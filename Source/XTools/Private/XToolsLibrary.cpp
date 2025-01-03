@@ -1,10 +1,117 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "XToolsLibrary.h"
+#include "XToolsPrivatePCH.h"
+
+/**
+ * 按类和标签查找父Actor
+ * 
+ * 该函数会沿着组件的父子层级向上查找，直到找到匹配指定类和标签的父Actor。
+ * 如果同时指定了ActorClass和ActorTag，会优先返回同时匹配的父级；
+ * 如果只匹配ActorClass，会返回最高级匹配的父级；
+ * 如果只匹配ActorTag，会返回第一个匹配的父级。
+ * 
+ * @param Component 要开始查找的起始组件，通常是一个场景组件（SceneComponent）
+ * @param ActorClass 要查找的Actor类，必须是AActor的子类
+ * @param ActorTag 要匹配的父Actor标签，为空时只按类查找
+ * @return 找到的父Actor，如果未找到则返回nullptr
+ * 
+ * @note 查找顺序：
+ * 1. 如果同时指定了ActorClass和ActorTag，优先返回同时匹配的父级
+ * 2. 如果只指定了ActorClass，返回最高级匹配的父级
+ * 3. 如果只指定了ActorTag，返回第一个匹配的父级
+ * 
+ * @example 
+ * // 查找标签为"MainCharacter"的父级Character
+ * ACharacter* ParentCharacter = Cast<ACharacter>(
+ *     UXToolsLibrary::FindParentComponentByClass(
+ *         MyComponent, 
+ *         ACharacter::StaticClass(), 
+ *         "MainCharacter"));
+ */
+AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, TSubclassOf<AActor> ActorClass, const FString& ActorTag)
+{
+    if (!Component)
+    {
+        return nullptr;
+    }
+
+    // 确保ActorClass是有效的Actor类
+    if (ActorClass && !ActorClass->IsChildOf(AActor::StaticClass()))
+    {
+        return nullptr;
+    }
+
+    USceneComponent* SceneComp = Cast<USceneComponent>(Component);
+    if (!SceneComp)
+    {
+        return nullptr;
+    }
+
+    USceneComponent* ParentComp = SceneComp->GetAttachParent();
+    AActor* HighestParent = nullptr;
+    int32 MaxIterations = 100; // 防止无限循环
+    int32 IterationCount = 0;
+    FName TagName = FName(*ActorTag);
+    
+    // 遍历所有父组件
+    while (ParentComp && IterationCount < MaxIterations)
+    {
+        IterationCount++;
+        
+        AActor* ParentActor = ParentComp->GetOwner();
+        
+        // 如果指定了ActorClass，检查是否匹配
+        if (ActorClass && (!ParentActor || !ParentActor->IsA(ActorClass)))
+        {
+            ParentComp = ParentComp->GetAttachParent();
+            continue;
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("Checking parent actor: %s"), *ParentActor->GetName());
+
+        // 如果指定了ActorClass，检查是否匹配
+        if (ActorClass && ParentActor->IsA(ActorClass))
+        {
+            // 记录当前匹配的父级
+            HighestParent = ParentActor;
+            UE_LOG(LogTemp, Log, TEXT("Recording parent with matching class: %s"), *ParentActor->GetName());
+
+            // 如果同时指定了ActorTag且匹配，立即返回
+            if (!ActorTag.IsEmpty() && ParentActor->Tags.Contains(TagName))
+            {
+                UE_LOG(LogTemp, Log, TEXT("Found parent with matching class and tag: %s"), *ActorTag);
+                return ParentActor;
+            }
+            
+            // 即使Tag不匹配，也继续查找更高层级的父级
+            // 最终会返回最高级匹配的父级
+        }
+        // 如果只指定了ActorTag，检查是否匹配
+        else if (!ActorTag.IsEmpty() && ParentActor->Tags.Contains(TagName))
+        {
+            UE_LOG(LogTemp, Log, TEXT("Found parent with matching tag: %s"), *ActorTag);
+            return ParentActor; // 找到匹配Tag的父级，立即返回
+        }
+        
+        ParentComp = ParentComp->GetAttachParent();
+    }
+
+    if (IterationCount >= MaxIterations)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Reached maximum iteration count while searching for parent actor"));
+    }
+    
+    // 返回最高级匹配的父级
+    return HighestParent;
+}
+
 #include "DrawDebugHelpers.h"
 
-FVector UXToolsLibrary::CalculateBezierPoint(const TArray<FVector>& Points, float Progress, bool bShowDebug, float Duration, FBezierDebugColors DebugColors, FBezierSpeedOptions SpeedOptions)
+FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray<FVector>& Points, float Progress, bool bShowDebug, float Duration, FBezierDebugColors DebugColors, FBezierSpeedOptions SpeedOptions)
 {
+    UWorld* World = Context->GetWorld();
+    check(World);
     // 参数验证
     if (Points.Num() < 2)
     {
@@ -38,18 +145,18 @@ FVector UXToolsLibrary::CalculateBezierPoint(const TArray<FVector>& Points, floa
     }
 
     // 如果开启调试，绘制控制点和连线
-    if (bShowDebug && GWorld)
+    if (bShowDebug && World)
     {
         // 绘制控制点
         for (const FVector& Point : Points)
         {
-            DrawDebugSphere(GWorld, Point, 8.0f, 8, DebugColors.ControlPointColor.ToFColor(true), false, Duration);
+            DrawDebugSphere(World, Point, 8.0f, 8, DebugColors.ControlPointColor.ToFColor(true), false, Duration);
         }
 
         // 绘制控制点之间的连线
         for (int32 i = 0; i < Points.Num() - 1; ++i)
         {
-            DrawDebugLine(GWorld, Points[i], Points[i + 1], DebugColors.ControlLineColor.ToFColor(true), false, Duration);
+            DrawDebugLine(World, Points[i], Points[i + 1], DebugColors.ControlLineColor.ToFColor(true), false, Duration);
         }
 
         // 绘制中间计算过程
@@ -64,10 +171,10 @@ FVector UXToolsLibrary::CalculateBezierPoint(const TArray<FVector>& Points, floa
                 const FVector& P2 = WorkPoints[CurrentIndex - LevelPoints];
                 
                 // 绘制中间点
-                DrawDebugPoint(GWorld, WorkPoints[CurrentIndex], 4.0f, 
+                DrawDebugPoint(World, WorkPoints[CurrentIndex], 4.0f, 
                     DebugColors.IntermediatePointColor.ToFColor(true), false, Duration);
                 // 绘制中间连线
-                DrawDebugLine(GWorld, P1, P2, 
+                DrawDebugLine(World, P1, P2, 
                     DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
                 
                 CurrentIndex++;
@@ -76,7 +183,7 @@ FVector UXToolsLibrary::CalculateBezierPoint(const TArray<FVector>& Points, floa
 
         // 绘制结果点（显示时间更长）
         const float ResultPointDuration = Duration * 5.0f;
-        DrawDebugPoint(GWorld, ResultPoint, 20.0f, DebugColors.ResultPointColor.ToFColor(true), false, ResultPointDuration);
+        DrawDebugPoint(World, ResultPoint, 20.0f, DebugColors.ResultPointColor.ToFColor(true), false, ResultPointDuration);
     }
 
     return ResultPoint;

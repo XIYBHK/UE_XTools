@@ -3,24 +3,26 @@
 	"Version": 1,
 	"VersionName": "1.0",
 	"FriendlyName": "XTools",
-	"Description": "一个通用工具插件，提供了常用的蓝图函数库和实用工具",
+	"Description": "蓝图函数库和实用工具",
 	"Category": "Tools",
 	"CreatedBy": "XIYBHK",
 	"CreatedByURL": "",
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
+	"EngineVersion": "5.3.0",
 	"CanContainContent": true,
-	"IsBetaVersion": false,
-	"IsExperimentalVersion": false,
-	"Installed": false,
+	"Installed": true,
 	"Modules": [
 		{
 			"Name": "XTools",
 			"Type": "Runtime",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			]
 		}
-	],
-	"EnabledByDefault": true,
-	"CanBeUsedWithUnrealHeaderTool": true
+	]
 }

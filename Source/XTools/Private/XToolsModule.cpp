@@ -1,20 +1,15 @@
 #include "XToolsModule.h"
-#include "Modules/ModuleManager.h"
 
-class FXToolsModule : public IXToolsModule
+#define LOCTEXT_NAMESPACE "FXToolsModule"
+
+void FXToolsModule::StartupModule()
 {
-public:
-	virtual void StartupModule() override
-	{
-		// 模块启动时的初始化代码
-		UE_LOG(LogTemp, Log, TEXT("XTools Module Startup"));
-	}
+}
 
-	virtual void ShutdownModule() override
-	{
-		// 模块关闭时的清理代码
-		UE_LOG(LogTemp, Log, TEXT("XTools Module Shutdown"));
-	}
-};
+void FXToolsModule::ShutdownModule()
+{
+}
 
+#undef LOCTEXT_NAMESPACE
+    
 IMPLEMENT_MODULE(FXToolsModule, XTools)

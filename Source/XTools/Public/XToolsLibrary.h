@@ -68,6 +68,24 @@ class XTOOLS_API UXToolsLibrary : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
+    /** 
+     * 按类查找父Actor
+     * @param Component 要开始查找的起始组件，通常是一个场景组件（SceneComponent）
+     * @param ActorClass 要查找的Actor类，必须是AActor的子类
+     * @param ParentName 要匹配的父Actor名称，为空时返回最高级父级
+     * @return 找到的父Actor，如果未找到则返回nullptr
+     * @note 该函数会沿着组件的父子层级向上查找，直到找到匹配指定类和名称的父Actor
+     * @example 
+     * // 查找名称包含"Character"的父级Character
+     * ACharacter* ParentCharacter = Cast<ACharacter>(
+     *     UXToolsLibrary::FindParentComponentByClass(MyComponent, ACharacter::StaticClass(), "Character"));
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|Components", 
+        meta = (DisplayName = "按类查找父组件", 
+               DeterminesOutputType = "ActorClass",
+               ToolTip = "沿组件层级向上查找匹配指定类和名称的父Actor。Component: 起始查找的组件。ActorClass: 要查找的Actor类。ParentName: 要匹配的父Actor名称（可选）。返回: 找到的父Actor，如果未找到则返回nullptr"))
+    static AActor* FindParentComponentByClass(UActorComponent* Component, TSubclassOf<AActor> ActorClass, const FString& ParentName = TEXT(""));
+
     /**
      * 计算贝塞尔曲线上的点
      * @param Points - 控制点数组
@@ -81,7 +99,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "XTools|Bezier", 
         meta = (DisplayName = "计算贝塞尔曲线点", 
                Duration = 0.03))
-    static FVector CalculateBezierPoint(UPARAM(ref) const TArray<FVector>& Points, 
+    static FVector CalculateBezierPoint(const UObject* Context,UPARAM(ref) const TArray<FVector>& Points, 
                                       float Progress, 
                                       bool bShowDebug, 
                                       float Duration = 0.03, 
