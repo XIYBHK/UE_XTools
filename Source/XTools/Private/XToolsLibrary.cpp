@@ -33,26 +33,33 @@ AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, T
 {
     if (!Component)
     {
+        UE_LOG(LogTemp, Warning, TEXT("Invalid component provided"));
         return nullptr;
     }
 
     // 确保ActorClass是有效的Actor类
     if (ActorClass && !ActorClass->IsChildOf(AActor::StaticClass()))
     {
+        UE_LOG(LogTemp, Warning, TEXT("Invalid ActorClass provided"));
         return nullptr;
     }
 
     USceneComponent* SceneComp = Cast<USceneComponent>(Component);
     if (!SceneComp)
     {
+        UE_LOG(LogTemp, Warning, TEXT("Component is not a SceneComponent"));
         return nullptr;
     }
 
-    USceneComponent* ParentComp = SceneComp->GetAttachParent();
-    AActor* HighestParent = nullptr;
-    int32 MaxIterations = 100; // 防止无限循环
+    // 设置最大深度，默认100层
+    const int32 MaxIterations = XTOOLS_MAX_PARENT_DEPTH;
     int32 IterationCount = 0;
     FName TagName = FName(*ActorTag);
+    AActor* HighestParent = nullptr;
+    USceneComponent* ParentComp = SceneComp->GetAttachParent();
+    
+    // 调试信息
+    UE_LOG(LogTemp, Log, TEXT("Starting parent search from component: %s"), *Component->GetName());
     
     // 遍历所有父组件
     while (ParentComp && IterationCount < MaxIterations)
@@ -60,6 +67,14 @@ AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, T
         IterationCount++;
         
         AActor* ParentActor = ParentComp->GetOwner();
+        
+        // 如果两者都为空，直接记录当前父级并继续向上查找
+        if (!ActorClass && ActorTag.IsEmpty())
+        {
+            HighestParent = ParentActor;
+            ParentComp = ParentComp->GetAttachParent();
+            continue;
+        }
         
         // 如果指定了ActorClass，检查是否匹配
         if (ActorClass && (!ParentActor || !ParentActor->IsA(ActorClass)))

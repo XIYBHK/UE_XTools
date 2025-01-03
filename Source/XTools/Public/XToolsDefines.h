@@ -27,3 +27,6 @@
 
 // Log category
 DECLARE_LOG_CATEGORY_EXTERN(LogXTools, Log, All);
+
+// Parent finder settings
+static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
