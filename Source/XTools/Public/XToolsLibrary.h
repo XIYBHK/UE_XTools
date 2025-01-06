@@ -83,7 +83,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "XTools|Components", 
         meta = (DisplayName = "按类查找父组件", 
                DeterminesOutputType = "ActorClass",
-               ToolTip = "沿组件层级向上查找匹配指定类和标签的父Actor。Component: 起始查找的组件。ActorClass: 要查找的Actor类。ActorTag: 要匹配的父Actor标签（可选）。返回: 找到的父Actor，如果未找到则返回nullptr"))
+               ToolTip = "从SceneComponent开始，沿组件层级向上查找父Actor。\n规则：\n1. 同时指定类和标签时，返回第一个同时匹配的父级\n2. 只指定类时，返回最高级匹配的父级\n3. 只指定标签时，返回第一个匹配的父级\n4. 都未指定时，返回最顶层的父级\nComponent: 起始查找的SceneComponent\nActorClass: 要查找的Actor类\nActorTag: 要匹配的父Actor标签（可选）\n返回: 找到的父Actor，如果未找到则返回nullptr"))
     static AActor* FindParentComponentByClass(UActorComponent* Component, TSubclassOf<AActor> ActorClass, const FString& ActorTag = TEXT(""));
 
     /**
