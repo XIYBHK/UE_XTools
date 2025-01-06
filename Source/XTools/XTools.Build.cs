@@ -21,6 +21,7 @@ public class XTools : ModuleRules
 		// Public include paths
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Public",
+			ModuleDirectory + "/AsyncTools",
 			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes"),
 			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Public"),
 			Path.Combine(EngineDirectory, "Source/Runtime/Core/Public"),
@@ -32,6 +33,7 @@ public class XTools : ModuleRules
 		// Private include paths  
 		PrivateIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Private",
+			ModuleDirectory + "/AsyncTools",
 			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Private")
 		});
 
@@ -43,13 +45,14 @@ public class XTools : ModuleRules
 			"InputCore", 
 			"Slate",
 			"SlateCore",
-			"UMG"
+			"UMG",
+			"Kismet"
 		});
 
 		// Private dependencies
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"Projects",
-			"ApplicationCore",
+			"ApplicationCore", 
 			"Json",
 			"JsonUtilities"
 		});
