@@ -4,50 +4,40 @@
 #include "XToolsPrivatePCH.h"
 
 /**
- * 按类和标签查找父Actor
+ * 在组件层级中查找匹配指定类和标签的父Actor
  * 
- * 该函数会沿着组件的父子层级向上查找，直到找到匹配指定类和标签的父Actor。
- * 如果同时指定了ActorClass和ActorTag，会优先返回同时匹配的父级；
- * 如果只匹配ActorClass，会返回最高级匹配的父级；
- * 如果只匹配ActorTag，会返回第一个匹配的父级。
+ * @param Component 起始组件，必须是SceneComponent（因为需要访问GetAttachParent()来遍历组件层级）
+ * @param ActorClass 要查找的Actor类（可选）
+ * @param ActorTag 要匹配的标签（可选）
+ * @return 找到的父Actor，未找到返回nullptr
  * 
- * @param Component 要开始查找的起始组件，通常是一个场景组件（SceneComponent）
- * @param ActorClass 要查找的Actor类，必须是AActor的子类
- * @param ActorTag 要匹配的父Actor标签，为空时只按类查找
- * @return 找到的父Actor，如果未找到则返回nullptr
+ * 查找规则：
+ * - 同时指定类和标签时，返回第一个同时匹配的父级
+ * - 只指定类时，返回最高级匹配的父级
+ * - 只指定标签时，返回第一个匹配的父级
+ * - 都未指定时，返回最顶层的父级
  * 
- * @note 查找顺序：
- * 1. 如果同时指定了ActorClass和ActorTag，优先返回同时匹配的父级
- * 2. 如果只指定了ActorClass，返回最高级匹配的父级
- * 3. 如果只指定了ActorTag，返回第一个匹配的父级
- * 
- * @example 
- * // 查找标签为"MainCharacter"的父级Character
- * ACharacter* ParentCharacter = Cast<ACharacter>(
- *     UXToolsLibrary::FindParentComponentByClass(
- *         MyComponent, 
- *         ACharacter::StaticClass(), 
- *         "MainCharacter"));
+ * 注意：最大查找深度为XTOOLS_MAX_PARENT_DEPTH（默认100层）
  */
 AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, TSubclassOf<AActor> ActorClass, const FString& ActorTag)
 {
     if (!Component)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Invalid component provided"));
+        UE_LOG(LogTemp, Warning, TEXT("提供的组件无效"));
         return nullptr;
     }
 
     // 确保ActorClass是有效的Actor类
     if (ActorClass && !ActorClass->IsChildOf(AActor::StaticClass()))
     {
-        UE_LOG(LogTemp, Warning, TEXT("Invalid ActorClass provided"));
+        UE_LOG(LogTemp, Warning, TEXT("提供的ActorClass无效"));
         return nullptr;
     }
 
     USceneComponent* SceneComp = Cast<USceneComponent>(Component);
     if (!SceneComp)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Component is not a SceneComponent"));
+        UE_LOG(LogTemp, Warning, TEXT("组件不是SceneComponent类型"));
         return nullptr;
     }
 
@@ -59,7 +49,7 @@ AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, T
     USceneComponent* ParentComp = SceneComp->GetAttachParent();
     
     // 调试信息
-    UE_LOG(LogTemp, Log, TEXT("Starting parent search from component: %s"), *Component->GetName());
+        UE_LOG(LogTemp, Log, TEXT("开始从组件查找父级: %s"), *Component->GetName());
     
     // 遍历所有父组件
     while (ParentComp && IterationCount < MaxIterations)
@@ -83,19 +73,19 @@ AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, T
             continue;
         }
 
-        UE_LOG(LogTemp, Log, TEXT("Checking parent actor: %s"), *ParentActor->GetName());
+        UE_LOG(LogTemp, Log, TEXT("正在检查父级Actor: %s"), *ParentActor->GetName());
 
         // 如果指定了ActorClass，检查是否匹配
         if (ActorClass && ParentActor->IsA(ActorClass))
         {
             // 记录当前匹配的父级
             HighestParent = ParentActor;
-            UE_LOG(LogTemp, Log, TEXT("Recording parent with matching class: %s"), *ParentActor->GetName());
+            UE_LOG(LogTemp, Log, TEXT("记录匹配类的父级: %s"), *ParentActor->GetName());
 
             // 如果同时指定了ActorTag且匹配，立即返回
             if (!ActorTag.IsEmpty() && ParentActor->Tags.Contains(TagName))
             {
-                UE_LOG(LogTemp, Log, TEXT("Found parent with matching class and tag: %s"), *ActorTag);
+                UE_LOG(LogTemp, Log, TEXT("找到匹配类和标签的父级: %s"), *ActorTag);
                 return ParentActor;
             }
             
@@ -105,7 +95,7 @@ AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, T
         // 如果只指定了ActorTag，检查是否匹配
         else if (!ActorTag.IsEmpty() && ParentActor->Tags.Contains(TagName))
         {
-            UE_LOG(LogTemp, Log, TEXT("Found parent with matching tag: %s"), *ActorTag);
+            UE_LOG(LogTemp, Log, TEXT("找到匹配标签的父级: %s"), *ActorTag);
             return ParentActor; // 找到匹配Tag的父级，立即返回
         }
         
@@ -114,7 +104,7 @@ AActor* UXToolsLibrary::FindParentComponentByClass(UActorComponent* Component, T
 
     if (IterationCount >= MaxIterations)
     {
-        UE_LOG(LogTemp, Error, TEXT("Reached maximum iteration count while searching for parent actor"));
+        UE_LOG(LogTemp, Error, TEXT("查找父级Actor时达到最大迭代次数"));
     }
     
     // 返回最高级匹配的父级
