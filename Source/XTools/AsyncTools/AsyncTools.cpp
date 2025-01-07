@@ -3,10 +3,12 @@
 #include "Engine/Engine.h"
 #include "Curves/CurveFloat.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogAsyncTools, Log, All);
+
 UAsyncTools::UAsyncTools(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	if (HasAnyFlags(RF_ClassDefaultObject) == false)
+	if (!HasAnyFlags(RF_ClassDefaultObject))
 	{
 		AddToRoot();
 	}
@@ -14,51 +16,67 @@ UAsyncTools::UAsyncTools(const FObjectInitializer& ObjectInitializer)
 
 UAsyncTools::~UAsyncTools()
 {
-	UE_LOG(LogTemp,Warning,TEXT("AsyncAction is End"));
+	UE_LOG(LogAsyncTools, Warning, TEXT("异步操作结束"));
 }
 
+/**
+ * 创建一个新的异步操作实例
+ * @param WorldContext - 世界上下文对象
+ * @param CurveFloat - 用于插值的曲线资源
+ * @param CurveValue - 用于插值的曲线值
+ * @param bUseCurve - 是否使用曲线进行插值
+ * @param A - 曲线的A值
+ * @param B - 曲线的B值
+ * @param DeltaSeconds - 更新曲线的时间步长
+ * @param Time - 曲线的总时间
+ * @param FirstDelay - 开始曲线前的延迟
+ * @param OutAsyncRef - 创建的异步操作的引用
+ * @return 新的异步操作实例
+ */
 UAsyncTools* UAsyncTools::AsyncAction(
-		UObject* worldContext,
+		UObject* WorldContext,
 		UCurveFloat* CurveFloat,
 		float CurveValue,
-		bool bIsUseCurve,
+		bool bUseCurve,
 		float A,
 		float B,
 		float DeltaSeconds,
 		float Time,
 		float FirstDelay,
-		UPARAM(DisplayName="Async Reference") UAsyncTools*& OutAsyncRef)
+		UAsyncTools*& OutAsyncRef)
 {
-	if (!worldContext)
+	if (!WorldContext)
 	{
-		UE_LOG(LogTemp, Error, TEXT("WorldContext is null"));
+		UE_LOG(LogTemp, Error, TEXT("WorldContext为空"));
 		return nullptr;
 	}
 
 	// 参数检查
-	if (bIsUseCurve && !CurveFloat)
+	if (bUseCurve && !CurveFloat)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] Invalid CurveFloat: bIsUseCurve is true but CurveFloat is null"));
+		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] 无效的CurveFloat: bUseCurve为true但CurveFloat为空"));
 		return nullptr;
 	}
 
 	if (DeltaSeconds <= 0.0f)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] Invalid DeltaSeconds: %f (must be positive)"), DeltaSeconds);
+		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] 无效的DeltaSeconds: %f (必须为正数)"), DeltaSeconds);
 		return nullptr;
 	}
 
 	if (Time <= 0.0f) 
 	{
-		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] Invalid Time: %f (must be positive)"), Time);
+		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] 无效的Time: %f (必须为正数)"), Time);
 		return nullptr;
 	}
 
 	// 调试信息
-	UE_LOG(LogTemp, Log, TEXT("[AsyncTools] Creating new async action:"));
+	UE_LOG(LogTemp, Log, TEXT("[AsyncTools] 创建新的异步操作:"));
 	UE_LOG(LogTemp, Log, TEXT("  - CurveFloat: %s"), CurveFloat ? *CurveFloat->GetName() : TEXT("None"));
-	UE_LOG(LogTemp, Log, TEXT("  - UseCurve: %s"), bIsUseCurve ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Log, TEXT("  - UseCurve: %s"), bUseCurve ? TEXT("true") : TEXT("false"));
+#if WITH_EDITOR
 	UE_LOG(LogTemp, Log, TEXT("  - Time: %.2f"), Time);
+#endif
 	UE_LOG(LogTemp, Log, TEXT("  - DeltaSeconds: %.2f"), DeltaSeconds);
 	UE_LOG(LogTemp, Log, TEXT("  - FirstDelay: %.2f"), FirstDelay);
 
@@ -70,15 +88,32 @@ UAsyncTools* UAsyncTools::AsyncAction(
 	Action->CurveValue = CurveValue;
 	Action->AValue = A;
 	Action->BValue = B;
-	Action->bIsUseCurve = bIsUseCurve;
+	Action->bUseCurve = bUseCurve;
 	Action->FirstDelay = FirstDelay;
 
-	Action->WorldContext = worldContext;
+	Action->WorldContext = WorldContext;
 	OutAsyncRef = Action;
 	
-	Action->RegisterWithGameInstance(worldContext);
+	Action->RegisterWithGameInstance(WorldContext);
 
 	return Action;
+}
+
+// 实现无输出引用的版本
+UAsyncTools* UAsyncTools::AsyncAction(
+	UObject* WorldContext,
+	UCurveFloat* CurveFloat,
+	float CurveValue,
+	bool bUseCurve,
+	float A,
+	float B,
+	float DeltaSeconds,
+	float Time,
+	float FirstDelay)
+{
+	UAsyncTools* OutRef = nullptr;
+	return AsyncAction(WorldContext, CurveFloat, CurveValue, bUseCurve, 
+					  A, B, DeltaSeconds, Time, FirstDelay, OutRef);
 }
 
 void UAsyncTools::Activate()
@@ -89,7 +124,7 @@ void UAsyncTools::Activate()
 		World = GEngine->GetWorldFromContextObject(WorldContext,EGetWorldErrorMode::ReturnNull);
 		if (World)
 		{
-			UE_LOG(LogTemp,Warning,TEXT("AsyncAction Start---Time:%f"),Time);
+			UE_LOG(LogTemp,Warning,TEXT("异步操作开始---时间:%f"),Time);
 			World->GetTimerManager().SetTimer(TimerHandle,this,&UAsyncTools::OnUpdate,DeltaSeconds,true,FirstDelay);
 			OnStartDelegate.Broadcast(Time,CurveValue,AValue,BValue);
 		}
@@ -98,73 +133,79 @@ void UAsyncTools::Activate()
 
 void UAsyncTools::Pause()
 {
-	if (World && !bIsPaused)
+	if (World && !bPaused)
 	{
-		bIsPaused = true;
+		bPaused = true;
 		World->GetTimerManager().PauseTimer(TimerHandle);
-		UE_LOG(LogTemp, Warning, TEXT("AsyncAction Paused"));
+		UE_LOG(LogAsyncTools, Warning, TEXT("异步操作暂停"));
 	}
 }
 
 void UAsyncTools::Resume()
 {
-	if (World && bIsPaused)
+	if (World && bPaused)
 	{
-		bIsPaused = false;
+		bPaused = false;
 		World->GetTimerManager().UnPauseTimer(TimerHandle);
-		UE_LOG(LogTemp, Warning, TEXT("AsyncAction Resumed"));
+		UE_LOG(LogAsyncTools, Warning, TEXT("异步操作恢复"));
 	}
 }
 
 void UAsyncTools::Cancel()
 {
-	if (World && !bIsCancelled)
+	if (World && !bCancelled)
 	{
-		bIsCancelled = true;
+		bCancelled = true;
 		World->GetTimerManager().ClearTimer(TimerHandle);
 		RemoveFromRoot();
 		SetReadyToDestroy();
-		UE_LOG(LogTemp, Warning, TEXT("AsyncAction Cancelled"));
+		UE_LOG(LogAsyncTools, Warning, TEXT("异步操作取消"));
 	}
 }
 
 void UAsyncTools::SetLoop(bool bInLoop)
 {
 	bLoop = bInLoop;
-	UE_LOG(LogTemp, Warning, TEXT("Set Loop: %s"), bLoop ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("设置循环: %s"), bLoop ? TEXT("true") : TEXT("false"));
 }
 
 void UAsyncTools::SetTimeScale(float InTimeScale)
 {
 	TimeScale = FMath::Max(0.0f, InTimeScale);
-	UE_LOG(LogTemp, Warning, TEXT("Set TimeScale: %.2f"), TimeScale);
+	UE_LOG(LogTemp, Warning, TEXT("设置时间缩放: %.2f"), TimeScale);
 }
 
 void UAsyncTools::UpdateCurveParams(float InA, float InB)
 {
 	AValue = InA;
 	BValue = InB;
-	UE_LOG(LogTemp, Warning, TEXT("Update Curve Params: A=%.2f, B=%.2f"), AValue, BValue);
+	UE_LOG(LogTemp, Warning, TEXT("更新曲线参数: A=%.2f, B=%.2f"), AValue, BValue);
 }
 
 void UAsyncTools::PrintDebugInfo() const
 {
-	UE_LOG(LogTemp, Warning, TEXT("AsyncTools Debug Info:"));
-	UE_LOG(LogTemp, Warning, TEXT("  - Time: %.2f"), Time);
-	UE_LOG(LogTemp, Warning, TEXT("  - LastTime: %.2f"), LastTime);
-	UE_LOG(LogTemp, Warning, TEXT("  - DeltaSeconds: %.2f"), DeltaSeconds);
-	UE_LOG(LogTemp, Warning, TEXT("  - CurveValue: %.2f"), CurveValue);
-	UE_LOG(LogTemp, Warning, TEXT("  - AValue: %.2f"), AValue);
-	UE_LOG(LogTemp, Warning, TEXT("  - BValue: %.2f"), BValue);
-	UE_LOG(LogTemp, Warning, TEXT("  - TimeScale: %.2f"), TimeScale);
-	UE_LOG(LogTemp, Warning, TEXT("  - bLoop: %s"), bLoop ? TEXT("true") : TEXT("false"));
-	UE_LOG(LogTemp, Warning, TEXT("  - bIsPaused: %s"), bIsPaused ? TEXT("true") : TEXT("false"));
-	UE_LOG(LogTemp, Warning, TEXT("  - bIsCancelled: %s"), bIsCancelled ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("AsyncTools 调试信息:"));
+	UE_LOG(LogTemp, Warning, TEXT("  - 时间: %.2f"), Time);
+	UE_LOG(LogTemp, Warning, TEXT("  - 上次时间: %.2f"), LastTime);
+	UE_LOG(LogTemp, Warning, TEXT("  - 时间步长: %.2f"), DeltaSeconds);
+	UE_LOG(LogTemp, Warning, TEXT("  - 曲线值: %.2f"), CurveValue);
+	UE_LOG(LogTemp, Warning, TEXT("  - A值: %.2f"), AValue);
+	UE_LOG(LogTemp, Warning, TEXT("  - B值: %.2f"), BValue);
+	UE_LOG(LogTemp, Warning, TEXT("  - 时间缩放: %.2f"), TimeScale);
+	UE_LOG(LogTemp, Warning, TEXT("  - 循环: %s"), bLoop ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("  - 暂停: %s"), bPaused ? TEXT("true") : TEXT("false"));
+	UE_LOG(LogTemp, Warning, TEXT("  - 取消: %s"), bCancelled ? TEXT("true") : TEXT("false"));
 }
 
 void UAsyncTools::OnUpdate()
 {
-	if (bIsCancelled || bIsPaused)
+	if (!World || !ensure(World->IsValidLowLevel()))
+	{
+		UE_LOG(LogAsyncTools, Warning, TEXT("无效的World引用"));
+		return;
+	}
+
+	if (bCancelled || bPaused)
 	{
 		return;
 	}
@@ -198,7 +239,7 @@ void UAsyncTools::OnUpdate()
 	}
 	else
 	{
-		if (bIsUseCurve && CurveFloat)
+		if (bUseCurve && CurveFloat)
 		{
 			CurveValue = CurveFloat->GetFloatValue(LastTime);
 		}
