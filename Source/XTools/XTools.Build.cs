@@ -27,7 +27,8 @@ public class XTools : ModuleRules
 			Path.Combine(EngineDirectory, "Source/Runtime/Core/Public"),
 			Path.Combine(EngineDirectory, "Source/Runtime/CoreUObject/Public"),
 			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/Components"),
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/GameFramework")
+			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/GameFramework"),
+			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/Engine")
 		});
 
 		// Private include paths  
@@ -45,8 +46,7 @@ public class XTools : ModuleRules
 			"InputCore", 
 			"Slate",
 			"SlateCore",
-			"UMG",
-			"Kismet"
+			"UMG"
 		});
 
 		// Private dependencies
@@ -56,6 +56,14 @@ public class XTools : ModuleRules
 			"Json",
 			"JsonUtilities"
 		});
+
+		// Editor-only dependencies
+		if (Target.bBuildEditor)
+		{
+			PublicDependencyModuleNames.AddRange(new string[] {
+				"Kismet"
+			});
+		}
 
 		// Dynamically loaded modules
 		DynamicallyLoadedModuleNames.AddRange(new string[] {

@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Curves/CurveFloat.h"
+#include "Templates/SubclassOf.h"
+#include "GameFramework/Actor.h"
 #include "XToolsLibrary.generated.h"
 
 // 贝塞尔曲线速度模式
