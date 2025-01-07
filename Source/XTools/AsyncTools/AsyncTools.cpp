@@ -182,19 +182,58 @@ void UAsyncTools::UpdateCurveParams(float InA, float InB)
 	UE_LOG(LogTemp, Warning, TEXT("更新曲线参数: A=%.2f, B=%.2f"), AValue, BValue);
 }
 
-void UAsyncTools::PrintDebugInfo() const
+void UAsyncTools::PrintDebugInfo(bool bPrintToScreen, bool bPrintToLog, FLinearColor TextColor, float Duration) const
 {
-	UE_LOG(LogTemp, Warning, TEXT("AsyncTools 调试信息:"));
-	UE_LOG(LogTemp, Warning, TEXT("  - 时间: %.2f"), Time);
-	UE_LOG(LogTemp, Warning, TEXT("  - 上次时间: %.2f"), LastTime);
-	UE_LOG(LogTemp, Warning, TEXT("  - 时间步长: %.2f"), DeltaSeconds);
-	UE_LOG(LogTemp, Warning, TEXT("  - 曲线值: %.2f"), CurveValue);
-	UE_LOG(LogTemp, Warning, TEXT("  - A值: %.2f"), AValue);
-	UE_LOG(LogTemp, Warning, TEXT("  - B值: %.2f"), BValue);
-	UE_LOG(LogTemp, Warning, TEXT("  - 时间缩放: %.2f"), TimeScale);
-	UE_LOG(LogTemp, Warning, TEXT("  - 循环: %s"), bLoop ? TEXT("true") : TEXT("false"));
-	UE_LOG(LogTemp, Warning, TEXT("  - 暂停: %s"), bPaused ? TEXT("true") : TEXT("false"));
-	UE_LOG(LogTemp, Warning, TEXT("  - 取消: %s"), bCancelled ? TEXT("true") : TEXT("false"));
+	// 使用固定的Key，这样文本位置就不会变动，只有值会更新
+	const int32 BaseKey = 39670;  // 使用一个不太常见的基础key值避免冲突
+
+	if (bPrintToScreen && GEngine)
+	{
+		// 将FLinearColor转换为FColor
+		const FColor DisplayColor = TextColor.ToFColor(true);
+		
+		// 固定的标题文本
+		GEngine->AddOnScreenDebugMessage(BaseKey, Duration, DisplayColor, 
+			TEXT("===== AsyncTools 调试信息 ====="));
+		
+		// 各项参数信息，每项使用不同的key以保持位置固定
+		GEngine->AddOnScreenDebugMessage(BaseKey + 1, Duration, DisplayColor, 
+			FString::Printf(TEXT("时间: %.2f"), Time));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 2, Duration, DisplayColor, 
+			FString::Printf(TEXT("上次时间: %.2f"), LastTime));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 3, Duration, DisplayColor, 
+			FString::Printf(TEXT("时间步长: %.2f"), DeltaSeconds));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 4, Duration, DisplayColor, 
+			FString::Printf(TEXT("曲线值: %.2f"), CurveValue));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 5, Duration, DisplayColor, 
+			FString::Printf(TEXT("A值: %.2f"), AValue));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 6, Duration, DisplayColor, 
+			FString::Printf(TEXT("B值: %.2f"), BValue));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 7, Duration, DisplayColor, 
+			FString::Printf(TEXT("时间缩放: %.2f"), TimeScale));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 8, Duration, DisplayColor, 
+			FString::Printf(TEXT("循环: %s"), bLoop ? TEXT("是") : TEXT("否")));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 9, Duration, DisplayColor, 
+			FString::Printf(TEXT("暂停: %s"), bPaused ? TEXT("是") : TEXT("否")));
+		GEngine->AddOnScreenDebugMessage(BaseKey + 10, Duration, DisplayColor, 
+			FString::Printf(TEXT("取消: %s"), bCancelled ? TEXT("是") : TEXT("否")));
+	}
+
+	if (bPrintToLog)
+	{
+		// 日志输出部分
+		UE_LOG(LogAsyncTools, Warning, TEXT("AsyncTools 调试信息:"));
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 时间: %.2f"), Time);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 上次时间: %.2f"), LastTime);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 时间步长: %.2f"), DeltaSeconds);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 曲线值: %.2f"), CurveValue);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - A值: %.2f"), AValue);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - B值: %.2f"), BValue);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 时间缩放: %.2f"), TimeScale);
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 循环: %s"), bLoop ? TEXT("是") : TEXT("否"));
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 暂停: %s"), bPaused ? TEXT("是") : TEXT("否"));
+		UE_LOG(LogAsyncTools, Warning, TEXT("  - 取消: %s"), bCancelled ? TEXT("是") : TEXT("否"));
+	}
 }
 
 void UAsyncTools::OnUpdate()

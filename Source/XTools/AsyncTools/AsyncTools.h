@@ -26,7 +26,14 @@ public:
 			DisplayName="Async Action",
 				CompactNodeTitle="AsyncAction",
 				ToolTip="创建异步操作实例",
-				WorldContext="WorldContext"),
+				WorldContext="WorldContext",
+				CurveValue="0.0",
+				bUseCurve="false",
+				A="0.0",
+				B="0.0",
+				DeltaSeconds="0.033",
+				Time="1.0",
+				FirstDelay="0.0"),
 		Category="XTools|Async")
 	static UAsyncTools* AsyncAction(
 		UObject* WorldContext,
@@ -145,8 +152,25 @@ public:
 		meta=(DisplayName="Update Curve Parameters", ToolTip="更新曲线的A和B参数"))
 	void UpdateCurveParams(float InA, float InB);
 
-	/** 打印调试信息 */
+	/** 
+	 * 打印调试信息到屏幕和日志
+	 * 屏幕显示会保持在固定位置并定期更新
+	 * @param bPrintToScreen 是否在屏幕上显示
+	 * @param bPrintToLog 是否输出到日志
+	 * @param TextColor 文本颜色
+	 * @param Duration 显示持续时间(秒)
+	 */
 	UFUNCTION(BlueprintCallable, Category="XTools|Async", 
-		meta=(DisplayName="Print Debug Info", ToolTip="输出当前状态的调试信息"))
-	void PrintDebugInfo() const;
+		meta=(
+			DisplayName="Print Debug Info", 
+			Keywords="debug,log,screen,display",
+			ToolTip="在屏幕上显示调试信息并输出到日志",
+			AdvancedDisplay="bPrintToScreen,bPrintToLog,TextColor,Duration"
+		))
+	void PrintDebugInfo(
+		UPARAM(DisplayName="Print To Screen") bool bPrintToScreen = true,
+		UPARAM(DisplayName="Print To Log") bool bPrintToLog = true,
+		UPARAM(DisplayName="Text Color") FLinearColor TextColor = FLinearColor(1.0f, 1.0f, 0.0f),
+		UPARAM(DisplayName="Duration") float Duration = 2.0f
+	) const;
 };
