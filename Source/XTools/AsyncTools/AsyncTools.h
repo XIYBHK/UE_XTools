@@ -6,6 +6,23 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FAsyncDelegate, float, Time, float, CurveValue, float, A, float, B);
 
+// 错误类型枚举
+UENUM(BlueprintType)
+enum class EAsyncToolsErrorType : uint8
+{
+	InvalidParameter    UMETA(DisplayName = "参数错误"),
+	WorldContextInvalid UMETA(DisplayName = "World上下文无效"),
+	CurveError         UMETA(DisplayName = "曲线错误"),
+	TimerError         UMETA(DisplayName = "定时器错误"),
+	StateError         UMETA(DisplayName = "状态错误")
+};
+
+// 错误委托声明
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnAsyncToolsError, 
+	EAsyncToolsErrorType, ErrorType,
+	const FString&, ErrorMessage,
+	const FString&, Context);
+
 /**
  * 异步工具类，用于处理异步操作和定时器功能
  * 支持曲线插值、暂停/恢复、循环等功能
@@ -82,9 +99,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="XTools|Async", meta=(ToolTip="进度更新时触发"))
 	FAsyncDelegate OnProgressDelegate;
 
-	/** 发生错误时触发 */
-	UPROPERTY(BlueprintAssignable, Category="XTools|Async", meta=(ToolTip="发生错误时触发"))
-	FAsyncDelegate OnErrorDelegate;
+	/**
+	 * 处理异步工具错误
+	 * @param ErrorType - 错误类型
+	 * @param ErrorMessage - 错误消息
+	 * @param Context - 错误发生的上下文
+	 */
+	static void HandleAsyncError(
+		EAsyncToolsErrorType ErrorType,
+		const FString& ErrorMessage,
+		const FString& Context
+	);
 
 private:
 	/** 是否使用曲线 */

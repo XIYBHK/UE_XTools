@@ -47,26 +47,41 @@ UAsyncTools* UAsyncTools::AsyncAction(
 {
 	if (!WorldContext)
 	{
-		UE_LOG(LogTemp, Error, TEXT("WorldContext为空"));
+		HandleAsyncError(
+			EAsyncToolsErrorType::WorldContextInvalid,
+			TEXT("WorldContext为空"),
+			TEXT("AsyncAction")
+		);
 		return nullptr;
 	}
 
-	// 参数检查
 	if (bUseCurve && !CurveFloat)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] 无效的CurveFloat: bUseCurve为true但CurveFloat为空"));
+		HandleAsyncError(
+			EAsyncToolsErrorType::CurveError,
+			TEXT("无效的CurveFloat: bUseCurve为true但CurveFloat为空"),
+			TEXT("AsyncAction")
+		);
 		return nullptr;
 	}
 
 	if (DeltaSeconds <= 0.0f)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] 无效的DeltaSeconds: %f (必须为正数)"), DeltaSeconds);
+		HandleAsyncError(
+			EAsyncToolsErrorType::InvalidParameter,
+			FString::Printf(TEXT("无效的DeltaSeconds: %f (必须为正数)"), DeltaSeconds),
+			TEXT("AsyncAction")
+		);
 		return nullptr;
 	}
 
-	if (Time <= 0.0f) 
+	if (Time <= 0.0f)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[AsyncTools] 无效的Time: %f (必须为正数)"), Time);
+		HandleAsyncError(
+			EAsyncToolsErrorType::InvalidParameter,
+			FString::Printf(TEXT("无效的Time: %f (必须为正数)"), Time),
+			TEXT("AsyncAction")
+		);
 		return nullptr;
 	}
 
@@ -171,7 +186,16 @@ void UAsyncTools::SetLoop(bool bInLoop)
 
 void UAsyncTools::SetTimeScale(float InTimeScale)
 {
-	TimeScale = FMath::Max(0.0f, InTimeScale);
+	if (InTimeScale < 0.0f)
+	{
+		HandleAsyncError(
+			EAsyncToolsErrorType::InvalidParameter,
+			FString::Printf(TEXT("无效的时间缩放值: %f (必须大于0)"), InTimeScale),
+			TEXT("SetTimeScale")
+		);
+		return;
+	}
+	TimeScale = InTimeScale;
 	UE_LOG(LogTemp, Warning, TEXT("设置时间缩放: %.2f"), TimeScale);
 }
 
@@ -240,12 +264,22 @@ void UAsyncTools::OnUpdate()
 {
 	if (!World || !ensure(World->IsValidLowLevel()))
 	{
-		UE_LOG(LogAsyncTools, Warning, TEXT("无效的World引用"));
+		const FString ErrorMsg = TEXT("无效的World引用");
+		HandleAsyncError(
+			EAsyncToolsErrorType::WorldContextInvalid,
+			ErrorMsg,
+			TEXT("OnUpdate")
+		);
 		return;
 	}
 
-	if (bCancelled || bPaused)
+	if (bCancelled)
 	{
+		HandleAsyncError(
+			EAsyncToolsErrorType::StateError,
+			TEXT("操作已被取消"),
+			TEXT("OnUpdate")
+		);
 		return;
 	}
 
@@ -283,5 +317,62 @@ void UAsyncTools::OnUpdate()
 			CurveValue = CurveFloat->GetFloatValue(LastTime);
 		}
 		OnUpdateDelegate.Broadcast(LastTime-DeltaSeconds,CurveValue,AValue,BValue);
+	}
+}
+
+void UAsyncTools::HandleAsyncError(
+	EAsyncToolsErrorType ErrorType,
+	const FString& ErrorMessage,
+	const FString& Context)
+{
+	// 根据错误类型确定日志级别和显示颜色
+	ELogVerbosity::Type ErrorLogLevel;
+	FColor DisplayColor;
+	FString Prefix;
+	const float DisplayTime = 5.0f;  // 固定显示时间为5秒
+	
+	switch(ErrorType)
+	{
+		case EAsyncToolsErrorType::WorldContextInvalid:
+		case EAsyncToolsErrorType::CurveError:
+			ErrorLogLevel = ELogVerbosity::Error;
+			DisplayColor = FColor::Red;
+			Prefix = TEXT("[AsyncTools错误]");
+			break;
+			
+		case EAsyncToolsErrorType::InvalidParameter:
+		case EAsyncToolsErrorType::TimerError:
+			ErrorLogLevel = ELogVerbosity::Warning;
+			DisplayColor = FColor::Yellow;
+			Prefix = TEXT("[AsyncTools警告]");
+			break;
+			
+		case EAsyncToolsErrorType::StateError:
+			ErrorLogLevel = ELogVerbosity::Warning;
+			DisplayColor = FColor::Orange;
+			Prefix = TEXT("[AsyncTools状态]");
+			break;
+			
+		default:
+			ErrorLogLevel = ELogVerbosity::Warning;
+			DisplayColor = FColor::White;
+			Prefix = TEXT("[AsyncTools]");
+	}
+	
+	// 构建完整的错误消息
+	const FString FullMessage = FString::Printf(TEXT("%s [%s] %s"), *Prefix, *Context, *ErrorMessage);
+	
+	// 输出到日志
+	FMsg::Logf(__FILE__, __LINE__, LogAsyncTools.GetCategoryName(), ErrorLogLevel, TEXT("%s"), *FullMessage);
+	
+	// 显示到屏幕
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			DisplayTime,
+			DisplayColor,
+			FullMessage
+		);
 	}
 }
