@@ -1,21 +1,35 @@
 // Copyright 2023 Tomasz Klin. All Rights Reserved.
 
+/**
+ * 组件时间轴运行时模块实现文件
+ * 负责模块的初始化和清理工作
+ */
 
 #include "ComponentTimelineRuntime.h"
 
 #define LOCTEXT_NAMESPACE "FComponentTimelineRuntimeModule"
 
+/**
+ * 模块启动函数
+ * 在模块被加载到内存后执行
+ * 具体的执行时机在模块的.uplugin文件中指定
+ */
 void FComponentTimelineRuntimeModule::StartupModule()
 {
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+	// 模块加载时的初始化代码
 }
 
+/**
+ * 模块关闭函数
+ * 在模块关闭时执行清理工作
+ * 对于支持动态重载的模块，该函数会在模块卸载前调用
+ */
 void FComponentTimelineRuntimeModule::ShutdownModule()
 {
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
+	// 模块关闭时的清理代码
 }
 
 #undef LOCTEXT_NAMESPACE
 	
+// 实现模块接口
 IMPLEMENT_MODULE(FComponentTimelineRuntimeModule, ComponentTimelineRuntime)
