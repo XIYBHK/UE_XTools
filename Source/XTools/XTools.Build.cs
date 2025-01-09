@@ -12,6 +12,13 @@ public class XTools : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		// 添加模块定义
+		PublicDefinitions.AddRange(new string[] {
+			"WITH_XTOOLS=1",
+			"DLLEXPORT=__declspec(dllexport)",
+			"DLLIMPORT=__declspec(dllimport)"
+		});
+
 		// Compilation optimization
 		bUsePrecompiled = false;
 		bEnableUndefinedIdentifierWarnings = false;
@@ -46,7 +53,8 @@ public class XTools : ModuleRules
 			"InputCore", 
 			"Slate",
 			"SlateCore",
-			"UMG"
+			"UMG",
+			"ComponentTimelineRuntime"
 		});
 
 		// Private dependencies
@@ -54,14 +62,19 @@ public class XTools : ModuleRules
 			"Projects",
 			"ApplicationCore", 
 			"Json",
-			"JsonUtilities"
+			"JsonUtilities",
+			"DeveloperSettings"
 		});
 
 		// Editor-only dependencies
 		if (Target.bBuildEditor)
 		{
 			PublicDependencyModuleNames.AddRange(new string[] {
-				"Kismet"
+				"Kismet",
+				"UnrealEd",
+				"BlueprintGraph",
+				"GraphEditor",
+				"ComponentTimelineUncooked"
 			});
 		}
 
