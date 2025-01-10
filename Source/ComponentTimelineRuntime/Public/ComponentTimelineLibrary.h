@@ -26,7 +26,7 @@ public:
 	 * @param Component - 需要初始化时间轴的目标组件
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|Timeline", 
-		meta = (DisplayName = "初始化组件时间轴 (Initialize Component Timelines)", 
+		meta = (DisplayName = "初始化组件时间轴", 
 		Keywords = "Initialize Component Timelines",
 		UnsafeDuringActorConstruction = "true", 
 		DefaultToSelf="Component"))
@@ -38,7 +38,7 @@ public:
 	 * @param ActorOwner - 关联的Actor对象
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|Timeline", 
-		meta = (DisplayName = "初始化对象时间轴 (Initialize Object Timelines)", 
+		meta = (DisplayName = "初始化对象时间轴", 
 		Keywords = "Initialize Object Timelines",
 		UnsafeDuringActorConstruction = "true", 
 		DefaultToSelf="BlueprintOwner"))
