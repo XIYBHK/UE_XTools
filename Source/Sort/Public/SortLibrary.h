@@ -43,6 +43,71 @@ class SORT_API USortLibrary : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
+    /** 通用排序函数 */
+    template <typename T>
+    static void SortArray(const TArray<T>& InArray, bool bAscending, TArray<T>& SortedArray, TArray<int32>& OriginalIndices)
+    {
+        // 参数验证
+        if (InArray.Num() <= 0)
+        {
+            SortedArray.Empty(0);
+            OriginalIndices.Empty(0);
+            return;
+        }
+
+        // 初始化输出数组
+        SortedArray = InArray;
+        const int32 ArrayNum = InArray.Num();
+        OriginalIndices.SetNumUninitialized(ArrayNum);
+
+        // 初始化索引数组
+        for (int32 i = 0; i < ArrayNum; ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+
+        // 创建排序用的键值对数组
+        struct TPair
+        {
+            T Value;
+            int32 OriginalIndex;
+
+            TPair() : Value(), OriginalIndex(INDEX_NONE) {}
+            TPair(const T& InValue, int32 InIndex)
+                : Value(InValue), OriginalIndex(InIndex) {}
+        };
+
+        TArray<TPair> Pairs;
+        Pairs.SetNumUninitialized(ArrayNum);
+
+        // 构建键值对
+        for (int32 i = 0; i < ArrayNum; ++i)
+        {
+            Pairs[i] = TPair(InArray[i], i);
+        }
+
+        // 使用数组排序
+        if (bAscending)
+        {
+            Pairs.Sort([](const TPair& A, const TPair& B) {
+                return A.Value < B.Value;
+            });
+        }
+        else
+        {
+            Pairs.Sort([](const TPair& A, const TPair& B) {
+                return A.Value > B.Value;
+            });
+        }
+
+        // 更新结果
+        for (int32 i = 0; i < ArrayNum; ++i)
+        {
+            SortedArray[i] = Pairs[i].Value;
+            OriginalIndices[i] = Pairs[i].OriginalIndex;
+        }
+    }
+
     /** 根据与指定位置的距离对Actor数组进行排序，并返回原始索引 */
     UFUNCTION(BlueprintPure,
         Category = "XTools|排序|Actor", 
