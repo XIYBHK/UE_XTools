@@ -43,71 +43,6 @@ class SORT_API USortLibrary : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
-    /** 通用排序函数 */
-    template <typename T>
-    static void SortArray(const TArray<T>& InArray, bool bAscending, TArray<T>& SortedArray, TArray<int32>& OriginalIndices)
-    {
-        // 参数验证
-        if (InArray.Num() <= 0)
-        {
-            SortedArray.Empty(0);
-            OriginalIndices.Empty(0);
-            return;
-        }
-
-        // 初始化输出数组
-        SortedArray = InArray;
-        const int32 ArrayNum = InArray.Num();
-        OriginalIndices.SetNumUninitialized(ArrayNum);
-
-        // 初始化索引数组
-        for (int32 i = 0; i < ArrayNum; ++i)
-        {
-            OriginalIndices[i] = i;
-        }
-
-        // 创建排序用的键值对数组
-        struct TPair
-        {
-            T Value;
-            int32 OriginalIndex;
-
-            TPair() : Value(), OriginalIndex(INDEX_NONE) {}
-            TPair(const T& InValue, int32 InIndex)
-                : Value(InValue), OriginalIndex(InIndex) {}
-        };
-
-        TArray<TPair> Pairs;
-        Pairs.SetNumUninitialized(ArrayNum);
-
-        // 构建键值对
-        for (int32 i = 0; i < ArrayNum; ++i)
-        {
-            Pairs[i] = TPair(InArray[i], i);
-        }
-
-        // 使用数组排序
-        if (bAscending)
-        {
-            Pairs.Sort([](const TPair& A, const TPair& B) {
-                return A.Value < B.Value;
-            });
-        }
-        else
-        {
-            Pairs.Sort([](const TPair& A, const TPair& B) {
-                return A.Value > B.Value;
-            });
-        }
-
-        // 更新结果
-        for (int32 i = 0; i < ArrayNum; ++i)
-        {
-            SortedArray[i] = Pairs[i].Value;
-            OriginalIndices[i] = Pairs[i].OriginalIndex;
-        }
-    }
-
     /** 根据与指定位置的距离对Actor数组进行排序，并返回原始索引 */
     UFUNCTION(BlueprintPure,
         Category = "XTools|排序|Actor", 
@@ -175,7 +110,7 @@ public:
             DisplayName = "排序字符串数组",
             Keywords = "排序,字符串,文本,索引",
             bAscending = "true",
-            ToolTip = "对字符串数组进行排序，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的字符串数组\nbAscending - true为升序（字母顺序），false为降序（字母倒序）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
+            ToolTip = "对字符串数组进行排序，按照字典序（lexicographical order）进行比较，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的字符串数组\nbAscending - true为升序（字典序），false为降序（字典序）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
         ))
     static void SortStringArray(UPARAM(DisplayName="输入数组") const TArray<FString>& InArray, 
         UPARAM(DisplayName="升序排序") bool bAscending,
@@ -580,4 +515,4 @@ public:
         UPARAM(DisplayName="容差值") float Tolerance,
         UPARAM(DisplayName="重复项索引") TArray<int32>& DuplicateIndices,
         UPARAM(DisplayName="重复项值") TArray<FVector>& DuplicateValues);
-}; 
+};

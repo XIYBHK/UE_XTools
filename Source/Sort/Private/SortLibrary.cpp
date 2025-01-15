@@ -1,5 +1,8 @@
 #include "SortLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Logging/LogMacros.h"
+
+DEFINE_LOG_CATEGORY_STATIC(SortLibraryLog, Log, All);
 
 void USortLibrary::SortActorsByDistance(const TArray<AActor*>& Actors, const FVector& Location, bool bAscending,
     bool b2DDistance, TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices, TArray<float>& SortedDistances)
@@ -7,9 +10,9 @@ void USortLibrary::SortActorsByDistance(const TArray<AActor*>& Actors, const FVe
     // 参数验证
     if (Actors.Num() <= 0)
     {
-        SortedActors.Empty(0);
-        OriginalIndices.Empty(0);
-        SortedDistances.Empty(0);
+        SortedActors.Empty();
+        OriginalIndices.Empty();
+        SortedDistances.Empty();
         return;
     }
 
@@ -97,8 +100,8 @@ void USortLibrary::SortActorsByHeight(const TArray<AActor*>& Actors, bool bAscen
     // 参数验证
     if (Actors.Num() <= 0)
     {
-        SortedActors.Empty(0);
-        OriginalIndices.Empty(0);
+        SortedActors.Empty();
+        OriginalIndices.Empty();
         return;
     }
 
@@ -321,9 +324,15 @@ void USortLibrary::SortStringArray(const TArray<FString>& InArray, bool bAscendi
     // 参数验证
     if (InArray.Num() <= 0)
     {
-        SortedArray.Empty(0);
-        OriginalIndices.Empty(0);
+        SortedArray.Empty(); // 确保输出数组被清空
+        OriginalIndices.Empty(); // 确保原始索引数组被清空
         return;
+    }
+
+    // 输出输入数组的内容
+    for (const FString& Str : InArray)
+    {
+        UE_LOG(SortLibraryLog, Log, TEXT("Input String: %s"), *Str);
     }
 
     // 初始化输出数组
@@ -332,54 +341,36 @@ void USortLibrary::SortStringArray(const TArray<FString>& InArray, bool bAscendi
     OriginalIndices.SetNumUninitialized(ArrayNum);
 
     // 初始化索引数组
-    for(int32 i = 0; i < ArrayNum; ++i)
+    for (int32 i = 0; i < ArrayNum; ++i)
     {
         OriginalIndices[i] = i;
-    }
-
-    // 创建排序用的键值对数组
-    struct FStringPair
-    {
-        FString Value;
-        int32 OriginalIndex;
-
-        FStringPair() : Value(), OriginalIndex(INDEX_NONE) {}
-        FStringPair(const FString& InValue, int32 InIndex)
-            : Value(InValue), OriginalIndex(InIndex) {}
-    };
-
-    TArray<FStringPair> Pairs;
-    Pairs.SetNumUninitialized(ArrayNum);
-
-    // 构建键值对
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        Pairs[i] = FStringPair(InArray[i], i);
     }
 
     // 使用数组排序
     if (bAscending)
     {
-        Pairs.Sort([](const FStringPair& A, const FStringPair& B) {
-            return A.Value.Compare(B.Value, ESearchCase::IgnoreCase) < 0;
+        SortedArray.Sort([](const FString& A, const FString& B) {
+            return A.Compare(B, ESearchCase::IgnoreCase) < 0;
         });
     }
     else
     {
-        Pairs.Sort([](const FStringPair& A, const FStringPair& B) {
-            return A.Value.Compare(B.Value, ESearchCase::IgnoreCase) > 0;
+        SortedArray.Sort([](const FString& A, const FString& B) {
+            return A.Compare(B, ESearchCase::IgnoreCase) > 0;
         });
     }
 
-    // 更新结果
-    for(int32 i = 0; i < ArrayNum; ++i)
+    // 更新原始索引
+    for (int32 i = 0; i < ArrayNum; ++i)
     {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
+        OriginalIndices[i] = InArray.IndexOfByKey(SortedArray[i]);
     }
 
-    // 优化内存
-    Pairs.Empty(0);
+    // 输出排序后的结果
+    for (const FString& Str : SortedArray)
+    {
+        UE_LOG(SortLibraryLog, Log, TEXT("Sorted String: %s"), *Str);
+    }
 }
 
 void USortLibrary::SortNameArray(const TArray<FName>& InArray, bool bAscending,
