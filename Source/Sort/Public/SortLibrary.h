@@ -117,18 +117,19 @@ public:
         UPARAM(DisplayName="排序后数组") TArray<FString>& SortedArray, 
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
 
-    /** 对名称数组进行排序 */
+    /** 根据字典序对命名数组进行排序 */
     UFUNCTION(BlueprintPure,
         Category = "XTools|排序|基础类型", 
         meta = (
-            DisplayName = "排序名称数组",
-            Keywords = "排序,名称,FName,索引",
+            DisplayName = "排序命名数组",
+            Keywords = "排序,命名,名称,FName,索引",
             bAscending = "true",
-            ToolTip = "对名称数组进行排序，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的名称数组\nbAscending - true为升序（字母顺序），false为降序（字母倒序）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
+            ToolTip = "将命名数组按照本地化规则进行排序，支持中文拼音排序。\n当输入为中文时，将按照拼音顺序排序。"
         ))
-    static void SortNameArray(UPARAM(DisplayName="输入数组") const TArray<FName>& InArray, 
+    static void SortNameArray(
+        UPARAM(DisplayName="命名数组") const TArray<FName>& InArray,
         UPARAM(DisplayName="升序排序") bool bAscending,
-        UPARAM(DisplayName="排序后数组") TArray<FName>& SortedArray, 
+        UPARAM(DisplayName="排序后数组") TArray<FName>& SortedArray,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
 
     /** 根据Actor在指定坐标轴上的值进行排序 */
@@ -245,12 +246,14 @@ public:
             Keywords = "排序,夹角,距离,权重,方向,Actor,索引,角度",
             AutoCreateRefTerm = "Center,Direction",
             bAscending = "true",
-            ToolTip = "将Actor数组按照与指定方向的夹角和到中心点的距离进行加权排序。\n参数:\nActors - 要排序的Actor数组\nCenter - 中心点位置\nDirection - 参考方向\nAngleWeight - 夹角的权重（0-1）\nDistanceWeight - 距离的权重（0-1）\nbAscending - true为升序（从小到大），false为降序（从大到小）\nb2DAngle - true则在XY平面上计算夹角\n返回值:\nSortedActors - 排序后的Actor数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedAngles - 排序后每个Actor与参考方向的夹角（度数）\nSortedDistances - 排序后每个Actor到中心点的距离"
+            ToolTip = "将Actor数组按照与参考方向的夹角和到中心点的距离进行加权排序。\n最大夹角和最大距离用于过滤，设为0表示不限制。\n当权重都为0时默认只按夹角排序，否则按权重计算综合评分进行排序。\n2D夹角选项开启时会忽略Z轴，在XY平面上计算。"
         ))
     static void SortActorsByAngleAndDistance(
         UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors,
         UPARAM(DisplayName="中心点") const FVector& Center,
         UPARAM(DisplayName="参考方向") const FVector& Direction,
+        UPARAM(DisplayName="最大夹角") float MaxAngle,
+        UPARAM(DisplayName="最大距离") float MaxDistance,
         UPARAM(DisplayName="夹角权重") float AngleWeight,
         UPARAM(DisplayName="距离权重") float DistanceWeight,
         UPARAM(DisplayName="升序排序") bool bAscending,
@@ -362,22 +365,22 @@ public:
         UPARAM(DisplayName="原始索引") TArray<int32>& Indices,
         UPARAM(DisplayName="向量长度") TArray<float>& Lengths);
 
-    /** 根据组件值范围截取向量数组 */
+    /** 根据向量在指定坐标轴上的值截取数组 */
     UFUNCTION(BlueprintPure,
         Category = "XTools|数组操作|截取", 
         meta = (
-            DisplayName = "由组件截取向量数组",
-            Keywords = "截取,组件,向量,数组,XYZ",
-            ToolTip = "根据指定坐标轴上的值范围截取向量数组。\n参数:\nInArray - 要截取的向量数组\nAxis - 要检查的坐标轴\nMinValue - 最小值（包含）\nMaxValue - 最大值（包含）\n返回值:\nOutArray - 截取后的数组\nIndices - 保留元素的原始索引\nAxisValues - 保留向量在指定轴上的值"
+            DisplayName = "根据坐标值截取向量数组",
+            Keywords = "截取,向量,坐标,XYZ,范围,筛选",
+            ToolTip = "根据向量在指定坐标轴上的值范围截取数组。\n参数:\nInArray - 要截取的向量数组\nAxis - 要检查的坐标轴\nMinValue - 最小坐标值（包含）\nMaxValue - 最大坐标值（包含）\n返回值:\nOutArray - 截取后的向量数组\nIndices - 保留元素的原始索引\nAxisValues - 保留元素在指定轴上的值"
         ))
     static void SliceVectorArrayByComponent(
-        UPARAM(DisplayName="输入数组") const TArray<FVector>& InArray,
+        UPARAM(DisplayName="向量数组") const TArray<FVector>& InArray,
         UPARAM(DisplayName="坐标轴") ECoordinateAxis Axis,
         UPARAM(DisplayName="最小值") float MinValue,
         UPARAM(DisplayName="最大值") float MaxValue,
-        UPARAM(DisplayName="输出数组") TArray<FVector>& OutArray,
+        UPARAM(DisplayName="截取后数组") TArray<FVector>& OutArray,
         UPARAM(DisplayName="原始索引") TArray<int32>& Indices,
-        UPARAM(DisplayName="组件值") TArray<float>& AxisValues);
+        UPARAM(DisplayName="坐标值") TArray<float>& AxisValues);
 
     /** 反转浮点数数组 */
     UFUNCTION(BlueprintPure,
