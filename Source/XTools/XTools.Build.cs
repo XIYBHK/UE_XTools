@@ -54,7 +54,8 @@ public class XTools : ModuleRules
 			"Slate",
 			"SlateCore",
 			"UMG",
-			"ComponentTimelineRuntime"
+			"ComponentTimelineRuntime",
+			"RandomShuffles"
 		});
 
 		// Private dependencies

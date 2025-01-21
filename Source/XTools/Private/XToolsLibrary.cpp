@@ -2,6 +2,7 @@
 
 #include "XToolsLibrary.h"
 #include "XToolsPrivatePCH.h"
+#include "RandomShuffleArrayLibrary.h"
 
 /**
  * 在组件层级中查找匹配指定类和标签的父Actor
@@ -265,4 +266,77 @@ float UXToolsLibrary::GetParameterByDistance(const TArray<FVector>& Points, floa
     }
 
     return 1.0f;
+}
+
+TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
+{
+    // 初始化结果数组，大小为13（0-12）
+    TArray<int32> Distribution;
+    Distribution.Init(0, 13);
+
+    // 记录当前失败次数
+    int32 CurrentFailureCount = 1;
+    float ActualChance = 0.f;
+    int32 TotalSuccesses = 0;
+    int32 TotalTests = 0;
+    TArray<int32> FailureTests;
+    FailureTests.Init(0, 13);
+
+    // 持续测试直到获得10000次成功
+    while (TotalSuccesses < 10000)
+    {
+        int32 NextFailureCount = 0;
+        TotalTests++;
+        
+        // 调用PRD函数
+        const bool bSuccess = URandomShuffleArrayLibrary::PseudoRandomBool(
+            BaseChance, 
+            NextFailureCount, 
+            ActualChance, 
+            CurrentFailureCount);
+
+        // 记录当前失败次数下的结果
+        if (CurrentFailureCount <= 12)
+        {
+            FailureTests[CurrentFailureCount]++;
+            if (bSuccess)
+            {
+                Distribution[CurrentFailureCount]++;
+                TotalSuccesses++;
+            }
+        }
+
+        // 更新失败次数
+        CurrentFailureCount = NextFailureCount;
+    }
+
+    // 输出统计结果到日志
+    UE_LOG(LogTemp, Log, TEXT("PRD Distribution Test Results (BaseChance = %.2f):"), BaseChance);
+    UE_LOG(LogTemp, Log, TEXT("Total Tests: %d"), TotalTests);
+    UE_LOG(LogTemp, Log, TEXT("失败次数 | 成功次数 | 实际成功率 | 理论成功率 | 测试次数"));
+    UE_LOG(LogTemp, Log, TEXT("----------------------------------------"));
+    
+    for (int32 i = 0; i <= 12; ++i)
+    {
+        float TestChance = 0.f;
+        float TestActualChance = 0.f;
+        int32 TestFailureCount = 0;
+        
+        // 获取当前失败次数的理论概率
+        URandomShuffleArrayLibrary::PseudoRandomBool(BaseChance, TestFailureCount, TestActualChance, i);
+        const float ExpectedChance = TestActualChance;
+        
+        // 计算实际成功率
+        const float SuccessRate = FailureTests[i] > 0 ? static_cast<float>(Distribution[i]) / FailureTests[i] : 0.0f;
+        
+        UE_LOG(LogTemp, Log, TEXT("%d次 | %d | %.2f%% | %.2f%% | %d"), 
+            i, 
+            Distribution[i],
+            SuccessRate * 100.0f,
+            ExpectedChance * 100.0f,
+            FailureTests[i]);
+    }
+    UE_LOG(LogTemp, Log, TEXT("Total Successes: %d"), TotalSuccesses);
+
+    return Distribution;
 }

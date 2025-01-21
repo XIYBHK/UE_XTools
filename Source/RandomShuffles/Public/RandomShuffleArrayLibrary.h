@@ -143,57 +143,60 @@ class RANDOMSHUFFLES_API URandomShuffleArrayLibrary : public UBlueprintFunctionL
 		ToolTip="使用指定的随机流从数组中随机选择指定数量的元素，严格保证选中次数与权重比例一致。\n使用说明：输入源数组、权重数组、采样数量和随机流，可以通过相同的随机流获得相同的采样结果"))
 	static void Array_StrictWeightRandomSampleFromStream(const TArray<int32>& InputArray, const TArray<float> Weights, int32 Count, UPARAM(Ref) FRandomStream& Stream, TArray<int32>& Result);
 
+public:
 	/** 
 	 * 使用PRD(伪随机分布)算法生成布尔值，可以让随机事件的发生更加均衡。
 	 * PRD算法会根据连续失败次数动态调整概率，避免运气过好或过差的情况。
 	 * 采用DOTA2的标准PRD算法实现，提供更公平的随机体验。
+	 * 实际概率计算公式：P = n * C，其中n为失败次数，C为PRD常数。
 	 * 算法来源：https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution
 	 *
 	 *@param	BaseChance		基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
-	 *@param	CurrentCompensation	当前概率补偿计数，记录连续失败的次数，首次调用传入1
-	 *@param	OutNextCompensation	输出下一次调用需要传入的概率补偿计数
-	 *@param	OutActualChance	输出实际概率
+	 *@param	OutFailureCount	输出当前失败次数
+	 *@param	OutActualChance	输出实际概率，计算公式为：失败次数 * PRD常数C
+	 *@param	FailureCount	当前失败次数，首次调用传入1，这样第一次的实际概率就是C值
 	 *@return	是否触发
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
 		DisplayName = "伪随机布尔",
 		BaseChance="基础概率",
-		CurrentCompensation="当前概率补偿",
-		OutNextCompensation="下次概率补偿",
+		FailureCount="失败次数",
+		OutFailureCount="累计失败数",
 		OutActualChance="实际概率",
-		ToolTip="使用DOTA2的PRD算法生成布尔值，可以让随机事件的发生更加均衡。\n使用说明：首次调用时当前概率补偿传入1，成功后会重置为1，失败后会+1。基础概率为期望的触发概率[0-1]"))
+		ToolTip="使用DOTA2的PRD算法生成布尔值，可以让随机事件的发生更加均衡。\n使用说明：首次调用时失败次数传入1，成功后会重置为1，失败后会+1。基础概率为期望的触发概率[0-1]"))
 	static bool PseudoRandomBool(
-		UPARAM(DisplayName="基础概率") float BaseChance, 
-		UPARAM(DisplayName="当前概率补偿") float CurrentCompensation, 
-		UPARAM(DisplayName="下次概率补偿") float& OutNextCompensation,
-		UPARAM(DisplayName="实际概率") float& OutActualChance);
+		UPARAM(DisplayName="基础概率") float BaseChance,
+		UPARAM(DisplayName="累计失败数") int32& OutFailureCount,
+		UPARAM(DisplayName="实际概率") float& OutActualChance,
+		UPARAM(DisplayName="失败次数") int32 FailureCount = 1);
 
 	/** 
 	 * 使用指定的随机流和PRD(伪随机分布)算法生成布尔值，可以让随机事件的发生更加均衡。
 	 * PRD算法会根据连续失败次数动态调整概率，避免运气过好或过差的情况。
 	 * 采用DOTA2的标准PRD算法实现，提供更公平的随机体验。
+	 * 实际概率计算公式：P = n * C，其中n为失败次数，C为PRD常数。
 	 * 算法来源：https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution
 	 *
 	 *@param	BaseChance		基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
-	 *@param	CurrentCompensation	当前概率补偿计数，记录连续失败的次数，首次调用传入1
+	 *@param	FailureCount	当前失败次数，首次调用传入1，这样第一次的实际概率就是C值
 	 *@param	Stream			要使用的随机流，用于控制随机数生成
-	 *@param	OutNextCompensation	输出下一次调用需要传入的概率补偿计数
-	 *@param	OutActualChance	输出实际概率
+	 *@param	OutFailureCount	输出当前失败次数
+	 *@param	OutActualChance	输出实际概率，计算公式为：失败次数 * PRD常数C
 	 *@return	是否触发
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
 		DisplayName = "流送中的伪随机布尔",
 		BaseChance="基础概率",
-		CurrentCompensation="当前概率补偿",
+		FailureCount="失败次数",
 		Stream="随机流",
-		OutNextCompensation="下次概率补偿",
+		OutFailureCount="累计失败数",
 		OutActualChance="实际概率",
-		ToolTip="使用DOTA2的PRD算法和指定的随机流生成布尔值，可以让随机事件的发生更加均衡。\n使用说明：首次调用时当前概率补偿传入1，成功后会重置为1，失败后会+1。使用随机流可以重现相同的随机序列"))
+		ToolTip="使用DOTA2的PRD算法和指定的随机流生成布尔值，可以让随机事件的发生更加均衡。\n使用说明：首次调用时失败次数传入1，成功后会重置为1，失败后会+1。使用随机流可以重现相同的随机序列"))
 	static bool PseudoRandomBoolFromStream(
 		UPARAM(DisplayName="基础概率") float BaseChance, 
-		UPARAM(DisplayName="当前概率补偿") float CurrentCompensation, 
+		UPARAM(DisplayName="失败次数") int32 FailureCount, 
 		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream, 
-		UPARAM(DisplayName="下次概率补偿") float& OutNextCompensation,
+		UPARAM(DisplayName="累计失败数") int32& OutFailureCount,
 		UPARAM(DisplayName="实际概率") float& OutActualChance);
 
 	static void GenericArray_RandomSample(

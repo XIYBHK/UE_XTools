@@ -108,6 +108,19 @@ public:
                                       FBezierDebugColors DebugColors = FBezierDebugColors(),
                                       FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
 
+    /** 
+     * 测试PRD算法的分布情况。
+     * 执行一万次PRD随机，统计每个失败次数触发成功的次数。
+     *
+     *@param	BaseChance		基础触发概率[0,1]
+     *@return	返回一个数组，索引表示失败次数（0-10），值表示在该失败次数下触发成功的次数
+    */
+    UFUNCTION(BlueprintCallable, Category="XTools|测试", meta=(
+        DisplayName = "测试PRD分布",
+        BaseChance="基础概率",
+        ToolTip="执行一万次PRD随机，统计每个失败次数触发成功的次数。\n返回数组中，索引表示失败次数（0-10），值表示在该失败次数下触发成功的次数"))
+    static TArray<int32> TestPRDDistribution(float BaseChance);
+
 private:
     // 计算曲线上某点的位置（基于参数t）
     static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints);
