@@ -363,7 +363,31 @@ void UAsyncTools::HandleAsyncError(
 	const FString FullMessage = FString::Printf(TEXT("%s [%s] %s"), *Prefix, *Context, *ErrorMessage);
 	
 	// 输出到日志
-	FMsg::Logf(__FILE__, __LINE__, LogAsyncTools.GetCategoryName(), ErrorLogLevel, TEXT("%s"), *FullMessage);
+	switch (ErrorLogLevel)
+	{
+		case ELogVerbosity::Fatal:
+		case ELogVerbosity::Error:
+			UE_LOG(LogAsyncTools, Error, TEXT("%s"), *FullMessage);
+			break;
+		case ELogVerbosity::Warning:
+			UE_LOG(LogAsyncTools, Warning, TEXT("%s"), *FullMessage);
+			break;
+		case ELogVerbosity::Display:
+			UE_LOG(LogAsyncTools, Display, TEXT("%s"), *FullMessage);
+			break;
+		case ELogVerbosity::Log:
+			UE_LOG(LogAsyncTools, Log, TEXT("%s"), *FullMessage);
+			break;
+		case ELogVerbosity::Verbose:
+			UE_LOG(LogAsyncTools, Verbose, TEXT("%s"), *FullMessage);
+			break;
+		case ELogVerbosity::VeryVerbose:
+			UE_LOG(LogAsyncTools, VeryVerbose, TEXT("%s"), *FullMessage);
+			break;
+		default:
+			UE_LOG(LogAsyncTools, Log, TEXT("%s"), *FullMessage); // 默认为 Log
+			break;
+	}
 	
 	// 显示到屏幕
 	if (GEngine)
