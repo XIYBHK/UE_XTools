@@ -69,6 +69,20 @@
 				"Mac",
 				"Linux"
 			]
+		},
+		{
+			"Name": "X_AssetEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
 		}
 	]
 }
