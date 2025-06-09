@@ -28,7 +28,7 @@ UECFDoNoMoreThanXTimeBP* UECFDoNoMoreThanXTimeBP::ECFDoNoMoreThanXTime(const UOb
 				if (Proxy->bActivated)
 				{
 					Proxy->OnExecute.Broadcast();
-					Proxy->ClearAsyncBPAction();
+					//Proxy->ClearAsyncBPAction();原版会导致仅执行一次
 				}
 				else
 				{
@@ -51,7 +51,7 @@ void UECFDoNoMoreThanXTimeBP::Activate()
 	{
 		bExecuteOnActivation = false;
 		OnExecute.Broadcast();
-		ClearAsyncBPAction();
+		//ClearAsyncBPAction();原版会导致仅执行一次
 	}
 }
 

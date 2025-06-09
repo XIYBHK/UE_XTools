@@ -9,6 +9,17 @@
 #include "GameFramework/Actor.h"
 #include "XToolsLibrary.generated.h"
 
+// 新增的采样模式枚举
+UENUM(BlueprintType)
+enum class EXToolsSamplingMethod : uint8
+{
+	/** 在模型表面内外一定距离内进行采样，适合生成贴近表面的效果。*/
+	SurfaceProximity	UMETA(DisplayName = "表面邻近度采样"),
+
+	/** [待实现] 对模型的内部进行完整的实体填充采样，会填满所有内部空间。*/
+	Voxelize			UMETA(DisplayName = "实体填充采样 (待实现)")
+};
+
 // 贝塞尔曲线速度模式
 UENUM(BlueprintType)
 enum class EBezierSpeedMode : uint8
@@ -61,6 +72,8 @@ struct FBezierSpeedOptions
     UCurveFloat* SpeedCurve = nullptr;
 };
 
+class UBoxComponent;
+
 /**
  * 工具库类
  */
@@ -100,6 +113,7 @@ public:
      */
     UFUNCTION(BlueprintPure, Category = "XTools|Bezier", 
         meta = (DisplayName = "计算贝塞尔曲线点", 
+               WorldContext="Context",
                Duration = 0.03))
     static FVector CalculateBezierPoint(const UObject* Context,UPARAM(ref) const TArray<FVector>& Points, 
                                       float Progress, 
@@ -121,6 +135,55 @@ public:
         ToolTip="执行一万次PRD随机，统计每个失败次数触发成功的次数。\n返回数组中，索引表示失败次数（0-10），值表示在该失败次数下触发成功的次数"))
     static TArray<int32> TestPRDDistribution(float BaseChance);
 
+    /**
+     * 在静态模型内部或表面生成点阵
+     *
+     * 根据选择的采样模式，在目标Actor的碰撞体内生成点阵。
+     * 
+     * @param WorldContextObject 世界上下文对象。
+     * @param TargetActor 要采样的目标Actor。
+     * @param BoundingBox 用于定义采样区域的Box组件。
+     * @param Method 采样模式：表面邻近度 或 实体填充(待实现)。
+     * @param GridSpacing 生成点阵的间距。
+     * @param Noise 每个采样点在各个轴上的最大随机偏移量，用于打破网格的规律性。
+     * @param TraceRadius [表面邻近度模式] 检测球体的半径。
+     * @param bEnableDebugDraw 是否启用调试绘制。
+     * @param bDrawOnlySuccessfulHits 调试绘制时是否只显示成功命中的点。
+     * @param bEnableBoundsCulling [优化] 是否启用模型包围盒剔除，可大幅提升大范围采样时的性能。
+     * @param DebugDrawDuration 调试绘制持续时间。
+     * @param OutPoints [输出] 所有符合条件的点的世界坐标数组。
+     * @param bSuccess [输出] 操作是否成功。
+     */
+    UFUNCTION(BlueprintCallable, Category="XTools|几何", meta=(
+        DisplayName = "在模型中生成点阵",
+        WorldContext="WorldContextObject",
+        AdvancedDisplay="Noise,TraceRadius,bEnableDebugDraw,bDrawOnlySuccessfulHits,bEnableBoundsCulling,DebugDrawDuration",
+        GridSpacing="10.0",
+        Noise="0.0",
+        TraceRadius="5.0",
+        bEnableDebugDraw="false",
+        bDrawOnlySuccessfulHits="true",
+        bEnableBoundsCulling="true",
+        DebugDrawDuration="5.0",
+        ToolTip="根据选择的采样模式，在目标Actor的碰撞体内生成点阵。\n\n@param TargetActor 要采样的目标Actor。\n@param BoundingBox 用于定义采样区域的Box组件。\n@param Method 采样模式：表面邻近度 或 实体填充(待实现)。\n@param GridSpacing 生成点阵的间距。\n@param Noise 每个采样点在各个轴上的最大随机偏移量，用于打破网格的规律性。\n@param TraceRadius [表面邻近度模式] 检测球体的半径。\n@param bEnableDebugDraw 是否启用调试绘制。\n@param bDrawOnlySuccessfulHits 调试绘制时是否只显示成功命中的点。\n@param bEnableBoundsCulling [优化] 是否启用模型包围盒剔除，可大幅提升大范围采样时的性能。\n@param DebugDrawDuration 调试绘制持续时间。\n@param OutPoints [输出] 所有符合条件的点的世界坐标数组。\n@param bSuccess [输出] 操作是否成功。"))
+    static void SamplePointsInsideStaticMeshWithBoxOptimized(
+        // --- Inputs
+        const UObject* WorldContextObject,
+        AActor* TargetActor,
+        UBoxComponent* BoundingBox,
+        EXToolsSamplingMethod Method,
+        float GridSpacing,
+        float Noise,
+        float TraceRadius,
+        bool bEnableDebugDraw,
+        bool bDrawOnlySuccessfulHits,
+        bool bEnableBoundsCulling,
+        float DebugDrawDuration,
+        // --- Outputs
+        TArray<FVector>& OutPoints,
+        bool& bSuccess
+    );
+
 private:
     // 计算曲线上某点的位置（基于参数t）
     static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints);
@@ -130,4 +193,5 @@ private:
     
     // 根据距离获取参数t
     static float GetParameterByDistance(const TArray<FVector>& Points, float Distance, float TotalLength, int32 Segments = 100);
+    
 };

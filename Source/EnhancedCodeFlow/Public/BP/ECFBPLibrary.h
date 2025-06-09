@@ -122,7 +122,7 @@ public:
 	/**
 	 * 允许在指定时间内只执行一次代码（在指定的秒数内锁定代码的执行能力）
 	 */
-	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", ExpandEnumAsExecs = "OutExecs", AdvancedDisplay = "Settings", DisplayName = "ECF - 时间锁定", Tooltip="在指定时间内只允许执行一次代码", Category = "XTools|ECF|时间控制"))
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", ExpandEnumAsExecs = "OutExecs", AdvancedDisplay = "Settings", DisplayName = "ECF - 时间锁定", Tooltip="时间锁定功能(实例化)：在指定时间内限制相同实例ID的代码执行\n\nLockTime参数：锁定时间，在此时间内再次调用会进入Locked输出引脚\n\n执行流程：\n1. 首次调用走Exec输出引脚\n2. 锁定期间调用走Locked输出引脚\n3. 锁定时间结束后，又可以执行\n\n注意：必须使用相同的实例ID才能正确跟踪锁定状态", Category = "XTools|ECF|时间控制"))
 	static void ECFTimeLock(const UObject* WorldContextObject, ETimeLockOutputType& OutExecs, UPARAM(DisplayName = "句柄") FECFHandleBP& OutHandle, float LockTime, UPARAM(Ref) FECFInstanceIdBP& InstanceId, FECFActionSettings Settings);
 
 	/**
