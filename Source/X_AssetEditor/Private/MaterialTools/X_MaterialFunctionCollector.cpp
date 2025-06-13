@@ -13,6 +13,9 @@
 #include "Logging/LogMacros.h"
 #include "X_AssetEditor.h"
 #include "MaterialTools/X_MaterialFunctionCore.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
 
 // 并行处理相关
 #include "Async/ParallelFor.h"
@@ -68,6 +71,75 @@ TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromAsset(const
                 if (BaseMaterial)
                 {
                     Materials.AddUnique(BaseMaterial);
+                }
+            }
+        }
+    }
+    else if (UBlueprint* Blueprint = Cast<UBlueprint>(AssetObject))
+    {
+        // 处理蓝图资产
+        // 获取蓝图的默认对象
+        if (Blueprint->GeneratedClass)
+        {
+            UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
+            if (AActor* ActorCDO = Cast<AActor>(CDO))
+            {
+                // 获取Actor的所有网格体组件
+                TArray<UMeshComponent*> MeshComponents;
+                
+                // 首先尝试获取CDO中的组件
+                ActorCDO->GetComponents<UMeshComponent>(MeshComponents);
+                
+                // 如果没有找到组件，尝试从蓝图的组件列表中获取
+                if (MeshComponents.Num() == 0)
+                {
+                    // 遍历蓝图的组件列表
+                    for (UActorComponent* Component : Blueprint->ComponentTemplates)
+                    {
+                        if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Component))
+                        {
+                            MeshComponents.Add(MeshComp);
+                        }
+                    }
+                    
+                    // 遍历蓝图的SCS组件
+                    if (Blueprint->SimpleConstructionScript)
+                    {
+                        for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+                        {
+                            if (Node && Node->ComponentTemplate)
+                            {
+                                if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Node->ComponentTemplate))
+                                {
+                                    MeshComponents.Add(MeshComp);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                UE_LOG(LogX_AssetEditor, Log, TEXT("处理蓝图 %s 的材质，找到 %d 个网格体组件"), 
+                    *Blueprint->GetName(), MeshComponents.Num());
+                
+                // 处理所有网格体组件的材质
+                for (UMeshComponent* MeshComponent : MeshComponents)
+                {
+                    if (MeshComponent)
+                    {
+                        const int32 NumMaterials = MeshComponent->GetNumMaterials();
+                        for (int32 MaterialIndex = 0; MaterialIndex < NumMaterials; ++MaterialIndex)
+                        {
+                            UMaterialInterface* MaterialInterface = MeshComponent->GetMaterial(MaterialIndex);
+                            if (MaterialInterface)
+                            {
+                                UMaterial* BaseMaterial = FX_MaterialFunctionCore::GetBaseMaterial(MaterialInterface);
+                                if (BaseMaterial)
+                                {
+                                    Materials.AddUnique(BaseMaterial);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -195,6 +267,76 @@ TArray<UMaterialInterface*> FX_MaterialFunctionCollector::CollectMaterialsFromAs
                 if (SkeletalMaterial.MaterialInterface)
                 {
                     CollectedMaterials.Add(SkeletalMaterial.MaterialInterface);
+                }
+            }
+        }
+        // 处理蓝图资产
+        else if (UBlueprint* Blueprint = Cast<UBlueprint>(Object))
+        {
+            // 获取蓝图的默认对象
+            if (Blueprint->GeneratedClass)
+            {
+                UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
+                if (AActor* ActorCDO = Cast<AActor>(CDO))
+                {
+                    // 获取Actor的所有网格体组件
+                    TArray<UMeshComponent*> MeshComponents;
+                    
+                    // 首先尝试获取CDO中的组件
+                    ActorCDO->GetComponents<UMeshComponent>(MeshComponents);
+                    
+                    // 如果没有找到组件，尝试从蓝图的组件列表中获取
+                    if (MeshComponents.Num() == 0)
+                    {
+                        // 遍历蓝图的组件列表
+                        for (UActorComponent* Component : Blueprint->ComponentTemplates)
+                        {
+                            if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Component))
+                            {
+                                MeshComponents.Add(MeshComp);
+                            }
+                        }
+                        
+                        // 遍历蓝图的SCS组件
+                        if (Blueprint->SimpleConstructionScript)
+                        {
+                            for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+                            {
+                                if (Node && Node->ComponentTemplate)
+                                {
+                                    if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Node->ComponentTemplate))
+                                    {
+                                        MeshComponents.Add(MeshComp);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    UE_LOG(LogX_AssetEditor, Log, TEXT("处理蓝图 %s 的材质，找到 %d 个网格体组件"), 
+                        *Blueprint->GetName(), MeshComponents.Num());
+                    
+                    // 处理所有网格体组件的材质
+                    for (UMeshComponent* MeshComp : MeshComponents)
+                    {
+                        if (MeshComp)
+                        {
+                            int32 MaterialCount = MeshComp->GetNumMaterials();
+                            UE_LOG(LogX_AssetEditor, Log, TEXT("  组件 %s 有 %d 个材质槽"), 
+                                *MeshComp->GetName(), MaterialCount);
+                            
+                            for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; MaterialIndex++)
+                            {
+                                UMaterialInterface* SlotMaterial = MeshComp->GetMaterial(MaterialIndex);
+                                if (SlotMaterial)
+                                {
+                                    UE_LOG(LogX_AssetEditor, Log, TEXT("    槽 %d: 材质 %s"), 
+                                        MaterialIndex, *SlotMaterial->GetName());
+                                    CollectedMaterials.Add(SlotMaterial);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

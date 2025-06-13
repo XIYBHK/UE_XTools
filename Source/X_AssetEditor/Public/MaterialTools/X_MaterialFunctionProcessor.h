@@ -8,6 +8,7 @@
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "AssetRegistry/AssetData.h"
 #include "MaterialTools/X_MaterialFunctionParams.h"
+#include "MaterialTools/X_MaterialFunctionOperation.h" // 添加此行以包含FMaterialProcessResult结构
 
 /**
  * 材质函数处理器类
@@ -49,20 +50,24 @@ public:
      * @param SelectedAssets - 选中的资产
      * @param MaterialFunction - 要应用的材质函数
      * @param TargetNode - 目标节点名称
+     * @param Params - 材质函数参数
      */
     static void ProcessAssetMaterialFunction(
         const TArray<FAssetData>& SelectedAssets,
         UMaterialFunctionInterface* MaterialFunction,
-        const FName& TargetNode);
+        const FName& TargetNode,
+        const TSharedPtr<FX_MaterialFunctionParams>& Params = nullptr);
 
     /**
      * 处理Actor上的材质函数应用
      * @param SelectedActors - 选中的Actor
      * @param MaterialFunction - 要应用的材质函数
      * @param TargetNode - 目标节点名称
+     * @param Params - 材质函数参数
      */
     static void ProcessActorMaterialFunction(
         const TArray<AActor*>& SelectedActors,
         UMaterialFunctionInterface* MaterialFunction,
-        const FName& TargetNode);
+        const FName& TargetNode,
+        const TSharedPtr<FX_MaterialFunctionParams>& Params = nullptr);
 }; 

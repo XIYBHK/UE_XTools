@@ -19,41 +19,76 @@ class AActor;
 class UMaterialFunctionInterface;
 class UX_MaterialToolsSettings;
 
-// 获取资产前缀映射
+/**
+ * 获取资产前缀映射
+ * 返回资产类型到命名前缀的映射表
+ * @return 资产前缀映射表
+ */
 const TMap<FString, FString>& GetAssetPrefixes();
 
+/**
+ * X资产编辑器模块类
+ * 提供资产编辑和管理的扩展功能
+ */
 class FX_AssetEditorModule : public IModuleInterface
 {
 public:
-	/** IModuleInterface implementation */
+	/** IModuleInterface实现 */
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
-	/** 单例访问器 */
+	/** 
+	 * 单例访问器
+	 * @return 模块实例的引用
+	 */
 	static FX_AssetEditorModule& Get()
 	{
 		return FModuleManager::LoadModuleChecked<FX_AssetEditorModule>("X_AssetEditor");
 	}
 
-	/** 检查模块是否已加载 */
+	/**
+	 * 检查模块是否已加载
+	 * @return 如果模块已加载则返回true
+	 */
 	static bool IsAvailable()
 	{
 		return FModuleManager::Get().IsModuleLoaded("X_AssetEditor");
 	}
 
-	/** 用于注册菜单扩展 */
+	/**
+	 * 用于注册菜单扩展
+	 * 在工具菜单系统初始化后调用
+	 */
 	void RegisterMenus();
 
-	/** 用于获取资产的简化类名 */
+	/**
+	 * 获取资产的简化类名
+	 * 移除类名中的路径和后缀
+	 * @param AssetData 资产数据
+	 * @return 简化的类名
+	 */
 	static FString GetSimpleClassName(const FAssetData& AssetData);
 
-	/** 用于确定正确的前缀 */
+	/**
+	 * 确定资产的正确前缀
+	 * 根据资产类型查找命名规范中的前缀
+	 * @param AssetData 资产数据
+	 * @param SimpleClassName 简化的类名
+	 * @return 资产应使用的正确前缀
+	 */
 	static FString GetCorrectPrefix(const FAssetData& AssetData, const FString& SimpleClassName);
 
-	/** 重命名选中资产 */
+	/**
+	 * 重命名选中的资产
+	 * 根据命名规范重命名当前选中的资产
+	 */
 	static void RenameSelectedAssets();
 
-	/** 获取资产类名显示 */
+	/**
+	 * 获取资产类名的显示名称
+	 * @param AssetData 资产数据
+	 * @return 用于显示的类名
+	 */
 	static FString GetAssetClassDisplayName(const FAssetData& AssetData);
 
 protected:
@@ -71,13 +106,17 @@ protected:
 	/** 扩展关卡编辑器Actor上下文菜单 */
 	TSharedRef<FExtender> OnExtendLevelEditorActorContextMenu(TSharedRef<FUICommandList> CommandList, TArray<AActor*> SelectedActors);
 
+	/** 添加资产命名菜单项 */
+	void AddAssetNamingMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
+
+	/** 添加材质函数菜单项 */
+	void AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
+
 	/** 添加材质菜单项 */
-	void AddMaterialMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
 	void AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilder, TArray<AActor*> SelectedActors);
 
 	/** 材质函数功能 */
 	void AddFresnelToAssets(TArray<FAssetData> SelectedAssets);
-
 
 	void AddFresnelToActors(TArray<AActor*> SelectedActors);
 	bool ValidateAssetPath(const FString& AssetPath);
@@ -139,13 +178,13 @@ private:
 	/** 获取当前插件名称 */
 	const TCHAR* GetTypeName() const { return TEXT("X_AssetEditor"); }
 
+	/** 命令列表 */
+	TSharedPtr<FUICommandList> PluginCommands;
+
 	/** 菜单扩展器句柄 */
 	FDelegateHandle ContentBrowserExtenderDelegateHandle;
 	FDelegateHandle LevelEditorExtenderDelegateHandle;
 
 	/** 菜单扩展器列表 */
 	TArray<TSharedPtr<FExtender>> MenuExtenders;
-
-	/** 命令列表 */
-	TSharedPtr<FUICommandList> PluginCommands;
 };

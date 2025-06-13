@@ -32,8 +32,6 @@ public class X_AssetEditor : ModuleRules
 				"Engine",
 				"GameplayTasks",
 				"DeveloperSettings",
-				"Slate",
-				"SlateCore",
 				"InputCore",
 				"EditorStyle",
 				"RHI",

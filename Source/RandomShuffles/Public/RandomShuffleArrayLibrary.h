@@ -163,12 +163,12 @@ public:
 		FailureCount="失败次数",
 		OutFailureCount="累计失败数",
 		OutActualChance="实际概率",
-		ToolTip="使用DOTA2的PRD算法生成布尔值，可以让随机事件的发生更加均衡。\n使用说明：首次调用时失败次数传入1，成功后会重置为1，失败后会+1。基础概率为期望的触发概率[0-1]"))
+		ToolTip="使用DOTA2的PRD算法生成布尔值, 让随机事件的发生更加均衡. \n使用说明: 失败次数从0开始, 成功后会重置为0, 失败后会+1. 基础概率为期望的触发概率[0-1]."))
 	static bool PseudoRandomBool(
 		UPARAM(DisplayName="基础概率") float BaseChance,
 		UPARAM(DisplayName="累计失败数") int32& OutFailureCount,
 		UPARAM(DisplayName="实际概率") float& OutActualChance,
-		UPARAM(DisplayName="失败次数") int32 FailureCount = 1);
+		UPARAM(DisplayName="失败次数") int32 FailureCount = 0);
 
 	/** 
 	 * 使用指定的随机流和PRD(伪随机分布)算法生成布尔值，可以让随机事件的发生更加均衡。
@@ -191,7 +191,7 @@ public:
 		Stream="随机流",
 		OutFailureCount="累计失败数",
 		OutActualChance="实际概率",
-		ToolTip="使用DOTA2的PRD算法和指定的随机流生成布尔值，可以让随机事件的发生更加均衡。\n使用说明：首次调用时失败次数传入1，成功后会重置为1，失败后会+1。使用随机流可以重现相同的随机序列"))
+		ToolTip="使用DOTA2的PRD算法和指定的随机流生成布尔值, 让随机事件的发生更加均衡. \n使用说明: 失败次数从0开始, 成功后会重置为0, 失败后会+1. 使用随机流可以重现相同的随机序列."))
 	static bool PseudoRandomBoolFromStream(
 		UPARAM(DisplayName="基础概率") float BaseChance, 
 		UPARAM(DisplayName="失败次数") int32 FailureCount, 
