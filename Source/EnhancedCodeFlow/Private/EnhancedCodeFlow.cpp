@@ -29,7 +29,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-/*^^^ ECF Flow Control Functions ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ ECF 流控制函数 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 bool FFlow::IsActionRunning(const UObject* WorldContextObject, const FECFHandle& Handle)
 {
@@ -73,7 +73,7 @@ bool FEnhancedCodeFlow::GetPause(const UObject* WorldContextObject)
 		return false;
 }
 
-/*^^^ Stop ECF Functions ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 停止 ECF 函数 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 void FFlow::StopAction(const UObject* WorldContextObject, FECFHandle& Handle, bool bComplete/* = false*/)
 {
@@ -93,7 +93,7 @@ void FFlow::StopAllActions(const UObject* WorldContextObject, bool bComplete/* =
 		ECF->RemoveAllActions(bComplete, InOwner);
 }
 
-/*^^^ Ticker ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 计时器 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::AddTicker(const UObject* InOwner, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, const FECFActionSettings& Settings/* = {}*/)
 {
@@ -156,7 +156,7 @@ void FFlow::RemoveAllTickers(const UObject* WorldContextObject, bool bComplete/*
 	}
 }
 
-/*^^^ Delay ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 延迟 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc, const FECFActionSettings& Settings/* = {}*/)
 {
@@ -180,7 +180,7 @@ void FFlow::RemoveAllDelays(const UObject* WorldContextObject, bool bComplete/* 
 		ECF->RemoveActionsOfClass<UECFDelay>(bComplete, InOwner);
 }
 
-/*^^^ Delay Ticks ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 延迟帧数 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FEnhancedCodeFlow::DelayTicks(const UObject* InOwner, int32 InDelayTicks, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc, const FECFActionSettings& Settings)
 {
@@ -204,7 +204,7 @@ void FEnhancedCodeFlow::RemoveAllDelayTicks(const UObject* WorldContextObject, b
 		ECF->RemoveActionsOfClass<UECFDelayTicks>(bComplete, InOwner);
 }
 
-/*^^^ Wait And Execute ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 等待并执行 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* bHasFinished*/()>&& InPredicate, TUniqueFunction<void(bool/* bTimedOut*/, bool/* bStopped*/)>&& InCallbackFunc, float InTimeOut/* = 0.f*/, const FECFActionSettings& Settings/* = {}*/)
 {
@@ -263,7 +263,7 @@ void FFlow::RemoveAllWaitAndExecutes(const UObject* WorldContextObject, bool bCo
 	}
 }
 
-/*^^^ While True Execute ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 条件循环执行 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bTimedOut*/, bool/* bStopped*/)>&& InCompleteFunc, float InTimeOut/* = 0.f*/, const FECFActionSettings& Settings/* = {}*/)
 {
@@ -295,7 +295,7 @@ void FFlow::RemoveAllWhileTrueExecutes(const UObject* WorldContextObject, bool b
 		ECF->RemoveActionsOfClass<UECFWhileTrueExecute>(bComplete, InOwner);
 }
 
-/*^^^ Timeline ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+/*^^^ 时间轴 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
 {

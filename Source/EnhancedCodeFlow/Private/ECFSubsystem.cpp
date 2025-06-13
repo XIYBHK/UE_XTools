@@ -12,7 +12,7 @@ DEFINE_STAT(STAT_ECF_InstancesCount);
 
 void UECFSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
-	// Only the subsystem from the Game World can tick.
+	// 只有游戏世界的子系统可以 tick
 	bCanTick = false;
 	if (UWorld* ThisWorld = GetWorld())
 	{
@@ -26,7 +26,7 @@ void UECFSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		}
 	}
 
-	// Reset the HandleId counter
+	// 重置句柄ID计数器
 	LastHandleId.Invalidate();
 }
 
@@ -61,7 +61,7 @@ UECFSubsystem* UECFSubsystem::Get(const UObject* WorldContextObject)
 
 void UECFSubsystem::Tick(float DeltaTime)
 {
-	// Do nothing when the whole subsystem is paused
+	// 当整个子系统暂停时不执行任何操作
 	if (bIsECFPaused)
 	{
 		return;
@@ -75,13 +75,13 @@ void UECFSubsystem::Tick(float DeltaTime)
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR("ECF-Actions-Tick");
 #endif
 
-	// Remove all expired actions first
+	// 首先移除所有过期的动作
 	Actions.RemoveAll([](UECFActionBase* Action) { return IsActionValid(Action) == false; });
 
-	// There might be a situation the pending action is invalid too
+	// 可能存在待添加的动作也无效的情况
 	PendingAddActions.RemoveAll([&](UECFActionBase* PendingAddAction) { return IsActionValid(PendingAddAction) == false; });
 
-	// Add all pending actions
+	// 添加所有待添加的动作
 	Actions.Append(PendingAddActions);
 	PendingAddActions.Empty();
 
@@ -90,7 +90,7 @@ void UECFSubsystem::Tick(float DeltaTime)
 	SET_DWORD_STAT(STAT_ECF_InstancesCount, 0);
 #endif
 
-	// Tick all active actions
+	// Tick 所有活动的动作
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))
@@ -159,7 +159,7 @@ void UECFSubsystem::RemoveAction(FECFHandle& HandleId, bool bComplete)
 
 void UECFSubsystem::RemoveActionsOfClass(TSubclassOf<UECFActionBase> ActionClass, bool bComplete, UObject* InOwner)
 {
-	// Find running actions of given class assigned to a specific owner (if specified) and set it as finished.
+	// 查找分配给特定所有者（如果指定）的给定类的运行中动作并将其设置为已完成
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))
@@ -174,7 +174,7 @@ void UECFSubsystem::RemoveActionsOfClass(TSubclassOf<UECFActionBase> ActionClass
 		}
 	}
 
-	// Also check pending actions to prevent from launching it.
+	// 同时检查待添加的动作以防止启动它们
 	for (UECFActionBase* PendingAction : PendingAddActions)
 	{
 		if (IsActionValid(PendingAction))
@@ -192,7 +192,7 @@ void UECFSubsystem::RemoveActionsOfClass(TSubclassOf<UECFActionBase> ActionClass
 
 void UECFSubsystem::RemoveInstancedAction(const FECFInstanceId& InstanceId, bool bComplete)
 {
-	// Stop all running and pending actions with the given InstanceId.
+	// 停止所有具有给定实例ID的运行中和待添加的动作
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))
@@ -217,7 +217,7 @@ void UECFSubsystem::RemoveInstancedAction(const FECFInstanceId& InstanceId, bool
 
 void UECFSubsystem::RemoveAllActions(bool bComplete, UObject* InOwner)
 {
-	// Stop all running and pending actions.
+	// 停止所有运行中和待添加的动作
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))

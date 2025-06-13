@@ -15,13 +15,6 @@ public class Sort : ModuleRules
 			}
 		);
 
-		PrivateDependencyModuleNames.AddRange(
-			new string[]
-			{
-				// ...
-			}
-		);
-
 		// --- 为编辑器添加必要的模块依赖 ---
 		if (Target.bBuildEditor)
 		{
@@ -35,8 +28,7 @@ public class Sort : ModuleRules
 					"Slate",
 					"SlateCore",
 					"EditorStyle",
-					"EditorWidgets",
-					"PropertyEditor"
+					"InputCore"
 				}
 			);
 		}

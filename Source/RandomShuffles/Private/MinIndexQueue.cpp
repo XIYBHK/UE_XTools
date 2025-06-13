@@ -5,9 +5,11 @@
 
 namespace RandomShuffles {
 
-MinIndexQueue::MinIndexQueue(std::size_t MaxSize) : Priorities(MaxSize), 
-    Queue(Compare {this})
+MinIndexQueue::MinIndexQueue(std::size_t MaxSize) : Queue(Compare {this})
 {
+    // 预分配内存以避免动态扩容
+    Priorities.reserve(MaxSize);
+    Priorities.resize(MaxSize, 0.0f);
 }
 
 float MinIndexQueue::MinimumKey() const {

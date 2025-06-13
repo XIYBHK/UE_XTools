@@ -28,7 +28,6 @@ const FName FSmartSort_Helper::PN_Location(TEXT("Location"));
 const FName FSmartSort_Helper::PN_Direction(TEXT("Direction"));
 const FName FSmartSort_Helper::PN_Axis(TEXT("Axis"));
 const FName FSmartSort_Helper::PN_PropertyName(TEXT("PropertyName"));
-// 移除PN_Fail常量定义
 
 UK2Node_SmartSort::UK2Node_SmartSort(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -449,14 +448,9 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 
 	// 获取连接的数组类型
 	FEdGraphPinType ConnectedType = ArrayInputPin->LinkedTo[0]->PinType;
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 连接类型 - Category: %s, ContainerType: %d, SubCategory: %s"),
-		*ConnectedType.PinCategory.ToString(),
-		(int32)ConnectedType.ContainerType,
-		ConnectedType.PinSubCategoryObject.IsValid() ? *ConnectedType.PinSubCategoryObject->GetName() : TEXT("None"));
 
 	if (ConnectedType.ContainerType != EPinContainerType::Array)
 	{
-		UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] 连接的引脚不是数组类型，ContainerType: %d"), (int32)ConnectedType.ContainerType);
 		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_NotAnArray", "[智能排序] 连接的引脚不是数组类型。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
@@ -464,26 +458,19 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 
 	// 2. 根据类型确定要调用的库函数名
 	FName FunctionName;
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 开始确定排序函数"));
 	if (!DetermineSortFunction(ConnectedType, FunctionName))
 	{
-		UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] 无法确定排序函数"));
 		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_NoMatchingFunction", "找不到与选项匹配的排序函数 for node %%.").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
-
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 确定的排序函数: %s"), *FunctionName.ToString());
 
 	// 3. 创建函数调用节点
 	UK2Node_CallFunction* CallFunctionNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	CallFunctionNode->FunctionReference.SetExternalMember(FunctionName, USortLibrary::StaticClass());
 	CallFunctionNode->AllocateDefaultPins();
 
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 创建函数调用节点完成，引脚数量: %d"), CallFunctionNode->Pins.Num());
-
 	// 3.5. 传播类型信息到函数调用节点
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 开始传播类型信息"));
 	PropagateTypeToFunctionNode(CallFunctionNode, ConnectedType);
 
 	// 4. 检查函数是否为Pure函数并进行相应处理
@@ -492,7 +479,6 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 
 	if (bIsPureFunction)
 	{
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] 检测到Pure函数，创建特殊执行流"));
 		CreatePureFunctionExecutionFlow(CompilerContext, CallFunctionNode, SourceGraph);
 	}
 	else
@@ -505,50 +491,31 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 		{
 			CompilerContext.MovePinLinksToIntermediate(*MyExecPin, *FuncExecPin);
 		}
-		else
-		{
-			UE_LOG(LogBlueprint, Error, TEXT("[智能排序] 无法找到执行引脚: MyExecPin=%s, FuncExecPin=%s"),
-				MyExecPin ? TEXT("Valid") : TEXT("NULL"),
-				FuncExecPin ? TEXT("Valid") : TEXT("NULL"));
-		}
 	}
 
 	// 5. 连接数组输入引脚
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 开始连接数组输入引脚"));
 	if (!ConnectArrayInputPin(CompilerContext, ArrayInputPin, CallFunctionNode))
 	{
-		UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] 连接数组输入引脚失败"));
 		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
 
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 数组输入引脚连接成功"));
-
 	// 5.5. 连接后再次确保类型传播正确
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 连接后重新传播类型"));
 	UEdGraphPin* FuncArrayPin = CallFunctionNode->FindPin(TEXT("TargetArray"), EGPD_Input);
 	if (FuncArrayPin)
 	{
 		FuncArrayPin->PinType = ConnectedType;
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 强制设置函数TargetArray引脚类型: %s, SubCategory: %s"),
-			*ConnectedType.PinCategory.ToString(),
-			ConnectedType.PinSubCategoryObject.IsValid() ? *ConnectedType.PinSubCategoryObject->GetName() : TEXT("None"));
 	}
 
 	// 6. 连接输出引脚
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 开始连接输出引脚"));
 	ConnectOutputPins(CompilerContext, CallFunctionNode);
 
 	// 7. 连接动态输入引脚
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 开始连接动态输入引脚"));
 	ConnectDynamicInputPins(CompilerContext, CallFunctionNode);
 
 	// 8. 断开所有原始连接
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 断开所有原始连接"));
 	BreakAllNodeLinks();
-
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] ExpandNode执行完成"));
 }
 
 bool UK2Node_SmartSort::DetermineSortFunction(const FEdGraphPinType& ConnectedType, FName& OutFunctionName)
@@ -724,18 +691,6 @@ FProperty* UK2Node_SmartSort::FindPropertyByName(UScriptStruct* StructType, FNam
 
 bool UK2Node_SmartSort::ConnectArrayInputPin(FKismetCompilerContext& CompilerContext, UEdGraphPin* ArrayInputPin, UK2Node_CallFunction* CallFunctionNode)
 {
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] ConnectArrayInputPin开始"));
-
-	// 打印函数调用节点的所有引脚
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 函数调用节点的引脚列表:"));
-	for (UEdGraphPin* Pin : CallFunctionNode->Pins)
-	{
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试]   引脚: %s, 方向: %s, 类型: %s"),
-			*Pin->PinName.ToString(),
-			Pin->Direction == EGPD_Input ? TEXT("Input") : TEXT("Output"),
-			*Pin->PinType.PinCategory.ToString());
-	}
-
 	// 定义可能的数组输入引脚名称
 	static const TArray<FString> ArrayInputPinNames = {
 		TEXT("Actors"),
@@ -747,41 +702,28 @@ bool UK2Node_SmartSort::ConnectArrayInputPin(FKismetCompilerContext& CompilerCon
 	// 查找匹配的输入引脚
 	for (const FString& PinName : ArrayInputPinNames)
 	{
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 尝试查找引脚: %s"), *PinName);
 		if (UEdGraphPin* FuncInputArrayPin = CallFunctionNode->FindPin(*PinName, EGPD_Input))
 		{
-			UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 找到匹配的引脚: %s，开始连接"), *PinName);
 			CompilerContext.MovePinLinksToIntermediate(*ArrayInputPin, *FuncInputArrayPin);
-			UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 引脚连接完成"));
 			return true;
 		}
 	}
 
-	UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] 未找到匹配的数组输入引脚"));
 	return false;
 }
 
 void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode)
 {
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] ConnectOutputPins开始"));
-
 	// 找到库函数中对应的数组输出引脚
 	UEdGraphPin* SortedArrayOutputPin = this->GetSortedArrayOutputPin();
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 智能排序节点输出引脚: %s"),
-		SortedArrayOutputPin ? *SortedArrayOutputPin->PinName.ToString() : TEXT("NULL"));
 
 	UEdGraphPin* FuncOutputArrayPin = CallFunctionNode->FindPin(TEXT("SortedActors"), EGPD_Output);
 	if(!FuncOutputArrayPin) FuncOutputArrayPin = CallFunctionNode->FindPin(TEXT("SortedVectors"), EGPD_Output);
 	if(!FuncOutputArrayPin) FuncOutputArrayPin = CallFunctionNode->FindPin(TEXT("SortedArray"), EGPD_Output);
 	if(!FuncOutputArrayPin) FuncOutputArrayPin = CallFunctionNode->FindPin(TEXT("ReturnValue"), EGPD_Output);
 
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 函数输出引脚: %s"),
-		FuncOutputArrayPin ? *FuncOutputArrayPin->PinName.ToString() : TEXT("NULL"));
-
 	if(FuncOutputArrayPin && SortedArrayOutputPin)
 	{
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] 连接输出引脚: %s -> %s"),
-			*SortedArrayOutputPin->PinName.ToString(), *FuncOutputArrayPin->PinName.ToString());
 		CompilerContext.MovePinLinksToIntermediate(*SortedArrayOutputPin, *FuncOutputArrayPin);
 	}
 	else if (!FuncOutputArrayPin && SortedArrayOutputPin)
@@ -791,8 +733,6 @@ void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContex
 		UEdGraphPin* FuncInputArrayPin = CallFunctionNode->FindPin(TEXT("TargetArray"), EGPD_Input);
 		if (FuncInputArrayPin && FuncInputArrayPin->LinkedTo.Num() > 0)
 		{
-			UE_LOG(LogBlueprint, Warning, TEXT("[智能排序调试] void函数，传递输入数组连接到输出"));
-
 			// 获取输入数组的源连接
 			UEdGraphPin* SourceArrayPin = FuncInputArrayPin->LinkedTo[0];
 
@@ -806,16 +746,6 @@ void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContex
 				}
 			}
 		}
-		else
-		{
-			UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] void函数但找不到输入数组连接"));
-		}
-	}
-	else
-	{
-		UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] 无法连接输出引脚 - SortedArrayOutputPin: %s, FuncOutputArrayPin: %s"),
-			SortedArrayOutputPin ? TEXT("Valid") : TEXT("NULL"),
-			FuncOutputArrayPin ? TEXT("Valid") : TEXT("NULL"));
 	}
 
 	// 连接原始索引输出

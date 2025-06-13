@@ -8,12 +8,12 @@
 
 void FRandomShufflesModule::StartupModule()
 {
-	UE_LOG(LogTemp, Warning, TEXT("RandomShuffles module started!"));
+	// 模块启动时的初始化逻辑
 }
 
 void FRandomShufflesModule::ShutdownModule()
 {
-	UE_LOG(LogTemp, Warning, TEXT("RandomShuffles module shut down!"));
+	// 模块关闭时的清理逻辑
 }
 
 #undef LOCTEXT_NAMESPACE

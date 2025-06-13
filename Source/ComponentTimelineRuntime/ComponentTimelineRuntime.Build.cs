@@ -12,49 +12,25 @@ public class ComponentTimelineRuntime : ModuleRules
 	public ComponentTimelineRuntime(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
-		// 公共包含路径设置
-		PublicIncludePaths.AddRange(
-			new string[] {
-				// 在此处添加所需的公共包含路径
-			}
-			);
 
-		// 私有包含路径设置
-		PrivateIncludePaths.AddRange(
-			new string[] {
-				// 在此处添加所需的其他私有包含路径
-			}
-			);
-			
-		// 公共依赖模块设置
+		// 公共依赖模块
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core", // 核心模块
-				// 在此处添加其他需要静态链接的公共依赖项
+				"Core"
 			}
-			);
-			
-		// 私有依赖模块设置
+		);
+
+		// 私有依赖模块
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"CoreUObject",    // 核心对象系统
-				"Engine",         // 引擎功能
-				"Slate",         // UI系统
-				"SlateCore",     // UI核心系统
-				"DeveloperSettings", // 开发者设置系统
-				// 在此处添加需要静态链接的私有依赖项
+				"CoreUObject",
+				"Engine",
+				"Slate",
+				"SlateCore",
+				"DeveloperSettings"
 			}
-			);
-		
-		// 动态加载模块设置
-		DynamicallyLoadedModuleNames.AddRange(
-			new string[]
-			{
-				// 在此处添加模块需要动态加载的任何模块
-			}
-			);
+		);
 	}
 }

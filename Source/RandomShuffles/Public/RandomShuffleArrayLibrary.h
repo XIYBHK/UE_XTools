@@ -144,60 +144,116 @@ class RANDOMSHUFFLES_API URandomShuffleArrayLibrary : public UBlueprintFunctionL
 	static void Array_StrictWeightRandomSampleFromStream(const TArray<int32>& InputArray, const TArray<float> Weights, int32 Count, UPARAM(Ref) FRandomStream& Stream, TArray<int32>& Result);
 
 public:
-	/** 
-	 * 使用PRD(伪随机分布)算法生成布尔值，可以让随机事件的发生更加均衡。
+	/**
+	 * 使用PRD(伪随机分布)算法生成布尔值 - 简单版本，自动管理状态。
 	 * PRD算法会根据连续失败次数动态调整概率，避免运气过好或过差的情况。
 	 * 采用DOTA2的标准PRD算法实现，提供更公平的随机体验。
-	 * 实际概率计算公式：P = n * C，其中n为失败次数，C为PRD常数。
+	 * 系统内部自动维护不同StateID的失败计数，用户无需手动管理状态。
 	 * 算法来源：https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution
 	 *
 	 *@param	BaseChance		基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
-	 *@param	OutFailureCount	输出当前失败次数
-	 *@param	OutActualChance	输出实际概率，计算公式为：失败次数 * PRD常数C
-	 *@param	FailureCount	当前失败次数，首次调用传入1，这样第一次的实际概率就是C值
+	 *@param	StateID			状态标识符，用于区分不同的PRD系统（如"技能冲锋"、"暴击"、"掉落"等）
 	 *@return	是否触发
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
-		DisplayName = "伪随机布尔",
-		BaseChance="基础概率",
-		FailureCount="失败次数",
-		OutFailureCount="累计失败数",
-		OutActualChance="实际概率",
-		ToolTip="使用DOTA2的PRD算法生成布尔值, 让随机事件的发生更加均衡. \n使用说明: 失败次数从0开始, 成功后会重置为0, 失败后会+1. 基础概率为期望的触发概率[0-1]."))
+		DisplayName = "PRD随机判定",
+		ToolTip="使用DOTA2的PRD算法生成布尔值, 让随机事件更加均衡, 避免运气过好或过差. \n• 自动管理状态, 开箱即用 \n• 使用StateID区分不同系统(如'暴击'、'技能触发'、'掉落') \n• 适合大多数使用场景"))
 	static bool PseudoRandomBool(
-		UPARAM(DisplayName="基础概率") float BaseChance,
-		UPARAM(DisplayName="累计失败数") int32& OutFailureCount,
-		UPARAM(DisplayName="实际概率") float& OutActualChance,
-		UPARAM(DisplayName="失败次数") int32 FailureCount = 0);
+		UPARAM(DisplayName="触发概率") float BaseChance,
+		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"));
 
-	/** 
-	 * 使用指定的随机流和PRD(伪随机分布)算法生成布尔值，可以让随机事件的发生更加均衡。
+	/**
+	 * 使用PRD(伪随机分布)算法生成布尔值 - 高级版本，完全手动控制。
 	 * PRD算法会根据连续失败次数动态调整概率，避免运气过好或过差的情况。
 	 * 采用DOTA2的标准PRD算法实现，提供更公平的随机体验。
 	 * 实际概率计算公式：P = n * C，其中n为失败次数，C为PRD常数。
+	 * 用户可以完全控制失败次数的输入和输出，实现自定义的状态管理逻辑。
 	 * 算法来源：https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution
 	 *
-	 *@param	BaseChance		基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
-	 *@param	FailureCount	当前失败次数，首次调用传入1，这样第一次的实际概率就是C值
-	 *@param	Stream			要使用的随机流，用于控制随机数生成
-	 *@param	OutFailureCount	输出当前失败次数
-	 *@param	OutActualChance	输出实际概率，计算公式为：失败次数 * PRD常数C
+	 *@param	BaseChance			基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
+	 *@param	StateID				状态标识符，用于区分不同的PRD系统，确保系统间不相互干扰
+	 *@param	OutFailureCount		输出更新后的失败次数，用户可选择是否使用此值更新状态
+	 *@param	OutActualChance		输出当前实际触发概率，用于调试和监控
+	 *@param	FailureCount		输入的当前失败次数，用户完全控制此值
 	 *@return	是否触发
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
-		DisplayName = "流送中的伪随机布尔",
-		BaseChance="基础概率",
-		FailureCount="失败次数",
-		Stream="随机流",
-		OutFailureCount="累计失败数",
-		OutActualChance="实际概率",
-		ToolTip="使用DOTA2的PRD算法和指定的随机流生成布尔值, 让随机事件的发生更加均衡. \n使用说明: 失败次数从0开始, 成功后会重置为0, 失败后会+1. 使用随机流可以重现相同的随机序列."))
+		DisplayName = "PRD随机判定(完全控制)",
+		ToolTip="使用DOTA2的PRD算法生成布尔值, 提供完全的状态控制. \n• 手动控制失败次数输入输出 \n• 可实现自定义状态管理逻辑 \n• 提供调试信息(当前概率、更新失败数) \n• 适合复杂PRD应用和精确控制场景"))
+	static bool PseudoRandomBoolAdvanced(
+		UPARAM(DisplayName="触发概率") float BaseChance,
+		UPARAM(DisplayName="更新失败数") int32& OutFailureCount,
+		UPARAM(DisplayName="当前概率") float& OutActualChance,
+		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"),
+		UPARAM(DisplayName="连续失败数") int32 FailureCount = 0);
+
+	/**
+	 * 使用指定的随机流和PRD(伪随机分布)算法生成布尔值 - 简单版本，自动管理状态。
+	 * PRD算法会根据连续失败次数动态调整概率，避免运气过好或过差的情况。
+	 * 采用DOTA2的标准PRD算法实现，提供更公平的随机体验。
+	 * 系统内部自动维护不同StateID的失败计数，用户无需手动管理状态。
+	 * 算法来源：https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution
+	 *
+	 *@param	BaseChance		基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
+	 *@param	StateID			状态标识符，用于区分不同的PRD系统（如"技能冲锋"、"暴击"、"掉落"等）
+	 *@param	Stream			要使用的随机流，用于控制随机数生成
+	 *@return	是否触发
+	*/
+	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
+		DisplayName = "流送PRD随机判定",
+		ToolTip="使用DOTA2的PRD算法和指定随机流生成布尔值, 让随机事件更加均衡. \n• 自动管理状态, 开箱即用 \n• 支持可重现的随机序列 \n• 使用StateID区分不同系统 \n• 适合需要确定性随机的场景"))
 	static bool PseudoRandomBoolFromStream(
-		UPARAM(DisplayName="基础概率") float BaseChance, 
-		UPARAM(DisplayName="失败次数") int32 FailureCount, 
-		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream, 
-		UPARAM(DisplayName="累计失败数") int32& OutFailureCount,
-		UPARAM(DisplayName="实际概率") float& OutActualChance);
+		UPARAM(DisplayName="触发概率") float BaseChance,
+		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream,
+		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"));
+
+	/**
+	 * 使用指定的随机流和PRD(伪随机分布)算法生成布尔值 - 高级版本，完全手动控制。
+	 * PRD算法会根据连续失败次数动态调整概率，避免运气过好或过差的情况。
+	 * 采用DOTA2的标准PRD算法实现，提供更公平的随机体验。
+	 * 实际概率计算公式：P = n * C，其中n为失败次数，C为PRD常数。
+	 * 用户可以完全控制失败次数的输入和输出，实现自定义的状态管理逻辑。
+	 * 算法来源：https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution
+	 *
+	 *@param	BaseChance			基础触发概率[0,1]，实际触发概率会根据连续失败次数动态调整
+	 *@param	StateID				状态标识符，用于区分不同的PRD系统，确保系统间不相互干扰
+	 *@param	Stream				要使用的随机流，用于控制随机数生成和重现随机序列
+	 *@param	OutFailureCount		输出更新后的失败次数，用户可选择是否使用此值更新状态
+	 *@param	OutActualChance		输出当前实际触发概率，用于调试和监控
+	 *@param	FailureCount		输入的当前失败次数，用户完全控制此值
+	 *@return	是否触发
+	*/
+	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
+		DisplayName = "流送PRD随机判定(完全控制)",
+		ToolTip="使用DOTA2的PRD算法和指定随机流生成布尔值, 提供完全的状态控制. \n• 手动控制失败次数输入输出 \n• 支持可重现的随机序列 \n• 提供调试信息(当前概率、更新失败数) \n• 适合复杂PRD应用和确定性随机场景"))
+	static bool PseudoRandomBoolFromStreamAdvanced(
+		UPARAM(DisplayName="触发概率") float BaseChance,
+		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream,
+		UPARAM(DisplayName="更新失败数") int32& OutFailureCount,
+		UPARAM(DisplayName="当前概率") float& OutActualChance,
+		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"),
+		UPARAM(DisplayName="连续失败数") int32 FailureCount = 0);
+
+	/**
+	 * 清理指定的PRD状态，释放内存。
+	 * 用于简单版本PRD函数的状态管理。
+	 *
+	 *@param	StateID		要清理的状态标识符
+	*/
+	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
+		DisplayName = "清理PRD状态",
+		ToolTip="清理指定StateID的PRD状态, 重置累积的失败次数. \n• 用于特定系统重置(换装备、技能重置) \n• 释放内存, 避免状态累积 \n• 不影响其他StateID的PRD状态"))
+	static void ClearPRDState(
+		UPARAM(DisplayName="状态标识") FString StateID);
+
+	/**
+	 * 清理所有PRD状态，释放内存。
+	 * 用于简单版本PRD函数的状态管理。
+	*/
+	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
+		DisplayName = "清理所有PRD状态",
+		ToolTip="清理所有PRD状态, 重置所有累积的失败次数. \n• 用于重大状态变化(玩家死亡、关卡切换、游戏重启) \n• 释放所有内存, 避免状态污染 \n• 让所有PRD系统重新开始"))
+	static void ClearAllPRDStates();
 
 	static void GenericArray_RandomSample(
         void* InputArray, const FArrayProperty* ArrayProp, 
@@ -467,4 +523,11 @@ public:
 		GenericArray_StrictWeightRandomSample(ArrayAddr, ArrayProperty, WeightsAddr, WeightsProperty, Count, RandomStream, Result, ResultProperty);
 		P_NATIVE_END;
 	}
+
+private:
+	// PRD状态管理 - 用于简单版本的自动状态管理
+	static TMap<FString, int32> PRDStateMap;
+
+	// 获取或创建PRD状态
+	static int32& GetOrCreatePRDState(const FString& StateID);
 };

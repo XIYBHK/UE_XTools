@@ -303,15 +303,16 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     // 持续测试直到获得10000次成功
     while (TotalSuccesses < 10000)
     {
-        int32 NextFailureCount = 0;
         TotalTests++;
-        
-        // 调用PRD函数
-        const bool bSuccess = URandomShuffleArrayLibrary::PseudoRandomBool(
-            BaseChance, 
-            NextFailureCount, 
-            ActualChance, 
-            CurrentFailureCount);
+
+        // 调用PRD函数 - 使用高级版本进行测试
+        int32 NextFailureCount = 0;
+        const bool bSuccess = URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(
+            BaseChance,
+            NextFailureCount,  // 输出的新失败次数
+            ActualChance,
+            "测试",  // StateID
+            CurrentFailureCount);  // 输入的当前失败次数
 
         // 记录当前失败次数下的结果
         if (CurrentFailureCount <= 12)
@@ -324,7 +325,7 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
             }
         }
 
-        // 更新失败次数
+        // 更新失败次数 - 高级版本允许用户选择是否使用输出的失败次数
         CurrentFailureCount = NextFailureCount;
     }
 
@@ -336,19 +337,21 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     
     for (int32 i = 0; i <= 12; ++i)
     {
-        float TestChance = 0.f;
         float TestActualChance = 0.f;
-        int32 TestFailureCount = 0;
-        
-        // 获取当前失败次数的理论概率
-        URandomShuffleArrayLibrary::PseudoRandomBool(BaseChance, TestFailureCount, TestActualChance, i);
+        int32 TestFailureCount = i;  // 设置为当前失败次数
+
+        // 获取当前失败次数的理论概率 - 使用高级版本进行测试
+        // 注意：这里我们只是想获取理论概率，不执行实际的随机判定
+        // 所以我们创建一个临时的失败计数器
+        int32 TempOutFailureCount = 0;
+        URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(BaseChance, TempOutFailureCount, TestActualChance, "理论测试", TestFailureCount);
         const float ExpectedChance = TestActualChance;
-        
+
         // 计算实际成功率
         const float SuccessRate = FailureTests[i] > 0 ? static_cast<float>(Distribution[i]) / FailureTests[i] : 0.0f;
-        
-        UE_LOG(LogXTools, Log, TEXT("%d次 | %d | %.2f%% | %.2f%% | %d"), 
-            i, 
+
+        UE_LOG(LogXTools, Log, TEXT("%d次 | %d | %.2f%% | %.2f%% | %d"),
+            i,
             Distribution[i],
             SuccessRate * 100.0f,
             ExpectedChance * 100.0f,

@@ -1,26 +1,21 @@
 // Copyright (c) 2024 Damian Nowakowski. All rights reserved.
 
 /**
- * Library of static functions used to launch Code Flow Actions.
- * You must use this library to control the plugin.
- * Most of the functions requires WorldContextObject to determine the
- * exact world this function should be launched in. This is needed in case
- * of multiple worlds running in the same editor instance (e.g. when testing multiplayer).
- * Every Action function require it's owner, so it can be properly cleaned up in case the owner
- * would be destroyed.
- * Launching action will return a handle to it. If the Handle is not valid (check IsValid() function)
- * it means the action couldn't be launched.
- * Even when the action has finished, the Handle will still be valid. To check if the action is still running
- * use IsActionRunning(this, Handle) function.
- * Callbacks should be defined using lambdas.
- * Example of the plugin usage when using Delay Action:
+ * 用于启动代码流动作的静态函数库
+ * 必须使用此库来控制插件功能
+ * 大多数函数需要 WorldContextObject 来确定函数应该在哪个确切的世界中启动
+ * 这在同一编辑器实例中运行多个世界时是必需的（例如测试多人游戏时）
+ * 每个动作函数都需要其所有者，以便在所有者被销毁时能够正确清理
+ * 启动动作将返回一个句柄。如果句柄无效（检查 IsValid() 函数），则表示动作无法启动
+ * 即使动作已完成，句柄仍然有效。要检查动作是否仍在运行，请使用 IsActionRunning(this, Handle) 函数
+ * 回调应使用 lambda 表达式定义
+ * 使用延迟动作的插件用法示例：
  * FECFHandle DelayHandle = FFlow::Delay(this, 2.f, [this]()
  * {
- *     // Stuff to do after 2 seconds delay.
+ *     // 2秒延迟后要执行的代码
  * });
- * Every function accepts an optional parameter of FECFActionSettings which can control
- * tick interval and flag to ignore global time dilation and more.
- * For more detailed instructions please check README.md.
+ * 每个函数都接受一个可选的 FECFActionSettings 参数，可以控制 tick 间隔和忽略全局时间膨胀等
+ * 更详细的说明请查看 README.md
  */
 
 #pragma once
@@ -38,58 +33,58 @@ class ENHANCEDCODEFLOW_API FEnhancedCodeFlow
 
 public:
 	
-	/*^^^ ECF Flow Control Functions ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
-	
+	/*^^^ ECF 流控制函数 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
 	/**
-	 * Checks if the action pointed by given handle is running.
+	 * 检查给定句柄指向的动作是否正在运行
 	 */
 	static bool IsActionRunning(const UObject* WorldContextObject, const FECFHandle& Handle);
 
 	/**
-	 * Pause ticking in the action pointed by given handle.
+	 * 暂停给定句柄指向的动作的 tick
 	 */
 	static void PauseAction(const UObject* WorldContextObject, const FECFHandle& Handle);
 
 	/**
-	 * Resume ticking in the action pointed by given handle.
+	 * 恢复给定句柄指向的动作的 tick
 	 */
 	static void ResumeAction(const UObject* WorldContextObject, const FECFHandle& Handle);
 
 	/**
-	 * Resume ticking in the action pointed by given handle.
-	 * Returns false if there is no action.
+	 * 检查给定句柄指向的动作是否已暂停
+	 * 如果没有动作则返回 false
 	 */
 	static bool IsActionPaused(const UObject* WorldContextObject, const FECFHandle& Handle, bool &bIsPaused);
 
 	/**
-	 * Sets if the ECF system is paused or not.
+	 * 设置 ECF 系统是否暂停
 	 */
 	static void SetPause(const UObject* WorldContextObject, bool bPaused);
 
 	/**
-	 * Checks if the ECF system is paused or not.
+	 * 检查 ECF 系统是否暂停
 	 */
 	static bool GetPause(const UObject* WorldContextObject);
 
-	/*^^^ Stop ECF Functions ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+	/*^^^ 停止 ECF 函数 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 	/**
-	 * Stops the running action pointed by given handle. Invalidates given handle.
-	 * bComplete param indicates if the action should be completed when stopped (run callback), or simply stopped.
+	 * 停止给定句柄指向的运行中动作，使给定句柄失效
+	 * bComplete 参数指示动作停止时是否应该完成（运行回调），还是简单停止
 	 */
 	static void StopAction(const UObject* WorldContextObject, FECFHandle& Handle, bool bComplete = false);
 
 	/**
-	 * Stops the running action with the given InstanceId.
-	 * bComplete param indicates if the action should be completed when stopped (run callback), or simply stopped.
+	 * 停止具有给定实例ID的运行中动作
+	 * bComplete 参数指示动作停止时是否应该完成（运行回调），还是简单停止
 	 */
 	static void StopInstancedAction(const UObject* WorldContextObject, FECFInstanceId InstanceId, bool bComplete = false);
-	
+
 	/**
-	 * Stops all running actions.
-	 * If owner is defined it will remove all actions from the given owner.
-	 * Otherwise it will stop all the actions from everywhere.
-	 * bComplete param indicates if the action should be completed when stopped (run callback), or simply stopped.
+	 * 停止所有运行中的动作
+	 * 如果定义了所有者，将移除给定所有者的所有动作
+	 * 否则将停止所有地方的所有动作
+	 * bComplete 参数指示动作停止时是否应该完成（运行回调），还是简单停止
 	 */
 	static void StopAllActions(const UObject* WorldContextObject, bool bComplete = false, UObject* InOwner = nullptr);
 

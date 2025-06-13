@@ -14,7 +14,6 @@
 #include "UObject/UObjectIterator.h"
 #include "K2Node_VariableGet.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintNodeSpawner.h"
 #include "DiffResults.h"
@@ -25,8 +24,10 @@
 
 #define LOCTEXT_NAMESPACE "K2Node_Timeline"
 
-/////////////////////////////////////////////////////
-// FKCHandler_Timeline
+/**
+ * 时间轴编译处理器
+ * 处理时间轴节点的编译逻辑
+ */
 class FKCHandler_Timeline : public FNodeHandlingFunctor
 {
 public:
@@ -43,9 +44,9 @@ public:
 
 		if (NewTimePin && SetNewTimePin)
 		{
-			// If SetNewTimePin is linked, then FKismetCompilerContext::ExpandTimelineNodes will create a function
-			// that handles the casting of the "NewTime" parameter for UTimelineComponent::SetNewTime.
-			// If SetNewTimePin is *not* linked, then we don't use "NewTime" at all, and can throw away the cast entry.
+			// 如果 SetNewTimePin 已连接，则 FKismetCompilerContext::ExpandTimelineNodes 将创建一个函数
+			// 来处理 UTimelineComponent::SetNewTime 的 "NewTime" 参数转换
+			// 如果 SetNewTimePin 未连接，则我们根本不使用 "NewTime"，可以丢弃转换条目
 
 			const bool bSetNewTimePinConnected = (SetNewTimePin->LinkedTo.Num() > 0);
 			if (!bSetNewTimePinConnected)
@@ -352,96 +353,18 @@ FText UK2Node_HackTimeline::GetNodeTitle(ENodeTitleType::Type TitleType) const
 	}
 	return Title;
 }
-/*
-UEdGraphPin* UK2Node_HackTimeline::GetDirectionPin() const
-{
-	UEdGraphPin* Pin = FindPin(DirectionPinName);
-	if (Pin)
-	{
-		const bool bIsOutput = (EGPD_Output == Pin->Direction);
-		const bool bProperType = (UEdGraphSchema_K2::PC_Byte == Pin->PinType.PinCategory);
-		const bool bProperSubCategoryObj = (Pin->PinType.PinSubCategoryObject == FTimeline::GetTimelineDirectionEnum());
-		if(bIsOutput && bProperType && bProperSubCategoryObj)
-		{
-			return Pin;
-		}
-	}
-	return NULL;
-}
 
-UEdGraphPin* UK2Node_HackTimeline::GetPlayPin() const
-{
-	return GetPin(this, PlayPinName, EGPD_Input);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetPlayFromStartPin() const
-{
-	return GetPin(this, PlayFromStartPinName, EGPD_Input);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetStopPin() const
-{
-	return GetPin(this, StopPinName, EGPD_Input);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetReversePin() const
-{
-	return GetPin(this, ReversePinName, EGPD_Input);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetReverseFromEndPin() const
-{
-	return GetPin(this, ReverseFromEndPinName, EGPD_Input);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetUpdatePin() const
-{
-	return GetPin(this, UpdatePinName, EGPD_Output);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetFinishedPin() const
-{
-	return GetPin(this, FinishedPinName, EGPD_Output);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetNewTimePin() const
-{
-	return GetPin(this, NewTimePinName, EGPD_Input);
-}
-
-UEdGraphPin* UK2Node_HackTimeline::GetSetNewTimePin() const
-{
-	return GetPin(this, SetNewTimePinName, EGPD_Input);
-}
-
-bool UK2Node_HackTimeline::RenameTimeline(const FString& NewName)
+void UK2Node_HackTimeline::PrepareForCopying()
 {
 	UBlueprint* Blueprint = GetBlueprint();
 	check(Blueprint);
-
-	FName NewTimelineName(*NewName);
-	if (FBlueprintEditorUtils::RenameTimeline(Blueprint, TimelineName, NewTimelineName))
-	{
-		// Clear off any existing error message now the timeline has been renamed
-		this->ErrorMsg.Empty();
-		this->bHasCompilerMessage = false;
-
-		return true;
-	}
-	return false;
-}
-*/
-void UK2Node_HackTimeline::PrepareForCopying() 
-{
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
-	//Set the GUID so we can identify which timeline template the copied node should use
+	// 设置 GUID 以便识别复制的节点应使用哪个时间轴模板
 	UTimelineTemplate* Template  = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
 	check(Template);
-	TimelineGuid = Template->TimelineGuid; // hold onto the template's Guid so on paste we can match it up on paste
+	TimelineGuid = Template->TimelineGuid; // 保存模板的 GUID，以便在粘贴时匹配
 }
 
-//Determine if all the tracks contained with both arrays are identical
+/** 确定两个数组中包含的所有轨道是否相同 */
 template<class T>
 void FindExactTimelineDifference(struct FDiffResults& Results, FDiffSingleResult Result, const TArray<T>& Tracks1, const TArray<T>& Tracks2, FString TrackTypeStr)
 {
@@ -556,7 +479,7 @@ void UK2Node_HackTimeline::FindDiffs( class UEdGraphNode* OtherNode, struct FDif
 			Results.Add(Diff);
 		}
 
-		//something specific inside has changed
+		// 内部某些特定内容已更改
 		if(Diff.Diff == EDiffType::NO_DIFFERENCE)
 		{
 			FindExactTimelineDifference(Results, Diff, Template1->EventTracks, Template2->EventTracks, LOCTEXT("Event", "Event").ToString());
@@ -673,15 +596,11 @@ void UK2Node_HackTimeline::GetNodeAttributes( TArray<TKeyValuePair<FString, FStr
 
 void UK2Node_HackTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	// actions get registered under specific object-keys; the idea is that 
-	// actions might have to be updated (or deleted) if their object-key is  
-	// mutated (or removed)... here we use the node's class (so if the node 
-	// type disappears, then the action should go with it)
+	// 动作在特定对象键下注册；如果对象键被修改（或移除），动作可能需要更新（或删除）
+	// 这里我们使用节点的类（因此如果节点类型消失，动作也应该随之消失）
 	UClass* ActionKey = GetClass();
-	// to keep from needlessly instantiating a UBlueprintNodeSpawner, first   
-	// check to make sure that the registrar is looking for actions of this type
-	// (could be regenerating actions for a specific asset, and therefore the 
-	// registrar would only accept actions corresponding to that asset)
+	// 为了避免不必要地实例化 UBlueprintNodeSpawner，首先检查注册器是否正在寻找此类型的动作
+	// （可能正在为特定资产重新生成动作，因此注册器只接受与该资产对应的动作）
 	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
@@ -697,7 +616,7 @@ void UK2Node_HackTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 				TimelineNode->TimelineName = FBlueprintEditorUtils::FindUniqueTimelineName(Blueprint);
 				if (!bIsTemplateNode && FBlueprintEditorUtils::AddNewTimeline(Blueprint, TimelineNode->TimelineName))
 				{
-					// clear off any existing error message now that the timeline has been added
+					// 现在时间轴已添加，清除任何现有的错误消息
 					TimelineNode->ErrorMsg.Empty();
 					TimelineNode->bHasCompilerMessage = false;
 				}

@@ -331,78 +331,22 @@ void USortLibrary::SortFloatArray(const TArray<float>& InArray, bool bAscending,
 
 void USortLibrary::SortStringArray(const TArray<FString>& InArray, bool bAscending, TArray<FString>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    // 使用一个自定义结构体进行排序，以便利用FText来获得正确的本地化支持 (例如中文拼音)
-    struct FStringSortPair
+    // 使用通用排序模板，利用FText来获得正确的本地化支持 (例如中文拼音)
+    auto GetSortKey = [](const FString& Value) -> FString
     {
-        FString Value;
-        int32 OriginalIndex;
-        bool operator<(const FStringSortPair& Other) const
-        {
-            return FText::FromString(Value).CompareTo(FText::FromString(Other.Value)) < 0;
-        }
+        return FText::FromString(Value).ToString();
     };
-    
-    TArray<FStringSortPair> Pairs;
-    Pairs.Reserve(InArray.Num());
-    for(int32 i=0; i < InArray.Num(); ++i)
-    {
-        Pairs.Add({InArray[i], i});
-    }
-
-    if (bAscending)
-    {
-        Pairs.Sort();
-    }
-    else
-    {
-        Pairs.Sort([](const auto& A, const auto& B){ return B < A; });
-    }
-    
-    SortedArray.SetNum(Pairs.Num());
-    OriginalIndices.SetNum(Pairs.Num());
-    for(int32 i=0; i < Pairs.Num(); ++i)
-    {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
+    SortLibrary_Private::GenericSort<FString, FString>(InArray, bAscending, GetSortKey, SortedArray, OriginalIndices);
 }
 
 void USortLibrary::SortNameArray(const TArray<FName>& InArray, bool bAscending, TArray<FName>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    // 排序FName需要先转换为FString，再转为FText，以实现正确的本地化
-    struct FNameSortPair
+    // 使用通用排序模板，先转换为FString，再转为FText，以实现正确的本地化
+    auto GetSortKey = [](const FName& Value) -> FString
     {
-        FName Value;
-        int32 OriginalIndex;
-        bool operator<(const FNameSortPair& Other) const
-        {
-            return FText::FromString(Value.ToString()).CompareTo(FText::FromString(Other.Value.ToString())) < 0;
-        }
+        return FText::FromString(Value.ToString()).ToString();
     };
-
-    TArray<FNameSortPair> Pairs;
-    Pairs.Reserve(InArray.Num());
-    for(int32 i=0; i < InArray.Num(); ++i)
-    {
-        Pairs.Add({InArray[i], i});
-    }
-
-    if (bAscending)
-    {
-        Pairs.Sort();
-    }
-    else
-    {
-        Pairs.Sort([](const auto& A, const auto& B){ return B < A; });
-    }
-
-    SortedArray.SetNum(Pairs.Num());
-    OriginalIndices.SetNum(Pairs.Num());
-    for(int32 i=0; i < Pairs.Num(); ++i)
-    {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
+    SortLibrary_Private::GenericSort<FName, FString>(InArray, bAscending, GetSortKey, SortedArray, OriginalIndices);
 }
 
 //~ 向量排序函数
@@ -445,55 +389,48 @@ void USortLibrary::SortVectorsByAxis(const TArray<FVector>& Vectors, ECoordinate
     SortLibrary_Private::GenericSort<FVector, float>(Vectors, bAscending, GetAxisValue, SortedVectors, OriginalIndices, &SortedAxisValues);
 }
 
+namespace SortLibrary_Private
+{
+    /**
+     * 通用数组截取模板函数，减少重复代码
+     */
+    template<typename ElementType>
+    void GenericSliceByIndices(const TArray<ElementType>& InArray, int32 StartIndex, int32 EndIndex, TArray<ElementType>& OutArray)
+    {
+        OutArray.Empty();
+        if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
+        {
+            const int32 Count = EndIndex - StartIndex + 1;
+            OutArray.Reserve(Count);
+            for (int32 i = StartIndex; i <= EndIndex; ++i)
+            {
+                OutArray.Add(InArray[i]);
+            }
+        }
+    }
+} // namespace SortLibrary_Private
+
 //~ 数组截取函数
 // =================================================================================================
 
 void USortLibrary::SliceActorArrayByIndices(const TArray<AActor*>& InArray, int32 StartIndex, int32 EndIndex, TArray<AActor*>& OutArray)
 {
-    OutArray.Empty();
-    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
-    {
-        for (int32 i = StartIndex; i <= EndIndex; ++i)
-        {
-            OutArray.Add(InArray[i]);
-        }
-    }
+    SortLibrary_Private::GenericSliceByIndices(InArray, StartIndex, EndIndex, OutArray);
 }
 
 void USortLibrary::SliceFloatArrayByIndices(const TArray<float>& InArray, int32 StartIndex, int32 EndIndex, TArray<float>& OutArray)
 {
-    OutArray.Empty();
-    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
-    {
-        for (int32 i = StartIndex; i <= EndIndex; ++i)
-        {
-            OutArray.Add(InArray[i]);
-        }
-    }
+    SortLibrary_Private::GenericSliceByIndices(InArray, StartIndex, EndIndex, OutArray);
 }
 
 void USortLibrary::SliceIntegerArrayByIndices(const TArray<int32>& InArray, int32 StartIndex, int32 EndIndex, TArray<int32>& OutArray)
 {
-    OutArray.Empty();
-    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
-    {
-        for (int32 i = StartIndex; i <= EndIndex; ++i)
-        {
-            OutArray.Add(InArray[i]);
-        }
-    }
+    SortLibrary_Private::GenericSliceByIndices(InArray, StartIndex, EndIndex, OutArray);
 }
 
 void USortLibrary::SliceVectorArrayByIndices(const TArray<FVector>& InArray, int32 StartIndex, int32 EndIndex, TArray<FVector>& OutArray)
 {
-    OutArray.Empty();
-    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
-    {
-        for (int32 i = StartIndex; i <= EndIndex; ++i)
-        {
-            OutArray.Add(InArray[i]);
-        }
-    }
+    SortLibrary_Private::GenericSliceByIndices(InArray, StartIndex, EndIndex, OutArray);
 }
 
 void USortLibrary::SliceFloatArrayByValue(const TArray<float>& InArray, float MinValue, float MaxValue, TArray<float>& OutArray, TArray<int32>& Indices)
@@ -1260,37 +1197,4 @@ int32 USortLibrary::PartitionStructByProperty(FScriptArrayHelper& ArrayHelper, F
     return i + 1;
 }
 
-//~ 结构体属性排序函数实现 (简化版本 - 不使用CustomThunk)
-// =================================================================================================
 
-TArray<int32> USortLibrary::SortStructByProperty_Float(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
-{
-    // 这个函数实际上不会被直接调用，因为智能排序节点会处理类型转换
-    // 但我们需要提供一个占位符实现
-    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_Float: 这个函数应该通过智能排序节点调用"));
-
-    // 返回空数组
-    OriginalIndices.Empty();
-    return TArray<int32>();
-}
-
-TArray<int32> USortLibrary::SortStructByProperty_Int(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
-{
-    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_Int: 这个函数应该通过智能排序节点调用"));
-    OriginalIndices.Empty();
-    return TArray<int32>();
-}
-
-TArray<int32> USortLibrary::SortStructByProperty_String(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
-{
-    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_String: 这个函数应该通过智能排序节点调用"));
-    OriginalIndices.Empty();
-    return TArray<int32>();
-}
-
-TArray<int32> USortLibrary::SortStructByProperty_Bool(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
-{
-    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_Bool: 这个函数应该通过智能排序节点调用"));
-    OriginalIndices.Empty();
-    return TArray<int32>();
-}

@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "ECFTypes.generated.h"
 
-// Possible blend functions for ECF system.
+// ECF 系统可用的混合函数
 UENUM(BlueprintType)
 enum class EECFBlendFunc : uint8
 {
@@ -16,7 +16,7 @@ enum class EECFBlendFunc : uint8
 	ECFBlend_EaseInOut UMETA(DisplayName = "缓入缓出")
 };
 
-// Possible priorities for async tasks in ECF system.
+// ECF 系统中异步任务的可用优先级
 UENUM(BlueprintType)
 enum class EECFAsyncPrio : uint8
 {

@@ -41,26 +41,32 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, std::size_t coun
         totalCount += expectedCount;
     }
 
-    // 调整总数以匹配要求的count
+    // 调整总数以匹配要求的count - 优化性能
     while(totalCount > count) {
         // 找到最大的非零计数并减1
         auto maxIt = std::max_element(expectedCounts.begin(), expectedCounts.end());
         if(*maxIt > 0) {
             (*maxIt)--;
             totalCount--;
+        } else {
+            break; // 防止无限循环
         }
     }
-    while(totalCount < count) {
-        // 找到权重最大的元素并增加其计数
-        float maxWeight = 0.0f;
-        size_t maxIdx = 0;
-        for(size_t i = 0; i < sampleSize; ++i) {
+
+    // 预先找到权重最大的元素索引，避免重复查找
+    size_t maxWeightIdx = 0;
+    if(totalCount < count) {
+        float maxWeight = weights[0];
+        for(size_t i = 1; i < sampleSize; ++i) {
             if(weights[i] > maxWeight) {
                 maxWeight = weights[i];
-                maxIdx = i;
+                maxWeightIdx = i;
             }
         }
-        expectedCounts[maxIdx]++;
+    }
+
+    while(totalCount < count) {
+        expectedCounts[maxWeightIdx]++;
         totalCount++;
     }
 

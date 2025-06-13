@@ -6,13 +6,13 @@ public class EnhancedCodeFlow : ModuleRules
 {
 	public EnhancedCodeFlow(ReadOnlyTargetRules Target) : base(Target)
 	{
-        // To ensure IWYU
+        // 确保 IWYU（Include What You Use）
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        // Ensure the default cpp standard is supported (CPP20 for UE5.3 and above)
+        // 确保支持默认的 C++ 标准（UE5.3 及以上版本为 CPP20）
         CppStandard = CppStandardVersion.Default;
 
-        // Required modules
+        // 必需的模块依赖
         PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -22,10 +22,10 @@ public class EnhancedCodeFlow : ModuleRules
 			}
 		);
 
-        // Ensure there are no duplicated definitions already
+        // 确保没有重复的定义
         PublicDefinitions.RemoveAll(ECFDefinition => ECFDefinition.StartsWith("ECF_"));
 
-        // Allow to disable optimization for non shipping builds (for easier debugging)
+        // 允许在非发布版本中禁用优化（便于调试）
         bool bDisableOptimization = false;
         if (bDisableOptimization && (Target.Configuration != UnrealTargetConfiguration.Shipping))
         {
@@ -46,7 +46,7 @@ public class EnhancedCodeFlow : ModuleRules
             PublicDefinitions.Add("ECF_PRAGMA_ENABLE_OPTIMIZATION=");
         }
 
-        // Enable or disable extra traces for Unreal Insight profiler
+        // 启用或禁用 Unreal Insight 分析器的额外跟踪
         bool bEnableInsightProfiling = true;
         if (bEnableInsightProfiling)
         {

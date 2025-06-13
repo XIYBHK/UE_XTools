@@ -2,14 +2,7 @@
 
 #include "CoreMinimal.h"
 
-#if WITH_EDITOR
-#define IS_SORT_API PLATFORM_WINDOWS
-#else
-#define IS_SORT_API 0
+// 简化的API导出定义，使用UE标准宏
+#ifndef SORT_API
+#define SORT_API
 #endif
-
-#if IS_SORT_API
-#define SORT_API DLLEXPORT
-#else
-#define SORT_API DLLIMPORT
-#endif 

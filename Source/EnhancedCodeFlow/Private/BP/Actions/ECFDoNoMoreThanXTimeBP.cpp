@@ -20,15 +20,14 @@ UECFDoNoMoreThanXTimeBP* UECFDoNoMoreThanXTimeBP::ECFDoNoMoreThanXTime(const UOb
 
 		Proxy->Proxy_Handle = FFlow::DoNoMoreThanXTime(WorldContextObject, [Proxy]()
 		{
-			// Because the action will be executed on first call, check if the async action has been activated.
-			// Not activated actions don't have bindings to delegates! 
-			// Enqueue the OnExecute broadcast for the activation.
+			// 因为动作将在第一次调用时执行，检查异步动作是否已激活
+			// 未激活的动作没有委托绑定！
+			// 为激活排队 OnExecute 广播
 			if (IsProxyValid(Proxy))
 			{
 				if (Proxy->bActivated)
 				{
 					Proxy->OnExecute.Broadcast();
-					//Proxy->ClearAsyncBPAction();原版会导致仅执行一次
 				}
 				else
 				{
@@ -46,12 +45,11 @@ void UECFDoNoMoreThanXTimeBP::Activate()
 {
 	Super::Activate();
 
-	// Broadcast OnExecute event if it was enqueued.
+	// 如果已排队，则广播 OnExecute 事件
 	if (bExecuteOnActivation)
 	{
 		bExecuteOnActivation = false;
 		OnExecute.Broadcast();
-		//ClearAsyncBPAction();原版会导致仅执行一次
 	}
 }
 
