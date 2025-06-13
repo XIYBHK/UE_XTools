@@ -448,18 +448,18 @@ bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, int32& OutFa
 {
     // 边界检查和参数规范化
     const float P = FMath::Clamp(BaseChance, 0.f, 1.f);
-    FailureCount = FMath::Max(FailureCount, 0);
+    FailureCount = FMath::Max(FailureCount, 1);
 
     // 特殊情况处理
     if (P <= 0.f)
     {
-        OutFailureCount = 0;
+        OutFailureCount = 1;
         OutActualChance = 0.f;
         return false;
     }
     if (P >= 1.f)
     {
-        OutFailureCount = 0;
+        OutFailureCount = 1;
         OutActualChance = 1.f;
         return true;
     }
@@ -467,17 +467,16 @@ bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, int32& OutFa
     // 获取DOTA2 PRD常数C
     const float C = RandomShuffles::GetPRDConstant(P);
     
-    // 计算当前实际触发概率 = (失败次数 + 1) * PRD常数C
-    // +1 是因为在DOTA2的原始公式中，N是从1开始的第一次尝试
-    OutActualChance = FMath::Min(static_cast<float>(FailureCount + 1) * C, 1.f);
+    // 计算当前实际触发概率 = 失败次数 * PRD常数C
+    OutActualChance = FMath::Min(static_cast<float>(FailureCount) * C, 1.f);
     
     // 生成随机数并判断是否触发
     const bool bSuccess = FMath::FRand() < OutActualChance;
 
     // 更新失败次数
-    // 成功：重置为0
+    // 成功：重置为1
     // 失败：累加1
-    OutFailureCount = bSuccess ? 0 : FailureCount + 1;
+    OutFailureCount = bSuccess ? 1 : FailureCount + 1;
 
     return bSuccess;
 }
@@ -486,18 +485,18 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(float BaseChance, in
 {
     // 边界检查和参数规范化
     const float P = FMath::Clamp(BaseChance, 0.f, 1.f);
-    FailureCount = FMath::Max(FailureCount, 0);
+    FailureCount = FMath::Max(FailureCount, 1);
 
     // 特殊情况处理
     if (P <= 0.f)
     {
-        OutFailureCount = 0;
+        OutFailureCount = 1;
         OutActualChance = 0.f;
         return false;
     }
     if (P >= 1.f)
     {
-        OutFailureCount = 0;
+        OutFailureCount = 1;
         OutActualChance = 1.f;
         return true;
     }
@@ -505,17 +504,16 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(float BaseChance, in
     // 获取DOTA2 PRD常数C
     const float C = RandomShuffles::GetPRDConstant(P);
     
-    // 计算当前实际触发概率 = (失败次数 + 1) * PRD常数C
-    // +1 是因为在DOTA2的原始公式中，N是从1开始的第一次尝试
-    OutActualChance = FMath::Min(static_cast<float>(FailureCount + 1) * C, 1.f);
+    // 计算当前实际触发概率 = 失败次数 * PRD常数C
+    OutActualChance = FMath::Min(static_cast<float>(FailureCount) * C, 1.f);
     
     // 生成随机数并判断是否触发
     const bool bSuccess = Stream.FRand() < OutActualChance;
 
     // 更新失败次数
-    // 成功：重置为0
+    // 成功：重置为1
     // 失败：累加1
-    OutFailureCount = bSuccess ? 0 : FailureCount + 1;
+    OutFailureCount = bSuccess ? 1 : FailureCount + 1;
 
     return bSuccess;
 }

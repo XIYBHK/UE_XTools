@@ -1,45 +1,47 @@
 // Copyright 1998-2023 Epic Games, Inc. All Rights Reserved.
 
 #include "X_AssetEditor.h"
-#include "MaterialTools/X_MaterialFunctionParamDialog.h"
-#include "MaterialTools/X_MaterialFunctionManager.h"
-#include "MaterialTools/X_MaterialFunctionParams.h"
-#include "MaterialTools/X_MaterialFunctionOperation.h"
 
 // 核心头文件
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
-#include "IAssetTools.h"
-#include "AssetToolsModule.h"
-#include "ContentBrowserModule.h"
-#include "IContentBrowserSingleton.h"
-#include "LevelEditor.h"
+#include "AssetRegistry/AssetData.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "AssetToolsModule.h"
+#include "EditorUtilityLibrary.h"
+#include "ToolMenus.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
-#include "Styling/AppStyle.h"
-#include "ToolMenus.h"
-#include "ISettingsModule.h"
 #include "Misc/MessageDialog.h"
+#include "UObject/UObjectGlobals.h"
+#include "UObject/Class.h"
+#include "UObject/Package.h"
 
 // 材质工具相关
+#include "MaterialTools/X_MaterialFunctionManager.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
 #include "MaterialTools/X_MaterialToolsSettings.h"
+#include "MaterialTools/X_MaterialFunctionParamDialog.h"
+#include "MaterialTools/X_MaterialFunctionParams.h"
 
-// 资产相关
-#include "EditorUtilityLibrary.h"
-#include "ISettingsContainer.h"
+// 编辑器相关
+#include "IContentBrowserSingleton.h"
+#include "ISettingsModule.h"
 #include "ISettingsSection.h"
-#include "AssetRegistry/AssetRegistryModule.h"
+#include "Developer/Settings/Public/ISettingsContainer.h"
+#include "LevelEditor.h"
+
+// 材质系统
 #include "Materials/Material.h"
+#include "Materials/MaterialInstance.h"
 #include "Materials/MaterialFunction.h"
-#include "Materials/MaterialInstanceConstant.h"
+#include "Materials/MaterialExpressionMaterialFunctionCall.h"
+
+// 网格体相关
+#include "ContentBrowserModule.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/MeshComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "GameFramework/Actor.h"
 
 // 移除所有游戏框架和资产类型相关的头文件
     // 移除 GameFramework, Components, Animation, Blueprint, Materials 等相关头文件
@@ -349,7 +351,6 @@ void FX_AssetEditorModule::RenameSelectedAssets()
 	TArray<FAssetData> SelectedAssets = UEditorUtilityLibrary::GetSelectedAssetData();
 	if (SelectedAssets.Num() == 0)
 	{
-		UE_LOG(LogX_AssetEditor, Warning, TEXT("未选中任何资产，无法执行重命名操作"));
 		return;
 	}
 
@@ -371,47 +372,11 @@ void FX_AssetEditorModule::RenameSelectedAssets()
 	
 	// 获取前缀映射
 	const TMap<FString, FString>& AssetPrefixes = GetAssetPrefixes();
-	
-	UE_LOG(LogX_AssetEditor, Log, TEXT("开始处理%d个资产的命名规范化"), SelectedAssets.Num());
-	
-	// 添加进度条，改善大量资产处理时的用户体验
-	FScopedSlowTask SlowTask(
-		SelectedAssets.Num(),
-		FText::Format(LOCTEXT("NormalizingAssetNames", "正在规范化 {0} 个资产的命名..."), FText::AsNumber(SelectedAssets.Num()))
-	);
-	SlowTask.MakeDialog(true); // true表示允许取消
 
 	for (const FAssetData& AssetData : SelectedAssets)
 	{
-		// 更新进度条
-		SlowTask.EnterProgressFrame(1.0f);
-		
-		// 检查用户是否取消了操作
-		if (SlowTask.ShouldCancel())
-		{
-			UE_LOG(LogX_AssetEditor, Warning, TEXT("用户取消了命名规范化操作"));
-			break;
-		}
-
-		// 添加异常处理
-		if (!AssetData.IsValid())
-		{
-			UE_LOG(LogX_AssetEditor, Warning, TEXT("发现无效的资产数据，已跳过"));
-			FailedCount++;
-			continue;
-		}
-
 		FString CurrentName = AssetData.AssetName.ToString();
 		FString PackagePath = FPackageName::GetLongPackagePath(AssetData.PackageName.ToString());
-		
-		// 添加路径验证
-		if (PackagePath.IsEmpty())
-		{
-			UE_LOG(LogX_AssetEditor, Warning, TEXT("资产'%s'的包路径无效"), *CurrentName);
-			FailedCount++;
-			continue;
-		}
-		
 		FString SimpleClassName = GetSimpleClassName(AssetData);
 		
 		// 记录到操作详情 - 保留关键信息
@@ -448,12 +413,7 @@ void FX_AssetEditorModule::RenameSelectedAssets()
 			}
 		}
 
-		// 优化字符串操作，减少内存分配
-		FString NewName;
-		NewName.Reserve(CorrectPrefix.Len() + BaseName.Len());
-		NewName.Append(CorrectPrefix);
-		NewName.Append(BaseName);
-		
+		FString NewName = CorrectPrefix + BaseName;
 		FString FinalNewName = NewName;
 		int32 SuffixCounter = 1;
 
@@ -485,15 +445,8 @@ void FX_AssetEditorModule::RenameSelectedAssets()
 			}
 			else
 			{
-				LastOperationDetails.Append(FString::Printf(TEXT("  无法加载资产: %s\n"), *CurrentName));
-				FailedCount++;
+
 			}
-		}
-		else
-		{
-			// 名称未改变，跳过
-			LastOperationDetails.Append(TEXT("  名称未改变，跳过\n"));
-			SkippedCount++;
 		}
 	}
 
@@ -746,37 +699,28 @@ TSharedRef<FExtender> FX_AssetEditorModule::OnExtendContentBrowserAssetSelection
 	// 只有当选中了资产时才添加菜单项
 	if (SelectedAssets.Num() > 0)
 	{
-		// 为所有资产添加"资产规范命名"菜单
-		Extender->AddMenuExtension(
-			"GetAssetActions",
-			EExtensionHook::After,
-			nullptr,
-			FMenuExtensionDelegate::CreateRaw(this, &FX_AssetEditorModule::AddAssetNamingMenuEntry, SelectedAssets)
-		);
-
-		// 检查是否有可能包含材质的资产
+		// 检查是否有材质相关资产
 		bool bHasMaterialAssets = false;
 		for (const FAssetData& Asset : SelectedAssets)
 		{
 			const FString AssetClassName = Asset.AssetClassPath.GetAssetName().ToString();
 			if (AssetClassName.Contains(TEXT("Material")) || 
 				AssetClassName == TEXT("StaticMesh") || 
-				AssetClassName == TEXT("SkeletalMesh") ||
-				AssetClassName.Contains(TEXT("Blueprint")))
+				AssetClassName == TEXT("SkeletalMesh"))
 			{
 				bHasMaterialAssets = true;
 				break;
 			}
 		}
 
-		// 如果有可能包含材质的资产，添加材质工具菜单
+		// 如果有材质相关资产，添加材质工具菜单
 		if (bHasMaterialAssets)
 		{
 			Extender->AddMenuExtension(
 				"GetAssetActions",
 				EExtensionHook::After,
 				nullptr,
-				FMenuExtensionDelegate::CreateRaw(this, &FX_AssetEditorModule::AddMaterialFunctionMenuEntry, SelectedAssets)
+				FMenuExtensionDelegate::CreateRaw(this, &FX_AssetEditorModule::AddMaterialMenuEntry, SelectedAssets)
 			);
 		}
 	}
@@ -784,10 +728,9 @@ TSharedRef<FExtender> FX_AssetEditorModule::OnExtendContentBrowserAssetSelection
 	return Extender;
 }
 
-// 添加资产命名菜单项
-void FX_AssetEditorModule::AddAssetNamingMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets)
+void FX_AssetEditorModule::AddMaterialMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets)
 {
-	MenuBuilder.BeginSection("AssetNaming", LOCTEXT("AssetNaming", "资产命名"));
+	MenuBuilder.BeginSection("MaterialTools", LOCTEXT("MaterialTools", "资产工具"));
 	{
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("RenameAssetMenuAction", "资产规范命名"),
@@ -795,15 +738,7 @@ void FX_AssetEditorModule::AddAssetNamingMenuEntry(FMenuBuilder& MenuBuilder, TA
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericEditor.Rename"),
 			FUIAction(FExecuteAction::CreateStatic(&FX_AssetEditorModule::RenameSelectedAssets))
 		);
-	}
-	MenuBuilder.EndSection();
-}
 
-// 添加材质函数菜单项
-void FX_AssetEditorModule::AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets)
-{
-	MenuBuilder.BeginSection("MaterialTools", LOCTEXT("MaterialTools", "材质工具"));
-	{
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("AddFresnelToAssets", "添加菲涅尔函数"),
 			LOCTEXT("AddFresnelToAssetsTooltip", "向所选资产的材质添加菲涅尔函数"),
@@ -930,57 +865,19 @@ void FX_AssetEditorModule::ShowMaterialFunctionPicker(
                 return;
             }
 
+            if (bIsActor)
+            {
+                ProcessActorMaterialFunction(SelectedActors, Cast<UMaterialFunction>(AssetData.GetAsset()));
+            }
+            else
+            {
+                ProcessAssetMaterialFunction(SelectedAssets, Cast<UMaterialFunction>(AssetData.GetAsset()));
+            }
+
             // 关闭资产选择器窗口
             if (PickerWindow.IsValid())
             {
                 PickerWindow->RequestDestroyWindow();
-            }
-            
-            // 创建参数结构体
-            FX_MaterialFunctionParams Params;
-            
-            // 根据材质函数名称自动设置连接选项
-            Params.SetupConnectionsByFunctionName(MaterialFunction->GetName());
-            
-            // 根据材质函数的输入输出引脚情况设置智能连接选项
-            int32 InputCount = 0;
-            int32 OutputCount = 0;
-            FX_MaterialFunctionOperation::GetFunctionInputOutputCount(MaterialFunction, InputCount, OutputCount);
-            
-            // 只有同时具有输入和输出引脚的材质函数才默认启用智能连接
-            // 只有输出引脚的材质函数默认禁用智能连接
-            Params.bEnableSmartConnect = (InputCount > 0 && OutputCount > 0);
-            
-            UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数 %s: 输入引脚=%d, 输出引脚=%d, 智能连接=%s"), 
-                *MaterialFunction->GetName(), InputCount, OutputCount, 
-                Params.bEnableSmartConnect ? TEXT("启用") : TEXT("禁用"));
-            
-            // 创建结构体包装器
-            TSharedRef<FStructOnScope> StructOnScope = MakeShared<FStructOnScope>(FX_MaterialFunctionParams::StaticStruct(), (uint8*)&Params);
-            
-            // 显示参数对话框
-            FText DialogTitle = FText::Format(
-                LOCTEXT("ConfigureMaterialFunction", "配置材质函数: {0}"),
-                FText::FromString(MaterialFunction->GetName())
-            );
-            
-            bool bOKPressed = SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope);
-            
-            if (bOKPressed)
-            {
-                // 用户点击了确定按钮，处理材质函数
-                if (bIsActor)
-                {
-                    // 处理Actor材质函数
-                    FX_MaterialFunctionOperation::ProcessActorMaterialFunction(
-                        SelectedActors, MaterialFunction, FName(*Params.NodeName), MakeShared<FX_MaterialFunctionParams>(Params));
-                }
-                else
-                {
-                    // 处理资产材质函数
-                    FX_MaterialFunctionOperation::ProcessAssetMaterialFunction(
-                        SelectedAssets, MaterialFunction, FName(*Params.NodeName), MakeShared<FX_MaterialFunctionParams>(Params));
-                }
             }
         });
 
@@ -997,57 +894,19 @@ void FX_AssetEditorModule::ShowMaterialFunctionPicker(
                 return;
             }
 
+            if (bIsActor)
+            {
+                ProcessActorMaterialFunction(SelectedActors, Cast<UMaterialFunction>(AssetData.GetAsset()));
+            }
+            else
+            {
+                ProcessAssetMaterialFunction(SelectedAssets, Cast<UMaterialFunction>(AssetData.GetAsset()));
+            }
+
             // 关闭资产选择器窗口
             if (PickerWindow.IsValid())
             {
                 PickerWindow->RequestDestroyWindow();
-            }
-            
-            // 创建参数结构体
-            FX_MaterialFunctionParams Params;
-            
-            // 根据材质函数名称自动设置连接选项
-            Params.SetupConnectionsByFunctionName(MaterialFunction->GetName());
-            
-            // 根据材质函数的输入输出引脚情况设置智能连接选项
-            int32 InputCount = 0;
-            int32 OutputCount = 0;
-            FX_MaterialFunctionOperation::GetFunctionInputOutputCount(MaterialFunction, InputCount, OutputCount);
-            
-            // 只有同时具有输入和输出引脚的材质函数才默认启用智能连接
-            // 只有输出引脚的材质函数默认禁用智能连接
-            Params.bEnableSmartConnect = (InputCount > 0 && OutputCount > 0);
-            
-            UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数 %s: 输入引脚=%d, 输出引脚=%d, 智能连接=%s"), 
-                *MaterialFunction->GetName(), InputCount, OutputCount, 
-                Params.bEnableSmartConnect ? TEXT("启用") : TEXT("禁用"));
-            
-            // 创建结构体包装器
-            TSharedRef<FStructOnScope> StructOnScope = MakeShared<FStructOnScope>(FX_MaterialFunctionParams::StaticStruct(), (uint8*)&Params);
-            
-            // 显示参数对话框
-            FText DialogTitle = FText::Format(
-                LOCTEXT("ConfigureMaterialFunction", "配置材质函数: {0}"),
-                FText::FromString(MaterialFunction->GetName())
-            );
-            
-            bool bOKPressed = SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope);
-            
-            if (bOKPressed)
-            {
-                // 用户点击了确定按钮，处理材质函数
-                if (bIsActor)
-                {
-                    // 处理Actor材质函数
-                    FX_MaterialFunctionOperation::ProcessActorMaterialFunction(
-                        SelectedActors, MaterialFunction, FName(*Params.NodeName), MakeShared<FX_MaterialFunctionParams>(Params));
-                }
-                else
-                {
-                    // 处理资产材质函数
-                    FX_MaterialFunctionOperation::ProcessAssetMaterialFunction(
-                        SelectedAssets, MaterialFunction, FName(*Params.NodeName), MakeShared<FX_MaterialFunctionParams>(Params));
-                }
             }
         });
 
@@ -1075,36 +934,199 @@ void FX_AssetEditorModule::ShowMaterialFunctionPicker(
 
 	// 记录到日志
 	UE_LOG(LogX_AssetEditor, Log, TEXT("打开材质函数选择器，%s模式，选中了 %d 个项目"), bIsActor ? TEXT("Actor") : TEXT("Asset"), (bIsActor ? SelectedActors.Num() : SelectedAssets.Num()));
+
 }
 
 void FX_AssetEditorModule::ProcessAssetMaterialFunction(
 	const TArray<FAssetData>& SelectedAssets,
 	UMaterialFunctionInterface* MaterialFunction)
 {
-	// 委托给FX_MaterialFunctionOperation处理
-	FX_MaterialFunctionOperation::ProcessAssetMaterialFunction(SelectedAssets, MaterialFunction, NAME_None);
+    if (!MaterialFunction)
+    {
+        return;
+    }
+    
+    // 创建材质函数参数结构体
+    FX_MaterialFunctionParams FunctionParams;
+    FunctionParams.SetupConnectionsByFunctionName(MaterialFunction->GetName());
+    
+    // 根据材质函数的输入输出引脚情况设置智能连接选项
+    int32 InputCount = 0;
+    int32 OutputCount = 0;
+    FX_MaterialFunctionOperation::GetFunctionInputOutputCount(MaterialFunction, InputCount, OutputCount);
+    
+    // 只有同时具有输入和输出引脚的材质函数才默认启用智能连接
+    // 只有输出引脚的材质函数默认禁用智能连接
+    FunctionParams.bEnableSmartConnect = (InputCount > 0 && OutputCount > 0);
+    
+    UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数 %s: 输入引脚=%d, 输出引脚=%d, 智能连接=%s"), 
+        *MaterialFunction->GetName(), InputCount, OutputCount, 
+        FunctionParams.bEnableSmartConnect ? TEXT("启用") : TEXT("禁用"));
+    
+    // 创建结构体包装器
+    TSharedRef<FStructOnScope> StructOnScope = MakeShared<FStructOnScope>(FX_MaterialFunctionParams::StaticStruct(), (uint8*)&FunctionParams);
+    
+    // 显示参数对话框
+    FText DialogTitle = FText::Format(LOCTEXT("MaterialFunctionParamTitle", "配置材质函数: {0}"), FText::FromString(MaterialFunction->GetName()));
+    bool bOKPressed = SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope);
+    
+    // 如果用户取消了操作，直接返回
+    if (!bOKPressed)
+    {
+        return;
+    }
+    
+    // 创建进度条
+    FScopedSlowTask SlowTask(
+        SelectedAssets.Num(),
+        LOCTEXT("ProcessingMaterials", "正在处理材质...")
+    );
+    SlowTask.MakeDialog();
+    
+    // 收集所有源对象
+    TArray<UObject*> SourceObjects;
+    for (const FAssetData& AssetData : SelectedAssets)
+    {
+        SlowTask.EnterProgressFrame(1.0f);
+        if (UObject* Asset = AssetData.GetAsset())
+        {
+            SourceObjects.Add(Asset);
+        }
+    }
+    
+    // 使用统一处理逻辑添加材质函数
+    FMaterialProcessResult Result = FX_MaterialFunctionManager::AddFunctionToMultipleMaterials(
+        SourceObjects, 
+        MaterialFunction, 
+        FName(*FunctionParams.NodeName), 
+        FunctionParams.PosX, 
+        FunctionParams.PosY,
+        FunctionParams.bSetupConnections,
+        &FunctionParams);
+    
+    // 显示结果通知
+    FText ResultMessage;
+    if (Result.SuccessCount > 0)
+    {
+        ResultMessage = FText::Format(
+            LOCTEXT("AddMaterialFunctionSuccess", "添加材质函数结果\n找到材质: {0}\n成功: {1}\n已有函数: {2}\n失败: {3}"),
+            FText::AsNumber(Result.TotalMaterials),
+            FText::AsNumber(Result.SuccessCount),
+            FText::AsNumber(Result.AlreadyHasFunctionCount),
+            FText::AsNumber(Result.FailedCount));
+    }
+    else
+    {
+        ResultMessage = FText::Format(
+            LOCTEXT("AddMaterialFunctionFailed", "添加材质函数失败\n源对象: {0}\n找到材质: {1}\n失败: {2}"),
+            FText::AsNumber(Result.TotalSourceObjects),
+            FText::AsNumber(Result.TotalMaterials),
+            FText::AsNumber(Result.FailedCount));
+    }
+    
+    FNotificationInfo InfoResult(ResultMessage);
+    InfoResult.ExpireDuration = 5.0f;
+    InfoResult.bUseLargeFont = true;
+    InfoResult.bUseSuccessFailIcons = true;
+    FSlateNotificationManager::Get().AddNotification(InfoResult);
 }
 
 void FX_AssetEditorModule::ProcessActorMaterialFunction(
-	const TArray<AActor*>& SelectedActors,
-	UMaterialFunctionInterface* MaterialFunction)
+    const TArray<AActor*>& SelectedActors,
+    UMaterialFunctionInterface* MaterialFunction)
 {
-	// 委托给FX_MaterialFunctionOperation处理
-	FX_MaterialFunctionOperation::ProcessActorMaterialFunction(SelectedActors, MaterialFunction, NAME_None);
+    if (!MaterialFunction)
+    {
+        return;
+    }
+    
+    // 创建材质函数参数结构体
+    FX_MaterialFunctionParams FunctionParams;
+    FunctionParams.SetupConnectionsByFunctionName(MaterialFunction->GetName());
+    
+    // 根据材质函数的输入输出引脚情况设置智能连接选项
+    int32 InputCount = 0;
+    int32 OutputCount = 0;
+    FX_MaterialFunctionOperation::GetFunctionInputOutputCount(MaterialFunction, InputCount, OutputCount);
+    
+    // 只有同时具有输入和输出引脚的材质函数才默认启用智能连接
+    // 只有输出引脚的材质函数默认禁用智能连接
+    FunctionParams.bEnableSmartConnect = (InputCount > 0 && OutputCount > 0);
+    
+    UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数 %s: 输入引脚=%d, 输出引脚=%d, 智能连接=%s"), 
+        *MaterialFunction->GetName(), InputCount, OutputCount, 
+        FunctionParams.bEnableSmartConnect ? TEXT("启用") : TEXT("禁用"));
+    
+    // 创建结构体包装器
+    TSharedRef<FStructOnScope> StructOnScope = MakeShared<FStructOnScope>(FX_MaterialFunctionParams::StaticStruct(), (uint8*)&FunctionParams);
+    
+    // 显示参数对话框
+    FText DialogTitle = FText::Format(LOCTEXT("MaterialFunctionParamTitle", "配置材质函数: {0}"), FText::FromString(MaterialFunction->GetName()));
+    bool bOKPressed = SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope);
+    
+    // 如果用户取消了操作，直接返回
+    if (!bOKPressed)
+    {
+        return;
+    }
+    
+    // 显示处理中的通知
+    FNotificationInfo InfoProcessing(LOCTEXT("ProcessingActorMaterials", "正在处理Actor材质..."));
+    InfoProcessing.ExpireDuration = 2.0f;
+    InfoProcessing.bFireAndForget = false;
+    InfoProcessing.bUseSuccessFailIcons = false;
+    InfoProcessing.bUseThrobber = true;
+    auto NotificationItem = FSlateNotificationManager::Get().AddNotification(InfoProcessing);
+    
+    // 收集所有源对象
+    TArray<UObject*> SourceObjects;
+    for (AActor* Actor : SelectedActors)
+    {
+        if (Actor)
+        {
+            SourceObjects.Add(Actor);
+        }
+    }
+				
+    // 使用统一处理逻辑添加材质函数
+    FMaterialProcessResult Result = FX_MaterialFunctionManager::AddFunctionToMultipleMaterials(
+        SourceObjects, 
+        MaterialFunction, 
+        FName(*FunctionParams.NodeName), 
+        FunctionParams.PosX, 
+        FunctionParams.PosY,
+        FunctionParams.bSetupConnections,
+        &FunctionParams);
+    
+    // 显示结果通知
+    FText ResultMessage;
+    if (Result.SuccessCount > 0)
+    {
+        ResultMessage = FText::Format(
+            LOCTEXT("AddMaterialFunctionSuccess", "添加材质函数结果\n找到材质: {0}\n成功: {1}\n已有函数: {2}\n失败: {3}"),
+            FText::AsNumber(Result.TotalMaterials),
+            FText::AsNumber(Result.SuccessCount),
+            FText::AsNumber(Result.AlreadyHasFunctionCount),
+            FText::AsNumber(Result.FailedCount));
+    }
+    else
+    {
+        ResultMessage = FText::Format(
+            LOCTEXT("AddMaterialFunctionFailed", "添加材质函数失败\n源对象: {0}\n找到材质: {1}\n失败: {2}"),
+            FText::AsNumber(Result.TotalSourceObjects),
+            FText::AsNumber(Result.TotalMaterials),
+            FText::AsNumber(Result.FailedCount));
+    }
+    
+    FNotificationInfo InfoResult(ResultMessage);
+    InfoResult.ExpireDuration = 5.0f;
+    InfoResult.bUseLargeFont = true;
+    InfoResult.bUseSuccessFailIcons = true;
+    FSlateNotificationManager::Get().AddNotification(InfoResult);
 }
 
 void FX_AssetEditorModule::AddFresnelToAssets(TArray<FAssetData> SelectedAssets)
 {
-    // 检查是否有选中的资产
-    if (SelectedAssets.Num() == 0)
-    {
-        FNotificationInfo Info(LOCTEXT("NoAssetsSelected", "请先选择资产"));
-        Info.ExpireDuration = 3.0f;
-        Info.bUseLargeFont = true;
-        FSlateNotificationManager::Get().AddNotification(Info);
-        return;
-    }
-
     // 显示处理中的通知
     FNotificationInfo InfoProcessing(LOCTEXT("AddFresnelProcessing", "正在添加菲涅尔函数..."));
     InfoProcessing.ExpireDuration = 2.0f;
@@ -1135,11 +1157,7 @@ void FX_AssetEditorModule::AddFresnelToAssets(TArray<FAssetData> SelectedAssets)
     
     // 显示结果通知
     FText ResultMessage;
-    if (Result.TotalMaterials == 0)
-    {
-        ResultMessage = LOCTEXT("NoMaterialsFound", "选中的资产中未找到任何材质。\n请选择包含材质的资产，如材质、网格体或蓝图。");
-    }
-    else if (Result.SuccessCount > 0)
+    if (Result.SuccessCount > 0)
     {
         ResultMessage = FText::Format(
             LOCTEXT("AddFresnelSuccess", "添加菲涅尔函数结果\n找到材质: {0}\n成功: {1}\n已有函数: {2}\n失败: {3}"),
@@ -1170,29 +1188,25 @@ bool FX_AssetEditorModule::ValidateAssetPath(const FString& AssetPath)
 	return !AssetPath.IsEmpty();
 }
 
+
+
 void FX_AssetEditorModule::OnAddMaterialFunctionToAsset(TArray<FAssetData> SelectedAssets)
 {
 	// 检查是否有选中的资产
 	if (SelectedAssets.Num() == 0)
 	{
-		FNotificationInfo Info(LOCTEXT("NoAssetsSelected", "请先选择资产"));
+		FNotificationInfo Info(LOCTEXT("NoAssetsSelected", "请先选择材质资产"));
 		Info.ExpireDuration = 3.0f;
 		Info.bUseLargeFont = true;
 		FSlateNotificationManager::Get().AddNotification(Info);
 		return;
 	}
-
+	
 	// 显示材质函数选择器
 	ShowMaterialFunctionPicker(SelectedAssets, TArray<AActor*>(), false);
 	
 	// 记录到日志
 	UE_LOG(LogX_AssetEditor, Log, TEXT("用户尝试添加材质函数，选中了 %d 个资产"), SelectedAssets.Num());
-
-	// 添加友好提示
-	FNotificationInfo Info(LOCTEXT("MaterialFunctionInfo", "如果选中的资产不包含材质，将不会有任何效果。\n请确保选择了包含材质的资产，如材质、网格体或蓝图。"));
-	Info.ExpireDuration = 5.0f;
-	Info.bUseLargeFont = false;
-	FSlateNotificationManager::Get().AddNotification(Info);
 }
 
 void FX_AssetEditorModule::OnAddMaterialFunctionToActor(TArray<AActor*> SelectedActors)

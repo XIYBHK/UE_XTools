@@ -46,26 +46,22 @@ public:
      * @param SelectedAssets - 选中的资产
      * @param MaterialFunction - 要应用的材质函数
      * @param TargetNode - 目标节点名称
-     * @param Params - 材质函数参数
      */
     static void ProcessAssetMaterialFunction(
         const TArray<FAssetData>& SelectedAssets,
         UMaterialFunctionInterface* MaterialFunction,
-        const FName& TargetNode,
-        const TSharedPtr<FX_MaterialFunctionParams>& Params = nullptr);
+        const FName& TargetNode);
 
     /**
      * 处理Actor上的材质函数应用
      * @param SelectedActors - 选中的Actor
      * @param MaterialFunction - 要应用的材质函数
      * @param TargetNode - 目标节点名称
-     * @param Params - 材质函数参数
      */
     static void ProcessActorMaterialFunction(
         const TArray<AActor*>& SelectedActors,
         UMaterialFunctionInterface* MaterialFunction,
-        const FName& TargetNode,
-        const TSharedPtr<FX_MaterialFunctionParams>& Params = nullptr);
+        const FName& TargetNode);
 
     /**
      * 从资产收集材质
@@ -107,10 +103,8 @@ public:
      * @param Material - 材质
      * @param MaterialFunction - 材质函数
      * @param TargetNode - 目标节点名称
-     * @param UserParams - 用户参数
-     * @return 创建的函数调用表达式
      */
-    static UMaterialExpressionMaterialFunctionCall* AddMaterialFunctionToMaterial(
+    static void AddMaterialFunctionToMaterial(
         UMaterial* Material,
         UMaterialFunctionInterface* MaterialFunction,
         const FName& TargetNode,

@@ -84,23 +84,22 @@ class XTOOLS_API UXToolsLibrary : public UBlueprintFunctionLibrary
 
 public:
     /** 
-     * 从组件开始，在Actor附加层级中查找最顶层的匹配父Actor
-     * @param StartComponent 要开始查找的起始组件。
-     * @param ActorClass 要查找的Actor类 (可选)。
-     * @param ActorTag 要匹配的Actor标签 (可选)。
-     * @return 找到的最顶层的匹配父Actor，如果未找到则返回nullptr。
-     * @note 该函数会从一个组件开始，沿着它的组件附加层级(GetAttachParent)一路向上查找，
-     *       并检查每个组件所属的Actor，返回最后一个（即最顶层的）符合所有指定条件的父Actor。
+     * 按类查找父Actor
+     * @param Component 要开始查找的起始组件，通常是一个场景组件（SceneComponent）
+     * @param ActorClass 要查找的Actor类，必须是AActor的子类
+     * @param ActorTag 要匹配的父Actor标签，为空时返回最高级父级
+     * @return 找到的父Actor，如果未找到则返回nullptr
+     * @note 该函数会沿着组件的父子层级向上查找，直到找到匹配指定类和标签的父Actor
+     * @example 
+     * // 查找标签为"MainCharacter"的父级Character
+     * ACharacter* ParentCharacter = Cast<ACharacter>(
+     *     UXToolsLibrary::FindParentComponentByClass(MyComponent, ACharacter::StaticClass(), "MainCharacter"));
      */
-    UFUNCTION(BlueprintCallable, Category = "XTools|Actors", 
-        meta = (DisplayName = "获取附加的Actor最高级", 
+    UFUNCTION(BlueprintCallable, Category = "XTools|Components", 
+        meta = (DisplayName = "按类查找父组件", 
                DeterminesOutputType = "ActorClass",
-               ToolTip = "从一个组件开始, 沿其父级链向上查找, 并返回最顶层的匹配父Actor. 注: 采用'从下至上'查找, 因其仅需一次遍历即可确定层级并找到最高匹配项, 是最高效的方式."))
-    static AActor* GetTopmostAttachedActor(
-        USceneComponent* StartComponent,
-        TSubclassOf<AActor> ActorClass,
-        FName ActorTag
-    );
+               ToolTip = "从SceneComponent开始，沿组件层级向上查找父Actor。\n规则：\n1. 同时指定类和标签时，返回第一个同时匹配的父级\n2. 只指定类时，返回最高级匹配的父级\n3. 只指定标签时，返回第一个匹配的父级\n4. 都未指定时，返回最顶层的父级\nComponent: 起始查找的SceneComponent\nActorClass: 要查找的Actor类\nActorTag: 要匹配的父Actor标签（可选）\n返回: 找到的父Actor，如果未找到则返回nullptr"))
+    static AActor* FindParentComponentByClass(UActorComponent* Component, TSubclassOf<AActor> ActorClass, const FString& ActorTag = TEXT(""));
 
     /**
      * 计算贝塞尔曲线上的点
@@ -152,14 +151,13 @@ public:
      * @param bDrawOnlySuccessfulHits 调试绘制时是否只显示成功命中的点。
      * @param bEnableBoundsCulling [优化] 是否启用模型包围盒剔除，可大幅提升大范围采样时的性能。
      * @param DebugDrawDuration 调试绘制持续时间。
-     * @param bUseComplexCollision 是否使用复杂碰撞（逐多边形），关闭可在有简单碰撞体时提升性能。
      * @param OutPoints [输出] 所有符合条件的点的世界坐标数组。
      * @param bSuccess [输出] 操作是否成功。
      */
     UFUNCTION(BlueprintCallable, Category="XTools|几何", meta=(
         DisplayName = "在模型中生成点阵",
         WorldContext="WorldContextObject",
-        AdvancedDisplay="Noise,TraceRadius,bEnableDebugDraw,bDrawOnlySuccessfulHits,bEnableBoundsCulling,DebugDrawDuration,bUseComplexCollision",
+        AdvancedDisplay="Noise,TraceRadius,bEnableDebugDraw,bDrawOnlySuccessfulHits,bEnableBoundsCulling,DebugDrawDuration",
         GridSpacing="10.0",
         Noise="0.0",
         TraceRadius="5.0",
@@ -167,7 +165,7 @@ public:
         bDrawOnlySuccessfulHits="true",
         bEnableBoundsCulling="true",
         DebugDrawDuration="5.0",
-        ToolTip="根据选择的采样模式，在目标Actor的碰撞体内生成点阵。\n\n@param TargetActor 要采样的目标Actor。\n@param BoundingBox 用于定义采样区域的Box组件。\n@param Method 采样模式：表面邻近度 或 实体填充(待实现)。\n@param GridSpacing 生成点阵的间距。\n@param Noise 每个采样点在各个轴上的最大随机偏移量，用于打破网格的规律性。\n@param TraceRadius [表面邻近度模式] 检测球体的半径。\n@param bUseComplexCollision 是否使用复杂碰撞（逐多边形），关闭可在有简单碰撞体时提升性能。\n@param bEnableDebugDraw 是否启用调试绘制。\n@param bDrawOnlySuccessfulHits 调试绘制时是否只显示成功命中的点。\n@param bEnableBoundsCulling [优化] 是否启用模型包围盒剔除，可大幅提升大范围采样时的性能。\n@param DebugDrawDuration 调试绘制持续时间。\n@param OutPoints [输出] 所有符合条件的点的世界坐标数组。\n@param bSuccess [输出] 操作是否成功。"))
+        ToolTip="根据选择的采样模式，在目标Actor的碰撞体内生成点阵。\n\n@param TargetActor 要采样的目标Actor。\n@param BoundingBox 用于定义采样区域的Box组件。\n@param Method 采样模式：表面邻近度 或 实体填充(待实现)。\n@param GridSpacing 生成点阵的间距。\n@param Noise 每个采样点在各个轴上的最大随机偏移量，用于打破网格的规律性。\n@param TraceRadius [表面邻近度模式] 检测球体的半径。\n@param bEnableDebugDraw 是否启用调试绘制。\n@param bDrawOnlySuccessfulHits 调试绘制时是否只显示成功命中的点。\n@param bEnableBoundsCulling [优化] 是否启用模型包围盒剔除，可大幅提升大范围采样时的性能。\n@param DebugDrawDuration 调试绘制持续时间。\n@param OutPoints [输出] 所有符合条件的点的世界坐标数组。\n@param bSuccess [输出] 操作是否成功。"))
     static void SamplePointsInsideStaticMeshWithBoxOptimized(
         // --- Inputs
         const UObject* WorldContextObject,
@@ -183,13 +181,17 @@ public:
         float DebugDrawDuration,
         // --- Outputs
         TArray<FVector>& OutPoints,
-        bool& bSuccess,
-        // --- Optional Input
-        bool bUseComplexCollision = true
+        bool& bSuccess
     );
 
 private:
     // 计算曲线上某点的位置（基于参数t）
     static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints);
+    
+    // 计算曲线总长度
+    static float CalculateCurveLength(const TArray<FVector>& Points, int32 Segments = 100);
+    
+    // 根据距离获取参数t
+    static float GetParameterByDistance(const TArray<FVector>& Points, float Distance, float TotalLength, int32 Segments = 100);
     
 };

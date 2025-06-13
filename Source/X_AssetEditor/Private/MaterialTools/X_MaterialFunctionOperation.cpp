@@ -36,21 +36,19 @@ UMaterial* FX_MaterialFunctionOperation::GetBaseMaterial(UMaterialInterface* Mat
 void FX_MaterialFunctionOperation::ProcessAssetMaterialFunction(
     const TArray<FAssetData>& SelectedAssets,
     UMaterialFunctionInterface* MaterialFunction,
-    const FName& TargetNode,
-    const TSharedPtr<FX_MaterialFunctionParams>& Params)
+    const FName& TargetNode)
 {
     // 委托给处理器类处理
-    FX_MaterialFunctionProcessor::ProcessAssetMaterialFunction(SelectedAssets, MaterialFunction, TargetNode, Params);
+    FX_MaterialFunctionProcessor::ProcessAssetMaterialFunction(SelectedAssets, MaterialFunction, TargetNode);
 }
 
 void FX_MaterialFunctionOperation::ProcessActorMaterialFunction(
     const TArray<AActor*>& SelectedActors,
     UMaterialFunctionInterface* MaterialFunction,
-    const FName& TargetNode,
-    const TSharedPtr<FX_MaterialFunctionParams>& Params)
+    const FName& TargetNode)
 {
     // 委托给处理器类处理
-    FX_MaterialFunctionProcessor::ProcessActorMaterialFunction(SelectedActors, MaterialFunction, TargetNode, Params);
+    FX_MaterialFunctionProcessor::ProcessActorMaterialFunction(SelectedActors, MaterialFunction, TargetNode);
 }
 
 TArray<UMaterial*> FX_MaterialFunctionOperation::CollectMaterialsFromAsset(const FAssetData& Asset)
@@ -77,7 +75,7 @@ TArray<UMaterial*> FX_MaterialFunctionOperation::CollectMaterialsFromActorParall
     return FX_MaterialFunctionCollector::CollectMaterialsFromActorParallel(Actors);
 }
 
-UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddMaterialFunctionToMaterial(
+void FX_MaterialFunctionOperation::AddMaterialFunctionToMaterial(
     UMaterial* Material,
     UMaterialFunctionInterface* MaterialFunction,
     const FName& TargetNode,
@@ -86,28 +84,20 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddMateri
     if (!Material || !MaterialFunction)
     {
         UE_LOG(LogX_AssetEditor, Warning, TEXT("材质或材质函数为空"));
-        return nullptr;
+        return;
     }
 
     // 收集所有材质 - 委托给收集器类
     TArray<UMaterial*> Materials = FX_MaterialFunctionCollector::CollectMaterialsFromAsset(FAssetData(Material));
     
     // 处理所有材质
-    UMaterialExpressionMaterialFunctionCall* Result = nullptr;
     for (UMaterial* CurrentMaterial : Materials)
     {
         if (CurrentMaterial)
         {
-            Result = AddFunctionToMaterial(CurrentMaterial, MaterialFunction, TargetNode, UserParams);
-            if (Result)
-            {
-                // 如果成功添加了函数，返回结果
-                return Result;
-            }
+            AddFunctionToMaterial(CurrentMaterial, MaterialFunction, TargetNode, UserParams);
         }
     }
-    
-    return Result;
 }
 
 UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::FindNodeInMaterial(
