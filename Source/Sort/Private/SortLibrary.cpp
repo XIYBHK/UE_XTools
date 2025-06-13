@@ -1,671 +1,213 @@
 #include "SortLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Logging/LogMacros.h"
+#include "Internationalization/Text.h"
+#include "Algo/Reverse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(SortLibraryLog, Log, All);
 
-// 键值对结构定义
-namespace SortPairs
+namespace SortLibrary_Private
 {
-    struct FActorDistancePair
+    /**
+     * @brief 一个通用的排序模板函数，用于处理各种类型的稳定排序。
+     * 此函数封装了创建键值对、对其进行排序，然后填充输出数组的通用模式。
+     * @tparam ElementType 输入数组中元素的类型 (例如, AActor*, int32, FVector)。
+     * @tparam SortKeyType 用于排序的键的类型 (例如, float, int32)。
+     * @param InArray 要排序的元素数组。
+     * @param bAscending true 为升序排序, false 为降序。
+     * @param GetSortKey 一个Lambda函数，接受一个 ElementType 并返回其 SortKeyType。
+     * @param SortedArray 用于存放已排序元素的输出数组。
+     * @param OriginalIndices 用于存放已排序元素原始索引的输出数组。
+     * @param SortedKeys (可选) 用于存放已排序键的输出数组。
+     */
+    template<typename ElementType, typename SortKeyType>
+    void GenericSort(
+        const TArray<ElementType>& InArray,
+        bool bAscending,
+        TFunctionRef<SortKeyType(const ElementType&)> GetSortKey,
+        TArray<ElementType>& SortedArray,
+        TArray<int32>& OriginalIndices,
+        TArray<SortKeyType>* SortedKeys = nullptr)
     {
-        AActor* Value;
-        float Distance;
-        int32 OriginalIndex;
-
-        FActorDistancePair() : Value(nullptr), Distance(MAX_FLT), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FActorHeightPair
-    {
-        AActor* Value;
-        float Height;
-        int32 OriginalIndex;
-
-        FActorHeightPair() : Value(nullptr), Height(MAX_FLT), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FIntegerPair
-    {
-        int32 Value;
-        int32 OriginalIndex;
-
-        FIntegerPair() : Value(0), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FFloatPair
-    {
-        float Value;
-        int32 OriginalIndex;
-
-        FFloatPair() : Value(0.0f), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FStringPair
-    {
-        FString Value;
-        int32 OriginalIndex;
-
-        FStringPair() : Value(TEXT("")), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FNamePair
-    {
-        FName Value;
-        int32 OriginalIndex;
-
-        FNamePair() : Value(NAME_None), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FActorAxisPair
-    {
-        AActor* Value;
-        float AxisValue;
-        int32 OriginalIndex;
-
-        FActorAxisPair() : Value(nullptr), AxisValue(0.0f), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FActorAnglePair
-    {
-        AActor* Value;
-        float Angle;
-        int32 OriginalIndex;
-
-        FActorAnglePair() : Value(nullptr), Angle(0.0f), OriginalIndex(INDEX_NONE) {}
-    };
-
-    struct FActorAzimuthPair
-    {
-        AActor* Value;
-        float Azimuth;
-        int32 OriginalIndex;
-
-        FActorAzimuthPair() : Value(nullptr), Azimuth(0.0f), OriginalIndex(INDEX_NONE) {}
-    };
-}
-
-// 辅助函数声明
-template<typename T>
-bool InitializeArrays(const TArray<T>& InArray, TArray<T>& OutArray, TArray<int32>& Indices);
-
-template<typename T, typename PairType>
-void UpdateSortedResults(const TArray<PairType>& Pairs, TArray<T>& SortedArray,
-    TArray<int32>& OriginalIndices, TArray<float>* SortedValues = nullptr,
-    TFunction<float(const PairType&)> GetSortedValue = nullptr);
-
-template<typename T>
-void OptimizeMemory(TArray<T>& Array, bool bShrinkArray = true);
-
-template<typename T, typename PairType>
-bool CreateSortPairs(const TArray<T>& InArray, TArray<PairType>& Pairs, bool PreallocateMemory = true)
-{
-    // 参数验证
-    if (InArray.Num() <= 0)
-    {
-        UE_LOG(SortLibraryLog, Warning, TEXT("CreateSortPairs: Input array is empty"));
-        return false;
-    }
-
-    const int32 ArrayNum = InArray.Num();
-    
-    // 预分配内存以提高性能
-    if (PreallocateMemory)
-    {
-        Pairs.Empty(ArrayNum);
-        Pairs.SetNum(ArrayNum);
-    }
-    else
-    {
-        Pairs.Empty();
-        Pairs.Reserve(ArrayNum);
-    }
-
-    // 创建键值对
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        if (PreallocateMemory)
+        // 如果输入为空，则清空输出数组
+        if (InArray.IsEmpty())
         {
-            // 安全地复制值
-            Pairs[i].Value = InArray[i];
-            Pairs[i].OriginalIndex = i;
+            SortedArray.Empty();
+            OriginalIndices.Empty();
+            if (SortedKeys)
+            {
+                SortedKeys->Empty();
+            }
+            return;
+        }
+
+        // 内部结构，用于将值与其排序键和原始索引配对，以实现稳定排序
+        struct FSortPair
+        {
+            ElementType Value;
+            SortKeyType Key;
+            int32 OriginalIndex;
+
+            // 用于排序的比较运算符
+            bool operator<(const FSortPair& Other) const
+            {
+                // 对浮点数的NaN和无穷大进行特殊处理，以确保可预测的排序行为
+                if constexpr (TIsFloatingPoint<SortKeyType>::Value)
+                {
+                    if (FMath::IsNaN(Key)) return false;
+                    if (FMath::IsNaN(Other.Key)) return true;
+                }
+                return Key < Other.Key;
+            }
+        };
+
+        TArray<FSortPair> Pairs;
+        Pairs.Reserve(InArray.Num());
+
+        // 填充配对数组，如果ElementType是指针，则跳过无效对象
+        for (int32 i = 0; i < InArray.Num(); ++i)
+        {
+            if constexpr (TIsPointer<ElementType>::Value)
+            {
+                if (!IsValid(InArray[i]))
+                {
+                    continue;
+                }
+            }
+            Pairs.Emplace(FSortPair{InArray[i], GetSortKey(InArray[i]), i});
+        }
+        
+        // 执行排序
+        if (bAscending)
+        {
+            Pairs.Sort([](const FSortPair& A, const FSortPair& B) { return A < B; });
         }
         else
         {
-            PairType NewPair;
-            NewPair.Value = InArray[i];
-            NewPair.OriginalIndex = i;
-            Pairs.Add(NewPair);
+            Pairs.Sort([](const FSortPair& A, const FSortPair& B) { return B < A; });
+        }
+
+        // 从已排序的配对中填充输出数组
+        const int32 SortedNum = Pairs.Num();
+        SortedArray.SetNum(SortedNum);
+        OriginalIndices.SetNum(SortedNum);
+        if (SortedKeys)
+        {
+            SortedKeys->SetNum(SortedNum);
+        }
+
+        for (int32 i = 0; i < SortedNum; ++i)
+        {
+            SortedArray[i] = Pairs[i].Value;
+            OriginalIndices[i] = Pairs[i].OriginalIndex;
+            if (SortedKeys)
+            {
+                (*SortedKeys)[i] = Pairs[i].Key;
+            }
         }
     }
+} // 命名空间 SortLibrary_Private
 
-    return true;
-}
+//~ Actor排序函数
+// =================================================================================================
 
 void USortLibrary::SortActorsByDistance(const TArray<AActor*>& Actors, const FVector& Location, bool bAscending,
     bool b2DDistance, TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices, TArray<float>& SortedDistances)
 {
-    // 参数验证
-    if (Actors.Num() <= 0)
+    auto GetDistance = [&](const AActor* Actor) -> float
     {
-        SortedActors.Empty();
-        OriginalIndices.Empty();
-        SortedDistances.Empty();
-        return;
-    }
+        const FVector ActorLocation = Actor->GetActorLocation();
+        return b2DDistance ? FVector::Dist2D(ActorLocation, Location) : FVector::Dist(ActorLocation, Location);
+    };
 
-    // 初始化输出数组
-    if (!InitializeArrays(Actors, SortedActors, OriginalIndices))
-    {
-        return;
-    }
-    SortedDistances.SetNumUninitialized(Actors.Num());
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FActorDistancePair> Pairs;
-    if (!CreateSortPairs(Actors, Pairs))
-    {
-        return;
-    }
-
-    // 计算距离
-    for (auto& Pair : Pairs)
-    {
-        if (!IsValid(Pair.Value))
-        {
-            Pair.Distance = MAX_FLT;
-            continue;
-        }
-        
-        if (b2DDistance)
-        {
-            FVector ActorLoc = Pair.Value->GetActorLocation();
-            ActorLoc.Z = Location.Z;
-            Pair.Distance = FVector::Dist(ActorLoc, Location);
-        }
-        else
-        {
-            Pair.Distance = FVector::Dist(Pair.Value->GetActorLocation(), Location);
-        }
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FActorDistancePair& A, const SortPairs::FActorDistancePair& B) {
-        return bAscending ? A.Distance < B.Distance : A.Distance > B.Distance;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedActors[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedDistances[i] = Pairs[i].Distance;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    SortLibrary_Private::GenericSort<AActor*, float>(Actors, bAscending, GetDistance, SortedActors, OriginalIndices, &SortedDistances);
 }
 
-void USortLibrary::SortIntegerArray(const TArray<int32>& InArray, bool bAscending,
-    TArray<int32>& SortedArray, TArray<int32>& OriginalIndices)
+void USortLibrary::SortActorsByHeight(const TArray<AActor*>& Actors, bool bAscending, TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices)
 {
-    // 参数验证
-    if (InArray.Num() <= 0)
+    auto GetHeight = [](const AActor* Actor) -> float
     {
-        SortedArray.Empty();
-        OriginalIndices.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(InArray, SortedArray, OriginalIndices))
-    {
-        return;
-    }
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FIntegerPair> Pairs;
-    if (!CreateSortPairs(InArray, Pairs))
-    {
-        return;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FIntegerPair& A, const SortPairs::FIntegerPair& B) {
-        return bAscending ? A.Value < B.Value : A.Value > B.Value;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
-}
-
-void USortLibrary::SortFloatArray(const TArray<float>& InArray, bool bAscending,
-    TArray<float>& SortedArray, TArray<int32>& OriginalIndices)
-{
-    // 参数验证
-    if (InArray.Num() <= 0)
-    {
-        SortedArray.Empty();
-        OriginalIndices.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(InArray, SortedArray, OriginalIndices))
-    {
-        return;
-    }
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FFloatPair> Pairs;
-    if (!CreateSortPairs(InArray, Pairs))
-    {
-        return;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FFloatPair& A, const SortPairs::FFloatPair& B) {
-        // 处理特殊浮点数
-        if (FMath::IsNaN(A.Value)) return false;
-        if (FMath::IsNaN(B.Value)) return true;
-        if (!FMath::IsFinite(A.Value) && !FMath::IsFinite(B.Value)) return false;
-        if (!FMath::IsFinite(A.Value)) return bAscending;
-        if (!FMath::IsFinite(B.Value)) return !bAscending;
-        if (FMath::IsNearlyEqual(A.Value, B.Value)) return false;
-        return bAscending ? A.Value < B.Value : A.Value > B.Value;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
-}
-
-void USortLibrary::SortStringArray(const TArray<FString>& InArray, bool bAscending,
-    TArray<FString>& SortedArray, TArray<int32>& OriginalIndices)
-{
-    // 参数验证
-    if (InArray.Num() <= 0)
-    {
-        SortedArray.Empty();
-        OriginalIndices.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(InArray, SortedArray, OriginalIndices))
-    {
-        return;
-    }
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FStringPair> Pairs;
-    if (!CreateSortPairs(InArray, Pairs))
-    {
-        return;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FStringPair& A, const SortPairs::FStringPair& B) {
-        // 确保字符串有效
-        if (A.Value.IsEmpty() && B.Value.IsEmpty()) return false;
-        if (A.Value.IsEmpty()) return bAscending;
-        if (B.Value.IsEmpty()) return !bAscending;
-
-        // 使用本地化感知的字符串比较
-        const FText TextA = FText::FromString(A.Value);
-        const FText TextB = FText::FromString(B.Value);
-        
-        // 使用 FText 的 Compare 函数进行比较
-        const int32 CompareResult = FText::FromString(A.Value).CompareTo(FText::FromString(B.Value));
-        
-        // 根据升序/降序返回比较结果
-        return bAscending ? CompareResult < 0 : CompareResult > 0;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
-}
-
-void USortLibrary::SortNameArray(const TArray<FName>& InArray, bool bAscending,
-    TArray<FName>& SortedArray, TArray<int32>& OriginalIndices)
-{
-    // 参数验证
-    if (InArray.Num() <= 0)
-    {
-        SortedArray.Empty();
-        OriginalIndices.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(InArray, SortedArray, OriginalIndices))
-    {
-        return;
-    }
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FNamePair> Pairs;
-    if (!CreateSortPairs(InArray, Pairs))
-    {
-        return;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FNamePair& A, const SortPairs::FNamePair& B) {
-        // 确保名称有效
-        if (A.Value.IsNone() && B.Value.IsNone()) return false;
-        if (A.Value.IsNone()) return bAscending;
-        if (B.Value.IsNone()) return !bAscending;
-
-        // 转换为字符串以支持本地化比较
-        const FString StringA = A.Value.ToString();
-        const FString StringB = B.Value.ToString();
-
-        // 使用本地化感知的字符串比较
-        const FText TextA = FText::FromString(StringA);
-        const FText TextB = FText::FromString(StringB);
-        
-        // 使用 FText 的 Compare 函数进行比较
-        const int32 CompareResult = FText::FromString(StringA).CompareTo(FText::FromString(StringB));
-        
-        // 根据升序/降序返回比较结果
-        return bAscending ? CompareResult < 0 : CompareResult > 0;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedArray[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+        return Actor->GetActorLocation().Z;
+    };
+    SortLibrary_Private::GenericSort<AActor*, float>(Actors, bAscending, GetHeight, SortedActors, OriginalIndices);
 }
 
 void USortLibrary::SortActorsByAxis(const TArray<AActor*>& Actors, ECoordinateAxis Axis, bool bAscending,
     TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices, TArray<float>& SortedAxisValues)
 {
-    // 参数验证
-    if (Actors.Num() <= 0)
+    auto GetAxisValue = [&](const AActor* Actor) -> float
     {
-        SortedActors.Empty();
-        OriginalIndices.Empty();
-        SortedAxisValues.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(Actors, SortedActors, OriginalIndices))
-    {
-        return;
-    }
-    SortedAxisValues.SetNumUninitialized(Actors.Num());
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FActorAxisPair> Pairs;
-    if (!CreateSortPairs(Actors, Pairs))
-    {
-        return;
-    }
-
-    // 计算轴向值
-    for (auto& Pair : Pairs)
-    {
-        if (!IsValid(Pair.Value))
+        const FVector Location = Actor->GetActorLocation();
+        switch (Axis)
         {
-            Pair.AxisValue = MAX_FLT;
-            continue;
+            case ECoordinateAxis::X: return Location.X;
+            case ECoordinateAxis::Y: return Location.Y;
+            case ECoordinateAxis::Z: return Location.Z;
+            default: return 0.0f;
         }
-
-        switch(Axis)
-        {
-            case ECoordinateAxis::X:
-                Pair.AxisValue = Pair.Value->GetActorLocation().X;
-                break;
-            case ECoordinateAxis::Y:
-                Pair.AxisValue = Pair.Value->GetActorLocation().Y;
-                break;
-            case ECoordinateAxis::Z:
-                Pair.AxisValue = Pair.Value->GetActorLocation().Z;
-                break;
-        }
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FActorAxisPair& A, const SortPairs::FActorAxisPair& B) {
-        return bAscending ? A.AxisValue < B.AxisValue : A.AxisValue > B.AxisValue;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedActors[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedAxisValues[i] = Pairs[i].AxisValue;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    };
+    SortLibrary_Private::GenericSort<AActor*, float>(Actors, bAscending, GetAxisValue, SortedActors, OriginalIndices, &SortedAxisValues);
 }
 
 void USortLibrary::SortActorsByAngle(const TArray<AActor*>& Actors, const FVector& Center, const FVector& Direction,
     bool bAscending, bool b2DAngle, TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices, TArray<float>& SortedAngles)
 {
-    // 参数验证
-    if (Actors.Num() <= 0)
-    {
-        SortedActors.Empty();
-        OriginalIndices.Empty();
-        SortedAngles.Empty();
-        return;
-    }
+    const FVector NormalizedDirection = b2DAngle ? FVector(Direction.X, Direction.Y, 0).GetSafeNormal() : Direction.GetSafeNormal();
 
-    // 初始化输出数组
-    if (!InitializeArrays(Actors, SortedActors, OriginalIndices))
+    auto GetAngle = [&](const AActor* Actor) -> float
     {
-        return;
-    }
-    SortedAngles.SetNumUninitialized(Actors.Num());
-
-    // 标准化参考方向
-    FVector NormalizedDirection = Direction.GetSafeNormal();
-    if (b2DAngle)
-    {
-        NormalizedDirection.Z = 0.0f;
-        NormalizedDirection.Normalize();
-    }
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FActorAnglePair> Pairs;
-    if (!CreateSortPairs(Actors, Pairs))
-    {
-        return;
-    }
-
-    // 计算夹角
-    for (auto& Pair : Pairs)
-    {
-        if (!IsValid(Pair.Value))
-        {
-            Pair.Angle = MAX_FLT;
-            continue;
-        }
-
-        FVector ToActor = Pair.Value->GetActorLocation() - Center;
+        FVector ToActor = Actor->GetActorLocation() - Center;
         if (b2DAngle)
         {
             ToActor.Z = 0.0f;
-            ToActor.Normalize();
-            float Angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(NormalizedDirection, ToActor)));
-            float Cross = NormalizedDirection.X * ToActor.Y - NormalizedDirection.Y * ToActor.X;
-            Pair.Angle = Cross < 0.0f ? 360.0f - Angle : Angle;
         }
-        else
+        
+        ToActor.Normalize();
+
+        const float Dot = FVector::DotProduct(NormalizedDirection, ToActor);
+        float AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
+
+        // 对于2D角度，判断是否为优角 (> 180度)
+        if (b2DAngle)
         {
-            ToActor.Normalize();
-            Pair.Angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(NormalizedDirection, ToActor)));
+            const float CrossZ = NormalizedDirection.X * ToActor.Y - NormalizedDirection.Y * ToActor.X;
+            if (CrossZ < 0.0f)
+            {
+                AngleDegrees = 360.0f - AngleDegrees;
+            }
         }
-    }
+        return AngleDegrees;
+    };
 
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FActorAnglePair& A, const SortPairs::FActorAnglePair& B) {
-        return bAscending ? A.Angle < B.Angle : A.Angle > B.Angle;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedActors[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedAngles[i] = Pairs[i].Angle;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    SortLibrary_Private::GenericSort<AActor*, float>(Actors, bAscending, GetAngle, SortedActors, OriginalIndices, &SortedAngles);
 }
 
 void USortLibrary::SortActorsByAzimuth(const TArray<AActor*>& Actors, const FVector& Center, bool bAscending,
     TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices, TArray<float>& SortedAzimuths)
 {
-    // 参数验证
-    if (Actors.Num() <= 0)
+    auto GetAzimuth = [&](const AActor* Actor) -> float
     {
-        SortedActors.Empty();
-        OriginalIndices.Empty();
-        SortedAzimuths.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(Actors, SortedActors, OriginalIndices))
-    {
-        return;
-    }
-    SortedAzimuths.SetNumUninitialized(Actors.Num());
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FActorAzimuthPair> Pairs;
-    if (!CreateSortPairs(Actors, Pairs))
-    {
-        return;
-    }
-
-    // 计算方位角
-    for (auto& Pair : Pairs)
-    {
-        if (!IsValid(Pair.Value))
+        const FVector ToActor = Actor->GetActorLocation() - Center;
+        const float AngleRadians = FMath::Atan2(ToActor.Y, ToActor.X);
+        const float AngleDegrees = FMath::RadiansToDegrees(AngleRadians);
+        // 从标准角度转换为方位角 (正北=0, 正东=90)
+        float Azimuth = 90.0f - AngleDegrees;
+        if (Azimuth < 0.0f)
         {
-            Pair.Azimuth = MAX_FLT;
-            continue;
+            Azimuth += 360.0f;
         }
+        return Azimuth;
+    };
 
-        // 计算从中心点到Actor的向量（在XY平面上）
-        FVector ToActor = Pair.Value->GetActorLocation() - Center;
-        ToActor.Z = 0.0f;
-
-        // 计算方位角（以Y轴正方向为北，顺时针旋转）
-        float Angle = FMath::RadiansToDegrees(FMath::Atan2(ToActor.Y, ToActor.X));
-        float Azimuth = FMath::Fmod(90.0f - Angle, 360.0f);
-        Pair.Azimuth = Azimuth < 0.0f ? Azimuth + 360.0f : Azimuth;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FActorAzimuthPair& A, const SortPairs::FActorAzimuthPair& B) {
-        return bAscending ? A.Azimuth < B.Azimuth : A.Azimuth > B.Azimuth;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedActors[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedAzimuths[i] = Pairs[i].Azimuth;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
-}
-
-void USortLibrary::SortActorsByHeight(const TArray<AActor*>& Actors, bool bAscending,
-    TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices)
-{
-    // 参数验证
-    if (Actors.Num() <= 0)
-    {
-        SortedActors.Empty();
-        OriginalIndices.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    if (!InitializeArrays(Actors, SortedActors, OriginalIndices))
-    {
-        return;
-    }
-
-    // 创建并填充键值对数组
-    TArray<SortPairs::FActorHeightPair> Pairs;
-    if (!CreateSortPairs(Actors, Pairs))
-    {
-        return;
-    }
-
-    // 计算高度
-    for (auto& Pair : Pairs)
-    {
-        if (!IsValid(Pair.Value))
-        {
-            Pair.Height = MAX_FLT;
-            continue;
-        }
-        
-        Pair.Height = Pair.Value->GetActorLocation().Z;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const SortPairs::FActorHeightPair& A, const SortPairs::FActorHeightPair& B) {
-        return bAscending ? A.Height < B.Height : A.Height > B.Height;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < Pairs.Num(); ++i)
-    {
-        SortedActors[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    SortLibrary_Private::GenericSort<AActor*, float>(Actors, bAscending, GetAzimuth, SortedActors, OriginalIndices, &SortedAzimuths);
 }
 
 void USortLibrary::SortActorsByAngleAndDistance(const TArray<AActor*>& Actors, const FVector& Center,
-    const FVector& Direction, float MaxAngle, float MaxDistance, float AngleWeight, float DistanceWeight, 
+    const FVector& Direction, float MaxAngle, float MaxDistance, float AngleWeight, float DistanceWeight,
     bool bAscending, bool b2DAngle, TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices,
     TArray<float>& SortedAngles, TArray<float>& SortedDistances)
 {
-    // 参数验证
-    if (Actors.Num() <= 0)
+    if (Actors.IsEmpty())
     {
         SortedActors.Empty();
         OriginalIndices.Empty();
@@ -674,187 +216,51 @@ void USortLibrary::SortActorsByAngleAndDistance(const TArray<AActor*>& Actors, c
         return;
     }
 
-    // 初始化输出数组
-    if (!InitializeArrays(Actors, SortedActors, OriginalIndices))
-    {
-        return;
-    }
-    SortedAngles.SetNumUninitialized(Actors.Num());
-    SortedDistances.SetNumUninitialized(Actors.Num());
+    const FVector NormalizedDirection = b2DAngle ? FVector(Direction.X, Direction.Y, 0).GetSafeNormal() : Direction.GetSafeNormal();
 
-    // 标准化参考方向
-    FVector NormalizedDirection = Direction.GetSafeNormal();
-    if (b2DAngle)
+    struct FActorSortInfo
     {
-        NormalizedDirection.Z = 0.0f;
-        NormalizedDirection.Normalize();
-    }
-
-    // 创建并填充键值对数组
-    struct FActorAngleDistancePair
-    {
-        AActor* Value;
+        AActor* Actor;
+        int32 OriginalIndex;
         float Angle;
         float Distance;
-        float SortValue; // 添加一个排序值字段，用于组合角度和距离
-        int32 OriginalIndex;
+        float Score;
 
-        FActorAngleDistancePair() : Value(nullptr), Angle(0.0f), Distance(0.0f), SortValue(0.0f), OriginalIndex(INDEX_NONE) {}
+        bool operator<(const FActorSortInfo& Other) const { return Score < Other.Score; }
     };
 
-    TArray<FActorAngleDistancePair> Pairs;
-    Pairs.SetNumUninitialized(Actors.Num());
+    TArray<FActorSortInfo> FilteredPairs;
+    FilteredPairs.Reserve(Actors.Num());
 
-    // 计算角度和距离
-    int32 ValidPairCount = 0;
-    float MaxFoundDistance = 0.0f; // 用于归一化距离
-    float MaxFoundAngle = 0.0f;    // 用于归一化角度
-
-    // 第一次遍历，找出最大值用于归一化
-    for (const AActor* Actor : Actors)
-    {
-        if (!IsValid(Actor))
-        {
-            continue;
-        }
-
-        FVector ToActor = Actor->GetActorLocation() - Center;
-        
-        // 计算距离
-        float Distance;
-        if (b2DAngle)
-        {
-            FVector ActorLoc = Actor->GetActorLocation();
-            ActorLoc.Z = Center.Z;
-            Distance = FVector::Dist(ActorLoc, Center);
-        }
-        else
-        {
-            Distance = ToActor.Size();
-        }
-
-        if (MaxDistance > 0.0f && Distance > MaxDistance)
-        {
-            continue;
-        }
-
-        MaxFoundDistance = FMath::Max(MaxFoundDistance, Distance);
-
-        // 计算角度
-        if (b2DAngle)
-        {
-            ToActor.Z = 0.0f;
-            if (!ToActor.Normalize())
-            {
-                continue;
-            }
-            float Angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(NormalizedDirection, ToActor)));
-            float Cross = NormalizedDirection.X * ToActor.Y - NormalizedDirection.Y * ToActor.X;
-            Angle = Cross < 0.0f ? 360.0f - Angle : Angle;
-            MaxFoundAngle = FMath::Max(MaxFoundAngle, Angle);
-        }
-        else
-        {
-            if (!ToActor.Normalize())
-            {
-                continue;
-            }
-            float Angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(NormalizedDirection, ToActor)));
-            MaxFoundAngle = FMath::Max(MaxFoundAngle, Angle);
-        }
-    }
-
-    // 防止除以零
-    MaxFoundDistance = MaxFoundDistance > 0.0f ? MaxFoundDistance : 1.0f;
-    MaxFoundAngle = MaxFoundAngle > 0.0f ? MaxFoundAngle : 1.0f;
-
-    // 第二次遍历，计算实际的排序值
+    // 第一次遍历: 过滤并计算值
     for (int32 i = 0; i < Actors.Num(); ++i)
     {
-        FActorAngleDistancePair& Pair = Pairs[ValidPairCount];
-        Pair.Value = Actors[i];
-        Pair.OriginalIndex = i;
+        AActor* Actor = Actors[i];
+        if (!IsValid(Actor)) continue;
 
-        if (!IsValid(Pair.Value))
-        {
-            continue;
-        }
-
-        FVector ToActor = Pair.Value->GetActorLocation() - Center;
+        const FVector ActorLocation = Actor->GetActorLocation();
+        FVector ToActor = ActorLocation - Center;
         
         // 计算距离
-        if (b2DAngle)
-        {
-            FVector ActorLoc = Pair.Value->GetActorLocation();
-            ActorLoc.Z = Center.Z;
-            Pair.Distance = FVector::Dist(ActorLoc, Center);
-        }
-        else
-        {
-            Pair.Distance = ToActor.Size();
-        }
-
-        // 如果超出最大距离，跳过
-        if (MaxDistance > 0.0f && Pair.Distance > MaxDistance)
-        {
-            continue;
-        }
-
+        const float Distance = b2DAngle ? FVector::Dist2D(ActorLocation, Center) : ToActor.Size();
+        if (MaxDistance > 0.0f && Distance > MaxDistance) continue;
+        
         // 计算角度
+        if (b2DAngle) ToActor.Z = 0.0f;
+        ToActor.Normalize();
+        const float Dot = FVector::DotProduct(NormalizedDirection, ToActor);
+        float Angle = FMath::RadiansToDegrees(FMath::Acos(Dot));
         if (b2DAngle)
         {
-            ToActor.Z = 0.0f;
-            if (!ToActor.Normalize())
-            {
-                continue;
-            }
-            float Angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(NormalizedDirection, ToActor)));
-            float Cross = NormalizedDirection.X * ToActor.Y - NormalizedDirection.Y * ToActor.X;
-            Pair.Angle = Cross < 0.0f ? 360.0f - Angle : Angle;
+            const float CrossZ = NormalizedDirection.X * ToActor.Y - NormalizedDirection.Y * ToActor.X;
+            if (CrossZ < 0.0f) Angle = 360.0f - Angle;
         }
-        else
-        {
-            if (!ToActor.Normalize())
-            {
-                continue;
-            }
-            Pair.Angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(NormalizedDirection, ToActor)));
-        }
-
-        // 如果超出最大角度，跳过
-        if (MaxAngle > 0.0f && Pair.Angle > MaxAngle)
-        {
-            continue;
-        }
-
-        // 计算归一化的排序值
-        float NormalizedAngle = Pair.Angle / MaxFoundAngle;
-        float NormalizedDistance = Pair.Distance / MaxFoundDistance;
-
-        // 如果权重都为0，使用默认的排序逻辑
-        if (FMath::IsNearlyZero(AngleWeight) && FMath::IsNearlyZero(DistanceWeight))
-        {
-            Pair.SortValue = NormalizedAngle;
-        }
-        else
-        {
-            // 使用权重计算最终的排序值
-            float WeightSum = AngleWeight + DistanceWeight;
-            if (WeightSum > 0.0f)
-            {
-                Pair.SortValue = (NormalizedAngle * AngleWeight + NormalizedDistance * DistanceWeight) / WeightSum;
-            }
-            else
-            {
-                Pair.SortValue = NormalizedAngle;
-            }
-        }
-
-        ValidPairCount++;
+        if (MaxAngle > 0.0f && Angle > MaxAngle) continue;
+        
+        FilteredPairs.Add({Actor, i, Angle, Distance, 0.0f});
     }
 
-    // 调整数组大小为有效的配对数量
-    if (ValidPairCount == 0)
+    if (FilteredPairs.IsEmpty())
     {
         SortedActors.Empty();
         OriginalIndices.Empty();
@@ -863,612 +269,240 @@ void USortLibrary::SortActorsByAngleAndDistance(const TArray<AActor*>& Actors, c
         return;
     }
 
-    Pairs.SetNum(ValidPairCount);
-
-    // 执行排序
-    Pairs.Sort([bAscending](const FActorAngleDistancePair& A, const FActorAngleDistancePair& B) {
-        return bAscending ? A.SortValue < B.SortValue : A.SortValue > B.SortValue;
-    });
-
-    // 更新输出数组大小
-    SortedActors.SetNum(ValidPairCount);
-    OriginalIndices.SetNum(ValidPairCount);
-    SortedAngles.SetNum(ValidPairCount);
-    SortedDistances.SetNum(ValidPairCount);
-
-    // 更新结果
-    for(int32 i = 0; i < ValidPairCount; ++i)
+    // 第二次遍历: 归一化并计算得分
+    float MaxFoundAngle = 0.0f, MaxFoundDistance = 0.0f;
+    for (const auto& Pair : FilteredPairs)
     {
-        SortedActors[i] = Pairs[i].Value;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedAngles[i] = Pairs[i].Angle;
-        SortedDistances[i] = Pairs[i].Distance;
+        MaxFoundAngle = FMath::Max(MaxFoundAngle, Pair.Angle);
+        MaxFoundDistance = FMath::Max(MaxFoundDistance, Pair.Distance);
+    }
+    
+    // 避免除以零
+    if (FMath::IsNearlyZero(MaxFoundAngle)) MaxFoundAngle = 1.0f;
+    if (FMath::IsNearlyZero(MaxFoundDistance)) MaxFoundDistance = 1.0f;
+
+    const float TotalWeight = AngleWeight + DistanceWeight;
+    const bool bUseDefaultSort = FMath::IsNearlyZero(TotalWeight);
+
+    for (auto& Pair : FilteredPairs)
+    {
+        const float NormAngle = Pair.Angle / MaxFoundAngle;
+        const float NormDistance = Pair.Distance / MaxFoundDistance;
+        Pair.Score = bUseDefaultSort ? NormAngle : (NormAngle * AngleWeight + NormDistance * DistanceWeight) / TotalWeight;
+    }
+    
+    // 排序
+    if (bAscending)
+    {
+        FilteredPairs.Sort();
+    }
+    else
+    {
+        FilteredPairs.Sort([](const auto& A, const auto& B){ return B < A; });
     }
 
-    // 优化内存
-    OptimizeMemory(Pairs);
+    // 填充输出数组
+    const int32 Count = FilteredPairs.Num();
+    SortedActors.SetNum(Count);
+    OriginalIndices.SetNum(Count);
+    SortedAngles.SetNum(Count);
+    SortedDistances.SetNum(Count);
+    for (int32 i = 0; i < Count; ++i)
+    {
+        SortedActors[i] = FilteredPairs[i].Actor;
+        OriginalIndices[i] = FilteredPairs[i].OriginalIndex;
+        SortedAngles[i] = FilteredPairs[i].Angle;
+        SortedDistances[i] = FilteredPairs[i].Distance;
+    }
 }
 
-/**
- * 初始化排序所需的输出数组和索引数组
- * @param InArray - 输入数组
- * @param OutArray - 输出数组，将被初始化为输入数组的副本
- * @param Indices - 索引数组，将被初始化为连续的索引值
- * @return bool - 初始化是否成功
- */
-template<typename T>
-bool InitializeArrays(const TArray<T>& InArray, TArray<T>& OutArray, TArray<int32>& Indices)
+//~ 基础类型排序函数
+// =================================================================================================
+
+void USortLibrary::SortIntegerArray(const TArray<int32>& InArray, bool bAscending, TArray<int32>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    // 参数验证
-    if (InArray.Num() <= 0)
-    {
-        UE_LOG(SortLibraryLog, Warning, TEXT("InitializeArrays: Input array is empty"));
-        return false;
-    }
-
-    // 初始化输出数组
-    OutArray = InArray;
-    const int32 ArrayNum = InArray.Num();
-    
-    // 预分配内存以提高性能
-    Indices.Empty(ArrayNum);
-    Indices.SetNumUninitialized(ArrayNum);
-    
-    // 初始化索引数组
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        Indices[i] = i;
-    }
-
-    return true;
+    SortLibrary_Private::GenericSort<int32, int32>(InArray, bAscending, [](int32 Val){ return Val; }, SortedArray, OriginalIndices);
 }
 
-/**
- * 更新排序后的结果数组
- * @param Pairs - 已排序的键值对数组
- * @param SortedArray - 要更新的排序结果数组
- * @param OriginalIndices - 要更新的原始索引数组
- * @param SortedValues - 可选的排序值数组
- * @param GetSortedValue - 获取排序值的函数
- */
-template<typename T, typename PairType>
-void UpdateSortedResults(const TArray<PairType>& Pairs, TArray<T>& SortedArray,
-    TArray<int32>& OriginalIndices, TArray<float>* SortedValues,
-    TFunction<float(const PairType&)> GetSortedValue)
+void USortLibrary::SortFloatArray(const TArray<float>& InArray, bool bAscending, TArray<float>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    // 参数验证
-    if (Pairs.Num() <= 0)
-    {
-        UE_LOG(SortLibraryLog, Warning, TEXT("UpdateSortedResults: Pairs array is empty"));
-        return;
-    }
+    SortLibrary_Private::GenericSort<float, float>(InArray, bAscending, [](float Val){ return Val; }, SortedArray, OriginalIndices);
+}
 
-    if (SortedValues && !GetSortedValue)
+void USortLibrary::SortStringArray(const TArray<FString>& InArray, bool bAscending, TArray<FString>& SortedArray, TArray<int32>& OriginalIndices)
+{
+    // 使用一个自定义结构体进行排序，以便利用FText来获得正确的本地化支持 (例如中文拼音)
+    struct FStringSortPair
     {
-        UE_LOG(SortLibraryLog, Warning, TEXT("UpdateSortedResults: GetSortedValue function is required when SortedValues is provided"));
-        return;
-    }
-
-    const int32 ArrayNum = Pairs.Num();
+        FString Value;
+        int32 OriginalIndex;
+        bool operator<(const FStringSortPair& Other) const
+        {
+            return FText::FromString(Value).CompareTo(FText::FromString(Other.Value)) < 0;
+        }
+    };
     
-    // 确保输出数组大小正确
-    if (SortedArray.Num() != ArrayNum)
+    TArray<FStringSortPair> Pairs;
+    Pairs.Reserve(InArray.Num());
+    for(int32 i=0; i < InArray.Num(); ++i)
     {
-        SortedArray.SetNum(ArrayNum);
-    }
-    if (OriginalIndices.Num() != ArrayNum)
-    {
-        OriginalIndices.SetNum(ArrayNum);
-    }
-    if (SortedValues && SortedValues->Num() != ArrayNum)
-    {
-        SortedValues->SetNum(ArrayNum);
+        Pairs.Add({InArray[i], i});
     }
 
-    // 更新结果
-    for(int32 i = 0; i < ArrayNum; ++i)
+    if (bAscending)
+    {
+        Pairs.Sort();
+    }
+    else
+    {
+        Pairs.Sort([](const auto& A, const auto& B){ return B < A; });
+    }
+    
+    SortedArray.SetNum(Pairs.Num());
+    OriginalIndices.SetNum(Pairs.Num());
+    for(int32 i=0; i < Pairs.Num(); ++i)
     {
         SortedArray[i] = Pairs[i].Value;
         OriginalIndices[i] = Pairs[i].OriginalIndex;
-        if(SortedValues && GetSortedValue)
-        {
-            (*SortedValues)[i] = GetSortedValue(Pairs[i]);
-        }
     }
 }
 
-/**
- * 优化数组内存使用
- * @param Array - 要优化的数组
- * @param bShrinkArray - 是否收缩数组内存
- */
-template<typename T>
-void OptimizeMemory(TArray<T>& Array, bool bShrinkArray)
+void USortLibrary::SortNameArray(const TArray<FName>& InArray, bool bAscending, TArray<FName>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    Array.Empty();
-    if (bShrinkArray)
+    // 排序FName需要先转换为FString，再转为FText，以实现正确的本地化
+    struct FNameSortPair
     {
-        Array.Shrink();
+        FName Value;
+        int32 OriginalIndex;
+        bool operator<(const FNameSortPair& Other) const
+        {
+            return FText::FromString(Value.ToString()).CompareTo(FText::FromString(Other.Value.ToString())) < 0;
+        }
+    };
+
+    TArray<FNameSortPair> Pairs;
+    Pairs.Reserve(InArray.Num());
+    for(int32 i=0; i < InArray.Num(); ++i)
+    {
+        Pairs.Add({InArray[i], i});
+    }
+
+    if (bAscending)
+    {
+        Pairs.Sort();
+    }
+    else
+    {
+        Pairs.Sort([](const auto& A, const auto& B){ return B < A; });
+    }
+
+    SortedArray.SetNum(Pairs.Num());
+    OriginalIndices.SetNum(Pairs.Num());
+    for(int32 i=0; i < Pairs.Num(); ++i)
+    {
+        SortedArray[i] = Pairs[i].Value;
+        OriginalIndices[i] = Pairs[i].OriginalIndex;
     }
 }
 
-// 向量排序函数实现
+//~ 向量排序函数
+// =================================================================================================
+
 void USortLibrary::SortVectorsByProjection(const TArray<FVector>& Vectors, const FVector& Direction, bool bAscending,
     TArray<FVector>& SortedVectors, TArray<int32>& OriginalIndices, TArray<float>& SortedProjections)
 {
-    // 参数验证
-    if (Vectors.Num() <= 0)
+    const FVector NormalizedDirection = Direction.GetSafeNormal();
+    auto GetProjection = [&](const FVector& Vector)
     {
-        SortedVectors.Empty();
-        OriginalIndices.Empty();
-        SortedProjections.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    SortedVectors = Vectors;
-    const int32 ArrayNum = Vectors.Num();
-    OriginalIndices.SetNumUninitialized(ArrayNum);
-    SortedProjections.SetNumUninitialized(ArrayNum);
-
-    // 初始化索引数组
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        OriginalIndices[i] = i;
-    }
-
-    // 标准化方向向量
-    FVector NormalizedDirection = Direction.GetSafeNormal();
-
-    // 创建排序用的键值对数组
-    struct FVectorProjectionPair
-    {
-        FVector Vector;
-        float Projection;
-        int32 OriginalIndex;
-
-        FVectorProjectionPair() : Vector(FVector::ZeroVector), Projection(0.0f), OriginalIndex(INDEX_NONE) {}
+        return FVector::DotProduct(Vector, NormalizedDirection);
     };
-
-    TArray<FVectorProjectionPair> Pairs;
-    Pairs.SetNumUninitialized(ArrayNum);
-
-    // 构建键值对
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        float Projection = FVector::DotProduct(Vectors[i], NormalizedDirection);
-        Pairs[i].Vector = Vectors[i];
-        Pairs[i].Projection = Projection;
-        Pairs[i].OriginalIndex = i;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const FVectorProjectionPair& A, const FVectorProjectionPair& B) {
-        return bAscending ? A.Projection < B.Projection : A.Projection > B.Projection;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        SortedVectors[i] = Pairs[i].Vector;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedProjections[i] = Pairs[i].Projection;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    SortLibrary_Private::GenericSort<FVector, float>(Vectors, bAscending, GetProjection, SortedVectors, OriginalIndices, &SortedProjections);
 }
 
 void USortLibrary::SortVectorsByLength(const TArray<FVector>& Vectors, bool bAscending,
     TArray<FVector>& SortedVectors, TArray<int32>& OriginalIndices, TArray<float>& SortedLengths)
 {
-    // 参数验证
-    if (Vectors.Num() <= 0)
+    auto GetLength = [](const FVector& Vector)
     {
-        SortedVectors.Empty();
-        OriginalIndices.Empty();
-        SortedLengths.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    SortedVectors = Vectors;
-    const int32 ArrayNum = Vectors.Num();
-    OriginalIndices.SetNumUninitialized(ArrayNum);
-    SortedLengths.SetNumUninitialized(ArrayNum);
-
-    // 初始化索引数组
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        OriginalIndices[i] = i;
-    }
-
-    // 创建排序用的键值对数组
-    struct FVectorLengthPair
-    {
-        FVector Vector;
-        float Length;
-        int32 OriginalIndex;
-
-        FVectorLengthPair() : Vector(FVector::ZeroVector), Length(0.0f), OriginalIndex(INDEX_NONE) {}
+        return Vector.Size();
     };
-
-    TArray<FVectorLengthPair> Pairs;
-    Pairs.SetNumUninitialized(ArrayNum);
-
-    // 构建键值对
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        float Length = Vectors[i].Size();
-        Pairs[i].Vector = Vectors[i];
-        Pairs[i].Length = Length;
-        Pairs[i].OriginalIndex = i;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const FVectorLengthPair& A, const FVectorLengthPair& B) {
-        return bAscending ? A.Length < B.Length : A.Length > B.Length;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        SortedVectors[i] = Pairs[i].Vector;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedLengths[i] = Pairs[i].Length;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    SortLibrary_Private::GenericSort<FVector, float>(Vectors, bAscending, GetLength, SortedVectors, OriginalIndices, &SortedLengths);
 }
 
 void USortLibrary::SortVectorsByAxis(const TArray<FVector>& Vectors, ECoordinateAxis Axis, bool bAscending,
     TArray<FVector>& SortedVectors, TArray<int32>& OriginalIndices, TArray<float>& SortedAxisValues)
 {
-    // 参数验证
-    if (Vectors.Num() <= 0)
+    auto GetAxisValue = [&](const FVector& Vector) -> float
     {
-        SortedVectors.Empty();
-        OriginalIndices.Empty();
-        SortedAxisValues.Empty();
-        return;
-    }
-
-    // 初始化输出数组
-    SortedVectors = Vectors;
-    const int32 ArrayNum = Vectors.Num();
-    OriginalIndices.SetNumUninitialized(ArrayNum);
-    SortedAxisValues.SetNumUninitialized(ArrayNum);
-
-    // 初始化索引数组
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        OriginalIndices[i] = i;
-    }
-
-    // 创建排序用的键值对数组
-    struct FVectorAxisPair
-    {
-        FVector Vector;
-        float AxisValue;
-        int32 OriginalIndex;
-
-        FVectorAxisPair() : Vector(FVector::ZeroVector), AxisValue(0.0f), OriginalIndex(INDEX_NONE) {}
+        switch (Axis)
+        {
+            case ECoordinateAxis::X: return Vector.X;
+            case ECoordinateAxis::Y: return Vector.Y;
+            case ECoordinateAxis::Z: return Vector.Z;
+            default: return 0.0f;
+        }
     };
-
-    TArray<FVectorAxisPair> Pairs;
-    Pairs.SetNumUninitialized(ArrayNum);
-
-    // 构建键值对
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        float Value = 0.0f;
-        switch(Axis)
-        {
-            case ECoordinateAxis::X:
-                Value = Vectors[i].X;
-                break;
-            case ECoordinateAxis::Y:
-                Value = Vectors[i].Y;
-                break;
-            case ECoordinateAxis::Z:
-                Value = Vectors[i].Z;
-                break;
-        }
-        Pairs[i].Vector = Vectors[i];
-        Pairs[i].AxisValue = Value;
-        Pairs[i].OriginalIndex = i;
-    }
-
-    // 执行排序
-    Pairs.Sort([bAscending](const FVectorAxisPair& A, const FVectorAxisPair& B) {
-        return bAscending ? A.AxisValue < B.AxisValue : A.AxisValue > B.AxisValue;
-    });
-
-    // 更新结果
-    for(int32 i = 0; i < ArrayNum; ++i)
-    {
-        SortedVectors[i] = Pairs[i].Vector;
-        OriginalIndices[i] = Pairs[i].OriginalIndex;
-        SortedAxisValues[i] = Pairs[i].AxisValue;
-    }
-
-    // 优化内存
-    OptimizeMemory(Pairs);
+    SortLibrary_Private::GenericSort<FVector, float>(Vectors, bAscending, GetAxisValue, SortedVectors, OriginalIndices, &SortedAxisValues);
 }
 
-// 数组操作函数实现
-void USortLibrary::RemoveDuplicateActors(const TArray<AActor*>& InArray, TArray<AActor*>& OutArray)
+//~ 数组截取函数
+// =================================================================================================
+
+void USortLibrary::SliceActorArrayByIndices(const TArray<AActor*>& InArray, int32 StartIndex, int32 EndIndex, TArray<AActor*>& OutArray)
 {
-    // 清空输出数组
     OutArray.Empty();
-
-    // 使用集合来去重
-    TSet<AActor*> UniqueActors;
-    
-    // 遍历输入数组
-    for (AActor* Actor : InArray)
+    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
     {
-        // 只添加有效的Actor
-        if (IsValid(Actor))
+        for (int32 i = StartIndex; i <= EndIndex; ++i)
         {
-            UniqueActors.Add(Actor);
+            OutArray.Add(InArray[i]);
         }
     }
-
-    // 将结果转换回数组
-    OutArray = UniqueActors.Array();
 }
 
-void USortLibrary::RemoveDuplicateFloats(const TArray<float>& InArray, float Tolerance, TArray<float>& OutArray)
+void USortLibrary::SliceFloatArrayByIndices(const TArray<float>& InArray, int32 StartIndex, int32 EndIndex, TArray<float>& OutArray)
 {
-    // 清空输出数组
     OutArray.Empty();
-    
-    // 遍历输入数组
-    for (float Value : InArray)
+    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
     {
-        bool bIsDuplicate = false;
-        
-        // 检查是否已存在相近的值
-        for (float ExistingValue : OutArray)
+        for (int32 i = StartIndex; i <= EndIndex; ++i)
         {
-            if (FMath::IsNearlyEqual(Value, ExistingValue, Tolerance))
-            {
-                bIsDuplicate = true;
-                break;
-            }
-        }
-        
-        // 如果不是重复值，则添加到输出数组
-        if (!bIsDuplicate)
-        {
-            OutArray.Add(Value);
+            OutArray.Add(InArray[i]);
         }
     }
 }
 
-void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<int32>& OutArray)
+void USortLibrary::SliceIntegerArrayByIndices(const TArray<int32>& InArray, int32 StartIndex, int32 EndIndex, TArray<int32>& OutArray)
 {
-    // 使用集合来去重
-    TSet<int32> UniqueInts(InArray);
-    
-    // 将结果转换回数组
-    OutArray = UniqueInts.Array();
-}
-
-void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, bool bCaseSensitive, TArray<FString>& OutArray)
-{
-    // 清空输出数组
     OutArray.Empty();
-    
-    // 遍历输入数组
-    for (const FString& String : InArray)
+    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
     {
-        bool bIsDuplicate = false;
-        
-        // 检查是否已存在相同的字符串
-        for (const FString& ExistingString : OutArray)
+        for (int32 i = StartIndex; i <= EndIndex; ++i)
         {
-            if (bCaseSensitive)
-            {
-                if (String.Equals(ExistingString))
-                {
-                    bIsDuplicate = true;
-                    break;
-                }
-            }
-            else
-            {
-                if (String.Equals(ExistingString, ESearchCase::IgnoreCase))
-                {
-                    bIsDuplicate = true;
-                    break;
-                }
-            }
-        }
-        
-        // 如果不是重复值，则添加到输出数组
-        if (!bIsDuplicate)
-        {
-            OutArray.Add(String);
+            OutArray.Add(InArray[i]);
         }
     }
 }
 
-void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, float Tolerance, TArray<FVector>& OutArray)
+void USortLibrary::SliceVectorArrayByIndices(const TArray<FVector>& InArray, int32 StartIndex, int32 EndIndex, TArray<FVector>& OutArray)
 {
-    // 清空输出数组
     OutArray.Empty();
-    
-    // 遍历输入数组
-    for (const FVector& Vector : InArray)
+    if (InArray.IsValidIndex(StartIndex) && InArray.IsValidIndex(EndIndex) && StartIndex <= EndIndex)
     {
-        bool bIsDuplicate = false;
-        
-        // 检查是否已存在相近的向量
-        for (const FVector& ExistingVector : OutArray)
+        for (int32 i = StartIndex; i <= EndIndex; ++i)
         {
-            if (Vector.Equals(ExistingVector, Tolerance))
-            {
-                bIsDuplicate = true;
-                break;
-            }
-        }
-        
-        // 如果不是重复值，则添加到输出数组
-        if (!bIsDuplicate)
-        {
-            OutArray.Add(Vector);
+            OutArray.Add(InArray[i]);
         }
     }
 }
 
-void USortLibrary::FindDuplicateVectors(const TArray<FVector>& InArray, float Tolerance,
-    TArray<int32>& DuplicateIndices, TArray<FVector>& DuplicateValues)
+void USortLibrary::SliceFloatArrayByValue(const TArray<float>& InArray, float MinValue, float MaxValue, TArray<float>& OutArray, TArray<int32>& Indices)
 {
-    // 清空输出数组
-    DuplicateIndices.Empty();
-    DuplicateValues.Empty();
-    
-    // 如果数组为空，直接返回
-    if (InArray.Num() == 0)
-    {
-        return;
-    }
-    
-    // 创建标记数组，用于记录已处理的索引
-    TArray<bool> Processed;
-    Processed.Init(false, InArray.Num());
-    
-    // 遍历所有向量
-    for (int32 i = 0; i < InArray.Num(); ++i)
-    {
-        // 如果当前索引已被处理，跳过
-        if (Processed[i])
-        {
-            continue;
-        }
-        
-        // 创建当前重复组的临时数组
-        TArray<int32> CurrentGroup;
-        CurrentGroup.Add(i);
-        
-        // 查找与当前向量完全相同的其他向量
-        for (int32 j = i + 1; j < InArray.Num(); ++j)
-        {
-            if (!Processed[j] && InArray[i].Equals(InArray[j], Tolerance))
-            {
-                CurrentGroup.Add(j);
-                Processed[j] = true;
-            }
-        }
-        
-        // 如果找到重复项（组内超过1个元素）
-        if (CurrentGroup.Num() > 1)
-        {
-            // 将所有索引添加到输出数组
-            DuplicateIndices.Append(CurrentGroup);
-            // 对于每个索引都添加对应的向量值
-            for (int32 k = 0; k < CurrentGroup.Num(); ++k)
-            {
-                DuplicateValues.Add(InArray[i]);
-            }
-        }
-        
-        // 标记当前索引为已处理
-        Processed[i] = true;
-    }
-}
-
-void USortLibrary::SliceActorArrayByIndices(const TArray<AActor*>& InArray, int32 StartIndex, int32 EndIndex,
-    TArray<AActor*>& OutArray)
-{
-    // 清空输出数组
-    OutArray.Empty();
-    
-    // 验证索引范围
-    if (InArray.Num() == 0 || !InArray.IsValidIndex(StartIndex) || !InArray.IsValidIndex(EndIndex) || StartIndex > EndIndex)
-    {
-        return;
-    }
-    
-    // 截取数组
-    for (int32 i = StartIndex; i <= EndIndex; ++i)
-    {
-        OutArray.Add(InArray[i]);
-    }
-}
-
-void USortLibrary::SliceFloatArrayByIndices(const TArray<float>& InArray, int32 StartIndex, int32 EndIndex,
-    TArray<float>& OutArray)
-{
-    // 清空输出数组
-    OutArray.Empty();
-    
-    // 验证索引范围
-    if (InArray.Num() == 0 || !InArray.IsValidIndex(StartIndex) || !InArray.IsValidIndex(EndIndex) || StartIndex > EndIndex)
-    {
-        return;
-    }
-    
-    // 截取数组
-    for (int32 i = StartIndex; i <= EndIndex; ++i)
-    {
-        OutArray.Add(InArray[i]);
-    }
-}
-
-void USortLibrary::SliceIntegerArrayByIndices(const TArray<int32>& InArray, int32 StartIndex, int32 EndIndex,
-    TArray<int32>& OutArray)
-{
-    // 清空输出数组
-    OutArray.Empty();
-    
-    // 验证索引范围
-    if (InArray.Num() == 0 || !InArray.IsValidIndex(StartIndex) || !InArray.IsValidIndex(EndIndex) || StartIndex > EndIndex)
-    {
-        return;
-    }
-    
-    // 截取数组
-    for (int32 i = StartIndex; i <= EndIndex; ++i)
-    {
-        OutArray.Add(InArray[i]);
-    }
-}
-
-void USortLibrary::SliceVectorArrayByIndices(const TArray<FVector>& InArray, int32 StartIndex, int32 EndIndex,
-    TArray<FVector>& OutArray)
-{
-    // 清空输出数组
-    OutArray.Empty();
-    
-    // 验证索引范围
-    if (InArray.Num() == 0 || !InArray.IsValidIndex(StartIndex) || !InArray.IsValidIndex(EndIndex) || StartIndex > EndIndex)
-    {
-        return;
-    }
-    
-    // 截取数组
-    for (int32 i = StartIndex; i <= EndIndex; ++i)
-    {
-        OutArray.Add(InArray[i]);
-    }
-}
-
-void USortLibrary::SliceFloatArrayByValue(const TArray<float>& InArray, float MinValue, float MaxValue,
-    TArray<float>& OutArray, TArray<int32>& Indices)
-{
-    // 清空输出数组
     OutArray.Empty();
     Indices.Empty();
-    
-    // 遍历输入数组
     for (int32 i = 0; i < InArray.Num(); ++i)
     {
-        float Value = InArray[i];
-        // 检查值是否在范围内
+        const float& Value = InArray[i];
         if (Value >= MinValue && Value <= MaxValue)
         {
             OutArray.Add(Value);
@@ -1477,18 +511,13 @@ void USortLibrary::SliceFloatArrayByValue(const TArray<float>& InArray, float Mi
     }
 }
 
-void USortLibrary::SliceIntegerArrayByValue(const TArray<int32>& InArray, int32 MinValue, int32 MaxValue,
-    TArray<int32>& OutArray, TArray<int32>& Indices)
+void USortLibrary::SliceIntegerArrayByValue(const TArray<int32>& InArray, int32 MinValue, int32 MaxValue, TArray<int32>& OutArray, TArray<int32>& Indices)
 {
-    // 清空输出数组
     OutArray.Empty();
     Indices.Empty();
-    
-    // 遍历输入数组
     for (int32 i = 0; i < InArray.Num(); ++i)
     {
-        int32 Value = InArray[i];
-        // 检查值是否在范围内
+        const int32& Value = InArray[i];
         if (Value >= MinValue && Value <= MaxValue)
         {
             OutArray.Add(Value);
@@ -1497,19 +526,14 @@ void USortLibrary::SliceIntegerArrayByValue(const TArray<int32>& InArray, int32 
     }
 }
 
-void USortLibrary::SliceVectorArrayByLength(const TArray<FVector>& InArray, float MinLength, float MaxLength,
-    TArray<FVector>& OutArray, TArray<int32>& Indices, TArray<float>& Lengths)
+void USortLibrary::SliceVectorArrayByLength(const TArray<FVector>& InArray, float MinLength, float MaxLength, TArray<FVector>& OutArray, TArray<int32>& Indices, TArray<float>& Lengths)
 {
-    // 清空输出数组
     OutArray.Empty();
     Indices.Empty();
     Lengths.Empty();
-    
-    // 遍历输入数组
     for (int32 i = 0; i < InArray.Num(); ++i)
     {
-        float Length = InArray[i].Size();
-        // 检查长度是否在范围内
+        const float Length = InArray[i].Size();
         if (Length >= MinLength && Length <= MaxLength)
         {
             OutArray.Add(InArray[i]);
@@ -1519,32 +543,20 @@ void USortLibrary::SliceVectorArrayByLength(const TArray<FVector>& InArray, floa
     }
 }
 
-void USortLibrary::SliceVectorArrayByComponent(const TArray<FVector>& InArray, ECoordinateAxis Axis,
-    float MinValue, float MaxValue, TArray<FVector>& OutArray, TArray<int32>& Indices, TArray<float>& AxisValues)
+void USortLibrary::SliceVectorArrayByComponent(const TArray<FVector>& InArray, ECoordinateAxis Axis, float MinValue, float MaxValue, TArray<FVector>& OutArray, TArray<int32>& Indices, TArray<float>& AxisValues)
 {
-    // 清空输出数组
     OutArray.Empty();
     Indices.Empty();
     AxisValues.Empty();
-    
-    // 遍历输入数组
     for (int32 i = 0; i < InArray.Num(); ++i)
     {
         float Value = 0.0f;
         switch(Axis)
         {
-            case ECoordinateAxis::X:
-                Value = InArray[i].X;
-                break;
-            case ECoordinateAxis::Y:
-                Value = InArray[i].Y;
-                break;
-            case ECoordinateAxis::Z:
-                Value = InArray[i].Z;
-                break;
+            case ECoordinateAxis::X: Value = InArray[i].X; break;
+            case ECoordinateAxis::Y: Value = InArray[i].Y; break;
+            case ECoordinateAxis::Z: Value = InArray[i].Z; break;
         }
-        
-        // 检查值是否在范围内
         if (Value >= MinValue && Value <= MaxValue)
         {
             OutArray.Add(InArray[i]);
@@ -1554,62 +566,731 @@ void USortLibrary::SliceVectorArrayByComponent(const TArray<FVector>& InArray, E
     }
 }
 
+
+//~ 数组反转函数
+// =================================================================================================
+
 void USortLibrary::ReverseFloatArray(const TArray<float>& InArray, TArray<float>& OutArray)
 {
-    // 清空输出数组
-    OutArray.Empty(InArray.Num());
-    
-    // 从后向前添加元素
-    for (int32 i = InArray.Num() - 1; i >= 0; --i)
-    {
-        OutArray.Add(InArray[i]);
-    }
+    OutArray = InArray;
+    Algo::Reverse(OutArray);
 }
 
 void USortLibrary::ReverseIntegerArray(const TArray<int32>& InArray, TArray<int32>& OutArray)
 {
-    // 清空输出数组
-    OutArray.Empty(InArray.Num());
-    
-    // 从后向前添加元素
-    for (int32 i = InArray.Num() - 1; i >= 0; --i)
-    {
-        OutArray.Add(InArray[i]);
-    }
+    OutArray = InArray;
+    Algo::Reverse(OutArray);
 }
 
 void USortLibrary::ReverseVectorArray(const TArray<FVector>& InArray, TArray<FVector>& OutArray)
 {
-    // 清空输出数组
-    OutArray.Empty(InArray.Num());
-    
-    // 从后向前添加元素
-    for (int32 i = InArray.Num() - 1; i >= 0; --i)
-    {
-        OutArray.Add(InArray[i]);
-    }
+    OutArray = InArray;
+    Algo::Reverse(OutArray);
 }
 
 void USortLibrary::ReverseActorArray(const TArray<AActor*>& InArray, TArray<AActor*>& OutArray)
 {
-    // 清空输出数组
-    OutArray.Empty(InArray.Num());
-    
-    // 从后向前添加元素
-    for (int32 i = InArray.Num() - 1; i >= 0; --i)
-    {
-        OutArray.Add(InArray[i]);
-    }
+    OutArray = InArray;
+    Algo::Reverse(OutArray);
 }
 
 void USortLibrary::ReverseStringArray(const TArray<FString>& InArray, TArray<FString>& OutArray)
 {
-    // 清空输出数组
-    OutArray.Empty(InArray.Num());
-    
-    // 从后向前添加元素
-    for (int32 i = InArray.Num() - 1; i >= 0; --i)
+    OutArray = InArray;
+    Algo::Reverse(OutArray);
+}
+
+//~ 数组去重函数
+// =================================================================================================
+
+void USortLibrary::RemoveDuplicateActors(const TArray<AActor*>& InArray, TArray<AActor*>& OutArray)
+{
+    TSet<AActor*> UniqueActors;
+    UniqueActors.Reserve(InArray.Num());
+    for (AActor* Actor : InArray)
     {
-        OutArray.Add(InArray[i]);
+        if (IsValid(Actor))
+        {
+            UniqueActors.Add(Actor);
+        }
     }
+    OutArray = UniqueActors.Array();
+}
+
+void USortLibrary::RemoveDuplicateFloats(const TArray<float>& InArray, float Tolerance, TArray<float>& OutArray)
+{
+    OutArray.Empty();
+    if (InArray.IsEmpty()) return;
+
+    TArray<float> SortedCopy = InArray;
+    SortedCopy.Sort();
+
+    OutArray.Add(SortedCopy[0]);
+    for (int32 i = 1; i < SortedCopy.Num(); ++i)
+    {
+        if (!FMath::IsNearlyEqual(SortedCopy[i], OutArray.Last(), Tolerance))
+        {
+            OutArray.Add(SortedCopy[i]);
+        }
+    }
+}
+
+void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<int32>& OutArray)
+{
+    TSet<int32> UniqueInts(InArray);
+    OutArray = UniqueInts.Array();
+}
+
+void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, bool bCaseSensitive, TArray<FString>& OutArray)
+{
+    OutArray.Empty();
+    if (InArray.IsEmpty()) return;
+
+    if (bCaseSensitive)
+    {
+        TSet<FString> UniqueStrings(InArray);
+        OutArray = UniqueStrings.Array();
+    }
+    else
+    {
+        // 对于不区分大小写的情况，必须手动检查唯一性
+        TSet<FString> UniqueStrings;
+        UniqueStrings.Reserve(InArray.Num());
+        for (const FString& Str : InArray)
+        {
+            bool bAlreadyExists = false;
+            // 这种实现仍然是O(N^2)的。一个带有不区分大小写的哈希的TSet会更好，但当前实现更简单。
+            for (const FString& ExistingStr : OutArray)
+            {
+                if (Str.Equals(ExistingStr, ESearchCase::IgnoreCase))
+                {
+                    bAlreadyExists = true;
+                    break;
+                }
+            }
+            if(!bAlreadyExists)
+            {
+                OutArray.Add(Str);
+            }
+        }
+    }
+}
+
+void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, float Tolerance, TArray<FVector>& OutArray)
+{
+    OutArray.Empty();
+    if (InArray.IsEmpty()) return;
+
+    TArray<FVector> SortedCopy = InArray;
+    SortedCopy.Sort([](const FVector& A, const FVector& B) {
+        if (A.X != B.X) return A.X < B.X;
+        if (A.Y != B.Y) return A.Y < B.Y;
+        return A.Z < B.Z;
+    });
+
+    OutArray.Reserve(SortedCopy.Num());
+    OutArray.Add(SortedCopy[0]);
+    for (int32 i = 1; i < SortedCopy.Num(); ++i)
+    {
+        if (!SortedCopy[i].Equals(OutArray.Last(), Tolerance))
+        {
+            OutArray.Add(SortedCopy[i]);
+        }
+    }
+    OutArray.Shrink();
+}
+
+void USortLibrary::FindDuplicateVectors(const TArray<FVector>& InArray, float Tolerance, TArray<int32>& DuplicateIndices, TArray<FVector>& DuplicateValues)
+{
+    DuplicateIndices.Empty();
+    DuplicateValues.Empty();
+    if (InArray.Num() < 2) return;
+
+    struct FVectorIndexPair { FVector Vector; int32 Index; };
+    TArray<FVectorIndexPair> Pairs;
+    Pairs.Reserve(InArray.Num());
+    for(int32 i=0; i<InArray.Num(); ++i)
+    {
+        Pairs.Add({InArray[i], i});
+    }
+
+    Pairs.Sort([](const FVectorIndexPair& A, const FVectorIndexPair& B) {
+        const FVector& V1 = A.Vector;
+        const FVector& V2 = B.Vector;
+        if (V1.X != V2.X) return V1.X < V2.X;
+        if (V1.Y != V2.Y) return V1.Y < V2.Y;
+        return V1.Z < V2.Z;
+    });
+
+    TArray<bool> IsDuplicate;
+    IsDuplicate.Init(false, InArray.Num());
+    bool bInDuplicateGroup = false;
+
+    for (int32 i = 0; i < Pairs.Num() - 1; ++i)
+    {
+        if (Pairs[i].Vector.Equals(Pairs[i+1].Vector, Tolerance))
+        {
+            IsDuplicate[Pairs[i].Index] = true;
+            IsDuplicate[Pairs[i+1].Index] = true;
+        }
+    }
+    
+    for(int32 i=0; i < IsDuplicate.Num(); ++i)
+    {
+        if(IsDuplicate[i])
+        {
+            DuplicateIndices.Add(i);
+            DuplicateValues.Add(InArray[i]);
+        }
+    }
+}
+
+//~ 通用属性排序函数 (基于GitHub项目的改进)
+// =================================================================================================
+
+void USortLibrary::SortArrayByPropertyInPlace(TArray<int32>& TargetArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
+{
+    // 这个函数永远不会被调用，因为它使用CustomThunk
+    check(0);
+}
+
+DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
+{
+    // 使用UE官方的CustomThunk模式 - 参考KismetArrayLibrary
+    Stack.MostRecentProperty = nullptr;
+    Stack.StepCompiledIn<FArrayProperty>(NULL);
+    void* ArrayAddr = Stack.MostRecentPropertyAddress;
+    FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Stack.MostRecentProperty);
+
+    if (!ArrayProperty)
+    {
+        Stack.bArrayContextFailed = true;
+        return;
+    }
+
+    P_GET_PROPERTY(FNameProperty, PropertyName);
+    P_GET_UBOOL(bAscending);
+    P_GET_TARRAY_REF(int32, OriginalIndices);
+
+    P_FINISH;
+
+    P_NATIVE_BEGIN;
+    UE_LOG(SortLibraryLog, Warning, TEXT("execSortArrayByPropertyInPlace: ArrayAddr=%p, ArrayProperty=%p, PropertyName=%s"),
+        ArrayAddr, ArrayProperty, *PropertyName.ToString());
+
+    if (ArrayAddr && ArrayProperty)
+    {
+        GenericSortArrayByProperty(ArrayAddr, ArrayProperty, PropertyName, bAscending, OriginalIndices);
+    }
+    else
+    {
+        UE_LOG(SortLibraryLog, Error, TEXT("execSortArrayByPropertyInPlace: 无效参数 - ArrayAddr=%p, ArrayProperty=%p"),
+            ArrayAddr, ArrayProperty);
+        OriginalIndices.Empty();
+    }
+    P_NATIVE_END;
+}
+
+void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty* ArrayProp, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
+{
+    UE_LOG(SortLibraryLog, Warning, TEXT("GenericSortArrayByProperty: 开始执行 - TargetArray=%p, ArrayProp=%p, PropertyName=%s"),
+        TargetArray, ArrayProp, *PropertyName.ToString());
+
+    if (!TargetArray || !ArrayProp)
+    {
+        UE_LOG(SortLibraryLog, Error, TEXT("GenericSortArrayByProperty: 参数无效 - TargetArray=%p, ArrayProp=%p"),
+            TargetArray, ArrayProp);
+        OriginalIndices.Empty();
+        return;
+    }
+
+    UE_LOG(SortLibraryLog, Warning, TEXT("GenericSortArrayByProperty: 创建ArrayHelper"));
+    FScriptArrayHelper ArrayHelper(ArrayProp, TargetArray);
+    UE_LOG(SortLibraryLog, Warning, TEXT("GenericSortArrayByProperty: ArrayHelper创建成功，数组大小=%d"), ArrayHelper.Num());
+    if (ArrayHelper.Num() < 2)
+    {
+        // 数组太小，不需要排序
+        OriginalIndices.SetNum(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+        return;
+    }
+
+    FProperty* SortProp = nullptr;
+
+    // 根据数组元素类型查找排序属性
+    if (const FObjectProperty* ObjectProp = CastField<FObjectProperty>(ArrayProp->Inner))
+    {
+        // 对象数组：在类中查找属性
+        SortProp = FindPropertyByName<FProperty>(ObjectProp->PropertyClass, PropertyName);
+    }
+    else if (const FStructProperty* StructProp = CastField<FStructProperty>(ArrayProp->Inner))
+    {
+        // 结构体数组：在结构体中查找属性
+        SortProp = FindPropertyByName<FProperty>(StructProp->Struct, PropertyName);
+    }
+    else
+    {
+        // 基础类型数组：直接使用元素属性
+        SortProp = ArrayProp->Inner;
+    }
+
+    if (!SortProp)
+    {
+        UE_LOG(SortLibraryLog, Warning, TEXT("无法找到属性: %s"), *PropertyName.ToString());
+        // 返回原始索引顺序
+        OriginalIndices.SetNum(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+        return;
+    }
+
+    // 创建索引数组并进行排序
+    TArray<int32> Indices;
+    Indices.SetNum(ArrayHelper.Num());
+    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    {
+        Indices[i] = i;
+    }
+
+    // 使用快速排序
+    QuickSortByProperty(ArrayHelper, ArrayProp->Inner, SortProp, Indices, 0, ArrayHelper.Num() - 1, bAscending);
+
+    // 根据排序后的索引重新排列数组
+    TArray<uint8> TempStorage;
+    const int32 ElementSize = ArrayProp->Inner->GetSize();
+    TempStorage.SetNumUninitialized(ElementSize * ArrayHelper.Num());
+
+    // 复制排序后的元素到临时存储
+    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    {
+        const int32 SourceIndex = Indices[i];
+        void* SourcePtr = ArrayHelper.GetRawPtr(SourceIndex);
+        void* DestPtr = TempStorage.GetData() + (i * ElementSize);
+        ArrayProp->Inner->CopyCompleteValue(DestPtr, SourcePtr);
+    }
+
+    // 将排序后的元素复制回原数组
+    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    {
+        void* SourcePtr = TempStorage.GetData() + (i * ElementSize);
+        void* DestPtr = ArrayHelper.GetRawPtr(i);
+        ArrayProp->Inner->CopyCompleteValue(DestPtr, SourcePtr);
+    }
+
+    // 返回原始索引
+    OriginalIndices = MoveTemp(Indices);
+}
+
+template<typename T>
+T* USortLibrary::FindPropertyByName(const UStruct* Owner, FName FieldName)
+{
+    if (FieldName.IsNone() || !Owner)
+    {
+        return nullptr;
+    }
+
+    // 通过比较FName（整数）而不是字符串来搜索，性能更好
+    for (TFieldIterator<T> It(Owner); It; ++It)
+    {
+        if ((It->GetFName() == FieldName) || (It->GetAuthoredName() == FieldName.ToString()))
+        {
+            return *It;
+        }
+    }
+
+    return nullptr;
+}
+
+bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* LeftValuePtr, const void* RightValuePtr, bool bAscending)
+{
+    if (!Property || !LeftValuePtr || !RightValuePtr)
+    {
+        return false;
+    }
+
+    bool bResult = false;
+
+    // 根据属性类型进行比较
+    if (const FNumericProperty* NumericProp = CastField<FNumericProperty>(Property))
+    {
+        if (NumericProp->IsFloatingPoint())
+        {
+            const double LeftValue = NumericProp->GetFloatingPointPropertyValue(LeftValuePtr);
+            const double RightValue = NumericProp->GetFloatingPointPropertyValue(RightValuePtr);
+            bResult = LeftValue < RightValue;
+        }
+        else if (NumericProp->IsInteger())
+        {
+            const int64 LeftValue = NumericProp->GetSignedIntPropertyValue(LeftValuePtr);
+            const int64 RightValue = NumericProp->GetSignedIntPropertyValue(RightValuePtr);
+            bResult = LeftValue < RightValue;
+        }
+    }
+    else if (const FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+    {
+        const bool LeftValue = BoolProp->GetPropertyValue(LeftValuePtr);
+        const bool RightValue = BoolProp->GetPropertyValue(RightValuePtr);
+        bResult = !LeftValue && RightValue; // false < true
+    }
+    else if (const FNameProperty* NameProp = CastField<FNameProperty>(Property))
+    {
+        const FName LeftValue = NameProp->GetPropertyValue(LeftValuePtr);
+        const FName RightValue = NameProp->GetPropertyValue(RightValuePtr);
+        bResult = LeftValue.ToString() < RightValue.ToString();
+    }
+    else if (const FStrProperty* StringProp = CastField<FStrProperty>(Property))
+    {
+        const FString& LeftValue = StringProp->GetPropertyValue(LeftValuePtr);
+        const FString& RightValue = StringProp->GetPropertyValue(RightValuePtr);
+        bResult = LeftValue < RightValue;
+    }
+    else if (const FTextProperty* TextProp = CastField<FTextProperty>(Property))
+    {
+        const FText& LeftValue = TextProp->GetPropertyValue(LeftValuePtr);
+        const FText& RightValue = TextProp->GetPropertyValue(RightValuePtr);
+        bResult = LeftValue.ToString() < RightValue.ToString();
+    }
+    else if (const FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
+    {
+        const int64 LeftValue = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(LeftValuePtr);
+        const int64 RightValue = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(RightValuePtr);
+        bResult = LeftValue < RightValue;
+    }
+
+    return bResult == bAscending;
+}
+
+void USortLibrary::QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
+{
+    if (Low < High)
+    {
+        const int32 PivotIndex = PartitionByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, High, bAscending);
+        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, PivotIndex - 1, bAscending);
+        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, PivotIndex + 1, High, bAscending);
+    }
+}
+
+int32 USortLibrary::PartitionByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
+{
+    const int32 PivotIndex = Indices[High];
+    void* PivotValuePtr = GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, PivotIndex);
+
+    int32 i = Low - 1;
+
+    for (int32 j = Low; j < High; ++j)
+    {
+        const int32 CurrentIndex = Indices[j];
+        void* CurrentValuePtr = GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, CurrentIndex);
+
+        if (ComparePropertyValues(SortProp, CurrentValuePtr, PivotValuePtr, bAscending))
+        {
+            ++i;
+            Indices.Swap(i, j);
+        }
+    }
+
+    Indices.Swap(i + 1, High);
+    return i + 1;
+}
+
+void* USortLibrary::GetPropertyValuePtr(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, int32 ElementIndex)
+{
+    void* ElementPtr = ArrayHelper.GetRawPtr(ElementIndex);
+
+    if (const FObjectProperty* ObjectProp = CastField<FObjectProperty>(InnerProp))
+    {
+        // 对象属性：先获取对象，再获取属性值
+        UObject* Object = ObjectProp->GetObjectPropertyValue(ElementPtr);
+        if (Object)
+        {
+            return SortProp->ContainerPtrToValuePtr<void>(Object);
+        }
+        return nullptr;
+    }
+    else
+    {
+        // 结构体属性：直接获取属性值
+        return SortProp->ContainerPtrToValuePtr<void>(ElementPtr);
+    }
+}
+
+
+
+void USortLibrary::SortStructByPropertyImpl(void* TargetArray, FArrayProperty* ArrayProp, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices, EPropertyType PropertyType)
+{
+    if (!TargetArray || !ArrayProp)
+    {
+        OriginalIndices.Empty();
+        return;
+    }
+
+    FScriptArrayHelper ArrayHelper(ArrayProp, TargetArray);
+    if (ArrayHelper.Num() < 2)
+    {
+        // 数组太小，不需要排序
+        OriginalIndices.SetNum(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+        return;
+    }
+
+    // 确保是结构体数组
+    FStructProperty* StructProp = CastField<FStructProperty>(ArrayProp->Inner);
+    if (!StructProp)
+    {
+        UE_LOG(SortLibraryLog, Error, TEXT("SortStructByPropertyImpl: 不是结构体数组"));
+        OriginalIndices.Empty();
+        return;
+    }
+
+    // 查找指定的属性
+    FProperty* SortProperty = nullptr;
+    for (TFieldIterator<FProperty> PropertyIt(StructProp->Struct); PropertyIt; ++PropertyIt)
+    {
+        FProperty* Property = *PropertyIt;
+        if (Property->GetFName() == PropertyName || Property->GetAuthoredName() == PropertyName.ToString())
+        {
+            SortProperty = Property;
+            break;
+        }
+    }
+
+    if (!SortProperty)
+    {
+        UE_LOG(SortLibraryLog, Error, TEXT("SortStructByPropertyImpl: 未找到属性 %s"), *PropertyName.ToString());
+        OriginalIndices.SetNum(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+        return;
+    }
+
+    // 验证属性类型是否匹配
+    bool bTypeMatches = false;
+    switch (PropertyType)
+    {
+        case EPropertyType::Float:
+            bTypeMatches = SortProperty->IsA<FFloatProperty>() || SortProperty->IsA<FDoubleProperty>();
+            break;
+        case EPropertyType::Integer:
+            bTypeMatches = SortProperty->IsA<FIntProperty>() || SortProperty->IsA<FInt64Property>() || SortProperty->IsA<FByteProperty>();
+            break;
+        case EPropertyType::String:
+            bTypeMatches = SortProperty->IsA<FStrProperty>() || SortProperty->IsA<FNameProperty>() || SortProperty->IsA<FTextProperty>();
+            break;
+        case EPropertyType::Boolean:
+            bTypeMatches = SortProperty->IsA<FBoolProperty>();
+            break;
+    }
+
+    if (!bTypeMatches)
+    {
+        UE_LOG(SortLibraryLog, Error, TEXT("SortStructByPropertyImpl: 属性类型不匹配"));
+        OriginalIndices.SetNum(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+        return;
+    }
+
+    // 创建索引数组并进行排序
+    TArray<int32> Indices;
+    Indices.SetNum(ArrayHelper.Num());
+    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    {
+        Indices[i] = i;
+    }
+
+    // 使用快速排序
+    QuickSortStructByProperty(ArrayHelper, StructProp, SortProperty, Indices, 0, ArrayHelper.Num() - 1, bAscending, PropertyType);
+
+    // 根据排序后的索引重新排列数组
+    TArray<uint8> TempStorage;
+    const int32 ElementSize = ArrayProp->Inner->GetSize();
+    TempStorage.SetNumUninitialized(ElementSize * ArrayHelper.Num());
+
+    // 复制排序后的元素到临时存储
+    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    {
+        const int32 SourceIndex = Indices[i];
+        void* SourcePtr = ArrayHelper.GetRawPtr(SourceIndex);
+        void* DestPtr = TempStorage.GetData() + (i * ElementSize);
+        ArrayProp->Inner->CopyCompleteValue(DestPtr, SourcePtr);
+    }
+
+    // 将排序后的元素复制回原数组
+    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    {
+        void* SourcePtr = TempStorage.GetData() + (i * ElementSize);
+        void* DestPtr = ArrayHelper.GetRawPtr(i);
+        ArrayProp->Inner->CopyCompleteValue(DestPtr, SourcePtr);
+    }
+
+    // 返回原始索引
+    OriginalIndices = MoveTemp(Indices);
+}
+
+bool USortLibrary::CompareStructPropertyValues(const FProperty* Property, const void* LeftValuePtr, const void* RightValuePtr, bool bAscending, EPropertyType PropertyType)
+{
+    if (!Property || !LeftValuePtr || !RightValuePtr)
+    {
+        return false;
+    }
+
+    bool bResult = false;
+
+    switch (PropertyType)
+    {
+        case EPropertyType::Float:
+        {
+            if (const FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+            {
+                const float LeftValue = FloatProp->GetPropertyValue(LeftValuePtr);
+                const float RightValue = FloatProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            else if (const FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+            {
+                const double LeftValue = DoubleProp->GetPropertyValue(LeftValuePtr);
+                const double RightValue = DoubleProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            break;
+        }
+        case EPropertyType::Integer:
+        {
+            if (const FIntProperty* IntProp = CastField<FIntProperty>(Property))
+            {
+                const int32 LeftValue = IntProp->GetPropertyValue(LeftValuePtr);
+                const int32 RightValue = IntProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            else if (const FInt64Property* Int64Prop = CastField<FInt64Property>(Property))
+            {
+                const int64 LeftValue = Int64Prop->GetPropertyValue(LeftValuePtr);
+                const int64 RightValue = Int64Prop->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            else if (const FByteProperty* ByteProp = CastField<FByteProperty>(Property))
+            {
+                const uint8 LeftValue = ByteProp->GetPropertyValue(LeftValuePtr);
+                const uint8 RightValue = ByteProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            break;
+        }
+        case EPropertyType::String:
+        {
+            if (const FStrProperty* StringProp = CastField<FStrProperty>(Property))
+            {
+                const FString& LeftValue = StringProp->GetPropertyValue(LeftValuePtr);
+                const FString& RightValue = StringProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            else if (const FNameProperty* NameProp = CastField<FNameProperty>(Property))
+            {
+                const FName LeftValue = NameProp->GetPropertyValue(LeftValuePtr);
+                const FName RightValue = NameProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue.ToString() < RightValue.ToString();
+            }
+            else if (const FTextProperty* TextProp = CastField<FTextProperty>(Property))
+            {
+                const FText& LeftValue = TextProp->GetPropertyValue(LeftValuePtr);
+                const FText& RightValue = TextProp->GetPropertyValue(RightValuePtr);
+                bResult = LeftValue.ToString() < RightValue.ToString();
+            }
+            break;
+        }
+        case EPropertyType::Boolean:
+        {
+            if (const FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+            {
+                const bool LeftValue = BoolProp->GetPropertyValue(LeftValuePtr);
+                const bool RightValue = BoolProp->GetPropertyValue(RightValuePtr);
+                bResult = !LeftValue && RightValue; // false < true
+            }
+            break;
+        }
+    }
+
+    return bResult == bAscending;
+}
+
+void USortLibrary::QuickSortStructByProperty(FScriptArrayHelper& ArrayHelper, FProperty* StructProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, EPropertyType PropertyType)
+{
+    if (Low < High)
+    {
+        const int32 PivotIndex = PartitionStructByProperty(ArrayHelper, StructProp, SortProp, Indices, Low, High, bAscending, PropertyType);
+        QuickSortStructByProperty(ArrayHelper, StructProp, SortProp, Indices, Low, PivotIndex - 1, bAscending, PropertyType);
+        QuickSortStructByProperty(ArrayHelper, StructProp, SortProp, Indices, PivotIndex + 1, High, bAscending, PropertyType);
+    }
+}
+
+int32 USortLibrary::PartitionStructByProperty(FScriptArrayHelper& ArrayHelper, FProperty* StructProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, EPropertyType PropertyType)
+{
+    const int32 PivotIndex = Indices[High];
+    void* PivotElementPtr = ArrayHelper.GetRawPtr(PivotIndex);
+    void* PivotValuePtr = SortProp->ContainerPtrToValuePtr<void>(PivotElementPtr);
+
+    int32 i = Low - 1;
+
+    for (int32 j = Low; j < High; ++j)
+    {
+        const int32 CurrentIndex = Indices[j];
+        void* CurrentElementPtr = ArrayHelper.GetRawPtr(CurrentIndex);
+        void* CurrentValuePtr = SortProp->ContainerPtrToValuePtr<void>(CurrentElementPtr);
+
+        if (CompareStructPropertyValues(SortProp, CurrentValuePtr, PivotValuePtr, bAscending, PropertyType))
+        {
+            ++i;
+            Indices.Swap(i, j);
+        }
+    }
+
+    Indices.Swap(i + 1, High);
+    return i + 1;
+}
+
+//~ 结构体属性排序函数实现 (简化版本 - 不使用CustomThunk)
+// =================================================================================================
+
+TArray<int32> USortLibrary::SortStructByProperty_Float(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
+{
+    // 这个函数实际上不会被直接调用，因为智能排序节点会处理类型转换
+    // 但我们需要提供一个占位符实现
+    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_Float: 这个函数应该通过智能排序节点调用"));
+
+    // 返回空数组
+    OriginalIndices.Empty();
+    return TArray<int32>();
+}
+
+TArray<int32> USortLibrary::SortStructByProperty_Int(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
+{
+    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_Int: 这个函数应该通过智能排序节点调用"));
+    OriginalIndices.Empty();
+    return TArray<int32>();
+}
+
+TArray<int32> USortLibrary::SortStructByProperty_String(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
+{
+    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_String: 这个函数应该通过智能排序节点调用"));
+    OriginalIndices.Empty();
+    return TArray<int32>();
+}
+
+TArray<int32> USortLibrary::SortStructByProperty_Bool(const TArray<int32>& StructArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
+{
+    UE_LOG(SortLibraryLog, Warning, TEXT("SortStructByProperty_Bool: 这个函数应该通过智能排序节点调用"));
+    OriginalIndices.Empty();
+    return TArray<int32>();
 }
