@@ -8,7 +8,7 @@
  * 排序模块的图形引脚工厂
  * 用于创建自定义的引脚UI组件
  */
-class SORT_API FSortGraphPinFactory : public FGraphPanelPinFactory
+class SORTEDITOR_API FSortGraphPinFactory : public FGraphPanelPinFactory
 {
 public:
     virtual TSharedPtr<class SGraphPin> CreatePin(class UEdGraphPin* InPin) const override;

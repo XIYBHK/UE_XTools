@@ -62,3 +62,23 @@
 - [ ] **DisplayName**: 为枚举值添加 `UMETA(DisplayName="...")` 以提高在UI中的可读性。
 
 - [ ] **运行时可用性**: 确保枚举类型定义在运行时模块中，而不是Editor-only模块，以便 ExpandNode 生成的节点可以在运行时访问它。
+
+## 7. 资产兼容性
+
+- [ ] **节点可扩展性**: 节点的逻辑是否易于扩展？例如，通过子类化或添加更多的引脚。
+- [ ] **遵循命名约定**: 节点的类名（`UK2Node_...`）、函数名和引脚名是否清晰并遵循UE的命名约定？
+- [ ] **资产兼容性**: 节点是否能正确处理不同类型的资产（例如，处理静态网格体和骨骼网格体）？
+
+### 打包与模块化清单
+
+- [ ] **模块类型正确性**: 包含 `UK2Node` 的模块是否设置为了 `Editor` 或 `UncookedOnly` 类型，而不是 `Runtime`？
+    - **原因**: `UK2Node` 及其相关类（如 `BlueprintGraph`）仅存在于编辑器环境中。`Runtime` 模块在打包时不会链接编辑器模块，会导致 `unresolved external symbol` 或 `cannot find parent class` 错误。
+- [ ] **编辑器代码隔离**: 是否将所有编辑器相关的代码（包括 `UK2Node`、`SWidget`、`FAssetTypeActions_Base` 等）都放在了编辑器类型的模块中？
+    - **原因**: 即使使用 `#if WITH_EDITOR` 宏，UHT（Unreal Header Tool）仍会为 `UCLASS` 生成代码，导致在打包 `Runtime` 版本时出现链接错误。最可靠的方法是将文件物理隔离到编辑器模块。
+- [ ] **检查 `.Build.cs` 依赖**: 编辑器模块是否在 `PrivateDependencyModuleNames` 或 `PublicDependencyModuleNames` 中添加了 `"UnrealEd"`, `"BlueprintGraph"` 等必要的依赖？
+- [ ] **检查 `.uplugin` 文件**: 新增的编辑器模块是否已在 `.uplugin` 文件中正确声明，并设置了正确的 `Type` 和 `LoadingPhase`？
+- [ ] **API导出宏**: 如果代码从一个模块迁移到另一个，是否更新了 `*_API` 宏（例如，从 `SORT_API` 改为 `SORTEDITOR_API`）？
+
+### 性能清单
+
+- [ ] **性能**: 对于可能耗时的编辑器操作（如遍历大量属性），使用 FScopedSlowTask 显示进度条，防止编辑器假死。

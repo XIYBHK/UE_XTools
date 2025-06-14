@@ -68,7 +68,7 @@ struct FSmartSort_Helper
  * @brief 一个智能排序节点，可根据连接的数组类型动态改变其排序选项。
  */
 UCLASS()
-class SORT_API UK2Node_SmartSort : public UK2Node
+class SORTEDITOR_API UK2Node_SmartSort : public UK2Node
 {
 	GENERATED_BODY()
 

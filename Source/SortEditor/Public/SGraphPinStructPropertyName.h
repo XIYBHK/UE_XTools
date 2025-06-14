@@ -9,7 +9,7 @@
  * 结构体属性名称选择引脚
  * 提供下拉菜单来选择结构体的可排序属性
  */
-class SORT_API SGraphPinStructPropertyName : public SGraphPin
+class SORTEDITOR_API SGraphPinStructPropertyName : public SGraphPin
 {
 public:
     SLATE_BEGIN_ARGS(SGraphPinStructPropertyName) {}

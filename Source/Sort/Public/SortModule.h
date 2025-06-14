@@ -3,8 +3,6 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
-struct FGraphPanelPinFactory;
-
 class FSortModule : public IModuleInterface
 {
 public:
@@ -12,7 +10,9 @@ public:
     virtual void StartupModule() override;
     virtual void ShutdownModule() override;
 
+#if WITH_EDITOR
 private:
     /** 自定义引脚工厂 */
-    TSharedPtr<FGraphPanelPinFactory> SortGraphPinFactory;
+    TSharedPtr<class FGraphPanelPinFactory> SortGraphPinFactory;
+#endif
 };

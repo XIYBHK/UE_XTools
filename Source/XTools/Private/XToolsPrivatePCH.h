@@ -5,29 +5,30 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
-// Common engine headers
-#include "Engine/Engine.h"
+// 核心UObject
+#include "UObject/Object.h"
+#include "UObject/UObjectGlobals.h"
+#include "UObject/Package.h"
+
+// 引擎
 #include "Engine/World.h"
 
-// Core module headers
-#include "CoreUObject.h"
-#include "CoreGlobals.h"
-
-// Input module headers
+// 输入
 #include "InputCoreTypes.h"
 
-// Slate/UMG headers
+// Slate/UMG - 作为UI的巨型依赖项，暂时保留
 #include "SlateBasics.h"
 #include "UMG.h"
 
-// Components headers
+// 组件
 #include "Components/SceneComponent.h"
 
-// Debugging headers
+// 调试
+#include "Engine/Canvas.h" // DrawDebugHelpers 依赖
 #include "DrawDebugHelpers.h"
 
-// Curve headers
+// 曲线
 #include "Curves/CurveFloat.h"
 
-// Plugin specific macros
+// 插件特定宏
 #include "XToolsDefines.h"

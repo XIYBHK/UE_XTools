@@ -30,6 +30,10 @@
     -   [5.1 提升用户体验 (UI/UX)](#51-提升用户体验-uiux)
     -   [5.2 性能与安全](#52-性能与安全)
     -   [5.3 版本兼容与模块化](#53-版本兼容与模块化)
+6.  [**第九部分：核心原则：编辑器与运行时模块分离**](#第九部分核心原则编辑器与运行时模块分离)
+    -   [9.1 为什么需要分离？](#91-为什么需要分离)
+    -   [9.2 如何正确分离模块？](#92-如何正确分离模块)
+    -   [9.3 实践步骤示例](#93-实践步骤示例)
 
 ---
 
@@ -37,7 +41,7 @@
 
 ### 1.1 什么是K2Node？
 
-`UK2Node` 是虚幻引擎中用于创建自定义蓝图节点的C++基类。与简单的 `UFUNCTION` 不同，K2Node 提供了对节点外观、引脚（Pins）、行为和编译过程的完全控制。它允许你创建具有复杂逻辑、动态引脚和自定义UI的“智能”节点，这些是纯 `UFUNCTION` 无法实现的。
+`UK2Node` 是虚幻引擎中用于创建自定义蓝图节点的C++基类。与简单的 `UFUNCTION` 不同，K2Node 提供了对节点外观、引脚（Pins）、行为和编译过程的完全控制。它允许你创建具有复杂逻辑、动态引脚和自定义UI的"智能"节点，这些是纯 `UFUNCTION` 无法实现的。
 
 ### 1.2 核心类结构
 
@@ -89,7 +93,7 @@ public:
 -   **`ReconstructNode`**: 当节点的结构需要改变时（如用户连接了一个不同类型的引脚），由引擎或手动调用此函数。它负责管理整个重建过程。
 -   **`ReallocatePinsDuringReconstruction`**: 在 `ReconstructNode` 内部调用，是重新创建引脚的主要场所。
 -   **`PostReconstructNode`**: 所有引脚重建和连接恢复后调用，适合进行最终的清理或状态更新。
--   **`ExpandNode`**: 在蓝图**编译**时调用。这是K2Node的核心，它将自身“展开”或“转译”为一个或多个更简单的底层节点（通常是 `UK2Node_CallFunction`）。最终打包的游戏中不存在K2Node，只存在它展开后的结果。
+-   **`ExpandNode`**: 在蓝图**编译**时调用。这是K2Node的核心，它将自身"展开"或"转译"为一个或多个更简单的底层节点（通常是 `UK2Node_CallFunction`）。最终打包的游戏中不存在K2Node，只存在它展开后的结果。
 
 ---
 
@@ -173,7 +177,7 @@ void UMyK2Node::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* So
     CallFunctionNode->FunctionReference.SetExternalMember(GET_FUNCTION_NAME_CHECKED(UMyBlueprintFunctionLibrary, MyRuntimeFunction), UMyBlueprintFunctionLibrary::StaticClass());
     CallFunctionNode->AllocateDefaultPins();
 
-    // 4. 将K2Node的引脚连接“移动”到函数调用节点的对应引脚上
+    // 4. 将K2Node的引脚连接"移动"到函数调用节点的对应引脚上
     // 移动执行引脚
     CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *CallFunctionNode->GetExecPin());
     CompilerContext.MovePinLinksToIntermediate(*GetThenPin(), *CallFunctionNode->GetThenPin());
@@ -193,7 +197,7 @@ void UMyK2Node::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* So
 
 ### 3.3 Pure函数的特殊处理
 
-如果要展开的函数是 `BlueprintPure`（没有执行引脚），`ExpandNode` 的处理方式略有不同。因为 `UK2Node_CallFunction` (for a pure function) 也没有执行引脚，你不能移动 `Exec/Then` 连接。这种情况下，你只需移动数据引脚的连接即可。如果你的K2Node本身有执行引脚但想调用一个pure函数，你可能需要生成一个“直通”节点（如 `UKismetSystemLibrary::Noop`）来承载执行流。
+如果要展开的函数是 `BlueprintPure`（没有执行引脚），`ExpandNode` 的处理方式略有不同。因为 `UK2Node_CallFunction` (for a pure function) 也没有执行引脚，你不能移动 `Exec/Then` 连接。这种情况下，你只需移动数据引脚的连接即可。如果你的K2Node本身有执行引脚但想调用一个pure函数，你可能需要生成一个"直通"节点（如 `UKismetSystemLibrary::Noop`）来承载执行流。
 
 ---
 
@@ -389,4 +393,76 @@ TArray<FName> UMyArraySortNode::GetSortablePropertyNames()
 
 -   **模块依赖**: 将编辑器专用代码（K2Node, Slate UI）和运行时代码（BlueprintFunctionLibrary）分离到不同的模块中，或至少使用 `#if WITH_EDITOR` 宏进行隔离。在 `.Build.cs` 文件中，只在 `Target.bBuildEditor` 为 `true` 时才添加 `"UnrealEd"`, `"BlueprintGraph"` 等编辑器模块依赖。
 -   **版本兼容**: 如果你更新了节点，改变了引脚的名称，应重写 `GetRedirectPinNames()` 来将旧名称映射到新名称，这样用户的旧蓝图就不会损坏。对于类或属性的重命名，使用 `FCoreRedirects`。
+
+---
+
+## 第九部分：核心原则：编辑器与运行时模块分离
+
+在开发任何包含编辑器功能（如自定义蓝图节点 `UK2Node`）的插件时，最重要的一个原则是：**严格分离编辑器代码和运行时代码**。违反这个原则是导致插件打包失败最常见的原因。
+
+### 9.1 为什么需要分离？
+
+- **打包环境的差异**：
+  - **编辑器环境**：编译时，所有模块（Runtime, Editor, UncookedOnly 等）都会被加载和链接。因此，在 `Runtime` 模块中引用 `UK2Node` 等编辑器类在编辑器里可以正常编译和运行。
+  - **打包环境**：当为游戏打包 `Shipping` 或 `Development` 版本时（例如 `UnrealGame` 目标），**只有 `Runtime` 类型的模块会被编译和链接**。编辑器相关的模块（`UnrealEd`, `BlueprintGraph` 等）完全不存在。
+
+- **常见的打包错误**：
+  1. **找不到父类 (`Unable to find parent class`)**: 如果你的 `UK2Node_MyNode` 继承自 `UK2Node` 但被放在 `Runtime` 模块中，打包时编译器会因为找不到 `UK2Node` 的定义而报错。
+  2. **链接错误 (`LNK2019: unresolved external symbol`)**: 如果你的 `Runtime` 模块代码调用了任何编辑器API，或者即使被 `#if WITH_EDITOR` 包裹，但其 `UCLASS` 的 `.gen.cpp` 文件被链接，都会在打包时产生链接错误。
+
+### 9.2 如何正确分离模块？
+
+最佳实践是为你的插件创建至少两个模块：一个用于运行时，一个用于编辑器。
+
+- `MyPlugin` (Type: `Runtime`): 存放所有游戏运行时需要的功能和类。例如 `UFUNCTION` 库、`UActorComponent` 等。这个模块**绝对不能**包含任何编辑器相关的头文件或代码。
+- `MyPluginEditor` (Type: `UncookedOnly` 或 `Editor`): 存放所有仅在编辑器中使用的功能。
+  - `UK2Node` 节点定义。
+  - `SWidget` 自定义UI。
+  - `FAssetTypeActions_Base` 资产操作。
+  - `FGraphPanelPinFactory` 自定义图钉。
+  - 所有需要 `include "UnrealEd.h"` 或其他编辑器头文件的代码。
+
+**注意**: 对于蓝图节点，模块类型推荐使用 `UncookedOnly` 而不是 `Editor`，可以避免在蓝图中出现"来自纯编辑器模块"的警告。
+
+### 9.3 实践步骤示例
+
+假设我们要创建一个排序节点 `UK2Node_SmartSort`。
+
+1. **创建 `Sort` (Runtime) 模块**:
+   - `Sort.Build.cs`: 这是一个 `Runtime` 模块，不应包含任何编辑器依赖。
+   - `USortBPLibrary.h/.cpp`: 可以在这里定义实际的排序函数，供 `K2Node` 调用。
+
+2. **创建 `SortEditor` (UncookedOnly) 模块**:
+   - 在 `.uplugin` 文件中添加新模块的声明:
+     ```json
+     {
+         "Name": "SortEditor",
+         "Type": "UncookedOnly",
+         "LoadingPhase": "Default"
+     }
+     ```
+   - **`SortEditor.Build.cs`**:
+     ```csharp
+     PublicDependencyModuleNames.AddRange(new string[] { "Core", "Sort" }); // 依赖运行时模块
+     PrivateDependencyModuleNames.AddRange(
+         new string[] {
+             "CoreUObject",
+             "Engine",
+             "Slate",
+             "SlateCore",
+             "UnrealEd",        // 编辑器核心
+             "BlueprintGraph",  // K2Node需要
+             "GraphEditor",     // 图表编辑器
+             // ... 其他编辑器依赖
+         }
+     );
+     ```
+   - **`K2Node_SmartSort.h/.cpp`**: 将这个文件放在 `SortEditor` 模块的 `Private` 或 `Public` 目录中。
+     - **重要**: 确保更新API宏：`class SORTEDITOR_API UK2Node_SmartSort : public UK2Node`。
+
+3. **处理 `#if WITH_EDITOR` 的陷阱**:
+   - **问题**: 即使你在 `.cpp` 中用 `#if WITH_EDITOR` 包裹了所有实现，但只要 `.h` 文件中的 `UCLASS()` 被UHT处理，它就会生成一个 `.gen.cpp` 文件。在打包时，这个 `.gen.cpp` 文件仍然会被编译，但找不到实现，导致链接失败。
+   - **解决方案**: **不要依赖 `#if WITH_EDITOR` 来混合代码**。将编辑器相关的头文件和源文件**整个**移动到编辑器模块中，这是最干净、最可靠的方法。
+
+通过这种方式，可以确保插件在编辑器中功能完整，并且在打包时能够顺利剔除所有不必要的编辑器代码，从而成功打包。
 

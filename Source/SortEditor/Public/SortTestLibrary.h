@@ -23,7 +23,7 @@ enum class ESortTestType : uint8
 };
 
 UCLASS(meta=(DisplayName="排序测试工具 (优化版)"))
-class SORT_API USortTestLibrary : public UBlueprintFunctionLibrary
+class SORTEDITOR_API USortTestLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 

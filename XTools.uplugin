@@ -77,6 +77,19 @@
 			"PlatformAllowList": [
 				"Win64"
 			]
+		},
+		{
+			"Name": "SortEditor",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PostDefault",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			],
+			"AdditionalDependencies": [
+				"Sort"
+			]
 		}
 	],
 	"Plugins": [
