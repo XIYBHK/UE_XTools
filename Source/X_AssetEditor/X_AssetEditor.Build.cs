@@ -37,6 +37,7 @@ public class X_AssetEditor : ModuleRules
 				"RHI",
 				"RenderCore",
 				"ContentBrowser",
+				"PhysicsCore",
 			}
 		);
 			
@@ -66,6 +67,10 @@ public class X_AssetEditor : ModuleRules
 				"ApplicationCore",
 				"Projects",
 				"MaterialEditor",
+				"PhysicsCore",
+				"Chaos",
+				"MeshDescription",
+				"StaticMeshDescription",
 			}
 		);
 		
