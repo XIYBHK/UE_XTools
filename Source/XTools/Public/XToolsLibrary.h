@@ -7,6 +7,8 @@
 #include "Curves/CurveFloat.h"
 #include "Templates/SubclassOf.h"
 #include "GameFramework/Actor.h"
+#include "FormationSystem.h"
+#include "FormationLibrary.h"
 #include "XToolsLibrary.generated.h"
 
 // 新增的采样模式枚举
@@ -191,5 +193,28 @@ public:
 private:
     // 计算曲线上某点的位置（基于参数t）
     static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints);
-    
+
+public:
+    /**
+     * 快速创建阵型变换演示
+     * 创建一个阵型管理器组件并演示从方形阵型到圆形阵型的变换
+     * @param WorldContext 世界上下文
+     * @param Units 参与变换的单位数组
+     * @param CenterLocation 阵型中心位置
+     * @param UnitSpacing 单位间距
+     * @param TransitionDuration 变换持续时间
+     * @param bShowDebug 是否显示调试信息
+     * @return 创建的阵型管理器组件
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation",
+        meta = (DisplayName = "演示阵型变换（方形到圆形）", WorldContext = "WorldContext"))
+    static UFormationManagerComponent* DemoFormationTransition(
+        const UObject* WorldContext,
+        const TArray<AActor*>& Units,
+        FVector CenterLocation,
+        float UnitSpacing = 100.0f,
+        float TransitionDuration = 3.0f,
+        bool bShowDebug = true
+    );
+
 };

@@ -609,3 +609,90 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
         UE_LOG(LogXTools, Log, TEXT("共检测 %d 个点, 在 %s 内部生成 %d 个点。"), TotalPointsChecked, *TargetActor->GetName(), OutPoints.Num());
     }
 }
+
+UFormationManagerComponent* UXToolsLibrary::DemoFormationTransition(
+    const UObject* WorldContext,
+    const TArray<AActor*>& Units,
+    FVector CenterLocation,
+    float UnitSpacing,
+    float TransitionDuration,
+    bool bShowDebug)
+{
+    UWorld* World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull);
+    if (!World)
+    {
+        UE_LOG(LogTemp, Error, TEXT("DemoFormationTransition: 无效的世界上下文"));
+        return nullptr;
+    }
+
+    if (Units.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("DemoFormationTransition: 单位数组为空"));
+        return nullptr;
+    }
+
+    // 创建一个临时Actor来承载阵型管理器组件
+    AActor* FormationActor = World->SpawnActor<AActor>();
+    if (!FormationActor)
+    {
+        UE_LOG(LogTemp, Error, TEXT("DemoFormationTransition: 无法创建阵型管理器Actor"));
+        return nullptr;
+    }
+
+    FormationActor->SetActorLocation(CenterLocation);
+    FormationActor->SetActorLabel(TEXT("FormationManager"));
+
+    // 添加阵型管理器组件
+    UFormationManagerComponent* FormationManager = NewObject<UFormationManagerComponent>(FormationActor);
+    FormationActor->AddInstanceComponent(FormationManager);
+    FormationManager->RegisterComponent();
+
+    // 创建方形阵型（起始阵型）
+    FFormationData SquareFormation = UFormationLibrary::CreateSquareFormation(
+        CenterLocation,
+        FRotator::ZeroRotator,
+        Units.Num(),
+        UnitSpacing
+    );
+
+    // 创建圆形阵型（目标阵型）
+    float CircleRadius = UnitSpacing * FMath::Max(1.0f, Units.Num() / 6.28f); // 根据单位数量调整半径
+    FFormationData CircleFormation = UFormationLibrary::CreateCircleFormation(
+        CenterLocation,
+        FRotator::ZeroRotator,
+        Units.Num(),
+        CircleRadius
+    );
+
+    // 配置变换参数
+    FFormationTransitionConfig Config;
+    Config.TransitionMode = EFormationTransitionMode::OptimizedAssignment;
+    Config.Duration = TransitionDuration;
+    Config.bUseEasing = true;
+    Config.EasingStrength = 2.0f;
+    Config.bShowDebug = bShowDebug;
+    Config.DebugDuration = TransitionDuration + 2.0f;
+
+    // 开始阵型变换
+    bool bSuccess = FormationManager->StartFormationTransition(Units, SquareFormation, CircleFormation, Config);
+
+    if (bSuccess)
+    {
+        UE_LOG(LogTemp, Log, TEXT("DemoFormationTransition: 成功开始阵型变换演示，单位数量: %d"), Units.Num());
+
+        // 如果启用调试，绘制阵型信息
+        if (bShowDebug)
+        {
+            UFormationLibrary::DrawFormationDebug(WorldContext, SquareFormation, TransitionDuration + 2.0f, FLinearColor::Green, 2.0f);
+            UFormationLibrary::DrawFormationDebug(WorldContext, CircleFormation, TransitionDuration + 2.0f, FLinearColor::Red, 2.0f);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("DemoFormationTransition: 阵型变换启动失败"));
+        FormationActor->Destroy();
+        return nullptr;
+    }
+
+    return FormationManager;
+}

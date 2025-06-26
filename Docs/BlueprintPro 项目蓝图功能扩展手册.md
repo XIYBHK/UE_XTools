@@ -1,15 +1,21 @@
 # BlueprintPro 项目蓝图功能扩展手册
 
-> **核心思想**: 本手册严格基于 `BlueprintPro` 项目的源码，分析并展示其为蓝图系统提供的核心功能扩展。
-> **参考源 (Reference Source)**: [https://github.com/xusjtuer/BlueprintPro/tree/main](https://github.com/xusjtuer/BlueprintPro/tree/main)
+> **核心思想**: 本手册基于优秀的开源项目 `BlueprintPro`，分析并展示其为蓝图系统提供的核心功能扩展，为XTools开发提供参考。
+> **参考源**: [BlueprintPro项目](https://github.com/xusjtuer/BlueprintPro/tree/main)
+> **适用于**: 想要深入理解蓝图扩展技术的开发者
+
+> 💡 **相关文档**:
+> - [UE K2Node 开发指南](UE%20K2Node%20开发指南.md) - 系统学习K2Node开发
+> - [高级K2Node开发案例分析](NoteUE4%20项目高级K2Node开发手册.md) - 更多实战案例
+> - [XTools源码](../Source/) - 查看XTools的实际实现
 
 ---
 
-## 目录
-1.  [数据结构扩展：TMap 与 TSet](#1-数据结构扩展tmap-与-tset)
-2.  [异步资源加载](#2-异步资源加载)
-3.  [高级字符串操作：正则表达式](#3-高级字符串操作正则表达式)
-4.  [反射与类工具](#4-反射与类工具)
+## 📋 目录
+1.  [数据结构扩展：TMap 与 TSet](#1-数据结构扩展tmap-与-tset) - 弥补蓝图数据结构操作的不足
+2.  [异步资源加载](#2-异步资源加载) - 避免同步加载导致的卡顿
+3.  [高级字符串操作：正则表达式](#3-高级字符串操作正则表达式) - 强大的字符串处理
+4.  [反射与类工具](#4-反射与类工具) - 运行时类型信息获取
 
 ---
 

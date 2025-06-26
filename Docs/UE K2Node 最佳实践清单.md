@@ -3,11 +3,18 @@
 
 本清单提供了一系列快速、可操作的最佳实践，用于在开发和审查自定义 UK2Node 时进行核对。
 
+> 💡 **相关文档**:
+> - 详细学习请参考 [UE K2Node 开发指南](UE%20K2Node%20开发指南.md)
+> - 实战案例请查看 [高级K2Node开发案例分析](NoteUE4%20项目高级K2Node开发手册.md)
+> - XTools实现参考 [XTools源码](../Source/)
+
 ## 1. 生命周期与结构
 
 - [ ] **生命周期函数**: 正确使用 AllocateDefaultPins, ReconstructNode, ReallocatePinsDuringReconstruction, 和 ExpandNode。
+  > 📖 详见: [开发指南 - 节点生命周期](UE%20K2Node%20开发指南.md#13-节点生命周期)
 
 - [ ] **编辑器代码隔离**: 所有K2Node、Slate UI和编辑器相关逻辑都必须包裹在 `#if WITH_EDITOR` 宏内。
+  > 📖 详见: [开发指南 - 模块分离](UE%20K2Node%20开发指南.md#第九部分核心原则编辑器与运行时模块分离)
 
 - [ ] **模块依赖**: 在 .Build.cs 中，编辑器模块（UnrealEd, BlueprintGraph 等）只在 `Target.bBuildEditor == true` 时添加。
 

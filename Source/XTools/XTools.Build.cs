@@ -50,12 +50,13 @@ public class XTools : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"InputCore", 
+			"InputCore",
 			"Slate",
 			"SlateCore",
 			"UMG",
 			"ComponentTimelineRuntime",
-			"RandomShuffles"
+			"RandomShuffles",
+			"FormationSystem"
 		});
 
 		// Private dependencies

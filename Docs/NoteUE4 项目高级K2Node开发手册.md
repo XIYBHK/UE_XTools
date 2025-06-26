@@ -1,7 +1,8 @@
-# NoteUE4 项目高级K2Node开发手册
+# 高级K2Node开发案例分析
 
-> **核心思想**: 本手册严格基于 `NoteUE4` 项目的源码，提供其中核心蓝图节点（K2Node）的实现原理分析与API用法示例。
-> **参考源 (Reference Source)**: [https://github.com/xusjtuer/NoteUE4/tree/master](https://github.com/xusjtuer/NoteUE4/tree/master)
+> **核心思想**: 本手册通过分析优秀的开源项目案例，提供高级蓝图节点（K2Node）的实现原理分析与API用法示例。
+> **参考源**: 基于多个开源项目的最佳实践，包括 [NoteUE4](https://github.com/xusjtuer/NoteUE4/tree/master) 等
+> **适用于**: XTools插件开发者和UE高级开发者
 
 ---
 

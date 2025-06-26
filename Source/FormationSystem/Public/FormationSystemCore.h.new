@@ -1,0 +1,12 @@
+#pragma once
+
+/**
+ * FormationSystemCore.h
+ * 
+ * 阵型系统核心包含文件
+ * 此文件为兼容性保留，新代码应直接包含具体的头文件
+ */
+
+#include "FormationTypes.h"
+#include "FormationMathUtils.h"
+#include "FormationManagerComponent.h" 

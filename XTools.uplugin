@@ -33,6 +33,16 @@
 			]
 		},
 		{
+			"Name": "FormationSystem",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			]
+		},
+		{
 			"Name": "ComponentTimelineRuntime",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
