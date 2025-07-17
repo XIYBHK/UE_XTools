@@ -10,6 +10,44 @@
 #include "MinIndexQueue.h"
 #include "RandomShuffleArrayLibrary.generated.h"
 
+/**
+ * RandomShuffles 模块配置常量
+ * 集中管理性能参数和配置选项
+ */
+namespace RandomShufflesConfig
+{
+    // PRD 算法配置
+    constexpr float MinValidChance = 0.0001f;      // 最小有效概率
+    constexpr float MaxValidChance = 1.0f;         // 最大有效概率
+    constexpr int32 MaxFailureCount = 10000;      // 最大失败次数限制
+
+    // 性能配置
+    constexpr int32 DefaultStateMapReserve = 64;  // 默认状态映射预分配大小
+    constexpr int32 MaxStateMapSize = 1000;       // 状态映射最大大小
+}
+
+/**
+ * PRD 性能统计结构
+ * 用于监控和调试PRD算法性能
+ */
+USTRUCT(BlueprintType)
+struct RANDOMSHUFFLES_API FPRDPerformanceStats
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "性能统计", meta = (DisplayName = "总调用次数"))
+    int32 TotalCalls = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "性能统计", meta = (DisplayName = "状态映射大小"))
+    int32 StateMapSize = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "性能统计", meta = (DisplayName = "最大失败次数"))
+    int32 MaxFailureCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "性能统计", meta = (DisplayName = "平均失败次数"))
+    float AverageFailureCount = 0.0f;
+};
+
 UCLASS(meta=(BlueprintThreadSafe))
 class RANDOMSHUFFLES_API URandomShuffleArrayLibrary : public UBlueprintFunctionLibrary 
 {
@@ -524,10 +562,36 @@ public:
 		P_NATIVE_END;
 	}
 
-private:
-	// PRD状态管理 - 用于简单版本的自动状态管理
-	static TMap<FString, int32> PRDStateMap;
+public:
+	/**
+	 * 获取PRD性能统计信息
+	 * @return PRD算法的性能统计数据
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|随机|调试", meta = (
+		DisplayName = "获取PRD性能统计",
+		ToolTip = "获取PRD算法的性能统计信息，用于性能监控和调试",
+		ReturnDisplayName = "性能统计数据"))
+	static FPRDPerformanceStats GetPRDPerformanceStats();
 
-	// 获取或创建PRD状态
+	/**
+	 * 重置PRD性能统计
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|随机|调试", meta = (
+		DisplayName = "重置PRD性能统计",
+		ToolTip = "重置PRD算法的性能统计计数器"))
+	static void ResetPRDPerformanceStats();
+
+private:
+	// PRD状态管理 - 线程安全的状态管理系统
+	static TMap<FName, int32> PRDStateMap;
+	static FCriticalSection PRDStateLock;
+
+	// 性能统计
+	static FPRDPerformanceStats PerformanceStats;
+
+	// 获取或创建PRD状态 - 线程安全版本
 	static int32& GetOrCreatePRDState(const FString& StateID);
+
+	// 更新性能统计
+	static void UpdatePerformanceStats(int32 FailureCount);
 };

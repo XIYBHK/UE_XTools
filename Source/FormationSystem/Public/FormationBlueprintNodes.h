@@ -2,14 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "Engine/World.h"
-#include "GameFramework/Actor.h"
-#include "FormationSystemCore.h"
+#include "FormationTypes.h"
 
 #include "FormationBlueprintNodes.generated.h"
 
 // 前向声明
 class UFormationLibrary;
+class UFormationManagerComponent;
+class AActor;
+class UObject;
 
 /**
  * 阵型蓝图节点库

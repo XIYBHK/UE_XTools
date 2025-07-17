@@ -1,5 +1,6 @@
 #include "FormationLibrary.h"
-#include "FormationSystemCore.h"
+#include "FormationMathUtils.h"
+#include "FormationLog.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetMathLibrary.h"

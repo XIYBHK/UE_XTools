@@ -11,6 +11,9 @@
 
 ## 🔧 C++标准和编译设置
 
+> **重要更新**：Epic Games 从 UE5.3 开始将引擎默认 C++ 标准从 C++17 升级到 C++20。
+> 所有引擎模块现在强制使用 C++20 编译，插件也应保持一致以避免兼容性问题。
+
 ### **推荐的C++标准设置**
 
 ```cpp
@@ -20,9 +23,10 @@ public class MyPluginCore : ModuleRules
     public MyPluginCore(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-        
-        // ✅ 使用稳定的C++17，除非确实需要C++20特性
-        CppStandard = CppStandardVersion.Cpp17;
+
+        // ✅ UE5.3+ 默认使用C++20，保持与引擎一致
+        // 注意：UE5.3+ 引擎模块强制使用C++20，插件也应保持一致
+        CppStandard = CppStandardVersion.Default;
         
         // ✅ Unity Build根据项目需要决定，默认关闭更安全
         bUseUnity = false;
@@ -282,7 +286,7 @@ void InitializeSystem()
 ### **核心原则**
 
 1. **UE API优先**：优先使用UE内置的容器、算法、数学库等
-2. **稳定性优先**：使用C++17而非激进的C++20
+2. **标准一致性**：使用C++20与UE5.3+引擎保持一致
 3. **IWYU强制执行**：确保每个文件只包含真正需要的头文件
 4. **前向声明优先**：在头文件中优先使用前向声明而非include
 5. **const正确性**：正确使用const提升代码安全性和性能
@@ -302,6 +306,96 @@ void InitializeSystem()
 
 ---
 
+## 🔄 代码重构关键经验教训
+
+> **重要提醒**：基于实际项目优化经验总结的关键教训，避免常见重构陷阱
+
+### **1. 重构是系统性工程**
+- **核心原则**: 不能只改一部分，必须完整更新所有相关代码
+- **实践要点**:
+  - 使用IDE的"查找所有引用"功能定位所有使用点
+  - 制作修改清单，确保不遗漏任何引用
+  - 重构后进行全面的编译验证
+
+```cpp
+// ❌ 错误做法 - 遗漏引用更新
+// 将成员变量移动到结构体后，遗漏了某些访问点的更新
+if (bPaused.Load()) // 变量已移动到StateManager，但此处未更新
+
+// ✅ 正确做法 - 完整更新所有引用
+if (StateManager.bPaused.Load()) // 所有访问点都更新为新路径
+```
+
+### **2. UE特殊性 - 函数返回值处理**
+- **核心原则**: UE的某些函数有特殊的返回值处理要求
+- **典型问题**: `SetTimer` 函数返回 `void`，不能用于条件判断
+
+```cpp
+// ❌ 错误做法 - SetTimer返回void，不能用于条件判断
+if (!World->GetTimerManager().SetTimer(...)) // 编译错误：无法从void转换为bool
+bool bResult = World->GetTimerManager().SetTimer(...); // 编译错误：无法从void初始化bool
+
+// ✅ 正确做法 - 调用SetTimer后检查TimerHandle的有效性
+World->GetTimerManager().SetTimer(TimerHandle, this, &UClass::Function, Interval, true);
+if (!TimerHandle.IsValid())
+{
+    // 处理定时器设置失败的情况
+    UE_LOG(LogTemp, Error, TEXT("定时器设置失败"));
+}
+```
+
+### **3. 命名规范重要性**
+- **核心原则**: 良好的命名约定可以避免很多冲突问题
+- **关键实践**: 避免局部变量与类成员变量同名
+
+```cpp
+// ❌ 错误做法 - 变量名冲突
+class UAsyncTools
+{
+    float CurveValue; // 成员变量
+
+    void SomeFunction()
+    {
+        const float CurveValue = ...; // C4458警告：声明隐藏了类成员
+    }
+};
+
+// ✅ 正确做法 - 使用不同的变量名
+void SomeFunction()
+{
+    const float CalculatedCurveValue = ...; // 避免冲突
+}
+```
+
+### **4. 渐进式重构**
+- **核心原则**: 大型重构应该分步进行，每步都要编译验证
+- **推荐流程**:
+  1. **阶段1**: 重构前准备 - 识别所有修改点
+  2. **阶段2**: 分步执行 - 每个小步骤后立即编译
+  3. **阶段3**: 验证测试 - 功能测试确保无回归
+
+```cpp
+// 推荐的重构步骤示例：
+// Step 1: 添加新的状态管理结构
+struct FStateManager { ... };
+
+// Step 2: 添加新成员变量，保留旧变量
+FStateManager StateManager;
+TAtomic<bool> bPaused; // 暂时保留
+
+// Step 3: 逐步更新引用点，编译验证
+// Step 4: 移除旧变量，最终编译验证
+```
+
+### **重构检查清单**
+- [ ] 使用"查找所有引用"确保无遗漏
+- [ ] UE函数返回值正确处理
+- [ ] 检查变量命名冲突
+- [ ] 分步重构，每步编译验证
+- [ ] 功能测试确保无回归
+
+---
+
 **本指南基于UE5.4+和2025年的最佳实践，持续更新中...**
 
-**最后更新: 2025年7月**
+**最后更新: 2025年7月 - 新增代码重构经验教训**

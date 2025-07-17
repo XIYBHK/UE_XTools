@@ -3,6 +3,10 @@
 #include "MenuExtensions/X_MenuExtensionManager.h"
 #include "AssetNaming/X_AssetNamingManager.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
+#include "MaterialTools/X_MaterialFunctionManager.h"  // ✅ 添加：材质函数管理器
+#include "MaterialTools/X_MaterialFunctionParamDialog.h"  // ✅ 添加：参数对话框
+#include "MaterialTools/X_MaterialFunctionParams.h"  // ✅ 添加：参数结构体
+#include "MaterialTools/X_MaterialFunctionUI.h"  // ✅ 添加：UI函数声明
 #include "CollisionTools/X_CollisionManager.h"
 #include "CollisionTools/X_CollisionSettingsDialog.h"
 
@@ -13,6 +17,8 @@
 #include "Misc/MessageDialog.h"
 
 #define LOCTEXT_NAMESPACE "X_MenuExtensionManager"
+
+DEFINE_LOG_CATEGORY_STATIC(LogX_AssetEditor, Log, All);
 
 TUniquePtr<FX_MenuExtensionManager> FX_MenuExtensionManager::Instance = nullptr;
 
@@ -109,14 +115,16 @@ TSharedRef<FExtender> FX_MenuExtensionManager::OnExtendContentBrowserAssetSelect
             );
         }
 
-        // 检查是否有材质相关资产
+        // 检查是否有材质相关资产或可能包含材质的资产
         bool bHasMaterialAssets = false;
         for (const FAssetData& Asset : SelectedAssets)
         {
             const FString AssetClassName = Asset.AssetClassPath.GetAssetName().ToString();
-            if (AssetClassName == TEXT("Material") || 
+            if (AssetClassName == TEXT("Material") ||
                 AssetClassName == TEXT("MaterialInstanceConstant") ||
-                AssetClassName == TEXT("MaterialFunction"))
+                AssetClassName == TEXT("StaticMesh") ||
+                AssetClassName == TEXT("SkeletalMesh") ||
+                AssetClassName.Contains(TEXT("Blueprint")))
             {
                 bHasMaterialAssets = true;
                 break;
@@ -205,9 +213,20 @@ void FX_MenuExtensionManager::AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBui
 {
     MenuBuilder.BeginSection("MaterialFunctions", LOCTEXT("MaterialFunctions", "材质函数"));
     {
+        // ✅ 添加任意指定材质函数功能（完整工作流程）
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("AddCustomMaterialFunction", "添加材质函数"),
+            LOCTEXT("AddCustomMaterialFunctionTooltip", "选择并配置材质函数参数，然后添加到选中资产的材质中\n支持：材质、材质实例、静态网格体、骨骼网格体、蓝图类"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.MaterialFunction"),
+            FUIAction(
+                FExecuteAction::CreateStatic(&FX_MenuExtensionManager::HandleAddMaterialFunctionToAssets, SelectedAssets)
+            )
+        );
+
+        // ✅ 保留原有的菲涅尔函数快捷功能
         MenuBuilder.AddMenuEntry(
             LOCTEXT("AddFresnelFunction", "添加菲涅尔函数"),
-            LOCTEXT("AddFresnelFunctionTooltip", "为选中的材质添加菲涅尔效果"),
+            LOCTEXT("AddFresnelFunctionTooltip", "为选中资产的材质添加菲涅尔效果\n支持：材质、材质实例、静态网格体、骨骼网格体、蓝图类"),
             FSlateIcon(FAppStyle::GetAppStyleSetName(), "MaterialEditor.Apply"),
             FUIAction(
                 FExecuteAction::CreateLambda([SelectedAssets]()
@@ -306,6 +325,72 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
 {
     MenuBuilder.BeginSection("ActorMaterials", LOCTEXT("ActorMaterials", "Actor材质"));
     {
+        // ✅ 添加任意指定材质函数功能（完整工作流程）
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("AddCustomMaterialFunctionToActors", "添加材质函数"),
+            LOCTEXT("AddCustomMaterialFunctionToActorsTooltip", "选择并配置材质函数参数，然后添加到选中Actor的材质"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.MaterialFunction"),
+            FUIAction(
+                FExecuteAction::CreateLambda([SelectedActors]()
+                {
+                    // ✅ 修复：直接使用SelectedActors，与原代码一致
+                    // 使用简单版选择器
+                    FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(
+                        FOnMaterialFunctionSelected::CreateLambda([SelectedActors](UMaterialFunctionInterface* SelectedFunction)
+                        {
+                            if (SelectedFunction)
+                            {
+                                // ✅ 修复：创建参数结构体（与原代码方式一致）
+                                FX_MaterialFunctionParams Params;
+
+                                // 设置默认参数
+                                Params.NodeName = SelectedFunction->GetName();
+                                Params.PosX = -300;
+                                Params.PosY = 0;
+                                Params.bSetupConnections = true;
+                                Params.ConnectionMode = EConnectionMode::Add;
+
+                                // 根据函数名称自动设置连接选项
+                                Params.SetupConnectionsByFunctionName(SelectedFunction->GetName());
+
+                                // ✅ 修复：根据材质函数的输入输出引脚情况设置智能连接选项（与原代码一致）
+                                int32 InputCount = 0;
+                                int32 OutputCount = 0;
+                                FX_MaterialFunctionOperation::GetFunctionInputOutputCount(SelectedFunction, InputCount, OutputCount);
+
+                                // 只有同时具有输入和输出引脚的材质函数才默认启用智能连接
+                                // 只有输出引脚的材质函数默认禁用智能连接
+                                Params.bEnableSmartConnect = (InputCount > 0 && OutputCount > 0);
+
+                                UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数 %s: 输入引脚=%d, 输出引脚=%d, 智能连接=%s"),
+                                    *SelectedFunction->GetName(), InputCount, OutputCount,
+                                    Params.bEnableSmartConnect ? TEXT("启用") : TEXT("禁用"));
+
+                                // 创建结构体包装器
+                                TSharedRef<FStructOnScope> StructOnScope = MakeShared<FStructOnScope>(FX_MaterialFunctionParams::StaticStruct(), (uint8*)&Params);
+
+                                // 显示参数对话框
+                                FText DialogTitle = FText::Format(LOCTEXT("MaterialFunctionParamDialogTitleForActors", "配置材质函数参数: {0}"),
+                                    FText::FromString(SelectedFunction->GetName()));
+
+                                if (SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope))
+                                {
+                                    // ✅ 修复：使用与原代码一致的调用方式
+                                    FX_MaterialFunctionOperation::ProcessActorMaterialFunction(
+                                        SelectedActors,
+                                        SelectedFunction,
+                                        FName(*Params.NodeName),
+                                        MakeShared<FX_MaterialFunctionParams>(Params)
+                                    );
+                                }
+                            }
+                        })
+                    );
+                })
+            )
+        );
+
+        // ✅ 保留原有的菲涅尔函数快捷功能
         MenuBuilder.AddMenuEntry(
             LOCTEXT("AddFresnelToActors", "添加菲涅尔效果"),
             LOCTEXT("AddFresnelToActorsTooltip", "为选中Actor的材质添加菲涅尔效果"),
@@ -328,6 +413,63 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
         );
     }
     MenuBuilder.EndSection();
+}
+
+void FX_MenuExtensionManager::HandleAddMaterialFunctionToAssets(TArray<FAssetData> SelectedAssets)
+{
+    // 使用简单版材质函数选择器
+    FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(
+        FOnMaterialFunctionSelected::CreateStatic(&FX_MenuExtensionManager::OnMaterialFunctionSelected, SelectedAssets)
+    );
+}
+
+void FX_MenuExtensionManager::OnMaterialFunctionSelected(UMaterialFunctionInterface* SelectedFunction, TArray<FAssetData> SelectedAssets)
+{
+    if (!SelectedFunction)
+    {
+        return;
+    }
+
+    // 创建参数结构体
+    FX_MaterialFunctionParams Params;
+    Params.NodeName = SelectedFunction->GetName();
+    Params.PosX = -300;
+    Params.PosY = 0;
+    Params.bSetupConnections = true;
+    Params.ConnectionMode = EConnectionMode::Add;
+
+    // 根据函数名称自动设置连接选项
+    Params.SetupConnectionsByFunctionName(SelectedFunction->GetName());
+
+    // 根据材质函数的输入输出引脚情况设置智能连接选项
+    int32 InputCount = 0;
+    int32 OutputCount = 0;
+    FX_MaterialFunctionOperation::GetFunctionInputOutputCount(SelectedFunction, InputCount, OutputCount);
+
+    // 只有同时具有输入和输出引脚的材质函数才默认启用智能连接
+    Params.bEnableSmartConnect = (InputCount > 0 && OutputCount > 0);
+
+    UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数 %s: 输入引脚=%d, 输出引脚=%d, 智能连接=%s"),
+        *SelectedFunction->GetName(), InputCount, OutputCount,
+        Params.bEnableSmartConnect ? TEXT("启用") : TEXT("禁用"));
+
+    // 创建结构体包装器
+    TSharedRef<FStructOnScope> StructOnScope = MakeShared<FStructOnScope>(FX_MaterialFunctionParams::StaticStruct(), (uint8*)&Params);
+
+    // 显示参数对话框
+    FText DialogTitle = FText::Format(LOCTEXT("MaterialFunctionParamDialogTitle", "配置材质函数参数: {0}"),
+        FText::FromString(SelectedFunction->GetName()));
+
+    if (SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope))
+    {
+        // 使用与原代码一致的调用方式
+        FX_MaterialFunctionOperation::ProcessAssetMaterialFunction(
+            SelectedAssets,
+            SelectedFunction,
+            FName(*Params.NodeName),
+            MakeShared<FX_MaterialFunctionParams>(Params)
+        );
+    }
 }
 
 #undef LOCTEXT_NAMESPACE

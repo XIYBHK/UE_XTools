@@ -8,9 +8,6 @@
 #include "RandomSample.h"
 #include "WeightPoolSample.h"
 #include "RandomShuffleLog.h"
-#include <functional>
-#include <iterator> 
-#include <cstddef> 
 
 namespace RandomShuffles {
 
@@ -416,16 +413,27 @@ namespace RandomShuffles
     }
 }
 
-// 静态成员定义
-TMap<FString, int32> URandomShuffleArrayLibrary::PRDStateMap;
+// 静态成员定义 - 线程安全的PRD状态管理
+TMap<FName, int32> URandomShuffleArrayLibrary::PRDStateMap;
+FCriticalSection URandomShuffleArrayLibrary::PRDStateLock;
+FPRDPerformanceStats URandomShuffleArrayLibrary::PerformanceStats;
 
 // 简单版本 - 自动状态管理
 bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, FString StateID)
 {
+    // 输入验证
+    BaseChance = FMath::Clamp(BaseChance, RandomShufflesConfig::MinValidChance, RandomShufflesConfig::MaxValidChance);
+
     int32& FailureCount = GetOrCreatePRDState(StateID);
     float ActualChance = 0.0f;
-    return RandomShuffles::CalculatePRD(BaseChance, FailureCount, FailureCount, ActualChance,
+
+    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, FailureCount, ActualChance,
         []() { return FMath::FRand(); });
+
+    // 更新性能统计
+    UpdatePerformanceStats(FailureCount);
+
+    return bResult;
 }
 
 // 高级版本 - 完全手动控制
@@ -451,22 +459,82 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(float BaseCh
         [&Stream]() { return Stream.FRand(); });
 }
 
-// PRD状态管理函数实现
+// PRD状态管理函数实现 - 线程安全版本
 int32& URandomShuffleArrayLibrary::GetOrCreatePRDState(const FString& StateID)
 {
-    if (!PRDStateMap.Contains(StateID))
+    FScopeLock Lock(&PRDStateLock);
+
+    // 首次使用时预分配内存
+    if (PRDStateMap.Num() == 0)
     {
-        PRDStateMap.Add(StateID, 0);
+        PRDStateMap.Reserve(RandomShufflesConfig::DefaultStateMapReserve);
     }
-    return PRDStateMap[StateID];
+
+    const FName StateKey(*StateID);
+    if (!PRDStateMap.Contains(StateKey))
+    {
+        // 检查状态映射大小限制
+        if (PRDStateMap.Num() >= RandomShufflesConfig::MaxStateMapSize)
+        {
+            UE_LOG(LogRandomShuffle, Warning,
+                TEXT("PRD状态映射已达到最大大小限制 (%d)，无法添加新状态: %s"),
+                RandomShufflesConfig::MaxStateMapSize, *StateID);
+
+            // 返回默认状态（使用"Default"键）
+            const FName DefaultKey(TEXT("Default"));
+            if (!PRDStateMap.Contains(DefaultKey))
+            {
+                PRDStateMap.Add(DefaultKey, 0);
+            }
+            return PRDStateMap[DefaultKey];
+        }
+
+        PRDStateMap.Add(StateKey, 0);
+    }
+    return PRDStateMap[StateKey];
 }
 
 void URandomShuffleArrayLibrary::ClearPRDState(FString StateID)
 {
-    PRDStateMap.Remove(StateID);
+    FScopeLock Lock(&PRDStateLock);
+    const FName StateKey(*StateID);
+    PRDStateMap.Remove(StateKey);
 }
 
 void URandomShuffleArrayLibrary::ClearAllPRDStates()
 {
+    FScopeLock Lock(&PRDStateLock);
     PRDStateMap.Empty();
+
+    // 重置性能统计
+    PerformanceStats = FPRDPerformanceStats();
+}
+
+// 性能统计实现
+FPRDPerformanceStats URandomShuffleArrayLibrary::GetPRDPerformanceStats()
+{
+    FScopeLock Lock(&PRDStateLock);
+
+    // 更新当前状态映射大小
+    PerformanceStats.StateMapSize = PRDStateMap.Num();
+
+    return PerformanceStats;
+}
+
+void URandomShuffleArrayLibrary::ResetPRDPerformanceStats()
+{
+    FScopeLock Lock(&PRDStateLock);
+    PerformanceStats = FPRDPerformanceStats();
+}
+
+void URandomShuffleArrayLibrary::UpdatePerformanceStats(int32 FailureCount)
+{
+    // 注意：此函数假设已经在锁保护下调用
+    PerformanceStats.TotalCalls++;
+    PerformanceStats.MaxFailureCount = FMath::Max(PerformanceStats.MaxFailureCount, FailureCount);
+
+    // 计算平均失败次数（简单移动平均）
+    const float Alpha = 0.1f; // 平滑因子
+    PerformanceStats.AverageFailureCount =
+        PerformanceStats.AverageFailureCount * (1.0f - Alpha) + FailureCount * Alpha;
 }

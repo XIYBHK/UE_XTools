@@ -136,12 +136,24 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
     FAssetPickerConfig AssetPickerConfig;
     AssetPickerConfig.Filter.ClassPaths.Add(UMaterialFunction::StaticClass()->GetClassPathName());
     AssetPickerConfig.Filter.bRecursiveClasses = true;
+    AssetPickerConfig.Filter.bRecursivePaths = true;      // 递归搜索路径
     AssetPickerConfig.bAllowNullSelection = false;
     AssetPickerConfig.bCanShowFolders = true;
     AssetPickerConfig.bCanShowClasses = true;
     AssetPickerConfig.bShowTypeInColumnView = true;
     AssetPickerConfig.bShowPathInColumnView = true;
     AssetPickerConfig.InitialAssetViewType = EAssetViewType::List;
+
+    // 配置内容显示选项 - 默认只显示项目内容
+    AssetPickerConfig.bForceShowEngineContent = false;    // 不强制显示引擎内容
+    AssetPickerConfig.bForceShowPluginContent = false;    // 不强制显示插件内容
+    AssetPickerConfig.bCanShowDevelopersFolder = true;    // 允许显示开发者文件夹（但默认不显示）
+
+    // 启用过滤器UI和其他选项
+    AssetPickerConfig.bAddFilterUI = true;               // 启用过滤器UI
+    AssetPickerConfig.bCanShowRealTimeThumbnails = true;
+    AssetPickerConfig.bFocusSearchBoxWhenOpened = false;
+    AssetPickerConfig.SaveSettingsName = TEXT("MaterialFunctionPicker"); // 保存设置
 
     // 配置选择回调
     AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateLambda(
@@ -213,4 +225,4 @@ TArray<TSharedPtr<FName>> FX_MaterialFunctionUI::GetCommonNodeNames()
     return NodeNames;
 }
 
-#undef LOCTEXT_NAMESPACE 
+#undef LOCTEXT_NAMESPACE

@@ -28,6 +28,26 @@
 #include "ECFInstanceId.h"
 #include "Coroutines/ECFCoroutineAwaiters.h"
 
+/**
+ * EnhancedCodeFlow 模块配置常量
+ * 集中管理性能参数和默认配置选项
+ */
+namespace EnhancedCodeFlowConfig
+{
+    // 默认时间配置
+    constexpr float DefaultTickInterval = 0.0f;        // 默认Tick间隔
+    constexpr float MinTickInterval = 0.001f;          // 最小Tick间隔
+    constexpr float MaxDelayTime = 3600.0f;            // 最大延迟时间（1小时）
+
+    // 异步任务配置
+    constexpr float DefaultAsyncTimeout = 30.0f;       // 默认异步超时时间
+    constexpr int32 MaxConcurrentAsyncTasks = 100;     // 最大并发异步任务数
+
+    // 性能配置
+    constexpr int32 DefaultActionPoolSize = 64;        // 默认动作池大小
+    constexpr int32 MaxActionsPerOwner = 1000;         // 每个所有者最大动作数
+}
+
 class ENHANCEDCODEFLOW_API FEnhancedCodeFlow
 {
 
@@ -515,11 +535,10 @@ public:
 	static FECFCoroutineAwaiter_RunAsyncAndWait RunAsyncAndWait(const UObject* InOwner, TUniqueFunction<void()>&& InAsyncTaskFunc, float InTimeOut = 0.f, EECFAsyncPrio InThreadPriority = EECFAsyncPrio::Normal, const FECFActionSettings& Settings = {});
 
 	/**
-	 * Stops all Wait Until coroutine actions.
-	 * @param bComplete			 - indicates if the action should be completed when stopped (run callback), or simply stopped.
-	 *							   !!!Have in mind that not completed coroutine will suspend function forever!!!
-	 * @param InOwner [optional] - if defined it will remove Wait Until actions only from the given owner. Otherwise
-	 *                             it will remove Wait Until actions from everywhere.
+	 * 停止所有异步等待协程动作
+	 * @param bComplete			 - 指示动作停止时是否应该完成（运行回调），还是简单停止
+	 *							   !!!注意：未完成的协程将永远挂起函数!!!
+	 * @param InOwner [可选] - 如果定义，将仅从给定所有者中移除异步等待动作。否则将从所有地方移除
 	 */
 	static void RemoveAllRunAsyncAndWait(const UObject* WorldContextObject, bool bComplete = false, UObject* InOwner = nullptr);
 };

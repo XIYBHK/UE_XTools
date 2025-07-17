@@ -342,30 +342,29 @@ bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, EC
         return false;
     }
 
-    try
+    // ✅ 使用UE错误处理模式，不使用异常
+    UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+    if (!BodySetup)
     {
-        UBodySetup* BodySetup = StaticMesh->GetBodySetup();
-
-        // 设置碰撞复杂度
-        BodySetup->CollisionTraceFlag = TraceFlag;
-
-        // 标记为已修改
-        BodySetup->MarkPackageDirty();
-        StaticMesh->MarkPackageDirty();
-
-        // 重新构建碰撞
-        BodySetup->CreatePhysicsMeshes();
-
-        // 保存修改
-        SaveStaticMeshChanges(StaticMesh);
-
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        LogOperation(FString::Printf(TEXT("设置碰撞复杂度时发生异常: %s"), ANSI_TO_TCHAR(e.what())), true);
+        LogOperation(TEXT("无法获取BodySetup，设置碰撞复杂度失败"), true);
         return false;
     }
+
+    // 设置碰撞复杂度
+    BodySetup->CollisionTraceFlag = TraceFlag;
+
+    // 标记为已修改
+    BodySetup->MarkPackageDirty();
+    StaticMesh->MarkPackageDirty();
+
+    // 重新构建碰撞
+    BodySetup->CreatePhysicsMeshes();
+
+    // 保存修改
+    SaveStaticMeshChanges(StaticMesh);
+    LogOperation(TEXT("碰撞复杂度设置成功"), false);
+
+    return true;
 }
 
 void FX_CollisionManager::SaveStaticMeshChanges(UStaticMesh* StaticMesh)

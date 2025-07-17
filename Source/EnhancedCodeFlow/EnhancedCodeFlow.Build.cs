@@ -2,15 +2,36 @@
 
 using UnrealBuildTool;
 
+/**
+ * EnhancedCodeFlow 插件模块
+ *
+ * 提供增强的代码流控制功能，包括异步操作、延迟执行、协程等
+ * 支持高性能的时间轴控制和复杂的异步任务管理
+ */
 public class EnhancedCodeFlow : ModuleRules
 {
 	public EnhancedCodeFlow(ReadOnlyTargetRules Target) : base(Target)
 	{
-        // 确保 IWYU（Include What You Use）
+        // ✅ UE5.3+ 标准配置
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        // 确保支持默认的 C++ 标准（UE5.3 及以上版本为 CPP20）
+        // ✅ C++20 标准与引擎保持一致
         CppStandard = CppStandardVersion.Default;
+
+        // ✅ 强制执行 IWYU 原则
+        bEnforceIWYU = true;
+
+        // ✅ 开发时禁用 Unity Build，确保代码质量
+        bUseUnity = false;
+
+        // ✅ UE 标准设置
+        bEnableExceptions = false;
+        bUseRTTI = false;
+
+        // ✅ 添加模块定义
+        PublicDefinitions.AddRange(new string[] {
+            "WITH_ENHANCEDCODEFLOW=1"
+        });
 
         // 必需的模块依赖
         PrivateDependencyModuleNames.AddRange(

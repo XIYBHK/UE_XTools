@@ -3,9 +3,10 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "FormationTypes.h"
-#include "FormationLog.h"
-#include "IFormationInterface.h"
 #include "FormationManagerComponent.generated.h"
+
+// 前向声明
+class IFormationInterface;
 
 /**
  * 阵型管理器组件
@@ -110,35 +111,37 @@ public:
     FPathConflictInfo CheckFormationPathConflicts(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
 
 protected:
-    /** 基于空间排序的直接映射算法 */
-    TArray<int32> CalculateSpatialOrderMapping(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
+    /** 🎯 核心算法委托 - 简化架构，提高可维护性 */
 
-    /** 检测是否为螺旋线阵型 */
-    bool DetectSpiralFormation(const TArray<FSpatialSortData>& SortedData);
+    /** 计算分配方案的核心接口 */
+    TArray<int32> CalculateAssignmentByMode(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions,
+        EFormationTransitionMode Mode);
 
-    /** 计算螺旋参数 */
-    float CalculateSpiralParameter(float Angle, float Distance);
+    /** 🔧 算法工具函数 */
 
-    /** 计算群集奖励 */
-    float CalculateFlockingBonus(int32 FromIndex, int32 ToIndex, const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
+    /** 创建成本矩阵 */
+    TArray<TArray<float>> CreateCostMatrix(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions,
+        bool bUseRelativePosition = true);
 
-    /** 计算相对位置成本矩阵 */
-    TArray<TArray<float>> CalculateRelativePositionCostMatrix(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
+    /** 🚀 成本矩阵计算函数 */
+    TArray<TArray<float>> CalculateRelativePositionCostMatrix(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
 
-    /** 计算绝对距离成本矩阵 */
-    TArray<TArray<float>> CalculateAbsoluteDistanceCostMatrix(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
+    TArray<TArray<float>> CalculateAbsoluteDistanceCostMatrix(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
 
-    /** 直接相对位置匹配算法 */
-    TArray<int32> CalculateDirectRelativePositionMatching(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
-
-    /** RTS群集移动分配算法 */
-    TArray<int32> CalculateRTSFlockMovementAssignment(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
-
-    /** 路径感知分配算法 */
-    TArray<int32> CalculatePathAwareAssignment(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
-
-    /** 距离优先分配算法 */
-    TArray<int32> CalculateDistancePriorityAssignment(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
+    /** 应用算法特定的成本修正 */
+    void ApplyCostModifications(
+        TArray<TArray<float>>& CostMatrix,
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions,
+        EFormationTransitionMode Mode);
 
     /** 匈牙利算法求解分配问题 */
     TArray<int32> SolveAssignmentHungarian(const TArray<TArray<float>>& CostMatrix);
@@ -149,8 +152,40 @@ protected:
     /** 通用分配问题求解器 */
     TArray<int32> SolveAssignmentProblem(const TArray<TArray<float>>& CostMatrix);
 
+    /** 🚀 特殊分配算法 */
+    TArray<int32> CalculateDirectRelativePositionMatching(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
+
+    TArray<int32> CalculateRTSFlockMovementAssignment(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
+
+    TArray<int32> CalculatePathAwareAssignment(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
+
+    TArray<int32> CalculateSpatialOrderMapping(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
+
+    TArray<int32> CalculateDistancePriorityAssignment(
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
+
     /** 检测路径冲突 */
     FPathConflictInfo DetectPathConflicts(const TArray<int32>& Assignment, const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
+
+    /** 🚀 辅助函数 */
+    bool DetectSpiralFormation(const TArray<FSpatialSortData>& SortedData);
+
+    float CalculateSpiralParameter(float Angle, float Distance);
+
+    float CalculateFlockingBonus(
+        int32 FromIndex,
+        int32 ToIndex,
+        const TArray<FVector>& FromPositions,
+        const TArray<FVector>& ToPositions);
 
     /** 更新单位位置 */
     void UpdateUnitPositions(float DeltaTime);
@@ -163,4 +198,25 @@ protected:
 
     /** 通知实现了IFormationInterface接口的单位 */
     void NotifyFormationInterfaceActors(const TArray<AActor*>& Units, const TArray<int32>& Assignment, const FFormationData& ToFormation);
-}; 
+
+private:
+    /** 🚀 性能优化：智能缓存系统 */
+
+    /** 成本矩阵缓存结构 */
+    struct FCostMatrixCache
+    {
+        uint32 PositionsHash = 0;
+        EFormationTransitionMode Mode = EFormationTransitionMode::OptimizedAssignment;
+        TArray<TArray<float>> CostMatrix;
+        double CacheTime = 0.0;
+
+        bool IsValid(uint32 NewHash, EFormationTransitionMode NewMode, double CurrentTime) const;
+        void UpdateCache(uint32 NewHash, EFormationTransitionMode NewMode, const TArray<TArray<float>>& NewMatrix, double CurrentTime);
+    };
+
+    /** 成本矩阵缓存 */
+    mutable FCostMatrixCache CostMatrixCache;
+
+    /** 计算位置数组的哈希值 */
+    uint32 CalculatePositionsHash(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions) const;
+};

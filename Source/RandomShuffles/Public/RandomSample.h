@@ -3,42 +3,42 @@
  */
 #pragma once
 
+#include "CoreMinimal.h"
 #include "MinIndexQueue.h"
-#include <cmath>
-#include <iterator>
-#include <vector>
-#include <algorithm>
 
 namespace RandomShuffles {
 
-// 均匀分布的随机采样实现
+// ✅ 使用UE容器 - 均匀分布的随机采样实现
 template<typename It, typename Out, typename Rand>
-Out UniformRandomSample(It begin, It end, Out out, std::size_t count, Rand randFunc) {
-    using std::distance;
-    auto sampleSize = static_cast<std::size_t>(std::distance(begin, end));
-    
+Out UniformRandomSample(It begin, It end, Out out, int32 count, Rand randFunc) {
+    // ✅ 使用UE兼容的迭代器计算方式
+    int32 sampleSize = 0;
+    for (It it = begin; it != end; ++it) {
+        ++sampleSize;
+    }
+
     if(sampleSize == 0 || count == 0) {
         return out;
     }
 
-    // 创建索引数组
-    std::vector<size_t> indices;
-    indices.reserve(sampleSize);
-    for(size_t i = 0; i < sampleSize; ++i) {
-        indices.push_back(i);
+    // ✅ 使用UE容器 - 创建索引数组
+    TArray<int32> indices;
+    indices.Reserve(sampleSize);
+    for(int32 i = 0; i < sampleSize; ++i) {
+        indices.Add(i);  // ✅ 使用UE容器方法
     }
 
     // 进行count次采样
-    for(size_t i = 0; i < count; ++i) {
+    for(int32 i = 0; i < count; ++i) {
         // 生成随机索引
         float r = randFunc(0.0f, 1.0f);
-        size_t selectedIdx = static_cast<size_t>(r * sampleSize);
+        int32 selectedIdx = static_cast<int32>(r * sampleSize);
         if(selectedIdx >= sampleSize) {
             selectedIdx = sampleSize - 1;
         }
-        
-        // 输出选中的元素
-        *out++ = *std::next(begin, indices[selectedIdx]);
+
+        // ✅ 使用UE算法 - 输出选中的元素
+        *out++ = *(begin + indices[selectedIdx]);
     }
     
     return out;

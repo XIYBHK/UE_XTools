@@ -1,7 +1,8 @@
 #include "FormationBlueprintNodes.h"
-#include "FormationSystemCore.h"
 #include "FormationLibrary.h"
+#include "FormationManagerComponent.h"
 #include "FormationMovementComponent.h"
+#include "FormationLog.h"
 
 #include "Engine/World.h"
 #include "Engine/Engine.h"

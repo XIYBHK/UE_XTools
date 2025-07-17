@@ -99,6 +99,19 @@ private:
     void AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
 
     /**
+     * 处理添加材质函数到资产
+     * @param SelectedAssets 选中的资产
+     */
+    static void HandleAddMaterialFunctionToAssets(TArray<FAssetData> SelectedAssets);
+
+    /**
+     * 材质函数选择回调
+     * @param SelectedFunction 选中的材质函数
+     * @param SelectedAssets 选中的资产
+     */
+    static void OnMaterialFunctionSelected(UMaterialFunctionInterface* SelectedFunction, TArray<FAssetData> SelectedAssets);
+
+    /**
      * 添加碰撞管理菜单项
      * @param MenuBuilder 菜单构建器
      * @param SelectedAssets 选中的资产

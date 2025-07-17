@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "FormationSystem.h"
 #include "FormationLibrary.h"
+#include "FormationManagerComponent.h"
 #include "FormationTestActor.generated.h"
 
 /**

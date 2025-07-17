@@ -28,6 +28,54 @@
 // 参数相关
 #include "MaterialTools/X_MaterialFunctionParams.h"
 
+// 屏幕消息显示
+#include "Engine/Engine.h"
+
+/**
+ * 检查材质是否为引擎自带材质
+ * @param Material 要检查的材质
+ * @return 如果是引擎材质返回true
+ */
+static bool IsEngineMaterial(UMaterial* Material)
+{
+    if (!Material)
+    {
+        return false;
+    }
+
+    // 获取材质的包路径
+    FString PackagePath = Material->GetPackage()->GetName();
+
+    // 检查是否在引擎目录下
+    return PackagePath.StartsWith(TEXT("/Engine/")) ||
+           PackagePath.StartsWith(TEXT("/Game/Engine/")) ||
+           PackagePath.Contains(TEXT("Engine/Content/"));
+}
+
+/**
+ * 显示屏幕消息
+ * @param Message 要显示的消息
+ * @param bIsError 是否为错误消息
+ */
+static void ShowScreenMessage(const FString& Message, bool bIsError = true)
+{
+    if (GEngine)
+    {
+        FColor MessageColor = bIsError ? FColor::Red : FColor::Green;
+        GEngine->AddOnScreenDebugMessage(-1, 5.0f, MessageColor, Message);
+    }
+
+    // 同时输出到日志
+    if (bIsError)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("%s"), *Message);
+    }
+    else
+    {
+        UE_LOG(LogX_AssetEditor, Log, TEXT("%s"), *Message);
+    }
+}
+
 UMaterial* FX_MaterialFunctionOperation::GetBaseMaterial(UMaterialInterface* MaterialInterface)
 {
     return FX_MaterialFunctionCore::GetBaseMaterial(MaterialInterface);
@@ -186,9 +234,25 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         return nullptr;
     }
 
+    // ✅ 检查是否为引擎自带材质
+    if (IsEngineMaterial(Material))
+    {
+        FString ErrorMessage = FString::Printf(
+            TEXT("无法修改引擎自带材质: %s\n修改引擎材质易导致崩溃，请复制材质到项目文件夹后再操作"),
+            *Material->GetName());
+
+        ShowScreenMessage(ErrorMessage, true);
+        return nullptr;
+    }
+
     // 检查材质是否已包含该函数
     if (DoesMaterialContainFunction(Material, Function))
     {
+        FString WarningMessage = FString::Printf(
+            TEXT("材质 %s 已包含函数 %s，跳过重复添加"),
+            *Material->GetName(), *Function->GetName());
+
+        ShowScreenMessage(WarningMessage, true);
         UE_LOG(LogX_AssetEditor, Warning, TEXT("材质 %s 已包含函数 %s"),
             *Material->GetName(), *Function->GetName());
         return nullptr;

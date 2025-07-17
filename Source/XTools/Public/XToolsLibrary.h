@@ -2,14 +2,18 @@
 
 #pragma once
 
+// ✅ 核心 UE 头文件
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "Curves/CurveFloat.h"
 #include "Templates/SubclassOf.h"
-#include "GameFramework/Actor.h"
-#include "FormationSystem.h"
-#include "FormationLibrary.h"
 #include "XToolsLibrary.generated.h"
+
+// ✅ 前向声明 - 减少编译依赖
+class AActor;
+class UBoxComponent;
+class UCurveFloat;
+class USceneComponent;
+class UFormationManagerComponent;
 
 // 新增的采样模式枚举
 UENUM(BlueprintType)
@@ -74,7 +78,7 @@ struct FBezierSpeedOptions
     UCurveFloat* SpeedCurve = nullptr;
 };
 
-class UBoxComponent;
+// ✅ 移除重复的前向声明 - 已在上方声明
 
 /**
  * 工具库类
@@ -125,18 +129,32 @@ public:
                                       FBezierDebugColors DebugColors = FBezierDebugColors(),
                                       FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
 
-    /** 
+    /**
      * 测试PRD算法的分布情况。
      * 执行一万次PRD随机，统计每个失败次数触发成功的次数。
      *
-     *@param	BaseChance		基础触发概率[0,1]
-     *@return	返回一个数组，索引表示失败次数（0-10），值表示在该失败次数下触发成功的次数
-    */
+     * @param BaseChance 基础触发概率[0,1]
+     * @return 返回一个数组，索引表示失败次数（0-12），值表示在该失败次数下触发成功的次数
+     */
     UFUNCTION(BlueprintCallable, Category="XTools|测试", meta=(
         DisplayName = "测试PRD分布",
         BaseChance="基础概率",
-        ToolTip="执行一万次PRD随机，统计每个失败次数触发成功的次数。\n返回数组中，索引表示失败次数（0-10），值表示在该失败次数下触发成功的次数"))
+        ToolTip="执行一万次PRD随机，统计每个失败次数触发成功的次数。\n返回数组中，索引表示失败次数（0-12），值表示在该失败次数下触发成功的次数"))
     static TArray<int32> TestPRDDistribution(float BaseChance);
+
+
+
+    /**
+     * 清理点阵生成缓存
+     *
+     * @return 清理结果信息
+     */
+    UFUNCTION(BlueprintCallable, Category="XTools|工具", meta=(
+        DisplayName = "清理点阵生成缓存",
+        ToolTip="清理'在模型中生成点阵'功能的计算缓存\n用途：释放内存、重置计算状态、解决缓存问题\n建议：关卡切换时调用，或遇到点阵生成异常时使用"))
+    static FString ClearPointSamplingCache();
+
+
 
     /**
      * 在静态模型内部或表面生成点阵
@@ -195,26 +213,6 @@ private:
     static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints);
 
 public:
-    /**
-     * 快速创建阵型变换演示
-     * 创建一个阵型管理器组件并演示从方形阵型到圆形阵型的变换
-     * @param WorldContext 世界上下文
-     * @param Units 参与变换的单位数组
-     * @param CenterLocation 阵型中心位置
-     * @param UnitSpacing 单位间距
-     * @param TransitionDuration 变换持续时间
-     * @param bShowDebug 是否显示调试信息
-     * @return 创建的阵型管理器组件
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|Formation",
-        meta = (DisplayName = "演示阵型变换（方形到圆形）", WorldContext = "WorldContext"))
-    static UFormationManagerComponent* DemoFormationTransition(
-        const UObject* WorldContext,
-        const TArray<AActor*>& Units,
-        FVector CenterLocation,
-        float UnitSpacing = 100.0f,
-        float TransitionDuration = 3.0f,
-        bool bShowDebug = true
-    );
+
 
 };

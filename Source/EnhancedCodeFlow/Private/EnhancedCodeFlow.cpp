@@ -168,8 +168,23 @@ FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFuncti
 
 FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFunction<void()>&& InCallbackFunc, const FECFActionSettings& Settings/* = {}*/)
 {
+	// 输入验证
+	if (!InOwner)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("EnhancedCodeFlow::Delay - InOwner 为空，无法创建延迟动作"));
+		return FECFHandle();
+	}
+
+	// 延迟时间验证和限制
+	const float ClampedDelayTime = FMath::Clamp(InDelayTime, 0.0f, EnhancedCodeFlowConfig::MaxDelayTime);
+	if (ClampedDelayTime != InDelayTime)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("EnhancedCodeFlow::Delay - 延迟时间 %.2f 超出范围，已限制为 %.2f"),
+			InDelayTime, ClampedDelayTime);
+	}
+
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFDelay>(InOwner, Settings, FECFInstanceId(), InDelayTime, MoveTemp(InCallbackFunc));
+		return ECF->AddAction<UECFDelay>(InOwner, Settings, FECFInstanceId(), ClampedDelayTime, MoveTemp(InCallbackFunc));
 	else
 		return FECFHandle();
 }

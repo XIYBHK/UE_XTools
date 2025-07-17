@@ -1,16 +1,23 @@
 ## C++标准和编译配置
-- 使用稳定的C++17标准，除非确实需要C++20特性否则避免使用
+- 使用C++20标准与UE5.3+引擎保持一致，优先使用稳定的C++20特性
 - 在Build.cs文件中始终设置 `bEnforceIWYU = true` 强制执行"包含你所使用的"原则
 - 开发时默认设置 `bUseUnity = false` 确保代码质量并暴露依赖问题
 - 遵循UE标准设置 `bEnableExceptions = false` 和 `bUseRTTI = false`
 - 使用 `PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs` 获得最佳编译性能
 
 ## UE内置API优先原则
+> **核心理念**: 不要重复造轮子，UE已经提供了经过优化和测试的实现
+
 - 始终优先使用UE内置容器而非STL：使用TArray、TMap、TSet而不是std::vector、std::map、std::set
 - 使用UE智能指针：TSharedPtr、TUniquePtr、TWeakPtr而不是std智能指针
 - 使用UE字符串类型：FString用于通用字符串，FName用于标识符，FText用于本地化文本
-- 优先使用UE数学库和算法而不是自定义实现
+- 优先使用UE数学库和算法而不是自定义实现：FMath、FVector、FRotator、FTransform等
 - 使用UE内存管理模式，避免手动内存管理
+- 使用UE异步系统：Async()、AsyncTask()而不是std::thread或自定义线程
+- 使用UE时间系统：FDateTime、FTimespan、FPlatformTime而不是std::chrono
+- 使用UE文件系统：IFileManager、FPlatformFilemanager而不是std::filesystem
+- 使用UE日志系统：UE_LOG而不是printf或std::cout
+- 使用UE断言系统：check()、ensure()、verify()而不是assert()
 
 ## 命名约定
 - 严格遵循UE命名约定：
@@ -28,12 +35,74 @@
 - 保持头文件简洁，将实现细节移到.cpp文件中
 - 使用const正确性：当函数不修改对象状态时标记为const
 
+## 迭代器和模板使用注意事项
+- **避免假设迭代器支持减法运算**：UE的迭代器不一定支持 `end - begin` 操作
+- **使用循环计算距离**：用 `for` 循环计算迭代器距离而不是 `std::distance`
+- **检查函数返回类型**：确认函数返回类型再用于条件判断
+- **模板兼容性**：编写模板时考虑UE迭代器的特殊性
+
+## IWYU实施注意事项
+
+### 常见问题和解决方案
+1. **前向声明不足**
+   ```cpp
+   // ❌ 错误 - 缺少前向声明
+   #include "MyClass.h" // 仅为了指针使用
+   
+   // ✅ 正确 - 使用前向声明
+   class UMyClass; // 前向声明
+   ```
+
+2. **模板特化问题**
+   - 模板类可能需要完整定义
+   - 使用`IWYU pragma: keep`注释保留必要包含
+
+3. **UE宏依赖**
+   - `UCLASS()`、`USTRUCT()`等宏可能需要额外包含
+   - 确保包含`UObject/NoExportTypes.h`等必要头文件
+
 ## 性能优化模式
 - 在容器中构造对象时使用Emplace()而不是Add()
 - 使用TStringBuilder进行高效字符串拼接，而不是重复的FString操作
 - 对大对象参数优先使用const引用以避免不必要的拷贝
 - 对频繁分配/释放的对象使用对象池
 - 当已知大小时预分配容器容量：使用Reserve()方法
+
+## 高级性能优化模式
+
+### 内存预分配策略
+```cpp
+// ✅ 智能预分配
+void ProcessLargeDataSet(const TArray<FData>& InputData)
+{
+    TArray<FResult> Results;
+    Results.Reserve(InputData.Num()); // 预分配避免重新分配
+    
+    for (const FData& Data : InputData)
+    {
+        Results.Emplace(ProcessData(Data)); // 使用Emplace避免拷贝
+    }
+}
+```
+
+### 缓存友好的数据结构
+```cpp
+// ✅ 结构体成员排序 - 减少内存碎片
+struct FOptimizedData
+{
+    // 8字节对齐的成员放在前面
+    double LargeValue;
+    FVector Position;
+    
+    // 4字节对齐
+    float SmallValue;
+    int32 Index;
+    
+    // 1字节成员放在最后
+    bool bIsActive;
+    uint8 Flags;
+};
+```
 
 ## 错误处理模式
 - 对可能失败的操作使用TResult<SuccessType, ErrorType>
@@ -42,6 +111,43 @@
 - 对不可恢复的程序员错误使用check()（仅调试版本）
 - 对可恢复的错误使用ensure()，在开发中触发断点
 - 当需要在发布版本中执行表达式时使用verify()
+
+## 错误处理最佳实践示例
+
+### ✅ 推荐模式
+```cpp
+// 1. 简单操作 - bool + out参数
+bool GetActorLocation(AActor* Actor, FVector& OutLocation)
+{
+    if (!IsValid(Actor))
+    {
+        return false;
+    }
+    OutLocation = Actor->GetActorLocation();
+    return true;
+}
+
+// 2. 复杂操作 - TOptional
+TOptional<FVector> FindNearestActor(const FVector& Location)
+{
+    // 实现查找逻辑
+    if (bFound)
+    {
+        return FVector(X, Y, Z);
+    }
+    return {}; // 空值表示未找到
+}
+
+// 3. 可能失败的操作 - 自定义Result类型
+struct FLoadResult
+{
+    bool bSuccess;
+    FString ErrorMessage;
+    UObject* LoadedObject = nullptr;
+};
+
+FLoadResult LoadAssetSafely(const FSoftObjectPath& AssetPath);
+```
 
 ## 内存管理
 - 使用RAII模式进行资源管理
@@ -56,6 +162,39 @@
 - 简单线程安全计数器使用原子操作（TAtomic）
 - 优先使用不可变数据结构保证线程安全
 - 可用时使用UE的线程安全容器
+
+## 线程安全最佳实践
+
+### UE线程安全容器
+```cpp
+// ✅ 线程安全的计数器
+TAtomic<int32> ThreadSafeCounter{0};
+
+// ✅ 读写锁用于读多写少场景
+class FThreadSafeCache
+{
+private:
+    mutable FRWLock CacheLock;
+    TMap<FString, FData> CacheData;
+    
+public:
+    TOptional<FData> GetData(const FString& Key) const
+    {
+        FReadScopeLock ReadLock(CacheLock);
+        if (const FData* Found = CacheData.Find(Key))
+        {
+            return *Found;
+        }
+        return {};
+    }
+    
+    void SetData(const FString& Key, const FData& Data)
+    {
+        FWriteScopeLock WriteLock(CacheLock);
+        CacheData.Add(Key, Data);
+    }
+};
+```
 
 ## 插件架构
 - 清晰分离模块：Core（运行时）、Editor（仅编辑器）、Tests（测试）
@@ -151,16 +290,37 @@
 - 保持文档简洁但完整
 
 ## 要避免的反模式
-- 当UE等效容器存在时不要使用STL容器
+> **核心原则**: 不要重复造轮子，充分利用UE已有的优化实现
+
+### 容器和数据结构
+- 当UE等效容器存在时不要使用STL容器（TArray vs std::vector, TMap vs std::map）
+- 不要自定义实现已有的数据结构（如优先队列、哈希表等）
+- 不要忽视UE容器的特殊方法（如Emplace、Reserve、Reset等）
+
+### 内存和资源管理
 - 当UE系统可以处理时不要手动管理内存
-- 不要忽视const正确性
 - 不要使用原始指针进行对象所有权管理
-- 当UE提供优化版本时不要实现自定义算法
-- 没有强有力理由时不要使用C++20特性
+- 不要忽视UE的RAII模式和智能指针
+- 不要自定义实现对象池，优先使用UE的对象管理系统
+
+### 算法和工具
+- 当UE提供优化版本时不要实现自定义算法（数学运算、字符串处理、文件操作等）
+- 不要重新实现UE已有的工具类（如FMath、FString、FDateTime等）
+- 不要忽视UE的异步和多线程系统，避免自定义线程管理
+
+### 编码规范
+- 不要忽视const正确性
+- 避免使用过于前沿的C++20特性，优先使用稳定特性
 - 不要绕过IWYU要求
 - 不要在模块间创建循环依赖
 - 不要在UE代码中使用异常
 - 不要忽视UE编码标准和命名约定
+
+### 迭代器和模板陷阱
+- **不要假设迭代器支持减法**：避免使用 `end - begin`，UE迭代器可能不支持
+- **不要直接使用std::distance**：在模板中使用循环计算距离
+- **不要忽视函数返回类型**：检查函数是否返回void再用于条件判断
+- **不要在模板中使用STL特定操作**：考虑UE迭代器的兼容性
 
 ## 测试和调试
 - 为关键功能编写自动化测试
@@ -175,3 +335,48 @@
 - 避免模块间的循环依赖
 - 使用适当的加载阶段进行模块初始化
 - 记录模块依赖的理由
+
+---
+
+## 🎯 核心开发理念总结
+
+### "不要重复造轮子" - UE已有实现优先原则
+
+**为什么要遵循这个原则？**
+1. **性能优化**: UE的实现经过了大量优化和测试
+2. **兼容性保证**: 与引擎其他部分完美集成
+3. **维护成本**: 减少自定义代码的维护负担
+4. **团队协作**: 统一的API让团队成员更容易理解和维护代码
+5. **未来兼容**: 跟随引擎更新自动获得改进
+
+**实践检查清单**
+- [ ] 在实现新功能前，先查阅UE文档确认是否已有现成实现
+- [ ] 优先使用UE容器、智能指针、字符串类型
+- [ ] 使用UE的数学库、时间系统、文件系统
+- [ ] 采用UE的异步和多线程模式
+- [ ] 遵循UE的错误处理和日志系统
+- [ ] 使用UE的内存管理和对象生命周期管理
+
+**记住**: 每当你想要自定义实现某个功能时，先问自己："UE是否已经提供了这个功能？"
+
+## C++20特性使用指导
+### ✅ 推荐使用的稳定特性
+- `constexpr` 增强 - 编译时计算
+- `consteval` - 强制编译时求值
+- `constinit` - 编译时初始化
+- `std::span` - 安全的数组视图（需要UE支持确认）
+- 概念（Concepts）- 模板约束（谨慎使用）
+
+### ⚠️ 谨慎使用的特性
+- 协程（Coroutines）- UE有自己的异步系统
+- 模块（Modules）- UE使用传统头文件系统
+- `std::format` - 使用UE的FString::Printf
+
+### ❌ 避免使用的特性
+- `std::jthread` - 使用UE的FRunnable
+- `std::atomic_ref` - 使用UE的TAtomic
+
+
+
+
+

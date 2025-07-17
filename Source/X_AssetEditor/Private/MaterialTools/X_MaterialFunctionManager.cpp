@@ -39,6 +39,8 @@
 #include "MaterialTools/X_MaterialFunctionOperation.h"
 #include "MaterialTools/X_MaterialFunctionUI.h"
 
+// 不再需要外部函数声明，直接使用FX_MaterialFunctionUI类
+
 //-----------------------------------------------------------------------------
 // 材质基础操作
 //-----------------------------------------------------------------------------

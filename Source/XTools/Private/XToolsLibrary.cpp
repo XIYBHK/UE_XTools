@@ -1,15 +1,205 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
+// ✅ 遵循 IWYU 原则的头文件包含
 #include "XToolsLibrary.h"
-#include "XToolsPrivatePCH.h"
+
+// ✅ 插件模块依赖
+#include "XToolsDefines.h"
 #include "RandomShuffleArrayLibrary.h"
-#include "Components/BoxComponent.h"
-#include "DrawDebugHelpers.h"
-#include "Kismet/KismetSystemLibrary.h"
+#include "FormationSystem.h"
+#include "FormationLibrary.h"
+
+// ✅ UE 核心依赖
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "GameFramework/Actor.h"
+#include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SceneComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "CollisionShape.h"
+#include "Curves/CurveFloat.h"
+
+// ✅ UObject 系统
+#include "UObject/UObjectGlobals.h"
+
+// ✅ 线程安全支持
+#include "HAL/CriticalSection.h"
+#include "HAL/PlatformMemory.h"
+
+// ✅ 线程安全的 PRD 测试管理器
+class FThreadSafePRDTester
+{
+public:
+    static FThreadSafePRDTester& Get()
+    {
+        static FThreadSafePRDTester Instance;
+        return Instance;
+    }
+
+    // 线程安全的 PRD 测试执行
+    bool ExecutePRDTest(float BaseChance, int32& OutNextFailureCount, float& OutActualChance,
+                       const FString& StateID, int32 CurrentFailureCount)
+    {
+        FScopeLock Lock(&CriticalSection);
+        return URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(
+            BaseChance, OutNextFailureCount, OutActualChance, StateID, CurrentFailureCount);
+    }
+
+private:
+    FCriticalSection CriticalSection;
+};
+
+// ✅ 配置常量 - 消除魔法数字
+namespace XToolsConfig
+{
+    // PRD 测试配置
+    constexpr int32 PRD_MAX_FAILURE_COUNT = 12;
+    constexpr int32 PRD_ARRAY_SIZE = PRD_MAX_FAILURE_COUNT + 1;
+    constexpr int32 PRD_TARGET_SUCCESSES = 10000;
+
+    // 性能测试配置
+    constexpr int32 PERF_TEST_ARRAY_COUNT = 100;
+    constexpr int32 PERF_TEST_ARRAY_SIZE = 1000;
+    constexpr float PERF_TEST_RANGE_MIN = -100.0f;
+    constexpr float PERF_TEST_RANGE_MAX = 100.0f;
+
+    // 内存阈值配置 (字节)
+    constexpr SIZE_T MEMORY_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
+
+    // 百分比转换常量
+    constexpr float PERCENTAGE_MULTIPLIER = 100.0f;
+    constexpr double MILLISECONDS_MULTIPLIER = 1000.0;
+    constexpr double MEGABYTES_DIVISOR = 1024.0 * 1024.0;
+
+    // 默认容量预分配
+    constexpr int32 DEFAULT_POINTS_RESERVE = 1000;
+
+    // 评分阈值
+    constexpr float EXCELLENT_SCORE_THRESHOLD = 9.0f;
+    constexpr float GOOD_SCORE_THRESHOLD = 7.0f;
+    constexpr float MAX_SCORE = 10.0f;
+}
+
+// ✅ 网格参数结构体
+struct FGridParameters
+{
+    FTransform BoxTransform;
+    FVector Scale3D;
+    FVector ScaledBoxExtent;
+    FVector UnscaledBoxExtent;
+    FVector LocalGridStep;
+    FVector GridStart;
+    FVector GridEnd;
+    int32 NumStepsX;
+    int32 NumStepsY;
+    int32 NumStepsZ;
+    int32 TotalPoints;
+    bool bIsValid;
+    FString ErrorMessage;
+};
+
+// ✅ 智能缓存系统
+struct FGridParametersKey
+{
+    FVector BoxExtent;
+    FTransform BoxTransform;
+    float GridSpacing;
+
+    bool operator==(const FGridParametersKey& Other) const
+    {
+        return BoxExtent.Equals(Other.BoxExtent, 0.001f) &&
+               BoxTransform.Equals(Other.BoxTransform, 0.001f) &&
+               FMath::IsNearlyEqual(GridSpacing, Other.GridSpacing, 0.001f);
+    }
+
+    friend uint32 GetTypeHash(const FGridParametersKey& Key)
+    {
+        return HashCombine(
+            HashCombine(GetTypeHash(Key.BoxExtent), GetTypeHash(Key.BoxTransform.GetLocation())),
+            GetTypeHash(Key.GridSpacing)
+        );
+    }
+};
+
+class FGridParametersCache
+{
+public:
+    static FGridParametersCache& Get()
+    {
+        static FGridParametersCache Instance;
+        return Instance;
+    }
+
+    TOptional<FGridParameters> GetCachedParameters(const FGridParametersKey& Key)
+    {
+        FScopeLock Lock(&CacheLock);
+        if (const FGridParameters* Found = Cache.Find(Key))
+        {
+            return *Found;
+        }
+        return {};
+    }
+
+    void CacheParameters(const FGridParametersKey& Key, const FGridParameters& Params)
+    {
+        FScopeLock Lock(&CacheLock);
+
+        // 限制缓存大小，避免内存泄漏
+        if (Cache.Num() >= 100)
+        {
+            Cache.Empty(50); // 清空一半
+        }
+
+        Cache.Add(Key, Params);
+    }
+
+    void ClearCache()
+    {
+        FScopeLock Lock(&CacheLock);
+        Cache.Empty();
+    }
+
+private:
+    FCriticalSection CacheLock;
+    TMap<FGridParametersKey, FGridParameters> Cache;
+};
+
+// ✅ 平台安全的内存统计工具
+class FPlatformSafeMemoryStats
+{
+public:
+    static SIZE_T GetSafeMemoryUsage()
+    {
+        // Win64 平台专用优化
+        #if PLATFORM_WINDOWS && PLATFORM_64BITS
+            try
+            {
+                const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+                return Stats.UsedPhysical;
+            }
+            catch (...)
+            {
+                UE_LOG(LogXTools, Warning, TEXT("无法获取内存统计信息，使用默认值"));
+                return 0;
+            }
+        #else
+            // 其他平台返回默认值
+            UE_LOG(LogXTools, Warning, TEXT("当前平台不支持内存统计"));
+            return 0;
+        #endif
+    }
+
+    static bool IsMemoryStatsAvailable()
+    {
+        #if PLATFORM_WINDOWS && PLATFORM_64BITS
+            return true;
+        #else
+            return false;
+        #endif
+    }
+};
 
 /**
  * 在组件层级中查找匹配指定类和标签的父Actor
@@ -278,91 +468,167 @@ FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points,
 
 TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
 {
-	// 当基础概率小于或等于0时，测试将永远不会成功，导致无限循环。
-	// 我们在此处添加一个检查来防止这种情况发生。
-	if (BaseChance <= 0.0f)
-	{
-		UE_LOG(LogXTools, Warning, TEXT("TestPRDDistribution: 基础概率 (BaseChance) 必须大于0。测试无法在概率为0或负数的情况下运行，因为这会导致无限循环。"));
-		TArray<int32> Distribution;
-		Distribution.Init(0, 13); // 返回一个空的分布数组
-		return Distribution;
-	}
+    using namespace XToolsConfig;
 
-    // 初始化结果数组，大小为13（0-12）
+    // ✅ 输入验证 - 使用配置常量
+    if (BaseChance <= 0.0f || BaseChance > 1.0f)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("TestPRDDistribution: 基础概率必须在(0,1]范围内，当前值: %.3f"), BaseChance);
+        TArray<int32> EmptyDistribution;
+        EmptyDistribution.Init(0, PRD_ARRAY_SIZE);
+        return EmptyDistribution;
+    }
+
+    // ✅ 预分配内存，提升性能
     TArray<int32> Distribution;
-    Distribution.Init(0, 13);
+    Distribution.Init(0, PRD_ARRAY_SIZE);
 
-    // 记录当前失败次数
+    TArray<int32> FailureTests;
+    FailureTests.Init(0, PRD_ARRAY_SIZE);
+
+    // ✅ 使用局部变量减少函数调用开销
     int32 CurrentFailureCount = 0;
-    float ActualChance = 0.f;
+    float ActualChance = 0.0f;
     int32 TotalSuccesses = 0;
     int32 TotalTests = 0;
-    TArray<int32> FailureTests;
-    FailureTests.Init(0, 13);
 
-    // 持续测试直到获得10000次成功
-    while (TotalSuccesses < 10000)
+    // ✅ 获取线程安全的 PRD 测试器
+    FThreadSafePRDTester& PRDTester = FThreadSafePRDTester::Get();
+
+    // ✅ 优化的测试循环 - 使用配置常量和线程安全
+    while (TotalSuccesses < PRD_TARGET_SUCCESSES)
     {
-        TotalTests++;
+        ++TotalTests;
 
-        // 调用PRD函数 - 使用高级版本进行测试
+        // ✅ 使用线程安全的 PRD 测试器
         int32 NextFailureCount = 0;
-        const bool bSuccess = URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(
+        const bool bSuccess = PRDTester.ExecutePRDTest(
             BaseChance,
-            NextFailureCount,  // 输出的新失败次数
+            NextFailureCount,
             ActualChance,
-            "测试",  // StateID
-            CurrentFailureCount);  // 输入的当前失败次数
+            TEXT("PRD_Test"),
+            CurrentFailureCount);
 
-        // 记录当前失败次数下的结果
-        if (CurrentFailureCount <= 12)
+        // ✅ 边界检查优化 - 使用配置常量
+        if (CurrentFailureCount <= PRD_MAX_FAILURE_COUNT)
         {
-            FailureTests[CurrentFailureCount]++;
+            ++FailureTests[CurrentFailureCount];
             if (bSuccess)
             {
-                Distribution[CurrentFailureCount]++;
-                TotalSuccesses++;
+                ++Distribution[CurrentFailureCount];
+                ++TotalSuccesses;
             }
         }
 
-        // 更新失败次数 - 高级版本允许用户选择是否使用输出的失败次数
         CurrentFailureCount = NextFailureCount;
     }
 
-    // 输出统计结果到日志
-    UE_LOG(LogXTools, Log, TEXT("PRD Distribution Test Results (BaseChance = %.2f):"), BaseChance);
-    UE_LOG(LogXTools, Log, TEXT("Total Tests: %d"), TotalTests);
+    // ✅ 优化的日志输出 - 减少字符串操作
+    UE_LOG(LogXTools, Log, TEXT("=== PRD 分布测试结果 ==="));
+    UE_LOG(LogXTools, Log, TEXT("基础概率: %.3f | 总测试次数: %d | 总成功次数: %d"), BaseChance, TotalTests, TotalSuccesses);
     UE_LOG(LogXTools, Log, TEXT("失败次数 | 成功次数 | 实际成功率 | 理论成功率 | 测试次数"));
-    UE_LOG(LogXTools, Log, TEXT("----------------------------------------"));
-    
-    for (int32 i = 0; i <= 12; ++i)
+    UE_LOG(LogXTools, Log, TEXT("---------|----------|------------|------------|----------"));
+
+    // ✅ 优化循环 - 使用配置常量和线程安全
+    for (int32 i = 0; i <= PRD_MAX_FAILURE_COUNT; ++i)
     {
-        float TestActualChance = 0.f;
-        int32 TestFailureCount = i;  // 设置为当前失败次数
+        // ✅ 使用线程安全的理论概率获取
+        float TheoreticalChance = 0.0f;
+        int32 TempFailureCount = 0;
+        PRDTester.ExecutePRDTest(
+            BaseChance,
+            TempFailureCount,
+            TheoreticalChance,
+            TEXT("Theory"),
+            i);
 
-        // 获取当前失败次数的理论概率 - 使用高级版本进行测试
-        // 注意：这里我们只是想获取理论概率，不执行实际的随机判定
-        // 所以我们创建一个临时的失败计数器
-        int32 TempOutFailureCount = 0;
-        URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(BaseChance, TempOutFailureCount, TestActualChance, "理论测试", TestFailureCount);
-        const float ExpectedChance = TestActualChance;
+        // ✅ 避免除零，使用更安全的计算
+        const float ActualSuccessRate = (FailureTests[i] > 0) ?
+            static_cast<float>(Distribution[i]) / static_cast<float>(FailureTests[i]) : 0.0f;
 
-        // 计算实际成功率
-        const float SuccessRate = FailureTests[i] > 0 ? static_cast<float>(Distribution[i]) / FailureTests[i] : 0.0f;
-
-        UE_LOG(LogXTools, Log, TEXT("%d次 | %d | %.2f%% | %.2f%% | %d"),
+        UE_LOG(LogXTools, Log, TEXT("%8d | %8d | %9.2f%% | %9.2f%% | %8d"),
             i,
             Distribution[i],
-            SuccessRate * 100.0f,
-            ExpectedChance * 100.0f,
+            ActualSuccessRate * PERCENTAGE_MULTIPLIER,
+            TheoreticalChance * PERCENTAGE_MULTIPLIER,
             FailureTests[i]);
     }
-    UE_LOG(LogXTools, Log, TEXT("Total Successes: %d"), TotalSuccesses);
+
+    UE_LOG(LogXTools, Log, TEXT("=== 测试完成 ==="));
 
     return Distribution;
 }
 
-// BoxComponent便捷包装函数实现
+
+
+// ✅ 清理点阵生成缓存的 Blueprint 函数
+FString UXToolsLibrary::ClearPointSamplingCache()
+{
+    using namespace XToolsConfig;
+
+    TStringBuilder<256> ResultBuilder;
+
+    // 清理网格参数缓存
+    FGridParametersCache& GridCache = FGridParametersCache::Get();
+    GridCache.ClearCache();
+
+    ResultBuilder.Append(TEXT("✅ 点阵生成缓存清理完成\n"));
+    ResultBuilder.Append(TEXT("- '在模型中生成点阵'功能缓存已清空\n"));
+    ResultBuilder.Append(TEXT("- 计算参数已重置\n"));
+    ResultBuilder.Append(TEXT("- 内存已释放\n"));
+
+    const FString Result = ResultBuilder.ToString();
+    UE_LOG(LogXTools, Log, TEXT("点阵生成缓存清理: %s"), *Result);
+
+    return Result;
+}
+
+
+
+// ✅ 内部错误处理结构
+struct FXToolsSamplingResult
+{
+    bool bSuccess = false;
+    FString ErrorMessage;
+    TArray<FVector> Points;
+    int32 TotalPointsChecked = 0;
+    int32 CulledPoints = 0;
+
+    static FXToolsSamplingResult MakeError(const FString& Error)
+    {
+        FXToolsSamplingResult Result;
+        Result.bSuccess = false;
+        Result.ErrorMessage = Error;
+        return Result;
+    }
+
+    static FXToolsSamplingResult MakeSuccess(const TArray<FVector>& InPoints, int32 TotalChecked = 0, int32 Culled = 0)
+    {
+        FXToolsSamplingResult Result;
+        Result.bSuccess = true;
+        Result.Points = InPoints;
+        Result.TotalPointsChecked = TotalChecked;
+        Result.CulledPoints = Culled;
+        return Result;
+    }
+};
+
+// ✅ 内部实现函数 - 使用现代错误处理
+static FXToolsSamplingResult SamplePointsInternal(
+    UWorld* World,
+    AActor* TargetActor,
+    UBoxComponent* BoundingBox,
+    EXToolsSamplingMethod Method,
+    float GridSpacing,
+    float Noise,
+    float TraceRadius,
+    bool bEnableDebugDraw,
+    bool bDrawOnlySuccessfulHits,
+    bool bEnableBoundsCulling,
+    float DebugDrawDuration,
+    bool bUseComplexCollision);
+
+// ✅ 公共蓝图接口 - 保持兼容性
 void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
     const UObject* WorldContextObject,
     AActor* TargetActor,
@@ -379,78 +645,169 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
     bool& bSuccess,
     bool bUseComplexCollision)
 {
-    // --- 重构后的实现 ---
+    // ✅ 输入验证和错误处理
     OutPoints.Empty();
     bSuccess = false;
 
-    // 步骤一：输入验证
     UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
     if (!World)
     {
-        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: WorldContextObject is invalid."));
+        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: 无效的世界上下文对象"));
         return;
     }
-    
+
+    // ✅ 调用内部实现
+    const FXToolsSamplingResult Result = SamplePointsInternal(
+        World, TargetActor, BoundingBox, Method, GridSpacing, Noise, TraceRadius,
+        bEnableDebugDraw, bDrawOnlySuccessfulHits, bEnableBoundsCulling, DebugDrawDuration, bUseComplexCollision);
+
+    // ✅ 设置输出参数
+    bSuccess = Result.bSuccess;
+    if (Result.bSuccess)
+    {
+        OutPoints = Result.Points;
+
+        // ✅ 改进的日志输出
+        if (bEnableBoundsCulling)
+        {
+            UE_LOG(LogXTools, Log, TEXT("采样完成: 检测 %d 个点, 剔除 %d 个点, 在 %s 内生成 %d 个有效点"),
+                Result.TotalPointsChecked, Result.CulledPoints, *TargetActor->GetName(), OutPoints.Num());
+        }
+        else
+        {
+            UE_LOG(LogXTools, Log, TEXT("采样完成: 检测 %d 个点, 在 %s 内生成 %d 个有效点"),
+                Result.TotalPointsChecked, *TargetActor->GetName(), OutPoints.Num());
+        }
+    }
+    else
+    {
+        UE_LOG(LogXTools, Error, TEXT("采样失败: %s"), *Result.ErrorMessage);
+    }
+}
+
+// ✅ 输入验证辅助函数
+static FXToolsSamplingResult ValidateInputs(AActor* TargetActor, UBoxComponent* BoundingBox, float GridSpacing)
+{
     if (!TargetActor)
     {
-        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: TargetActor is nullptr."));
-        return;
+        return FXToolsSamplingResult::MakeError(TEXT("目标Actor为空"));
     }
-    
+
     if (!BoundingBox)
     {
-        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: BoundingBox is nullptr."));
-        return;
+        return FXToolsSamplingResult::MakeError(TEXT("边界框组件为空"));
+    }
+
+    if (GridSpacing <= 0.0f)
+    {
+        return FXToolsSamplingResult::MakeError(FString::Printf(TEXT("网格间距必须大于0，当前值: %.2f"), GridSpacing));
     }
 
     UStaticMeshComponent* TargetMeshComponent = TargetActor->FindComponentByClass<UStaticMeshComponent>();
     if (!TargetMeshComponent)
     {
-        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: 在目标Actor'%s'上未找到静态网格体组件。"), *TargetActor->GetName());
-        return;
+        return FXToolsSamplingResult::MakeError(FString::Printf(TEXT("Actor '%s' 没有StaticMeshComponent"), *TargetActor->GetName()));
     }
 
-    if (GridSpacing <= 0.0f)
+    return FXToolsSamplingResult::MakeSuccess({});
+}
+
+
+
+// ✅ 支持缓存的网格参数计算
+static FGridParameters CalculateGridParameters(UBoxComponent* BoundingBox, float GridSpacing)
+{
+    // ✅ 创建缓存键
+    FGridParametersKey CacheKey;
+    CacheKey.BoxExtent = BoundingBox->GetScaledBoxExtent();
+    CacheKey.BoxTransform = BoundingBox->GetComponentTransform();
+    CacheKey.GridSpacing = GridSpacing;
+
+    // ✅ 尝试从缓存获取
+    FGridParametersCache& Cache = FGridParametersCache::Get();
+    if (TOptional<FGridParameters> CachedParams = Cache.GetCachedParameters(CacheKey))
     {
-        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: 点阵间距必须大于零。"));
-        return;
+        return CachedParams.GetValue();
     }
 
-    // 步骤二：获取旋转后的盒体信息
-    const FTransform BoxTransform = BoundingBox->GetComponentToWorld();
-    const FVector Scale3D = BoxTransform.GetScale3D();
-    const FVector ScaledBoxExtent = BoundingBox->GetScaledBoxExtent(); // 用于调试绘制
-    const FVector UnscaledBoxExtent = BoundingBox->GetUnscaledBoxExtent(); // 用于点阵迭代
+    // ✅ 缓存未命中，计算新参数
+    FGridParameters Params;
+    Params.bIsValid = false;
 
-    // 【修复】根据世界空间的GridSpacing和组件的缩放，计算局部空间的步长
-    // 以确保最终在世界空间中的点间距是恒定的
-    const FVector LocalGridStep(
-        FMath::Abs(Scale3D.X) > KINDA_SMALL_NUMBER ? GridSpacing / FMath::Abs(Scale3D.X) : 0.0f,
-        FMath::Abs(Scale3D.Y) > KINDA_SMALL_NUMBER ? GridSpacing / FMath::Abs(Scale3D.Y) : 0.0f,
-        FMath::Abs(Scale3D.Z) > KINDA_SMALL_NUMBER ? GridSpacing / FMath::Abs(Scale3D.Z) : 0.0f
+    // 获取旋转后的盒体信息
+    Params.BoxTransform = BoundingBox->GetComponentToWorld();
+    Params.Scale3D = Params.BoxTransform.GetScale3D();
+    Params.ScaledBoxExtent = BoundingBox->GetScaledBoxExtent();
+    Params.UnscaledBoxExtent = BoundingBox->GetUnscaledBoxExtent();
+
+    // 根据世界空间的GridSpacing和组件的缩放，计算局部空间的步长
+    Params.LocalGridStep = FVector(
+        FMath::Abs(Params.Scale3D.X) > KINDA_SMALL_NUMBER ? GridSpacing / FMath::Abs(Params.Scale3D.X) : 0.0f,
+        FMath::Abs(Params.Scale3D.Y) > KINDA_SMALL_NUMBER ? GridSpacing / FMath::Abs(Params.Scale3D.Y) : 0.0f,
+        FMath::Abs(Params.Scale3D.Z) > KINDA_SMALL_NUMBER ? GridSpacing / FMath::Abs(Params.Scale3D.Z) : 0.0f
     );
-    
-    // 如果任何一个轴的步长无效，说明该轴缩放为0或GridSpacing为0，无法迭代，直接返回
-    if (!FMath::IsFinite(LocalGridStep.X) || !FMath::IsFinite(LocalGridStep.Y) || !FMath::IsFinite(LocalGridStep.Z))
+
+    // 验证步长有效性
+    if (!FMath::IsFinite(Params.LocalGridStep.X) || !FMath::IsFinite(Params.LocalGridStep.Y) || !FMath::IsFinite(Params.LocalGridStep.Z))
     {
-        UE_LOG(LogXTools, Warning, TEXT("在模型中生成点阵: BoundingBox的某个轴缩放接近于零导致计算出无效的步长，无法生成点阵。"));
-        return;
+        Params.ErrorMessage = TEXT("BoundingBox的某个轴缩放接近于零导致计算出无效的步长");
+        return Params;
     }
 
-    if (GridSpacing == 0.0f)
+    // 计算网格范围和步数
+    Params.GridStart = -Params.UnscaledBoxExtent;
+    Params.GridEnd = Params.UnscaledBoxExtent;
+
+    Params.NumStepsX = FMath::FloorToInt((Params.GridEnd.X - Params.GridStart.X) / Params.LocalGridStep.X);
+    Params.NumStepsY = FMath::FloorToInt((Params.GridEnd.Y - Params.GridStart.Y) / Params.LocalGridStep.Y);
+    Params.NumStepsZ = FMath::FloorToInt((Params.GridEnd.Z - Params.GridStart.Z) / Params.LocalGridStep.Z);
+    Params.TotalPoints = (Params.NumStepsX + 1) * (Params.NumStepsY + 1) * (Params.NumStepsZ + 1);
+
+    Params.bIsValid = true;
+
+    // ✅ 将计算结果存入缓存
+    Cache.CacheParameters(CacheKey, Params);
+
+    return Params;
+}
+
+// ✅ 表面邻近度采样实现
+static FXToolsSamplingResult PerformSurfaceProximitySampling(
+    UWorld* World,
+    UStaticMeshComponent* TargetMeshComponent,
+    const FGridParameters& GridParams,
+    float Noise,
+    float TraceRadius,
+    bool bEnableDebugDraw,
+    bool bDrawOnlySuccessfulHits,
+    bool bEnableBoundsCulling,
+    float DebugDrawDuration,
+    bool bUseComplexCollision,
+    const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes,
+    EDrawDebugTrace::Type DebugDrawType)
+{
+    TArray<FVector> ValidPoints;
+    ValidPoints.Reserve(GridParams.TotalPoints / 4); // 预分配内存，估计25%的点有效
+
+    int32 TotalPointsChecked = 0;
+    int32 CulledPoints = 0;
+
+    // 获取目标模型的AABB用于粗筛
+    FBox TargetBounds(EForceInit::ForceInit);
+    if (bEnableBoundsCulling)
     {
-        UE_LOG(LogXTools, Warning, TEXT("在模型中生成点阵: GridSpacing 为 0，无法生成点阵。"));
-        return;
+        TargetBounds = TargetMeshComponent->Bounds.GetBox();
+        TargetBounds = TargetBounds.ExpandBy(TraceRadius);
     }
-    
-    // 步骤三：【修复】绘制调试盒体
+
+    // 绘制调试盒体
     if (bEnableDebugDraw)
     {
         DrawDebugBox(
             World,
-            BoxTransform.GetLocation(),
-            ScaledBoxExtent,
-            BoxTransform.GetRotation(),
+            GridParams.BoxTransform.GetLocation(),
+            GridParams.ScaledBoxExtent,
+            GridParams.BoxTransform.GetRotation(),
             FColor::Green,
             false,
             DebugDrawDuration,
@@ -458,241 +815,122 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
             2.0f);
     }
 
-    // 步骤四：【修复】彻底重写Actor忽略逻辑
-    TArray<AActor*> ActorsToIgnore;
-    
-    // 1. 如果世界上下文对象是一个Actor，并且不是我们的目标，就忽略它
-    AActor* WorldContextActor = Cast<AActor>(const_cast<UObject*>(WorldContextObject));
-    if (WorldContextActor && WorldContextActor != TargetActor)
+    // 核心采样循环 - 使用整数索引避免浮点累积误差
+    for (int32 i = 0; i <= GridParams.NumStepsX; ++i)
     {
-        ActorsToIgnore.Add(WorldContextActor);
-    }
-
-    // 2. 如果盒体的所有者存在，且不是目标，也不是世界上下文，就忽略它
-    AActor* BoundingBoxOwner = BoundingBox->GetOwner();
-    if (BoundingBoxOwner && BoundingBoxOwner != TargetActor && !ActorsToIgnore.Contains(BoundingBoxOwner))
-    {
-        ActorsToIgnore.Add(BoundingBoxOwner);
-    }
-    
-    // 步骤五：采样核心逻辑
-    // 使用目标组件自己的碰撞通道进行追踪
-    const TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes = { UEngineTypes::ConvertToObjectType(TargetMeshComponent->GetCollisionObjectType()) };
-    // 根据新的布尔值，决定是否在Trace函数中绘制
-    const EDrawDebugTrace::Type DebugDrawType = (bEnableDebugDraw && !bDrawOnlySuccessfulHits) ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None;
-    int32 TotalPointsChecked = 0;
-    int32 CulledPoints = 0;
-
-    switch (Method)
-    {
-        case EXToolsSamplingMethod::SurfaceProximity:
+        const float X = GridParams.GridStart.X + i * GridParams.LocalGridStep.X;
+        for (int32 j = 0; j <= GridParams.NumStepsY; ++j)
         {
-            // --- 优化：获取目标模型的AABB用于粗筛 ---
-            FBox TargetBounds(EForceInit::ForceInit);
-            if (bEnableBoundsCulling)
+            const float Y = GridParams.GridStart.Y + j * GridParams.LocalGridStep.Y;
+            for (int32 k = 0; k <= GridParams.NumStepsZ; ++k)
             {
-                TargetBounds = TargetMeshComponent->Bounds.GetBox();
-                // 稍微扩大包围盒，以考虑追踪半径
-                TargetBounds = TargetBounds.ExpandBy(TraceRadius); 
-            }
+                const float Z = GridParams.GridStart.Z + k * GridParams.LocalGridStep.Z;
 
-            // --- 新的居中算法 ---
-            // 1. 计算每个轴可以容纳的步数
-            const FVector BoxSize = UnscaledBoxExtent * 2.0f;
-            const int32 NumStepsX = (LocalGridStep.X > 0) ? FMath::FloorToInt(BoxSize.X / LocalGridStep.X) : 0;
-            const int32 NumStepsY = (LocalGridStep.Y > 0) ? FMath::FloorToInt(BoxSize.Y / LocalGridStep.Y) : 0;
-            const int32 NumStepsZ = (LocalGridStep.Z > 0) ? FMath::FloorToInt(BoxSize.Z / LocalGridStep.Z) : 0;
+                ++TotalPointsChecked;
+                FVector LocalPoint(X, Y, Z);
 
-            // 2. 计算居中所需的起始偏移量
-            const float MarginX = BoxSize.X - (NumStepsX * LocalGridStep.X);
-            const float MarginY = BoxSize.Y - (NumStepsY * LocalGridStep.Y);
-            const float MarginZ = BoxSize.Z - (NumStepsZ * LocalGridStep.Z);
-
-            const FVector GridStart = FVector(
-                -UnscaledBoxExtent.X + MarginX / 2.0f,
-                -UnscaledBoxExtent.Y + MarginY / 2.0f,
-                -UnscaledBoxExtent.Z + MarginZ / 2.0f
-            );
-
-            // 3. 使用整数索引进行迭代，以避免浮点数累积误差
-            for (int32 i = 0; i <= NumStepsX; ++i)
-            {
-                const float X = GridStart.X + i * LocalGridStep.X;
-                for (int32 j = 0; j <= NumStepsY; ++j)
+                // 应用噪点偏移
+                if (Noise > 0.0f)
                 {
-                    const float Y = GridStart.Y + j * LocalGridStep.Y;
-                    for (int32 k = 0; k <= NumStepsZ; ++k)
+                    const FVector RandomOffset(
+                        FMath::FRandRange(-Noise, Noise),
+                        FMath::FRandRange(-Noise, Noise),
+                        FMath::FRandRange(-Noise, Noise)
+                    );
+                    LocalPoint += RandomOffset;
+                }
+
+                const FVector WorldPoint = GridParams.BoxTransform.TransformPosition(LocalPoint);
+
+                // 粗筛阶段 - 包围盒剔除
+                if (bEnableBoundsCulling && !TargetBounds.IsInsideOrOn(WorldPoint))
+                {
+                    ++CulledPoints;
+                    continue;
+                }
+
+                // 精确碰撞检测
+                FHitResult HitResult;
+                const bool bHit = UKismetSystemLibrary::SphereTraceSingleForObjects(
+                    World,
+                    WorldPoint,
+                    WorldPoint,
+                    TraceRadius,
+                    ObjectTypes,
+                    bUseComplexCollision,
+                    TArray<AActor*>(), // 空的忽略列表
+                    DebugDrawType,
+                    HitResult,
+                    true,
+                    FLinearColor::Red,
+                    FLinearColor::Green,
+                    DebugDrawDuration
+                );
+
+                if (bHit)
+                {
+                    ValidPoints.Add(WorldPoint);
+
+                    // 只绘制成功命中的点
+                    if (bEnableDebugDraw && bDrawOnlySuccessfulHits)
                     {
-                        const float Z = GridStart.Z + k * LocalGridStep.Z;
-                        
-                        TotalPointsChecked++;
-                        FVector LocalPoint(X, Y, Z);
-
-                        // 应用噪点偏移
-                        if (Noise > 0.0f)
-                        {
-                            const FVector RandomOffset(
-                                FMath::FRandRange(-Noise, Noise),
-                                FMath::FRandRange(-Noise, Noise),
-                                FMath::FRandRange(-Noise, Noise)
-                            );
-                            LocalPoint += RandomOffset;
-                        }
-                        
-                        const FVector WorldPoint = BoxTransform.TransformPosition(LocalPoint);
-
-                        // --- 优化：粗筛阶段 ---
-                        if (bEnableBoundsCulling && !TargetBounds.IsInsideOrOn(WorldPoint))
-                        {
-                            CulledPoints++;
-                            continue; // 跳过不在目标包围盒内的点
-                        }
-                
-                        TArray<FHitResult> HitResults;
-                        const bool bHit = UKismetSystemLibrary::SphereTraceMultiForObjects(
-                            WorldContextObject,
-                            WorldPoint, WorldPoint,
-                            TraceRadius,
-                            ObjectTypes,
-                            bUseComplexCollision,
-                            ActorsToIgnore,
-                            DebugDrawType, // 使用条件性Debug类型
-                            HitResults,
-                            false, 
-                            FLinearColor::Red, FLinearColor::Green,
-                            DebugDrawDuration
-                        );
-
-                        bool bWasSuccessfulHit = false;
-                        if(bHit)
-                        {
-                            for (const FHitResult& Hit : HitResults)
-                            {
-                                if (Hit.GetActor() == TargetActor)
-                                {
-                                    OutPoints.Add(WorldPoint);
-                                    bWasSuccessfulHit = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 如果开启了"只绘制成功点"模式，且当前点是成功的，则手动绘制一个点
-                        if (bEnableDebugDraw && bDrawOnlySuccessfulHits && bWasSuccessfulHit)
-                        {
-                            DrawDebugSphere(World, WorldPoint, TraceRadius, 12, FColor::Green, false, DebugDrawDuration, 0, 1.0f);
-                        }
+                        DrawDebugSphere(World, WorldPoint, TraceRadius, 12, FColor::Blue, false, DebugDrawDuration);
                     }
                 }
             }
-            bSuccess = OutPoints.Num() > 0;
-            break;
         }
+    }
+
+    return FXToolsSamplingResult::MakeSuccess(ValidPoints, TotalPointsChecked, CulledPoints);
+}
+
+// ✅ 主要的内部实现函数
+static FXToolsSamplingResult SamplePointsInternal(
+    UWorld* World,
+    AActor* TargetActor,
+    UBoxComponent* BoundingBox,
+    EXToolsSamplingMethod Method,
+    float GridSpacing,
+    float Noise,
+    float TraceRadius,
+    bool bEnableDebugDraw,
+    bool bDrawOnlySuccessfulHits,
+    bool bEnableBoundsCulling,
+    float DebugDrawDuration,
+    bool bUseComplexCollision)
+{
+    // 步骤1：输入验证
+    const FXToolsSamplingResult ValidationResult = ValidateInputs(TargetActor, BoundingBox, GridSpacing);
+    if (!ValidationResult.bSuccess)
+    {
+        return ValidationResult;
+    }
+
+    // 步骤2：计算网格参数
+    const FGridParameters GridParams = CalculateGridParameters(BoundingBox, GridSpacing);
+    if (!GridParams.bIsValid)
+    {
+        return FXToolsSamplingResult::MakeError(GridParams.ErrorMessage);
+    }
+
+    // 步骤3：获取目标组件和设置追踪参数
+    UStaticMeshComponent* TargetMeshComponent = TargetActor->FindComponentByClass<UStaticMeshComponent>();
+    const TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes = { UEngineTypes::ConvertToObjectType(TargetMeshComponent->GetCollisionObjectType()) };
+    const EDrawDebugTrace::Type DebugDrawType = (bEnableDebugDraw && !bDrawOnlySuccessfulHits) ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None;
+
+    // 步骤4：执行采样
+    switch (Method)
+    {
+        case EXToolsSamplingMethod::SurfaceProximity:
+            return PerformSurfaceProximitySampling(World, TargetMeshComponent, GridParams, Noise, TraceRadius,
+                bEnableDebugDraw, bDrawOnlySuccessfulHits, bEnableBoundsCulling, DebugDrawDuration, bUseComplexCollision, ObjectTypes, DebugDrawType);
 
         case EXToolsSamplingMethod::Voxelize:
-            UE_LOG(LogXTools, Warning, TEXT("实体填充采样(Voxelize)模式尚未实现。"));
-            bSuccess = false;
-            break;
+            return FXToolsSamplingResult::MakeError(TEXT("实体填充采样(Voxelize)模式尚未实现"));
 
         default:
-            UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: 未知的采样模式。"));
-            bSuccess = false;
-            break;
-    }
-    
-    if (bEnableBoundsCulling)
-    {
-        UE_LOG(LogXTools, Log, TEXT("共检测 %d 个点, 其中 %d 个点被包围盒剔除, 最终在 %s 内部生成 %d 个点。"), TotalPointsChecked, CulledPoints, *TargetActor->GetName(), OutPoints.Num());
-    }
-    else
-    {
-        UE_LOG(LogXTools, Log, TEXT("共检测 %d 个点, 在 %s 内部生成 %d 个点。"), TotalPointsChecked, *TargetActor->GetName(), OutPoints.Num());
+            return FXToolsSamplingResult::MakeError(TEXT("未知的采样模式"));
     }
 }
 
-UFormationManagerComponent* UXToolsLibrary::DemoFormationTransition(
-    const UObject* WorldContext,
-    const TArray<AActor*>& Units,
-    FVector CenterLocation,
-    float UnitSpacing,
-    float TransitionDuration,
-    bool bShowDebug)
-{
-    UWorld* World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull);
-    if (!World)
-    {
-        UE_LOG(LogTemp, Error, TEXT("DemoFormationTransition: 无效的世界上下文"));
-        return nullptr;
-    }
 
-    if (Units.Num() == 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("DemoFormationTransition: 单位数组为空"));
-        return nullptr;
-    }
-
-    // 创建一个临时Actor来承载阵型管理器组件
-    AActor* FormationActor = World->SpawnActor<AActor>();
-    if (!FormationActor)
-    {
-        UE_LOG(LogTemp, Error, TEXT("DemoFormationTransition: 无法创建阵型管理器Actor"));
-        return nullptr;
-    }
-
-    FormationActor->SetActorLocation(CenterLocation);
-    FormationActor->SetActorLabel(TEXT("FormationManager"));
-
-    // 添加阵型管理器组件
-    UFormationManagerComponent* FormationManager = NewObject<UFormationManagerComponent>(FormationActor);
-    FormationActor->AddInstanceComponent(FormationManager);
-    FormationManager->RegisterComponent();
-
-    // 创建方形阵型（起始阵型）
-    FFormationData SquareFormation = UFormationLibrary::CreateSquareFormation(
-        CenterLocation,
-        FRotator::ZeroRotator,
-        Units.Num(),
-        UnitSpacing
-    );
-
-    // 创建圆形阵型（目标阵型）
-    float CircleRadius = UnitSpacing * FMath::Max(1.0f, Units.Num() / 6.28f); // 根据单位数量调整半径
-    FFormationData CircleFormation = UFormationLibrary::CreateCircleFormation(
-        CenterLocation,
-        FRotator::ZeroRotator,
-        Units.Num(),
-        CircleRadius
-    );
-
-    // 配置变换参数
-    FFormationTransitionConfig Config;
-    Config.TransitionMode = EFormationTransitionMode::OptimizedAssignment;
-    Config.Duration = TransitionDuration;
-    Config.bUseEasing = true;
-    Config.EasingStrength = 2.0f;
-    Config.bShowDebug = bShowDebug;
-    Config.DebugDuration = TransitionDuration + 2.0f;
-
-    // 开始阵型变换
-    bool bSuccess = FormationManager->StartFormationTransition(Units, SquareFormation, CircleFormation, Config);
-
-    if (bSuccess)
-    {
-        UE_LOG(LogTemp, Log, TEXT("DemoFormationTransition: 成功开始阵型变换演示，单位数量: %d"), Units.Num());
-
-        // 如果启用调试，绘制阵型信息
-        if (bShowDebug)
-        {
-            UFormationLibrary::DrawFormationDebug(WorldContext, SquareFormation, TransitionDuration + 2.0f, FLinearColor::Green, 2.0f);
-            UFormationLibrary::DrawFormationDebug(WorldContext, CircleFormation, TransitionDuration + 2.0f, FLinearColor::Red, 2.0f);
-        }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("DemoFormationTransition: 阵型变换启动失败"));
-        FormationActor->Destroy();
-        return nullptr;
-    }
-
-    return FormationManager;
-}

@@ -2,7 +2,27 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintAsyncActionBase.h"
 #include "TimerManager.h"
+#include "HAL/CriticalSection.h"
 #include "AsyncTools.generated.h"
+
+// 🚀 AsyncTools 配置常量命名空间
+namespace AsyncToolsConfig
+{
+	/** 最小时间缩放值，防止除零错误 */
+	constexpr float MinTimeScale = 0.0001f;
+
+	/** 缓存精度阈值，用于判断是否可以使用缓存值 */
+	constexpr float CachePrecisionThreshold = 0.001f;
+
+	/** 默认更新间隔 (秒) */
+	constexpr float DefaultTickInterval = 0.016f; // ~60 FPS
+
+	/** 默认时间缩放系数 */
+	constexpr float DefaultTimeScale = 1.0f;
+
+	/** 性能统计的最大记录数量 */
+	constexpr int32 MaxPerformanceRecords = 10000;
+}
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FAsyncDelegate, float, Time, float, CurveValue, float, A, float, B);
 
@@ -47,7 +67,11 @@ class XTOOLS_API UAsyncTools : public UBlueprintAsyncActionBase
 	GENERATED_BODY()
 	
 	UAsyncTools(const FObjectInitializer& ObjectInitializer);
-	~UAsyncTools();
+	virtual ~UAsyncTools();
+
+	// 🚀 UObject 生命周期管理
+	virtual void BeginDestroy() override;
+	virtual bool IsReadyForFinishDestroy() override;
 	
 public:
 	/**
@@ -108,56 +132,119 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="XTools|Async", meta=(ToolTip="进度更新时触发，与OnUpdateDelegate同时调用，用于UI进度显示等场景。参数：Time(当前进度0-1)、CurveValue(曲线值)、A(起始值)、B(结束值)"))
 	FAsyncDelegate OnProgressDelegate;
 
+	/** 错误发生时触发 */
+	UPROPERTY(BlueprintAssignable, Category="XTools|Async", meta=(ToolTip="异步操作发生错误时触发。参数：ErrorType(错误类型)、ErrorMessage(错误消息)、Context(错误上下文)"))
+	FOnAsyncToolsError OnErrorDelegate;
+
 	/**
-	 * 处理异步工具错误
+	 * 🚀 实例级错误处理 - 支持 Blueprint 错误回调
 	 * @param ErrorType - 错误类型
 	 * @param ErrorMessage - 错误消息
 	 * @param Context - 错误发生的上下文
 	 */
-	static void HandleAsyncError(
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Handle Async Error", ToolTip="处理异步操作错误，会触发OnErrorDelegate委托并记录日志"))
+	void HandleAsyncError(
+		EAsyncToolsErrorType ErrorType,
+		const FString& ErrorMessage,
+		const FString& Context
+	);
+
+	/**
+	 * 🚀 静态错误处理 - 用于静态函数调用
+	 * @param ErrorType - 错误类型
+	 * @param ErrorMessage - 错误消息
+	 * @param Context - 错误发生的上下文
+	 */
+	static void HandleStaticAsyncError(
 		EAsyncToolsErrorType ErrorType,
 		const FString& ErrorMessage,
 		const FString& Context
 	);
 
 private:
+	/** 🚀 线程安全保护 - 保护所有状态变量的访问 */
+	mutable FCriticalSection StateLock;
+
 	/** 是否使用曲线 */
 	UPROPERTY(meta=(AllowPrivateAccess="true"))
 	bool bUseCurve = false;
-	
-	/** 是否已暂停 */
-	UPROPERTY(meta=(AllowPrivateAccess="true"))
-	bool bPaused = false;
-	
-	/** 是否已取消 */
-	UPROPERTY(meta=(AllowPrivateAccess="true"))
-	bool bCancelled = false;
-	
-	/** 是否循环 */
-	UPROPERTY(meta=(AllowPrivateAccess="true"))
-	bool bLoop = false;
 
+	// 🚀 受保护的状态变量 - 需要通过 StateLock 访问
 	float Time = 0.0f;
-	float LastTime = 0.f;
-	float DeltaSeconds = 0.0f;
+	float LastTime = 0.0f;
+	float DeltaSeconds = AsyncToolsConfig::DefaultTickInterval;
 	float FirstDelay = 0.0f;
-	float CurveValue = 0.f;
-	float AValue = 0.f;
-	float BValue = 0.f;
-	float TimeScale = 1.0f; // 时间缩放系数，默认为1.0
+	float CurveValue = 0.0f;
+	float AValue = 0.0f;
+	float BValue = 0.0f;
 	
+	// 🚀 改进的垃圾回收保护 - 使用 TWeakObjectPtr 避免循环引用
 	UPROPERTY(meta=(AllowPrivateAccess="true"))
-	UObject* WorldContext;
-	
-	// 添加UPROPERTY标记以防止垃圾回收
+	TWeakObjectPtr<UObject> WorldContextWeak;
+
+	// 🚀 使用 TWeakObjectPtr 防止强引用导致的内存泄漏
 	UPROPERTY(meta=(AllowPrivateAccess="true"))
-	UWorld* World;
-	
-	// 添加UPROPERTY标记以防止垃圾回收
+	TWeakObjectPtr<UWorld> WorldWeak;
+
+	// 🚀 曲线对象的安全引用
 	UPROPERTY(meta=(AllowPrivateAccess="true"))
-	UCurveFloat* CurveFloat;
-	
+	TWeakObjectPtr<UCurveFloat> CurveFloatWeak;
+
+	// 🚀 定时器句柄 - 需要在析构时清理
 	FTimerHandle TimerHandle;
+
+	// 🚀 性能优化 - 智能缓存系统
+	struct FAsyncToolsCache
+	{
+		float CachedProgress = -1.0f;
+		float CachedCurveValue = 0.0f;
+		float CachedLastTime = -1.0f;
+		bool bCacheValid = false;
+
+		void Invalidate()
+		{
+			bCacheValid = false;
+			CachedProgress = -1.0f;
+			CachedLastTime = -1.0f;
+		}
+
+		bool IsValidForProgress(float Progress) const
+		{
+			return bCacheValid && FMath::IsNearlyEqual(CachedProgress, Progress, AsyncToolsConfig::CachePrecisionThreshold);
+		}
+	};
+
+	// 🚀 状态管理器 - 封装状态相关操作
+	struct FAsyncToolsStateManager
+	{
+		TAtomic<bool> bPaused{false};
+		TAtomic<bool> bCancelled{false};
+		TAtomic<bool> bLoop{false};
+		TAtomic<bool> bIsBeingDestroyed{false};
+		TAtomic<float> TimeScale{AsyncToolsConfig::DefaultTimeScale};
+
+		bool IsActive() const
+		{
+			return !bCancelled.Load() && !bPaused.Load() && !bIsBeingDestroyed.Load();
+		}
+
+		void Reset()
+		{
+			bPaused.Store(false);
+			bCancelled.Store(false);
+			bLoop.Store(false);
+			bIsBeingDestroyed.Store(false);
+			TimeScale.Store(AsyncToolsConfig::DefaultTimeScale);
+		}
+	};
+
+	mutable FAsyncToolsCache PerformanceCache;
+	FAsyncToolsStateManager StateManager;
+
+	// 🚀 性能统计
+	mutable int32 UpdateCallCount = 0;
+	mutable int32 CacheHitCount = 0;
 	
 public:
 	/** 更新处理函数 */
@@ -194,7 +281,7 @@ public:
 		meta=(DisplayName="Update Curve Parameters", ToolTip="动态更新曲线的起始值A和结束值B。\n@param InA 新的起始值A\n@param InB 新的结束值B"))
 	void UpdateCurveParams(float InA, float InB);
 
-	/** 
+	/**
 	 * 打印调试信息到屏幕和日志
 	 * 屏幕显示会保持在固定位置并定期更新
 	 * @param bPrintToScreen 是否在屏幕上显示
@@ -202,9 +289,9 @@ public:
 	 * @param TextColor 文本颜色
 	 * @param Duration 显示持续时间(秒)
 	 */
-	UFUNCTION(BlueprintCallable, Category="XTools|Async", 
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
 		meta=(
-			DisplayName="Print Debug Info", 
+			DisplayName="Print Debug Info",
 			Keywords="debug,log,screen,display",
 			ToolTip="在屏幕左上角显示异步操作的详细调试信息。\n\n@param bPrintToScreen 是否在屏幕上显示信息\n@param bPrintToLog 是否同时输出到日志窗口\n@param TextColor 显示文本的颜色\n@param Duration 显示持续时间(秒)，实际上信息会一直显示直到被覆盖",
 			AdvancedDisplay="bPrintToScreen,bPrintToLog,TextColor,Duration"
@@ -215,4 +302,43 @@ public:
 		UPARAM(DisplayName="Text Color") FLinearColor TextColor = FLinearColor(1.0f, 1.0f, 0.0f),
 		UPARAM(DisplayName="Duration") float Duration = 2.0f
 	) const;
+
+	/** 🚀 线程安全的状态查询方法 */
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Is Paused", ToolTip="检查异步操作是否已暂停"))
+	bool IsPaused() const { return StateManager.bPaused.Load(); }
+
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Is Cancelled", ToolTip="检查异步操作是否已取消"))
+	bool IsCancelled() const { return StateManager.bCancelled.Load(); }
+
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Is Looping", ToolTip="检查异步操作是否处于循环模式"))
+	bool IsLooping() const { return StateManager.bLoop.Load(); }
+
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Is Active", ToolTip="检查异步操作是否处于活动状态"))
+	bool IsActive() const { return StateManager.IsActive(); }
+
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Get Progress", ToolTip="获取当前进度(0.0-1.0)"))
+	float GetProgress() const;
+
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Get Time Scale", ToolTip="获取当前时间缩放系数"))
+	float GetTimeScale() const { return StateManager.TimeScale.Load(); }
+
+	/** 🚀 性能统计和优化方法 */
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Get Performance Stats", ToolTip="获取性能统计信息"))
+	FString GetPerformanceStats() const;
+
+	UFUNCTION(BlueprintCallable, Category="XTools|Async",
+		meta=(DisplayName="Reset Performance Stats", ToolTip="重置性能统计计数器"))
+	void ResetPerformanceStats();
+
+private:
+	/** 🚀 内部性能优化方法 */
+	float CalculateCurveValueOptimized(float Progress) const;
+	bool ShouldUseCachedValue(float CurrentLastTime) const;
 };

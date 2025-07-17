@@ -19,30 +19,33 @@ public class XTools : ModuleRules
 			"DLLIMPORT=__declspec(dllimport)"
 		});
 
-		// Compilation optimization
+		// ✅ UE5.3+ C++20 标准配置
+		CppStandard = CppStandardVersion.Default;
+
+		// ✅ IWYU 强制执行 - 提升编译速度和代码质量
+		bEnforceIWYU = true;
+
+		// ✅ 开发时配置 - 确保代码质量
+		bUseUnity = false;
+
+		// ✅ UE 标准设置 - 符合引擎最佳实践
+		bEnableExceptions = false;
+		bUseRTTI = false;
+
+		// 编译优化设置
 		bUsePrecompiled = false;
 		bEnableUndefinedIdentifierWarnings = false;
-		bEnableExceptions = true;
-		bUseRTTI = true;
 
-		// Public include paths
+		// ✅ 简化的公共包含路径 - 移除不必要的引擎内部路径
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Public",
-			ModuleDirectory + "/AsyncTools",
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes"),
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Public"),
-			Path.Combine(EngineDirectory, "Source/Runtime/Core/Public"),
-			Path.Combine(EngineDirectory, "Source/Runtime/CoreUObject/Public"),
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/Components"),
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/GameFramework"),
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Classes/Engine")
+			ModuleDirectory + "/AsyncTools"
 		});
 
-		// Private include paths  
+		// ✅ 简化的私有包含路径
 		PrivateIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Private",
-			ModuleDirectory + "/AsyncTools",
-			Path.Combine(EngineDirectory, "Source/Runtime/Engine/Private")
+			ModuleDirectory + "/AsyncTools"
 		});
 
 		// Public dependencies
@@ -84,7 +87,6 @@ public class XTools : ModuleRules
 		DynamicallyLoadedModuleNames.AddRange(new string[] {
 		});
 
-		// Additional compiler flags
-		PublicDefinitions.Add("WITH_XTOOLS=1");
+		// ✅ 移除重复的定义 - WITH_XTOOLS=1 已在第17行定义
 	}
 }

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "FormationSystemCore.h"
+#include "FormationTypes.h"
 #include "FormationLibrary.generated.h"
 
 /**

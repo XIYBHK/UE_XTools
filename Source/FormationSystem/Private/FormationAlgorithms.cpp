@@ -6,63 +6,81 @@
 #include "FormationLog.h"
 #include "Kismet/KismetMathLibrary.h"
 
+// 🚀 性能优化配置常量（本地定义）
+namespace FormationPerformanceConfig
+{
+    constexpr int32 HungarianAlgorithmThreshold = 50;
+}
+
 // ========== 成本矩阵计算 ==========
 
 TArray<TArray<float>> UFormationManagerComponent::CalculateRelativePositionCostMatrix(
-    const TArray<FVector>& FromPositions, 
+    const TArray<FVector>& FromPositions,
     const TArray<FVector>& ToPositions)
 {
     int32 NumPositions = FromPositions.Num();
     TArray<TArray<float>> CostMatrix;
+
+    // 🚀 性能优化：预分配内存避免重复分配
+    CostMatrix.Reserve(NumPositions);
     CostMatrix.SetNum(NumPositions);
 
-    // 计算起始阵型的包围盒和中心
-    FBox FromAABB(FromPositions[0], FromPositions[0]);
-    for (const FVector& Pos : FromPositions)
-    {
-        FromAABB += Pos;
-    }
-    FVector FromCenter = FromAABB.GetCenter();
+    // 🚀 性能优化：使用 UE 内置的高效包围盒计算
+    FBox FromAABB = FBox(FromPositions);
+    FBox ToAABB = FBox(ToPositions);
 
-    // 计算目标阵型的包围盒和中心
-    FBox ToAABB(ToPositions[0], ToPositions[0]);
-    for (const FVector& Pos : ToPositions)
+    // 🚀 性能优化：缓存中心点和尺寸，避免重复计算
+    const FVector FromCenter = FromAABB.GetCenter();
+    const FVector ToCenter = ToAABB.GetCenter();
+    const FVector FromSize = FromAABB.GetSize();
+    const FVector ToSize = ToAABB.GetSize();
+
+    // 🚀 性能优化：预计算归一化因子，避免重复除法运算
+    const FVector FromSizeInv = FVector(
+        FromSize.X > 1.0f ? 1.0f / FromSize.X : 0.0f,
+        FromSize.Y > 1.0f ? 1.0f / FromSize.Y : 0.0f,
+        FromSize.Z > 1.0f ? 1.0f / FromSize.Z : 0.0f
+    );
+    const FVector ToSizeInv = FVector(
+        ToSize.X > 1.0f ? 1.0f / ToSize.X : 0.0f,
+        ToSize.Y > 1.0f ? 1.0f / ToSize.Y : 0.0f,
+        ToSize.Z > 1.0f ? 1.0f / ToSize.Z : 0.0f
+    );
+
+    // 🚀 性能优化：预计算归一化位置数组，避免重复计算
+    TArray<FVector> FromNormalized;
+    TArray<FVector> ToNormalized;
+    FromNormalized.Reserve(NumPositions);
+    ToNormalized.Reserve(NumPositions);
+
+    for (int32 i = 0; i < NumPositions; i++)
     {
-        ToAABB += Pos;
+        FVector FromRelative = FromPositions[i] - FromCenter;
+        FromNormalized.Add(FromRelative * FromSizeInv);
+
+        FVector ToRelative = ToPositions[i] - ToCenter;
+        ToNormalized.Add(ToRelative * ToSizeInv);
     }
-    FVector ToCenter = ToAABB.GetCenter();
+
+    // 🚀 性能优化：使用常量权重，避免重复乘法
+    constexpr float RelativeWeight = 0.7f;
+    constexpr float AbsoluteWeight = 0.3f;
+    constexpr float RelativeScale = 1000.0f;
 
     // 计算相对位置成本矩阵
     for (int32 i = 0; i < NumPositions; i++)
     {
+        CostMatrix[i].Reserve(NumPositions);
         CostMatrix[i].SetNum(NumPositions);
-
-        // 计算起始位置相对于中心的归一化位置
-        FVector FromRelative = FromPositions[i] - FromCenter;
-        FVector FromNormalized = FVector::ZeroVector;
-        
-        if (FromAABB.GetSize().X > 1.0f) FromNormalized.X = FromRelative.X / FromAABB.GetSize().X;
-        if (FromAABB.GetSize().Y > 1.0f) FromNormalized.Y = FromRelative.Y / FromAABB.GetSize().Y;
-        if (FromAABB.GetSize().Z > 1.0f) FromNormalized.Z = FromRelative.Z / FromAABB.GetSize().Z;
 
         for (int32 j = 0; j < NumPositions; j++)
         {
-            // 计算目标位置相对于中心的归一化位置
-            FVector ToRelative = ToPositions[j] - ToCenter;
-            FVector ToNormalized = FVector::ZeroVector;
-            
-            if (ToAABB.GetSize().X > 1.0f) ToNormalized.X = ToRelative.X / ToAABB.GetSize().X;
-            if (ToAABB.GetSize().Y > 1.0f) ToNormalized.Y = ToRelative.Y / ToAABB.GetSize().Y;
-            if (ToAABB.GetSize().Z > 1.0f) ToNormalized.Z = ToRelative.Z / ToAABB.GetSize().Z;
-
-            // 相对位置相似度成本（越相似成本越低）
-            float RelativePositionCost = FVector::Dist(FromNormalized, ToNormalized) * 1000.0f;
-
-            // 绝对距离成本
+            // 🚀 性能优化：使用预计算的归一化位置
+            float RelativePositionCost = FVector::Dist(FromNormalized[i], ToNormalized[j]) * RelativeScale;
             float AbsoluteDistanceCost = FVector::Dist(FromPositions[i], ToPositions[j]);
 
             // 组合成本：相对位置权重更高
-            CostMatrix[i][j] = RelativePositionCost * 0.7f + AbsoluteDistanceCost * 0.3f;
+            CostMatrix[i][j] = RelativePositionCost * RelativeWeight + AbsoluteDistanceCost * AbsoluteWeight;
         }
     }
 
@@ -70,19 +88,27 @@ TArray<TArray<float>> UFormationManagerComponent::CalculateRelativePositionCostM
 }
 
 TArray<TArray<float>> UFormationManagerComponent::CalculateAbsoluteDistanceCostMatrix(
-    const TArray<FVector>& FromPositions, 
+    const TArray<FVector>& FromPositions,
     const TArray<FVector>& ToPositions)
 {
     int32 NumPositions = FromPositions.Num();
     TArray<TArray<float>> CostMatrix;
+
+    // 🚀 性能优化：预分配内存
+    CostMatrix.Reserve(NumPositions);
     CostMatrix.SetNum(NumPositions);
 
+    // 🚀 性能优化：使用更高效的距离计算
     for (int32 i = 0; i < NumPositions; i++)
     {
+        CostMatrix[i].Reserve(NumPositions);
         CostMatrix[i].SetNum(NumPositions);
+
+        const FVector& FromPos = FromPositions[i];
         for (int32 j = 0; j < NumPositions; j++)
         {
-            CostMatrix[i][j] = FVector::Dist(FromPositions[i], ToPositions[j]);
+            // 使用引用避免数组访问开销
+            CostMatrix[i][j] = FVector::Dist(FromPos, ToPositions[j]);
         }
     }
 
@@ -98,13 +124,16 @@ TArray<int32> UFormationManagerComponent::SolveAssignmentProblem(const TArray<TA
         return TArray<int32>();
     }
 
-    // 对于小规模问题使用匈牙利算法，大规模问题使用贪心算法
-    if (CostMatrix.Num() <= 50)
+    // 🚀 性能优化：使用配置常量进行算法选择
+    // 对于小规模问题使用匈牙利算法（精确），大规模问题使用贪心算法（快速）
+    if (CostMatrix.Num() <= FormationPerformanceConfig::HungarianAlgorithmThreshold)
     {
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("🧮 使用匈牙利算法求解 %d×%d 分配问题"), CostMatrix.Num(), CostMatrix.Num());
         return SolveAssignmentHungarian(CostMatrix);
     }
     else
     {
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("🧮 使用贪心算法求解 %d×%d 分配问题"), CostMatrix.Num(), CostMatrix.Num());
         return SolveAssignmentGreedy(CostMatrix);
     }
 }
@@ -162,12 +191,13 @@ TArray<int32> UFormationManagerComponent::SolveAssignmentHungarian(const TArray<
         return Assignment;
     }
 
-    // 简化的匈牙利算法实现
-    // 创建成本矩阵的副本
+    // 🚀 性能优化：预分配内存避免重复分配
     TArray<TArray<float>> Matrix;
+    Matrix.Reserve(n);
     Matrix.SetNum(n);
     for (int32 i = 0; i < n; i++)
     {
+        Matrix[i].Reserve(n);
         Matrix[i] = CostMatrix[i];
     }
 

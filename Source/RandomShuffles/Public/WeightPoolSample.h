@@ -1,24 +1,26 @@
 #pragma once
 
-#include <vector>
-#include <algorithm>
+#include "CoreMinimal.h"
 
 namespace RandomShuffles {
 
 template<typename It, typename Wt, typename Out, typename Rand>
-Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, std::size_t count, Rand randFunc) {
-    using std::distance;
-    auto sampleSize = static_cast<std::size_t>(std::distance(begin, end));
-    
-    // 计算权重总和并存储权重
-    std::vector<float> weights;
-    weights.reserve(sampleSize);
+Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, int32 count, Rand randFunc) {
+    // ✅ 使用UE兼容的迭代器计算方式
+    int32 sampleSize = 0;
+    for (It it = begin; it != end; ++it) {
+        ++sampleSize;
+    }
+
+    // ✅ 使用UE容器替代STL - 计算权重总和并存储权重
+    TArray<float> weights;
+    weights.Reserve(sampleSize);
     float totalWeight = 0.0f;
     
     // 保存权重并计算总和
-    for(size_t idx = 0; idx < sampleSize; ++idx) {
+    for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = static_cast<float>(*weightBegin++);
-        weights.push_back(weight);
+        weights.Add(weight);  // ✅ 使用UE容器方法
         if(weight > 0.0f) {
             totalWeight += weight;
         }
@@ -28,25 +30,32 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, std::size_t coun
         return out;
     }
 
-    // 计算每个元素应该出现的次数
-    std::vector<size_t> expectedCounts;
-    expectedCounts.reserve(sampleSize);
-    size_t totalCount = 0;
+    // ✅ 使用UE容器 - 计算每个元素应该出现的次数
+    TArray<int32> expectedCounts;
+    expectedCounts.Reserve(sampleSize);
+    int32 totalCount = 0;
 
-    for(size_t idx = 0; idx < sampleSize; ++idx) {
+    for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = weights[idx];
         // 计算期望的出现次数，四舍五入
-        size_t expectedCount = static_cast<size_t>((weight / totalWeight) * count + 0.5f);
-        expectedCounts.push_back(expectedCount);
+        int32 expectedCount = static_cast<int32>((weight / totalWeight) * count + 0.5f);
+        expectedCounts.Add(expectedCount);  // ✅ 使用UE容器方法
         totalCount += expectedCount;
     }
 
-    // 调整总数以匹配要求的count - 优化性能
+    // ✅ 使用UE算法 - 调整总数以匹配要求的count
     while(totalCount > count) {
         // 找到最大的非零计数并减1
-        auto maxIt = std::max_element(expectedCounts.begin(), expectedCounts.end());
-        if(*maxIt > 0) {
-            (*maxIt)--;
+        int32 maxIdx = 0;
+        int32 maxValue = expectedCounts[0];
+        for(int32 i = 1; i < expectedCounts.Num(); ++i) {
+            if(expectedCounts[i] > maxValue) {
+                maxValue = expectedCounts[i];
+                maxIdx = i;
+            }
+        }
+        if(maxValue > 0) {
+            expectedCounts[maxIdx]--;
             totalCount--;
         } else {
             break; // 防止无限循环
@@ -54,10 +63,10 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, std::size_t coun
     }
 
     // 预先找到权重最大的元素索引，避免重复查找
-    size_t maxWeightIdx = 0;
+    int32 maxWeightIdx = 0;
     if(totalCount < count) {
         float maxWeight = weights[0];
-        for(size_t i = 1; i < sampleSize; ++i) {
+        for(int32 i = 1; i < sampleSize; ++i) {
             if(weights[i] > maxWeight) {
                 maxWeight = weights[i];
                 maxWeightIdx = i;
@@ -70,27 +79,27 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, std::size_t coun
         totalCount++;
     }
 
-    // 创建结果数组
-    std::vector<size_t> resultIndices;
-    resultIndices.reserve(count);
-    
+    // ✅ 使用UE容器 - 创建结果数组
+    TArray<int32> resultIndices;
+    resultIndices.Reserve(count);
+
     // 按照计算的次数添加索引
-    for(size_t idx = 0; idx < sampleSize; ++idx) {
-        for(size_t j = 0; j < expectedCounts[idx]; ++j) {
-            resultIndices.push_back(idx);
+    for(int32 idx = 0; idx < sampleSize; ++idx) {
+        for(int32 j = 0; j < expectedCounts[idx]; ++j) {
+            resultIndices.Add(idx);  // ✅ 使用UE容器方法
         }
     }
 
-    // 打乱结果数组
-    for(size_t i = resultIndices.size() - 1; i > 0; --i) {
+    // ✅ 使用UE算法 - 打乱结果数组
+    for(int32 i = resultIndices.Num() - 1; i > 0; --i) {
         float r = randFunc(0.0f, 1.0f);
-        size_t j = static_cast<size_t>(r * (i + 1));
+        int32 j = static_cast<int32>(r * (i + 1));
         if(j > i) j = i;
-        std::swap(resultIndices[i], resultIndices[j]);
+        resultIndices.Swap(i, j);  // ✅ 使用UE容器方法
     }
 
     // 输出结果
-    for(size_t idx : resultIndices) {
+    for(int32 idx : resultIndices) {
         *out++ = *std::next(begin, idx);
     }
     
