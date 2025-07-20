@@ -10,6 +10,10 @@
 #include <atomic>
 
 // ✅ 对象池模块依赖
+#include "ObjectPoolTypesSimplified.h"
+
+// ✅ 向后兼容性支持（废弃）
+// 注意：暂时包含原始类型以保持兼容性，将在后续版本中移除
 #include "ObjectPoolTypes.h"
 
 // ✅ 前向声明

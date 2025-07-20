@@ -10,6 +10,13 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/ActorComponent.h"
 
+// ✅ 组件依赖
+#include "GameFramework/ProjectileMovementComponent.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Components/AudioComponent.h"
+#include "GameFramework/MovementComponent.h"
+#include "Components/MeshComponent.h"
+
 // ✅ 对象池模块依赖
 #include "ObjectPool.h"
 
@@ -269,8 +276,8 @@ void FActorStateResetter::ResetSingleComponent(UActorComponent* Component, const
         return;
     }
 
-    // ✅ 基础组件重置（简化版本）
-    // 这里可以根据需要扩展更多组件类型的重置逻辑
+    // ✅ 基础组件重置 - 处理常见组件类型
+    ResetCommonComponentTypes(Component, ResetConfig);
 }
 
 FActorResetStats FActorStateResetter::GetResetStats() const
@@ -283,6 +290,112 @@ void FActorStateResetter::UpdateResetStats(bool bSuccess, float ResetTimeMs)
 {
     FScopeLock Lock(&ResetterLock);
     ResetStatsData.UpdateStats(bSuccess, ResetTimeMs);
+}
+
+void FActorStateResetter::ResetCommonComponentTypes(UActorComponent* Component, const FActorResetConfig& ResetConfig)
+{
+    if (!IsValid(Component))
+    {
+        return;
+    }
+
+    // ✅ ProjectileMovement组件重置
+    if (UProjectileMovementComponent* ProjectileComp = Cast<UProjectileMovementComponent>(Component))
+    {
+        ResetProjectileMovementComponent(ProjectileComp, ResetConfig);
+        return;
+    }
+
+    // ✅ 粒子系统组件重置
+    if (UParticleSystemComponent* ParticleComp = Cast<UParticleSystemComponent>(Component))
+    {
+        if (ResetConfig.bResetParticles)
+        {
+            ParticleComp->DeactivateSystem();
+            ParticleComp->ResetParticles();
+        }
+        return;
+    }
+
+    // ✅ 音频组件重置
+    if (UAudioComponent* AudioComp = Cast<UAudioComponent>(Component))
+    {
+        if (ResetConfig.bResetAudio)
+        {
+            AudioComp->Stop();
+            AudioComp->SetVolumeMultiplier(1.0f);
+            AudioComp->SetPitchMultiplier(1.0f);
+        }
+        return;
+    }
+
+    // ✅ 移动组件重置
+    if (UMovementComponent* MovementComp = Cast<UMovementComponent>(Component))
+    {
+        if (ResetConfig.bResetPhysics)
+        {
+            MovementComp->StopMovementImmediately();
+            MovementComp->Velocity = FVector::ZeroVector;
+        }
+        return;
+    }
+
+    // ✅ 网格组件重置
+    if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Component))
+    {
+        MeshComp->SetVisibility(true);
+        // 重置材质参数等可以在这里添加
+        return;
+    }
+}
+
+void FActorStateResetter::ResetProjectileMovementComponent(UProjectileMovementComponent* ProjectileComp, const FActorResetConfig& ResetConfig)
+{
+    if (!IsValid(ProjectileComp))
+    {
+        return;
+    }
+
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("重置ProjectileMovement组件"));
+
+    // ✅ 停止当前移动
+    ProjectileComp->StopMovementImmediately();
+
+    // ✅ 重置速度
+    ProjectileComp->Velocity = FVector::ZeroVector;
+
+    // ✅ 重置位置（如果需要）
+    if (ResetConfig.bResetTransform)
+    {
+        // 位置重置由Actor的Transform处理，这里不需要额外操作
+    }
+
+    // ✅ 重置物理状态
+    if (ResetConfig.bResetPhysics)
+    {
+        // 重置重力相关
+        ProjectileComp->ProjectileGravityScale = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->ProjectileGravityScale;
+
+        // 重置弹跳相关
+        ProjectileComp->bShouldBounce = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->bShouldBounce;
+        ProjectileComp->Bounciness = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->Bounciness;
+
+        // 重置其他物理属性
+        ProjectileComp->Friction = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->Friction;
+    }
+
+    // ✅ 重置初始速度（保持原始设计的初始速度）
+    ProjectileComp->InitialSpeed = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->InitialSpeed;
+    ProjectileComp->MaxSpeed = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->MaxSpeed;
+
+    // ✅ 重置生命周期（在UE5.3中可能没有这个属性，跳过）
+    // ProjectileComp->ProjectileLifeSpan = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->ProjectileLifeSpan;
+
+    // ✅ 重新激活组件（如果之前被停用）
+    ProjectileComp->SetActive(true);
+    ProjectileComp->SetComponentTickEnabled(true);
+
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("ProjectileMovement组件重置完成"));
 }
 
 // ✅ 简化的实现，后续可以扩展

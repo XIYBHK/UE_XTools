@@ -19,8 +19,8 @@ public class ComponentTimelineUncooked : ModuleRules
 		// ✅ C++20 标准与引擎保持一致
 		CppStandard = CppStandardVersion.Default;
 
-		// ✅ 强制执行 IWYU 原则
-		bEnforceIWYU = true;
+		// ✅ 强制执行 IWYU 原则 (UE5.2+)
+		IWYUSupport = IWYUSupport.Full;
 
 		// ✅ 开发时禁用 Unity Build，确保代码质量
 		bUseUnity = false;

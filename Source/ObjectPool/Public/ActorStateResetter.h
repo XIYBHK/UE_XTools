@@ -12,6 +12,13 @@
 // ✅ 对象池模块依赖
 #include "ObjectPoolTypes.h"
 
+// ✅ 前向声明
+class UProjectileMovementComponent;
+class UParticleSystemComponent;
+class UAudioComponent;
+class UMovementComponent;
+class UMeshComponent;
+
 /**
  * Actor状态重置管理器
  * 
@@ -195,6 +202,20 @@ private:
      * @return 是否成功
      */
     bool SafeExecuteReset(TFunction<void()> ResetFunction, const FString& Context);
+
+    /**
+     * 重置常见组件类型
+     * @param Component 目标组件
+     * @param ResetConfig 重置配置
+     */
+    void ResetCommonComponentTypes(UActorComponent* Component, const FActorResetConfig& ResetConfig);
+
+    /**
+     * 重置ProjectileMovement组件
+     * @param ProjectileComp ProjectileMovement组件
+     * @param ResetConfig 重置配置
+     */
+    void ResetProjectileMovementComponent(UProjectileMovementComponent* ProjectileComp, const FActorResetConfig& ResetConfig);
 
 private:
     /** 默认重置配置 */

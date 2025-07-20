@@ -35,8 +35,8 @@ public class MyPluginCore : ModuleRules
         bEnableExceptions = false;
         bUseRTTI = false;
         
-        // ✅ 强制执行"包含你所使用的"，Epic官方极力推行的实践
-        bEnforceIWYU = true;
+        // ✅ 强制执行"包含你所使用的"，Epic官方极力推行的实践 (UE5.2+)
+        IWYUSupport = IWYUSupport.Full;
     }
 }
 ```

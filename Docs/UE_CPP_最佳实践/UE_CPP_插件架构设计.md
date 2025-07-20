@@ -44,7 +44,7 @@ public class MyPluginCore : ModuleRules
     public MyPluginCore(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-        bEnforceIWYU = true;
+        IWYUSupport = IWYUSupport.Full; // UE5.2+替代bEnforceIWYU
         
         PublicDependencyModuleNames.AddRange(new string[]
         {
@@ -68,7 +68,7 @@ public class MyPluginEditor : ModuleRules
     public MyPluginEditor(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-        bEnforceIWYU = true;
+        IWYUSupport = IWYUSupport.Full; // UE5.2+替代bEnforceIWYU
         
         PublicDependencyModuleNames.AddRange(new string[]
         {

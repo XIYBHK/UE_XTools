@@ -9,8 +9,17 @@
 #include "GameFramework/Actor.h"
 
 // ✅ 对象池模块依赖
+#include "ObjectPoolTypesSimplified.h"
+#include "ObjectPoolSubsystemSimplified.h"
+#include "ObjectPoolMigrationConfig.h"
+
+// ✅ 向后兼容性支持（废弃）
+// 注意：暂时包含原始类型以保持兼容性，将在后续版本中移除
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolSubsystem.h"
+
+// 前向声明
+class FObjectPoolMigrationManager;
 
 // ✅ 生成的头文件必须放在最后
 #include "ObjectPoolLibrary.generated.h"
@@ -181,6 +190,28 @@ public:
         UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass);
 
     /**
+     * 显示池统计信息到屏幕
+     * @param WorldContext 世界上下文
+     * @param ActorClass Actor类型（可选，如果为空则显示所有池的统计）
+     * @param bShowOnScreen 是否显示到屏幕
+     * @param bPrintToLog 是否输出到日志
+     * @param DisplayDuration 屏幕显示持续时间（秒）
+     * @param TextColor 文本颜色
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
+        DisplayName = "显示池统计信息",
+        ToolTip = "在屏幕左上角显示对象池的详细统计信息，信息不会被其他打印覆盖",
+        WorldContext = "WorldContext",
+        AdvancedDisplay = "bPrintToLog,DisplayDuration,TextColor"))
+    static void DisplayPoolStats(
+        const UObject* WorldContext,
+        UPARAM(DisplayName = "Actor类（可选）") TSubclassOf<AActor> ActorClass = nullptr,
+        UPARAM(DisplayName = "显示到屏幕") bool bShowOnScreen = true,
+        UPARAM(DisplayName = "输出到日志") bool bPrintToLog = false,
+        UPARAM(DisplayName = "显示时长") float DisplayDuration = 5.0f,
+        UPARAM(DisplayName = "文本颜色") FLinearColor TextColor = FLinearColor::White);
+
+    /**
      * 预热对象池
      * @param WorldContext 世界上下文
      * @param ActorClass Actor类型
@@ -220,6 +251,73 @@ public:
         ToolTip = "获取对象池子系统实例，用于高级操作",
         WorldContext = "WorldContext"))
     static UObjectPoolSubsystem* GetObjectPoolSubsystem(const UObject* WorldContext);
+
+    /**
+     * 获取简化对象池子系统实例
+     * @param WorldContext 世界上下文
+     * @return 简化子系统实例
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
+        DisplayName = "获取简化对象池子系统",
+        ToolTip = "获取简化对象池子系统实例，用于高级操作",
+        WorldContext = "WorldContext"))
+    static UObjectPoolSubsystemSimplified* GetObjectPoolSubsystemSimplified(const UObject* WorldContext);
+
+    // ✅ 迁移管理功能
+
+    /**
+     * 检查当前是否使用简化实现
+     * @return 是否使用简化实现
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|迁移", meta = (
+        DisplayName = "检查是否使用简化实现",
+        ToolTip = "检查当前是否使用简化的对象池实现"))
+    static bool IsUsingSimplifiedImplementation();
+
+    /**
+     * 切换到简化实现
+     * @return 是否切换成功
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|迁移", meta = (
+        DisplayName = "切换到简化实现",
+        ToolTip = "切换到高性能的简化对象池实现"))
+    static bool SwitchToSimplifiedImplementation();
+
+    /**
+     * 切换到原始实现
+     * @return 是否切换成功
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|迁移", meta = (
+        DisplayName = "切换到原始实现",
+        ToolTip = "切换到原始的对象池实现"))
+    static bool SwitchToOriginalImplementation();
+
+    /**
+     * 切换实现类型
+     * @return 是否切换成功
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|迁移", meta = (
+        DisplayName = "切换实现类型",
+        ToolTip = "在简化实现和原始实现之间切换"))
+    static bool ToggleImplementation();
+
+    /**
+     * 获取迁移配置摘要
+     * @return 配置摘要字符串
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|迁移", meta = (
+        DisplayName = "获取迁移配置摘要",
+        ToolTip = "获取当前迁移配置的详细摘要"))
+    static FString GetMigrationConfigurationSummary();
+
+    /**
+     * 生成迁移报告
+     * @return 迁移报告字符串
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|迁移", meta = (
+        DisplayName = "生成迁移报告",
+        ToolTip = "生成详细的迁移状态和统计报告"))
+    static FString GenerateMigrationReport();
 
     // ✅ 生命周期事件管理接口
 
@@ -282,4 +380,11 @@ private:
      * @return 子系统实例，如果失败返回nullptr
      */
     static UObjectPoolSubsystem* GetSubsystemSafe(const UObject* WorldContext);
+
+    /**
+     * 内部辅助方法：安全获取简化子系统
+     * @param WorldContext 世界上下文
+     * @return 简化子系统实例，如果失败返回nullptr
+     */
+    static UObjectPoolSubsystemSimplified* GetSimplifiedSubsystemSafe(const UObject* WorldContext);
 };

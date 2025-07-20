@@ -2,6 +2,28 @@
 
 #pragma once
 
+// ⚠️⚠️⚠️ 严重废弃警告：此文件已被标记为废弃，将在下一个版本中移除 ⚠️⚠️⚠️
+//
+// 📋 迁移指南：
+// - 新代码请使用 ObjectPoolTypesSimplified.h 中的简化类型
+// - 现有代码已在任务 7.1 中迁移到新类型
+// - 此文件仅为向后兼容性保留，不应在新代码中使用
+//
+// 🔄 替代方案：
+// - FObjectPoolStats → FObjectPoolStatsSimplified
+// - FObjectPoolConfig → FObjectPoolConfigSimplified
+// - EObjectPoolState → EObjectPoolStateSimplified
+//
+// 📞 如需帮助，请参考迁移文档或联系开发团队
+
+#ifdef _MSC_VER
+#pragma message("警告: ObjectPoolTypes.h 已废弃，请使用 ObjectPoolTypesSimplified.h")
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#warning "ObjectPoolTypes.h 已废弃，请使用 ObjectPoolTypesSimplified.h"
+#endif
+
 // ✅ 遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
@@ -25,35 +47,51 @@ struct OBJECTPOOL_API FObjectPoolStats
     GENERATED_BODY()
 
     /** 池中总共创建的Actor数量 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "总创建数",
+        ToolTip = "自池创建以来总共创建的Actor数量"))
     int32 TotalCreated = 0;
 
     /** 当前活跃的Actor数量 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "当前活跃数",
+        ToolTip = "当前正在使用中的Actor数量"))
     int32 CurrentActive = 0;
 
     /** 当前可用的Actor数量 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "当前可用数",
+        ToolTip = "当前在池中可用的Actor数量"))
     int32 CurrentAvailable = 0;
 
     /** 池的最大容量 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "池大小",
+        ToolTip = "对象池的最大容量"))
     int32 PoolSize = 0;
 
     /** 池命中率 (0.0 - 1.0) */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "命中率",
+        ToolTip = "池的命中率，范围0.0-1.0"))
     float HitRate = 0.0f;
 
     /** Actor类名 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "Actor类名",
+        ToolTip = "池化的Actor类名称"))
     FString ActorClassName;
 
     /** 池创建时间 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "创建时间",
+        ToolTip = "对象池的创建时间"))
     FDateTime CreationTime;
 
     /** 最后一次使用时间 */
-    UPROPERTY(BlueprintReadOnly, Category = "统计")
+    UPROPERTY(BlueprintReadOnly, Category = "统计", meta = (
+        DisplayName = "最后使用时间",
+        ToolTip = "对象池最后一次被使用的时间"))
     FDateTime LastUsedTime;
 
     /** 默认构造函数 */
@@ -89,7 +127,7 @@ struct OBJECTPOOL_API FObjectPoolStats
     /** 获取格式化的统计信息字符串 */
     FString ToString() const
     {
-        return FString::Printf(TEXT("Pool[%s]: Size=%d, Active=%d, Available=%d, Created=%d, HitRate=%.2f%%"),
+        return FString::Printf(TEXT("对象池[%s]: 池大小=%d, 活跃数=%d, 可用数=%d, 总创建=%d, 命中率=%.2f%%"),
             *ActorClassName, PoolSize, CurrentActive, CurrentAvailable, TotalCreated, HitRate * 100.0f);
     }
 };

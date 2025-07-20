@@ -23,8 +23,8 @@ public class FormationSystem : ModuleRules
 		// ✅ UE5.3+ C++20 标准配置
 		CppStandard = CppStandardVersion.Default;
 
-		// ✅ IWYU 强制执行 - 提升编译速度和代码质量
-		bEnforceIWYU = true;
+		// ✅ IWYU 强制执行 - 提升编译速度和代码质量 (UE5.2+)
+		IWYUSupport = IWYUSupport.Full;
 
 		// ✅ 开发时配置 - 确保代码质量
 		bUseUnity = false;

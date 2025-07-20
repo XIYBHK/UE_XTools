@@ -1,6 +1,6 @@
 ## C++标准和编译配置
 - 使用C++20标准与UE5.3+引擎保持一致，优先使用稳定的C++20特性
-- 在Build.cs文件中始终设置 `bEnforceIWYU = true` 强制执行"包含你所使用的"原则
+- 在Build.cs文件中始终设置 `IWYUSupport = IWYUSupport.Full` 强制执行"包含你所使用的"原则 (UE5.2+替代bEnforceIWYU)
 - 开发时默认设置 `bUseUnity = false` 确保代码质量并暴露依赖问题
 - 遵循UE标准设置 `bEnableExceptions = false` 和 `bUseRTTI = false`
 - 使用 `PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs` 获得最佳编译性能
@@ -233,7 +233,7 @@ public:
 - 在Build.cs中设置正确的PCH和IWYU配置：
   ```cpp
   PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-  bEnforceIWYU = true;
+  IWYUSupport = IWYUSupport.Full; // UE5.2+替代bEnforceIWYU
   ```
 - 使用适当的模块类型：Runtime、Editor、Developer、ThirdParty
 - 实现正确的模块加载阶段：PreDefault、Default、PostEngineInit等

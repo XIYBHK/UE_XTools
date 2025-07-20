@@ -26,28 +26,32 @@ class FObjectPoolDebugManager;
 
 /**
  * 对象池子系统 - 全局Actor对象池管理器
- * 
+ *
+ * @deprecated 此类已被UObjectPoolSubsystemSimplified替代，将在未来版本中移除。
+ *             请使用UObjectPoolSubsystemSimplified以获得更好的性能和更简洁的API。
+ *             迁移指南：所有API保持兼容，只需通过UObjectPoolLibrary访问即可自动使用新实现。
+ *
  * 设计理念：
  * - 基于UGameInstanceSubsystem，提供全局访问
  * - 管理多个Actor类型的对象池
  * - 提供蓝图友好的极简API接口
  * - 支持自动池创建和生命周期管理
- * 
+ *
  * 核心功能：
  * - RegisterActorClass: 注册Actor类到对象池
  * - SpawnActorFromPool: 从池获取Actor（永不失败）
  * - ReturnActorToPool: 将Actor归还到池
- * 
+ *
  * 线程安全：
  * - 子系统级别的操作是线程安全的
  * - 底层FActorPool使用FRWLock保证并发安全
  */
 UCLASS(BlueprintType, meta = (
-    DisplayName = "对象池子系统",
-    ToolTip = "全局Actor对象池管理器，提供高性能的Actor复用功能。支持自动池化、生命周期管理、性能统计等企业级功能。",
-    Keywords = "对象池,Actor池,性能优化,内存管理,复用,池化",
-    Category = "XTools|性能优化",
-    ShortToolTip = "高性能Actor对象池管理器"))
+    DisplayName = "对象池子系统（已废弃）",
+    ToolTip = "已废弃：此类已被UObjectPoolSubsystemSimplified替代。请使用UObjectPoolLibrary访问新的简化实现以获得更好的性能。",
+    Keywords = "对象池,Actor池,性能优化,内存管理,复用,池化,已废弃,deprecated",
+    Category = "XTools|性能优化|已废弃",
+    ShortToolTip = "已废弃的Actor对象池管理器"))
 class OBJECTPOOL_API UObjectPoolSubsystem : public UGameInstanceSubsystem
 {
     GENERATED_BODY()

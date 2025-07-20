@@ -26,13 +26,17 @@ class FReferenceCollector;
 
 /**
  * Actor对象池核心实现类
- * 
+ *
+ * @deprecated 此类已被FActorPoolSimplified替代，将在未来版本中移除。
+ *             请使用FActorPoolSimplified以获得更好的性能和更简洁的实现。
+ *             迁移指南：通过UObjectPoolSubsystemSimplified访问新的简化实现。
+ *
  * 设计理念：
  * - 基于UE最佳实践，使用FRWLock实现线程安全
  * - 支持Actor生命周期管理和自动状态重置
  * - 提供智能预分配和自动扩展功能
  * - 内置性能统计和监控功能
- * 
+ *
  * 线程安全：
  * - 使用FRWLock读写锁，优化读多写少场景
  * - GetActor操作使用读锁（支持并发）
