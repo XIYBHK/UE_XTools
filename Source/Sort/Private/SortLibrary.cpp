@@ -6,6 +6,70 @@
 
 DEFINE_LOG_CATEGORY_STATIC(SortLibraryLog, Log, All);
 
+/**
+ * 自然排序比较器，用于处理字符串中的数字和中文
+ */
+struct FNaturalSortComparator
+{
+    static int32 Compare(const FString& A, const FString& B)
+    {
+        int32 IndexA = 0, IndexB = 0;
+        while (IndexA < A.Len() && IndexB < B.Len())
+        {
+            // 如果两者都是数字，则按数值比较
+            if (FChar::IsDigit(A[IndexA]) && FChar::IsDigit(B[IndexB]))
+            {
+                int64 NumA = 0, NumB = 0;
+                while (IndexA < A.Len() && FChar::IsDigit(A[IndexA]))
+                {
+                    NumA = NumA * 10 + (A[IndexA++] - '0');
+                }
+                while (IndexB < B.Len() && FChar::IsDigit(B[IndexB]))
+                {
+                    NumB = NumB * 10 + (B[IndexB++] - '0');
+                }
+
+                if (NumA != NumB)
+                {
+                    return NumA < NumB ? -1 : 1;
+                }
+            }
+            else
+            {
+                // 提取非数字部分进行比较
+                int32 StartA = IndexA, StartB = IndexB;
+                while (IndexA < A.Len() && !FChar::IsDigit(A[IndexA]))
+                {
+                    IndexA++;
+                }
+                while (IndexB < B.Len() && !FChar::IsDigit(B[IndexB]))
+                {
+                    IndexB++;
+                }
+
+                FString SubA = A.Mid(StartA, IndexA - StartA);
+                FString SubB = B.Mid(StartB, IndexB - StartB);
+
+                // 使用FText进行文化敏感的比较，支持中文拼音
+                FText TextA = FText::FromString(SubA);
+                FText TextB = FText::FromString(SubB);
+                int32 Result = TextA.CompareTo(TextB, ETextComparisonLevel::Primary);
+
+                if (Result != 0)
+                {
+                    return Result;
+                }
+            }
+        }
+
+        // 如果一个字符串是另一个的前缀，则较短的优先
+        if (A.Len() < B.Len()) return -1;
+        if (A.Len() > B.Len()) return 1;
+
+        return 0;
+    }
+};
+
 namespace SortLibrary_Private
 {
     /**
@@ -331,22 +395,102 @@ void USortLibrary::SortFloatArray(const TArray<float>& InArray, bool bAscending,
 
 void USortLibrary::SortStringArray(const TArray<FString>& InArray, bool bAscending, TArray<FString>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    // 使用通用排序模板，利用FText来获得正确的本地化支持 (例如中文拼音)
-    auto GetSortKey = [](const FString& Value) -> FString
+    // 使用自然排序来处理字符串中的数字部分
+    if (InArray.IsEmpty())
     {
-        return FText::FromString(Value).ToString();
+        SortedArray.Empty();
+        OriginalIndices.Empty();
+        return;
+    }
+
+    struct FSortPair
+    {
+        FString Value;
+        int32 OriginalIndex;
+
+        bool operator<(const FSortPair& Other) const
+        {
+            return FNaturalSortComparator::Compare(Value, Other.Value) < 0;
+        }
     };
-    SortLibrary_Private::GenericSort<FString, FString>(InArray, bAscending, GetSortKey, SortedArray, OriginalIndices);
+
+    TArray<FSortPair> Pairs;
+    Pairs.Reserve(InArray.Num());
+
+    for (int32 i = 0; i < InArray.Num(); ++i)
+    {
+        Pairs.Emplace(FSortPair{InArray[i], i});
+    }
+
+    if (bAscending)
+    {
+        Pairs.Sort();
+    }
+    else
+    {
+        Pairs.Sort([](const FSortPair& A, const FSortPair& B) { return B < A; });
+    }
+
+    const int32 SortedNum = Pairs.Num();
+    SortedArray.SetNum(SortedNum);
+    OriginalIndices.SetNum(SortedNum);
+
+    for (int32 i = 0; i < SortedNum; ++i)
+    {
+        SortedArray[i] = Pairs[i].Value;
+        OriginalIndices[i] = Pairs[i].OriginalIndex;
+    }
 }
 
 void USortLibrary::SortNameArray(const TArray<FName>& InArray, bool bAscending, TArray<FName>& SortedArray, TArray<int32>& OriginalIndices)
 {
-    // 使用通用排序模板，先转换为FString，再转为FText，以实现正确的本地化
-    auto GetSortKey = [](const FName& Value) -> FString
+    // 使用自然排序来处理名称中的数字部分
+    if (InArray.IsEmpty())
     {
-        return FText::FromString(Value.ToString()).ToString();
+        SortedArray.Empty();
+        OriginalIndices.Empty();
+        return;
+    }
+
+    struct FSortPair
+    {
+        FName Value;
+        FString StringValue;
+        int32 OriginalIndex;
+
+        bool operator<(const FSortPair& Other) const
+        {
+            return FNaturalSortComparator::Compare(StringValue, Other.StringValue) < 0;
+        }
     };
-    SortLibrary_Private::GenericSort<FName, FString>(InArray, bAscending, GetSortKey, SortedArray, OriginalIndices);
+
+    TArray<FSortPair> Pairs;
+    Pairs.Reserve(InArray.Num());
+
+    for (int32 i = 0; i < InArray.Num(); ++i)
+    {
+        FString StringValue = InArray[i].ToString();
+        Pairs.Emplace(FSortPair{InArray[i], MoveTemp(StringValue), i});
+    }
+
+    if (bAscending)
+    {
+        Pairs.Sort();
+    }
+    else
+    {
+        Pairs.Sort([](const FSortPair& A, const FSortPair& B) { return B < A; });
+    }
+
+    const int32 SortedNum = Pairs.Num();
+    SortedArray.SetNum(SortedNum);
+    OriginalIndices.SetNum(SortedNum);
+
+    for (int32 i = 0; i < SortedNum; ++i)
+    {
+        SortedArray[i] = Pairs[i].Value;
+        OriginalIndices[i] = Pairs[i].OriginalIndex;
+    }
 }
 
 //~ 向量排序函数
@@ -578,6 +722,39 @@ void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<
     OutArray = UniqueInts.Array();
 }
 
+// 为TSet提供不区分大小写的字符串比较功能，符合UE最佳实践
+struct FCaseInsensitiveStringKeyFuncs
+{
+    // TSet needs us to define these types
+    using KeyInitType = const FString&;
+    using ElementInitType = const FString&;
+    static constexpr bool bAllowDuplicateKeys = false;
+
+    /**
+     * @return The key from an element.
+     */
+    static FORCEINLINE KeyInitType GetSetKey(ElementInitType Element)
+    {
+        return Element;
+    }
+
+    /**
+     * @return True if the keys are equal.
+     */
+    static FORCEINLINE bool Matches(KeyInitType A, KeyInitType B)
+    {
+        return A.Equals(B, ESearchCase::IgnoreCase);
+    }
+
+    /**
+     * @return The hash for a key.
+     */
+    static FORCEINLINE uint32 GetKeyHash(KeyInitType Key)
+    {
+        return GetTypeHash(Key.ToLower());
+    }
+};
+
 void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, bool bCaseSensitive, TArray<FString>& OutArray)
 {
     OutArray.Empty();
@@ -585,31 +762,20 @@ void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, bool b
 
     if (bCaseSensitive)
     {
+        // 区分大小写：使用标准的TSet，性能很好
         TSet<FString> UniqueStrings(InArray);
         OutArray = UniqueStrings.Array();
     }
     else
     {
-        // 对于不区分大小写的情况，必须手动检查唯一性
-        TSet<FString> UniqueStrings;
+        // 不区分大小写：使用自定义KeyFuncs的TSet，实现O(N)的性能
+        TSet<FString, FCaseInsensitiveStringKeyFuncs> UniqueStrings;
         UniqueStrings.Reserve(InArray.Num());
         for (const FString& Str : InArray)
         {
-            bool bAlreadyExists = false;
-            // 这种实现仍然是O(N^2)的。一个带有不区分大小写的哈希的TSet会更好，但当前实现更简单。
-            for (const FString& ExistingStr : OutArray)
-            {
-                if (Str.Equals(ExistingStr, ESearchCase::IgnoreCase))
-                {
-                    bAlreadyExists = true;
-                    break;
-                }
-            }
-            if(!bAlreadyExists)
-            {
-                OutArray.Add(Str);
-            }
+            UniqueStrings.Add(Str);
         }
+        OutArray = UniqueStrings.Array();
     }
 }
 
@@ -876,22 +1042,26 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
     }
     else if (const FNameProperty* NameProp = CastField<FNameProperty>(Property))
     {
-        const FName LeftValue = NameProp->GetPropertyValue(LeftValuePtr);
-        const FName RightValue = NameProp->GetPropertyValue(RightValuePtr);
-        bResult = LeftValue.ToString() < RightValue.ToString();
+        const FString LeftValue = NameProp->GetPropertyValue(LeftValuePtr).ToString();
+        const FString RightValue = NameProp->GetPropertyValue(RightValuePtr).ToString();
+        bResult = FNaturalSortComparator::Compare(LeftValue, RightValue) < 0;
     }
     else if (const FStrProperty* StringProp = CastField<FStrProperty>(Property))
     {
         const FString& LeftValue = StringProp->GetPropertyValue(LeftValuePtr);
         const FString& RightValue = StringProp->GetPropertyValue(RightValuePtr);
-        bResult = LeftValue < RightValue;
+        bResult = FNaturalSortComparator::Compare(LeftValue, RightValue) < 0;
     }
+    #if WITH_EDITOR
+    #if WITH_EDITOR
     else if (const FTextProperty* TextProp = CastField<FTextProperty>(Property))
     {
-        const FText& LeftValue = TextProp->GetPropertyValue(LeftValuePtr);
-        const FText& RightValue = TextProp->GetPropertyValue(RightValuePtr);
-        bResult = LeftValue.ToString() < RightValue.ToString();
+        const FString LeftValue = TextProp->GetPropertyValue(LeftValuePtr).ToString();
+        const FString RightValue = TextProp->GetPropertyValue(RightValuePtr).ToString();
+        bResult = FNaturalSortComparator::Compare(LeftValue, RightValue) < 0;
     }
+#endif
+#endif
     else if (const FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
     {
         const int64 LeftValue = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(LeftValuePtr);
@@ -1196,5 +1366,3 @@ int32 USortLibrary::PartitionStructByProperty(FScriptArrayHelper& ArrayHelper, F
     Indices.Swap(i + 1, High);
     return i + 1;
 }
-
-
