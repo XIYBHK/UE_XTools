@@ -2,414 +2,358 @@
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
-#include "Subsystems/GameInstanceSubsystem.h"
+#include "Subsystems/WorldSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "Templates/SharedPointer.h"
 #include "Containers/Map.h"
-#include "UObject/GCObject.h"
+#include "Templates/SharedPointer.h"
+#include "Engine/Engine.h"
 
 // ✅ 对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ActorPool.h"
+#include "ObjectPoolConfigManager.h"
+#include "ObjectPoolManager.h"
 
-// ✅ 生成的头文件必须放在最后
 #include "ObjectPoolSubsystem.generated.h"
 
-// ✅ 前向声明
-class FActorPool;
-class FActorStateResetter;
-class FObjectPoolConfigManager;
-class FObjectPoolDebugManager;
+// 前向声明
+class FObjectPoolMonitor;
 
 /**
- * 对象池子系统 - 全局Actor对象池管理器
- *
- * @deprecated 此类已被UObjectPoolSubsystemSimplified替代，将在未来版本中移除。
- *             请使用UObjectPoolSubsystemSimplified以获得更好的性能和更简洁的API。
- *             迁移指南：所有API保持兼容，只需通过UObjectPoolLibrary访问即可自动使用新实现。
- *
- * 设计理念：
- * - 基于UGameInstanceSubsystem，提供全局访问
- * - 管理多个Actor类型的对象池
- * - 提供蓝图友好的极简API接口
- * - 支持自动池创建和生命周期管理
- *
- * 核心功能：
- * - RegisterActorClass: 注册Actor类到对象池
- * - SpawnActorFromPool: 从池获取Actor（永不失败）
- * - ReturnActorToPool: 将Actor归还到池
- *
- * 线程安全：
- * - 子系统级别的操作是线程安全的
- * - 底层FActorPool使用FRWLock保证并发安全
+ * 子系统级别的统计信息
  */
-UCLASS(BlueprintType, meta = (
-    DisplayName = "对象池子系统（已废弃）",
-    ToolTip = "已废弃：此类已被UObjectPoolSubsystemSimplified替代。请使用UObjectPoolLibrary访问新的简化实现以获得更好的性能。",
-    Keywords = "对象池,Actor池,性能优化,内存管理,复用,池化,已废弃,deprecated",
-    Category = "XTools|性能优化|已废弃",
-    ShortToolTip = "已废弃的Actor对象池管理器"))
-class OBJECTPOOL_API UObjectPoolSubsystem : public UGameInstanceSubsystem
+USTRUCT(BlueprintType)
+struct OBJECTPOOL_API FObjectPoolSubsystemStats
+{
+    GENERATED_BODY()
+
+    /** 总的SpawnActor调用次数 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    int32 TotalSpawnCalls;
+
+    /** 总的ReturnActor调用次数 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    int32 TotalReturnCalls;
+
+    /** 总的池创建次数 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    int32 TotalPoolsCreated;
+
+    /** 总的池销毁次数 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    int32 TotalPoolsDestroyed;
+
+    /** 子系统启动时间 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    double StartupTime;
+
+    /** 上次维护时间 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    double LastMaintenanceTime;
+
+    /** 池命中次数（从池中成功获取）- 衡量对象池效率 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    int32 TotalPoolHits;
+
+    /** 回退生成次数（池空时的正常生成）- 衡量"永不失败"机制使用 */
+    UPROPERTY(BlueprintReadOnly, Category = "Stats")
+    int32 TotalFallbackSpawns;
+
+    FObjectPoolSubsystemStats()
+        : TotalSpawnCalls(0)
+        , TotalReturnCalls(0)
+        , TotalPoolsCreated(0)
+        , TotalPoolsDestroyed(0)
+        , StartupTime(0.0)
+        , LastMaintenanceTime(0.0)
+        , TotalPoolHits(0)
+        , TotalFallbackSpawns(0)
+    {
+    }
+};
+
+/**
+ * 对象池子系统
+ * 
+ * 设计原则：
+ * - 单一职责：专注于子系统的核心协调功能
+ * - 简化架构：移除复杂的内部管理器，使用独立工具类
+ * - 组合优于继承：通过组合使用专门的工具类
+ * - 清晰接口：提供简单易用的公共API
+ * 
+ * 核心职责：
+ * - 作为全局访问点（子系统职责）
+ * - 池的生命周期管理（创建、销毁、清理）
+ * - 基本的SpawnActorFromPool/ReturnActorToPool API
+ * - 与UE生命周期的集成
+ * 
+ * 移除的功能及新归属：
+ * - 复杂配置管理 → FObjectPoolConfigManager
+ * - 性能监控统计 → FObjectPoolMonitor
+ * - 智能池管理 → FObjectPoolManager
+ */
+UCLASS()
+class OBJECTPOOL_API UObjectPoolSubsystem : public UWorldSubsystem
 {
     GENERATED_BODY()
 
 public:
-    /** USubsystem interface */
+    // ✅ UE官方子系统完整生命周期 - 深度集成引擎机制
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
+    virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
 
-
-    /** 性能统计和调试功能 */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "输出性能统计",
-        ToolTip = "输出所有对象池的性能统计信息到日志，用于调试和性能分析",
-        Keywords = "性能,统计,调试,日志,分析",
-        CallInEditor = "true"))
-    void LogPerformanceStats();
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "输出内存使用情况",
-        ToolTip = "输出对象池的内存使用情况到日志",
-        Keywords = "内存,使用,统计,调试"))
-    void LogMemoryUsage();
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "启用性能监控",
-        ToolTip = "启用定期性能监控，每隔指定秒数输出统计信息",
-        Keywords = "性能,监控,定时,自动"))
-    void EnablePerformanceMonitoring(float IntervalSeconds = 60.0f);
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "禁用性能监控",
-        ToolTip = "禁用定期性能监控",
-        Keywords = "性能,监控,停止"))
-    void DisablePerformanceMonitoring();
-
-    /** 配置管理功能 - 利用已有的配置系统 */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|配置", meta = (
-        DisplayName = "应用配置模板",
-        ToolTip = "应用预设的配置模板到对象池系统",
-        Keywords = "配置,模板,应用,设置"))
-    bool ApplyConfigTemplate(const FString& TemplateName);
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|配置", meta = (
-        DisplayName = "获取可用模板",
-        ToolTip = "获取所有可用的配置模板名称列表",
-        Keywords = "配置,模板,列表"))
-    TArray<FString> GetAvailableConfigTemplates() const;
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|配置", meta = (
-        DisplayName = "重置为默认配置",
-        ToolTip = "将对象池配置重置为默认设置",
-        Keywords = "配置,重置,默认"))
-    void ResetToDefaultConfig();
-
-    /** 调试工具功能 - 基于已有的统计系统 */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "设置调试模式",
-        ToolTip = "设置对象池的调试显示模式",
-        Keywords = "调试,模式,显示"))
-    void SetDebugMode(int32 DebugMode);
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "获取调试摘要",
-        ToolTip = "获取对象池系统的调试摘要信息",
-        Keywords = "调试,摘要,统计"))
-    FString GetDebugSummary();
-
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|调试", meta = (
-        DisplayName = "检测性能热点",
-        ToolTip = "检测对象池使用中的性能热点和问题",
-        Keywords = "热点,性能,检测,分析"))
-    TArray<FString> DetectPerformanceHotspots();
-
-    /**
-     * 获取对象池子系统实例
-     * @param WorldContext 世界上下文对象
-     * @return 对象池子系统实例
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "获取对象池子系统",
-        ToolTip = "获取全局对象池管理器实例。这是访问对象池功能的入口点，支持编辑器和运行时调用。",
-        Keywords = "获取,子系统,对象池,管理器",
-        ShortToolTip = "获取对象池管理器",
-        CallInEditor = "true",
-        CompactNodeTitle = "获取对象池"))
-    static UObjectPoolSubsystem* Get(const UObject* WorldContext);
-
-    /**
-     * 智能获取World实例（公有方法，供其他模块使用）
-     * @return 有效的World指针，如果无法获取则返回nullptr
-     */
-    UWorld* GetValidWorld() const;
-
-    /**
-     * 智能获取子系统实例（无需WorldContext）
-     * 使用引擎的全局上下文自动查找合适的子系统实例
-     * @return 子系统实例，失败返回nullptr
-     */
-    static UObjectPoolSubsystem* GetGlobal();
-
-    /**
-     * 全局静态方法：智能获取World实例
-     * 供其他模块使用，无需手动获取子系统实例
-     * @param WorldContext 可选的世界上下文，如果为空则使用全局查找
-     * @return 有效的World指针，失败返回nullptr
-     */
-    static UWorld* GetValidWorldStatic(const UObject* WorldContext = nullptr);
-
-    // ✅ Actor状态重置公共API
-
-    /**
-     * 重置Actor状态（公共API）
-     * @param Actor 目标Actor
-     * @param SpawnTransform 新的Transform
-     * @param ResetConfig 重置配置
-     * @return 重置是否成功
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "重置Actor状态",
-        ToolTip = "重置Actor到指定状态，清理所有临时数据。可用于对象池或其他需要重置Actor的场景。",
-        Keywords = "重置,状态,Actor,清理",
-        ShortToolTip = "重置Actor状态",
-        CallInEditor = "true"))
-    bool ResetActorState(AActor* Actor, const FTransform& SpawnTransform, const FActorResetConfig& ResetConfig);
-
-    /**
-     * 批量重置Actor状态（公共API）
-     * @param Actors Actor数组
-     * @param ResetConfig 重置配置
-     * @return 成功重置的数量
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "批量重置Actor状态",
-        ToolTip = "批量重置多个Actor的状态，提高性能。适合同时重置大量Actor的场景。",
-        Keywords = "批量,重置,状态,Actor,性能",
-        ShortToolTip = "批量重置Actor状态"))
-    int32 BatchResetActorStates(const TArray<AActor*>& Actors, const FActorResetConfig& ResetConfig);
-
-    /**
-     * 获取Actor重置统计信息
-     * @return 重置统计数据
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "获取重置统计",
-        ToolTip = "获取Actor状态重置操作的统计信息，包括成功率、耗时等性能指标。",
-        Keywords = "统计,重置,性能,监控",
-        ShortToolTip = "获取重置统计"))
-    FActorResetStats GetActorResetStats() const;
-
-    // ✅ 极简核心API - 仅3个核心函数
+public:
+    // ✅ 核心对象池API - 设计文档第177-210行的极简API设计
 
     /**
      * 注册Actor类到对象池
      * @param ActorClass 要池化的Actor类
-     * @param InitialSize 初始池大小
+     * @param InitialSize 初始池大小  
      * @param HardLimit 池的最大限制 (0表示无限制)
+     * @return 注册是否成功
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "注册Actor类",
-        ToolTip = "为指定Actor类创建对象池，设置初始大小和最大限制。建议在游戏开始时注册常用的Actor类型以获得最佳性能。",
-        Keywords = "注册,Actor类,对象池,初始化,配置",
-        ShortToolTip = "注册Actor类到对象池",
-        CompactNodeTitle = "注册Actor类",
-        AdvancedDisplay = "HardLimit"))
-    void RegisterActorClass(
-        UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
-        UPARAM(DisplayName = "初始大小") int32 InitialSize = 10,
-        UPARAM(DisplayName = "硬限制") int32 HardLimit = 0);
+        ToolTip = "为指定Actor类创建对象池，这是使用对象池的第一步",
+        Keywords = "对象池,注册,创建,初始化"))
+    bool RegisterActorClass(TSubclassOf<AActor> ActorClass, int32 InitialSize = 10, int32 HardLimit = 0);
 
     /**
-     * 从对象池获取Actor
-     * @param ActorClass Actor类型
+     * 从池中生成Actor - 永不失败设计
+     * @param ActorClass 要生成的Actor类
      * @param SpawnTransform 生成位置和旋转
-     * @return 池化的Actor实例，永不返回null (自动回退到正常生成)
+     * @return 池化的Actor实例，永不返回null（自动回退到正常生成）
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "从池获取Actor",
-        ToolTip = "从对象池获取Actor实例。采用智能回退机制：优先从池获取→池空时自动创建→失败时回退到默认类型，确保永不失败。自动调用生命周期事件。",
-        Keywords = "获取,生成,Actor,对象池,永不失败,智能回退",
-        ShortToolTip = "从对象池获取Actor（永不失败）",
-        CompactNodeTitle = "池获取Actor",
-        BlueprintInternalUseOnly = "false"))
-    AActor* SpawnActorFromPool(
-        UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
-        UPARAM(DisplayName = "生成Transform") const FTransform& SpawnTransform);
+        ToolTip = "从对象池获取Actor，永不失败！如果池为空会自动创建新Actor",
+        Keywords = "对象池,生成,获取,永不失败"))
+    AActor* SpawnActorFromPool(UClass* ActorClass, const FTransform& SpawnTransform);
+
+
 
     /**
-     * 将Actor归还到对象池
+     * 将Actor归还到池中 - 智能归还
      * @param Actor 要归还的Actor
+     * @return 归还是否成功（自动处理各种异常情况）
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "归还Actor到池",
-        ToolTip = "将Actor归还到对象池以供重复使用。自动重置Actor状态（隐藏、禁用碰撞、停止Tick），调用生命周期事件，确保下次使用时状态正确。",
-        Keywords = "归还,回收,Actor,对象池,重置状态,生命周期",
-        ShortToolTip = "归还Actor到对象池",
-        CompactNodeTitle = "归还Actor",
-        BlueprintInternalUseOnly = "false"))
-    void ReturnActorToPool(UPARAM(DisplayName = "Actor") AActor* Actor);
-
-    // ✅ 可选的高级功能
+        ToolTip = "将Actor归还到对象池，自动处理状态重置和生命周期事件",
+        Keywords = "对象池,归还,回收"))
+    bool ReturnActorToPool(AActor* Actor);
 
     /**
-     * 预热对象池
-     * @param ActorClass Actor类型
-     * @param Count 预创建的数量
+     * 预热对象池 - 可选的优化功能
+     * @param ActorClass 要预热的Actor类
+     * @param Count 预热数量
+     * @return 实际预热的数量
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "预热对象池",
-        ToolTip = "预先创建指定数量的Actor到池中"))
-    void PrewarmPool(TSubclassOf<AActor> ActorClass, int32 Count);
+        ToolTip = "预先创建指定数量的Actor，提升运行时性能（可选功能）",
+        Keywords = "对象池,预热,优化,性能"))
+    int32 PrewarmPool(UClass* ActorClass, int32 Count);
+
+    // ✅ 静态访问方法（设计文档第295行要求）
 
     /**
-     * 获取池统计信息
-     * @param ActorClass Actor类型
-     * @return 池的统计信息
+     * 获取对象池子系统实例
+     * @param World 世界上下文
+     * @return 子系统实例
      */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "获取池统计信息",
-        ToolTip = "获取指定Actor类型的对象池使用统计"))
-    FObjectPoolStats GetPoolStats(TSubclassOf<AActor> ActorClass);
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (WorldContext = "WorldContext", 
+        DisplayName = "获取对象池子系统",
+        ToolTip = "获取全局对象池管理器"))
+    static UObjectPoolSubsystem* Get(const UObject* WorldContext);
 
-    /**
-     * 清空指定对象池
-     * @param ActorClass Actor类型
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "清空对象池",
-        ToolTip = "清空指定Actor类型的对象池，销毁所有池化Actor"))
-    void ClearPool(TSubclassOf<AActor> ActorClass);
 
-    /**
-     * 清空所有对象池
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "清空所有对象池",
-        ToolTip = "清空所有对象池，销毁所有池化Actor"))
-    void ClearAllPools();
-
-    /**
-     * 获取所有池的统计信息
-     * @return 所有池的统计信息数组
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "获取所有池统计",
-        ToolTip = "获取所有对象池的统计信息"))
-    TArray<FObjectPoolStats> GetAllPoolStats();
-
-    /**
-     * 检查Actor类是否已注册
-     * @param ActorClass Actor类型
-     * @return true if registered
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "检查类是否已注册",
-        ToolTip = "检查指定Actor类是否已经注册到对象池"))
-    bool IsActorClassRegistered(TSubclassOf<AActor> ActorClass);
-
-    /**
-     * 验证所有对象池的完整性
-     * @return true if all pools are valid
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
-        DisplayName = "验证池完整性",
-        ToolTip = "验证所有对象池的完整性和状态"))
-    bool ValidateAllPools();
 
 private:
+    // ✅ 核心数据成员
+
+    /** 池存储：Actor类 -> 池实例 (UE官方智能指针最佳实践) */
+    TMap<UClass*, TSharedPtr<FActorPool>> ActorPools;
+    
+    /** UE官方推荐：预分配容器减少运行时重分配 */
+    static constexpr int32 DefaultPoolCapacity = 16;
+
+    /** 池访问读写锁（优化并发性能） */
+    mutable FRWLock PoolsRWLock;
+
+    // ✅ 性能优化缓存
+
+    /** 最近访问的池缓存（提高热点访问性能） */
+    mutable TWeakPtr<FActorPool> LastAccessedPool;
+    mutable UClass* LastAccessedClass;
+
+    /** 缓存访问锁 */
+    mutable FCriticalSection CacheLock;
+
+    /** 是否已初始化 */
+    bool bIsInitialized;
+
+    // ✅ UE官方垃圾回收系统集成
+    
+    /** GC回调：垃圾回收前的清理 */
+    UFUNCTION()
+    void OnPreGarbageCollect();
+    
+    /** GC回调：垃圾回收后的清理 */  
+    UFUNCTION()
+    void OnPostGarbageCollect();
+
+    // ✅ 独立工具类（组合模式，基于UE智能指针）
+
+    /** 配置管理器 */
+    TUniquePtr<FObjectPoolConfigManager> ConfigManager;
+
+    /** 池管理器 */
+    TUniquePtr<FObjectPoolManager> PoolManager;
+
+    /** 是否启用监控 */
+    bool bMonitoringEnabled;
+
+    // ✅ 安全延迟预热机制
+    
+    /** 待预热信息结构体 */
+    struct FDelayedPrewarmInfo
+    {
+        UClass* ActorClass;
+        int32 Count;
+        FString PoolName;
+        
+        FDelayedPrewarmInfo(UClass* InActorClass, int32 InCount)
+            : ActorClass(InActorClass), Count(InCount)
+        {
+            PoolName = InActorClass ? InActorClass->GetName() : TEXT("Unknown");
+        }
+    };
+
+    /** 延迟预热队列 */
+    TArray<FDelayedPrewarmInfo> DelayedPrewarmQueue;
+
+    /** 延迟预热Timer句柄 */
+    FTimerHandle DelayedPrewarmTimerHandle;
+
+    // ✅ 基本性能统计
+
+    /** 子系统统计信息实例 */
+    FObjectPoolSubsystemStats SubsystemStats;
+
+    // ✅ 内部辅助方法
+
     /**
-     * 获取或创建指定Actor类的对象池
-     * @param ActorClass Actor类型
-     * @return 对象池指针
+     * 获取或创建指定类型的池
+     * @param ActorClass Actor类
+     * @return 池的共享指针
      */
     TSharedPtr<FActorPool> GetOrCreatePool(UClass* ActorClass);
 
     /**
-     * 清理无效的对象池
+     * 获取现有的池（不创建新的）
+     * @param ActorClass Actor类
+     * @return 池的共享指针，不存在时返回nullptr
+     */
+    TSharedPtr<FActorPool> GetPool(UClass* ActorClass) const;
+
+    /**
+     * 清空所有池
+     */
+    void ClearAllPools();
+
+    /**
+     * 创建新的池
+     * @param ActorClass Actor类
+     * @return 创建的池
+     */
+    TSharedPtr<FActorPool> CreatePool(UClass* ActorClass);
+
+    /**
+     * 验证Actor类是否有效
+     * @param ActorClass Actor类
+     * @return 是否有效
+     */
+    bool ValidateActorClass(UClass* ActorClass) const;
+
+    /**
+     * 清理无效的池
      */
     void CleanupInvalidPools();
 
     /**
-     * 初始化默认对象池
+     * 执行定期维护
      */
-    void InitializeDefaultPools();
+    void PerformMaintenance();
+
+    // ✅ 性能优化方法
 
     /**
-     * 验证Actor类是否有效
-     * @param ActorClass 要验证的Actor类
-     * @return true if valid
-     */
-    bool ValidateActorClass(TSubclassOf<AActor> ActorClass) const;
-
-    /**
-     * 安全销毁Actor
-     * @param Actor 要销毁的Actor
-     */
-    void SafeDestroyActor(AActor* Actor) const;
-
-    /**
-     * 多级回退机制：尝试从对象池获取Actor
+     * 更新池缓存
      * @param ActorClass Actor类
-     * @param SpawnTransform 生成Transform
-     * @param World 世界实例
-     * @return 从池获取的Actor，失败返回nullptr
+     * @param Pool 池实例
      */
-    AActor* TryGetFromPool(UClass* ActorClass, const FTransform& SpawnTransform, UWorld* World);
+    void UpdatePoolCache(UClass* ActorClass, TSharedPtr<FActorPool> Pool) const;
 
     /**
-     * 多级回退机制：尝试直接创建Actor
+     * 清理池缓存
+     */
+    void ClearPoolCache() const;
+
+    /**
+     * 获取子系统级别的统计信息
+     * @return 子系统统计信息
+     */
+    FObjectPoolSubsystemStats GetSubsystemStats() const;
+
+    // ✅ 安全延迟预热方法
+
+    /**
+     * 队列延迟预热请求（避免同帧死锁）
      * @param ActorClass Actor类
-     * @param SpawnTransform 生成Transform
-     * @param World 世界实例
-     * @return 新创建的Actor，失败返回nullptr
+     * @param Count 预热数量
      */
-    AActor* TryCreateDirectly(UClass* ActorClass, const FTransform& SpawnTransform, UWorld* World);
+    void QueueDelayedPrewarm(UClass* ActorClass, int32 Count);
 
     /**
-     * 多级回退机制：最后的回退策略
-     * @param SpawnTransform 生成Transform
-     * @param World 世界实例
-     * @return 默认Actor实例
+     * 执行延迟预热（在下一帧安全执行）
      */
-    AActor* FallbackToDefault(const FTransform& SpawnTransform, UWorld* World);
+    void ProcessDelayedPrewarmQueue();
 
     /**
-     * 验证生成的Actor是否有效
-     * @param Actor 要验证的Actor
-     * @param ExpectedClass 期望的类型
-     * @return true if valid
+     * 清理延迟预热Timer
      */
-    bool ValidateSpawnedActor(AActor* Actor, UClass* ExpectedClass) const;
+    void ClearDelayedPrewarmTimer();
 
-private:
-    /** 对象池映射表 - 从Actor类到对象池的映射 */
-    TMap<UClass*, TSharedPtr<FActorPool>> ActorPools;
+    // ✅ 常量定义
 
-    /** 池访问锁 */
-    mutable FCriticalSection PoolsLock;
+    /** 默认池初始大小 */
+    static constexpr int32 DEFAULT_POOL_INITIAL_SIZE = 10;
 
-    /** 子系统是否已初始化 */
-    bool bIsInitialized;
+    /** 默认池最大大小 */
+    static constexpr int32 DEFAULT_POOL_MAX_SIZE = 100;
 
-    /** 默认池配置 */
-    TArray<FObjectPoolConfig> DefaultPoolConfigs;
-
-    /** 生命周期事件配置 */
-    FObjectPoolLifecycleConfig LifecycleConfig;
-
-    /** Actor状态重置管理器（单一职责，独立功能） */
-    TSharedPtr<FActorStateResetter> StateResetter;
-
-    /** 配置管理器（单一职责，独立功能） */
-    TSharedPtr<FObjectPoolConfigManager> ConfigManager;
-
-    /** 调试管理器（单一职责，独立功能） */
-    TSharedPtr<FObjectPoolDebugManager> DebugManager;
-
-    /** 性能监控定时器句柄 */
-    FTimerHandle PerformanceMonitoringTimer;
+    /** 维护间隔（秒） */
+    static constexpr float MAINTENANCE_INTERVAL = 30.0f;
 };
+
+/**
+ * 子系统的日志宏
+ */
+DECLARE_LOG_CATEGORY_EXTERN(LogObjectPoolSubsystem, Log, All);
+
+#define OBJECTPOOL_SUBSYSTEM_LOG(Verbosity, Format, ...) \
+    UE_LOG(LogObjectPoolSubsystem, Verbosity, Format, ##__VA_ARGS__)
+
+/**
+ * 子系统的性能统计宏
+ */
+#if STATS
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ObjectPoolSubsystem_SpawnActor"), STAT_ObjectPoolSubsystem_SpawnActor, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ObjectPoolSubsystem_ReturnActor"), STAT_ObjectPoolSubsystem_ReturnActor, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ObjectPoolSubsystem_GetOrCreatePool"), STAT_ObjectPoolSubsystem_GetOrCreatePool, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
+#endif

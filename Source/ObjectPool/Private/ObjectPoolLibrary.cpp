@@ -11,70 +11,44 @@
 // ✅ 对象池模块依赖
 #include "ObjectPool.h"
 #include "ObjectPoolSubsystem.h"
-#include "ObjectPoolSubsystemSimplified.h"
-#include "ObjectPoolMigrationManager.h"
+
 
 bool UObjectPoolLibrary::RegisterActorClass(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
 {
-    // ✅ 优先使用简化子系统
-    UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-    if (SimplifiedSubsystem)
+    // ✅ 获取子系统
+    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
+    if (Subsystem)
     {
-        // 使用简化子系统的配置方法
-        FObjectPoolConfigSimplified Config;
-        Config.ActorClass = ActorClass;
-        Config.InitialSize = InitialSize;
-        Config.HardLimit = HardLimit;
+        // ✅ 调用子系统的RegisterActorClass进行安全的注册和预热
+        bool bSuccess = Subsystem->RegisterActorClass(ActorClass, InitialSize, HardLimit);
 
-        bool bSuccess = SimplifiedSubsystem->SetPoolConfig(ActorClass, Config);
-
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::RegisterActorClass (Simplified): %s, 结果: %s"),
+        OBJECTPOOL_LOG(Log, TEXT("UObjectPoolLibrary::RegisterActorClass: 注册Actor类: %s, 初始大小=%d, 结果: %s"),
             ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
+            InitialSize,
             bSuccess ? TEXT("成功") : TEXT("失败"));
 
         return bSuccess;
     }
 
-    // ✅ 回退到原始子系统
-    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
-    if (!Subsystem)
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::RegisterActorClass: 无法获取对象池子系统"));
-        return false;
-    }
-
-    // ✅ 调用子系统方法（子系统内部已有完整的错误处理）
-    Subsystem->RegisterActorClass(ActorClass, InitialSize, HardLimit);
-
-    // ✅ 验证注册是否成功
-    bool bSuccess = Subsystem->IsActorClassRegistered(ActorClass);
-
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::RegisterActorClass: %s, 结果: %s"),
-        ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
-        bSuccess ? TEXT("成功") : TEXT("失败"));
-
-    return bSuccess;
+    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::RegisterActorClass: 无法获取对象池子系统"));
+    return false;
 }
 
 AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform)
 {
-    // ✅ 优先使用简化子系统
-    UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-    if (SimplifiedSubsystem)
+    // ✅ 获取对象池子系统
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (PoolSubsystem)
     {
-        // 使用简化子系统（已实现永不失败机制）
-        AActor* Actor = SimplifiedSubsystem->SpawnActorFromPool(ActorClass, SpawnTransform);
+        // 使用对象池子系统的SpawnActorFromPool（已实现永不失败机制）
+        AActor* Actor = PoolSubsystem->SpawnActorFromPool(ActorClass, SpawnTransform);
 
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::SpawnActorFromPool (Simplified): %s, 结果: %s"),
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::SpawnActorFromPool: %s, 结果: %s"),
             ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
             Actor ? *Actor->GetName() : TEXT("Failed"));
 
         return Actor;
     }
-
-    // ✅ 回退到原始子系统
-    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
-    if (!Subsystem)
     {
         OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 无法获取对象池子系统，尝试直接创建"));
         
@@ -92,7 +66,7 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
         {
             if (UObjectPoolSubsystem* TempSubsystem = UObjectPoolSubsystem::Get(WorldContext))
             {
-                World = TempSubsystem->GetValidWorld();
+                World = TempSubsystem->GetWorld(); // 使用USubsystem::GetWorld()方法
             }
         }
 
@@ -136,49 +110,42 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
         return LibraryEmergencyActor;
     }
 
-    // ✅ 调用子系统方法（已实现永不失败机制）
-    AActor* Actor = Subsystem->SpawnActorFromPool(ActorClass, SpawnTransform);
+    // ✅ 无法获取子系统，返回emergency actor
+    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 所有子系统都不可用，创建emergency actor"));
     
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::SpawnActorFromPool: %s, 结果: %s"), 
-        ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
-        Actor ? *Actor->GetName() : TEXT("Failed"));
-    
-    return Actor;
+    // 创建一个静态的紧急Actor，确保永不返回nullptr
+    static AActor* FallbackEmergencyActor = nullptr;
+    if (!FallbackEmergencyActor)
+    {
+        FallbackEmergencyActor = NewObject<AActor>();
+        FallbackEmergencyActor->AddToRoot(); // 防止被垃圾回收
+    }
+    return FallbackEmergencyActor;
 }
 
 void UObjectPoolLibrary::ReturnActorToPool(const UObject* WorldContext, AActor* Actor)
 {
-    // ✅ 优先使用简化子系统
-    UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-    if (SimplifiedSubsystem)
+    // ✅ 获取对象池子系统
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (PoolSubsystem)
     {
-        // 使用简化子系统（已有完整的错误处理）
-        SimplifiedSubsystem->ReturnActorToPool(Actor);
+        // 使用对象池子系统返回Actor
+        PoolSubsystem->ReturnActorToPool(Actor);
 
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::ReturnActorToPool (Simplified): %s"),
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::ReturnActorToPool: %s"),
             Actor ? *Actor->GetName() : TEXT("Invalid"));
         return;
     }
+    
+    // ✅ 如果没有子系统可用，直接销毁Actor避免内存泄漏
+    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::ReturnActorToPool: 无法获取对象池子系统，直接销毁Actor"));
 
-    // ✅ 回退到原始子系统
-    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
-    if (!Subsystem)
+    if (IsValid(Actor))
     {
-        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::ReturnActorToPool: 无法获取对象池子系统，直接销毁Actor"));
-
-        // ✅ 即使子系统不可用也要处理Actor（避免内存泄漏）
-        if (IsValid(Actor))
-        {
-            Actor->Destroy();
-        }
-        return;
+        Actor->Destroy();
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::ReturnActorToPool: 直接销毁Actor: %s"),
+            *Actor->GetName());
     }
-
-    // ✅ 调用子系统方法（已有完整的错误处理）
-    Subsystem->ReturnActorToPool(Actor);
-
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::ReturnActorToPool: %s"),
-        Actor ? *Actor->GetName() : TEXT("Invalid"));
 }
 
 AActor* UObjectPoolLibrary::QuickSpawnActor(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FVector& Location, const FRotator& Rotation)
@@ -229,29 +196,33 @@ int32 UObjectPoolLibrary::BatchSpawnActors(const UObject* WorldContext, TSubclas
 bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
     // ✅ 优先使用简化子系统
-    UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-    if (SimplifiedSubsystem)
-    {
-        // 检查是否有池存在（简化子系统中池的存在即表示已注册）
-        TSharedPtr<FActorPoolSimplified> Pool = SimplifiedSubsystem->GetPool(ActorClass);
-        bool bRegistered = Pool.IsValid();
-
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::IsActorClassRegistered (Simplified): %s, 结果: %s"),
-            ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
-            bRegistered ? TEXT("已注册") : TEXT("未注册"));
-
-        return bRegistered;
-    }
-
-    // ✅ 回退到原始子系统
-    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
-    if (!Subsystem)
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (!PoolSubsystem)
     {
         OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::IsActorClassRegistered: 无法获取对象池子系统"));
         return false;
     }
 
-    bool bRegistered = Subsystem->IsActorClassRegistered(ActorClass);
+    // ✅ 极简API设计：通过PrewarmPool(0)检查池是否存在
+    // 注意：这是内部实现细节，用户应该使用极简API
+    bool bRegistered = false;
+    try 
+    {
+        // ✅ 通过PrewarmPool(0)检查池是否已注册
+        // PrewarmPool(0)不会创建Actor，但会返回池的可用数量
+        // 如果返回>=0说明池存在（已注册），否则说明未注册
+        int32 AvailableCount = PoolSubsystem->PrewarmPool(ActorClass, 0);
+        bRegistered = (AvailableCount >= 0);
+        
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("IsActorClassRegistered检查: %s, 可用数量=%d, 已注册=%s"),
+            ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
+            AvailableCount,
+            bRegistered ? TEXT("是") : TEXT("否"));
+    }
+    catch(...)
+    {
+        bRegistered = false;
+    }
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::IsActorClassRegistered: %s, 结果: %s"),
         ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
@@ -262,50 +233,20 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
 
 FObjectPoolStats UObjectPoolLibrary::GetPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
-    // ✅ 优先使用简化子系统
-    UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-    if (SimplifiedSubsystem)
-    {
-        // 获取简化统计信息并转换为兼容格式
-        TSharedPtr<FActorPoolSimplified> Pool = SimplifiedSubsystem->GetPool(ActorClass);
-        if (Pool.IsValid())
-        {
-            FObjectPoolStatsSimplified SimplifiedStats = Pool->GetStats();
+    // ✅ 极简API设计：统计功能已被移除
 
-            // 转换为原始格式以保持API兼容性
-            FObjectPoolStats CompatStats;
-            CompatStats.ActorClassName = SimplifiedStats.ActorClassName;
-            CompatStats.PoolSize = SimplifiedStats.PoolSize;
-            CompatStats.CurrentActive = SimplifiedStats.CurrentActive;
-            CompatStats.CurrentAvailable = SimplifiedStats.CurrentAvailable;
-            CompatStats.TotalCreated = SimplifiedStats.TotalCreated;
-            CompatStats.HitRate = SimplifiedStats.HitRate;
-            // 注意：简化版本没有TotalDestroyed, CreationTime, LastAccessTime字段
-            // 使用默认值或计算值
-            CompatStats.CreationTime = FDateTime::Now(); // 使用当前时间作为默认值
-            CompatStats.LastUsedTime = FDateTime::Now(); // 使用当前时间作为默认值
-
-            OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats (Simplified): %s"), *CompatStats.ToString());
-            return CompatStats;
-        }
-
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats (Simplified): 池不存在"));
-        return FObjectPoolStats();
-    }
-
-    // ✅ 回退到原始子系统
-    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
-    if (!Subsystem)
+    // ✅ 如果没有找到池，返回空统计
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats: 没有找到对象池: %s"),
+        ActorClass ? *ActorClass->GetName() : TEXT("Invalid"));
+    return FObjectPoolStats();
     {
         OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats: 无法获取对象池子系统"));
         return FObjectPoolStats();
     }
 
-    FObjectPoolStats Stats = Subsystem->GetPoolStats(ActorClass);
-
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats: %s"), *Stats.ToString());
-
-    return Stats;
+    // ✅ 极简API设计：移除统计功能
+    OBJECTPOOL_LOG(Warning, TEXT("GetPoolStats已被移除，使用极简API设计"));
+    return FObjectPoolStats();
 }
 
 void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, bool bShowOnScreen, bool bPrintToLog, float DisplayDuration, FLinearColor TextColor)
@@ -333,73 +274,8 @@ void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclass
         StatsText = TEXT("=== 所有对象池统计信息 ===\n");
 
         // ✅ 优先使用简化子系统
-        UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-        if (SimplifiedSubsystem)
-        {
-            TArray<FObjectPoolStatsSimplified> AllStats = SimplifiedSubsystem->GetAllPoolStats();
-            if (AllStats.Num() > 0)
-            {
-                for (const FObjectPoolStatsSimplified& PoolStats : AllStats)
-                {
-                    StatsText += FString::Printf(TEXT("%s\n"), *PoolStats.ToString());
-                }
-
-                // 添加汇总信息
-                int32 TotalPools = AllStats.Num();
-                int32 TotalActive = 0;
-                int32 TotalAvailable = 0;
-                int32 TotalCreated = 0;
-                float AverageHitRate = 0.0f;
-
-                for (const FObjectPoolStatsSimplified& PoolStats : AllStats)
-                {
-                    TotalActive += PoolStats.CurrentActive;
-                    TotalAvailable += PoolStats.CurrentAvailable;
-                    TotalCreated += PoolStats.TotalCreated;
-                    AverageHitRate += PoolStats.HitRate;
-                }
-
-                if (TotalPools > 0)
-                {
-                    AverageHitRate /= TotalPools;
-                }
-
-                StatsText += FString::Printf(TEXT("\n=== 汇总信息 ===\n"));
-                StatsText += FString::Printf(TEXT("总池数: %d\n"), TotalPools);
-                StatsText += FString::Printf(TEXT("总活跃数: %d\n"), TotalActive);
-                StatsText += FString::Printf(TEXT("总可用数: %d\n"), TotalAvailable);
-                StatsText += FString::Printf(TEXT("总创建数: %d\n"), TotalCreated);
-                StatsText += FString::Printf(TEXT("平均命中率: %.1f%%"), AverageHitRate * 100.0f);
-            }
-            else
-            {
-                StatsText += TEXT("当前没有活跃的对象池");
-            }
-        }
-        else
-        {
-            // 回退到原始子系统
-            UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
-            if (Subsystem)
-            {
-                TArray<FObjectPoolStats> AllStats = Subsystem->GetAllPoolStats();
-                if (AllStats.Num() > 0)
-                {
-                    for (const FObjectPoolStats& PoolStats : AllStats)
-                    {
-                        StatsText += FString::Printf(TEXT("%s\n"), *PoolStats.ToString());
-                    }
-                }
-                else
-                {
-                    StatsText += TEXT("当前没有活跃的对象池");
-                }
-            }
-            else
-            {
-                StatsText += TEXT("无法获取对象池子系统");
-            }
-        }
+        // ✅ 极简API设计：移除统计功能
+        StatsText += TEXT("统计功能已被移除（极简API设计）");
     }
 
     // ✅ 显示到屏幕（使用固定的键值确保不被覆盖）
@@ -427,21 +303,7 @@ bool UObjectPoolLibrary::PrewarmPool(const UObject* WorldContext, TSubclassOf<AA
         return false;
     }
 
-    // ✅ 优先使用简化子系统
-    UObjectPoolSubsystemSimplified* SimplifiedSubsystem = GetSimplifiedSubsystemSafe(WorldContext);
-    if (SimplifiedSubsystem)
-    {
-        // 使用简化子系统的预热方法
-        int32 PrewarmedCount = SimplifiedSubsystem->PrewarmPool(ActorClass, Count);
-        bool bSuccess = PrewarmedCount > 0;
-
-        OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary::PrewarmPool (Simplified): %s, 请求: %d, 实际: %d"),
-            ActorClass ? *ActorClass->GetName() : TEXT("Invalid"), Count, PrewarmedCount);
-
-        return bSuccess;
-    }
-
-    // ✅ 回退到原始子系统
+    // ✅ 获取子系统
     UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
     if (!Subsystem)
     {
@@ -467,8 +329,9 @@ bool UObjectPoolLibrary::ClearPool(const UObject* WorldContext, TSubclassOf<AAct
         return false;
     }
 
-    // ✅ 调用子系统清空方法
-    Subsystem->ClearPool(ActorClass);
+    // ✅ 极简API设计：ClearPool功能已被移除
+    OBJECTPOOL_LOG(Warning, TEXT("ClearPool功能已被移除（极简API设计）"));
+    // 用户应该通过RegisterActorClass重新注册来实现清理功能
 
     OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary::ClearPool: %s"),
         ActorClass ? *ActorClass->GetName() : TEXT("Invalid"));
@@ -481,131 +344,19 @@ UObjectPoolSubsystem* UObjectPoolLibrary::GetObjectPoolSubsystem(const UObject* 
     return GetSubsystemSafe(WorldContext);
 }
 
-UObjectPoolSubsystemSimplified* UObjectPoolLibrary::GetObjectPoolSubsystemSimplified(const UObject* WorldContext)
-{
-    return GetSimplifiedSubsystemSafe(WorldContext);
-}
 
-// ✅ 迁移管理功能实现
 
-bool UObjectPoolLibrary::IsUsingSimplifiedImplementation()
-{
-    OBJECTPOOL_MIXED_MODE_CODE(
-        return FObjectPoolMigrationManager::IsUsingSimplifiedImplementation();
-    )
 
-    // 编译时确定的实现
-#if OBJECTPOOL_USE_SIMPLIFIED_IMPLEMENTATION == 1
-    return true;
-#elif OBJECTPOOL_USE_SIMPLIFIED_IMPLEMENTATION == 0
-    return false;
-#else
-    return FObjectPoolMigrationManager::IsUsingSimplifiedImplementation();
-#endif
-}
 
-bool UObjectPoolLibrary::SwitchToSimplifiedImplementation()
-{
-    OBJECTPOOL_MIXED_MODE_CODE(
-        FObjectPoolMigrationManager& Manager = FObjectPoolMigrationManager::Get();
-        bool bSuccess = Manager.SwitchToSimplifiedImplementation();
 
-        OBJECTPOOL_LOG(Log, TEXT("UObjectPoolLibrary::SwitchToSimplifiedImplementation: %s"),
-            bSuccess ? TEXT("成功") : TEXT("失败"));
 
-        return bSuccess;
-    )
 
-    // 编译时固定实现时，切换操作无效
-    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SwitchToSimplifiedImplementation: 编译时固定实现，无法切换"));
-    return false;
-}
 
-bool UObjectPoolLibrary::SwitchToOriginalImplementation()
-{
-    OBJECTPOOL_MIXED_MODE_CODE(
-        FObjectPoolMigrationManager& Manager = FObjectPoolMigrationManager::Get();
-        bool bSuccess = Manager.SwitchToOriginalImplementation();
 
-        OBJECTPOOL_LOG(Log, TEXT("UObjectPoolLibrary::SwitchToOriginalImplementation: %s"),
-            bSuccess ? TEXT("成功") : TEXT("失败"));
 
-        return bSuccess;
-    )
 
-    // 编译时固定实现时，切换操作无效
-    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SwitchToOriginalImplementation: 编译时固定实现，无法切换"));
-    return false;
-}
 
-bool UObjectPoolLibrary::ToggleImplementation()
-{
-    OBJECTPOOL_MIXED_MODE_CODE(
-        FObjectPoolMigrationManager& Manager = FObjectPoolMigrationManager::Get();
-        bool bSuccess = Manager.ToggleImplementation();
 
-        OBJECTPOOL_LOG(Log, TEXT("UObjectPoolLibrary::ToggleImplementation: %s"),
-            bSuccess ? TEXT("成功") : TEXT("失败"));
-
-        return bSuccess;
-    )
-
-    // 编译时固定实现时，切换操作无效
-    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::ToggleImplementation: 编译时固定实现，无法切换"));
-    return false;
-}
-
-FString UObjectPoolLibrary::GetMigrationConfigurationSummary()
-{
-    OBJECTPOOL_MIXED_MODE_CODE(
-        FObjectPoolMigrationManager& Manager = FObjectPoolMigrationManager::Get();
-        return Manager.GetConfigurationSummary();
-    )
-
-    // 编译时固定实现的配置摘要
-    FString ConfigSummary = OBJECTPOOL_GET_CONFIG_SUMMARY();
-    return FString::Printf(TEXT(
-        "=== 对象池配置摘要（编译时固定） ===\n"
-        "实现类型: %s\n"
-        "编译时配置: %s\n"
-        "运行时切换: 不支持\n"
-    ),
-#if OBJECTPOOL_USE_SIMPLIFIED_IMPLEMENTATION == 1
-        TEXT("简化实现"),
-#elif OBJECTPOOL_USE_SIMPLIFIED_IMPLEMENTATION == 0
-        TEXT("原始实现"),
-#else
-        TEXT("混合模式"),
-#endif
-        *ConfigSummary
-    );
-}
-
-FString UObjectPoolLibrary::GenerateMigrationReport()
-{
-    OBJECTPOOL_MIXED_MODE_CODE(
-        FObjectPoolMigrationManager& Manager = FObjectPoolMigrationManager::Get();
-        return Manager.GenerateMigrationReport();
-    )
-
-    // 编译时固定实现的简单报告
-    FString ConfigSummary = OBJECTPOOL_GET_CONFIG_SUMMARY();
-    return FString::Printf(TEXT(
-        "=== 对象池报告（编译时固定） ===\n"
-        "当前实现: %s\n"
-        "迁移状态: 不适用（编译时固定）\n"
-        "配置: %s\n"
-    ),
-#if OBJECTPOOL_USE_SIMPLIFIED_IMPLEMENTATION == 1
-        TEXT("简化实现"),
-#elif OBJECTPOOL_USE_SIMPLIFIED_IMPLEMENTATION == 0
-        TEXT("原始实现"),
-#else
-        TEXT("混合模式"),
-#endif
-        *ConfigSummary
-    );
-}
 
 UObjectPoolSubsystem* UObjectPoolLibrary::GetSubsystemSafe(const UObject* WorldContext)
 {
@@ -625,23 +376,7 @@ UObjectPoolSubsystem* UObjectPoolLibrary::GetSubsystemSafe(const UObject* WorldC
     return Subsystem;
 }
 
-UObjectPoolSubsystemSimplified* UObjectPoolLibrary::GetSimplifiedSubsystemSafe(const UObject* WorldContext)
-{
-    if (!WorldContext)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetSimplifiedSubsystemSafe: WorldContext为空"));
-        return nullptr;
-    }
 
-    // ✅ 使用简化子系统的静态方法获取实例
-    UObjectPoolSubsystemSimplified* Subsystem = UObjectPoolSubsystemSimplified::Get(WorldContext);
-    if (!Subsystem)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetSimplifiedSubsystemSafe: 无法获取简化对象池子系统"));
-    }
-
-    return Subsystem;
-}
 
 bool UObjectPoolLibrary::CallLifecycleEvent(const UObject* WorldContext, AActor* Actor, EObjectPoolLifecycleEvent EventType, bool bAsync)
 {

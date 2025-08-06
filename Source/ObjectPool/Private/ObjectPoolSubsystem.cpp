@@ -1,514 +1,407 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-// ✅ 遵循IWYU原则的头文件包含
 #include "ObjectPoolSubsystem.h"
+#include "ObjectPool.h"
+
+// ✅ 独立工具类
+#include "ObjectPoolConfigManager.h"
+#include "ObjectPoolManager.h"
+
+// ✅ 生命周期接口
+#include "ObjectPoolInterface.h"
+// #include "ObjectPoolMonitor.h" // 暂时移除，后续实现
 
 // ✅ UE核心依赖
 #include "Engine/World.h"
-#include "Engine/Engine.h"
-#include "Engine/GameInstance.h"
 #include "GameFramework/Actor.h"
 #include "UObject/UObjectGlobals.h"
+#include "TimerManager.h"
 
-// ✅ 对象池模块依赖
-#include "ObjectPool.h"
-#include "ActorPool.h"
-#include "ObjectPoolInterface.h"
-#include "ActorStateResetter.h"
-#include "ObjectPoolConfigManager.h"
-#include "ObjectPoolDebugManager.h"
+// ✅ 日志和统计
+DEFINE_LOG_CATEGORY(LogObjectPoolSubsystem);
+
+#if STATS
+DEFINE_STAT(STAT_ObjectPoolSubsystem_SpawnActor);
+DEFINE_STAT(STAT_ObjectPoolSubsystem_ReturnActor);
+DEFINE_STAT(STAT_ObjectPoolSubsystem_GetOrCreatePool);
+#endif
+
+// ✅ USubsystem接口实现
 
 void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
 
-    OBJECTPOOL_LOG(Log, TEXT("ObjectPool子系统初始化中..."));
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统开始初始化 - 基于UE官方架构"));
 
-    // ✅ 初始化状态
-    bIsInitialized = false;
+    // ✅ UE官方智能指针最佳实践
+    ConfigManager = MakeUnique<FObjectPoolConfigManager>();
+    PoolManager = MakeUnique<FObjectPoolManager>();
+    
+    // ✅ UE官方容器预分配优化
+    ActorPools.Reserve(DefaultPoolCapacity);
+    
+    // 监控器是可选的
+    bMonitoringEnabled = false;
 
-    // ✅ 预分配容器空间
-    ActorPools.Reserve(16);
+    // ✅ 初始化缓存
+    LastAccessedClass = nullptr;
 
-    // ✅ 初始化默认对象池
-    InitializeDefaultPools();
-
-    // ✅ 初始化状态重置管理器
-    StateResetter = MakeShared<FActorStateResetter>();
-
-    // ✅ 初始化配置管理器
-    ConfigManager = MakeShared<FObjectPoolConfigManager>();
-    if (ConfigManager.IsValid())
+    // ✅ 与UE垃圾回收系统深度集成
+    if (UWorld* World = GetWorld())
     {
-        ConfigManager->Initialize();
-        OBJECTPOOL_LOG(Log, TEXT("配置管理器初始化完成"));
+        // 注册GC回调，确保与UE垃圾回收系统协调工作
+        FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddUObject(this, &UObjectPoolSubsystem::OnPreGarbageCollect);
+        FCoreUObjectDelegates::GetPostGarbageCollect().AddUObject(this, &UObjectPoolSubsystem::OnPostGarbageCollect);
+        
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("已注册GC回调 - 与UE垃圾回收系统深度集成"));
     }
 
-    // ✅ 初始化调试管理器
-    DebugManager = MakeShared<FObjectPoolDebugManager>();
-    if (DebugManager.IsValid())
-    {
-        DebugManager->Initialize();
-        OBJECTPOOL_LOG(Log, TEXT("调试管理器初始化完成"));
-    }
+    // 记录启动时间
+    SubsystemStats.StartupTime = FPlatformTime::Seconds();
+    SubsystemStats.LastMaintenanceTime = SubsystemStats.StartupTime;
 
     bIsInitialized = true;
 
-    OBJECTPOOL_LOG(Log, TEXT("ObjectPool子系统初始化完成"));
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统初始化完成 - 深度集成UE官方架构"));
 }
 
 void UObjectPoolSubsystem::Deinitialize()
 {
-    OBJECTPOOL_LOG(Log, TEXT("ObjectPool子系统关闭中..."));
-
-    // ✅ 清理性能监控定时器
-    DisablePerformanceMonitoring();
-
-    // ✅ 清理配置管理器
-    if (ConfigManager.IsValid())
+    if (bIsInitialized)
     {
-        ConfigManager->Shutdown();
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统开始清理"));
+
+        // ✅ 取消GC回调注册 - 防止野指针
+        FCoreUObjectDelegates::GetPreGarbageCollectDelegate().RemoveAll(this);
+        FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
+
+        // ✅ 清理延迟预热Timer和队列
+        ClearDelayedPrewarmTimer();
+
+        // ✅ 确保线程安全的清理
+        // 清空所有池（内部已有锁保护）
+        ClearAllPools();
+
+        // 清理工具类（在主线程中执行，无需额外锁）
+        PoolManager.Reset();
         ConfigManager.Reset();
-        OBJECTPOOL_LOG(Log, TEXT("配置管理器已清理"));
+
+        // 原子操作，无需锁
+        bIsInitialized = false;
+
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统已清理"));
     }
-
-    // ✅ 清理调试管理器
-    if (DebugManager.IsValid())
-    {
-        DebugManager->Shutdown();
-        DebugManager.Reset();
-        OBJECTPOOL_LOG(Log, TEXT("调试管理器已清理"));
-    }
-
-    // ✅ 清空所有对象池
-    ClearAllPools();
-
-    // ✅ 清理资源
-    {
-        FScopeLock Lock(&PoolsLock);
-        ActorPools.Empty();
-        DefaultPoolConfigs.Empty();
-    }
-
-    bIsInitialized = false;
-
-    OBJECTPOOL_LOG(Log, TEXT("ObjectPool子系统关闭完成"));
 
     Super::Deinitialize();
 }
 
-UObjectPoolSubsystem* UObjectPoolSubsystem::Get(const UObject* WorldContext)
+bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-    if (!IsValid(WorldContext))
+    // 只在游戏世界中创建
+    if (UWorld* World = Cast<UWorld>(Outer))
     {
-        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolSubsystem::Get: WorldContext无效"));
-        return nullptr;
+        return World->IsGameWorld();
     }
-
-    // ✅ 获取GameInstance
-    UGameInstance* GameInstance = nullptr;
-    if (const UWorld* World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull))
-    {
-        GameInstance = World->GetGameInstance();
-    }
-
-    if (!IsValid(GameInstance))
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolSubsystem::Get: 无法获取GameInstance"));
-        return nullptr;
-    }
-
-    // ✅ 获取子系统实例
-    return GameInstance->GetSubsystem<UObjectPoolSubsystem>();
+    return false;
 }
 
-UObjectPoolSubsystem* UObjectPoolSubsystem::GetGlobal()
+// ✅ 核心对象池API实现 - 设计文档第177-210行的极简API设计
+
+bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
 {
-    // ✅ 智能查找策略：遍历所有可用的World上下文
-    if (GEngine && GEngine->GetWorldContexts().Num() > 0)
-    {
-        // 优先查找游戏世界的子系统
-        for (const FWorldContext& Context : GEngine->GetWorldContexts())
-        {
-            if (Context.World() && IsValid(Context.World()))
-            {
-                UWorld* World = Context.World();
-
-                // 优先选择游戏世界
-                if (World->IsGameWorld())
-                {
-                    if (UGameInstance* GameInstance = World->GetGameInstance())
-                    {
-                        if (UObjectPoolSubsystem* Subsystem = GameInstance->GetSubsystem<UObjectPoolSubsystem>())
-                        {
-                            return Subsystem;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 如果没有游戏世界，使用任何可用的世界
-        for (const FWorldContext& Context : GEngine->GetWorldContexts())
-        {
-            if (Context.World() && IsValid(Context.World()))
-            {
-                UWorld* World = Context.World();
-                if (UGameInstance* GameInstance = World->GetGameInstance())
-                {
-                    if (UObjectPoolSubsystem* Subsystem = GameInstance->GetSubsystem<UObjectPoolSubsystem>())
-                    {
-                        return Subsystem;
-                    }
-                }
-            }
-        }
-    }
-
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("GetGlobal: 无法找到可用的对象池子系统"));
-    return nullptr;
-}
-
-UWorld* UObjectPoolSubsystem::GetValidWorldStatic(const UObject* WorldContext)
-{
-    // ✅ 如果提供了WorldContext，优先使用标准方法
-    if (WorldContext)
-    {
-        if (UObjectPoolSubsystem* Subsystem = Get(WorldContext))
-        {
-            return Subsystem->GetValidWorld();
-        }
-    }
-
-    // ✅ 否则使用全局查找
-    if (UObjectPoolSubsystem* Subsystem = GetGlobal())
-    {
-        return Subsystem->GetValidWorld();
-    }
-
-    // ✅ 最后的回退：直接从引擎获取（保持兼容性）
-    if (GEngine && GEngine->GetWorldContexts().Num() > 0)
-    {
-        for (const FWorldContext& Context : GEngine->GetWorldContexts())
-        {
-            if (Context.World() && IsValid(Context.World()))
-            {
-                return Context.World();
-            }
-        }
-    }
-
-    return nullptr;
-}
-
-void UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
-{
-    // ✅ 使用辅助函数验证Actor类
     if (!ValidateActorClass(ActorClass))
     {
-        OBJECTPOOL_LOG(Warning, TEXT("RegisterActorClass: Actor类无效，忽略注册"));
-        return;
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("RegisterActorClass: 无效的Actor类"));
+        return false;
     }
 
-    UClass* Class = ActorClass.Get();
-
-    // ✅ 参数范围检查和修正
-    if (InitialSize < 0)
+    // 检查是否已经注册
+    if (GetPool(ActorClass))
     {
-        OBJECTPOOL_LOG(Warning, TEXT("RegisterActorClass: 初始大小不能为负数，设置为0"));
-        InitialSize = 0;
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("RegisterActorClass: Actor类已经注册: %s"), *ActorClass->GetName());
+        return true; // 已存在视为成功
     }
 
-    if (HardLimit < 0)
+    // 创建配置
+    FObjectPoolConfig Config;
+    Config.InitialSize = InitialSize;
+    Config.HardLimit = HardLimit;
+
+    // 设置配置（如果配置管理器存在）
+    if (ConfigManager.IsValid())
     {
-        OBJECTPOOL_LOG(Warning, TEXT("RegisterActorClass: 硬限制不能为负数，设置为0（无限制）"));
-        HardLimit = 0;
+        ConfigManager->SetConfig(ActorClass, Config);
     }
 
-    // ✅ 即使子系统未初始化也允许注册（延迟初始化）
-    if (!bIsInitialized)
+    // 创建池
+    TSharedPtr<FActorPool> NewPool = GetOrCreatePool(ActorClass);
+    if (!NewPool.IsValid())
     {
-        OBJECTPOOL_LOG(Log, TEXT("RegisterActorClass: 子系统未初始化，将在初始化后处理"));
-        // 可以考虑将配置保存到DefaultPoolConfigs中，等初始化后再处理
+        OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("RegisterActorClass: 创建池失败: %s"), *ActorClass->GetName());
+        return false;
     }
 
-    OBJECTPOOL_LOG(Log, TEXT("注册Actor类到对象池: %s, 初始大小: %d, 硬限制: %d"), 
-        *Class->GetName(), InitialSize, HardLimit);
-
-    // ✅ 获取或创建对象池
-    TSharedPtr<FActorPool> Pool = GetOrCreatePool(Class);
-    if (!Pool.IsValid())
-    {
-        OBJECTPOOL_LOG(Error, TEXT("创建对象池失败: %s"), *Class->GetName());
-        return;
-    }
-
-    // ✅ 设置池参数
-    Pool->SetHardLimit(HardLimit);
-
-    // ✅ 预热池
+    // ✅ 标准对象池预热机制 - 组件自动激活问题已通过DisableAutoActivateComponents解决
     if (InitialSize > 0)
     {
-        if (UWorld* World = GetWorld())
-        {
-            Pool->PrewarmPool(World, InitialSize);
-        }
-        else
-        {
-            OBJECTPOOL_LOG(Warning, TEXT("无法获取World，跳过预热: %s"), *Class->GetName());
-        }
-    }
-
-    OBJECTPOOL_LOG(Log, TEXT("Actor类注册完成: %s"), *Class->GetName());
-}
-
-AActor* UObjectPoolSubsystem::SpawnActorFromPool(TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform)
-{
-    // OBJECTPOOL_STAT(ObjectPool_SpawnFromPool); // TODO: 实现性能统计
-
-    // ✅ 永不失败原则：使用辅助函数进行安全检查
-    UClass* Class = nullptr;
-
-    // ✅ 验证Actor类
-    if (ValidateActorClass(ActorClass))
-    {
-        Class = ActorClass.Get();
+        NewPool->PrewarmPool(GetWorld(), InitialSize);
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("注册Actor类并预热: %s, 预热数量=%d"), 
+            *ActorClass->GetName(), InitialSize);
     }
     else
     {
-        OBJECTPOOL_LOG(Warning, TEXT("SpawnActorFromPool: Actor类无效，使用默认Actor类"));
-        Class = AActor::StaticClass();
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("注册Actor类（无预热）: %s"), *ActorClass->GetName());
     }
 
-    // ✅ 获取有效的World - 永不失败原则
-    UWorld* World = GetValidWorld();
-    if (!World)
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("RegisterActorClass: 成功注册Actor类: %s (初始大小=%d, 硬限制=%d)"),
+        *ActorClass->GetName(), InitialSize, HardLimit);
+
+    return true;
+}
+
+AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTransform& SpawnTransform)
+{
+    SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_SpawnActor);
+
+    // ✅ 更新统计信息
+    ++SubsystemStats.TotalSpawnCalls;
+
+    if (!ValidateActorClass(ActorClass))
     {
-        OBJECTPOOL_LOG(Error, TEXT("SpawnActorFromPool: 无法获取有效的World，尝试从引擎获取"));
-
-        // ✅ 最后的回退：直接从引擎获取World
-        if (GEngine && GEngine->GetWorldContexts().Num() > 0)
-        {
-            for (const FWorldContext& Context : GEngine->GetWorldContexts())
-            {
-                if (Context.World() && IsValid(Context.World()))
-                {
-                    World = Context.World();
-                    break;
-                }
-            }
-        }
-
-        // ✅ 如果仍然无法获取World，这是极端情况，但仍要遵循永不失败原则
-        if (!World)
-        {
-            OBJECTPOOL_LOG(Error, TEXT("SpawnActorFromPool: 无法获取任何World，返回静态虚拟Actor"));
-            // 返回一个静态的虚拟Actor，确保永不返回nullptr
-            static AActor* EmergencyActor = NewObject<AActor>();
-            return EmergencyActor;
-        }
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("SpawnActorFromPool: 无效的Actor类"));
+        return nullptr;
     }
 
-    // ✅ 多级回退机制 - 确保永不失败
-    AActor* Actor = nullptr;
-
-    // 第一级：尝试从对象池获取
-    Actor = TryGetFromPool(Class, SpawnTransform, World);
-    if (Actor && ValidateSpawnedActor(Actor, Class))
+    // 获取或创建池
+    TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
+    if (!Pool.IsValid())
     {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("从池获取Actor成功: %s"), *Actor->GetName());
-        return Actor;
+        OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("SpawnActorFromPool: 无法创建池 %s"), *ActorClass->GetName());
+        return nullptr;
     }
 
-    // 第二级：尝试直接创建指定类型
-    Actor = TryCreateDirectly(Class, SpawnTransform, World);
-    if (Actor && ValidateSpawnedActor(Actor, Class))
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("直接创建Actor成功: %s"), *Actor->GetName());
-        return Actor;
-    }
-
-    // 第三级：回退到默认Actor类型
-    Actor = FallbackToDefault(SpawnTransform, World);
-    if (Actor)
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("回退到默认Actor: %s"), *Actor->GetName());
-        return Actor;
-    }
-
-    // ✅ 最后的保障：绝对永不失败原则
-    OBJECTPOOL_LOG(Error, TEXT("所有回退机制都失败，创建紧急Actor"));
-
-    // ✅ 创建一个最基本的Actor作为最后的保障
-    FActorSpawnParameters EmergencyParams;
-    EmergencyParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    EmergencyParams.bNoFail = true;
-
-    Actor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform, EmergencyParams);
-
-    // ✅ 绝对保证永不返回nullptr - 这是设计文档的核心要求
+    // 从池中获取Actor
+    AActor* Actor = Pool->GetActor(GetWorld(), SpawnTransform);
+    
+    // ✅ 永不失败机制：如果从池中获取失败，自动回退到正常生成
     if (!Actor)
     {
-        OBJECTPOOL_LOG(Error, TEXT("连基础Actor都无法创建，返回静态紧急Actor"));
-        // 创建一个静态的紧急Actor，确保永不返回nullptr
-        static AActor* StaticEmergencyActor = nullptr;
-        if (!StaticEmergencyActor)
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("池中无可用Actor，回退到正常生成: %s"), *ActorClass->GetName());
+        
+        // 自动回退到UE标准的SpawnActor
+        Actor = GetWorld()->SpawnActor<AActor>(ActorClass, SpawnTransform);
+        
+        if (Actor)
         {
-            StaticEmergencyActor = NewObject<AActor>();
-            StaticEmergencyActor->AddToRoot(); // 防止被垃圾回收
+            OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("回退生成成功: %s"), *Actor->GetName());
+            ++SubsystemStats.TotalFallbackSpawns;
         }
-        return StaticEmergencyActor;
+        else
+        {
+            OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("连回退生成都失败了: %s"), *ActorClass->GetName());
+        }
     }
+    else
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("从池成功获取Actor: %s"), *Actor->GetName());
+        ++SubsystemStats.TotalPoolHits;
+        
+        // ✅ 生命周期接口集成：调用OnPoolActorActivated事件
+        if (Actor && IObjectPoolInterface::DoesActorImplementInterface(Actor))
+        {
+            if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
+            {
+                // C++版本的事件
+                PoolInterface->OnPoolActorActivated_Implementation();
+            }
+            
+            // 蓝图版本的事件（如果Actor实现了接口）
+            IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
+            
+            OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("已调用生命周期事件OnPoolActorActivated: %s"), *Actor->GetName());
+        }
+        
+        OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("从池获取Actor成功: %s"), *Actor->GetName());
+    }
+    
+    // 暂时禁用监控器功能
+    // if (Actor && Monitor.IsValid())
+    // {
+    //     // 通知监控器
+    //     Monitor->OnActorSpawned(ActorClass, Actor);
+    // }
 
     return Actor;
 }
 
-void UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
-{
-    // OBJECTPOOL_STAT(ObjectPool_ReturnToPool); // TODO: 实现性能统计
 
-    // ✅ 安全检查：如果Actor无效，直接返回（不是错误）
+
+bool UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
+{
+    SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_ReturnActor);
+
+    // ✅ 更新统计信息
+    ++SubsystemStats.TotalReturnCalls;
+
     if (!IsValid(Actor))
     {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("ReturnActorToPool: Actor无效，忽略归还操作"));
-        return;
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("ReturnActorToPool: 无效的Actor"));
+        return false;
     }
 
     UClass* ActorClass = Actor->GetClass();
-    if (!ActorClass)
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("ReturnActorToPool: 无法获取Actor类，安全销毁"));
-        SafeDestroyActor(Actor);
-        return;
-    }
-
-    // ✅ 即使子系统未初始化也要处理Actor（避免内存泄漏）
-    if (!bIsInitialized)
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("ReturnActorToPool: 子系统未初始化，安全销毁Actor: %s"), *ActorClass->GetName());
-        SafeDestroyActor(Actor);
-        return;
-    }
-
-    // ✅ 查找对应的对象池
-    TSharedPtr<FActorPool> Pool;
-    {
-        FScopeLock Lock(&PoolsLock);
-        if (TSharedPtr<FActorPool>* FoundPool = ActorPools.Find(ActorClass))
-        {
-            Pool = *FoundPool;
-        }
-    }
-
+    
+    // 获取对应的池
+    TSharedPtr<FActorPool> Pool = GetPool(ActorClass);
     if (!Pool.IsValid())
     {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("Actor类未注册到对象池，安全销毁: %s"), *ActorClass->GetName());
-        SafeDestroyActor(Actor);
-        return;
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("ReturnActorToPool: 找不到对应的池 %s"), *ActorClass->GetName());
+        return false;
     }
 
-    // ✅ 归还到池
-    if (Pool->ReturnActor(Actor))
+    // ✅ 生命周期接口集成：在归还前调用OnReturnToPool事件
+    if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
     {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("Actor归还到池成功: %s"), *Actor->GetName());
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("Actor归还到池失败，安全销毁: %s"), *Actor->GetName());
-        SafeDestroyActor(Actor);
-    }
-}
-
-void UObjectPoolSubsystem::PrewarmPool(TSubclassOf<AActor> ActorClass, int32 Count)
-{
-    if (!ActorClass || Count <= 0)
-    {
-        return;
-    }
-
-    UClass* Class = ActorClass.Get();
-    UWorld* World = GetWorld();
-
-    if (!Class || !World)
-    {
-        return;
-    }
-
-    // ✅ 获取或创建对象池
-    TSharedPtr<FActorPool> Pool = GetOrCreatePool(Class);
-    if (Pool.IsValid())
-    {
-        Pool->PrewarmPool(World, Count);
-        OBJECTPOOL_LOG(Log, TEXT("预热对象池: %s, 数量: %d"), *Class->GetName(), Count);
-    }
-}
-
-FObjectPoolStats UObjectPoolSubsystem::GetPoolStats(TSubclassOf<AActor> ActorClass)
-{
-    if (!ActorClass)
-    {
-        return FObjectPoolStats();
-    }
-
-    UClass* Class = ActorClass.Get();
-    if (!Class)
-    {
-        return FObjectPoolStats();
-    }
-
-    // ✅ 查找对象池
-    TSharedPtr<FActorPool> Pool;
-    {
-        FScopeLock Lock(&PoolsLock);
-        if (TSharedPtr<FActorPool>* FoundPool = ActorPools.Find(Class))
+        if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
         {
-            Pool = *FoundPool;
+            // C++版本的事件
+            PoolInterface->OnReturnToPool_Implementation();
+        }
+        
+        // 蓝图版本的事件（如果Actor实现了接口）
+        IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+        
+        OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("已调用生命周期事件OnReturnToPool: %s"), *Actor->GetName());
+    }
+    
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("归还Actor到池: %s"), *Actor->GetName());
+    
+    // 归还到池
+    bool bSuccess = Pool->ReturnActor(Actor);
+    
+    // 暂时禁用监控器功能
+    // if (bSuccess && Monitor.IsValid())
+    // {
+    //     // 通知监控器
+    //     Monitor->OnActorReturned(ActorClass, Actor);
+    // }
+
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("归还Actor到池: %s, 结果=%s"), 
+        *Actor->GetName(), bSuccess ? TEXT("成功") : TEXT("失败"));
+
+    return bSuccess;
+}
+
+int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
+{
+    if (!ValidateActorClass(ActorClass) || Count <= 0)
+    {
+        return 0;
+    }
+
+    TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
+    if (!Pool.IsValid())
+    {
+        return 0;
+    }
+
+    // ✅ 标准对象池预热机制 - 安全的组件处理
+    Pool->PrewarmPool(GetWorld(), Count);
+    
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("子系统预热池完成: %s, 预热数量=%d"), 
+        *ActorClass->GetName(), Count);
+    
+    return Pool->GetAvailableCount();
+}
+
+// ✅ 池管理功能实现
+
+TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
+{
+    SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_GetOrCreatePool);
+
+    if (!ValidateActorClass(ActorClass))
+    {
+        return nullptr;
+    }
+
+    // ✅ 快速缓存检查（无锁优化）
+    {
+        FScopeLock CacheReadLock(&CacheLock);
+        if (LastAccessedClass == ActorClass && LastAccessedPool.IsValid())
+        {
+            TSharedPtr<FActorPool> CachedPool = LastAccessedPool.Pin();
+            if (CachedPool.IsValid())
+            {
+                return CachedPool;
+            }
         }
     }
 
-    if (Pool.IsValid())
+    // ✅ 优化的双重检查锁定模式
+    // 首先使用读锁进行快速检查
+    TSharedPtr<FActorPool> FoundPool;
     {
-        return Pool->GetStats();
-    }
-
-    return FObjectPoolStats();
-}
-
-void UObjectPoolSubsystem::ClearPool(TSubclassOf<AActor> ActorClass)
-{
-    if (!ActorClass)
-    {
-        return;
-    }
-
-    UClass* Class = ActorClass.Get();
-    if (!Class)
-    {
-        return;
-    }
-
-    // ✅ 查找并清空对象池
-    TSharedPtr<FActorPool> Pool;
-    {
-        FScopeLock Lock(&PoolsLock);
-        if (TSharedPtr<FActorPool>* FoundPool = ActorPools.Find(Class))
+        FReadScopeLock ReadLock(PoolsRWLock);
+        if (TSharedPtr<FActorPool>* ExistingPool = ActorPools.Find(ActorClass))
         {
-            Pool = *FoundPool;
+            FoundPool = *ExistingPool;
         }
     }
 
-    if (Pool.IsValid())
+    if (FoundPool.IsValid())
     {
-        Pool->ClearPool();
-        OBJECTPOOL_LOG(Log, TEXT("清空对象池: %s"), *Class->GetName());
+        // ✅ 更新缓存
+        UpdatePoolCache(ActorClass, FoundPool);
+        return FoundPool;
+    }
+
+    // 如果不存在，使用写锁创建新池
+    {
+        FWriteScopeLock WriteLock(PoolsRWLock);
+
+        // 再次检查，防止在锁切换期间其他线程已创建
+        if (TSharedPtr<FActorPool>* ExistingPool = ActorPools.Find(ActorClass))
+        {
+            TSharedPtr<FActorPool> ExistingPoolPtr = *ExistingPool;
+            UpdatePoolCache(ActorClass, ExistingPoolPtr);
+            return ExistingPoolPtr;
+        }
+
+        // 创建新池
+        TSharedPtr<FActorPool> NewPool = CreatePool(ActorClass);
+        if (NewPool.IsValid())
+        {
+            UpdatePoolCache(ActorClass, NewPool);
+        }
+        return NewPool;
     }
 }
+
+TSharedPtr<FActorPool> UObjectPoolSubsystem::GetPool(UClass* ActorClass) const
+{
+    if (!ValidateActorClass(ActorClass))
+    {
+        return nullptr;
+    }
+
+    // ✅ 使用读锁进行高效查找
+    FReadScopeLock ReadLock(PoolsRWLock);
+
+    if (const TSharedPtr<FActorPool>* Pool = ActorPools.Find(ActorClass))
+    {
+        return *Pool;
+    }
+
+    return nullptr;
+}
+
+
 
 void UObjectPoolSubsystem::ClearAllPools()
 {
-    OBJECTPOOL_LOG(Log, TEXT("清空所有对象池"));
-
-    FScopeLock Lock(&PoolsLock);
+    FWriteScopeLock WriteLock(PoolsRWLock);
 
     for (auto& PoolPair : ActorPools)
     {
@@ -520,644 +413,302 @@ void UObjectPoolSubsystem::ClearAllPools()
 
     ActorPools.Empty();
 
-    OBJECTPOOL_LOG(Log, TEXT("所有对象池已清空"));
+    // ✅ 清理缓存
+    ClearPoolCache();
+
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清空所有池"));
 }
 
-TArray<FObjectPoolStats> UObjectPoolSubsystem::GetAllPoolStats()
+
+
+
+
+// ✅ 静态访问方法
+
+UObjectPoolSubsystem* UObjectPoolSubsystem::Get(const UObject* WorldContext)
 {
-    TArray<FObjectPoolStats> AllStats;
-
-    FScopeLock Lock(&PoolsLock);
-
-    for (const auto& PoolPair : ActorPools)
+    if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull))
     {
-        if (PoolPair.Value.IsValid())
-        {
-            AllStats.Add(PoolPair.Value->GetStats());
-        }
+        return World->GetSubsystem<UObjectPoolSubsystem>();
     }
-
-    return AllStats;
+    return nullptr;
 }
 
-bool UObjectPoolSubsystem::IsActorClassRegistered(TSubclassOf<AActor> ActorClass)
+
+
+// ✅ 内部辅助方法实现
+
+TSharedPtr<FActorPool> UObjectPoolSubsystem::CreatePool(UClass* ActorClass)
 {
-    if (!ActorClass)
-    {
-        return false;
-    }
+    // 注意：调用者应该持有锁
 
-    UClass* Class = ActorClass.Get();
-    if (!Class)
-    {
-        return false;
-    }
-
-    FScopeLock Lock(&PoolsLock);
-    return ActorPools.Contains(Class);
-}
-
-bool UObjectPoolSubsystem::ValidateAllPools()
-{
-    FScopeLock Lock(&PoolsLock);
-
-    bool bAllValid = true;
-
-    for (auto& PoolPair : ActorPools)
-    {
-        if (!PoolPair.Value.IsValid() || !PoolPair.Value->ValidatePool())
-        {
-            OBJECTPOOL_LOG(Warning, TEXT("对象池验证失败: %s"),
-                PoolPair.Key ? *PoolPair.Key->GetName() : TEXT("Unknown"));
-            bAllValid = false;
-        }
-    }
-
-    return bAllValid;
-}
-
-TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
-{
-    if (!ActorClass)
+    if (!ValidateActorClass(ActorClass))
     {
         return nullptr;
     }
 
-    FScopeLock Lock(&PoolsLock);
+    // 获取配置
+    FObjectPoolConfig Config = ConfigManager.IsValid() ?
+        ConfigManager->GetConfig(ActorClass) : FObjectPoolConfig();
 
-    // ✅ 查找现有池
-    if (TSharedPtr<FActorPool>* ExistingPool = ActorPools.Find(ActorClass))
+    // 创建池
+    TSharedPtr<FActorPool> NewPool = MakeShared<FActorPool>(
+        ActorClass,
+        Config.InitialSize > 0 ? Config.InitialSize : DEFAULT_POOL_INITIAL_SIZE,
+        Config.HardLimit > 0 ? Config.HardLimit : DEFAULT_POOL_MAX_SIZE
+    );
+
+    if (NewPool.IsValid())
     {
-        return *ExistingPool;
+        // 添加到映射
+        ActorPools.Add(ActorClass, NewPool);
+
+        // ✅ 更新统计信息
+        ++SubsystemStats.TotalPoolsCreated;
+
+        // 通知池管理器
+        if (PoolManager.IsValid())
+        {
+            PoolManager->OnPoolCreated(ActorClass, NewPool);
+        }
+
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("创建新池: %s, 初始大小=%d, 最大大小=%d"),
+            *ActorClass->GetName(), Config.InitialSize, Config.HardLimit);
     }
-
-    // ✅ 创建新池
-    TSharedPtr<FActorPool> NewPool = MakeShared<FActorPool>(ActorClass, 0, 0);
-    ActorPools.Add(ActorClass, NewPool);
-
-    OBJECTPOOL_LOG(Log, TEXT("创建新对象池: %s"), *ActorClass->GetName());
 
     return NewPool;
 }
 
+bool UObjectPoolSubsystem::ValidateActorClass(UClass* ActorClass) const
+{
+    if (!IsValid(ActorClass))
+    {
+        return false;
+    }
+
+    if (!ActorClass->IsChildOf<AActor>())
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("类不是Actor的子类: %s"), *ActorClass->GetName());
+        return false;
+    }
+
+    return true;
+}
+
 void UObjectPoolSubsystem::CleanupInvalidPools()
 {
-    FScopeLock Lock(&PoolsLock);
+    FWriteScopeLock WriteLock(PoolsRWLock);
 
-    // ✅ 清理无效的池
-    for (auto It = ActorPools.CreateIterator(); It; ++It)
+    TArray<UClass*> InvalidClasses;
+
+    for (auto& PoolPair : ActorPools)
     {
-        if (!It.Value().IsValid() || !IsValid(It.Key()))
+        if (!PoolPair.Value.IsValid() || !IsValid(PoolPair.Key))
         {
-            OBJECTPOOL_LOG(Log, TEXT("清理无效对象池: %s"),
-                It.Key() ? *It.Key()->GetName() : TEXT("Unknown"));
-            It.RemoveCurrent();
+            InvalidClasses.Add(PoolPair.Key);
+        }
+    }
+
+    for (UClass* InvalidClass : InvalidClasses)
+    {
+        ActorPools.Remove(InvalidClass);
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清理无效池: %s"),
+            InvalidClass ? *InvalidClass->GetName() : TEXT("Unknown"));
+    }
+}
+
+void UObjectPoolSubsystem::PerformMaintenance()
+{
+    if (!bIsInitialized)
+    {
+        return;
+    }
+
+    // 清理无效池
+    CleanupInvalidPools();
+
+    // 委托给池管理器执行维护
+    if (PoolManager.IsValid())
+    {
+        PoolManager->PerformMaintenance(ActorPools);
+    }
+
+    // 更新监控器（暂时禁用）
+    // if (Monitor.IsValid())
+    // {
+    //     Monitor->UpdateGlobalStats(ActorPools);
+    // }
+
+    // ✅ 更新维护时间
+    SubsystemStats.LastMaintenanceTime = FPlatformTime::Seconds();
+
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("执行定期维护"));
+}
+
+// ✅ 性能统计功能实现
+
+FObjectPoolSubsystemStats UObjectPoolSubsystem::GetSubsystemStats() const
+{
+    FReadScopeLock ReadLock(PoolsRWLock);
+    return SubsystemStats;
+}
+
+// ✅ UE官方垃圾回收系统集成实现
+
+// ✅ GC集成现在通过委托处理，不需要手动AddReferencedObjects
+
+void UObjectPoolSubsystem::OnPreGarbageCollect()
+{
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("GC前清理：开始清理无效的Actor类引用"));
+    
+    FWriteScopeLock WriteLock(PoolsRWLock);
+    
+    // 清理无效的Actor类引用
+    TArray<UClass*> InvalidKeys;
+    for (auto& PoolPair : ActorPools)
+    {
+        if (!IsValid(PoolPair.Key))
+        {
+            InvalidKeys.Add(PoolPair.Key);
+        }
+        else if (PoolPair.Value.IsValid())
+        {
+            // 通知池准备GC
+            // PoolPair.Value->PrepareForGarbageCollection();
+        }
+    }
+    
+    // 移除无效的池
+    for (UClass* InvalidKey : InvalidKeys)
+    {
+        ActorPools.Remove(InvalidKey);
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("GC前清理：移除无效Actor类的池"));
+    }
+}
+
+void UObjectPoolSubsystem::OnPostGarbageCollect()
+{
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("GC后清理：验证对象池状态"));
+    
+    FReadScopeLock ReadLock(PoolsRWLock);
+    
+    // 验证所有池的状态
+    for (auto& PoolPair : ActorPools)
+    {
+        if (PoolPair.Value.IsValid() && IsValid(PoolPair.Key))
+        {
+            // 让池清理内部的无效Actor引用
+            // PoolPair.Value->PostGarbageCollectCleanup();
         }
     }
 }
 
-void UObjectPoolSubsystem::InitializeDefaultPools()
+
+
+// ✅ 性能优化方法实现
+
+void UObjectPoolSubsystem::UpdatePoolCache(UClass* ActorClass, TSharedPtr<FActorPool> Pool) const
 {
-    // ✅ 这里可以添加默认的对象池配置
-    // 例如：常用的Actor类型可以预先注册
-
-    OBJECTPOOL_LOG(Verbose, TEXT("初始化默认对象池配置"));
-
-    // TODO: 从配置文件或设置中读取默认池配置
-    // 目前保持空实现，用户需要手动注册Actor类
-}
-
-UWorld* UObjectPoolSubsystem::GetValidWorld() const
-{
-    // ✅ 首先尝试从子系统获取World
-    UWorld* World = GetWorld();
-    if (IsValid(World))
+    if (!IsValid(ActorClass) || !Pool.IsValid())
     {
-        return World;
+        return;
     }
 
-    // ✅ 如果失败，尝试从引擎获取
-    if (GEngine && GEngine->GetWorldContexts().Num() > 0)
+    FScopeLock CacheWriteLock(&CacheLock);
+    LastAccessedClass = ActorClass;
+    LastAccessedPool = Pool;
+}
+
+void UObjectPoolSubsystem::ClearPoolCache() const
+{
+    FScopeLock CacheWriteLock(&CacheLock);
+    LastAccessedClass = nullptr;
+    LastAccessedPool.Reset();
+}
+
+// ✅ 安全延迟预热机制实现
+
+void UObjectPoolSubsystem::QueueDelayedPrewarm(UClass* ActorClass, int32 Count)
+{
+    if (!IsValid(ActorClass) || Count <= 0)
     {
-        for (const FWorldContext& Context : GEngine->GetWorldContexts())
+        return;
+    }
+
+    // 添加到延迟预热队列
+    DelayedPrewarmQueue.Add(FDelayedPrewarmInfo(ActorClass, Count));
+    
+    // 如果Timer还没有设置，创建一个0.1秒后的延迟Timer
+    if (!DelayedPrewarmTimerHandle.IsValid())
+    {
+        if (UWorld* World = GetWorld())
         {
-            if (IsValid(Context.World()))
+            World->GetTimerManager().SetTimer(
+                DelayedPrewarmTimerHandle,
+                this,
+                &UObjectPoolSubsystem::ProcessDelayedPrewarmQueue,
+                0.1f,  // 0.1秒延迟，确保不在同一帧
+                false  // 不重复
+            );
+            
+            OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("设置延迟预热Timer: 0.1秒后执行"));
+        }
+    }
+    
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("已队列延迟预热: %s, 数量=%d, 队列大小=%d"), 
+        *ActorClass->GetName(), Count, DelayedPrewarmQueue.Num());
+}
+
+void UObjectPoolSubsystem::ProcessDelayedPrewarmQueue()
+{
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("开始处理延迟预热队列，队列大小=%d"), DelayedPrewarmQueue.Num());
+    
+    for (const FDelayedPrewarmInfo& PrewarmInfo : DelayedPrewarmQueue)
+    {
+        if (IsValid(PrewarmInfo.ActorClass))
+        {
+            // 获取或创建池
+            TSharedPtr<FActorPool> Pool = GetOrCreatePool(PrewarmInfo.ActorClass);
+            if (Pool.IsValid())
             {
-                return Context.World();
+                // 现在在不同帧中执行PrewarmPool应该是安全的
+                Pool->PrewarmPool(GetWorld(), PrewarmInfo.Count);
+                
+                OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热完成: %s, 数量=%d"), 
+                    *PrewarmInfo.PoolName, PrewarmInfo.Count);
+            }
+            else
+            {
+                OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("延迟预热失败，无法获取池: %s"), 
+                    *PrewarmInfo.PoolName);
             }
         }
-    }
-
-    OBJECTPOOL_LOG(Warning, TEXT("无法获取有效的World实例"));
-    return nullptr;
-}
-
-bool UObjectPoolSubsystem::ValidateActorClass(TSubclassOf<AActor> ActorClass) const
-{
-    if (!ActorClass)
-    {
-        return false;
-    }
-
-    UClass* Class = ActorClass.Get();
-    if (!Class)
-    {
-        return false;
-    }
-
-    // ✅ 检查是否是Actor的子类
-    if (!Class->IsChildOf(AActor::StaticClass()))
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("类 %s 不是Actor的子类"), *Class->GetName());
-        return false;
-    }
-
-    return true;
-}
-
-void UObjectPoolSubsystem::SafeDestroyActor(AActor* Actor) const
-{
-    if (!IsValid(Actor))
-    {
-        return;
-    }
-
-    // ✅ 安全销毁Actor
-    try
-    {
-        Actor->Destroy();
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("安全销毁Actor: %s"), *Actor->GetName());
-    }
-    catch (...)
-    {
-        OBJECTPOOL_LOG(Error, TEXT("销毁Actor时发生异常: %s"), *Actor->GetName());
-    }
-}
-
-AActor* UObjectPoolSubsystem::TryGetFromPool(UClass* ActorClass, const FTransform& SpawnTransform, UWorld* World)
-{
-    // ✅ 检查前置条件
-    if (!bIsInitialized || !ActorClass || !World)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("TryGetFromPool: 前置条件不满足"));
-        return nullptr;
-    }
-
-    // ✅ 尝试获取或创建对象池
-    TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
-    if (!Pool.IsValid())
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("TryGetFromPool: 无法获取对象池: %s"), *ActorClass->GetName());
-        return nullptr;
-    }
-
-    // ✅ 从池中获取Actor
-    AActor* Actor = Pool->GetActor(World, SpawnTransform);
-    if (Actor)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("TryGetFromPool: 成功从池获取: %s"), *Actor->GetName());
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("TryGetFromPool: 池为空或获取失败: %s"), *ActorClass->GetName());
-    }
-
-    return Actor;
-}
-
-AActor* UObjectPoolSubsystem::TryCreateDirectly(UClass* ActorClass, const FTransform& SpawnTransform, UWorld* World)
-{
-    if (!ActorClass || !World)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("TryCreateDirectly: 参数无效"));
-        return nullptr;
-    }
-
-    // ✅ 尝试直接创建指定类型的Actor
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    SpawnParams.bNoFail = false; // 允许失败，这样我们可以尝试其他回退策略
-
-    AActor* Actor = World->SpawnActor<AActor>(ActorClass, SpawnTransform, SpawnParams);
-
-    if (Actor)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("TryCreateDirectly: 成功创建: %s"), *Actor->GetName());
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("TryCreateDirectly: 创建失败: %s"), *ActorClass->GetName());
-    }
-
-    return Actor;
-}
-
-AActor* UObjectPoolSubsystem::FallbackToDefault(const FTransform& SpawnTransform, UWorld* World)
-{
-    if (!World)
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("FallbackToDefault: World无效，创建静态Actor"));
-        // ✅ 即使World无效，也要遵循永不失败原则
-        static AActor* StaticFallbackActor = nullptr;
-        if (!StaticFallbackActor)
+        else
         {
-            StaticFallbackActor = NewObject<AActor>();
-            StaticFallbackActor->AddToRoot();
-        }
-        return StaticFallbackActor;
-    }
-
-    // ✅ 尝试创建默认Actor类型 - 使用bNoFail确保成功
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    SpawnParams.bNoFail = true; // ✅ 确保不失败
-
-    AActor* Actor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform, SpawnParams);
-
-    // ✅ 双重保障：即使bNoFail=true，也要检查结果
-    if (Actor)
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("FallbackToDefault: 成功创建默认Actor: %s"), *Actor->GetName());
-        return Actor;
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Error, TEXT("FallbackToDefault: 即使bNoFail=true也失败，返回静态Actor"));
-        // ✅ 最后的保障
-        static AActor* EmergencyFallbackActor = nullptr;
-        if (!EmergencyFallbackActor)
-        {
-            EmergencyFallbackActor = NewObject<AActor>();
-            EmergencyFallbackActor->AddToRoot();
-        }
-        return EmergencyFallbackActor;
-    }
-}
-
-bool UObjectPoolSubsystem::ValidateSpawnedActor(AActor* Actor, UClass* ExpectedClass) const
-{
-    if (!IsValid(Actor))
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("ValidateSpawnedActor: Actor无效"));
-        return false;
-    }
-
-    if (!ExpectedClass)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("ValidateSpawnedActor: 期望类型无效，但Actor有效"));
-        return true; // Actor有效就行
-    }
-
-    // ✅ 检查Actor是否是期望类型或其子类
-    if (!Actor->IsA(ExpectedClass))
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("ValidateSpawnedActor: Actor类型不匹配，期望: %s, 实际: %s"),
-            *ExpectedClass->GetName(), *Actor->GetClass()->GetName());
-        return false;
-    }
-
-    // ✅ 检查Actor是否在正确的World中
-    if (Actor->GetWorld() != GetWorld())
-    {
-        OBJECTPOOL_LOG(Verbose, TEXT("ValidateSpawnedActor: Actor不在正确的World中"));
-        return false;
-    }
-
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("ValidateSpawnedActor: Actor验证通过: %s"), *Actor->GetName());
-    return true;
-}
-
-// ✅ Actor状态重置公共API实现
-
-bool UObjectPoolSubsystem::ResetActorState(AActor* Actor, const FTransform& SpawnTransform, const FActorResetConfig& ResetConfig)
-{
-    if (!IsValid(Actor))
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("ResetActorState: Actor无效"));
-        return false;
-    }
-
-    if (!StateResetter.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("ResetActorState: 状态重置管理器未初始化"));
-        return false;
-    }
-
-    return StateResetter->ResetActorState(Actor, SpawnTransform, ResetConfig);
-}
-
-int32 UObjectPoolSubsystem::BatchResetActorStates(const TArray<AActor*>& Actors, const FActorResetConfig& ResetConfig)
-{
-    if (Actors.Num() == 0)
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("BatchResetActorStates: 空的Actor数组"));
-        return 0;
-    }
-
-    if (!StateResetter.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("BatchResetActorStates: 状态重置管理器未初始化"));
-        return 0;
-    }
-
-    return StateResetter->BatchResetActorStates(Actors, TArray<FTransform>(), ResetConfig);
-}
-
-FActorResetStats UObjectPoolSubsystem::GetActorResetStats() const
-{
-    if (!StateResetter.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("GetActorResetStats: 状态重置管理器未初始化"));
-        return FActorResetStats();
-    }
-
-    return StateResetter->GetResetStats();
-}
-
-
-
-// ✅ 性能统计和调试功能实现
-
-void UObjectPoolSubsystem::LogPerformanceStats()
-{
-    OBJECTPOOL_LOG(Warning, TEXT("=== 对象池性能统计报告 ==="));
-
-    if (ActorPools.Num() == 0)
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("当前没有活跃的对象池"));
-        return;
-    }
-
-    int32 TotalPools = 0;
-    int32 TotalAvailableActors = 0;
-    int32 TotalActiveActors = 0;
-    int32 TotalCreatedActors = 0;
-    float TotalHitRate = 0.0f;
-
-    for (const auto& PoolPair : ActorPools)
-    {
-        if (FActorPool* Pool = PoolPair.Value.Get())
-        {
-            FActorPoolStats Stats = Pool->GetPoolStats();
-            UClass* ActorClass = PoolPair.Key;
-
-            OBJECTPOOL_LOG(Warning, TEXT("池 [%s]:"), ActorClass ? *ActorClass->GetName() : TEXT("Unknown"));
-            OBJECTPOOL_LOG(Warning, TEXT("  - 可用Actor: %d"), Stats.CurrentAvailable);
-            OBJECTPOOL_LOG(Warning, TEXT("  - 活跃Actor: %d"), Stats.CurrentActive);
-            OBJECTPOOL_LOG(Warning, TEXT("  - 总创建数: %d"), Stats.TotalCreated);
-            OBJECTPOOL_LOG(Warning, TEXT("  - 命中率: %.1f%%"), Stats.HitRate * 100.0f);
-            OBJECTPOOL_LOG(Warning, TEXT("  - 最后使用: %s"), *Stats.LastUsedTime.ToString());
-
-            ++TotalPools;
-            TotalAvailableActors += Stats.CurrentAvailable;
-            TotalActiveActors += Stats.CurrentActive;
-            TotalCreatedActors += Stats.TotalCreated;
-            TotalHitRate += Stats.HitRate;
+            OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("延迟预热失败，Actor类无效: %s"), 
+                *PrewarmInfo.PoolName);
         }
     }
-
-    // ✅ 输出汇总统计
-    OBJECTPOOL_LOG(Warning, TEXT("=== 汇总统计 ==="));
-    OBJECTPOOL_LOG(Warning, TEXT("总池数: %d"), TotalPools);
-    OBJECTPOOL_LOG(Warning, TEXT("总可用Actor: %d"), TotalAvailableActors);
-    OBJECTPOOL_LOG(Warning, TEXT("总活跃Actor: %d"), TotalActiveActors);
-    OBJECTPOOL_LOG(Warning, TEXT("总创建Actor: %d"), TotalCreatedActors);
-    OBJECTPOOL_LOG(Warning, TEXT("平均命中率: %.1f%%"), TotalPools > 0 ? (TotalHitRate / TotalPools) * 100.0f : 0.0f);
-
-    // ✅ 输出状态重置统计
-    if (StateResetter.IsValid())
-    {
-        FActorResetStats ResetStats = StateResetter->GetResetStats();
-        OBJECTPOOL_LOG(Warning, TEXT("=== 状态重置统计 ==="));
-        OBJECTPOOL_LOG(Warning, TEXT("总重置次数: %d"), ResetStats.TotalResetCount);
-        OBJECTPOOL_LOG(Warning, TEXT("重置成功率: %.1f%%"), ResetStats.ResetSuccessRate * 100.0f);
-        OBJECTPOOL_LOG(Warning, TEXT("平均重置耗时: %.2fms"), ResetStats.AverageResetTimeMs);
-    }
+    
+    // 清空队列和Timer
+    DelayedPrewarmQueue.Empty();
+    DelayedPrewarmTimerHandle.Invalidate();
+    
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热队列处理完成"));
 }
 
-void UObjectPoolSubsystem::LogMemoryUsage()
+void UObjectPoolSubsystem::ClearDelayedPrewarmTimer()
 {
-    OBJECTPOOL_LOG(Warning, TEXT("=== 对象池内存使用报告 ==="));
-
-    if (ActorPools.Num() == 0)
+    if (DelayedPrewarmTimerHandle.IsValid())
     {
-        OBJECTPOOL_LOG(Warning, TEXT("当前没有活跃的对象池"));
-        return;
-    }
-
-    int64 TotalMemoryUsage = 0;
-
-    for (const auto& PoolPair : ActorPools)
-    {
-        if (FActorPool* Pool = PoolPair.Value.Get())
+        if (UWorld* World = GetWorld())
         {
-            int64 PoolMemory = Pool->CalculateMemoryUsage();
-            UClass* ActorClass = PoolPair.Key;
-
-            OBJECTPOOL_LOG(Warning, TEXT("池 [%s]: %.2f KB"),
-                ActorClass ? *ActorClass->GetName() : TEXT("Unknown"),
-                PoolMemory / 1024.0f);
-
-            TotalMemoryUsage += PoolMemory;
+            World->GetTimerManager().ClearTimer(DelayedPrewarmTimerHandle);
         }
+        DelayedPrewarmTimerHandle.Invalidate();
+        
+        OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("已清理延迟预热Timer"));
     }
-
-    OBJECTPOOL_LOG(Warning, TEXT("=== 内存使用汇总 ==="));
-    OBJECTPOOL_LOG(Warning, TEXT("总内存使用: %.2f KB (%.2f MB)"),
-        TotalMemoryUsage / 1024.0f,
-        TotalMemoryUsage / (1024.0f * 1024.0f));
-
-    // ✅ 输出系统内存信息
-    FPlatformMemoryStats MemStats = FPlatformMemory::GetStats();
-    OBJECTPOOL_LOG(Warning, TEXT("系统可用内存: %.2f MB"), MemStats.AvailablePhysical / (1024.0f * 1024.0f));
-    OBJECTPOOL_LOG(Warning, TEXT("系统已用内存: %.2f MB"), MemStats.UsedPhysical / (1024.0f * 1024.0f));
-}
-
-void UObjectPoolSubsystem::EnablePerformanceMonitoring(float IntervalSeconds)
-{
-    if (IntervalSeconds <= 0.0f)
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("EnablePerformanceMonitoring: 无效的间隔时间 %.2f，使用默认值60秒"), IntervalSeconds);
-        IntervalSeconds = 60.0f;
-    }
-
-    // ✅ 清除现有定时器
-    if (PerformanceMonitoringTimer.IsValid())
-    {
-        if (UWorld* World = GetValidWorld())
-        {
-            World->GetTimerManager().ClearTimer(PerformanceMonitoringTimer);
-        }
-    }
-
-    // ✅ 设置新的定时器
-    if (UWorld* World = GetValidWorld())
-    {
-        World->GetTimerManager().SetTimer(
-            PerformanceMonitoringTimer,
-            this,
-            &UObjectPoolSubsystem::LogPerformanceStats,
-            IntervalSeconds,
-            true  // 循环执行
-        );
-
-        OBJECTPOOL_LOG(Warning, TEXT("性能监控已启用，间隔: %.1f秒"), IntervalSeconds);
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Error, TEXT("EnablePerformanceMonitoring: 无法获取有效的World"));
-    }
-}
-
-void UObjectPoolSubsystem::DisablePerformanceMonitoring()
-{
-    if (PerformanceMonitoringTimer.IsValid())
-    {
-        if (UWorld* World = GetValidWorld())
-        {
-            World->GetTimerManager().ClearTimer(PerformanceMonitoringTimer);
-            PerformanceMonitoringTimer.Invalidate();
-            OBJECTPOOL_LOG(Warning, TEXT("性能监控已禁用"));
-        }
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("性能监控未启用"));
-    }
-}
-
-// ✅ 配置管理功能实现 - 利用已有的配置系统
-
-bool UObjectPoolSubsystem::ApplyConfigTemplate(const FString& TemplateName)
-{
-    if (!ConfigManager.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("ApplyConfigTemplate: 配置管理器未初始化"));
-        return false;
-    }
-
-    if (TemplateName.IsEmpty())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("ApplyConfigTemplate: 模板名称为空"));
-        return false;
-    }
-
-    bool bSuccess = ConfigManager->ApplyPresetTemplate(TemplateName, this);
-    if (bSuccess)
-    {
-        OBJECTPOOL_LOG(Log, TEXT("成功应用配置模板: %s"), *TemplateName);
-    }
-    else
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("应用配置模板失败: %s"), *TemplateName);
-    }
-
-    return bSuccess;
-}
-
-TArray<FString> UObjectPoolSubsystem::GetAvailableConfigTemplates() const
-{
-    if (!ConfigManager.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("GetAvailableConfigTemplates: 配置管理器未初始化"));
-        return TArray<FString>();
-    }
-
-    TArray<FString> Templates = ConfigManager->GetAvailableTemplateNames();
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("获取到 %d 个可用配置模板"), Templates.Num());
-
-    return Templates;
-}
-
-void UObjectPoolSubsystem::ResetToDefaultConfig()
-{
-    if (!ConfigManager.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("ResetToDefaultConfig: 配置管理器未初始化"));
-        return;
-    }
-
-    ConfigManager->ResetToDefaults(this);
-    OBJECTPOOL_LOG(Log, TEXT("已重置为默认配置"));
-}
-
-// ✅ 调试工具功能实现 - 基于已有的统计系统
-
-void UObjectPoolSubsystem::SetDebugMode(int32 DebugMode)
-{
-    if (!DebugManager.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("SetDebugMode: 调试管理器未初始化"));
-        return;
-    }
-
-    EObjectPoolDebugMode Mode = static_cast<EObjectPoolDebugMode>(DebugMode);
-    DebugManager->SetDebugMode(Mode);
-    OBJECTPOOL_LOG(Log, TEXT("调试模式已设置为: %d"), DebugMode);
-}
-
-FString UObjectPoolSubsystem::GetDebugSummary()
-{
-    if (!DebugManager.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("GetDebugSummary: 调试管理器未初始化"));
-        return TEXT("调试管理器未初始化");
-    }
-
-    // ✅ 利用调试管理器的功能，基于已有统计数据
-    return DebugManager->GetDebugSummary(this);
-}
-
-TArray<FString> UObjectPoolSubsystem::DetectPerformanceHotspots()
-{
-    TArray<FString> HotspotDescriptions;
-
-    if (!DebugManager.IsValid())
-    {
-        OBJECTPOOL_LOG(Warning, TEXT("DetectPerformanceHotspots: 调试管理器未初始化"));
-        HotspotDescriptions.Add(TEXT("调试管理器未初始化"));
-        return HotspotDescriptions;
-    }
-
-    // ✅ 利用已有的统计API进行简化的热点检测
-    TArray<FObjectPoolStats> AllStats = GetAllPoolStats();
-
-    for (const FObjectPoolStats& PoolStats : AllStats)
-    {
-        // 检测低命中率
-        if (PoolStats.HitRate < 0.5f)
-        {
-            FString Description = FString::Printf(TEXT("[低命中率] %s - 命中率仅为 %.1f%% (建议: 增加初始池大小)"),
-                *PoolStats.ActorClassName, PoolStats.HitRate * 100.0f);
-            HotspotDescriptions.Add(Description);
-        }
-
-        // 检测大池
-        if (PoolStats.PoolSize > 100)
-        {
-            FString Description = FString::Printf(TEXT("[大池] %s - 池大小为 %d (建议: 启用自动收缩)"),
-                *PoolStats.ActorClassName, PoolStats.PoolSize);
-            HotspotDescriptions.Add(Description);
-        }
-
-        // 检测空闲池
-        if (PoolStats.CurrentActive == 0 && PoolStats.CurrentAvailable > 0)
-        {
-            FString Description = FString::Printf(TEXT("[空闲池] %s - 有 %d 个未使用的Actor (建议: 启用自动收缩)"),
-                *PoolStats.ActorClassName, PoolStats.CurrentAvailable);
-            HotspotDescriptions.Add(Description);
-        }
-    }
-
-    // 检测重置性能问题
-    FActorResetStats ResetStats = GetActorResetStats();
-    if (ResetStats.AverageResetTimeMs > 10.0f)
-    {
-        FString Description = FString::Printf(TEXT("[慢重置] 全局 - 平均重置耗时 %.2fms (建议: 优化重置配置)"),
-            ResetStats.AverageResetTimeMs);
-        HotspotDescriptions.Add(Description);
-    }
-
-    OBJECTPOOL_LOG(Log, TEXT("检测到 %d 个性能热点"), HotspotDescriptions.Num());
-    return HotspotDescriptions;
+    
+    DelayedPrewarmQueue.Empty();
 }

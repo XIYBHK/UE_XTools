@@ -10,11 +10,9 @@
 #include <atomic>
 
 // ✅ 对象池模块依赖
-#include "ObjectPoolTypesSimplified.h"
-
-// ✅ 向后兼容性支持（废弃）
-// 注意：暂时包含原始类型以保持兼容性，将在后续版本中移除
 #include "ObjectPoolTypes.h"
+
+
 
 // ✅ 前向声明
 class FActorPool;
@@ -54,7 +52,7 @@ public:
      * @param Config 预分配配置
      * @return 是否成功启动
      */
-    bool StartPreallocation(UWorld* World, const FObjectPoolPreallocationConfig& Config);
+    bool StartPreallocation(UWorld* World, const FObjectPoolConfig& Config);
 
     /**
      * 停止预分配
@@ -178,7 +176,7 @@ private:
     FActorPool* OwnerPool;
 
     /** 预分配配置 */
-    FObjectPoolPreallocationConfig Config;
+    FObjectPoolConfig Config;
 
     /** 统计信息 */
     mutable FObjectPoolPreallocationStats Stats;

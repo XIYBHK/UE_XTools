@@ -9,10 +9,10 @@
 #include "GameFramework/Actor.h"
 
 // ✅ 对象池模块依赖
-#include "ObjectPoolTypesSimplified.h"
+#include "ObjectPoolTypes.h"
 
 // 前向声明
-class FActorPoolSimplified;
+class FActorPool;
 
 /**
  * 对象池管理器
@@ -119,7 +119,7 @@ public:
      * @param ActorClass Actor类
      * @param Pool 池实例
      */
-    void OnPoolCreated(UClass* ActorClass, TSharedPtr<FActorPoolSimplified> Pool);
+    void OnPoolCreated(UClass* ActorClass, TSharedPtr<FActorPool> Pool);
 
     /**
      * 通知池即将销毁
@@ -140,7 +140,7 @@ public:
      * @param Pool 池实例
      * @return 是否应该销毁
      */
-    bool ShouldDestroyPool(UClass* ActorClass, const FActorPoolSimplified& Pool) const;
+    bool ShouldDestroyPool(UClass* ActorClass, const FActorPool& Pool) const;
 
     // ✅ 智能管理功能
 
@@ -149,7 +149,7 @@ public:
      * @param AllPools 所有池的映射
      * @param MaintenanceType 维护类型
      */
-    void PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPoolSimplified>>& AllPools, 
+    void PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools, 
                            EMaintenanceType MaintenanceType = EMaintenanceType::All);
 
     /**
@@ -158,7 +158,7 @@ public:
      * @param Pool 池实例
      * @return 管理建议列表
      */
-    TArray<FString> AnalyzePoolUsage(UClass* ActorClass, const FActorPoolSimplified& Pool) const;
+    TArray<FString> AnalyzePoolUsage(UClass* ActorClass, const FActorPool& Pool) const;
 
     /**
      * 自动调整池大小
@@ -166,7 +166,7 @@ public:
      * @param Pool 池实例
      * @return 是否进行了调整
      */
-    bool AutoResizePool(UClass* ActorClass, FActorPoolSimplified& Pool) const;
+    bool AutoResizePool(UClass* ActorClass, FActorPool& Pool) const;
 
     /**
      * 执行智能预分配
@@ -175,7 +175,7 @@ public:
      * @param World 世界上下文
      * @return 预分配的数量
      */
-    int32 PerformSmartPreallocation(UClass* ActorClass, FActorPoolSimplified& Pool, UWorld* World) const;
+    int32 PerformSmartPreallocation(UClass* ActorClass, FActorPool& Pool, UWorld* World) const;
 
     // ✅ 策略管理
 
@@ -216,7 +216,7 @@ public:
      * @param AllPools 所有池的映射
      * @return 格式化的报告
      */
-    FString GenerateManagementReport(const TMap<UClass*, TSharedPtr<FActorPoolSimplified>>& AllPools) const;
+    FString GenerateManagementReport(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools) const;
 
     /**
      * 重置统计信息
@@ -250,7 +250,7 @@ private:
      * @param Pool 池实例
      * @return 使用趋势（正数表示增长，负数表示下降）
      */
-    float AnalyzeUsageTrend(UClass* ActorClass, const FActorPoolSimplified& Pool) const;
+    float AnalyzeUsageTrend(UClass* ActorClass, const FActorPool& Pool) const;
 
     /**
      * 计算推荐的池大小
@@ -258,21 +258,21 @@ private:
      * @param Pool 池实例
      * @return 推荐大小
      */
-    int32 CalculateRecommendedSize(UClass* ActorClass, const FActorPoolSimplified& Pool) const;
+    int32 CalculateRecommendedSize(UClass* ActorClass, const FActorPool& Pool) const;
 
     /**
      * 检查是否需要清理
      * @param Pool 池实例
      * @return 是否需要清理
      */
-    bool ShouldPerformCleanup(const FActorPoolSimplified& Pool) const;
+    bool ShouldPerformCleanup(const FActorPool& Pool) const;
 
     /**
      * 检查是否需要预分配
      * @param Pool 池实例
      * @return 是否需要预分配
      */
-    bool ShouldPerformPreallocation(const FActorPoolSimplified& Pool) const;
+    bool ShouldPerformPreallocation(const FActorPool& Pool) const;
 
     /**
      * 更新使用历史

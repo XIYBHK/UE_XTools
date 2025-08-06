@@ -9,7 +9,7 @@
 #include "Components/ActorComponent.h"
 
 // ✅ 对象池模块依赖
-#include "ObjectPoolTypesSimplified.h"
+#include "ObjectPoolTypes.h"
 #include "ObjectPoolInterface.h"
 
 /**
@@ -51,6 +51,8 @@ public:
      */
     static bool ActivateActorFromPool(AActor* Actor, const FTransform& SpawnTransform);
 
+
+
     /**
      * 基础的Actor状态重置
      * 提供最基本的重置功能，作为回退方案
@@ -71,7 +73,7 @@ public:
      * @param OutErrorMessage 错误信息输出
      * @return 配置是否有效
      */
-    static bool ValidateConfig(const FObjectPoolConfigSimplified& Config, FString& OutErrorMessage);
+    static bool ValidateConfig(const FObjectPoolConfig& Config, FString& OutErrorMessage);
 
     /**
      * 应用默认配置值
@@ -79,7 +81,7 @@ public:
      * 
      * @param Config 要处理的配置（会被修改）
      */
-    static void ApplyDefaultConfig(FObjectPoolConfigSimplified& Config);
+    static void ApplyDefaultConfig(FObjectPoolConfig& Config);
 
     /**
      * 创建常用类型的默认配置
@@ -88,7 +90,7 @@ public:
      * @param PoolType 池类型（子弹、敌人、特效等）
      * @return 默认配置
      */
-    static FObjectPoolConfigSimplified CreateDefaultConfig(TSubclassOf<AActor> ActorClass, const FString& PoolType = TEXT(""));
+    static FObjectPoolConfig CreateDefaultConfig(TSubclassOf<AActor> ActorClass, const FString& PoolType = TEXT(""));
 
     // ✅ 调试和监控工具方法
 
@@ -99,7 +101,7 @@ public:
      * @param PoolName 池名称
      * @return 调试信息结构
      */
-    static FObjectPoolDebugInfoSimplified GetDebugInfo(const FObjectPoolStatsSimplified& Stats, const FString& PoolName);
+    static FObjectPoolDebugInfo GetDebugInfo(const FObjectPoolStats& Stats, const FString& PoolName);
 
     /**
      * 记录池统计信息到日志
@@ -108,7 +110,7 @@ public:
      * @param PoolName 池名称
      * @param Verbosity 日志级别
      */
-    static void LogPoolStats(const FObjectPoolStatsSimplified& Stats, const FString& PoolName, ELogVerbosity::Type Verbosity = ELogVerbosity::Log);
+    static void LogPoolStats(const FObjectPoolStats& Stats, const FString& PoolName, ELogVerbosity::Type Verbosity = ELogVerbosity::Log);
 
     /**
      * 检查池的健康状态
@@ -116,7 +118,7 @@ public:
      * @param Stats 统计信息
      * @return 是否健康
      */
-    static bool IsPoolHealthy(const FObjectPoolStatsSimplified& Stats);
+    static bool IsPoolHealthy(const FObjectPoolStats& Stats);
 
     /**
      * 获取性能建议
@@ -124,7 +126,7 @@ public:
      * @param Stats 统计信息
      * @return 建议列表
      */
-    static TArray<FString> GetPerformanceSuggestions(const FObjectPoolStatsSimplified& Stats);
+    static TArray<FString> GetPerformanceSuggestions(const FObjectPoolStats& Stats);
 
     // ✅ 性能分析工具方法
 
@@ -143,7 +145,7 @@ public:
      * @param Stats 统计信息
      * @return 使用模式描述
      */
-    static FString AnalyzeUsagePattern(const FObjectPoolStatsSimplified& Stats);
+    static FString AnalyzeUsagePattern(const FObjectPoolStats& Stats);
 
     /**
      * 获取优化建议
@@ -152,7 +154,7 @@ public:
      * @param Stats 当前统计
      * @return 优化建议
      */
-    static TArray<FString> GetOptimizationSuggestions(const FObjectPoolConfigSimplified& Config, const FObjectPoolStatsSimplified& Stats);
+    static TArray<FString> GetOptimizationSuggestions(const FObjectPoolConfig& Config, const FObjectPoolStats& Stats);
 
     // ✅ 实用工具方法
 
@@ -179,7 +181,7 @@ public:
      * @param bDetailed 是否显示详细信息
      * @return 格式化的字符串
      */
-    static FString FormatStatsString(const FObjectPoolStatsSimplified& Stats, bool bDetailed = false);
+    static FString FormatStatsString(const FObjectPoolStats& Stats, bool bDetailed = false);
 
     /**
      * 生成池的唯一标识符

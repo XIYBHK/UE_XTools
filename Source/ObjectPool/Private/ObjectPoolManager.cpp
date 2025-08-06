@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ObjectPoolManager.h"
-#include "ActorPoolSimplified.h"
+#include "ActorPool.h"
 #include "ObjectPool.h"
 
 // ✅ UE核心依赖
@@ -61,7 +61,7 @@ FObjectPoolManager& FObjectPoolManager::operator=(FObjectPoolManager&& Other) no
 
 // ✅ 池生命周期管理实现
 
-void FObjectPoolManager::OnPoolCreated(UClass* ActorClass, TSharedPtr<FActorPoolSimplified> Pool)
+void FObjectPoolManager::OnPoolCreated(UClass* ActorClass, TSharedPtr<FActorPool> Pool)
 {
     if (!IsValid(ActorClass) || !Pool.IsValid())
     {
@@ -123,7 +123,7 @@ bool FObjectPoolManager::ShouldCreatePool(UClass* ActorClass) const
     }
 }
 
-bool FObjectPoolManager::ShouldDestroyPool(UClass* ActorClass, const FActorPoolSimplified& Pool) const
+bool FObjectPoolManager::ShouldDestroyPool(UClass* ActorClass, const FActorPool& Pool) const
 {
     if (!IsValid(ActorClass) || !bAutoManagementEnabled)
     {
@@ -131,7 +131,7 @@ bool FObjectPoolManager::ShouldDestroyPool(UClass* ActorClass, const FActorPoolS
     }
 
     // 检查池是否长期未使用
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 如果池为空且没有请求，考虑销毁
     if (PoolStats.PoolSize == 0 && PoolStats.TotalCreated == 0)
@@ -144,7 +144,7 @@ bool FObjectPoolManager::ShouldDestroyPool(UClass* ActorClass, const FActorPoolS
 
 // ✅ 智能管理功能实现
 
-void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPoolSimplified>>& AllPools, EMaintenanceType MaintenanceType)
+void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools, EMaintenanceType MaintenanceType)
 {
     SCOPE_CYCLE_COUNTER(STAT_PoolManager_PerformMaintenance);
 
@@ -160,7 +160,7 @@ void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActo
     for (const auto& PoolPair : AllPools)
     {
         UClass* ActorClass = PoolPair.Key;
-        TSharedPtr<FActorPoolSimplified> Pool = PoolPair.Value;
+        TSharedPtr<FActorPool> Pool = PoolPair.Value;
         
         if (!IsValid(ActorClass) || !Pool.IsValid())
         {
@@ -168,7 +168,7 @@ void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActo
         }
 
         // 更新使用历史
-        FObjectPoolStatsSimplified PoolStats = Pool->GetStats();
+        FObjectPoolStats PoolStats = Pool->GetStats();
         float UsageRatio = PoolStats.PoolSize > 0 ? 
             static_cast<float>(PoolStats.CurrentActive) / static_cast<float>(PoolStats.PoolSize) : 0.0f;
         UpdateUsageHistory(ActorClass, UsageRatio);
@@ -210,7 +210,7 @@ void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActo
         *GetMaintenanceTypeName(MaintenanceType), EndTime - StartTime);
 }
 
-TArray<FString> FObjectPoolManager::AnalyzePoolUsage(UClass* ActorClass, const FActorPoolSimplified& Pool) const
+TArray<FString> FObjectPoolManager::AnalyzePoolUsage(UClass* ActorClass, const FActorPool& Pool) const
 {
     TArray<FString> Suggestions;
 
@@ -219,7 +219,7 @@ TArray<FString> FObjectPoolManager::AnalyzePoolUsage(UClass* ActorClass, const F
         return Suggestions;
     }
 
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     float UsageRatio = PoolStats.PoolSize > 0 ? 
         static_cast<float>(PoolStats.CurrentActive) / static_cast<float>(PoolStats.PoolSize) : 0.0f;
 
@@ -253,7 +253,7 @@ TArray<FString> FObjectPoolManager::AnalyzePoolUsage(UClass* ActorClass, const F
     return Suggestions;
 }
 
-bool FObjectPoolManager::AutoResizePool(UClass* ActorClass, FActorPoolSimplified& Pool) const
+bool FObjectPoolManager::AutoResizePool(UClass* ActorClass, FActorPool& Pool) const
 {
     SCOPE_CYCLE_COUNTER(STAT_PoolManager_AutoResize);
 
@@ -278,7 +278,7 @@ bool FObjectPoolManager::AutoResizePool(UClass* ActorClass, FActorPoolSimplified
     return false;
 }
 
-int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPoolSimplified& Pool, UWorld* World) const
+int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPool& Pool, UWorld* World) const
 {
     SCOPE_CYCLE_COUNTER(STAT_PoolManager_SmartPreallocation);
 
@@ -287,7 +287,7 @@ int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPo
         return 0;
     }
 
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 计算预分配数量
     int32 PreallocCount = FMath::Max(1, PoolStats.CurrentActive / 2);
@@ -295,9 +295,11 @@ int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPo
     // 限制预分配数量
     PreallocCount = FMath::Min(PreallocCount, 10);
 
+    // ✅ 智能预分配机制 - 组件自动激活问题已解决
     Pool.PrewarmPool(World, PreallocCount);
 
-    POOL_MANAGER_LOG(Log, TEXT("智能预分配: %s, 数量=%d"), *ActorClass->GetName(), PreallocCount);
+    POOL_MANAGER_LOG(Log, TEXT("智能预分配完成: %s, 预分配数量=%d"), 
+        *ActorClass->GetName(), PreallocCount);
 
     return PreallocCount;
 }
@@ -334,7 +336,7 @@ FObjectPoolManager::FManagementStats FObjectPoolManager::GetManagementStats() co
     return Stats;
 }
 
-FString FObjectPoolManager::GenerateManagementReport(const TMap<UClass*, TSharedPtr<FActorPoolSimplified>>& AllPools) const
+FString FObjectPoolManager::GenerateManagementReport(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools) const
 {
     FScopeLock Lock(&ManagementLock);
 
@@ -367,14 +369,14 @@ FString FObjectPoolManager::GenerateManagementReport(const TMap<UClass*, TShared
     for (const auto& PoolPair : AllPools)
     {
         UClass* ActorClass = PoolPair.Key;
-        TSharedPtr<FActorPoolSimplified> Pool = PoolPair.Value;
+        TSharedPtr<FActorPool> Pool = PoolPair.Value;
 
         if (!IsValid(ActorClass) || !Pool.IsValid())
         {
             continue;
         }
 
-        FObjectPoolStatsSimplified PoolStats = Pool->GetStats();
+        FObjectPoolStats PoolStats = Pool->GetStats();
         float UsageRatio = PoolStats.PoolSize > 0 ?
             static_cast<float>(PoolStats.CurrentActive) / static_cast<float>(PoolStats.PoolSize) : 0.0f;
 
@@ -401,7 +403,7 @@ void FObjectPoolManager::ResetStats()
 
 // ✅ 内部辅助方法实现
 
-float FObjectPoolManager::AnalyzeUsageTrend(UClass* ActorClass, const FActorPoolSimplified& Pool) const
+float FObjectPoolManager::AnalyzeUsageTrend(UClass* ActorClass, const FActorPool& Pool) const
 {
     // 注意：调用者应该持有锁
 
@@ -431,9 +433,9 @@ float FObjectPoolManager::AnalyzeUsageTrend(UClass* ActorClass, const FActorPool
     return WeightedAverage - Average;
 }
 
-int32 FObjectPoolManager::CalculateRecommendedSize(UClass* ActorClass, const FActorPoolSimplified& Pool) const
+int32 FObjectPoolManager::CalculateRecommendedSize(UClass* ActorClass, const FActorPool& Pool) const
 {
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
 
     if (PoolStats.PoolSize == 0)
     {
@@ -485,9 +487,9 @@ int32 FObjectPoolManager::CalculateRecommendedSize(UClass* ActorClass, const FAc
     return RecommendedSize;
 }
 
-bool FObjectPoolManager::ShouldPerformCleanup(const FActorPoolSimplified& Pool) const
+bool FObjectPoolManager::ShouldPerformCleanup(const FActorPool& Pool) const
 {
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
 
     if (PoolStats.PoolSize == 0)
     {
@@ -498,9 +500,9 @@ bool FObjectPoolManager::ShouldPerformCleanup(const FActorPoolSimplified& Pool) 
     return UsageRatio < CLEANUP_THRESHOLD;
 }
 
-bool FObjectPoolManager::ShouldPerformPreallocation(const FActorPoolSimplified& Pool) const
+bool FObjectPoolManager::ShouldPerformPreallocation(const FActorPool& Pool) const
 {
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
 
     if (PoolStats.PoolSize == 0)
     {

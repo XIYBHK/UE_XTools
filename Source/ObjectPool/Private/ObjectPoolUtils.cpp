@@ -2,6 +2,7 @@
 
 #include "ObjectPoolUtils.h"
 #include "ObjectPool.h"
+#include "ObjectPoolInterface.h"
 
 // ✅ UE核心依赖
 #include "Engine/World.h"
@@ -63,6 +64,34 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
     {
         OBJECTPOOL_UTILS_LOG(Warning, TEXT("ActivateActorFromPool: Actor无效"));
         return false;
+    }
+
+    // ✅ 最安全策略：检查是否需要完成延迟构造
+    bool bWasUninitialized = !Actor->IsActorInitialized();
+    if (bWasUninitialized)
+    {
+        OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("Actor未完成初始化，执行FinishSpawning: %s"), *Actor->GetName());
+        
+        // 完成延迟构造，这会调用BeginPlay等生命周期函数
+        Actor->FinishSpawning(SpawnTransform);
+        
+        OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("FinishSpawning完成: %s"), *Actor->GetName());
+        
+        // ✅ 首次初始化时调用OnPoolActorCreated事件
+        if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+        {
+            if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
+            {
+                PoolInterface->OnPoolActorCreated_Implementation();
+            }
+            IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+            OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("已调用生命周期事件OnPoolActorCreated: %s"), *Actor->GetName());
+        }
+    }
+    else
+    {
+        // Actor已经初始化过，直接调用重复使用事件
+        OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("Actor已初始化，直接重用: %s"), *Actor->GetName());
     }
 
     // ✅ 应用新的Transform
@@ -138,7 +167,7 @@ bool FObjectPoolUtils::BasicActorReset(AActor* Actor, const FTransform& NewTrans
 
 // ✅ 配置管理实现
 
-bool FObjectPoolUtils::ValidateConfig(const FObjectPoolConfigSimplified& Config, FString& OutErrorMessage)
+bool FObjectPoolUtils::ValidateConfig(const FObjectPoolConfig& Config, FString& OutErrorMessage)
 {
     SCOPE_CYCLE_COUNTER(STAT_ValidateConfig);
     
@@ -170,7 +199,7 @@ bool FObjectPoolUtils::ValidateConfig(const FObjectPoolConfigSimplified& Config,
     return true;
 }
 
-void FObjectPoolUtils::ApplyDefaultConfig(FObjectPoolConfigSimplified& Config)
+void FObjectPoolUtils::ApplyDefaultConfig(FObjectPoolConfig& Config)
 {
     if (!Config.ActorClass)
     {
@@ -194,9 +223,9 @@ void FObjectPoolUtils::ApplyDefaultConfig(FObjectPoolConfigSimplified& Config)
     Config.HardLimit = FMath::Max(Config.HardLimit, Config.InitialSize);
 }
 
-FObjectPoolConfigSimplified FObjectPoolUtils::CreateDefaultConfig(TSubclassOf<AActor> ActorClass, const FString& PoolType)
+FObjectPoolConfig FObjectPoolUtils::CreateDefaultConfig(TSubclassOf<AActor> ActorClass, const FString& PoolType)
 {
-    FObjectPoolConfigSimplified Config;
+    FObjectPoolConfig Config;
     Config.ActorClass = ActorClass;
     
     // ✅ 根据池类型设置默认值
@@ -227,11 +256,11 @@ FObjectPoolConfigSimplified FObjectPoolUtils::CreateDefaultConfig(TSubclassOf<AA
 
 // ✅ 调试和监控实现
 
-FObjectPoolDebugInfoSimplified FObjectPoolUtils::GetDebugInfo(const FObjectPoolStatsSimplified& Stats, const FString& PoolName)
+FObjectPoolDebugInfo FObjectPoolUtils::GetDebugInfo(const FObjectPoolStats& Stats, const FString& PoolName)
 {
-    FObjectPoolDebugInfoSimplified DebugInfo;
+    FObjectPoolDebugInfo DebugInfo;
     DebugInfo.PoolName = PoolName;
-    DebugInfo.Stats = Stats;
+    // DebugInfo.Stats = Stats; // Stats字段不存在，移除这行
     
     // ✅ 健康检查
     DebugInfo.bIsHealthy = IsPoolHealthy(Stats);
@@ -249,7 +278,7 @@ FObjectPoolDebugInfoSimplified FObjectPoolUtils::GetDebugInfo(const FObjectPoolS
     return DebugInfo;
 }
 
-void FObjectPoolUtils::LogPoolStats(const FObjectPoolStatsSimplified& Stats, const FString& PoolName, ELogVerbosity::Type Verbosity)
+void FObjectPoolUtils::LogPoolStats(const FObjectPoolStats& Stats, const FString& PoolName, ELogVerbosity::Type Verbosity)
 {
     FString StatsString = FormatStatsString(Stats, true);
     
@@ -273,7 +302,7 @@ void FObjectPoolUtils::LogPoolStats(const FObjectPoolStatsSimplified& Stats, con
     }
 }
 
-bool FObjectPoolUtils::IsPoolHealthy(const FObjectPoolStatsSimplified& Stats)
+bool FObjectPoolUtils::IsPoolHealthy(const FObjectPoolStats& Stats)
 {
     // ✅ 命中率检查
     if (Stats.HitRate < MIN_HEALTHY_HIT_RATE && Stats.TotalCreated > 10)
@@ -294,7 +323,7 @@ bool FObjectPoolUtils::IsPoolHealthy(const FObjectPoolStatsSimplified& Stats)
     return true;
 }
 
-TArray<FString> FObjectPoolUtils::GetPerformanceSuggestions(const FObjectPoolStatsSimplified& Stats)
+TArray<FString> FObjectPoolUtils::GetPerformanceSuggestions(const FObjectPoolStats& Stats)
 {
     TArray<FString> Suggestions;
     
@@ -338,7 +367,7 @@ int64 FObjectPoolUtils::EstimateMemoryUsage(TSubclassOf<AActor> ActorClass, int3
     return SingleActorMemory * PoolSize;
 }
 
-FString FObjectPoolUtils::AnalyzeUsagePattern(const FObjectPoolStatsSimplified& Stats)
+FString FObjectPoolUtils::AnalyzeUsagePattern(const FObjectPoolStats& Stats)
 {
     if (Stats.TotalCreated == 0)
     {
@@ -366,7 +395,7 @@ FString FObjectPoolUtils::AnalyzeUsagePattern(const FObjectPoolStatsSimplified& 
     }
 }
 
-TArray<FString> FObjectPoolUtils::GetOptimizationSuggestions(const FObjectPoolConfigSimplified& Config, const FObjectPoolStatsSimplified& Stats)
+TArray<FString> FObjectPoolUtils::GetOptimizationSuggestions(const FObjectPoolConfig& Config, const FObjectPoolStats& Stats)
 {
     TArray<FString> Suggestions;
     
@@ -444,7 +473,7 @@ bool FObjectPoolUtils::IsActorSuitableForPooling(TSubclassOf<AActor> ActorClass)
     return true;
 }
 
-FString FObjectPoolUtils::FormatStatsString(const FObjectPoolStatsSimplified& Stats, bool bDetailed)
+FString FObjectPoolUtils::FormatStatsString(const FObjectPoolStats& Stats, bool bDetailed)
 {
     if (bDetailed)
     {
@@ -793,3 +822,5 @@ FObjectPoolUtilsTimer::~FObjectPoolUtilsTimer()
         OBJECTPOOL_UTILS_LOG(Verbose, TEXT("操作 '%s' 耗时: %.2f ms"), *Operation, ElapsedMs);
     }
 }
+
+

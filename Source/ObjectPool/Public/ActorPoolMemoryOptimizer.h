@@ -10,11 +10,11 @@
 #include "GameFramework/Actor.h"
 
 // ✅ 对象池模块依赖
-#include "ObjectPoolTypesSimplified.h"
+#include "ObjectPoolTypes.h"
 #include "ObjectPoolUtils.h"
 
 // 前向声明
-class FActorPoolSimplified;
+class FActorPool;
 
 /**
  * Actor池内存优化器
@@ -135,21 +135,21 @@ public:
      * @param Pool 要分析的池
      * @return 内存统计信息
      */
-    FMemoryStats AnalyzeMemoryUsage(const FActorPoolSimplified& Pool) const;
+    FMemoryStats AnalyzeMemoryUsage(const FActorPool& Pool) const;
 
     /**
      * 获取内存使用建议
      * @param Pool 要分析的池
      * @return 优化建议列表
      */
-    TArray<FString> GetMemoryOptimizationSuggestions(const FActorPoolSimplified& Pool) const;
+    TArray<FString> GetMemoryOptimizationSuggestions(const FActorPool& Pool) const;
 
     /**
      * 检查是否需要内存优化
      * @param Pool 要检查的池
      * @return 是否需要优化
      */
-    bool ShouldOptimizeMemory(const FActorPoolSimplified& Pool) const;
+    bool ShouldOptimizeMemory(const FActorPool& Pool) const;
 
     // ✅ 预分配优化功能
 
@@ -158,14 +158,14 @@ public:
      * @param Pool 要检查的池
      * @return 是否应该预分配
      */
-    bool ShouldPreallocate(const FActorPoolSimplified& Pool) const;
+    bool ShouldPreallocate(const FActorPool& Pool) const;
 
     /**
      * 计算建议的预分配数量
      * @param Pool 要分析的池
      * @return 建议的预分配数量
      */
-    int32 CalculatePreallocationCount(const FActorPoolSimplified& Pool) const;
+    int32 CalculatePreallocationCount(const FActorPool& Pool) const;
 
     /**
      * 执行智能预分配
@@ -173,7 +173,7 @@ public:
      * @param World 世界上下文
      * @return 实际预分配的数量
      */
-    int32 PerformSmartPreallocation(FActorPoolSimplified& Pool, UWorld* World) const;
+    int32 PerformSmartPreallocation(FActorPool& Pool, UWorld* World) const;
 
     // ✅ 内存压缩功能
 
@@ -182,14 +182,14 @@ public:
      * @param Pool 要分析的池
      * @return 碎片化程度（0.0-1.0）
      */
-    float AnalyzeFragmentation(const FActorPoolSimplified& Pool) const;
+    float AnalyzeFragmentation(const FActorPool& Pool) const;
 
     /**
      * 执行内存压缩
      * @param Pool 目标池
      * @return 压缩后释放的内存量（字节）
      */
-    int64 CompactMemory(FActorPoolSimplified& Pool) const;
+    int64 CompactMemory(FActorPool& Pool) const;
 
     // ✅ 配置管理
 
@@ -224,7 +224,7 @@ public:
      * @param Pool 要分析的池
      * @return 格式化的性能报告
      */
-    FString GeneratePerformanceReport(const FActorPoolSimplified& Pool) const;
+    FString GeneratePerformanceReport(const FActorPool& Pool) const;
 
     /**
      * 获取优化效果统计
@@ -272,14 +272,14 @@ private:
      * @param Pool 目标池
      * @return 内存使用量（字节）
      */
-    int64 CalculatePoolMemoryUsage(const FActorPoolSimplified& Pool) const;
+    int64 CalculatePoolMemoryUsage(const FActorPool& Pool) const;
 
     /**
      * 分析使用模式
      * @param Pool 目标池
      * @return 使用模式描述
      */
-    FString AnalyzeUsagePattern(const FActorPoolSimplified& Pool) const;
+    FString AnalyzeUsagePattern(const FActorPool& Pool) const;
 
     /**
      * 获取策略名称

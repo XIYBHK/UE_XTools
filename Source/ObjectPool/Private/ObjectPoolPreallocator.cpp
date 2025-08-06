@@ -31,7 +31,7 @@ FObjectPoolPreallocator::~FObjectPoolPreallocator()
     OBJECTPOOL_LOG(VeryVerbose, TEXT("ObjectPoolPreallocator销毁"));
 }
 
-bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoolPreallocationConfig& InConfig)
+bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoolConfig& InConfig)
 {
     if (!World || !OwnerPool)
     {
@@ -129,9 +129,9 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
 
     // ✅ 使用子系统的智能World获取方法
     UWorld* World = nullptr;
-    if (UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::GetGlobal())
+    if (UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::Get(nullptr))
     {
-        World = Subsystem->GetValidWorld();
+        World = Subsystem->GetWorld();
     }
 
     if (!World)
@@ -331,7 +331,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
 
     // ✅ 通过对象池创建Actor
     FTransform DefaultTransform = FTransform::Identity;
-    bool bSuccess = OwnerPool->CreateNewActor(World, DefaultTransform) != nullptr;
+            bool bSuccess = OwnerPool->CreateNewActor(World) != nullptr;
 
     if (bSuccess)
     {

@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ActorPoolMemoryOptimizer.h"
-#include "ActorPoolSimplified.h"
+#include "ActorPool.h"
 #include "ObjectPool.h"
 
 // ✅ UE核心依赖
@@ -62,7 +62,7 @@ FActorPoolMemoryOptimizer& FActorPoolMemoryOptimizer::operator=(FActorPoolMemory
 
 // ✅ 内存监控功能实现
 
-FActorPoolMemoryOptimizer::FMemoryStats FActorPoolMemoryOptimizer::AnalyzeMemoryUsage(const FActorPoolSimplified& Pool) const
+FActorPoolMemoryOptimizer::FMemoryStats FActorPoolMemoryOptimizer::AnalyzeMemoryUsage(const FActorPool& Pool) const
 {
     SCOPE_CYCLE_COUNTER(STAT_MemoryOptimizer_AnalyzeMemory);
 
@@ -75,7 +75,7 @@ FActorPoolMemoryOptimizer::FMemoryStats FActorPoolMemoryOptimizer::AnalyzeMemory
     Stats.FragmentationRatio = AnalyzeFragmentation(Pool);
     
     // 计算平均Actor大小
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     if (PoolStats.TotalCreated > 0)
     {
         Stats.AverageActorSize = Stats.CurrentMemoryUsage / PoolStats.TotalCreated;
@@ -90,12 +90,12 @@ FActorPoolMemoryOptimizer::FMemoryStats FActorPoolMemoryOptimizer::AnalyzeMemory
     return Stats;
 }
 
-TArray<FString> FActorPoolMemoryOptimizer::GetMemoryOptimizationSuggestions(const FActorPoolSimplified& Pool) const
+TArray<FString> FActorPoolMemoryOptimizer::GetMemoryOptimizationSuggestions(const FActorPool& Pool) const
 {
     TArray<FString> Suggestions;
     
     FMemoryStats MemStats = AnalyzeMemoryUsage(Pool);
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 基于碎片化程度的建议
     if (MemStats.FragmentationRatio > 0.3f)
@@ -133,7 +133,7 @@ TArray<FString> FActorPoolMemoryOptimizer::GetMemoryOptimizationSuggestions(cons
     return Suggestions;
 }
 
-bool FActorPoolMemoryOptimizer::ShouldOptimizeMemory(const FActorPoolSimplified& Pool) const
+bool FActorPoolMemoryOptimizer::ShouldOptimizeMemory(const FActorPool& Pool) const
 {
     FMemoryStats MemStats = AnalyzeMemoryUsage(Pool);
     
@@ -159,14 +159,14 @@ bool FActorPoolMemoryOptimizer::ShouldOptimizeMemory(const FActorPoolSimplified&
 
 // ✅ 预分配优化功能实现
 
-bool FActorPoolMemoryOptimizer::ShouldPreallocate(const FActorPoolSimplified& Pool) const
+bool FActorPoolMemoryOptimizer::ShouldPreallocate(const FActorPool& Pool) const
 {
     if (!PreallocConfig.bEnableSmartPreallocation)
     {
         return false;
     }
     
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 检查池是否已满
     if (PoolStats.PoolSize >= Pool.GetPoolSize()) // 假设有GetMaxSize方法
@@ -181,14 +181,14 @@ bool FActorPoolMemoryOptimizer::ShouldPreallocate(const FActorPoolSimplified& Po
     return UsageRatio >= PreallocConfig.TriggerThreshold;
 }
 
-int32 FActorPoolMemoryOptimizer::CalculatePreallocationCount(const FActorPoolSimplified& Pool) const
+int32 FActorPoolMemoryOptimizer::CalculatePreallocationCount(const FActorPool& Pool) const
 {
     if (!ShouldPreallocate(Pool))
     {
         return 0;
     }
     
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 基于当前使用模式计算预分配数量
     int32 CurrentActive = PoolStats.CurrentActive;
@@ -203,7 +203,7 @@ int32 FActorPoolMemoryOptimizer::CalculatePreallocationCount(const FActorPoolSim
     return NeededCount;
 }
 
-int32 FActorPoolMemoryOptimizer::PerformSmartPreallocation(FActorPoolSimplified& Pool, UWorld* World) const
+int32 FActorPoolMemoryOptimizer::PerformSmartPreallocation(FActorPool& Pool, UWorld* World) const
 {
     SCOPE_CYCLE_COUNTER(STAT_MemoryOptimizer_Preallocation);
 
@@ -218,10 +218,10 @@ int32 FActorPoolMemoryOptimizer::PerformSmartPreallocation(FActorPoolSimplified&
         return 0;
     }
     
-    MEMORY_OPTIMIZER_LOG(Log, TEXT("执行智能预分配: %d个Actor"), PreallocCount);
-    
-    // 使用池的预热功能进行预分配
+    // ✅ 内存优化预热机制 - 组件自动激活问题已解决
     Pool.PrewarmPool(World, PreallocCount);
+    
+    MEMORY_OPTIMIZER_LOG(Log, TEXT("内存优化预热完成: 预分配数量=%d"), PreallocCount);
     
     // 更新统计
     ++OptimizationStats.TotalPreallocations;
@@ -231,9 +231,9 @@ int32 FActorPoolMemoryOptimizer::PerformSmartPreallocation(FActorPoolSimplified&
 
 // ✅ 内存压缩功能实现
 
-float FActorPoolMemoryOptimizer::AnalyzeFragmentation(const FActorPoolSimplified& Pool) const
+float FActorPoolMemoryOptimizer::AnalyzeFragmentation(const FActorPool& Pool) const
 {
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 简化的碎片化计算：基于池的使用效率
     if (PoolStats.PoolSize == 0)
@@ -248,7 +248,7 @@ float FActorPoolMemoryOptimizer::AnalyzeFragmentation(const FActorPoolSimplified
     return FMath::Clamp(1.0f - EfficiencyRatio, 0.0f, 1.0f);
 }
 
-int64 FActorPoolMemoryOptimizer::CompactMemory(FActorPoolSimplified& Pool) const
+int64 FActorPoolMemoryOptimizer::CompactMemory(FActorPool& Pool) const
 {
     SCOPE_CYCLE_COUNTER(STAT_MemoryOptimizer_Compaction);
 
@@ -295,10 +295,10 @@ void FActorPoolMemoryOptimizer::SetPreallocationConfig(const FPreallocationConfi
 
 // ✅ 性能分析实现
 
-FString FActorPoolMemoryOptimizer::GeneratePerformanceReport(const FActorPoolSimplified& Pool) const
+FString FActorPoolMemoryOptimizer::GeneratePerformanceReport(const FActorPool& Pool) const
 {
     FMemoryStats MemStats = AnalyzeMemoryUsage(Pool);
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
     FString UsagePattern = AnalyzeUsagePattern(Pool);
 
     FString Report = FString::Printf(TEXT(
@@ -403,7 +403,7 @@ void FActorPoolMemoryOptimizer::InitializeConfigForStrategy(EOptimizationStrateg
     }
 }
 
-int64 FActorPoolMemoryOptimizer::CalculatePoolMemoryUsage(const FActorPoolSimplified& Pool) const
+int64 FActorPoolMemoryOptimizer::CalculatePoolMemoryUsage(const FActorPool& Pool) const
 {
     // 使用FObjectPoolUtils来估算内存使用
     UClass* ActorClass = Pool.GetActorClass();
@@ -412,21 +412,21 @@ int64 FActorPoolMemoryOptimizer::CalculatePoolMemoryUsage(const FActorPoolSimpli
         return 0;
     }
 
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
 
     // 估算Actor内存
     int64 ActorMemory = FObjectPoolUtils::EstimateMemoryUsage(ActorClass, PoolStats.TotalCreated);
 
     // 估算池自身内存（简化计算）
-    int64 PoolOverhead = sizeof(FActorPoolSimplified) +
+    int64 PoolOverhead = sizeof(FActorPool) +
                         (PoolStats.PoolSize * sizeof(TWeakObjectPtr<AActor>) * 2); // 两个数组
 
     return ActorMemory + PoolOverhead;
 }
 
-FString FActorPoolMemoryOptimizer::AnalyzeUsagePattern(const FActorPoolSimplified& Pool) const
+FString FActorPoolMemoryOptimizer::AnalyzeUsagePattern(const FActorPool& Pool) const
 {
-    FObjectPoolStatsSimplified PoolStats = Pool.GetStats();
+    FObjectPoolStats PoolStats = Pool.GetStats();
 
     if (PoolStats.TotalCreated == 0)
     {
