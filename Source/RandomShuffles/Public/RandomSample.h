@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <cmath>
 #include "CoreMinimal.h"
 #include "MinIndexQueue.h"
 

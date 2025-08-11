@@ -115,6 +115,14 @@ if (Target.bBuildEditor)
 
 ## 🏗️ 架构设计
 
+### **UE官方的架构设计模式：**
+
+- **子系统架构** - UWorldSubsystem, UGameInstanceSubsystem
+- **智能指针系统** - TSharedPtr, TWeakObjectPtr, TUniquePtr
+- **垃圾回收集成** - 与GC系统深度协调
+- **容器优化** - TArray, TMap 的内存分配器
+- **线程安全机制** - FRWLock, FCriticalSection
+
 ### 模块结构
 ```
 Source/ObjectPool/

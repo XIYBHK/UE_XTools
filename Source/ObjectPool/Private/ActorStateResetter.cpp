@@ -43,70 +43,62 @@ bool FActorStateResetter::ResetActorState(AActor* Actor, const FTransform& Spawn
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("开始重置Actor状态: %s"), *Actor->GetName());
 
-    try
+    // ✅ 1. 重置基本属性
+    if (ResetConfig.bResetTransform)
     {
-        // ✅ 1. 重置基本属性
-        if (ResetConfig.bResetTransform)
-        {
-            ResetBasicProperties(Actor, true, SpawnTransform);
-        }
-        else
-        {
-            ResetBasicProperties(Actor, false);
-        }
-
-        // ✅ 2. 重置物理状态
-        if (ResetConfig.bResetPhysics)
-        {
-            ResetPhysicsState(Actor);
-        }
-
-        // ✅ 3. 重置组件状态
-        ResetComponentStates(Actor, ResetConfig);
-
-        // ✅ 4. 清理定时器和事件
-        if (ResetConfig.bClearTimers)
-        {
-            ClearTimersAndEvents(Actor);
-        }
-
-        // ✅ 5. 重置AI状态
-        if (ResetConfig.bResetAI)
-        {
-            ResetAIState(Actor);
-        }
-
-        // ✅ 6. 重置动画状态
-        if (ResetConfig.bResetAnimation)
-        {
-            ResetAnimationState(Actor);
-        }
-
-        // ✅ 7. 重置音频状态
-        if (ResetConfig.bResetAudio)
-        {
-            ResetAudioState(Actor);
-        }
-
-        // ✅ 8. 重置粒子系统
-        if (ResetConfig.bResetParticles)
-        {
-            ResetParticleState(Actor);
-        }
-
-        // ✅ 9. 重置网络状态
-        if (ResetConfig.bResetNetwork)
-        {
-            ResetNetworkState(Actor);
-        }
-
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("完成重置Actor状态: %s"), *Actor->GetName());
+        ResetBasicProperties(Actor, true, SpawnTransform);
     }
-    catch (...)
+    else
     {
-        OBJECTPOOL_LOG(Error, TEXT("重置Actor状态时发生异常: %s"), *Actor->GetName());
-        bSuccess = false;
+        ResetBasicProperties(Actor, false);
     }
+
+    // ✅ 2. 重置物理状态
+    if (ResetConfig.bResetPhysics)
+    {
+        ResetPhysicsState(Actor);
+    }
+
+    // ✅ 3. 重置组件状态
+    ResetComponentStates(Actor, ResetConfig);
+
+    // ✅ 4. 清理定时器和事件
+    if (ResetConfig.bClearTimers)
+    {
+        ClearTimersAndEvents(Actor);
+    }
+
+    // ✅ 5. 重置AI状态
+    if (ResetConfig.bResetAI)
+    {
+        ResetAIState(Actor);
+    }
+
+    // ✅ 6. 重置动画状态
+    if (ResetConfig.bResetAnimation)
+    {
+        ResetAnimationState(Actor);
+    }
+
+    // ✅ 7. 重置音频状态
+    if (ResetConfig.bResetAudio)
+    {
+        ResetAudioState(Actor);
+    }
+
+    // ✅ 8. 重置粒子系统
+    if (ResetConfig.bResetParticles)
+    {
+        ResetParticleState(Actor);
+    }
+
+    // ✅ 9. 重置网络状态
+    if (ResetConfig.bResetNetwork)
+    {
+        ResetNetworkState(Actor);
+    }
+
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("完成重置Actor状态: %s"), *Actor->GetName());
 
     // ✅ 更新统计信息
     double EndTime = FPlatformTime::Seconds();

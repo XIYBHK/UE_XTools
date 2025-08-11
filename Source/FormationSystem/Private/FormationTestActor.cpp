@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Engine/StaticMesh.h"
 #include "TimerManager.h"
 #include "GameFramework/Actor.h"
 
@@ -209,11 +210,25 @@ void AFormationTestActor::CreateTestUnits(int32 UnitCount, TSubclassOf<AActor> U
             NewUnit = CreateDefaultUnit(SpawnLocation);
         }
 
+        #if WITH_EDITOR
+        #if WITH_EDITOR
         if (NewUnit)
         {
             NewUnit->SetActorLabel(FString::Printf(TEXT("TestUnit_%d"), i));
             TestUnits.Add(NewUnit);
         }
+#else
+        if (NewUnit)
+        {
+            TestUnits.Add(NewUnit);
+        }
+#endif
+#else
+        if (NewUnit)
+        {
+            TestUnits.Add(NewUnit);
+        }
+#endif
     }
 
     UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 创建了 %d 个测试单位"), TestUnits.Num());
@@ -322,12 +337,17 @@ AActor* AFormationTestActor::CreateDefaultUnit(FVector Location)
         NewActor->SetRootComponent(MeshComponent);
         MeshComponent->RegisterComponent();
 
-        // 尝试设置一个默认的立方体网格
-        static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshAsset(TEXT("/Engine/BasicShapes/Cube"));
-        if (CubeMeshAsset.Succeeded())
+        // 设置一个默认的立方体网格（使用软引用，兼容 5.4+ 严格包含）
         {
-            MeshComponent->SetStaticMesh(CubeMeshAsset.Object);
-            MeshComponent->SetWorldScale3D(FVector(0.5f, 0.5f, 0.5f));
+            const FSoftObjectPath MeshPath(TEXT("/Engine/BasicShapes/Cube.Cube"));
+            if (UObject* LoadedObj = MeshPath.TryLoad())
+            {
+                if (UStaticMesh* LoadedMesh = Cast<UStaticMesh>(LoadedObj))
+                {
+                    MeshComponent->SetStaticMesh(LoadedMesh);
+                    MeshComponent->SetWorldScale3D(FVector(0.5f, 0.5f, 0.5f));
+                }
+            }
         }
     }
 

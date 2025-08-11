@@ -426,27 +426,20 @@ void FObjectPoolUtils::SafeCallLifecycleInterface(AActor* Actor, const FString& 
         return;
     }
 
-    try
+    if (EventType == TEXT("Created"))
     {
-        if (EventType == TEXT("Created"))
-        {
-            IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
-        }
-        else if (EventType == TEXT("Activated"))
-        {
-            IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
-        }
-        else if (EventType == TEXT("ReturnedToPool"))
-        {
-            IObjectPoolInterface::Execute_OnReturnToPool(Actor);
-        }
+        IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+    }
+    else if (EventType == TEXT("Activated"))
+    {
+        IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
+    }
+    else if (EventType == TEXT("ReturnedToPool"))
+    {
+        IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+    }
 
-        OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("成功调用生命周期接口: %s - %s"), *Actor->GetName(), *EventType);
-    }
-    catch (...)
-    {
-        OBJECTPOOL_UTILS_LOG(Warning, TEXT("调用生命周期接口时发生异常: %s - %s"), *Actor->GetName(), *EventType);
-    }
+    OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("成功调用生命周期接口: %s - %s"), *Actor->GetName(), *EventType);
 }
 
 bool FObjectPoolUtils::IsActorSuitableForPooling(TSubclassOf<AActor> ActorClass)

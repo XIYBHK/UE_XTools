@@ -21,7 +21,8 @@ public class X_AssetEditor : ModuleRules
 
 		// ✅ UE 标准设置 - 符合引擎最佳实践
 		bEnableExceptions = false;
-		bUseRTTI = false;
+		        bEnableExceptions = true;
+        bUseRTTI = false;
 		
 		// ✅ 简化的包含路径 - 移除不必要的引擎内部路径
 		PublicIncludePaths.AddRange(new string[] {

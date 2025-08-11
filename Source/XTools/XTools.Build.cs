@@ -30,7 +30,8 @@ public class XTools : ModuleRules
 
 		// ✅ UE 标准设置 - 符合引擎最佳实践
 		bEnableExceptions = false;
-		bUseRTTI = false;
+		        bEnableExceptions = true;
+        bUseRTTI = false;
 
 		// 编译优化设置
 		bUsePrecompiled = false;

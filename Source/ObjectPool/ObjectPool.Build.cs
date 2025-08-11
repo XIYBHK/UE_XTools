@@ -28,8 +28,7 @@ public class ObjectPool : ModuleRules
         // ✅ 私有依赖 - 内部实现需要
         PrivateDependencyModuleNames.AddRange(new string[]
         {
-            "DeveloperSettings",  // 配置系统需要
-            "Niagara"            // VFX组件处理需要
+            "DeveloperSettings"  // 配置系统需要
         });
 
         // ✅ 测试支持 - 暂时禁用以简化编译
@@ -58,11 +57,7 @@ public class ObjectPool : ModuleRules
             // 使用相对路径，遵循UE约定
         });
         
-        // ✅ 定义预处理器宏
-        PublicDefinitions.AddRange(new string[]
-        {
-            "OBJECTPOOL_API=DLLEXPORT"
-        });
+        // ✅ 不再手动定义 OBJECTPOOL_API，避免与 UBT 生成的宏冲突
         
         // ✅ 优化设置
         if (Target.Configuration == UnrealTargetConfiguration.Shipping)

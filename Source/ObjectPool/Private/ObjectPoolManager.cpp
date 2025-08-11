@@ -263,7 +263,7 @@ bool FObjectPoolManager::AutoResizePool(UClass* ActorClass, FActorPool& Pool) co
     }
 
     int32 RecommendedSize = CalculateRecommendedSize(ActorClass, Pool);
-    int32 CurrentMaxSize = Pool.GetPoolSize(); // 假设有GetMaxSize方法
+    int32 CurrentMaxSize = Pool.GetMaxSize();
 
     if (RecommendedSize != CurrentMaxSize && RecommendedSize > 0)
     {

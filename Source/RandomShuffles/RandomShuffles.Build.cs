@@ -28,7 +28,8 @@ public class RandomShuffles : ModuleRules
 
 		// ✅ UE 标准设置
 		bEnableExceptions = false;
-		bUseRTTI = false;
+		        bEnableExceptions = true;
+        bUseRTTI = false;
 
 		// ✅ 添加模块定义
 		PublicDefinitions.AddRange(new string[] {

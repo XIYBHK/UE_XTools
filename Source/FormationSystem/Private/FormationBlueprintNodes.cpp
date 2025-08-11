@@ -50,7 +50,9 @@ bool UFormationBlueprintNodes::QuickFormationTransition(
     }
 
     FormationActor->SetActorLocation(FormationTransform.GetLocation());
+#if WITH_EDITOR
     FormationActor->SetActorLabel(TEXT("QuickFormationManager"));
+#endif
 
     // 创建阵型管理器组件
     OutFormationManager = NewObject<UFormationManagerComponent>(FormationActor);
@@ -147,7 +149,9 @@ UFormationManagerComponent* UFormationBlueprintNodes::FormationTransitionSequenc
     }
 
     SequenceActor->SetActorLocation(CenterLocation);
+    #if WITH_EDITOR
     SequenceActor->SetActorLabel(TEXT("FormationSequenceManager"));
+#endif
 
     UFormationManagerComponent* FormationManager = NewObject<UFormationManagerComponent>(SequenceActor);
     SequenceActor->AddInstanceComponent(FormationManager);

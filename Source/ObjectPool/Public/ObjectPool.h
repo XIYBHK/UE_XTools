@@ -80,7 +80,3 @@ DECLARE_LOG_CATEGORY_EXTERN(LogObjectPool, Log, All);
     #define OBJECTPOOL_LOG(Verbosity, Format, ...)
 #endif
 
-// ✅ 模块API宏定义
-#ifndef OBJECTPOOL_API
-    #define OBJECTPOOL_API DLLIMPORT
-#endif

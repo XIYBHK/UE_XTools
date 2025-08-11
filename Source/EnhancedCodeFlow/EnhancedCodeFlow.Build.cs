@@ -26,6 +26,7 @@ public class EnhancedCodeFlow : ModuleRules
 
         // ✅ UE 标准设置
         bEnableExceptions = false;
+        bEnableExceptions = true;
         bUseRTTI = false;
 
         // ✅ 添加模块定义

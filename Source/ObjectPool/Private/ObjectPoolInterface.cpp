@@ -10,8 +10,7 @@
 #include "UObject/Class.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
-#include "Async/AsyncWork.h"
-#include "Async/TaskGraphInterfaces.h"
+#include "Async/Async.h"
 
 // ✅ 对象池模块依赖
 #include "ObjectPool.h"
@@ -96,18 +95,10 @@ void IObjectPoolInterface::ExecuteBlueprintEvent(AActor* Actor, const FName& Fun
         // 继续执行，不返回
     }
 
-    // ✅ 安全调用蓝图函数
-    try
-    {
-        Actor->ProcessEvent(Function, nullptr);
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("成功调用Actor %s 的蓝图事件: %s"), 
-            *Actor->GetName(), *FunctionName.ToString());
-    }
-    catch (...)
-    {
-        OBJECTPOOL_LOG(Error, TEXT("调用Actor %s 的蓝图事件时发生异常: %s"), 
-            *Actor->GetName(), *FunctionName.ToString());
-    }
+    // ✅ 安全调用蓝图函数（不使用 C++ 异常）
+    Actor->ProcessEvent(Function, nullptr);
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("成功调用Actor %s 的蓝图事件: %s"), 
+        *Actor->GetName(), *FunctionName.ToString());
 }
 
 // ✅ 接口的默认实现已在头文件中定义
@@ -180,34 +171,26 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
     }
     else
     {
-        // ✅ 同步调用
-        try
-        {
-            ExecuteBlueprintEvent(Actor, FName(*EventName));
+        // ✅ 同步调用（不使用 C++ 异常）
+        ExecuteBlueprintEvent(Actor, FName(*EventName));
 
-            // 同时调用C++版本
-            if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
-            {
-                if (EventName == TEXT("OnPoolActorCreated"))
-                {
-                    Interface->OnPoolActorCreated_Implementation();
-                }
-                else if (EventName == TEXT("OnPoolActorActivated"))
-                {
-                    Interface->OnPoolActorActivated_Implementation();
-                }
-                else if (EventName == TEXT("OnReturnToPool"))
-                {
-                    Interface->OnReturnToPool_Implementation();
-                }
-            }
-            bSuccess = true;
-        }
-        catch (...)
+        // 同时调用C++版本
+        if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
         {
-            OBJECTPOOL_LOG(Error, TEXT("CallLifecycleEventEnhanced: 调用事件时发生异常: %s"), *EventName);
-            bSuccess = false;
+            if (EventName == TEXT("OnPoolActorCreated"))
+            {
+                Interface->OnPoolActorCreated_Implementation();
+            }
+            else if (EventName == TEXT("OnPoolActorActivated"))
+            {
+                Interface->OnPoolActorActivated_Implementation();
+            }
+            else if (EventName == TEXT("OnReturnToPool"))
+            {
+                Interface->OnReturnToPool_Implementation();
+            }
         }
+        bSuccess = true;
     }
 
     // ✅ 记录性能统计

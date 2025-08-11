@@ -11,6 +11,7 @@
 #include "Misc/ScopedSlowTask.h"
 #include "Misc/DateTime.h"
 #include "HAL/PlatformFilemanager.h"
+#include "ScopedTransaction.h"
 
 DEFINE_LOG_CATEGORY(LogX_AssetNaming);
 

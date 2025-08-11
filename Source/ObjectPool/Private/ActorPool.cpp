@@ -9,6 +9,7 @@
 // ✅ UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Components/PrimitiveComponent.h"
 #include "UObject/UObjectGlobals.h"
 
 
@@ -164,10 +165,9 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
             CleanupInvalidActors();
         }
 
-        // 尝试从可用列表获取Actor
-            if (AvailableActors.Num() > 0)
-            {
-            // 从可用列表获取最后一个有效Actor
+        // 尝试从可用列表获取Actor（仅取出，不在锁内激活）
+        if (AvailableActors.Num() > 0)
+        {
             for (int32 i = AvailableActors.Num() - 1; i >= 0; --i)
             {
                 if (AvailableActors[i].IsValid())
@@ -178,38 +178,29 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
                 }
             }
         }
+    }
 
-        // 如果找到了可用Actor，添加到活跃列表
-        if (ResultActor)
+    // 如果成功取到可复用Actor，锁外激活并在成功后加入活跃列表
+    if (ResultActor)
+    {
+        if (IsValid(ResultActor) && FObjectPoolUtils::ActivateActorFromPool(ResultActor, SpawnTransform))
         {
-            // 验证Actor仍然有效
-            if (IsValid(ResultActor))
+            // 写锁内加入活跃列表
             {
-                // 添加到活跃列表
+                FWriteScopeLock WriteLock(PoolLock);
                 ActiveActors.Add(ResultActor);
-
-                // 使用工具类激活Actor
-                if (FObjectPoolUtils::ActivateActorFromPool(ResultActor, SpawnTransform))
-                {
-                    UpdateStats(true, false); // 池命中
-                    ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
-                    return ResultActor;
-                }
-                else
-                {
-                    // 激活失败，从活跃列表移除
-                    ActiveActors.RemoveSwap(ResultActor);
-                    ResultActor = nullptr;
-                }
             }
-            else
-            {
-                ResultActor = nullptr;
-            }
+            UpdateStats(true, false);
+            ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
+            return ResultActor;
+        }
+        else
+        {
+            ResultActor = nullptr;
         }
     }
 
-    // ✅ 池中没有可用Actor，尝试创建新的
+    // ✅ 池中没有可用Actor，尝试创建新的（锁外创建与激活）
     if (!ResultActor && CanCreateMoreActors())
     {
         // 在锁外创建Actor以避免长时间持有锁
@@ -217,28 +208,16 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         if (NewActor)
         {
             // 重新获取写锁添加到活跃列表
-            FWriteScopeLock WriteLock(PoolLock);
-
-            // 添加到活跃列表
-            ActiveActors.Add(NewActor);
-
-            // 锁会自动释放
-
-            // 使用工具类激活Actor
             if (FObjectPoolUtils::ActivateActorFromPool(NewActor, SpawnTransform))
             {
+                FWriteScopeLock WriteLock(PoolLock);
+                ActiveActors.Add(NewActor);
                 UpdateStats(false, true); // 新创建
                 ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
                 return NewActor;
             }
             else
             {
-                // 激活失败，需要重新获取锁来清理
-                {
-                    FWriteScopeLock CleanupLock(PoolLock);
-                    ActiveActors.RemoveSwap(NewActor);
-                }
-
                 if (IsValid(NewActor))
                 {
                     NewActor->Destroy();

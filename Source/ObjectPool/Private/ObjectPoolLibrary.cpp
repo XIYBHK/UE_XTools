@@ -97,30 +97,10 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
             }
         }
 
-        // ✅ 最后的保障：遵循永不失败原则
-        OBJECTPOOL_LOG(Error, TEXT("UObjectPoolLibrary: 所有回退机制都失败，创建静态紧急Actor"));
-
-        // 创建一个静态的紧急Actor，确保永不返回nullptr
-        static AActor* LibraryEmergencyActor = nullptr;
-        if (!LibraryEmergencyActor)
-        {
-            LibraryEmergencyActor = NewObject<AActor>();
-            LibraryEmergencyActor->AddToRoot(); // 防止被垃圾回收
-        }
-        return LibraryEmergencyActor;
+        // ✅ 所有回退机制均失败：直接返回 nullptr，由上层决定是否改用 SpawnActor 兜底
+        OBJECTPOOL_LOG(Error, TEXT("UObjectPoolLibrary: 所有回退机制都失败，返回 nullptr"));
+        return nullptr;
     }
-
-    // ✅ 无法获取子系统，返回emergency actor
-    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 所有子系统都不可用，创建emergency actor"));
-    
-    // 创建一个静态的紧急Actor，确保永不返回nullptr
-    static AActor* FallbackEmergencyActor = nullptr;
-    if (!FallbackEmergencyActor)
-    {
-        FallbackEmergencyActor = NewObject<AActor>();
-        FallbackEmergencyActor->AddToRoot(); // 防止被垃圾回收
-    }
-    return FallbackEmergencyActor;
 }
 
 void UObjectPoolLibrary::ReturnActorToPool(const UObject* WorldContext, AActor* Actor)
@@ -206,23 +186,14 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
     // ✅ 极简API设计：通过PrewarmPool(0)检查池是否存在
     // 注意：这是内部实现细节，用户应该使用极简API
     bool bRegistered = false;
-    try 
-    {
-        // ✅ 通过PrewarmPool(0)检查池是否已注册
-        // PrewarmPool(0)不会创建Actor，但会返回池的可用数量
-        // 如果返回>=0说明池存在（已注册），否则说明未注册
-        int32 AvailableCount = PoolSubsystem->PrewarmPool(ActorClass, 0);
-        bRegistered = (AvailableCount >= 0);
-        
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("IsActorClassRegistered检查: %s, 可用数量=%d, 已注册=%s"),
-            ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
-            AvailableCount,
-            bRegistered ? TEXT("是") : TEXT("否"));
-    }
-    catch(...)
-    {
-        bRegistered = false;
-    }
+    // ✅ 通过PrewarmPool(0)检查池是否已注册（不使用异常）
+    int32 AvailableCount = PoolSubsystem->PrewarmPool(ActorClass, 0);
+    bRegistered = (AvailableCount >= 0);
+    
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("IsActorClassRegistered检查: %s, 可用数量=%d, 已注册=%s"),
+        ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
+        AvailableCount,
+        bRegistered ? TEXT("是") : TEXT("否"));
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::IsActorClassRegistered: %s, 结果: %s"),
         ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
@@ -233,19 +204,7 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
 
 FObjectPoolStats UObjectPoolLibrary::GetPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
-    // ✅ 极简API设计：统计功能已被移除
-
-    // ✅ 如果没有找到池，返回空统计
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats: 没有找到对象池: %s"),
-        ActorClass ? *ActorClass->GetName() : TEXT("Invalid"));
-    return FObjectPoolStats();
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats: 无法获取对象池子系统"));
-        return FObjectPoolStats();
-    }
-
-    // ✅ 极简API设计：移除统计功能
-    OBJECTPOOL_LOG(Warning, TEXT("GetPoolStats已被移除，使用极简API设计"));
+    // ✅ 极简API：直接返回空统计，避免死代码路径
     return FObjectPoolStats();
 }
 

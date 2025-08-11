@@ -1,6 +1,7 @@
 #include "SortTestLibrary.h"
 #include "SortLibrary.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "GameFramework/Actor.h"
 #include "Internationalization/Text.h"

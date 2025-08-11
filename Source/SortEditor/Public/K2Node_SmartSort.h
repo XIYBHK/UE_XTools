@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "UObject/ScriptMacros.h"
 
 // ----------------------------------------------------------------------------
 // 公共枚举：运行时与编辑器均可见，便于在蓝图/代码侧直接引用
@@ -35,6 +37,10 @@ enum class ESmartSort_VectorSortMode : uint8
 
 #if WITH_EDITOR
 #include "K2Node.h"
+#include "EdGraph/EdGraphPin.h"
+#include "EdGraphSchema_K2.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "BlueprintActionDatabaseRegistrar.h"
 #include "SortLibrary.h" // 包含 ECoordinateAxis
 #include "K2Node_SmartSort.generated.h"
 

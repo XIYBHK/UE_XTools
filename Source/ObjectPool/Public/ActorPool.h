@@ -121,6 +121,12 @@ public:
     int32 GetPoolSize() const;
 
     /**
+     * 获取池的最大容量上限
+     * @return 最大池大小
+     */
+    int32 GetMaxSize() const { return MaxPoolSize; }
+
+    /**
      * 检查池是否为空
      * @return 池是否为空
      */

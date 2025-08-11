@@ -40,6 +40,8 @@ public:
 	virtual FSlateIcon GetIconAndTint(FLinearColor& OutColor) const override;
 	virtual bool ShouldShowNodeProperties() const override { return true; }
 	virtual UObject* GetJumpTargetForDoubleClick() const override;
+  // UE5.5: Base class declares GetToolTipHeading but symbol may not be exported; provide local override to avoid unresolved external
+  virtual FText GetToolTipHeading() const override;
 	//~ UEdGraphNode 接口结束
 
 	//~ UK2Node 接口实现

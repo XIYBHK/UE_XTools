@@ -2,6 +2,8 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Logging/LogMacros.h"
 #include "Internationalization/Text.h"
+#include "UObject/UnrealType.h"
+#include "UObject/TextProperty.h"
 #include "Algo/Reverse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(SortLibraryLog, Log, All);
@@ -1311,9 +1313,9 @@ bool USortLibrary::CompareStructPropertyValues(const FProperty* Property, const 
             }
             else if (const FTextProperty* TextProp = CastField<FTextProperty>(Property))
             {
-                const FText& LeftValue = TextProp->GetPropertyValue(LeftValuePtr);
-                const FText& RightValue = TextProp->GetPropertyValue(RightValuePtr);
-                bResult = LeftValue.ToString() < RightValue.ToString();
+                const FString LeftValueStr = TextProp->GetPropertyValue(LeftValuePtr).ToString();
+                const FString RightValueStr = TextProp->GetPropertyValue(RightValuePtr).ToString();
+                bResult = LeftValueStr < RightValueStr;
             }
             break;
         }

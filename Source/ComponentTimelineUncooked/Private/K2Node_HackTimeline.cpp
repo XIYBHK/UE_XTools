@@ -175,6 +175,12 @@ void UK2Node_HackTimeline::PreloadRequiredAssets()
 	UK2Node::PreloadRequiredAssets();
 }
 
+FText UK2Node_HackTimeline::GetToolTipHeading() const
+{
+    // Provide a stable local heading to satisfy linker when base symbol isn't exported in 5.5
+    return LOCTEXT("TimelineNodeHeading", "Timeline");
+}
+
 void UK2Node_HackTimeline::DestroyNode()
 {
 	UBlueprint* Blueprint = GetBlueprint();

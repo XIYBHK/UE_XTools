@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "AssetRegistry/AssetData.h"
+#include "Materials/MaterialFunctionInterface.h"
 
 class FExtender;
 class AActor;

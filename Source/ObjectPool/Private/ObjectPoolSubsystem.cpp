@@ -206,22 +206,7 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
     {
         OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("从池成功获取Actor: %s"), *Actor->GetName());
         ++SubsystemStats.TotalPoolHits;
-        
-        // ✅ 生命周期接口集成：调用OnPoolActorActivated事件
-        if (Actor && IObjectPoolInterface::DoesActorImplementInterface(Actor))
-        {
-            if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
-            {
-                // C++版本的事件
-                PoolInterface->OnPoolActorActivated_Implementation();
-            }
-            
-            // 蓝图版本的事件（如果Actor实现了接口）
-            IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
-            
-            OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("已调用生命周期事件OnPoolActorActivated: %s"), *Actor->GetName());
-        }
-        
+        // 生命周期事件由 FObjectPoolUtils 统一触发
         OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("从池获取Actor成功: %s"), *Actor->GetName());
     }
     
@@ -260,21 +245,8 @@ bool UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
         return false;
     }
 
-    // ✅ 生命周期接口集成：在归还前调用OnReturnToPool事件
-    if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
-    {
-        if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
-        {
-            // C++版本的事件
-            PoolInterface->OnReturnToPool_Implementation();
-        }
-        
-        // 蓝图版本的事件（如果Actor实现了接口）
-        IObjectPoolInterface::Execute_OnReturnToPool(Actor);
-        
-        OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("已调用生命周期事件OnReturnToPool: %s"), *Actor->GetName());
-    }
-    
+    // 生命周期事件由 FObjectPoolUtils 统一触发
+
     OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("归还Actor到池: %s"), *Actor->GetName());
     
     // 归还到池

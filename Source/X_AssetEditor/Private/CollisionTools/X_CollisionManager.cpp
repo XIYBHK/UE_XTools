@@ -3,6 +3,7 @@
 #include "CollisionTools/X_CollisionManager.h"
 #include "X_AssetEditor.h"
 #include "Engine/StaticMesh.h"
+#include "StaticMeshResources.h"
 #include "Engine/StaticMeshActor.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/ConvexElem.h"

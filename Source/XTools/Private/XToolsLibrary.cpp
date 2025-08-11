@@ -174,19 +174,13 @@ public:
     {
         // Win64 平台专用优化
         #if PLATFORM_WINDOWS && PLATFORM_64BITS
-            try
-            {
-                const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
-                return Stats.UsedPhysical;
-            }
-            catch (...)
-            {
-                UE_LOG(LogXTools, Warning, TEXT("无法获取内存统计信息，使用默认值"));
-                return 0;
-            }
+            // 直接获取内存统计，不使用try-catch，因为UE的异常处理通常是针对特定情况的
+            // 如果FPlatformMemory::GetStats()在非编辑器构建中不可用，它应该有自己的处理机制
+            const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+            return Stats.UsedPhysical;
         #else
             // 其他平台返回默认值
-            UE_LOG(LogXTools, Warning, TEXT("当前平台不支持内存统计"));
+            // UE_LOG(LogXTools, Warning, TEXT("当前平台不支持内存统计")); // 移除日志，避免在非编辑器构建中引入不必要的依赖
             return 0;
         #endif
     }

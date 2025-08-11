@@ -24,6 +24,7 @@ public class SortEditor : ModuleRules
 
         // ✅ UE 标准设置
         bEnableExceptions = false;
+        bEnableExceptions = true;
         bUseRTTI = false;
 
         // 仅在编辑器中编译此模块
