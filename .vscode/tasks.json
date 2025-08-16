@@ -1,0 +1,83 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Editor (Full & Formal)",
+            "type": "shell",
+            "command": "${config:unreal.engine.path}/Engine/Build/BatchFiles/Build.bat",
+            "args": [
+                "${config:unreal.project.name}Editor",
+                "Win64",
+                "Development",
+                "-Project=${workspaceFolder}/../../${config:unreal.project.name}.uproject",
+                "-FromMsBuild"
+            ],
+            "group": { "kind": "build", "isDefault": true },
+            "presentation": { "reveal": "always", "panel": "new" },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Live Coding (Official)",
+            "type": "shell",
+            "command": "${config:unreal.engine.path}/Engine/Build/BatchFiles/Build.bat",
+			"args": [
+                "${config:unreal.project.name}Editor",
+                "Win64",
+                "Development",
+                "-Project=${workspaceFolder}/../../${config:unreal.project.name}.uproject",
+                "-LiveCoding",
+                "-LiveCodingModules=${config:unreal.engine.path}/Engine/Intermediate/LiveCodingModules.json",
+                "-LiveCodingManifest=${config:unreal.engine.path}/Engine/Intermediate/LiveCoding.json",
+                "-WaitMutex"
+			],
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build Game (Shipping)",
+            "type": "shell",
+            "command": "${config:unreal.engine.path}/Engine/Build/BatchFiles/Build.bat",
+            "args": [
+                "${config:unreal.project.name}",
+                "Win64",
+                "Shipping",
+                "-Project=${workspaceFolder}/../../${config:unreal.project.name}.uproject",
+                "-FromMsBuild"
+            ],
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Clean Project",
+            "type": "shell",
+            "command": "${config:unreal.engine.path}/Engine/Build/BatchFiles/Build.bat",
+            "args": [
+                "${config:unreal.project.name}Editor",
+                "Win64",
+                "Development",
+                "-Project=${workspaceFolder}/../../${config:unreal.project.name}.uproject",
+                "-clean"
+            ],
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Generate Project Files",
+            "type": "shell",
+            "command": "${config:unreal.engine.path}/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe",
+            "args": [
+                "-projectfiles",
+                "-Project=${workspaceFolder}/../../${config:unreal.project.name}.uproject",
+                "-game",
+                "-rocket",
+                "-progress"
+            ],
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "problemMatcher": []
+        }
+    ]
+}

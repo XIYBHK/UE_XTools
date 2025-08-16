@@ -110,7 +110,7 @@ TArray<FString> FActorPoolMemoryOptimizer::GetMemoryOptimizationSuggestions(cons
     
     if (UsageRatio > 0.9f)
     {
-        Suggestions.Add(TEXT("池使用率过高，建议增加池大小或启用智能预分配"));
+        Suggestions.Add(TEXT("池使用率过高，建议增加池大小或启用预分配"));
     }
     else if (UsageRatio < 0.3f && PoolStats.PoolSize > 10)
     {

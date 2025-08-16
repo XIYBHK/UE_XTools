@@ -90,12 +90,14 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
     }
     else
     {
-        // Actor已经初始化过，直接调用重复使用事件
+        // Actor已经初始化过，直接重用
         OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("Actor已初始化，直接重用: %s"), *Actor->GetName());
     }
 
     // ✅ 应用新的Transform
     ApplyTransformToActor(Actor, SpawnTransform);
+
+    // 复用路径的 Construction Script 重跑移至 FinalizeDeferred，确保顺序与原生更一致
     
     // ✅ 激活Actor
     ResetBasicActorProperties(Actor, false); // 显示Actor
@@ -136,10 +138,31 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         }
     }
 
-    // ✅ 调用生命周期接口
+    // ✅ 调用生命周期接口（记录调试信息）
+    OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("即将触发Activated生命周期: %s"), *Actor->GetName());
     SafeCallLifecycleInterface(Actor, TEXT("Activated"));
     
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("成功激活Actor从池: %s"), *Actor->GetName());
+    // 调试：输出所有 ExposeOnSpawn 变量的当前值
+    if (UE_LOG_ACTIVE(LogObjectPoolUtils, VeryVerbose))
+    {
+        UClass* Klass = Actor->GetClass();
+        for (TFieldIterator<FProperty> It(Klass, EFieldIteratorFlags::IncludeSuper); It; ++It)
+        {
+            FProperty* Prop = *It;
+            if (!Prop) { continue; }
+            const bool bExpose = Prop->HasAnyPropertyFlags(CPF_BlueprintVisible) && Prop->HasAnyPropertyFlags(CPF_ExposeOnSpawn);
+            const bool bEditable = !Prop->HasAnyPropertyFlags(CPF_DisableEditOnInstance);
+            if (!bExpose || !bEditable)
+            {
+                continue;
+            }
+            FString TextValue;
+            Prop->ExportTextItem_Direct(TextValue, Prop->ContainerPtrToValuePtr<void>(Actor), nullptr, Actor, PPF_None);
+            OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("ExposeOnSpawn属性: %s = %s"), *Prop->GetName(), *TextValue);
+        }
+    }
+    OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("ActivateActorFromPool 完成: %s"), *Actor->GetName());
     return true;
 }
 

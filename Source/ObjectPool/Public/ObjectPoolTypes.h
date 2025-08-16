@@ -73,6 +73,35 @@ enum class EObjectPoolFallbackStrategy : uint8
 };
 
 /**
+ * 批量操作失败策略
+ */
+UENUM(BlueprintType, meta = (
+    DisplayName = "批量失败策略",
+    ToolTip = "批量操作的失败处理策略"))
+enum class EBatchFailurePolicy : uint8
+{
+    /** 全或无：任意一步失败则视为失败（调用方可据此回滚） */
+    AllOrNothing UMETA(DisplayName = "全或无"),
+
+    /** 尽力而为：尽可能完成，允许部分失败 */
+    BestEffort UMETA(DisplayName = "尽力而为")
+};
+
+/**
+ * 池操作结果
+ */
+UENUM(BlueprintType, meta = (
+    DisplayName = "池操作结果",
+    ToolTip = "用于标识对象池相关操作的结果"))
+enum class EPoolOpResult : uint8
+{
+    Success UMETA(DisplayName = "成功"),
+    FallbackSpawned UMETA(DisplayName = "回退生成"),
+    NotPooled UMETA(DisplayName = "非池对象"),
+    InvalidArgs UMETA(DisplayName = "参数无效")
+};
+
+/**
  * 对象池配置
  * 包含最核心的配置选项，简洁高效的设计
  */

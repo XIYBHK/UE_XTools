@@ -31,7 +31,7 @@ FObjectPoolPreallocator::~FObjectPoolPreallocator()
     OBJECTPOOL_LOG(VeryVerbose, TEXT("ObjectPoolPreallocator销毁"));
 }
 
-bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoolConfig& InConfig)
+bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoolPreallocationConfig& InConfig)
 {
     if (!World || !OwnerPool)
     {
@@ -87,7 +87,7 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
         return false;
     }
 
-    OBJECTPOOL_LOG(Log, TEXT("StartPreallocation: 启动预分配，策略: %d, 目标数量: %d"), 
+    OBJECTPOOL_LOG(Log, TEXT("StartPreallocation: 启动智能预分配，策略: %d, 目标数量: %d"), 
         (int32)Config.Strategy, Config.PreallocationCount);
 
     return true;
@@ -129,9 +129,9 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
 
     // ✅ 使用子系统的智能World获取方法
     UWorld* World = nullptr;
-    if (UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::Get(nullptr))
+    if (UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::GetGlobal())
     {
-        World = Subsystem->GetWorld();
+        World = Subsystem->GetValidWorld();
     }
 
     if (!World)
@@ -331,7 +331,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
 
     // ✅ 通过对象池创建Actor
     FTransform DefaultTransform = FTransform::Identity;
-            bool bSuccess = OwnerPool->CreateNewActor(World) != nullptr;
+    bool bSuccess = OwnerPool->CreateNewActor(World, DefaultTransform) != nullptr;
 
     if (bSuccess)
     {

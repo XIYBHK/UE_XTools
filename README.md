@@ -3,7 +3,7 @@
 [![UE Version](https://img.shields.io/badge/UE-5.3-blue.svg)](https://www.unrealengine.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-1.7.0-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
+[![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
 
 XTools 是一个为 Unreal Engine 5.3 设计的综合性实用工具插件，提供了丰富的蓝图节点和 C++ 功能，旨在提升开发效率和游戏体验。
 
@@ -85,6 +85,17 @@ XTools 是一个为 Unreal Engine 5.3 设计的综合性实用工具插件，提
 - **高效算法**: 单次遍历的高效算法
 - **错误处理**: 完善的错误处理机制
 
+### 🏊 对象池 (ObjectPool Module)
+**专业的Actor对象池系统**
+- **内存优化**: 避免频繁的Actor创建/销毁开销
+- **智能管理**: 自动池大小调整和内存回收
+- **ExposeOnSpawn支持**: 完整支持蓝图生成时公开属性
+- **自定义K2节点**: "从池生成Actor"节点，完全兼容原生"从类生成Actor"
+- **智能状态重置**: 自动重置Actor的Transform、组件状态、物理属性等
+- **配置灵活**: 支持预热、硬限制、自适应扩池等策略
+- **性能监控**: 内置池使用率统计和优化建议
+- **蓝图友好**: 简化的静态函数库接口，无需手动获取子系统
+
 ## 📦 模块架构
 
 XTools 插件采用模块化设计，包含以下核心模块：
@@ -98,7 +109,11 @@ XTools/
 │   ├── EnhancedCodeFlow/          # 增强代码流
 │   ├── ComponentTimelineRuntime/  # 组件时间轴运行时
 │   ├── ComponentTimelineUncooked/ # 组件时间轴编辑器
-│   └── X_AssetEditor/             # 资产编辑器工具
+│   ├── X_AssetEditor/             # 资产编辑器工具
+│   ├── ObjectPool/                # 对象池系统
+│   └── ObjectPoolEditor/          # 对象池编辑器工具
+├── Scripts/                       # 自动化脚本工具
+├── .vscode/                       # VS Code 配置
 ├── Content/                       # 插件内容
 └── Config/                        # 配置文件
 ```
@@ -149,6 +164,12 @@ XTools 需要以下插件支持：
 - **时间轴**: 各种时间轴动画
 - **流程控制**: 条件执行、循环控制
 
+### XTools|对象池|核心
+- **从池生成Actor**: 自定义K2节点，替代原生"从类生成Actor"
+- **注册Actor类**: 配置池化参数和预热设置
+- **池管理**: 获取池状态、清理池资源
+- **性能优化**: 池使用率监控和优化建议
+
 ## 🚀 快速开始
 
 ### 排序功能示例
@@ -181,6 +202,56 @@ FECFHandle DelayHandle = FFlow::Delay(this, 2.0f, [this]()
 ```cpp
 // 在组件的 BeginPlay 中初始化时间轴
 UComponentTimelineLibrary::InitializeComponentTimelines(this);
+```
+
+### 对象池系统示例
+```cpp
+// C++ 示例 - 注册Actor类到对象池
+UObjectPoolLibrary::RegisterActorClass(GetWorld(), ABullet::StaticClass(), 50, 1000);
+
+// 从对象池获取Actor（在蓝图中使用"从池生成Actor"节点更便捷）
+AActor* PooledActor = UObjectPoolLibrary::SpawnActorFromPool(
+    GetWorld(), 
+    ABullet::StaticClass(), 
+    Transform
+);
+```
+
+## 🛠️ 开发工具集
+
+### VS Code 集成
+插件提供完整的 VS Code 开发环境配置：
+
+```json
+// .vscode/tasks.json 包含的编译任务
+- Build Editor (Full & Formal)    // 完整编辑器编译
+- Live Coding (Official)          // 官方 Live Coding
+- Live Coding (Quick Patch)       // 快速补丁编译
+- Generate Project Files          // 生成项目文件
+- Clean Build                     // 清理构建
+```
+
+### 自动化脚本工具
+`Scripts/` 目录提供专业的插件开发脚本：
+
+#### 多版本插件打包
+```powershell
+# 自动化多版本UE插件打包
+.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.4","UE_5.5","UE_5.6" -Follow
+
+# 支持的参数
+-EngineRoots    # 指定UE引擎路径列表
+-OutputBase     # 自定义输出目录
+-Follow         # 实时跟踪打包进度
+-Clean          # 打包前清理
+```
+
+#### 插件清理工具
+```powershell
+# 清理插件临时文件和缓存
+.\Scripts\Clean-UEPlugin.ps1
+
+# 清理内容包括：Binaries、Intermediate、.vs、缓存文件等
 ```
 
 ## ⚙️ 配置选项
@@ -216,11 +287,19 @@ EnhancedCodeFlow 模块支持：
 - `URandomShuffleArrayLibrary`: 随机功能库
 - `FFlow`: 增强代码流主接口
 - `UComponentTimelineLibrary`: 组件时间轴功能库
+- `UObjectPoolLibrary`: 对象池静态功能库
+- `UObjectPoolSubsystem`: 对象池世界子系统
+- `UK2Node_SpawnActorFromPool`: 自定义"从池生成Actor"蓝图节点
+- `FActorStateResetter`: Actor状态智能重置管理器
 
 ### 重要结构体
 - `FECFHandle`: 代码流动作句柄
 - `FECFActionSettings`: 动作设置
 - `ECoordinateAxis`: 坐标轴枚举
+- `FObjectPoolConfig`: 对象池配置结构体
+- `FActorPool`: 单个Actor类的池管理器
+- `EPoolManagementStrategy`: 池管理策略枚举
+- `FActorResetConfig`: Actor状态重置配置
 
 ## ⚠️ 注意事项
 
@@ -230,15 +309,30 @@ EnhancedCodeFlow 模块支持：
 - **几何工具**: 采样点数量与网格大小成正比，注意性能影响
 - **组件时间轴**: 需在 BeginPlay 中初始化
 - **排序工具**: 自动处理空值和无效引用
+- **对象池**: 推荐先注册Actor类再使用，支持ExposeOnSpawn属性
+- **池化节点**: 使用"从池生成Actor"节点替代原生节点以获得池化优势
+- **状态重置**: 对象池自动处理Actor状态重置，无需手动清理
+- **开发工具**: 建议使用提供的VS Code配置和自动化脚本提升开发效率
 
 ### 性能考虑
 - 批量处理大量资产时可能会暂时降低编辑器性能
 - PRD 算法状态会持久保存，注意内存使用
 - 异步操作需要合理管理生命周期
+- 对象池预热会在初始化时消耗一定性能，但显著提升运行时效率
 
 ## 📈 版本历史
 
-### v1.7.0 (当前版本)
+### v1.8.0 (当前版本)
+- 🆕 **新增对象池模块**: Actor对象池系统
+- ✅ **自定义K2节点**: "从池生成Actor"节点，完全兼容原生节点
+- ✅ **ExposeOnSpawn支持**: 完整支持蓝图生成时公开属性设置
+- ✅ **智能状态重置**: 自动重置Actor的Transform、组件状态、物理属性等
+- ✅ **智能池管理**: 支持预热、自适应扩池、内存优化策略
+- ✅ **性能监控**: 内置池使用率统计和优化建议系统
+- ✅ **VS Code集成**: 完整的编译和Live Coding任务配置
+- ✅ **多版本打包**: 支持UE 5.4/5.5/5.6自动化打包流程
+
+### v1.7.0
 - ✅ **重构 AsyncTools 模块**: 改进调试信息显示系统
 - ✅ **重构 X_AssetEditor 模块**: 优化材质函数处理和资产命名系统
 - ✅ **优化组件查找**: 改进 GetTopmostAttachedActor 函数性能

@@ -98,11 +98,12 @@ foreach ($e in $engines) {
 ### 复核清单（出包前）
 - [ ] 移除自定义 `{Module}_API` 定义
 - [ ] 无 `try/catch`，异步用 `Async/Async.h`
-- [ ] Editor API 用 `WITH_EDITOR` 包裹
+- [ ] Editor API 用 `WITH_EDITOR` 包裹（**关键：`RerunConstructionScripts` 等编辑器专用方法**）
 - [ ] 严格包含缺失的头已补齐（见上文列表）
 - [ ] `SpawnActorFromPool` 无不可达代码；失败返回 `nullptr`
 - [ ] 无不必要的第三方/引擎模块依赖
 - [ ] HostProject 源码已同步且清理了 `Intermediate/Binaries`
+- [ ] 遵循 IWYU 原则，避免过度包含头文件
 
 ### 常用命令
 - 单版本：
@@ -166,4 +167,14 @@ foreach ($e in $engines) {
   - 说明：`UObjectPoolLibrary::SpawnActorFromPool` 在“无法获取子系统且多级回退均失败”时返回 `nullptr`，由调用方回退到 `SpawnActor`。避免静态 AddToRoot 对象带来的不可达代码与 GC 风险。
 - 严格包含与编辑器 API 说明
   - `ObjectPool/*`：异步使用 `#include "Async/Async.h"`；编辑器 API 使用 `#if WITH_EDITOR`（如 `AActor::SetActorLabel`）。
+- **关键发现：RerunConstructionScripts 编辑器 API 保护（2025-08）**
+  - 症状：`ActorPool.cpp(314): error C2039: "RerunConstructionScripts": 不是 "AActor" 的成员`
+  - 原因：`AActor::RerunConstructionScripts()` 是编辑器专用 API，在运行时构建（Runtime Build）中不可用。
+  - 解决：用 `#if WITH_EDITOR` 宏包裹编辑器专用调用：
+    ```cpp
+    #if WITH_EDITOR
+        Actor->RerunConstructionScripts();
+    #endif
+    ```
+  - **重要：此修复是解决打包失败的关键，而非头文件包含问题。遵循 IWYU (Include What You Use) 原则，只包含实际使用的头文件即可。**
 

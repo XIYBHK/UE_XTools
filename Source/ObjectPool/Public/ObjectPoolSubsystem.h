@@ -134,6 +134,20 @@ public:
         Keywords = "对象池,生成,获取,永不失败"))
     AActor* SpawnActorFromPool(UClass* ActorClass, const FTransform& SpawnTransform);
 
+    /** 延迟获取：仅取出或创建延迟构造实例，不激活 */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
+        DisplayName = "延迟获取Actor（池）",
+        ToolTip = "仅从池取出或创建延迟构造实例，不激活，由后续Finalize完成",
+        Keywords = "对象池,延迟,Defer"))
+    AActor* AcquireDeferredFromPool(UClass* ActorClass);
+
+    /** 完成延迟激活：应用Transform并激活（必要时FinishSpawning） */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
+        DisplayName = "完成延迟激活（池）",
+        ToolTip = "对延迟获取的Actor应用Transform并激活，触发生命周期事件",
+        Keywords = "对象池,Finalize,激活"))
+    bool FinalizeSpawnFromPool(AActor* Actor, const FTransform& SpawnTransform);
+
 
 
     /**
@@ -170,6 +184,12 @@ public:
         DisplayName = "获取对象池子系统",
         ToolTip = "获取全局对象池管理器"))
     static UObjectPoolSubsystem* Get(const UObject* WorldContext);
+
+    /**
+     * 查询给定Actor是否由某个池管理
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池|查询")
+    bool IsActorPooled(const AActor* Actor) const;
 
 
 

@@ -11,7 +11,6 @@
 // ✅ 对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolSubsystem.h"
-// 前向声明
 
 // ✅ 生成的头文件必须放在最后
 #include "ObjectPoolLibrary.generated.h"
@@ -52,10 +51,9 @@ public:
      * @param HardLimit 池的最大限制 (0表示无限制)
      * @return true if registration successful
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "注册Actor类（静态）",
-		ToolTip = "静态方法：为指定Actor类创建对象池，无需手动获取子系统",
-		Keywords = "Pool Register Init",
+        ToolTip = "静态方法：为指定Actor类创建对象池，无需手动获取子系统",
         WorldContext = "WorldContext"))
     static bool RegisterActorClass(
         const UObject* WorldContext,
@@ -70,36 +68,21 @@ public:
      * @param SpawnTransform 生成位置和旋转
      * @return 池化的Actor实例，永不返回null
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "从池获取Actor（静态）",
-		ToolTip = "静态方法：从对象池获取Actor，永不失败，自动处理所有错误情况",
-		Keywords = "Pool Spawn Acquire Get",
+        ToolTip = "静态方法：从对象池获取Actor，永不失败，自动处理所有错误情况",
         WorldContext = "WorldContext"))
     static AActor* SpawnActorFromPool(
         const UObject* WorldContext,
         UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
         UPARAM(DisplayName = "生成Transform") const FTransform& SpawnTransform);
 
-	/**
-	 * 扩展：从池获取Actor并输出结果码
-	 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
-		DisplayName = "从池获取Actor（扩展）",
-		ToolTip = "从对象池获取Actor，输出结果码（例如是否回退生成）",
-		Keywords = "Pool Spawn Acquire Get Ex",
-		WorldContext = "WorldContext"))
-	static AActor* SpawnActorFromPoolEx(
-		const UObject* WorldContext,
-		UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
-		UPARAM(DisplayName = "生成Transform") const FTransform& SpawnTransform,
-		UPARAM(DisplayName = "结果") EPoolOpResult& OutResult);
-
     /**
      * 将Actor归还到对象池（静态版本）
      * @param WorldContext 世界上下文
      * @param Actor 要归还的Actor
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "归还Actor到池（静态）",
         ToolTip = "静态方法：将Actor归还到对象池，自动处理状态重置",
         WorldContext = "WorldContext"))
@@ -107,17 +90,29 @@ public:
         const UObject* WorldContext,
         UPARAM(DisplayName = "Actor") AActor* Actor);
 
-    /** 扩展版：归还并返回结果 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
-        DisplayName = "归还Actor到池（扩展）",
-        ToolTip = "将Actor归还到对象池并返回结果码",
-        WorldContext = "WorldContext"))
-    static bool ReturnActorToPoolEx(
-        const UObject* WorldContext,
-        UPARAM(DisplayName = "Actor") AActor* Actor,
-        UPARAM(DisplayName = "结果") EPoolOpResult& OutResult);
+    // ✅ 便捷接口 - 常用操作的简化版本
 
-    // ✅ 便捷接口 - 常用操作的简化版本（已简化至统一使用FTransform的入口）
+    /**
+     * 快速生成Actor（位置版本）
+     * @param WorldContext 世界上下文
+     * @param ActorClass Actor类型
+     * @param Location 生成位置
+     * @param Rotation 生成旋转（可选）
+     * @return 池化的Actor实例
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
+        DisplayName = "快速生成Actor",
+        ToolTip = "便捷方法：使用位置和旋转快速生成Actor，自动构建Transform。比手动构建Transform更简单，适合大多数使用场景。",
+        Keywords = "快速生成,便捷,位置,旋转,Transform",
+        ShortToolTip = "快速生成Actor（位置+旋转）",
+        CompactNodeTitle = "快速生成",
+        WorldContext = "WorldContext",
+        AdvancedDisplay = "Rotation"))
+    static AActor* QuickSpawnActor(
+        const UObject* WorldContext,
+        UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
+        UPARAM(DisplayName = "位置") const FVector& Location,
+        UPARAM(DisplayName = "旋转") const FRotator& Rotation = FRotator::ZeroRotator);
 
     /**
      * 批量生成Actor
@@ -127,7 +122,7 @@ public:
      * @param OutActors 输出的Actor数组
      * @return 成功生成的数量
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|批量", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "批量生成Actor",
         ToolTip = "高级功能：一次性生成多个Actor，提高批量操作效率。适合生成大量相同类型的Actor，如子弹群、敌人波次等。",
         Keywords = "批量生成,多个Actor,高效,批量操作,数组",
@@ -141,86 +136,19 @@ public:
         UPARAM(DisplayName = "生成Transform数组") const TArray<FTransform>& SpawnTransforms,
         UPARAM(DisplayName = "输出Actor数组") TArray<AActor*>& OutActors);
 
-	/** 扩展：批量生成，支持失败策略与是否保持顺序 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|批量", meta = (
-		DisplayName = "批量生成Actor（扩展）",
-		ToolTip = "批量生成，支持全或无/尽力而为策略与顺序保留",
-		WorldContext = "WorldContext"))
-	static int32 BatchSpawnActorsEx(
-		const UObject* WorldContext,
-		UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
-		UPARAM(DisplayName = "生成Transform数组") const TArray<FTransform>& SpawnTransforms,
-		UPARAM(DisplayName = "输出Actor数组") TArray<AActor*>& OutActors,
-		UPARAM(DisplayName = "失败策略") EBatchFailurePolicy FailurePolicy = EBatchFailurePolicy::BestEffort,
-		UPARAM(DisplayName = "保持顺序") bool bPreserveOrder = false);
-
     /**
      * 批量归还Actor
      * @param WorldContext 世界上下文
      * @param Actors 要归还的Actor数组
      * @return 成功归还的数量
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|批量", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "批量归还Actor",
         ToolTip = "高级功能：一次性归还多个Actor到对象池",
         WorldContext = "WorldContext"))
     static int32 BatchReturnActors(
         const UObject* WorldContext,
         UPARAM(DisplayName = "Actor数组") const TArray<AActor*>& Actors);
-
-	/** 扩展：批量归还，支持失败策略 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|批量", meta = (
-		DisplayName = "批量归还Actor（扩展）",
-		ToolTip = "批量归还，支持全或无/尽力而为策略",
-		WorldContext = "WorldContext"))
-	static int32 BatchReturnActorsEx(
-		const UObject* WorldContext,
-		UPARAM(DisplayName = "Actor数组") const TArray<AActor*>& Actors,
-		UPARAM(DisplayName = "失败策略") EBatchFailurePolicy FailurePolicy = EBatchFailurePolicy::BestEffort);
-
-    /** 便捷：获取或生成（合并Acquire/Spawn语义） */
-    UFUNCTION(BlueprintCallable, Category="XTools|对象池|核心", meta=(
-        DisplayName = "获取或生成",
-        CompactNodeTitle = "获取/生成",
-        WorldContext = "WorldContext"))
-    static AActor* AcquireOrSpawn(
-        const UObject* WorldContext,
-        UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
-        UPARAM(DisplayName = "生成Transform") const FTransform& SpawnTransform,
-        UPARAM(DisplayName = "结果") EPoolOpResult& OutResult);
-
-	/** 延迟获取（库） */
-	UFUNCTION(BlueprintCallable, Category="XTools|对象池|核心", meta=(
-		DisplayName = "延迟获取Actor（库）",
-		WorldContext = "WorldContext"))
-	static AActor* AcquireDeferredFromPool(
-		const UObject* WorldContext,
-		UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass);
-
-	/** 完成延迟激活（库） */
-	UFUNCTION(BlueprintCallable, Category="XTools|对象池|核心", meta=(
-		DisplayName = "完成延迟激活（库）",
-		WorldContext = "WorldContext"))
-	static bool FinalizeSpawnFromPool(
-		const UObject* WorldContext,
-		UPARAM(DisplayName = "Actor") AActor* Actor,
-		UPARAM(DisplayName = "生成Transform") const FTransform& SpawnTransform);
-
-    /** 便捷：释放或销毁（优先归还；非池对象则Destroy） */
-    UFUNCTION(BlueprintCallable, Category="XTools|对象池|核心", meta=(
-        DisplayName = "释放或移除",
-        CompactNodeTitle = "释放/移除",
-        WorldContext = "WorldContext"))
-    static bool ReleaseOrDespawn(
-        const UObject* WorldContext,
-        UPARAM(DisplayName = "Actor") AActor* Actor,
-        UPARAM(DisplayName = "结果") EPoolOpResult& OutResult);
-
-    /** 查询：是否为池对象 */
-    UFUNCTION(BlueprintCallable, Category="XTools|对象池|查询", meta=(WorldContext="WorldContext"))
-    static bool IsActorPooled(
-        const UObject* WorldContext,
-        UPARAM(DisplayName = "Actor") const AActor* Actor);
 
     // ✅ 查询和管理接口
 
@@ -230,7 +158,7 @@ public:
      * @param ActorClass Actor类型
      * @return true if registered
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|查询", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "检查类是否已注册",
         ToolTip = "查询指定Actor类是否已经注册到对象池",
         WorldContext = "WorldContext"))
@@ -244,7 +172,7 @@ public:
      * @param ActorClass Actor类型
      * @return 池的统计信息
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|查询", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "获取池统计信息",
         ToolTip = "获取指定Actor类型的对象池使用统计和性能数据",
         WorldContext = "WorldContext"))
@@ -253,35 +181,13 @@ public:
         UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass);
 
     /**
-     * 显示池统计信息到屏幕
-     * @param WorldContext 世界上下文
-     * @param ActorClass Actor类型（可选，如果为空则显示所有池的统计）
-     * @param bShowOnScreen 是否显示到屏幕
-     * @param bPrintToLog 是否输出到日志
-     * @param DisplayDuration 屏幕显示持续时间（秒）
-     * @param TextColor 文本颜色
-     */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|查询", meta = (
-        DisplayName = "显示池统计信息",
-        ToolTip = "在屏幕左上角显示对象池的详细统计信息，信息不会被其他打印覆盖",
-        WorldContext = "WorldContext",
-        AdvancedDisplay = "bPrintToLog,DisplayDuration,TextColor"))
-    static void DisplayPoolStats(
-        const UObject* WorldContext,
-		UPARAM(DisplayName = "Actor类（可选）") TSubclassOf<AActor> ActorClass = nullptr,
-		UPARAM(DisplayName = "显示到屏幕") bool bShowOnScreen = false,
-		UPARAM(DisplayName = "输出到日志") bool bPrintToLog = true,
-        UPARAM(DisplayName = "显示时长") float DisplayDuration = 5.0f,
-        UPARAM(DisplayName = "文本颜色") FLinearColor TextColor = FLinearColor::White);
-
-    /**
      * 预热对象池
      * @param WorldContext 世界上下文
      * @param ActorClass Actor类型
      * @param Count 预创建的数量
      * @return true if prewarming successful
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "预热对象池",
         ToolTip = "预先创建指定数量的Actor到池中，提高运行时性能",
         WorldContext = "WorldContext"))
@@ -296,7 +202,7 @@ public:
      * @param ActorClass Actor类型
      * @return true if clearing successful
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "清空对象池",
         ToolTip = "清空指定Actor类型的对象池，销毁所有池化Actor",
         WorldContext = "WorldContext"))
@@ -309,29 +215,11 @@ public:
      * @param WorldContext 世界上下文
      * @return 对象池子系统实例
      */
-	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|查询", meta = (
+    UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "获取对象池子系统",
         ToolTip = "获取对象池子系统实例，用于高级操作",
         WorldContext = "WorldContext"))
     static UObjectPoolSubsystem* GetObjectPoolSubsystem(const UObject* WorldContext);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     // ✅ 生命周期事件管理接口
 
@@ -394,11 +282,4 @@ private:
      * @return 子系统实例，如果失败返回nullptr
      */
     static UObjectPoolSubsystem* GetSubsystemSafe(const UObject* WorldContext);
-
-    /**
-     * 内部辅助方法：安全获取简化子系统
-     * @param WorldContext 世界上下文
-     * @return 简化子系统实例，如果失败返回nullptr
-     */
-
 };

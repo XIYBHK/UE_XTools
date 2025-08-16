@@ -32,7 +32,7 @@ void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
 
-    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统开始初始化 - 基于UE官方架构"));
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统开始初始化"));
 
     // ✅ UE官方智能指针最佳实践
     ConfigManager = MakeUnique<FObjectPoolConfigManager>();
@@ -54,7 +54,7 @@ void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
         FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddUObject(this, &UObjectPoolSubsystem::OnPreGarbageCollect);
         FCoreUObjectDelegates::GetPostGarbageCollect().AddUObject(this, &UObjectPoolSubsystem::OnPostGarbageCollect);
         
-        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("已注册GC回调 - 与UE垃圾回收系统深度集成"));
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("已注册GC回调"));
     }
 
     // 记录启动时间
@@ -63,7 +63,7 @@ void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
     bIsInitialized = true;
 
-    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统初始化完成 - 深度集成UE官方架构"));
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统初始化完成"));
 }
 
 void UObjectPoolSubsystem::Deinitialize()
@@ -125,6 +125,7 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
 
     // 创建配置
     FObjectPoolConfig Config;
+    Config.ActorClass = ActorClass; // 确保配置校验通过并与该类绑定
     Config.InitialSize = InitialSize;
     Config.HardLimit = HardLimit;
 
@@ -218,6 +219,48 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
     // }
 
     return Actor;
+}
+
+AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
+{
+    if (!ValidateActorClass(ActorClass))
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("AcquireDeferredFromPool: 无效的Actor类"));
+        return nullptr;
+    }
+
+    TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
+    if (!Pool.IsValid())
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("AcquireDeferredFromPool: 无法创建池 %s"), *ActorClass->GetName());
+        return nullptr;
+    }
+    return Pool->AcquireDeferred(GetWorld());
+}
+
+bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform& SpawnTransform)
+{
+    if (!IsValid(Actor))
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("FinalizeSpawnFromPool: Actor无效"));
+        return false;
+    }
+
+    UClass* ActorClass = Actor->GetClass();
+    TSharedPtr<FActorPool> Pool = GetPool(ActorClass);
+    if (!Pool.IsValid())
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("FinalizeSpawnFromPool: 找不到对应池，直接回退FinishSpawning+激活"));
+        // 非池管理对象：直接完成构造并返回
+        if (!Actor->IsActorInitialized())
+        {
+            Actor->FinishSpawning(SpawnTransform);
+        }
+        FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+        return true;
+    }
+
+    return Pool->FinalizeDeferred(Actor, SpawnTransform);
 }
 
 
@@ -407,6 +450,22 @@ UObjectPoolSubsystem* UObjectPoolSubsystem::Get(const UObject* WorldContext)
 }
 
 
+
+bool UObjectPoolSubsystem::IsActorPooled(const AActor* Actor) const
+{
+    if (!IsValid(Actor))
+    {
+        return false;
+    }
+
+    UClass* Cls = Actor->GetClass();
+    TSharedPtr<FActorPool> Pool = GetPool(Cls);
+    if (!Pool.IsValid())
+    {
+        return false;
+    }
+    return Pool->ContainsActor(Actor);
+}
 
 // ✅ 内部辅助方法实现
 

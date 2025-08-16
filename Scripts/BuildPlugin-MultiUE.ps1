@@ -18,7 +18,8 @@ function Resolve-Engines {
   $candidates = @(
     "D:\\Program Files\\Epic Games\\UE_5.4",
     "D:\\Program Files\\Epic Games\\UE_5.5",
-    "D:\\Program Files\\Epic Games\\UE_5.6"
+    "D:\\Program Files\\Epic Games\\UE_5.6",
+    "F:\\ProgramFiles\\UE_5.6"
   )
   return $candidates | Where-Object { Test-Path $_ }
 }

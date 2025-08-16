@@ -25,6 +25,19 @@
 			]
 		},
 		{
+			"Name": "ObjectPoolEditor",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PostDefault",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			],
+			"AdditionalDependencies": [
+				"ObjectPool"
+			]
+		},
+		{
 			"Name": "RandomShuffles",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",

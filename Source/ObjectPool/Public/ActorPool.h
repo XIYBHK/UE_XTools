@@ -78,7 +78,23 @@ public:
      * @param SpawnTransform Actor的生成位置和旋转
      * @return 池化的Actor实例，失败时返回nullptr
      */
-    AActor* GetActor(UWorld* World, const FTransform& SpawnTransform = FTransform::Identity);
+		AActor* GetActor(UWorld* World, const FTransform& SpawnTransform = FTransform::Identity);
+
+		/**
+		 * 从池中获取Actor（延迟激活版本）
+		 * - 不调用激活/FinishSpawning
+		 * - 仅从可用列表取出或新建延迟构造的实例
+		 * - 最终应由 FinalizeDeferred 进行激活并加入活跃列表
+		 */
+		AActor* AcquireDeferred(UWorld* World);
+
+		/**
+		 * 完成延迟获取的Actor的激活过程
+		 * - 应用Transform、启用碰撞/Tick
+		 * - 对首次创建的延迟构造Actor调用FinishSpawning
+		 * - 将Actor加入活跃列表
+		 */
+		bool FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransform);
 
     /**
      * 将Actor归还到池中
@@ -137,6 +153,11 @@ public:
      * @return 池是否已满
      */
     bool IsFull() const;
+
+    /**
+     * 检查给定Actor是否由该池管理（在活跃或可用列表中）
+     */
+    bool ContainsActor(const AActor* Actor) const;
 
     // ✅ 管理功能
 

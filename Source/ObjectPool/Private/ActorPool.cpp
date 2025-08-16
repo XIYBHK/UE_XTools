@@ -232,6 +232,102 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
     return nullptr;
 }
 
+AActor* FActorPool::AcquireDeferred(UWorld* World)
+{
+    if (!bIsInitialized || !IsValid(ActorClass) || !IsValid(World))
+    {
+        ACTORPOOL_LOG(Warning, TEXT("AcquireDeferred: 池未初始化或参数无效"));
+        return nullptr;
+    }
+
+    ++TotalRequests;
+
+    AActor* ResultActor = nullptr;
+
+    {
+        FWriteScopeLock WriteLock(PoolLock);
+
+        // 定期清理无效引用
+        if (TotalRequests % CLEANUP_FREQUENCY == 0)
+        {
+            CleanupInvalidActors();
+        }
+
+        // 优先从可用列表取出一个实例（不激活）
+        for (int32 i = AvailableActors.Num() - 1; i >= 0; --i)
+        {
+            if (AvailableActors[i].IsValid())
+            {
+                ResultActor = AvailableActors[i].Get();
+                AvailableActors.RemoveAtSwap(i);
+                break;
+            }
+        }
+    }
+
+    if (ResultActor)
+    {
+        // 仅取出，不激活；交由 FinalizeDeferred 处理
+        UpdateStats(true, false);
+        return ResultActor;
+    }
+
+    // 可用为空，尝试新建延迟构造Actor
+    if (CanCreateMoreActors())
+    {
+        AActor* NewActor = CreateNewActor(World);
+        if (NewActor)
+        {
+            UpdateStats(false, true);
+            return NewActor; // 延迟构造状态，等待Finalize
+        }
+    }
+
+    UpdateStats(false, false);
+    ACTORPOOL_LOG(Warning, TEXT("AcquireDeferred: 无可用Actor且创建失败: %s"), *ActorClass->GetName());
+    return nullptr;
+}
+
+bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransform)
+{
+    if (!ValidateActor(Actor) || !bIsInitialized)
+    {
+        ACTORPOOL_LOG(Warning, TEXT("FinalizeDeferred: Actor无效或池未初始化"));
+        return false;
+    }
+
+    // 如果是延迟构造的Actor，需要完成构造
+    if (!Actor->IsActorInitialized())
+    {
+        ACTORPOOL_LOG(VeryVerbose, TEXT("FinalizeDeferred: FinishSpawning: %s"), *Actor->GetName());
+        Actor->FinishSpawning(SpawnTransform);
+        // 首次创建完成后，触发生命周期“创建”事件
+        if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+        {
+            IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+        }
+    }
+    // 对于复用实例（已初始化），在激活前先重跑Construction Script，确保其读取的是本次ExposeOnSpawn赋的值
+    if (Actor->IsActorInitialized())
+    {
+        ACTORPOOL_LOG(VeryVerbose, TEXT("FinalizeDeferred: 复用实例激活前重跑ConstructionScripts: %s"), *Actor->GetName());
+#if WITH_EDITOR
+        Actor->RerunConstructionScripts();
+#endif
+    }
+
+    // 统一激活（内部会根据是否已初始化决定是否FinishSpawning/应用Transform/启用组件）
+    FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+
+    // 加入活跃列表
+    {
+        FWriteScopeLock WriteLock(PoolLock);
+        ActiveActors.Add(Actor);
+    }
+
+    return true;
+}
+
 bool FActorPool::ReturnActor(AActor* Actor)
 {
     SCOPE_CYCLE_COUNTER(STAT_ActorPool_ReturnActor);
@@ -389,6 +485,34 @@ bool FActorPool::IsFull() const
     // ✅ 直接计算池大小，避免嵌套锁调用
     int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
     return CurrentPoolSize >= MaxPoolSize;
+}
+
+bool FActorPool::ContainsActor(const AActor* Actor) const
+{
+    if (!IsValid(Actor))
+    {
+        return false;
+    }
+
+    FReadScopeLock ReadLock(PoolLock);
+
+    for (const TWeakObjectPtr<AActor>& Ptr : ActiveActors)
+    {
+        if (Ptr.Get() == Actor)
+        {
+            return true;
+        }
+    }
+
+    for (const TWeakObjectPtr<AActor>& Ptr : AvailableActors)
+    {
+        if (Ptr.Get() == Actor)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // ✅ 管理功能实现

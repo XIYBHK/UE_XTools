@@ -103,6 +103,29 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
     }
 }
 
+AActor* UObjectPoolLibrary::SpawnActorFromPoolEx(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform, EPoolOpResult& OutResult)
+{
+    OutResult = EPoolOpResult::InvalidArgs;
+    AActor* Actor = SpawnActorFromPool(WorldContext, ActorClass, SpawnTransform);
+    if (!Actor)
+    {
+        return nullptr;
+    }
+
+    // 判断是否来自对象池
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (PoolSubsystem && PoolSubsystem->IsActorPooled(Actor))
+    {
+        OutResult = EPoolOpResult::Success;
+    }
+    else
+    {
+        OutResult = EPoolOpResult::FallbackSpawned;
+    }
+
+    return Actor;
+}
+
 void UObjectPoolLibrary::ReturnActorToPool(const UObject* WorldContext, AActor* Actor)
 {
     // ✅ 获取对象池子系统
@@ -128,12 +151,36 @@ void UObjectPoolLibrary::ReturnActorToPool(const UObject* WorldContext, AActor* 
     }
 }
 
-AActor* UObjectPoolLibrary::QuickSpawnActor(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FVector& Location, const FRotator& Rotation)
+bool UObjectPoolLibrary::ReturnActorToPoolEx(const UObject* WorldContext, AActor* Actor, EPoolOpResult& OutResult)
 {
-    // ✅ 构建Transform并调用标准方法
-    FTransform SpawnTransform(Rotation, Location, FVector::OneVector);
-    return SpawnActorFromPool(WorldContext, ActorClass, SpawnTransform);
+    OutResult = EPoolOpResult::InvalidArgs;
+    if (!IsValid(Actor))
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("ReturnActorToPoolEx: Actor无效"));
+        return false;
+    }
+
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (PoolSubsystem)
+    {
+        const bool bIsPooled = PoolSubsystem->IsActorPooled(Actor);
+        const bool bOk = PoolSubsystem->ReturnActorToPool(Actor);
+        OutResult = bIsPooled ? (bOk ? EPoolOpResult::Success : EPoolOpResult::InvalidArgs)
+                              : EPoolOpResult::NotPooled;
+        return bOk;
+    }
+
+    // 无子系统：直接Destroy
+    if (IsValid(Actor))
+    {
+        Actor->Destroy();
+        OutResult = EPoolOpResult::NotPooled;
+        OBJECTPOOL_LOG(Warning, TEXT("ReturnActorToPoolEx: 无子系统，直接销毁Actor"));
+    }
+    return true;
 }
+
+// 移除 QuickSpawnActor：请直接使用 SpawnActorFromPool，并在调用端自行构造 FTransform
 
 int32 UObjectPoolLibrary::BatchSpawnActors(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const TArray<FTransform>& SpawnTransforms, TArray<AActor*>& OutActors)
 {
@@ -170,6 +217,65 @@ int32 UObjectPoolLibrary::BatchSpawnActors(const UObject* WorldContext, TSubclas
     OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary::BatchSpawnActors: 请求 %d 个，成功 %d 个"), 
         SpawnTransforms.Num(), SuccessCount);
     
+    return SuccessCount;
+}
+
+int32 UObjectPoolLibrary::BatchSpawnActorsEx(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const TArray<FTransform>& SpawnTransforms, TArray<AActor*>& OutActors, EBatchFailurePolicy FailurePolicy, bool bPreserveOrder)
+{
+    OutActors.Empty();
+
+    const int32 Num = SpawnTransforms.Num();
+    if (Num == 0)
+    {
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("BatchSpawnActorsEx: 空的Transform数组"));
+        return 0;
+    }
+
+    if (bPreserveOrder)
+    {
+        OutActors.SetNum(Num);
+    }
+
+    int32 SuccessCount = 0;
+    TArray<AActor*> SpawnedActors;
+    SpawnedActors.Reserve(Num);
+
+    for (int32 Index = 0; Index < Num; ++Index)
+    {
+        const FTransform& Xform = SpawnTransforms[Index];
+        EPoolOpResult Result;
+        AActor* Actor = SpawnActorFromPoolEx(WorldContext, ActorClass, Xform, Result);
+
+        const bool bSuccess = (Actor != nullptr);
+        if (bPreserveOrder)
+        {
+            OutActors[Index] = Actor;
+        }
+        else if (bSuccess)
+        {
+            OutActors.Add(Actor);
+        }
+
+        if (bSuccess)
+        {
+            ++SuccessCount;
+            SpawnedActors.Add(Actor);
+        }
+        else if (FailurePolicy == EBatchFailurePolicy::AllOrNothing)
+        {
+            // 回滚：归还/销毁已生成的Actor
+            EPoolOpResult ReturnResult;
+            for (AActor* Spawned : SpawnedActors)
+            {
+                ReturnActorToPoolEx(WorldContext, Spawned, ReturnResult);
+            }
+            OutActors.Empty();
+            OBJECTPOOL_LOG(Warning, TEXT("BatchSpawnActorsEx: AllOrNothing 触发回滚，失败于索引 %d"), Index);
+            return 0;
+        }
+    }
+
+    OBJECTPOOL_LOG(Verbose, TEXT("BatchSpawnActorsEx: 请求 %d 个，成功 %d 个，策略=%d，保持顺序=%s"), Num, SuccessCount, (int32)FailurePolicy, bPreserveOrder ? TEXT("true") : TEXT("false"));
     return SuccessCount;
 }
 
@@ -412,4 +518,123 @@ int32 UObjectPoolLibrary::BatchReturnActors(const UObject* WorldContext, const T
         Actors.Num(), SuccessCount);
     
     return SuccessCount;
+}
+
+int32 UObjectPoolLibrary::BatchReturnActorsEx(const UObject* WorldContext, const TArray<AActor*>& Actors, EBatchFailurePolicy FailurePolicy)
+{
+    const int32 Num = Actors.Num();
+    if (Num == 0)
+    {
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("BatchReturnActorsEx: 空的Actor数组"));
+        return 0;
+    }
+
+    if (FailurePolicy == EBatchFailurePolicy::AllOrNothing)
+    {
+        // 预校验：避免部分返回、难以回滚
+        for (AActor* Actor : Actors)
+        {
+            if (!IsValid(Actor))
+            {
+                OBJECTPOOL_LOG(Warning, TEXT("BatchReturnActorsEx: AllOrNothing 预检失败（Actor无效）"));
+                return 0;
+            }
+        }
+    }
+
+    int32 SuccessCount = 0;
+    bool bAnyFailure = false;
+    for (AActor* Actor : Actors)
+    {
+        if (!IsValid(Actor))
+        {
+            bAnyFailure = true;
+            continue;
+        }
+
+        EPoolOpResult Result;
+        const bool bOk = ReturnActorToPoolEx(WorldContext, Actor, Result);
+        if (bOk)
+        {
+            ++SuccessCount;
+        }
+        else
+        {
+            bAnyFailure = true;
+        }
+    }
+
+    if (FailurePolicy == EBatchFailurePolicy::AllOrNothing && bAnyFailure)
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("BatchReturnActorsEx: AllOrNothing 检测到失败，返回 0（无法安全回滚）"));
+        return 0;
+    }
+
+    OBJECTPOOL_LOG(Verbose, TEXT("BatchReturnActorsEx: 请求 %d 个，成功 %d 个，策略=%d"), Num, SuccessCount, (int32)FailurePolicy);
+    return SuccessCount;
+}
+
+AActor* UObjectPoolLibrary::AcquireOrSpawn(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform, EPoolOpResult& OutResult)
+{
+    OutResult = EPoolOpResult::InvalidArgs;
+    AActor* Actor = SpawnActorFromPool(WorldContext, ActorClass, SpawnTransform);
+    if (!Actor)
+    {
+        return nullptr;
+    }
+
+    // 粗略判断是否为回退生成：当前API无法直接知晓，保守置为Success
+    OutResult = EPoolOpResult::Success;
+    return Actor;
+}
+
+bool UObjectPoolLibrary::ReleaseOrDespawn(const UObject* WorldContext, AActor* Actor, EPoolOpResult& OutResult)
+{
+    return ReturnActorToPoolEx(WorldContext, Actor, OutResult);
+}
+
+AActor* UObjectPoolLibrary::AcquireDeferredFromPool(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
+{
+    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
+    if (!Subsystem)
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("AcquireDeferredFromPool: 无子系统"));
+        return nullptr;
+    }
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("AcquireDeferredFromPool 调用: %s"), *GetNameSafe(ActorClass));
+    return Subsystem->AcquireDeferredFromPool(ActorClass);
+}
+
+bool UObjectPoolLibrary::FinalizeSpawnFromPool(const UObject* WorldContext, AActor* Actor, const FTransform& SpawnTransform)
+{
+    UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
+    if (!Subsystem)
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("FinalizeSpawnFromPool: 无子系统，直接完成构造/激活"));
+        if (IsValid(Actor))
+        {
+            if (!Actor->IsActorInitialized())
+            {
+                Actor->FinishSpawning(SpawnTransform);
+            }
+            FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+            return true;
+        }
+        return false;
+    }
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("FinalizeSpawnFromPool 调用: %s Transform=%s"), *GetNameSafe(Actor), *SpawnTransform.ToHumanReadableString());
+    return Subsystem->FinalizeSpawnFromPool(Actor, SpawnTransform);
+}
+
+// 提供WorldContext隐式传递的Spawn入口（与原生一致的World解析）
+// 注意：蓝图侧K2节点直接构建Acquire/Finalize链路，因此此处不再额外实现
+
+bool UObjectPoolLibrary::IsActorPooled(const UObject* WorldContext, const AActor* Actor)
+{
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (!PoolSubsystem)
+    {
+        return false;
+    }
+    return PoolSubsystem->IsActorPooled(Actor);
 }

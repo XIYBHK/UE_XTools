@@ -298,7 +298,7 @@ int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPo
     // ✅ 智能预分配机制 - 组件自动激活问题已解决
     Pool.PrewarmPool(World, PreallocCount);
 
-    POOL_MANAGER_LOG(Log, TEXT("智能预分配完成: %s, 预分配数量=%d"), 
+            POOL_MANAGER_LOG(Log, TEXT("预分配完成: %s, 预分配数量=%d"), 
         *ActorClass->GetName(), PreallocCount);
 
     return PreallocCount;
@@ -541,15 +541,15 @@ FString FObjectPoolManager::GetStrategyName(EManagementStrategy Strategy)
     switch (Strategy)
     {
     case EManagementStrategy::Conservative:
-        return TEXT("保守管理");
+        return TEXT("保守");
     case EManagementStrategy::Adaptive:
-        return TEXT("自适应管理");
+        return TEXT("自适应");
     case EManagementStrategy::Aggressive:
-        return TEXT("激进管理");
+        return TEXT("激进");
     case EManagementStrategy::Manual:
-        return TEXT("手动管理");
+        return TEXT("手动");
     default:
-        return TEXT("未知策略");
+        return TEXT("未知");
     }
 }
 
