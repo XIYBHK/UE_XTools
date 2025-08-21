@@ -79,6 +79,10 @@ struct FX_MaterialFunctionParams
 	UPROPERTY(EditAnywhere, Category = "连接设置", meta = (DisplayName = "连接到环境光遮蔽", EditCondition = "bSetupConnections && !bEnableSmartConnect"))
 	bool bConnectToAO = false;
 
+	/** 是否强制使用MaterialAttributes连接 */
+	UPROPERTY(EditAnywhere, Category = "连接设置", meta = (DisplayName = "使用材质属性连接"))
+	bool bUseMaterialAttributes = false;
+
 	/** 构造函数 */
 	FX_MaterialFunctionParams()
 	{
@@ -95,6 +99,7 @@ struct FX_MaterialFunctionParams
 		bConnectToNormal = false;
 		bConnectToEmissive = false;
 		bConnectToAO = false;
+		bUseMaterialAttributes = false;
 	}
 
 	/** 
@@ -110,9 +115,22 @@ struct FX_MaterialFunctionParams
 		bConnectToNormal = false;
 		bConnectToEmissive = false;
 		bConnectToAO = false;
+		bUseMaterialAttributes = false;
 
+		// ✅ 优先检测MaterialAttributes函数
+		if (FunctionName.Contains(TEXT("MaterialAttributes")) ||
+			FunctionName.Contains(TEXT("MA_")) ||
+			FunctionName.Contains(TEXT("MakeMA")) ||
+			FunctionName.Contains(TEXT("SetMA")) ||
+			FunctionName.Contains(TEXT("BlendMA")))
+		{
+			bUseMaterialAttributes = true;
+			// MaterialAttributes模式下禁用其他连接选项
+			bSetupConnections = true;
+			bEnableSmartConnect = false;  // 使用专用连接逻辑
+		}
 		// 根据函数名称设置默认连接
-		if (FunctionName.Contains(TEXT("BaseColor")))
+		else if (FunctionName.Contains(TEXT("BaseColor")))
 		{
 			bConnectToBaseColor = true;
 		}
