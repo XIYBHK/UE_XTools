@@ -9,6 +9,12 @@
 #include "MaterialTools/X_MaterialFunctionUI.h"  // ✅ 添加：UI函数声明
 #include "CollisionTools/X_CollisionManager.h"
 #include "CollisionTools/X_CollisionSettingsDialog.h"
+#include "CollisionTools/X_AutoConvexDialog.h"
+#include "RawMesh.h"
+#include "CollisionTools/X_CoACDIntegration.h"
+#include "CollisionTools/SX_CoACDDialog.h"
+#include "StaticMeshEditorSubsystem.h"
+#include "StaticMeshEditorSubsystemHelpers.h"
 
 #include "ContentBrowserModule.h"
 #include "LevelEditor.h"
@@ -279,31 +285,115 @@ void FX_MenuExtensionManager::AddCollisionManagementMenuEntry(FMenuBuilder& Menu
             )
         );
 
-        MenuBuilder.AddMenuEntry(
-            LOCTEXT("AddConvexCollision", "添加简单凸包碰撞"),
-            LOCTEXT("AddConvexCollisionTooltip", "为选中静态网格体添加简单凸包碰撞"),
-            FSlateIcon(FAppStyle::GetAppStyleSetName(), "PhysicsAssetEditor.NewBody"),
-            FUIAction(
-                FExecuteAction::CreateLambda([SelectedAssets]()
+        // 子菜单：添加简单碰撞（原生）
+        MenuBuilder.AddSubMenu(
+            LOCTEXT("AddSimpleCollision", "添加简单碰撞"),
+            LOCTEXT("AddSimpleCollisionTooltip", "使用UE原生选项添加多种简单碰撞"),
+            FNewMenuDelegate::CreateLambda([SelectedAssets](FMenuBuilder& SubMenu)
+            {
+                auto AddShapeEntry = [&SubMenu, SelectedAssets](const FText& Label, const FText& Tooltip, uint8 ShapeType)
                 {
-                    // 确认对话框
-                    FText ConfirmText = FText::Format(
-                        LOCTEXT("ConfirmAddConvexCollision", "确定要为 {0} 个资产添加凸包碰撞吗？\n\n此操作将先清除现有碰撞，然后添加新的凸包碰撞。"),
-                        FText::AsNumber(SelectedAssets.Num())
+                    SubMenu.AddMenuEntry(
+                        Label,
+                        Tooltip,
+                        FSlateIcon(FAppStyle::GetAppStyleSetName(), "PhysicsAssetEditor.NewBody"),
+                        FUIAction(FExecuteAction::CreateLambda([SelectedAssets, ShapeType]()
+                        {
+                            FX_CollisionManager::AddSimpleCollisionToAssets(SelectedAssets, ShapeType);
+                        }))
                     );
+                };
 
-                    EAppReturnType::Type Result = FMessageDialog::Open(
-                        EAppMsgType::YesNo,
-                        ConfirmText,
-                        LOCTEXT("AddConvexCollisionTitle", "确认添加凸包碰撞")
-                    );
+                // 盒、球、胶囊
+                AddShapeEntry(LOCTEXT("AddBoxCollision", "添加盒体简化碰撞"), LOCTEXT("AddBoxCollisionTooltip", "添加盒体简化碰撞"), (uint8)EScriptCollisionShapeType::Box);
+                AddShapeEntry(LOCTEXT("AddSphereCollision", "添加球体简化碰撞"), LOCTEXT("AddSphereCollisionTooltip", "添加球体简化碰撞"), (uint8)EScriptCollisionShapeType::Sphere);
+                AddShapeEntry(LOCTEXT("AddCapsuleCollision", "添加胶囊简化碰撞"), LOCTEXT("AddCapsuleCollisionTooltip", "添加胶囊简化碰撞"), (uint8)EScriptCollisionShapeType::Capsule);
 
-                    if (Result == EAppReturnType::Yes)
+                SubMenu.AddSeparator();
+                // KDOP 族
+                AddShapeEntry(LOCTEXT("AddKDOP10X", "添加10DOP-X简化碰撞"), LOCTEXT("AddKDOP10XTooltip", "添加10DOP-X简化碰撞"), (uint8)EScriptCollisionShapeType::NDOP10_X);
+                AddShapeEntry(LOCTEXT("AddKDOP10Y", "添加10DOP-Y简化碰撞"), LOCTEXT("AddKDOP10YTooltip", "添加10DOP-Y简化碰撞"), (uint8)EScriptCollisionShapeType::NDOP10_Y);
+                AddShapeEntry(LOCTEXT("AddKDOP10Z", "添加10DOP-Z简化碰撞"), LOCTEXT("AddKDOP10ZTooltip", "添加10DOP-Z简化碰撞"), (uint8)EScriptCollisionShapeType::NDOP10_Z);
+                AddShapeEntry(LOCTEXT("AddKDOP18", "添加18DOP简化碰撞"), LOCTEXT("AddKDOP18Tooltip", "添加18DOP简化碰撞"), (uint8)EScriptCollisionShapeType::NDOP18);
+                AddShapeEntry(LOCTEXT("AddKDOP26", "添加26DOP简化碰撞"), LOCTEXT("AddKDOP26Tooltip", "添加26DOP简化碰撞"), (uint8)EScriptCollisionShapeType::NDOP26);
+
+                SubMenu.AddSeparator();
+                // 简单凸包（快速一键版，使用原生AutoConvex默认参数）
+                SubMenu.AddMenuEntry(
+                    LOCTEXT("AddSimpleConvexCollision", "添加凸包碰撞"),
+                    LOCTEXT("AddSimpleConvexCollisionTip", "基于LOD0顶点一键生成凸包碰撞"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "PhysicsAssetEditor.NewBody"),
+                    FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
                     {
-                        FX_CollisionManager::AddConvexCollisionToAssets(SelectedAssets);
-                    }
-                })
-            )
+                        // 默认参数
+                        const int32 HullCount = 4;
+                        const int32 MaxHullVerts = 16;
+                        const int32 HullPrecision = 100000;
+
+                        TArray<UStaticMesh*> Meshes;
+                        for (const FAssetData& AssetData : SelectedAssets)
+                        {
+                            if (UStaticMesh* SM = Cast<UStaticMesh>(AssetData.GetAsset()))
+                            {
+                                Meshes.Add(SM);
+                            }
+                        }
+                        if (Meshes.Num() > 0)
+                        {
+                            if (UStaticMeshEditorSubsystem* Sys = GEditor->GetEditorSubsystem<UStaticMeshEditorSubsystem>())
+                            {
+                                Sys->BulkSetConvexDecompositionCollisionsWithNotification(Meshes, HullCount, MaxHullVerts, HullPrecision, true);
+                            }
+                        }
+                    }))
+                );
+
+                SubMenu.AddSeparator();
+                // 自动凸包（批量）移入此菜单并弹窗参数
+                SubMenu.AddMenuEntry(
+                    LOCTEXT("AutoConvexBulkInSub", "添加凸包碰撞(参数)"),
+                    LOCTEXT("AutoConvexBulkInSubTip", "配置参数并批量生成凸包碰撞"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "PhysicsAssetEditor.NewBody"),
+                    FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
+                    {
+                        int32 HullCount = 4, MaxHullVerts = 16, HullPrecision = 100000;
+                        if (SX_AutoConvexDialog::ShowDialog(HullCount, MaxHullVerts, HullPrecision, HullCount, MaxHullVerts, HullPrecision))
+                        {
+                            TArray<UStaticMesh*> Meshes;
+                            for (const FAssetData& AssetData : SelectedAssets)
+                            {
+                                if (UStaticMesh* SM = Cast<UStaticMesh>(AssetData.GetAsset()))
+                                {
+                                    Meshes.Add(SM);
+                                }
+                            }
+                            if (Meshes.Num() > 0)
+                            {
+                                if (UStaticMeshEditorSubsystem* Sys = GEditor->GetEditorSubsystem<UStaticMeshEditorSubsystem>())
+                                {
+                                    Sys->BulkSetConvexDecompositionCollisionsWithNotification(Meshes, HullCount, MaxHullVerts, HullPrecision, true);
+                                }
+                            }
+                        }
+                    }))
+                );
+
+                // CoACD算法碰撞（基于SIGGRAPH 2022论文）
+                SubMenu.AddSeparator();
+                SubMenu.AddMenuEntry(
+                    LOCTEXT("CoACDAlgCollision", "CoACD算法碰撞(参数)"),
+                    LOCTEXT("CoACDAlgCollisionTip", "基于SIGGRAPH 2022论文的碰撞感知凸分解算法\n使用蒙特卡洛树搜索优化切割策略\n适合复杂几何体的高质量分解"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "PhysicsAssetEditor.NewBody"),
+                    FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
+                    {
+                        FX_CoACDArgs Args; // 从保存中读取默认
+                        if (SX_CoACDDialog::ShowDialog(Args))
+                        {
+                            FX_CoACDIntegration::GenerateForAssets(SelectedAssets, Args);
+                        }
+                    }))
+                );
+            })
         );
 
         MenuBuilder.AddMenuEntry(
@@ -317,6 +407,8 @@ void FX_MenuExtensionManager::AddCollisionManagementMenuEntry(FMenuBuilder& Menu
                 })
             )
         );
+
+        // 顶层不再单列“自动凸包碰撞(批量)”
     }
     MenuBuilder.EndSection();
 }

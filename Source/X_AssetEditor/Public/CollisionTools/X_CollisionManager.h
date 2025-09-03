@@ -83,6 +83,12 @@ public:
     static FX_CollisionOperationResult AddConvexCollisionToAssets(const TArray<FAssetData>& SelectedAssets);
 
     /**
+     * 批量添加UE原生简单碰撞（盒、球、胶囊、KDOP等）
+     * 形状类型沿用UE编辑器脚本的 `EScriptCollisionShapeType`
+     */
+    static FX_CollisionOperationResult AddSimpleCollisionToAssets(const TArray<FAssetData>& SelectedAssets, uint8 ShapeType /*EScriptCollisionShapeType*/);
+
+    /**
      * 批量设置静态网格体的碰撞复杂度
      * @param SelectedAssets 选中的资产列表
      * @param ComplexityType 碰撞复杂度类型

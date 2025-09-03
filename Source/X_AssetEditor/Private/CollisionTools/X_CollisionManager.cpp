@@ -13,6 +13,8 @@
 #include "Misc/MessageDialog.h"
 #include "Editor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
+#include "StaticMeshEditorSubsystem.h"
+#include "StaticMeshEditorSubsystemHelpers.h"
 
 DEFINE_LOG_CATEGORY(LogX_CollisionManager);
 
@@ -160,6 +162,59 @@ FX_CollisionOperationResult FX_CollisionManager::SetCollisionComplexity(const TA
     }
 
     ShowOperationResult(Result, FString::Printf(TEXT("设置碰撞复杂度为%s"), *ComplexityName));
+    return Result;
+}
+
+FX_CollisionOperationResult FX_CollisionManager::AddSimpleCollisionToAssets(const TArray<FAssetData>& SelectedAssets, uint8 ShapeType)
+{
+    FX_CollisionOperationResult Result;
+
+    LogOperation(FString::Printf(TEXT("开始为 %d 个资产添加简单碰撞，类型=%d"), SelectedAssets.Num(), (int32)ShapeType));
+
+    UStaticMeshEditorSubsystem* SMEditorSubsystem = GEditor ? GEditor->GetEditorSubsystem<UStaticMeshEditorSubsystem>() : nullptr;
+    if (!SMEditorSubsystem)
+    {
+        Result.FailureCount = SelectedAssets.Num();
+        Result.ErrorMessages.Add(TEXT("无法获取 UStaticMeshEditorSubsystem"));
+        ShowOperationResult(Result, TEXT("添加简单碰撞"));
+        return Result;
+    }
+
+    for (const FAssetData& AssetData : SelectedAssets)
+    {
+        if (!IsStaticMeshAsset(AssetData))
+        {
+            Result.SkippedCount++;
+            LogOperation(FString::Printf(TEXT("跳过非静态网格体资产: %s"), *AssetData.AssetName.ToString()));
+            continue;
+        }
+
+        UStaticMesh* StaticMesh = GetStaticMeshFromAsset(AssetData);
+        if (!StaticMesh)
+        {
+            Result.FailureCount++;
+            FString ErrorMsg = FString::Printf(TEXT("无法加载静态网格体: %s"), *AssetData.AssetName.ToString());
+            Result.ErrorMessages.Add(ErrorMsg);
+            LogOperation(ErrorMsg, true);
+            continue;
+        }
+
+        const int32 PrimIndex = SMEditorSubsystem->AddSimpleCollisionsWithNotification(StaticMesh, static_cast<EScriptCollisionShapeType>(ShapeType), true);
+        if (PrimIndex >= 0)
+        {
+            Result.SuccessCount++;
+            LogOperation(FString::Printf(TEXT("成功添加简单碰撞: %s (PrimIndex=%d)"), *AssetData.AssetName.ToString(), PrimIndex));
+        }
+        else
+        {
+            Result.FailureCount++;
+            FString ErrorMsg = FString::Printf(TEXT("添加简单碰撞失败: %s"), *AssetData.AssetName.ToString());
+            Result.ErrorMessages.Add(ErrorMsg);
+            LogOperation(ErrorMsg, true);
+        }
+    }
+
+    ShowOperationResult(Result, TEXT("添加简单碰撞"));
     return Result;
 }
 

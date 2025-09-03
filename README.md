@@ -46,10 +46,10 @@ XTools 是一个为 Unreal Engine 5.3 设计的综合性实用工具插件，提
 
 ### 🛠️ 资产编辑器工具 (X_AssetEditor Module)
 **专业的资产管理和处理工具**
-- **材质函数批量应用**: 快速为材质添加特效
+- **批量UE原生碰撞**: 球体、盒体、胶囊体、KDOP等碰撞类型批量设置
+- **SIGGRAPH 2022 CoACD算法**: 智能凸包分解，支持复杂模型高质量碰撞
+- **材质函数批量应用**: 快速为材质添加材质函数
 - **资产命名规范化**: 自动化资产命名管理
-- **菲涅尔等特效**: 内置常用材质函数
-- **批量处理**: 支持大量资产的批量操作
 - **前缀管理**: 智能的资产前缀系统
 
 ### 📐 几何工具 (Geometry Module)
@@ -168,54 +168,7 @@ XTools 需要以下插件支持：
 - **从池生成Actor**: 自定义K2节点，替代原生"从类生成Actor"
 - **注册Actor类**: 配置池化参数和预热设置
 - **池管理**: 获取池状态、清理池资源
-- **性能优化**: 池使用率监控和优化建议
 
-## 🚀 快速开始
-
-### 排序功能示例
-```cpp
-// C++ 示例 - 整数数组排序
-TArray<int32> Numbers = {3, 1, 4, 1, 5};
-TArray<int32> SortedNumbers;
-TArray<int32> OriginalIndices;
-
-USortLibrary::SortIntegerArray(Numbers, true, SortedNumbers, OriginalIndices);
-// 结果: SortedNumbers = {1, 1, 3, 4, 5}, OriginalIndices = {1, 3, 0, 2, 4}
-```
-
-### PRD 随机示例
-```cpp
-// 使用 PRD 算法进行随机判定
-bool bCriticalHit = URandomShuffleArrayLibrary::PseudoRandomBool(0.25f, "CriticalHit");
-```
-
-### 增强代码流示例
-```cpp
-// 延迟执行
-FECFHandle DelayHandle = FFlow::Delay(this, 2.0f, [this]()
-{
-    UE_LOG(LogTemp, Log, TEXT("2秒后执行"));
-});
-```
-
-### 组件时间轴示例
-```cpp
-// 在组件的 BeginPlay 中初始化时间轴
-UComponentTimelineLibrary::InitializeComponentTimelines(this);
-```
-
-### 对象池系统示例
-```cpp
-// C++ 示例 - 注册Actor类到对象池
-UObjectPoolLibrary::RegisterActorClass(GetWorld(), ABullet::StaticClass(), 50, 1000);
-
-// 从对象池获取Actor（在蓝图中使用"从池生成Actor"节点更便捷）
-AActor* PooledActor = UObjectPoolLibrary::SpawnActorFromPool(
-    GetWorld(), 
-    ABullet::StaticClass(), 
-    Transform
-);
-```
 
 ## 🛠️ 开发工具集
 
@@ -274,11 +227,6 @@ EnhancedCodeFlow 模块支持：
 - **C++ 标准**: C++20
 - **编译器**: MSVC 2022
 
-### 性能特性
-- **内存优化**: 原地排序算法，减少内存分配
-- **类型安全**: 强类型检查，避免运行时错误
-- **异步支持**: 非阻塞的异步操作
-- **性能分析**: 内置性能统计和分析工具
 
 ## 📚 API 参考
 
@@ -329,6 +277,8 @@ EnhancedCodeFlow 模块支持：
 - ✅ **智能状态重置**: 自动重置Actor的Transform、组件状态、物理属性等
 - ✅ **智能池管理**: 支持预热、自适应扩池、内存优化策略
 - ✅ **性能监控**: 内置池使用率统计和优化建议系统
+- 🆕 **高级碰撞工具**: 集成SIGGRAPH 2022 CoACD算法智能凸包分解
+- ✅ **批量碰撞生成**: 支持UE原生碰撞类型批量设置
 - ✅ **VS Code集成**: 完整的编译和Live Coding任务配置
 - ✅ **多版本打包**: 支持UE 5.4/5.5/5.6自动化打包流程
 
@@ -395,6 +345,8 @@ EnhancedCodeFlow 模块支持：
 - **Component Timeline** 模块基于 Tomasz Klin 的贡献
 - **Random Shuffles** 模块基于 Anthony Arnold (RK4XYZ) 的实现
 - **PRD 算法** 参考了 DOTA2 的标准实现
+- **CoACD 算法** 基于 Wei et al. SIGGRAPH 2022 论文 ([详细引用](ThirdParty/CoACD/CREDITS.md))
+- **CoACD 项目** 原作者开源实现 ([GitHub](https://github.com/SarahWeiii/CoACD))
 
 ## 📞 联系方式
 
