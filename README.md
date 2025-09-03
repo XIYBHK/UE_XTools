@@ -345,7 +345,7 @@ EnhancedCodeFlow 模块支持：
 - **Component Timeline** 模块基于 Tomasz Klin 的贡献
 - **Random Shuffles** 模块基于 Anthony Arnold (RK4XYZ) 的实现
 - **PRD 算法** 参考了 DOTA2 的标准实现
-- **CoACD 算法** 基于 Wei et al. SIGGRAPH 2022 论文 ([详细引用](ThirdParty/CoACD/CREDITS.md))
+- **CoACD 算法** 基于 Wei、et al. SIGGRAPH 2022 论文 ([详细引用](ThirdParty/CoACD/CREDITS.md))
 - **CoACD 项目** 原作者开源实现 ([GitHub](https://github.com/SarahWeiii/CoACD))
 
 ## 📞 联系方式

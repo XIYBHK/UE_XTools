@@ -40,6 +40,8 @@
 
 // UE异步和并发系统
 #include "Async/ParallelFor.h"
+// 为了将耗时任务放到线程池并在主线程刷新进度
+#include "Async/Async.h"
 
 // UE UI和通知系统
 #include "Framework/Notifications/NotificationManager.h"
@@ -64,26 +66,25 @@ struct FCoACD_MeshArray
     uint64 meshes_count;           // 凸包数量 (uint64_t)
 };
 
-// 基于GitHub commit "Add missing function args in public CoACD function (#66)" 更新的函数签名
-// 修复与官方API头文件的参数顺序不匹配问题
-using TCoACD_Run = FCoACD_MeshArray(*)(
+// 适配 CoACD v1.0.7 DLL 的公开 API 签名（17 参数版本，包含 decimate/extrude/approx 等）
+using TCoACD_Run = FCoACD_MeshArray(*) (
     const FCoACD_Mesh&,    // 1. 输入网格
     double,                // 2. threshold
     int,                   // 3. max_convex_hull
     int,                   // 4. preprocess_mode
     int,                   // 5. prep_resolution
-    int,                   // 6. resolution
+    int,                   // 6. sample_resolution
     int,                   // 7. mcts_nodes
     int,                   // 8. mcts_iteration
-    int,                   // 9. mcts_depth
+    int,                   // 9. mcts_max_depth
     bool,                  // 10. pca
     bool,                  // 11. merge
-    bool,                  // 12. decimate (enable vertex constraints, v1.0.3)
-    int,                   // 13. max_ch_vertex (max vertices per hull, v1.0.3)
-    bool,                  // 14. extrude (enable hull extrusion, v1.0.5)
-    double,                // 15. extrude_margin (extrusion margin, v1.0.5)
-    int,                   // 16. apx_mode (0=convex_hulls, 1=box, v1.0.2)
-    unsigned int           // 17. seed (random seed)
+    bool,                  // 12. decimate (v1.0.3+)
+    int,                   // 13. max_ch_vertex (v1.0.3+)
+    bool,                  // 14. extrude (v1.0.5+)
+    double,                // 15. extrude_margin (v1.0.5+)
+    int,                   // 16. approximate_mode (v1.0.2+)
+    unsigned int           // 17. seed
 );
 using TCoACD_Free = void(*)(FCoACD_MeshArray);
 
@@ -113,6 +114,35 @@ static FString FindCoACDDll()
         }
     }
     return FString();
+}
+
+// 轻量输入承载：TArray 承载真实数据，MeshView 仅指向其内存
+struct FCoACDInputBuffers
+{
+    TArray<double> Vertices;   // size = NumVerts * 3
+    TArray<int> Indices;       // size = NumWedges
+    FCoACD_Mesh MeshView{};    // 指向上面两块内存
+};
+
+static void BuildInputFromRawMesh(const FRawMesh& Raw, FCoACDInputBuffers& Out)
+{
+    Out.Vertices.SetNumUninitialized(Raw.VertexPositions.Num() * 3);
+    for (int32 i = 0; i < Raw.VertexPositions.Num(); ++i)
+    {
+        const FVector3f& P = Raw.VertexPositions[i];
+        Out.Vertices[i*3+0] = (double)P.X;
+        Out.Vertices[i*3+1] = (double)P.Y;
+        Out.Vertices[i*3+2] = (double)P.Z;
+    }
+    Out.Indices.SetNumUninitialized(Raw.WedgeIndices.Num());
+    for (int32 i = 0; i < Raw.WedgeIndices.Num(); ++i)
+    {
+        Out.Indices[i] = Raw.WedgeIndices[i];
+    }
+    Out.MeshView.vertices_count = (uint64)Raw.VertexPositions.Num();
+    Out.MeshView.vertices_ptr = Out.Vertices.GetData();
+    Out.MeshView.triangles_count = (uint64)(Raw.WedgeIndices.Num() / 3);
+    Out.MeshView.triangles_ptr = Out.Indices.GetData();
 }
 
 bool FX_CoACDIntegration::Initialize()
@@ -226,92 +256,112 @@ static void CompactUnusedVertices(FRawMesh& RawMesh)
     }
 }
 
-bool FX_CoACDIntegration::GenerateForMesh(UStaticMesh* StaticMesh, const FX_CoACDArgs& Args)
+// 根据材质槽ID移除对应三角面（以及相关的楔数据），参考 Docs/ref/CoACD 实现
+static bool DeleteWedgesByMaterialIDs(FRawMesh& RawMesh, const TArray<int32>& MaterialIDs, bool bCleanUpVertexPositions)
 {
-#if WITH_EDITOR
-    if (!StaticMesh) return false;
-    if (!IsAvailable() && !Initialize()) return false;
-
-    FRawMesh Raw;
-    if (!LoadRawMeshLOD(StaticMesh, Args.SourceLODIndex, Raw))
+    if (!MaterialIDs.ContainsByPredicate([](int32 i){ return i >= 0; }))
     {
         return false;
     }
 
-    // 压缩未使用顶点，避免出现索引越界或稀疏索引
-    CompactUnusedVertices(Raw);
-
-    FCoACD_Mesh Input{};
-    Input.vertices_count = (uint64)Raw.VertexPositions.Num();
-    Input.vertices_ptr = new double[(size_t)Input.vertices_count * 3];
-    for (int32 i = 0; i < Raw.VertexPositions.Num(); ++i)
+    bool bModified = false;
+    for (int32 FaceIdx = RawMesh.FaceMaterialIndices.Num() - 1; FaceIdx >= 0; --FaceIdx)
     {
-        const FVector3f& P = Raw.VertexPositions[i];
-        Input.vertices_ptr[(size_t)i * 3 + 0] = (double)P.X;
-        Input.vertices_ptr[(size_t)i * 3 + 1] = (double)P.Y;
-        Input.vertices_ptr[(size_t)i * 3 + 2] = (double)P.Z;
+        if (MaterialIDs.Contains(RawMesh.FaceMaterialIndices[FaceIdx]))
+        {
+            RawMesh.FaceMaterialIndices.RemoveAt(FaceIdx);
+            RawMesh.FaceSmoothingMasks.RemoveAt(FaceIdx);
+
+            for (int32 j = 2; j >= 0; --j)
+            {
+                const int32 WedgeK = 3 * FaceIdx + j;
+                if (RawMesh.WedgeColors.IsValidIndex(WedgeK)) RawMesh.WedgeColors.RemoveAt(WedgeK);
+                if (RawMesh.WedgeIndices.IsValidIndex(WedgeK)) RawMesh.WedgeIndices.RemoveAt(WedgeK);
+                if (RawMesh.WedgeTangentX.IsValidIndex(WedgeK)) RawMesh.WedgeTangentX.RemoveAt(WedgeK);
+                if (RawMesh.WedgeTangentY.IsValidIndex(WedgeK)) RawMesh.WedgeTangentY.RemoveAt(WedgeK);
+                if (RawMesh.WedgeTangentZ.IsValidIndex(WedgeK)) RawMesh.WedgeTangentZ.RemoveAt(WedgeK);
+                for (int32 m = 0; m < MAX_MESH_TEXTURE_COORDS; ++m)
+                {
+                    if (RawMesh.WedgeTexCoords[m].IsValidIndex(WedgeK)) RawMesh.WedgeTexCoords[m].RemoveAt(WedgeK);
+                }
+            }
+            bModified = true;
+        }
     }
-    Input.triangles_count = (uint64)(Raw.WedgeIndices.Num() / 3);
-    Input.triangles_ptr = new int[Raw.WedgeIndices.Num()];
-    for (int32 i = 0; i < Raw.WedgeIndices.Num(); ++i)
+
+    if (bModified && bCleanUpVertexPositions)
     {
-        Input.triangles_ptr[i] = Raw.WedgeIndices[i];
+        TSet<uint32> UsedVIDs(RawMesh.WedgeIndices);
+        TArray<uint32> UnusedVIDs;
+        UnusedVIDs.Reserve(RawMesh.VertexPositions.Num());
+        for (int32 i = RawMesh.VertexPositions.Num() - 1; i >= 0; --i)
+        {
+            if (!UsedVIDs.Contains((uint32)i)) UnusedVIDs.Add((uint32)i);
+        }
+        for (uint32 ID : UnusedVIDs)
+        {
+            RawMesh.VertexPositions.RemoveAt((int32)ID);
+            for (uint32& WID : RawMesh.WedgeIndices)
+            {
+                ensure(WID != ID);
+                if (WID > ID) WID -= 1;
+            }
+        }
     }
+    return bModified;
+}
 
-    FCoACD_MeshArray Result{ nullptr, 0 };
-    check(GCoACD_Run && GCoACD_Free);
-    Result = GCoACD_Run(
-        Input,
-        (double)Args.Threshold,
-        Args.MaxConvexHull,
-        (int)Args.PreprocessMode,
-        Args.PreprocessResolution,
-        Args.SampleResolution,
-        Args.MCTSNodes,
-        Args.MCTSIteration,
-        Args.MCTSMaxDepth,
-        Args.bPCA,
-        Args.bMerge,
-        // v1.0.7 新增参数 - 使用用户配置的实际值
-        Args.bDecimate,          // decimate: 顶点约束开关
-        Args.MaxConvexHullVertex, // max_ch_vertex: 每个凸包最大顶点数
-        Args.bExtrude,           // extrude: 凸包挤出开关
-        (double)Args.ExtrudeMargin, // extrude_margin: 挤出边距
-        Args.ApproximateMode,    // apx_mode: 近似模式 (0=凸包, 1=包围盒)
-        (unsigned int)Args.Seed  // seed: 随机种子（移到最后）
-    );
+static void FilterRawMeshByKeywords(UStaticMesh* StaticMesh, FRawMesh& Raw, const TArray<FString>& Keywords)
+{
+    if (Keywords.Num() <= 0) return;
+    TArray<int32> BlacklistMaterialIDs;
+    const TArray<FStaticMaterial>& StaticMats = StaticMesh->GetStaticMaterials();
+    for (int32 Idx = 0; Idx < StaticMats.Num(); ++Idx)
+    {
+        const FString SlotNameStr = StaticMats[Idx].MaterialSlotName.ToString();
+        const UMaterialInterface* Mat = StaticMats[Idx].MaterialInterface;
+        const FString MatNameStr = Mat ? Mat->GetName() : FString();
+        const FString MatPathStr = Mat ? Mat->GetPathName() : FString();
+        const FString ElementStrEn = FString::Printf(TEXT("Element %d"), Idx);
+        const FString ElementStrZh = FString::Printf(TEXT("元素%d"), Idx);
+        const FString IndexStr = FString::FromInt(Idx);
 
+        for (const FString& KWRaw : Keywords)
+        {
+            const FString KW = KWRaw.TrimStartAndEnd();
+            if (KW.IsEmpty()) continue;
+
+            bool bMatch = false;
+            bMatch |= SlotNameStr.Contains(KW, ESearchCase::IgnoreCase);
+            bMatch |= MatNameStr.Contains(KW, ESearchCase::IgnoreCase);
+            bMatch |= MatPathStr.Contains(KW, ESearchCase::IgnoreCase);
+            bMatch |= ElementStrEn.Contains(KW, ESearchCase::IgnoreCase);
+            bMatch |= ElementStrZh.Contains(KW, ESearchCase::IgnoreCase);
+            bMatch |= (KW.Equals(IndexStr, ESearchCase::IgnoreCase));
+            if (bMatch)
+            {
+                BlacklistMaterialIDs.Add(Idx);
+                break;
+            }
+        }
+    }
+    if (BlacklistMaterialIDs.Num() > 0)
+    {
+        DeleteWedgesByMaterialIDs(Raw, BlacklistMaterialIDs, /*bCleanUpVertexPositions*/ true);
+    }
+}
+
+static bool ApplyResultToBodySetup(UStaticMesh* StaticMesh, const FCoACD_MeshArray& Result, bool bRemoveExistingCollision)
+{
     StaticMesh->Modify();
     StaticMesh->CreateBodySetup();
     UBodySetup* BodySetup = StaticMesh->GetBodySetup();
-    if (!BodySetup)
-    {
-        delete[] Input.vertices_ptr;
-        delete[] Input.triangles_ptr;
-        if (GCoACD_Free) GCoACD_Free(Result);
-        return false;
-    }
-
-    if (Args.bRemoveExistingCollision)
+    if (!BodySetup) return false;
+    if (bRemoveExistingCollision)
     {
         BodySetup->RemoveSimpleCollision();
     }
-
-    // 材质槽排除关键词：与参考实现一致
-    if (Args.MaterialKeywordsToExclude.Num() > 0)
-    {
-        // 重新过滤 RawMesh 面：参考插件是在进入 DLL 前做，这里已在上方Compact后，简化为忽略
-        // 生产中可在 LoadRawMeshLOD 之后按 FaceMaterialIndices 过滤三角并重建索引
-    }
-
-    if (Result.meshes_count == 0 || !Result.meshes_ptr)
-    {
-        // 没有生成任何凸包，清理并返回
-        delete[] Input.vertices_ptr;
-        delete[] Input.triangles_ptr;
-        if (GCoACD_Free) GCoACD_Free(Result);
-        return false;
-    }
+    if (Result.meshes_count == 0 || !Result.meshes_ptr) return false;
 
     auto& ConvexElems = BodySetup->AggGeom.ConvexElems;
     const int32 FirstIdx = ConvexElems.Num();
@@ -338,11 +388,102 @@ bool FX_CoACDIntegration::GenerateForMesh(UStaticMesh* StaticMesh, const FX_CoAC
         }
         Elem.UpdateElemBox();
     }
-
     BodySetup->InvalidatePhysicsData();
+    return true;
+}
 
-    delete[] Input.vertices_ptr;
-    delete[] Input.triangles_ptr;
+bool FX_CoACDIntegration::GenerateForMesh(UStaticMesh* StaticMesh, const FX_CoACDArgs& Args)
+{
+#if WITH_EDITOR
+    if (!StaticMesh) return false;
+    if (!IsAvailable() && !Initialize()) return false;
+
+    FRawMesh Raw;
+    if (!LoadRawMeshLOD(StaticMesh, Args.SourceLODIndex, Raw))
+    {
+        return false;
+    }
+
+    // 根据材质槽关键词过滤三角面（可选）
+    if (Args.MaterialKeywordsToExclude.Num() > 0)
+    {
+        TArray<int32> BlacklistMaterialIDs;
+        const TArray<FStaticMaterial>& StaticMats = StaticMesh->GetStaticMaterials();
+        for (int32 Idx = 0; Idx < StaticMats.Num(); ++Idx)
+        {
+            const FString SlotNameStr = StaticMats[Idx].MaterialSlotName.ToString();
+            const UMaterialInterface* Mat = StaticMats[Idx].MaterialInterface;
+            const FString MatNameStr = Mat ? Mat->GetName() : FString();
+            const FString MatPathStr = Mat ? Mat->GetPathName() : FString();
+            const FString ElementStrEn = FString::Printf(TEXT("Element %d"), Idx);
+            const FString ElementStrZh = FString::Printf(TEXT("元素%d"), Idx);
+            const FString IndexStr = FString::FromInt(Idx);
+
+            for (const FString& KWRaw : Args.MaterialKeywordsToExclude)
+            {
+                const FString KW = KWRaw.TrimStartAndEnd();
+                if (KW.IsEmpty()) continue;
+
+                bool bMatch = false;
+                // 支持按槽名、材质资产名、资产路径匹配
+                bMatch |= SlotNameStr.Contains(KW, ESearchCase::IgnoreCase);
+                bMatch |= MatNameStr.Contains(KW, ESearchCase::IgnoreCase);
+                bMatch |= MatPathStr.Contains(KW, ESearchCase::IgnoreCase);
+                // 支持按“Element 0 / 元素0 / 索引数字”匹配
+                bMatch |= ElementStrEn.Contains(KW, ESearchCase::IgnoreCase);
+                bMatch |= ElementStrZh.Contains(KW, ESearchCase::IgnoreCase);
+                bMatch |= (KW.Equals(IndexStr, ESearchCase::IgnoreCase));
+
+                if (bMatch)
+                {
+                    BlacklistMaterialIDs.Add(Idx);
+                    break;
+                }
+            }
+        }
+        if (BlacklistMaterialIDs.Num() > 0)
+        {
+            DeleteWedgesByMaterialIDs(Raw, BlacklistMaterialIDs, /*bCleanUpVertexPositions*/ true);
+        }
+    }
+
+    // 过滤 + 压缩
+    FilterRawMeshByKeywords(StaticMesh, Raw, Args.MaterialKeywordsToExclude);
+    CompactUnusedVertices(Raw);
+
+    FCoACDInputBuffers InputBuf;
+    BuildInputFromRawMesh(Raw, InputBuf);
+
+    FCoACD_MeshArray Result{ nullptr, 0 };
+    check(GCoACD_Run && GCoACD_Free);
+    Result = GCoACD_Run(
+        InputBuf.MeshView,
+        (double)Args.Threshold,
+        Args.MaxConvexHull,
+        (int)Args.PreprocessMode,
+        Args.PreprocessResolution,
+        Args.SampleResolution,
+        Args.MCTSNodes,
+        Args.MCTSIteration,
+        Args.MCTSMaxDepth,
+        Args.bPCA,
+        Args.bMerge,
+        Args.bDecimate,
+        Args.MaxConvexHullVertex,
+        Args.bExtrude,
+        (double)Args.ExtrudeMargin,
+        Args.ApproximateMode,
+        (unsigned int)Args.Seed
+    );
+
+    if (!ApplyResultToBodySetup(StaticMesh, Result, Args.bRemoveExistingCollision))
+    {
+        if (GCoACD_Free) GCoACD_Free(Result);
+        return false;
+    }
+
+    // 注：材质槽过滤已在进入 DLL 之前完成
+
     if (GCoACD_Free) GCoACD_Free(Result);
     return true;
 #else
@@ -357,7 +498,7 @@ void FX_CoACDIntegration::GenerateForAssets(const TArray<FAssetData>& SelectedAs
     FScopedSlowTask Task((float)SelectedAssets.Num(), NSLOCTEXT("CoACD","Batch","CoACD 生成碰撞中..."));
     Task.MakeDialog(true);
 
-    auto Work = [&SelectedAssets,&Args,&Task](int32 Index)
+    auto WorkMainThread = [&SelectedAssets,&Args,&Task](int32 Index)
     {
         const FAssetData& AD = SelectedAssets[Index];
         if (UStaticMesh* SM = Cast<UStaticMesh>(AD.GetAsset()))
@@ -372,18 +513,214 @@ void FX_CoACDIntegration::GenerateForAssets(const TArray<FAssetData>& SelectedAs
         }
     };
 
-    if (Args.bEnableParallel)
+    // 单资产：提供动态进度（在游戏线程准备数据与回写；仅将 DLL 计算放到线程池）
+    if (SelectedAssets.Num() == 1)
     {
-        // UE ParallelFor 当前不直接暴露并发度控制；使用默认线程池并发。
-        ParallelFor(SelectedAssets.Num(), Work, /*bForceSingleThread*/ false, /*bChunked*/ false);
+        const FAssetData& AD = SelectedAssets[0];
+        if (UStaticMesh* StaticMesh = Cast<UStaticMesh>(AD.GetAsset()))
+        {
+            if (!IsAvailable() && !Initialize()) return;
+
+            // 进度框（分阶段：加载10% + 过滤10% + 构建输入20% + 求解50% + 写回10%）
+            FScopedSlowTask Inner(100.f, NSLOCTEXT("CoACD","Single","CoACD 处理中..."));
+            Inner.MakeDialog(true);
+
+            float Shown = 0.f;
+            auto Advance = [&Inner,&Shown](float Delta, const FText& Phase){ Shown += Delta; Inner.EnterProgressFrame(Delta, Phase); };
+            auto BriefPaint = [&Inner](){
+                const double Start = FPlatformTime::Seconds();
+                while ((FPlatformTime::Seconds() - Start) < 0.2)
+                {
+                    FPlatformProcess::Sleep(0.02f);
+                    Inner.EnterProgressFrame(0.f);
+                }
+            };
+            Advance(10.f, NSLOCTEXT("CoACD","PhaseLoad","加载与校验网格..."));
+            BriefPaint();
+
+            // 读取 RawMesh（游戏线程）
+            FRawMesh Raw;
+            if (!LoadRawMeshLOD(StaticMesh, Args.SourceLODIndex, Raw))
+            {
+                return;
+            }
+
+            // 材质过滤（游戏线程）
+            if (Args.MaterialKeywordsToExclude.Num() > 0)
+            {
+                TArray<int32> BlacklistMaterialIDs;
+                const TArray<FStaticMaterial>& StaticMats = StaticMesh->GetStaticMaterials();
+                for (int32 Idx = 0; Idx < StaticMats.Num(); ++Idx)
+                {
+                    const FString SlotNameStr = StaticMats[Idx].MaterialSlotName.ToString();
+                    const UMaterialInterface* Mat = StaticMats[Idx].MaterialInterface;
+                    const FString MatNameStr = Mat ? Mat->GetName() : FString();
+                    const FString MatPathStr = Mat ? Mat->GetPathName() : FString();
+                    const FString ElementStrEn = FString::Printf(TEXT("Element %d"), Idx);
+                    const FString ElementStrZh = FString::Printf(TEXT("元素%d"), Idx);
+                    const FString IndexStr = FString::FromInt(Idx);
+
+                    for (const FString& KWRaw : Args.MaterialKeywordsToExclude)
+                    {
+                        const FString KW = KWRaw.TrimStartAndEnd();
+                        if (KW.IsEmpty()) continue;
+
+                        bool bMatch = false;
+                        bMatch |= SlotNameStr.Contains(KW, ESearchCase::IgnoreCase);
+                        bMatch |= MatNameStr.Contains(KW, ESearchCase::IgnoreCase);
+                        bMatch |= MatPathStr.Contains(KW, ESearchCase::IgnoreCase);
+                        bMatch |= ElementStrEn.Contains(KW, ESearchCase::IgnoreCase);
+                        bMatch |= ElementStrZh.Contains(KW, ESearchCase::IgnoreCase);
+                        bMatch |= (KW.Equals(IndexStr, ESearchCase::IgnoreCase));
+
+                        if (bMatch)
+                        {
+                            BlacklistMaterialIDs.Add(Idx);
+                            break;
+                        }
+                    }
+                }
+                if (BlacklistMaterialIDs.Num() > 0)
+                {
+                    DeleteWedgesByMaterialIDs(Raw, BlacklistMaterialIDs, /*bCleanUpVertexPositions*/ true);
+                }
+            }
+            Advance(10.f, NSLOCTEXT("CoACD","PhaseFilter","材质过滤..."));
+            BriefPaint();
+
+            // 压缩未使用顶点（游戏线程）
+            CompactUnusedVertices(Raw);
+
+            // 构建 DLL 输入（Plain 数据，可跨线程使用）
+            FCoACD_Mesh Input{};
+            Input.vertices_count = (uint64)Raw.VertexPositions.Num();
+            Input.vertices_ptr = new double[(size_t)Input.vertices_count * 3];
+            for (int32 i = 0; i < Raw.VertexPositions.Num(); ++i)
+            {
+                const FVector3f& P = Raw.VertexPositions[i];
+                Input.vertices_ptr[(size_t)i * 3 + 0] = (double)P.X;
+                Input.vertices_ptr[(size_t)i * 3 + 1] = (double)P.Y;
+                Input.vertices_ptr[(size_t)i * 3 + 2] = (double)P.Z;
+            }
+            Input.triangles_count = (uint64)(Raw.WedgeIndices.Num() / 3);
+            Input.triangles_ptr = new int[Raw.WedgeIndices.Num()];
+            for (int32 i = 0; i < Raw.WedgeIndices.Num(); ++i)
+            {
+                Input.triangles_ptr[i] = Raw.WedgeIndices[i];
+            }
+
+            Advance(20.f, NSLOCTEXT("CoACD","PhaseBuild","构建输入数据..."));
+            BriefPaint();
+
+            // 后台计算（仅 DLL 调用）
+            FThreadSafeBool bDone(false);
+            FCoACD_MeshArray Result{ nullptr, 0 };
+            Async(EAsyncExecution::ThreadPool, [&Args,&Input,&Result,&bDone]()
+            {
+                Result = GCoACD_Run(
+                    Input,
+                    (double)Args.Threshold,
+                    Args.MaxConvexHull,
+                    (int)Args.PreprocessMode,
+                    Args.PreprocessResolution,
+                    Args.SampleResolution,
+                    Args.MCTSNodes,
+                    Args.MCTSIteration,
+                    Args.MCTSMaxDepth,
+                    Args.bPCA,
+                    Args.bMerge,
+                    Args.bDecimate,
+                    Args.MaxConvexHullVertex,
+                    Args.bExtrude,
+                    (double)Args.ExtrudeMargin,
+                    Args.ApproximateMode,
+                    (unsigned int)Args.Seed
+                );
+                bDone = true;
+            });
+
+            // 进度循环（游戏线程） - 求解阶段 50%
+            const float SolveTarget = Shown + 50.f;
+            while (!bDone)
+            {
+                if (Task.ShouldCancel()) break;
+                const float Step = 0.5f;
+                if (Shown + Step <= SolveTarget)
+                {
+                    Advance(Step, NSLOCTEXT("CoACD","PhaseSolve","CoACD 求解中..."));
     }
     else
     {
-        for (int32 i=0;i<SelectedAssets.Num();++i)
-        {
-            Work(i);
-            if (Task.ShouldCancel()) break;
+                    Inner.EnterProgressFrame(0.f, NSLOCTEXT("CoACD","PhaseSolve","CoACD 求解中..."));
+                }
+                FPlatformProcess::Sleep(0.03f);
+            }
+
+            // 回写结果（游戏线程）
+            StaticMesh->Modify();
+            StaticMesh->CreateBodySetup();
+            UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+            if (BodySetup)
+            {
+                if (Args.bRemoveExistingCollision)
+                {
+                    BodySetup->RemoveSimpleCollision();
+                }
+
+                if (Result.meshes_count > 0 && Result.meshes_ptr)
+                {
+                    auto& ConvexElems = BodySetup->AggGeom.ConvexElems;
+                    const int32 FirstIdx = ConvexElems.Num();
+                    ConvexElems.AddDefaulted((int32)Result.meshes_count);
+                    for (uint64 i = 0; i < Result.meshes_count; ++i)
+                    {
+                        FKConvexElem& Elem = ConvexElems[FirstIdx + (int32)i];
+                        const FCoACD_Mesh& RM = Result.meshes_ptr[i];
+                        if (RM.vertices_count == 0 || !RM.vertices_ptr || RM.triangles_count == 0 || !RM.triangles_ptr)
+                        {
+                            continue;
+                        }
+                        Elem.VertexData.SetNumUninitialized((int32)RM.vertices_count);
+                        for (uint64 p = 0; p < RM.vertices_count; ++p)
+                        {
+                            Elem.VertexData[(int32)p].X = RM.vertices_ptr[(size_t)p * 3 + 0];
+                            Elem.VertexData[(int32)p].Y = RM.vertices_ptr[(size_t)p * 3 + 1];
+                            Elem.VertexData[(int32)p].Z = RM.vertices_ptr[(size_t)p * 3 + 2];
+                        }
+                        Elem.IndexData.SetNumUninitialized((int32)RM.triangles_count * 3);
+                        for (int32 p = 0; p < Elem.IndexData.Num(); ++p)
+                        {
+                            Elem.IndexData[p] = RM.triangles_ptr[p];
+                        }
+                        Elem.UpdateElemBox();
+                    }
+
+                    BodySetup->InvalidatePhysicsData();
+                }
+            }
+
+            // 释放资源
+            if (GCoACD_Free) GCoACD_Free(Result);
+            if (GCoACD_Free) GCoACD_Free(Result);
+
+            // 写回阶段 余量（大约 10%）
+            if (Shown < 100.f)
+            {
+                Advance(100.f - Shown, NSLOCTEXT("CoACD","PhaseWrite","写回结果..."));
+            }
         }
+        else
+        {
+            Task.EnterProgressFrame(1.f);
+        }
+        return;
+    }
+
+    // 多资产：顺序处理（游戏线程），避免 UObject 跨线程
+    for (int32 i=0;i<SelectedAssets.Num();++i)
+    {
+        WorkMainThread(i);
+        if (Task.ShouldCancel()) break;
     }
 }
 

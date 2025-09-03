@@ -44,8 +44,8 @@ struct FX_CoACDArgs
     int32 SourceLODIndex = 0;                // LOD 索引
     bool bRemoveExistingCollision = true;    // 移除现有碰撞
 
-    // 需要排除的材质槽关键词（包含匹配，忽略大小写）
-    TArray<FString> MaterialKeywordsToExclude{ TEXT("Outline") };
+    // 需要排除的材质关键词（槽名/材质名/路径/索引，忽略大小写）
+    TArray<FString> MaterialKeywordsToExclude; // 默认不排除
 
     // 批量控制
     bool bEnableParallel = false;            // 是否并行（默认串行更安全）

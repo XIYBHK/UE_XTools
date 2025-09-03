@@ -16,6 +16,9 @@
 *.dylib
 *.dll
 
+# 允许 CoACD ThirdParty DLL 文件被跟踪
+!ThirdParty/CoACD/DLL/*.dll
+
 # Fortran module files
 *.mod
 
