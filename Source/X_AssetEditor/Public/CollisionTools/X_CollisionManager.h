@@ -3,9 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/StaticMesh.h"
-#include "AssetRegistry/AssetData.h"
-#include "PhysicsEngine/BodySetup.h"
+// Public头尽量轻：用前向声明替代重头
+class UStaticMesh;
+struct FAssetData;
+enum ECollisionTraceFlag : int;
 #include "X_CollisionManager.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_CollisionManager, Log, All);

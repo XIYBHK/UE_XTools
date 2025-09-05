@@ -14,7 +14,6 @@
 #include "Editor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "StaticMeshEditorSubsystem.h"
-#include "StaticMeshEditorSubsystemHelpers.h"
 
 DEFINE_LOG_CATEGORY(LogX_CollisionManager);
 
@@ -299,96 +298,69 @@ void FX_CollisionManager::ShowOperationResult(const FX_CollisionOperationResult&
 
 bool FX_CollisionManager::RemoveCollisionFromMesh(UStaticMesh* StaticMesh)
 {
-    if (!StaticMesh || !StaticMesh->GetBodySetup())
+    if (!StaticMesh)
+    {
+        return false;
+    }
+    UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+    if (!BodySetup)
     {
         return false;
     }
 
-    try
-    {
-        UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+    // 清除所有碰撞数据
+    BodySetup->RemoveSimpleCollision();
 
-        // 清除所有碰撞数据
-        BodySetup->RemoveSimpleCollision();
+    // 标记并重建
+    BodySetup->MarkPackageDirty();
+    BodySetup->CreatePhysicsMeshes();
 
-        // 标记为已修改
-        BodySetup->MarkPackageDirty();
-        StaticMesh->MarkPackageDirty();
-
-        // 重新构建碰撞
-        BodySetup->CreatePhysicsMeshes();
-
-        // 保存修改
-        SaveStaticMeshChanges(StaticMesh);
-
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        LogOperation(FString::Printf(TEXT("移除碰撞时发生异常: %s"), ANSI_TO_TCHAR(e.what())), true);
-        return false;
-    }
+    // 保存修改（内部负责 StaticMesh 标脏与编辑器刷新）
+    SaveStaticMeshChanges(StaticMesh);
+    return true;
 }
 
 bool FX_CollisionManager::AddConvexCollisionToMesh(UStaticMesh* StaticMesh)
 {
-    if (!StaticMesh || !StaticMesh->GetBodySetup())
+    if (!StaticMesh)
+    {
+        return false;
+    }
+    UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+    if (!BodySetup)
     {
         return false;
     }
 
-    try
+    // 先清除现有的简单碰撞
+    BodySetup->RemoveSimpleCollision();
+
+    // 添加凸包碰撞（基于 LOD0 顶点数据）
+    if (StaticMesh->GetNumLODs() > 0 && StaticMesh->GetRenderData())
     {
-        UBodySetup* BodySetup = StaticMesh->GetBodySetup();
+        const FStaticMeshLODResources& LODResource = StaticMesh->GetRenderData()->LODResources[0];
 
-        // 先清除现有的简单碰撞
-        BodySetup->RemoveSimpleCollision();
-
-        // 添加凸包碰撞
-        // 使用静态网格体的渲染数据生成凸包
-        if (StaticMesh->GetNumLODs() > 0)
+        FKConvexElem ConvexElem;
+        TArray<FVector> Vertices;
+        const int32 NumVertices = LODResource.GetNumVertices();
+        Vertices.Reserve(NumVertices);
+        for (int32 VertIndex = 0; VertIndex < NumVertices; ++VertIndex)
         {
-            // 为每个LOD生成凸包（通常只使用LOD0）
-            const FStaticMeshLODResources& LODResource = StaticMesh->GetRenderData()->LODResources[0];
-
-            // 创建凸包元素
-            FKConvexElem ConvexElem;
-
-            // 从顶点数据生成凸包
-            TArray<FVector> Vertices;
-            const int32 NumVertices = LODResource.GetNumVertices();
-
-            for (int32 VertIndex = 0; VertIndex < NumVertices; ++VertIndex)
-            {
-                FVector Vertex = (FVector)LODResource.VertexBuffers.PositionVertexBuffer.VertexPosition(VertIndex);
-                Vertices.Add(Vertex);
-            }
-
-            // 设置凸包顶点
-            ConvexElem.VertexData = Vertices;
-            ConvexElem.UpdateElemBox();
-
-            // 添加到BodySetup
-            BodySetup->AggGeom.ConvexElems.Add(ConvexElem);
+            const FVector Vertex = (FVector)LODResource.VertexBuffers.PositionVertexBuffer.VertexPosition(VertIndex);
+            Vertices.Add(Vertex);
         }
-
-        // 标记为已修改
-        BodySetup->MarkPackageDirty();
-        StaticMesh->MarkPackageDirty();
-
-        // 重新构建碰撞
-        BodySetup->CreatePhysicsMeshes();
-
-        // 保存修改
-        SaveStaticMeshChanges(StaticMesh);
-
-        return true;
+        ConvexElem.VertexData = MoveTemp(Vertices);
+        ConvexElem.UpdateElemBox();
+        BodySetup->AggGeom.ConvexElems.Add(ConvexElem);
     }
-    catch (const std::exception& e)
-    {
-        LogOperation(FString::Printf(TEXT("添加凸包碰撞时发生异常: %s"), ANSI_TO_TCHAR(e.what())), true);
-        return false;
-    }
+
+    // 标记并重建
+    BodySetup->MarkPackageDirty();
+    BodySetup->CreatePhysicsMeshes();
+
+    // 保存修改
+    SaveStaticMeshChanges(StaticMesh);
+    return true;
 }
 
 bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, ECollisionTraceFlag TraceFlag)
