@@ -1,0 +1,125 @@
+name: Build XTools Plugin (Simplified)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Windows 构建 (使用您的本地电脑作为自托管运行器)
+  build-windows:
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        ue_version: ['5.3', '5.4', '5.5', '5.6']
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    # 使用您本地电脑上预安装的UE版本
+    - name: Setup UE Path
+      run: |
+        # 根据您的实际UE安装路径调整
+        # 先尝试您脚本中的路径（D盘），再尝试标准路径（C盘）
+        $ue_paths = @(
+          "D:\Program Files\Epic Games\UE_${{ matrix.ue_version }}",
+          "C:\Program Files\Epic Games\UE_${{ matrix.ue_version }}",
+          "F:\ProgramFiles\UE_${{ matrix.ue_version }}"  # 与您的PowerShell脚本保持一致
+        )
+        
+        $ue_path = $null
+        foreach ($path in $ue_paths) {
+          if (Test-Path $path) {
+            $ue_path = $path
+            break
+          }
+        }
+        
+        if (-not $ue_path) {
+          Write-Error "❌ UE ${{ matrix.ue_version }} not found in any of these locations: $($ue_paths -join ', ')"
+          exit 1
+        }
+        echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
+        echo "UE_VERSION=${{ matrix.ue_version }}" >> $env:GITHUB_ENV
+        Write-Host "🎯 Using UE installation at: $ue_path"
+        
+    # 手动构建插件（支持三平台：Win64+Linux+Mac）
+    - name: Build Plugin
+      run: |
+        $plugin_path = "${{ github.workspace }}\XTools.uplugin"
+        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ matrix.ue_version }}-AllPlatforms"
+        $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
+        
+        Write-Host "Building plugin for ALL platforms (Win64+Linux+Mac):"
+        Write-Host "  Plugin: $plugin_path"
+        Write-Host "  Output: $output_path"
+        Write-Host "  UAT: $uat_path"
+        
+        # 创建输出目录
+        New-Item -ItemType Directory -Force -Path $output_path | Out-Null
+        
+        # 🎯 一条命令构建三平台！
+        & $uat_path BuildPlugin `
+          -Plugin="$plugin_path" `
+          -Package="$output_path" `
+          -TargetPlatforms=Win64+Linux+Mac `
+          -StrictIncludes `
+          -NoHostProject
+          
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Plugin build failed with exit code: $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+        
+        Write-Host "Build completed successfully!"
+        
+    - name: List Build Output
+      run: |
+        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ matrix.ue_version }}-AllPlatforms"
+        if (Test-Path $output_path) {
+          Write-Host "Build artifacts for ALL platforms:"
+          Write-Host "Windows binaries:"
+          Get-ChildItem -Path "$output_path" -Filter "*.dll" -Recurse | Select-Object FullName
+          Write-Host "Linux binaries:"  
+          Get-ChildItem -Path "$output_path" -Filter "*.so" -Recurse | Select-Object FullName
+          Write-Host "Mac binaries:"
+          Get-ChildItem -Path "$output_path" -Filter "*.dylib" -Recurse | Select-Object FullName
+          Write-Host "All files:"
+          Get-ChildItem -Path $output_path -Recurse | Select-Object FullName, Length | Format-Table
+        } else {
+          Write-Host "No build output found at: $output_path"
+        }
+        
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: XTools-UE_${{ matrix.ue_version }}-AllPlatforms
+        path: PackagedPlugin/XTools-UE_${{ matrix.ue_version }}-AllPlatforms/
+        retention-days: 7
+
+  # 汇总构建结果
+  summary:
+    if: always()
+    needs: [build-windows]
+    runs-on: self-hosted  # 在您的本地电脑上运行汇总
+    
+    steps:
+    - name: Build Summary
+      run: |
+        echo "## XTools Plugin Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Windows Build Results" >> $GITHUB_STEP_SUMMARY
+        echo "- UE 5.3: ${{ needs.build-windows.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- UE 5.4: ${{ needs.build-windows.result }}" >> $GITHUB_STEP_SUMMARY  
+        echo "- UE 5.5: ${{ needs.build-windows.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- UE 5.6: ${{ needs.build-windows.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.build-windows.result }}" == "success" ]]; then
+          echo "✅ All builds completed successfully!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Some builds failed. Check the logs for details." >> $GITHUB_STEP_SUMMARY
+        fi

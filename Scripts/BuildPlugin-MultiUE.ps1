@@ -2,7 +2,7 @@ Param(
   [string]$PluginUplugin = (Join-Path $PSScriptRoot "..\XTools.uplugin"),
   [string[]]$EngineRoots,
   [string]$OutputBase = (Join-Path $PSScriptRoot "..\..\Plugin_Packages"),
-  [string]$TargetPlatforms = "Win64",
+  [string]$TargetPlatforms = "Win64+Linux+Mac",
   [switch]$StrictIncludes = $true,
   [switch]$NoHostProject = $true,
   [switch]$CleanOutput = $false,

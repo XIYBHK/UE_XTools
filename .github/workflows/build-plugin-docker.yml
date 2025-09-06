@@ -1,0 +1,246 @@
+name: Build XTools Plugin (Docker)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ue_versions:
+        description: 'UE Versions to build'
+        required: false
+        default: '5.3,5.4,5.5,5.6'
+        type: string
+
+jobs:
+  build-plugin:
+    runs-on: self-hosted  # 如果您想在本地运行Docker构建
+    strategy:
+      fail-fast: false
+      matrix:
+        ue_version: ['5.3', '5.4', '5.5', '5.6']
+    
+    # 使用预构建的UE容器（需要自定义或使用社区镜像）
+    container:
+      image: ghcr.io/epicgames/unreal-engine:${{ matrix.ue_version }}-dev
+      # 注意：Epic的官方镜像需要认证，这里使用示例路径
+      # 实际使用时可能需要：
+      # 1. 构建自己的UE容器镜像
+      # 2. 使用社区提供的UE镜像  
+      # 3. 或者使用自托管运行器
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --cpus="4" --memory="8g"
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Verify UE Installation
+      run: |
+        echo "Verifying Unreal Engine ${{ matrix.ue_version }} installation..."
+        ls -la /opt/ue${{ matrix.ue_version }}/Engine/Build/BatchFiles/ || echo "UE not found in expected location"
+        
+        # 设置UE路径
+        echo "UE_ROOT=/opt/ue${{ matrix.ue_version }}" >> $GITHUB_ENV
+        echo "UE_VERSION=${{ matrix.ue_version }}" >> $GITHUB_ENV
+
+    - name: Build Plugin
+      run: |
+        # 设置构建变量
+        PLUGIN_FILE="${{ github.workspace }}/XTools.uplugin"
+        OUTPUT_DIR="${{ github.workspace }}/PackagedPlugin/XTools-UE_${{ matrix.ue_version }}"
+        UAT_SCRIPT="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
+        
+        echo "Building XTools plugin..."
+        echo "  Plugin file: $PLUGIN_FILE"
+        echo "  Output dir:  $OUTPUT_DIR"
+        echo "  UAT script:  $UAT_SCRIPT"
+        
+        # 确保输出目录存在
+        mkdir -p "$OUTPUT_DIR"
+        
+        # 执行构建
+        $UAT_SCRIPT BuildPlugin \
+          -Plugin="$PLUGIN_FILE" \
+          -Package="$OUTPUT_DIR" \
+          -TargetPlatforms=Linux \
+          -StrictIncludes \
+          -NoHostProject
+          
+        # 检查构建结果
+        if [ $? -eq 0 ]; then
+          echo "✅ Build completed successfully!"
+          echo "Build artifacts:"
+          find "$OUTPUT_DIR" -type f -name "*.so" -o -name "*.uplugin" | head -10
+        else
+          echo "❌ Build failed!"
+          exit 1
+        fi
+
+    - name: Upload Linux Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: XTools-UE_${{ matrix.ue_version }}-Linux
+        path: PackagedPlugin/XTools-UE_${{ matrix.ue_version }}/
+        retention-days: 7
+
+# 替代方案：使用自托管运行器的工作流
+---
+name: Build XTools Plugin (Self-Hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: 'Self-hosted runner label'
+        required: true
+        default: 'ue-builder'
+        type: string
+
+jobs:
+  build-multiplatform:
+    # 使用您的本地电脑作为自托管运行器
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ue_version: "5.3"
+            platform: "Win64"
+            config: "Development"
+          - ue_version: "5.4" 
+            platform: "Win64"
+            config: "Development"
+          - ue_version: "5.5"
+            platform: "Win64"
+            config: "Development"
+          - ue_version: "5.6"
+            platform: "Win64"
+            config: "Development"
+          # Linux构建（如果自托管运行器支持）
+          - ue_version: "5.6"
+            platform: "Linux"
+            config: "Development"
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Environment
+      shell: bash
+      run: |
+        # 根据平台设置不同的环境
+        if [[ "${{ matrix.platform }}" == "Win64" ]]; then
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            UE_ROOT="C:/Program Files/Epic Games/UE_${{ matrix.ue_version }}"
+            UAT_CMD="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.bat"
+          else
+            # Linux/Mac上的Windows交叉编译
+            UE_ROOT="/opt/UnrealEngine-${{ matrix.ue_version }}"
+            UAT_CMD="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
+          fi
+        else
+          UE_ROOT="/opt/UnrealEngine-${{ matrix.ue_version }}"
+          UAT_CMD="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
+        fi
+        
+        echo "UE_ROOT=$UE_ROOT" >> $GITHUB_ENV
+        echo "UAT_CMD=$UAT_CMD" >> $GITHUB_ENV
+        echo "PLATFORM=${{ matrix.platform }}" >> $GITHUB_ENV
+        echo "UE_VERSION=${{ matrix.ue_version }}" >> $GITHUB_ENV
+
+    - name: Verify UE Installation
+      shell: bash
+      run: |
+        echo "Checking UE installation..."
+        echo "UE Root: $UE_ROOT"
+        echo "UAT Command: $UAT_CMD"
+        
+        if [[ -f "$UAT_CMD" ]]; then
+          echo "✅ UE ${{ matrix.ue_version }} found"
+        else
+          echo "❌ UE ${{ matrix.ue_version }} not found at $UE_ROOT"
+          echo "Trying alternative paths on your local machine..."
+          # 在Windows self-hosted runner上检查常见UE安装位置
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "Checking Windows UE installations:"
+            ls -la "D:/Program Files/Epic Games/" 2>/dev/null | grep UE || echo "No UE found in D:/Program Files/Epic Games/"
+            ls -la "C:/Program Files/Epic Games/" 2>/dev/null | grep UE || echo "No UE found in C:/Program Files/Epic Games/"
+            ls -la "F:/ProgramFiles/" 2>/dev/null | grep UE || echo "No UE found in F:/ProgramFiles/"
+          fi
+          exit 1
+        fi
+
+    - name: Build XTools Plugin
+      shell: bash
+      run: |
+        PLUGIN_FILE="${{ github.workspace }}/XTools.uplugin"
+        OUTPUT_DIR="${{ github.workspace }}/PackagedPlugin/XTools-UE_${{ matrix.ue_version }}-${{ matrix.platform }}"
+        
+        echo "Building XTools plugin for UE ${{ matrix.ue_version }} - ${{ matrix.platform }}"
+        echo "Plugin: $PLUGIN_FILE"
+        echo "Output: $OUTPUT_DIR"
+        
+        # 清理并创建输出目录
+        rm -rf "$OUTPUT_DIR"
+        mkdir -p "$OUTPUT_DIR"
+        
+        # 根据操作系统选择正确的命令执行方式
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          cmd //c "\"$UAT_CMD\" BuildPlugin -Plugin=\"$PLUGIN_FILE\" -Package=\"$OUTPUT_DIR\" -TargetPlatforms=${{ matrix.platform }} -StrictIncludes -NoHostProject"
+        else
+          "$UAT_CMD" BuildPlugin \
+            -Plugin="$PLUGIN_FILE" \
+            -Package="$OUTPUT_DIR" \
+            -TargetPlatforms=${{ matrix.platform }} \
+            -StrictIncludes \
+            -NoHostProject
+        fi
+        
+        # 验证构建结果
+        if [[ $? -eq 0 ]]; then
+          echo "✅ Build successful!"
+          echo "Generated files:"
+          find "$OUTPUT_DIR" -type f | head -20
+          
+          # 计算产物大小
+          total_size=$(du -sh "$OUTPUT_DIR" | cut -f1)
+          echo "Total size: $total_size"
+        else
+          echo "❌ Build failed!"
+          exit 1
+        fi
+
+    - name: Upload Plugin Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: XTools-UE_${{ matrix.ue_version }}-${{ matrix.platform }}
+        path: PackagedPlugin/XTools-UE_${{ matrix.ue_version }}-${{ matrix.platform }}/
+        retention-days: 30
+
+    - name: Generate Build Report
+      shell: bash
+      run: |
+        OUTPUT_DIR="${{ github.workspace }}/PackagedPlugin/XTools-UE_${{ matrix.ue_version }}-${{ matrix.platform }}"
+        
+        echo "## Build Report: XTools-UE_${{ matrix.ue_version }}-${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Status:** ✅ Success" >> $GITHUB_STEP_SUMMARY
+        echo "**Platform:** ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+        echo "**UE Version:** ${{ matrix.ue_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Build Config:** ${{ matrix.config }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ -d "$OUTPUT_DIR" ]]; then
+          file_count=$(find "$OUTPUT_DIR" -type f | wc -l)
+          dir_size=$(du -sh "$OUTPUT_DIR" | cut -f1)
+          
+          echo "**Output Statistics:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Files generated: $file_count" >> $GITHUB_STEP_SUMMARY
+          echo "- Total size: $dir_size" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "**Key Files:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          find "$OUTPUT_DIR" -name "*.uplugin" -o -name "*.dll" -o -name "*.so" -o -name "*.dylib" | head -10 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi

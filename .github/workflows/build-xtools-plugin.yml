@@ -1,0 +1,240 @@
+name: Build XTools Plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      ue_versions:
+        description: 'UE Versions to build (comma-separated)'
+        required: false
+        default: '5.3,5.4,5.5,5.6'
+        type: string
+      platforms:
+        description: 'Platforms to build (use + to separate multiple platforms)'
+        required: false
+        default: 'Win64+Linux+Mac'
+        type: string
+      clean_build:
+        description: 'Clean build'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PLUGIN_NAME: 'XTools'
+  PLUGIN_FILE: 'XTools.uplugin'
+
+jobs:
+  # 主构建任务 - 简化版，一次构建所有平台
+  build:
+    runs-on: self-hosted  # 使用自托管运行器，预装所有UE版本
+    strategy:
+      fail-fast: false
+      matrix:
+        ue_version: ['5.3', '5.4', '5.5', '5.6']
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup UE Environment
+      run: |
+        # 与您的PowerShell脚本保持一致的路径检测逻辑
+        $ue_paths = @(
+          "D:\Program Files\Epic Games\UE_${{ matrix.ue_version }}",
+          "C:\Program Files\Epic Games\UE_${{ matrix.ue_version }}",
+          "F:\ProgramFiles\UE_${{ matrix.ue_version }}"
+        )
+        
+        $ue_path = $null
+        foreach ($path in $ue_paths) {
+          if (Test-Path $path) {
+            $ue_path = $path
+            break
+          }
+        }
+        
+        if (-not $ue_path) {
+          Write-Error "❌ UE ${{ matrix.ue_version }} not found in any of these locations: $($ue_paths -join ', ')"
+          exit 1
+        }
+        
+        echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
+        echo "UE_VERSION=${{ matrix.ue_version }}" >> $env:GITHUB_ENV
+        Write-Host "🎯 Using local UE installation at: $ue_path"
+        
+    - name: Verify UE Installation
+      run: |
+        $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
+        if (Test-Path $uat_path) {
+          Write-Host "✅ Found UE ${{ matrix.ue_version }} at: $env:UE_PATH"
+        } else {
+          Write-Error "❌ UE ${{ matrix.ue_version }} not found at: $env:UE_PATH"
+          exit 1
+        }
+        
+    # 🎯 一条命令构建所有平台！
+    - name: Build XTools Plugin (All Platforms)
+      run: |
+        $plugin_path = "${{ github.workspace }}\${{ env.PLUGIN_FILE }}"
+        $output_path = "${{ github.workspace }}\PackagedPlugin\${{ env.PLUGIN_NAME }}-UE_${{ matrix.ue_version }}-AllPlatforms"
+        $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
+        $platforms = "${{ github.event.inputs.platforms || 'Win64+Linux+Mac' }}"
+        
+        Write-Host "Building ${{ env.PLUGIN_NAME }} plugin for platforms: $platforms"
+        Write-Host "Plugin: $plugin_path"
+        Write-Host "Output: $output_path"
+        
+        # 清理输出目录
+        if ("${{ github.event.inputs.clean_build || 'true' }}" -eq "true") {
+          if (Test-Path $output_path) {
+            Remove-Item -Recurse -Force $output_path
+            Write-Host "🧹 Cleaned output directory"
+          }
+        }
+        
+        # 创建输出目录
+        New-Item -ItemType Directory -Force -Path $output_path | Out-Null
+        
+        # 构建插件
+        & $uat_path BuildPlugin `
+          -Plugin="$plugin_path" `
+          -Package="$output_path" `
+          -TargetPlatforms=$platforms `
+          -StrictIncludes `
+          -NoHostProject
+          
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Plugin build failed with exit code: $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+        
+        Write-Host "✅ Build completed successfully for all platforms!"
+        
+    # 检查和列出构建产物
+    - name: List Build Artifacts
+      run: |
+        $output_path = "${{ github.workspace }}\PackagedPlugin\${{ env.PLUGIN_NAME }}-UE_${{ matrix.ue_version }}-AllPlatforms"
+        
+        if (Test-Path $output_path) {
+          Write-Host "📦 Build artifacts for UE ${{ matrix.ue_version }} (All Platforms):"
+          
+          Write-Host "`n🪟 Windows binaries (.dll):"
+          Get-ChildItem -Path $output_path -Filter "*.dll" -Recurse | ForEach-Object { "  $_" }
+          
+          Write-Host "`n🐧 Linux binaries (.so):"
+          Get-ChildItem -Path $output_path -Filter "*.so" -Recurse | ForEach-Object { "  $_" }
+          
+          Write-Host "`n🍎 Mac binaries (.dylib):"
+          Get-ChildItem -Path $output_path -Filter "*.dylib" -Recurse | ForEach-Object { "  $_" }
+          
+          Write-Host "`n📄 Plugin files (.uplugin):"
+          Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse | ForEach-Object { "  $_" }
+          
+          # 计算总大小
+          $totalSize = (Get-ChildItem -Path $output_path -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Host "`n📊 Total size: $([math]::Round($totalSize/1MB, 2)) MB"
+        } else {
+          Write-Warning "❌ No build output found at: $output_path"
+        }
+        
+    # 上传构建产物
+    - name: Upload Plugin Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PLUGIN_NAME }}-UE_${{ matrix.ue_version }}-AllPlatforms
+        path: PackagedPlugin/${{ env.PLUGIN_NAME }}-UE_${{ matrix.ue_version }}-AllPlatforms/
+        retention-days: 30
+        
+    # 清理临时文件（可选）
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        # 清理临时构建文件，节省存储空间
+        rm -rf PackagedPlugin/ || true
+        echo "Cleanup completed"
+
+  # 发布任务（仅在Tag推送时执行）
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: self-hosted  # 在您的本地电脑上创建发布包
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    # 下载所有构建产物
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+        
+    # 创建发布包
+    - name: Create Release Packages
+      run: |
+        mkdir -p release_packages
+        
+        # 为每个版本和平台创建ZIP包
+        cd artifacts
+        for artifact_dir in */; do
+          if [ -d "$artifact_dir" ]; then
+            artifact_name=$(basename "$artifact_dir")
+            echo "Creating package for: $artifact_name"
+            cd "$artifact_dir"
+            zip -r "../../release_packages/${artifact_name}.zip" ./*
+            cd ..
+          fi
+        done
+        
+        # 创建完整版本包（所有平台）
+        cd ..
+        zip -r "release_packages/${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-All-Platforms.zip" artifacts/
+        
+        echo "Release packages created:"
+        ls -la release_packages/
+        
+    # 创建GitHub Release
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release_packages/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 构建报告
+  report:
+    if: always()
+    needs: [build]
+    runs-on: self-hosted  # 在您的本地电脑上生成报告
+    
+    steps:
+    - name: Build Report
+      run: |
+        echo "## XTools Plugin Build Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # 构建配置信息
+        echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
+        echo "**UE Versions:** ${{ github.event.inputs.ue_versions || '5.3, 5.4, 5.5, 5.6' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Platforms:** ${{ github.event.inputs.platforms || 'Win64+Linux+Mac' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Clean Build:** ${{ github.event.inputs.clean_build || 'true' }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # 构建状态
+        echo "### Build Status" >> $GITHUB_STEP_SUMMARY
+        echo "Build job result: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+          echo "🚀 **Release build completed for tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "🔧 **Development build completed**" >> $GITHUB_STEP_SUMMARY
+        fi
