@@ -22,7 +22,7 @@ jobs:
       run: |
         # Focus on UE 5.3 version - adjust according to your actual installation path
         # F Drive: F:\Epic Games\UE_5.3\Engine
-        Write-Host "🔍 Detecting UE 5.3 installation path..."
+        Write-Host "[INFO] Detecting UE 5.3 installation path..."
         $ue_paths = @(
           "F:\Epic Games\UE_5.3",  # Your actual installation path (F drive)
           "D:\Program Files\Epic Games\UE_5.3",
@@ -34,47 +34,47 @@ jobs:
           Write-Host "  Checking path: $path"
           if (Test-Path $path) {
             $ue_path = $path
-            Write-Host "  ✅ Found UE installation: $path"
+            Write-Host "  [SUCCESS] Found UE installation: $path"
             break
           } else {
-            Write-Host "  ❌ Path not found: $path"
+            Write-Host "  [ERROR] Path not found: $path"
           }
         }
         
         if (-not $ue_path) {
-          Write-Error "❌ Error: UE 5.3 not found in any of these locations: $($ue_paths -join ', ')"
+          Write-Error "[ERROR] Error: UE 5.3 not found in any of these locations: $($ue_paths -join ', ')"
           exit 1
         }
         
         # Verify key files
         $uat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
         if (-not (Test-Path $uat_path)) {
-          Write-Error "❌ Error: RunUAT.bat not found at: $uat_path"
+          Write-Error "[ERROR] Error: RunUAT.bat not found at: $uat_path"
           exit 1
         }
         
         echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
         echo "UE_VERSION=5.3" >> $env:GITHUB_ENV
-        Write-Host "🎯 Using UE 5.3 installation at: $ue_path"
-        Write-Host "🔧 Found RunUAT.bat at: $uat_path"
+        Write-Host "[TARGET] Using UE 5.3 installation at: $ue_path"
+        Write-Host "[FOUND] Found RunUAT.bat at: $uat_path"
         
         # Detect VS2022 installation path (simplified)
-        Write-Host "🔍 Detecting VS2022 installation path..."
+        Write-Host "[CHECK] Detecting VS2022 installation path..."
         $vs_main_path = "E:\VisualStudio\2022"
         if (Test-Path $vs_main_path) {
           echo "VS2022INSTALLDIR=$vs_main_path" >> $env:GITHUB_ENV
-          Write-Host "🔧 Found VS2022 at: $vs_main_path"
+          Write-Host "[FOUND] Found VS2022 at: $vs_main_path"
         } else {
-          Write-Host "⚠️ Warning: VS2022 not found at E:\VisualStudio\2022, UE BuildTool will auto-detect"
+          Write-Host "[WARNING] Warning: VS2022 not found at E:\VisualStudio\2022, UE BuildTool will auto-detect"
         }
         
         # Verify plugin file exists
         $plugin_file = "${{ github.workspace }}\XTools.uplugin"
-        Write-Host "🔍 Checking plugin file: $plugin_file"
+        Write-Host "[CHECK] Checking plugin file: $plugin_file"
         if (Test-Path $plugin_file) {
-          Write-Host "✅ Plugin file exists: $plugin_file"
+          Write-Host "[SUCCESS] Plugin file exists: $plugin_file"
         } else {
-          Write-Error "❌ Error: Plugin file not found: $plugin_file"
+          Write-Error "[ERROR] Error: Plugin file not found: $plugin_file"
           exit 1
         }
         
@@ -82,26 +82,44 @@ jobs:
     - name: Build Plugin
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "🚀 Starting XTools plugin build (UE 5.3)..."
+        Write-Host "[START] Starting XTools plugin build (UE 5.3)..."
         
         $plugin_path = "${{ github.workspace }}\XTools.uplugin"
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
         $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
         
-        Write-Host "📋 Build Configuration:"
-        Write-Host "  🎮 UE Version: 5.3"
-        Write-Host "  📦 Plugin File: $plugin_path"  
-        Write-Host "  📁 Output Directory: $output_path"
-        Write-Host "  🔧 UAT Tool: $uat_path"
-        Write-Host "  🎯 Target Platforms: Win64+Linux+Mac"
+        Write-Host "[INFO] Build Configuration:"
+        Write-Host "  [UE] UE Version: 5.3"
+        Write-Host "  [PLUGIN] Plugin File: $plugin_path"  
+        Write-Host "  [DIR] Output Directory: $output_path"
+        Write-Host "  [FOUND] UAT Tool: $uat_path"
+        Write-Host "  [TARGET] Target Platforms: Win64+Linux+Mac"
         
         # Create output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        Write-Host "🔧 Using -Installed flag to build plugin without host project"
+        # Pre-generate UE engine headers to fix generated.h issues
+        Write-Host "[PREP] Pre-generating UE engine headers..."
+        $preGenCmd = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe"
+        $preGenArgs = @(
+          "UnrealEditor"
+          "Win64"
+          "Development"
+          "-WaitMutex"
+          "-FromMsBuild"
+        )
+        
+        Write-Host "[EXEC] Running header generation: $preGenCmd $($preGenArgs -join ' ')"
+        & $preGenCmd @preGenArgs
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "[WARNING] Header generation completed with warnings, continuing..."
+        } else {
+          Write-Host "[SUCCESS] UE engine headers generated successfully"
+        }
         
         # Start building cross-platform plugin
-        Write-Host "🏗️ Building plugin with -Installed engine..."
+        Write-Host "[BUILD] Building plugin with pre-generated headers..."
         Write-Host ""
         
         $buildArgs = @(
@@ -110,10 +128,10 @@ jobs:
           "-Package=`"$output_path`""
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
-          "-Installed"
+          "-Rocket"
         )
         
-        Write-Host "⚡ Executing build command:"
+        Write-Host "[EXEC] Executing build command:"
         Write-Host "  $uat_path $($buildArgs -join ' ')"
         Write-Host ""
         
@@ -121,56 +139,56 @@ jobs:
           
         if ($LASTEXITCODE -ne 0) {
           Write-Host ""
-          Write-Error "❌ Error: Plugin build failed with exit code: $LASTEXITCODE"
+          Write-Error "[ERROR] Error: Plugin build failed with exit code: $LASTEXITCODE"
           exit $LASTEXITCODE
         }
         
         Write-Host ""
-        Write-Host "🎉 Build completed: UE 5.3 plugin build successful"
+        Write-Host "[COMPLETE] Build completed: UE 5.3 plugin build successful"
         
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "🔍 Checking UE 5.3 build output..."
+        Write-Host "[CHECK] Checking UE 5.3 build output..."
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
         
         if (Test-Path $output_path) {
-          Write-Host "✅ Build output directory exists: $output_path"
+          Write-Host "[SUCCESS] Build output directory exists: $output_path"
           Write-Host ""
           
           # File statistics
           $allFiles = Get-ChildItem -Path $output_path -Recurse -File
           $totalSize = ($allFiles | Measure-Object -Property Length -Sum).Sum
-          Write-Host "📊 Build Statistics:"
-          Write-Host "  📁 Total Files: $($allFiles.Count)"
-          Write-Host "  📏 Total Size: $([math]::Round($totalSize/1MB, 2)) MB"
+          Write-Host "[STATS] Build Statistics:"
+          Write-Host "  [DIR] Total Files: $($allFiles.Count)"
+          Write-Host "  [SIZE] Total Size: $([math]::Round($totalSize/1MB, 2)) MB"
           Write-Host ""
           
           # Windows platform files
           $winFiles = Get-ChildItem -Path "$output_path" -Filter "*.dll" -Recurse
-          Write-Host "🪟 Windows Binary Files ($($winFiles.Count)):"
-          $winFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
+          Write-Host "[WIN] Windows Binary Files ($($winFiles.Count)):"
+          $winFiles | ForEach-Object { Write-Host "  [FILE] File: $($_.FullName)" }
           Write-Host ""
           
           # Linux platform files
           $linuxFiles = Get-ChildItem -Path "$output_path" -Filter "*.so" -Recurse
-          Write-Host "🐧 Linux Binary Files ($($linuxFiles.Count)):"
-          $linuxFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
+          Write-Host "[LINUX] Linux Binary Files ($($linuxFiles.Count)):"
+          $linuxFiles | ForEach-Object { Write-Host "  [FILE] File: $($_.FullName)" }
           Write-Host ""
           
           # Mac platform files
           $macFiles = Get-ChildItem -Path "$output_path" -Filter "*.dylib" -Recurse
-          Write-Host "🍎 Mac Binary Files ($($macFiles.Count)):"
-          $macFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
+          Write-Host "[MAC] Mac Binary Files ($($macFiles.Count)):"
+          $macFiles | ForEach-Object { Write-Host "  [FILE] File: $($_.FullName)" }
           Write-Host ""
           
           # Plugin configuration files
           $upluginFiles = Get-ChildItem -Path "$output_path" -Filter "*.uplugin" -Recurse
-          Write-Host "⚙️ Plugin Configuration Files ($($upluginFiles.Count)):"
-          $upluginFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
+          Write-Host "[CONFIG] Plugin Configuration Files ($($upluginFiles.Count)):"
+          $upluginFiles | ForEach-Object { Write-Host "  [FILE] File: $($_.FullName)" }
           
         } else {
-          Write-Error "❌ Error: Build output directory not found: $output_path"
+          Write-Error "[ERROR] Error: Build output directory not found: $output_path"
           exit 1
         }
         
@@ -191,7 +209,7 @@ jobs:
     - name: Build Summary
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "📋 Generating build summary report..."
+        Write-Host "[INFO] Generating build summary report..."
         
         echo "## XTools Plugin Build Summary (UE 5.3 Focus)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
