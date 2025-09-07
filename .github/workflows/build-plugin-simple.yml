@@ -124,7 +124,7 @@ jobs:
         }
         
         Write-Host ""
-        Write-Host "成功: UE 5.3 插件构建成功完成！"
+        Write-Host "构建完成: UE 5.3 插件构建成功"
         
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
