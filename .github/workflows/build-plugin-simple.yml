@@ -122,6 +122,47 @@ jobs:
         Write-Host "  Method: Direct BuildPlugin call with -NoHostProject (your proven approach)"
         Write-Host ""
         
+        # CRITICAL: Diagnose CI environment differences (GitHub Official Runner v2.328.0)
+        Write-Host "[DIAGNOSE] CI Environment Analysis (GitHub Actions Runner Service)..."
+        Write-Host "  Current User: $($env:USERNAME)"
+        Write-Host "  Current Domain: $($env:USERDOMAIN)" 
+        Write-Host "  User SID: $([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)"
+        Write-Host "  Temp Directory: $($env:TEMP)"
+        Write-Host "  User Profile: $($env:USERPROFILE)"
+        $serviceMode = switch ($env:USERNAME) {
+          'NETWORK SERVICE' { 'Network Service (Limited Permissions)' }
+          'SYSTEM' { 'Local System (Full Permissions - RECOMMENDED)' }
+          default { "User Account: $($env:USERNAME) (Full Permissions)" }
+        }
+        Write-Host "  Service Mode: $serviceMode"
+        Write-Host ""
+        
+        # Check UE engine directory permissions
+        Write-Host "[DIAGNOSE] UE Engine Directory Access..."
+        $engineTestPath = "$env:UE_PATH\Engine\Binaries"
+        if (Test-Path $engineTestPath) {
+          $engineAccess = Get-ChildItem $engineTestPath -ErrorAction SilentlyContinue | Measure-Object
+          Write-Host "  Engine Binaries Access: SUCCESS ($($engineAccess.Count) items)"
+        } else {
+          Write-Host "  Engine Binaries Access: FAILED"
+        }
+        
+        # Check if UHT can run directly
+        Write-Host "[DIAGNOSE] Testing UHT Direct Access..."
+        $uhtPath = "$env:UE_PATH\Engine\Binaries\Win64\UnrealHeaderTool.exe"
+        if (Test-Path $uhtPath) {
+          Write-Host "  UHT Path: EXISTS - $uhtPath"
+          try {
+            & $uhtPath -help | Out-Null
+            Write-Host "  UHT Execution: SUCCESS"
+          } catch {
+            Write-Host "  UHT Execution: FAILED - $($_.Exception.Message)"
+          }
+        } else {
+          Write-Host "  UHT Path: NOT FOUND - $uhtPath"
+        }
+        Write-Host ""
+        
         # Apply exact same parameters as BuildPlugin-MultiUE.ps1 (lines 47-54)
         $buildArgs = @(
           "BuildPlugin"
