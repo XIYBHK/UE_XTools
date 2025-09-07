@@ -94,23 +94,40 @@ jobs:
         Write-Host "  [PLUGIN] Plugin File: $plugin_path"  
         Write-Host "  [DIR] Output Directory: $output_path"
         Write-Host "  [FOUND] UAT Tool: $uat_path"
-        Write-Host "  [STRATEGY] Using -NoHostProject approach"
+        Write-Host "  [STRATEGY] Using an existing host project: F:\Unreal Projects\CPP\CPP.uproject"
         
         # Create output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        # --- Final Build Strategy ---
-        # 1. Use vcvarsall.bat to create a full Visual Studio developer environment. This is critical.
-        # 2. Use -NoHostProject, which is proven to work on your local machine and avoids issues 
-        #    with UBT misinterpreting the project type and adding the problematic "-installed" flag.
+        # --- FINAL STRATEGY V4: Use a real, existing host project ---
+        # Replicating the user's local successful setup is the most reliable path.
+        # We will use the provided C++ project as the build host. This guarantees that UAT
+        # has a valid, complete context and will not generate a flawed temporary project.
         
+        $host_project_path = "F:\Unreal Projects\CPP\CPP.uproject"
+
+        Write-Host "[INFO] Using existing host project at: $host_project_path"
+        if (-not (Test-Path $host_project_path)) {
+            Write-Error "[ERROR] The specified host project was not found: $host_project_path"
+            exit 1
+        }
+
+        # The plugin must be "discoverable" by the host project.
+        # The most reliable way is to place it in the project's Plugins directory.
+        $target_plugin_dir = "F:\Unreal Projects\CPP\Plugins\XTools"
+        Write-Host "[SETUP] Copying plugin from ${{ github.workspace }} to $target_plugin_dir"
+        Copy-Item -Path "${{ github.workspace }}\*" -Destination $target_plugin_dir -Recurse -Force
+
+        $plugin_path_in_project = Join-Path $target_plugin_dir "XTools.uplugin"
+        Write-Host "[INFO] Plugin is now located at: $plugin_path_in_project"
+
         $buildArgs = @(
           "BuildPlugin"
-          "-Plugin=`"$plugin_path`""
+          "-Plugin=`"$plugin_path_in_project`""
           "-Package=`"$output_path`""
+          "-Project=`"$host_project_path`"" # Force UAT to use the REAL project
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
-          "-NoHostProject" # Reverting to the simplest, locally-proven method
         )
         
         # CRITICAL: Initialize the Visual Studio Developer Environment
