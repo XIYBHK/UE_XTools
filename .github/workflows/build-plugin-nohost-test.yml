@@ -1,4 +1,4 @@
-name: Build XTools Plugin (NoHost Test)
+name: Build XTools Plugin (Dynamic Host Test)
 
 on:
   workflow_dispatch:
@@ -6,130 +6,67 @@ on:
 jobs:
   # Windows build (using your local computer as self-hosted runner)
   build-windows:
+    name: Build for Windows (UE ${{ matrix.ue_version }})
     runs-on: self-hosted
+
     strategy:
       fail-fast: false
       matrix:
-        ue_version: ['5.3']  # Focus on version 5.3 first, add other versions after success
-    
+        ue_version: ['5.3'] # 专注于UE 5.3版本
+
     steps:
+    - name: Set Environment Variables
+      run: |
+        $UE_PATH = "F:\Epic Games\UE_${{ matrix.ue_version }}"
+        $VS_PATH = "E:\VisualStudio\2022"
+        echo "UE_PATH=$UE_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "VS2022INSTALLDIR=$VS_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "Runner will use UE version ${{ matrix.ue_version }}"
+
     - name: Checkout Repository
       uses: actions/checkout@v4
-      
-    # Use pre-installed UE version on your local computer
-    - name: Setup UE Path
-      shell: powershell -ExecutionPolicy Bypass -File {0}
-      run: |
-        # Focus on UE 5.3 version - adjust according to your actual installation path
-        # F Drive: F:\Epic Games\UE_5.3\Engine
-        Write-Host "[INFO] Detecting UE 5.3 installation path..."
-        $ue_paths = @(
-          "F:\Epic Games\UE_5.3",  # Your actual installation path (F drive)
-          "D:\Program Files\Epic Games\UE_5.3",
-          "C:\Program Files\Epic Games\UE_5.3"
-        )
-        
-        $ue_path = $null
-        foreach ($path in $ue_paths) {
-          Write-Host "  Checking path: $path"
-          if (Test-Path $path) {
-            $ue_path = $path
-            Write-Host "  [SUCCESS] Found UE installation: $path"
-            break
-          } else {
-            Write-Host "  [ERROR] Path not found: $path"
-          }
-        }
-        
-        if (-not $ue_path) {
-          Write-Error "[ERROR] Error: UE 5.3 not found in any of these locations: $($ue_paths -join ', ')"
-          exit 1
-        }
-        
-        # Verify key files
-        $uat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
-        if (-not (Test-Path $uat_path)) {
-          Write-Error "[ERROR] Error: RunUAT.bat not found at: $uat_path"
-          exit 1
-        }
-        
-        echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
-        echo "UE_VERSION=5.3" >> $env:GITHUB_ENV
-        Write-Host "[TARGET] Using UE 5.3 installation at: $ue_path"
-        Write-Host "[FOUND] Found RunUAT.bat at: $uat_path"
-        
-        # Detect VS2022 installation path (simplified)
-        Write-Host "[CHECK] Detecting VS2022 installation path..."
-        $vs_main_path = "E:\VisualStudio\2022"
-        if (Test-Path $vs_main_path) {
-          echo "VS2022INSTALLDIR=$vs_main_path" >> $env:GITHUB_ENV
-          Write-Host "[FOUND] Found VS2022 at: $vs_main_path"
-        } else {
-          Write-Host "[WARNING] Warning: VS2022 not found at E:\VisualStudio\2022, UE BuildTool will auto-detect"
-        }
-        
-        # Verify plugin file exists
-        $plugin_file = "${{ github.workspace }}\XTools.uplugin"
-        Write-Host "[CHECK] Checking plugin file: $plugin_file"
-        if (Test-Path $plugin_file) {
-          Write-Host "[SUCCESS] Plugin file exists: $plugin_file"
-        } else {
-          Write-Error "[ERROR] Error: Plugin file not found: $plugin_file"
-          exit 1
-        }
-        
-    - name: Build Plugin
-      shell: powershell -ExecutionPolicy Bypass -File {0}
-      run: |
-        Write-Host "[START] Starting XTools plugin build (UE 5.3) with NoHostProject strategy..."
-        
-        # --- FINAL STRATEGY V6: Pre-generate Engine Headers ---
-        # The root cause is a corrupted or incomplete installed engine build. It's missing the
-        # pre-generated `.generated.h` files it is supposed to have.
-        # On local machines, opening a .uproject in VS often triggers a repair step that
-        # regenerates these files. We must replicate this repair step in CI.
-        #
-        # STEP 1: Force regeneration of engine headers by generating project files for the host project.
-        # This acts as our "repair engine" step.
-        Write-Host "[REPAIR] Forcing regeneration of engine headers..."
-        $host_project_path = "F:\Unreal Projects\CPP\CPP.uproject"
-        $ubt_path = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
-        $dotnet_path = "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\6.0.302\windows\dotnet.exe"
-        
-        $genProjectArgs = @(
-            "-projectfiles",
-            "-project=`"$host_project_path`"",
-            "-game",
-            "-rocket",
-            "-progress"
-        )
-        & $dotnet_path "$ubt_path" $genProjectArgs
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "[ERROR] Failed to generate project files and repair engine headers."
-            exit $LASTEXITCODE
-        }
-        Write-Host "[SUCCESS] Engine headers regenerated successfully."
-        Write-Host ""
-        
-        # STEP 2: Now that the engine is repaired, build the plugin using the NoHostProject strategy.
-        Write-Host "[BUILD] Building plugin against the repaired engine..."
-        $plugin_path = "${{ github.workspace }}\XTools.uplugin"
-        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-NoHost"
-        $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
-        
-        # Create output directory
-        New-Item -ItemType Directory -Force -Path $output_path | Out-Null
 
-        $buildArgs = @(
-          "BuildPlugin"
-          "-Plugin=`"$plugin_path`""
-          "-Package=`"$output_path`""
-          "-TargetPlatforms=Win64+Linux+Mac"
-          "-StrictIncludes"
-          "-NoHostProject"
-        )
+    - name: Build and Package Plugin
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "[START] Starting XTools plugin build (UE ${{ matrix.ue_version }}) using Dynamic Host strategy..."
         
-        # CRITICAL: Initialize the Visual Studio Developer Environment
+        # --- STRATEGY V7: Dynamic Host Project ---
+        # This strategy dynamically creates a temporary, clean host project inside the workspace.
+        # It then uses the proven, reliable method of invoking UnrealBuildTool (UBT) directly.
+        # This is fully automated and requires no pre-existing projects on the runner.
+
+        $ue_version = "${{ matrix.ue_version }}"
+        $output_name = "XTools-UE_${ue_version}-Win64-Test"
+        $final_package_dir = "${{ github.workspace }}\PackagedPlugin\$output_name"
+
+        # Step 1: Dynamically create a temporary host project.
+        $temp_project_dir = "${{ github.workspace }}\TempHostProject"
+        $temp_project_path = "$temp_project_dir\TempHostProject.uproject"
+        New-Item -ItemType Directory -Force -Path $temp_project_dir | Out-Null
+        
+        $uproject_content = @"
+        {
+            "FileVersion": 3,
+            "EngineAssociation": "$ue_version",
+            "Category": "",
+            "Description": ""
+        }
+"@
+        Set-Content -Path $temp_project_path -Value $uproject_content -Encoding UTF8
+        Write-Host "[SETUP] Dynamically created temporary host project at: $temp_project_path"
+
+        # Step 2: Copy the plugin source into the temporary project.
+        $source_plugin_repo_dir = "${{ github.workspace }}"
+        $target_plugin_proj_dir = "$temp_project_dir\Plugins\XTools"
+        New-Item -ItemType Directory -Force -Path (Split-Path $target_plugin_proj_dir) | Out-Null
+        
+        Write-Host "[SETUP] Copying plugin source to temporary project..."
+        $exclude_dirs = @(Split-Path -Leaf $temp_project_dir, "PackagedPlugin", ".git")
+        Get-ChildItem -Path $source_plugin_repo_dir -Exclude $exclude_dirs | Copy-Item -Destination $target_plugin_proj_dir -Recurse -Force
+        Write-Host "[SUCCESS] Plugin copied."
+
+        # Step 3: Initialize the Visual Studio Developer Environment. This remains CRITICAL.
         Write-Host "[CRITICAL] Initializing Visual Studio Developer Environment..."
         $vcvars_path = Join-Path $env:VS2022INSTALLDIR "VC\Auxiliary\Build\vcvarsall.bat"
         if (-not (Test-Path $vcvars_path)) {
@@ -137,38 +74,83 @@ jobs:
             exit 1
         }
         
-        $command_chain = "call `"$vcvars_path`" x64 && `"$uat_path`" $($buildArgs -join ' ')"
+        # Step 4: Directly invoke UnrealBuildTool (UBT) to build the temporary project.
+        Write-Host "[BUILD] Invoking UBT directly to build the temporary project..."
+        $ubt_path = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
+        $dotnet_path = "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\6.0.302\windows\dotnet.exe"
+
+        $ubtArgs = @(
+            "UnrealEditor",
+            "Win64",
+            "Development",
+            "-Project=`"$temp_project_path`"",
+            "-log=`"${{ github.workspace }}\ubt.log`""
+        )
         
-        Write-Host "[EXEC] Executing UAT within a prepared VS environment..."
+        $command_chain = "call `"$vcvars_path`" x64 && `"$dotnet_path`" `"$ubt_path`" $($ubtArgs -join ' ')"
+        
+        Write-Host "[EXEC] Executing UBT within a prepared VS environment..."
         Write-Host "  Command Chain: $command_chain"
         cmd.exe /c $command_chain
         
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "[ERROR] Build failed with exit code: $LASTEXITCODE"
+            Write-Error "[ERROR] UBT build failed. Check the ubt.log artifact for details."
             exit $LASTEXITCODE
         }
-        Write-Host "[SUCCESS] Build completed successfully."
+        Write-Host "[SUCCESS] UBT build completed successfully."
+        Write-Host ""
         
-    - name: List Build Output
-      shell: powershell -ExecutionPolicy Bypass -File {0}
-      run: |
-        Write-Host "[CHECK] Checking UE 5.3 NoHost build output..."
-        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-NoHost"
-        
-        if (Test-Path $output_path) {
-          Write-Host "[SUCCESS] Build output directory exists: $output_path"
-          Get-ChildItem -Path $output_path -Recurse | ForEach-Object { Write-Host "  [FILE] $($_.FullName)" }
-        } else {
-          Write-Error "[ERROR] Error: Build output directory not found: $output_path"
-          exit 1
+        # Step 5: Manually package the plugin with the newly compiled binaries.
+        Write-Host "[PACKAGE] Manually packaging the plugin from the temporary project..."
+        $built_plugin_dir = $target_plugin_proj_dir
+        $binary_source_path = Join-Path $built_plugin_dir "Binaries\Win64"
+        if (-not (Test-Path $binary_source_path)) {
+            Write-Error "[ERROR] Build succeeded but no binaries were found at $binary_source_path"
+            exit 1
         }
         
-    - name: Upload Artifacts
+        New-Item -ItemType Directory -Force -Path $final_package_dir | Out-Null
+        
+        $include_dirs = @("Content", "Resources", "Source", "ThirdParty")
+        $include_files = @("README.md", "XTools.uplugin")
+        
+        foreach ($dir in $include_dirs) {
+            $source_dir = Join-Path $built_plugin_dir $dir
+            if (Test-Path $source_dir) {
+                Write-Host "  Copying directory: $dir"
+                Copy-Item -Path $source_dir -Destination $final_package_dir -Recurse
+            }
+        }
+        
+        foreach ($file in $include_files) {
+            $source_file = Join-Path $built_plugin_dir $file
+            if (Test-Path $source_file) {
+                Write-Host "  Copying file: $file"
+                Copy-Item -Path $source_file -Destination $final_package_dir
+            }
+        }
+        
+        $binary_dest_path = Join-Path $final_package_dir "Binaries\Win64"
+        New-Item -ItemType Directory -Force -Path $binary_dest_path | Out-Null
+        Write-Host "  Copying and cleaning binaries (DLLs only)..."
+        Get-ChildItem -Path $binary_source_path -Filter "*.dll" | Copy-Item -Destination $binary_dest_path
+        
+        Write-Host "[SUCCESS] Plugin packaging complete to $final_package_dir"
+        Write-Host "[COMPLETE] Build process finished successfully."
+
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: XTools-UE_5.3-NoHost
-        path: PackagedPlugin/XTools-UE_5.3-NoHost/
+        name: XTools-UE_${{ matrix.ue_version }}-Win64-Test
+        path: ${{ github.workspace }}/PackagedPlugin/XTools-UE_${{ matrix.ue_version }}-Win64-Test
         retention-days: 7
+        
+    - name: Upload UBT Log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ubt-log-UE_${{ matrix.ue_version }}-Test
+        path: ${{ github.workspace }}/ubt.log
 
   # Summarize build results
   summary:
@@ -182,19 +164,16 @@ jobs:
       run: |
         Write-Host "[INFO] Generating build summary report..."
         
-        echo "## XTools Plugin Build Summary (NoHost Test)" >> $GITHUB_STEP_SUMMARY
+        echo "## XTools Plugin Build Summary (Dynamic Host Test)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Build Time:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
-        echo "**Commit Hash:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Runner:** Self-Hosted" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         echo "### UE 5.3 Build Results" >> $GITHUB_STEP_SUMMARY
         $buildResult = "${{ needs.build-windows.result }}"
         if ($buildResult -eq "success") {
-          echo "- **UE 5.3 (NoHost)**: Build Successful" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact Name**: \`XTools-UE_5.3-NoHost\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **UE 5.3 (Dynamic Host)**: Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: \`XTools-UE_5.3-Win64-Test\`" >> $GITHUB_STEP_SUMMARY
         } else {
-          echo "- **UE 5.3 (NoHost)**: Build Failed" >> $GITHUB_STEP_SUMMARY
+          echo "- **UE 5.3 (Dynamic Host)**: Build Failed" >> $GITHUB_STEP_SUMMARY
         }
