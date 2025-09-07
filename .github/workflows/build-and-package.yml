@@ -19,6 +19,9 @@ jobs:
         ue_version: ['5.3', '5.4', '5.5', '5.6']
 
     steps:
+    - name: Prioritize System Windows Tar
+      run: echo "C:\Windows\System32" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
     - name: Set Environment Variables
       run: |
         $UE_PATH = "F:\Epic Games\UE_${{ matrix.ue_version }}"
@@ -55,25 +58,3 @@ jobs:
         name: ubt-log-UE_${{ matrix.ue_version }}
         path: ${{ github.workspace }}/ubt.log
 
-  summary:
-    if: always()
-    needs: [build-windows]
-    runs-on: self-hosted
-    
-    steps:
-    - name: Build Summary
-      run: |
-        echo "## XTools Plugin Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Engine Version | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
-        echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
-
-        $buildResult = '${{ needs.build-windows.result }}'
-        $ue_version = '${{ matrix.ue_version }}'
-        $artifact_name = "XTools-UE_${ue_version}-Win64"
-
-        if ($buildResult -eq 'success') {
-          echo "| **UE ${ue_version}** | :white_check_mark: Success | \`$artifact_name\` |" >> $GITHUB_STEP_SUMMARY
-        } else {
-          echo "| **UE ${ue_version}** | :x: Failed | N/A |" >> $GITHUB_STEP_SUMMARY
-        }
