@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ue_version: ['5.3'] # 专注于UE 5.3版本
+        ue_version: ['5.3', '5.4', '5.5', '5.6']
 
     steps:
     - name: Set Environment Variables
@@ -159,7 +159,7 @@ jobs:
     
     steps:
     - name: Build Summary
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: powershell
       run: |
         Write-Host "[INFO] Generating build summary report..."
         
@@ -168,11 +168,15 @@ jobs:
         echo "**Build Time:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        echo "### UE 5.3 Build Results" >> $GITHUB_STEP_SUMMARY
-        $buildResult = "${{ needs.build-windows.result }}"
-        if ($buildResult -eq "success") {
-          echo "- **UE 5.3 (Dynamic Host)**: Build Successful" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact Name**: \`XTools-UE_5.3-Win64-Test\`" >> $GITHUB_STEP_SUMMARY
+        echo "| Engine Version | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
+        echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+
+        $buildResult = '${{ needs.build-windows.result }}'
+        $ue_version = '${{ matrix.ue_version }}'
+        $artifact_name = "XTools-UE_${ue_version}-Win64-Test"
+
+        if ($buildResult -eq 'success') {
+          echo "| **UE ${ue_version}** | :white_check_mark: Success | \`$artifact_name\` |" >> $GITHUB_STEP_SUMMARY
         } else {
-          echo "- **UE 5.3 (Dynamic Host)**: Build Failed" >> $GITHUB_STEP_SUMMARY
+          echo "| **UE ${ue_version}** | :x: Failed | N/A |" >> $GITHUB_STEP_SUMMARY
         }
