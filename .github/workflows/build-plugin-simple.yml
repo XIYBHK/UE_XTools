@@ -98,37 +98,55 @@ jobs:
         # Create output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        # Pre-generate UE engine headers to fix generated.h issues
-        Write-Host "[PREP] Pre-generating UE engine headers..."
-        $preGenCmd = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe"
-        $preGenArgs = @(
-          "UnrealEditor"
-          "Win64"
-          "Development"
-          "-WaitMutex"
-          "-FromMsBuild"
-        )
+        # Create temporary UE project as host for plugin building
+        Write-Host "[PREP] Creating temporary UE project for plugin building..."
+        $tempProjectDir = "$env:GITHUB_WORKSPACE\TempHostProject"
+        $tempProjectFile = "$tempProjectDir\TempHost.uproject"
+        $tempPluginsDir = "$tempProjectDir\Plugins"
+        $tempPluginDir = "$tempPluginsDir\XTools"
         
-        Write-Host "[EXEC] Running header generation: $preGenCmd $($preGenArgs -join ' ')"
-        & $preGenCmd @preGenArgs
+        # Create temp project directory
+        New-Item -ItemType Directory -Force -Path $tempProjectDir | Out-Null
+        New-Item -ItemType Directory -Force -Path $tempPluginsDir | Out-Null
         
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "[WARNING] Header generation completed with warnings, continuing..."
-        } else {
-          Write-Host "[SUCCESS] UE engine headers generated successfully"
-        }
+        # Create minimal .uproject file
+        $uprojectContent = @{
+            FileVersion = 3
+            EngineAssociation = "5.3"
+            Category = ""
+            Description = ""
+            Modules = @()
+            Plugins = @(
+                @{
+                    Name = "XTools"
+                    Enabled = $true
+                }
+            )
+        } | ConvertTo-Json -Depth 10
         
-        # Start building cross-platform plugin
-        Write-Host "[BUILD] Building plugin with pre-generated headers..."
+        $uprojectContent | Out-File -FilePath $tempProjectFile -Encoding UTF8
+        Write-Host "[SUCCESS] Created temporary project: $tempProjectFile"
+        
+        # Copy plugin to temp project
+        Write-Host "[COPY] Copying plugin to temporary project..."
+        Copy-Item -Path "$env:GITHUB_WORKSPACE" -Destination $tempPluginDir -Recurse -Force -Exclude @(".git", "TempHostProject", ".github")
+        Write-Host "[SUCCESS] Plugin copied to: $tempPluginDir"
+        
+        # Update plugin path to point to temp location
+        $plugin_path = "$tempPluginDir\XTools.uplugin"
+        Write-Host "[UPDATE] Updated plugin path: $plugin_path"
+        
+        # Build plugin using temporary project as host
+        Write-Host "[BUILD] Building plugin with temporary host project..."
         Write-Host ""
         
         $buildArgs = @(
           "BuildPlugin"
           "-Plugin=`"$plugin_path`""
           "-Package=`"$output_path`""
+          "-Project=`"$tempProjectFile`""
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
-          "-Rocket"
         )
         
         Write-Host "[EXEC] Executing build command:"
@@ -145,6 +163,13 @@ jobs:
         
         Write-Host ""
         Write-Host "[COMPLETE] Build completed: UE 5.3 plugin build successful"
+        
+        # Clean up temporary project
+        Write-Host "[CLEANUP] Removing temporary project..."
+        if (Test-Path $tempProjectDir) {
+          Remove-Item -Path $tempProjectDir -Recurse -Force
+          Write-Host "[SUCCESS] Temporary project cleaned up"
+        }
         
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
