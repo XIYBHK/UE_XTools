@@ -84,6 +84,7 @@ jobs:
       run: |
         Write-Host "[START] Starting XTools plugin build (UE 5.3)..."
         
+        # Simplified paths and arguments based on the NoHostProject strategy
         $plugin_path = "${{ github.workspace }}\XTools.uplugin"
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
         $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
@@ -93,101 +94,28 @@ jobs:
         Write-Host "  [PLUGIN] Plugin File: $plugin_path"  
         Write-Host "  [DIR] Output Directory: $output_path"
         Write-Host "  [FOUND] UAT Tool: $uat_path"
-        Write-Host "  [TARGET] Target Platforms: Win64+Linux+Mac"
+        Write-Host "  [STRATEGY] Using -NoHostProject approach"
         
         # Create output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        # Environment diagnostics (compare with your local environment)
-        Write-Host "[ENV] CI Environment Analysis:"
-        Write-Host "  Working Directory: $env:GITHUB_WORKSPACE"
-        Write-Host "  UE Path: $env:UE_PATH"
-        Write-Host "  VS2022: $env:VS2022INSTALLDIR"
-        Write-Host "  User Account: $env:USERNAME"
-        Write-Host "  Service Account: $env:USERDOMAIN"
+        # --- Final Build Strategy ---
+        # 1. Use vcvarsall.bat to create a full Visual Studio developer environment. This is critical.
+        # 2. Use -NoHostProject, which is proven to work on your local machine and avoids issues 
+        #    with UBT misinterpreting the project type and adding the problematic "-installed" flag.
         
-        # Test plugin file integrity
-        Write-Host "[VALIDATE] Plugin validation:"
-        if (Test-Path $plugin_path) {
-          $pluginContent = Get-Content $plugin_path -Raw | ConvertFrom-Json
-          Write-Host "  Plugin Version: $($pluginContent.VersionName)"
-          Write-Host "  Engine Version: $($pluginContent.EngineVersion)" 
-          Write-Host "  Modules Count: $($pluginContent.Modules.Count)"
-          Write-Host "  Can Contain Content: $($pluginContent.CanContainContent)"
-        }
-        
-        # Create a minimal host project for CI environment
-        Write-Host "[BUILD] Creating host project for CI environment..."
-        Write-Host "  Strategy: Use host project to provide proper UE context for header generation"
-        Write-Host "  Method: BuildPlugin with -Project parameter (CI-compatible approach)"
-        Write-Host ""
-        
-        # Create minimal host project
-        $host_project_path = "${{ github.workspace }}\CPP.uproject"
-        
-        Write-Host "[CREATE] Creating host project: $host_project_path"
-        
-        # Create host project JSON content
-        $host_project_json = @{
-          "FileVersion" = 3
-          "EngineAssociation" = "5.3"
-          "Category" = ""
-          "Description" = ""
-          "Modules" = @(
-            @{
-              "Name" = "CPP"
-              "Type" = "Runtime"
-              "LoadingPhase" = "Default"
-            }
-          )
-          "Plugins" = @(
-            @{
-              "Name" = "XTools"
-              "Enabled" = $true
-              "Path" = "./XTools.uplugin"
-            }
-          )
-        }
-        
-        # Convert to JSON and save
-        $host_project_json | ConvertTo-Json -Depth 10 | Out-File -FilePath $host_project_path -Encoding UTF8
-        
-        # Verify files exist
-        if (-not (Test-Path $host_project_path)) { 
-          Write-Error "[ERROR] Failed to create host project: $host_project_path"
-          exit 1 
-        }
-        if (-not (Test-Path $plugin_path)) { 
-          Write-Error "[ERROR] Plugin not found: $plugin_path"
-          exit 1 
-        }
-        
-        Write-Host "[SUCCESS] Host project created successfully"
-        Write-Host "  Host Project: $host_project_path"
-        Write-Host "  Plugin: $plugin_path"
-        Write-Host ""
-        
-        # Build with host project (NO -NoHostProject parameter)
         $buildArgs = @(
           "BuildPlugin"
           "-Plugin=`"$plugin_path`""
           "-Package=`"$output_path`""
-          "-Project=`"$host_project_path`""
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
+          "-NoHostProject" # Reverting to the simplest, locally-proven method
         )
         
-        Write-Host "[EXEC] Executing build command:"
-        Write-Host "  $uat_path $($buildArgs -join ' ')"
-        Write-Host ""
-        
-        # CRITICAL FIX: The runner environment, even as the correct user, is missing VS dev variables.
-        # We must explicitly create a developer command prompt environment before running UAT.
+        # CRITICAL: Initialize the Visual Studio Developer Environment
         Write-Host "[CRITICAL] Initializing Visual Studio Developer Environment..."
-        Write-Host "  Strategy: Call vcvarsall.bat to set up the MSVC toolchain environment."
-        
-        $vs_path = $env:VS2022INSTALLDIR
-        $vcvars_path = Join-Path $vs_path "VC\Auxiliary\Build\vcvarsall.bat"
+        $vcvars_path = Join-Path $env:VS2022INSTALLDIR "VC\Auxiliary\Build\vcvarsall.bat"
         
         if (-not (Test-Path $vcvars_path)) {
             Write-Error "[ERROR] vcvarsall.bat not found at $vcvars_path. Cannot create VS build environment."
@@ -197,8 +125,7 @@ jobs:
         Write-Host "[SUCCESS] Found vcvarsall.bat at: $vcvars_path"
         Write-Host ""
         
-        # Chain the vcvarsall.bat setup and the UAT command together to be executed in a single cmd.exe process.
-        # This ensures UAT runs within the fully initialized developer environment.
+        # Chain the vcvarsall.bat setup and the UAT command together.
         $command_chain = "call `"$vcvars_path`" x64 && `"$uat_path`" $($buildArgs -join ' ')"
         
         Write-Host "[EXEC] Executing build within a prepared VS environment via cmd.exe..."
@@ -209,7 +136,7 @@ jobs:
           
         if ($LASTEXITCODE -ne 0) {
           Write-Host ""
-          Write-Error "[ERROR] Plugin build failed with exit code: $LASTEXITCODE"
+          Write-Error "[ERROR] Error: Plugin build failed with exit code: $LASTEXITCODE"
           exit $LASTEXITCODE
         }
         
