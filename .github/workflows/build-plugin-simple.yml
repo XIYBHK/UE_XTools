@@ -125,6 +125,33 @@ jobs:
         $hostProjectPath = "F:\Unreal Projects\CPP\CPP.uproject"
         if (Test-Path $hostProjectPath) {
           Write-Host "[SUCCESS] Found working host project: $hostProjectPath"
+          Write-Host "[STRATEGY] Pre-building host project to ensure all engine headers are generated..."
+          
+          # Step 1: Pre-build the host project to generate all engine headers
+          Write-Host "[STEP 1] Pre-building host project to generate headers..."
+          $prebuildArgs = @(
+            "BuildTarget"
+            "-project=`"$hostProjectPath`""
+            "-platform=Win64"
+            "-configuration=Development"
+            "-target=CPPEditor"
+          )
+          
+          Write-Host "[EXEC] Pre-build command:"
+          Write-Host "  $uat_path $($prebuildArgs -join ' ')"
+          Write-Host ""
+          
+          & $uat_path @prebuildArgs
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "[WARNING] Host project pre-build failed, but continuing with plugin build..."
+          } else {
+            Write-Host "[SUCCESS] Host project pre-build completed"
+          }
+          Write-Host ""
+          
+          # Step 2: Build plugin with host project context
+          Write-Host "[STEP 2] Building plugin with host project context..."
           $buildArgs = @(
             "BuildPlugin"
             "-Plugin=`"$plugin_path`""
