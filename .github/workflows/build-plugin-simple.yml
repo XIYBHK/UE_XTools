@@ -98,55 +98,36 @@ jobs:
         # Create output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        # Create temporary UE project as host for plugin building
-        Write-Host "[PREP] Creating temporary UE project for plugin building..."
-        $tempProjectDir = "$env:GITHUB_WORKSPACE\TempHostProject"
-        $tempProjectFile = "$tempProjectDir\TempHost.uproject"
-        $tempPluginsDir = "$tempProjectDir\Plugins"
-        $tempPluginDir = "$tempPluginsDir\XTools"
+        # Environment diagnostics (compare with your local environment)
+        Write-Host "[ENV] CI Environment Analysis:"
+        Write-Host "  Working Directory: $env:GITHUB_WORKSPACE"
+        Write-Host "  UE Path: $env:UE_PATH"
+        Write-Host "  VS2022: $env:VS2022INSTALLDIR"
+        Write-Host "  User Account: $env:USERNAME"
+        Write-Host "  Service Account: $env:USERDOMAIN"
         
-        # Create temp project directory
-        New-Item -ItemType Directory -Force -Path $tempProjectDir | Out-Null
-        New-Item -ItemType Directory -Force -Path $tempPluginsDir | Out-Null
+        # Test plugin file integrity
+        Write-Host "[VALIDATE] Plugin validation:"
+        if (Test-Path $plugin_path) {
+          $pluginContent = Get-Content $plugin_path -Raw | ConvertFrom-Json
+          Write-Host "  Plugin Version: $($pluginContent.VersionName)"
+          Write-Host "  Engine Version: $($pluginContent.EngineVersion)" 
+          Write-Host "  Modules Count: $($pluginContent.Modules.Count)"
+          Write-Host "  Can Contain Content: $($pluginContent.CanContainContent)"
+        }
         
-        # Create minimal .uproject file
-        $uprojectContent = @{
-            FileVersion = 3
-            EngineAssociation = "5.3"
-            Category = ""
-            Description = ""
-            Modules = @()
-            Plugins = @(
-                @{
-                    Name = "XTools"
-                    Enabled = $true
-                }
-            )
-        } | ConvertTo-Json -Depth 10
-        
-        $uprojectContent | Out-File -FilePath $tempProjectFile -Encoding UTF8
-        Write-Host "[SUCCESS] Created temporary project: $tempProjectFile"
-        
-        # Copy plugin to temp project
-        Write-Host "[COPY] Copying plugin to temporary project..."
-        Copy-Item -Path "$env:GITHUB_WORKSPACE" -Destination $tempPluginDir -Recurse -Force -Exclude @(".git", "TempHostProject", ".github")
-        Write-Host "[SUCCESS] Plugin copied to: $tempPluginDir"
-        
-        # Update plugin path to point to temp location
-        $plugin_path = "$tempPluginDir\XTools.uplugin"
-        Write-Host "[UPDATE] Updated plugin path: $plugin_path"
-        
-        # Build plugin using temporary project as host
-        Write-Host "[BUILD] Building plugin with temporary host project..."
+        # Use the exact same approach as your successful local script
+        Write-Host "[BUILD] Building plugin without host project (like your local script)..."
+        Write-Host "  Strategy: Direct -NoHostProject (verified working locally)"
         Write-Host ""
         
         $buildArgs = @(
           "BuildPlugin"
           "-Plugin=`"$plugin_path`""
           "-Package=`"$output_path`""
-          "-Project=`"$tempProjectFile`""
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
+          "-NoHostProject"
         )
         
         Write-Host "[EXEC] Executing build command:"
@@ -163,13 +144,6 @@ jobs:
         
         Write-Host ""
         Write-Host "[COMPLETE] Build completed: UE 5.3 plugin build successful"
-        
-        # Clean up temporary project
-        Write-Host "[CLEANUP] Removing temporary project..."
-        if (Test-Path $tempProjectDir) {
-          Remove-Item -Path $tempProjectDir -Recurse -Force
-          Write-Host "[SUCCESS] Temporary project cleaned up"
-        }
         
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
