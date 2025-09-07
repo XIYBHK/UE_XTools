@@ -22,7 +22,7 @@ jobs:
       run: |
         # 专注于UE 5.3版本 - 根据您的实际安装路径调整
         # F盘: F:\Epic Games\UE_5.3\Engine
-        Write-Host "🔍 检测UE 5.3安装路径..."
+        Write-Host "检测UE 5.3安装路径..."
         $ue_paths = @(
           "F:\Epic Games\UE_5.3",  # 您的实际安装路径（F盘）
           "D:\Program Files\Epic Games\UE_5.3",
@@ -34,47 +34,47 @@ jobs:
           Write-Host "  检查路径: $path"
           if (Test-Path $path) {
             $ue_path = $path
-            Write-Host "  ✅ 找到UE安装: $path"
+            Write-Host "  找到UE安装: $path"
             break
           } else {
-            Write-Host "  ❌ 路径不存在: $path"
+            Write-Host "  路径不存在: $path"
           }
         }
         
         if (-not $ue_path) {
-          Write-Error "❌ UE 5.3 not found in any of these locations: $($ue_paths -join ', ')"
+          Write-Error "错误: UE 5.3 not found in any of these locations: $($ue_paths -join ', ')"
           exit 1
         }
         
         # 验证关键文件
         $uat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
         if (-not (Test-Path $uat_path)) {
-          Write-Error "❌ RunUAT.bat not found at: $uat_path"
+          Write-Error "错误: RunUAT.bat not found at: $uat_path"
           exit 1
         }
         
         echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
         echo "UE_VERSION=5.3" >> $env:GITHUB_ENV
-        Write-Host "🎯 Using UE 5.3 installation at: $ue_path"
-        Write-Host "🔧 RunUAT.bat found at: $uat_path"
+        Write-Host "使用UE 5.3安装路径: $ue_path"
+        Write-Host "找到RunUAT.bat: $uat_path"
         
         # 检测VS2022安装路径（简化版）
-        Write-Host "🔍 检测VS2022安装路径..."
+        Write-Host "检测VS2022安装路径..."
         $vs_main_path = "E:\VisualStudio\2022"
         if (Test-Path $vs_main_path) {
           echo "VS2022INSTALLDIR=$vs_main_path" >> $env:GITHUB_ENV
-          Write-Host "🔧 Found VS2022 at: $vs_main_path"
+          Write-Host "找到VS2022: $vs_main_path"
         } else {
-          Write-Host "⚠️ VS2022 not found at E:\VisualStudio\2022, UE BuildTool will auto-detect"
+          Write-Host "警告: VS2022 not found at E:\VisualStudio\2022, UE BuildTool will auto-detect"
         }
         
         # 验证插件文件存在
         $plugin_file = "${{ github.workspace }}\XTools.uplugin"
-        Write-Host "🔍 检查插件文件: $plugin_file"
+        Write-Host "检查插件文件: $plugin_file"
         if (Test-Path $plugin_file) {
-          Write-Host "✅ 插件文件存在: $plugin_file"
+          Write-Host "插件文件存在: $plugin_file"
         } else {
-          Write-Error "❌ 插件文件不存在: $plugin_file"
+          Write-Error "错误: 插件文件不存在: $plugin_file"
           exit 1
         }
         
@@ -82,24 +82,24 @@ jobs:
     - name: Build Plugin
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "🚀 开始构建XTools插件 (UE 5.3版本)..."
+        Write-Host "开始构建XTools插件 (UE 5.3版本)..."
         
         $plugin_path = "${{ github.workspace }}\XTools.uplugin"
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
         $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
         
-        Write-Host "📋 构建配置:"
-        Write-Host "  🎯 UE版本: 5.3"
-        Write-Host "  📄 插件文件: $plugin_path"  
-        Write-Host "  📦 输出目录: $output_path"
-        Write-Host "  🔧 UAT工具: $uat_path"
-        Write-Host "  🌐 目标平台: Win64+Linux+Mac"
+        Write-Host "构建配置:"
+        Write-Host "  UE版本: 5.3"
+        Write-Host "  插件文件: $plugin_path"  
+        Write-Host "  输出目录: $output_path"
+        Write-Host "  UAT工具: $uat_path"
+        Write-Host "  目标平台: Win64+Linux+Mac"
         
         # 创建输出目录
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        # 🎯 开始构建三平台插件
-        Write-Host "⏳ 正在构建插件..."
+        # 开始构建三平台插件
+        Write-Host "正在构建插件..."
         Write-Host ""
         
         $buildArgs = @(
@@ -111,7 +111,7 @@ jobs:
           "-NoHostProject"
         )
         
-        Write-Host "🔨 执行构建命令:"
+        Write-Host "执行构建命令:"
         Write-Host "  $uat_path $($buildArgs -join ' ')"
         Write-Host ""
         
@@ -119,56 +119,56 @@ jobs:
           
         if ($LASTEXITCODE -ne 0) {
           Write-Host ""
-          Write-Error "❌ 插件构建失败，退出代码: $LASTEXITCODE"
+          Write-Error "错误: 插件构建失败，退出代码: $LASTEXITCODE"
           exit $LASTEXITCODE
         }
         
         Write-Host ""
-        Write-Host "✅ UE 5.3 插件构建成功完成！"
+        Write-Host "成功: UE 5.3 插件构建成功完成！"
         
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "📦 检查UE 5.3构建产物..."
+        Write-Host "检查UE 5.3构建产物..."
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
         
         if (Test-Path $output_path) {
-          Write-Host "✅ 构建输出目录存在: $output_path"
+          Write-Host "构建输出目录存在: $output_path"
           Write-Host ""
           
           # 统计文件
           $allFiles = Get-ChildItem -Path $output_path -Recurse -File
           $totalSize = ($allFiles | Measure-Object -Property Length -Sum).Sum
-          Write-Host "📊 构建统计:"
-          Write-Host "  📁 总文件数: $($allFiles.Count)"
-          Write-Host "  📏 总大小: $([math]::Round($totalSize/1MB, 2)) MB"
+          Write-Host "构建统计:"
+          Write-Host "  总文件数: $($allFiles.Count)"
+          Write-Host "  总大小: $([math]::Round($totalSize/1MB, 2)) MB"
           Write-Host ""
           
           # Windows平台文件
           $winFiles = Get-ChildItem -Path "$output_path" -Filter "*.dll" -Recurse
-          Write-Host "🪟 Windows二进制文件 ($($winFiles.Count)个):"
-          $winFiles | ForEach-Object { Write-Host "  📄 $($_.FullName)" }
+          Write-Host "Windows二进制文件 ($($winFiles.Count)个):"
+          $winFiles | ForEach-Object { Write-Host "  文件: $($_.FullName)" }
           Write-Host ""
           
           # Linux平台文件  
           $linuxFiles = Get-ChildItem -Path "$output_path" -Filter "*.so" -Recurse
-          Write-Host "🐧 Linux二进制文件 ($($linuxFiles.Count)个):"
-          $linuxFiles | ForEach-Object { Write-Host "  📄 $($_.FullName)" }
+          Write-Host "Linux二进制文件 ($($linuxFiles.Count)个):"
+          $linuxFiles | ForEach-Object { Write-Host "  文件: $($_.FullName)" }
           Write-Host ""
           
           # Mac平台文件
           $macFiles = Get-ChildItem -Path "$output_path" -Filter "*.dylib" -Recurse
-          Write-Host "🍎 Mac二进制文件 ($($macFiles.Count)个):"
-          $macFiles | ForEach-Object { Write-Host "  📄 $($_.FullName)" }
+          Write-Host "Mac二进制文件 ($($macFiles.Count)个):"
+          $macFiles | ForEach-Object { Write-Host "  文件: $($_.FullName)" }
           Write-Host ""
           
           # 插件配置文件
           $upluginFiles = Get-ChildItem -Path "$output_path" -Filter "*.uplugin" -Recurse
-          Write-Host "⚙️ 插件配置文件 ($($upluginFiles.Count)个):"
-          $upluginFiles | ForEach-Object { Write-Host "  📄 $($_.FullName)" }
+          Write-Host "插件配置文件 ($($upluginFiles.Count)个):"
+          $upluginFiles | ForEach-Object { Write-Host "  文件: $($_.FullName)" }
           
         } else {
-          Write-Error "❌ 构建输出目录不存在: $output_path"
+          Write-Error "错误: 构建输出目录不存在: $output_path"
           exit 1
         }
         
@@ -189,31 +189,31 @@ jobs:
     - name: Build Summary
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "📋 生成构建汇总报告..."
+        Write-Host "生成构建汇总报告..."
         
-        echo "## 🎯 XTools插件构建汇总 (UE 5.3专项)" >> $GITHUB_STEP_SUMMARY
+        echo "## XTools插件构建汇总 (UE 5.3专项)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**📅 构建时间:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
-        echo "**📊 提交哈希:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**🌿 分支:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**🏃 Runner:** Self-Hosted" >> $GITHUB_STEP_SUMMARY
+        echo "**构建时间:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
+        echo "**提交哈希:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**分支:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Runner:** Self-Hosted" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        echo "### 🎮 UE 5.3 构建结果" >> $GITHUB_STEP_SUMMARY
+        echo "### UE 5.3 构建结果" >> $GITHUB_STEP_SUMMARY
         $buildResult = "${{ needs.build-windows.result }}"
         if ($buildResult -eq "success") {
-          echo "- ✅ **UE 5.3**: 构建成功 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "- **UE 5.3**: 构建成功" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 构建产物" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 **多平台支持**: Win64 + Linux + Mac" >> $GITHUB_STEP_SUMMARY
-          echo "- 📁 **Artifact名称**: \`XTools-UE_5.3-AllPlatforms\`" >> $GITHUB_STEP_SUMMARY
-          echo "- ⏰ **保留时间**: 7天" >> $GITHUB_STEP_SUMMARY
+          echo "### 构建产物" >> $GITHUB_STEP_SUMMARY
+          echo "- **多平台支持**: Win64 + Linux + Mac" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact名称**: \`XTools-UE_5.3-AllPlatforms\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **保留时间**: 7天" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🚀 **下一步**: 测试成功后可以添加UE 5.4, 5.5, 5.6版本到构建矩阵" >> $GITHUB_STEP_SUMMARY
+          echo "**下一步**: 测试成功后可以添加UE 5.4, 5.5, 5.6版本到构建矩阵" >> $GITHUB_STEP_SUMMARY
         } else {
-          echo "- ❌ **UE 5.3**: 构建失败 💥" >> $GITHUB_STEP_SUMMARY
+          echo "- **UE 5.3**: 构建失败" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔍 **故障排除**: 请检查构建日志中的详细错误信息" >> $GITHUB_STEP_SUMMARY
+          echo "**故障排除**: 请检查构建日志中的详细错误信息" >> $GITHUB_STEP_SUMMARY
         }
         
-        Write-Host "✅ 构建汇总报告已生成"
+        Write-Host "构建汇总报告已生成"
