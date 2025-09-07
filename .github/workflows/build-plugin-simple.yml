@@ -116,19 +116,34 @@ jobs:
           Write-Host "  Can Contain Content: $($pluginContent.CanContainContent)"
         }
         
-        # Use the exact same approach as your successful local script
-        Write-Host "[BUILD] Building plugin without host project (like your local script)..."
-        Write-Host "  Strategy: Direct -NoHostProject (verified working locally)"
+        # Use the working C++ project as host (breakthrough solution!)
+        Write-Host "[BUILD] Using your working C++ project as host..."
+        Write-Host "  Discovery: UE5.3 C++ project builds successfully on runner"
+        Write-Host "  Strategy: Use proven working project as plugin host"
         Write-Host ""
         
-        $buildArgs = @(
-          "BuildPlugin"
-          "-Plugin=`"$plugin_path`""
-          "-Package=`"$output_path`""
-          "-TargetPlatforms=Win64+Linux+Mac"
-          "-StrictIncludes"
-          "-NoHostProject"
-        )
+        $hostProjectPath = "F:\Unreal Projects\CPP\CPP.uproject"
+        if (Test-Path $hostProjectPath) {
+          Write-Host "[SUCCESS] Found working host project: $hostProjectPath"
+          $buildArgs = @(
+            "BuildPlugin"
+            "-Plugin=`"$plugin_path`""
+            "-Package=`"$output_path`""
+            "-Project=`"$hostProjectPath`""
+            "-TargetPlatforms=Win64+Linux+Mac"
+            "-StrictIncludes"
+          )
+        } else {
+          Write-Host "[FALLBACK] Host project not found, using -NoHostProject"
+          $buildArgs = @(
+            "BuildPlugin"
+            "-Plugin=`"$plugin_path`""
+            "-Package=`"$output_path`""
+            "-TargetPlatforms=Win64+Linux+Mac"
+            "-StrictIncludes"
+            "-NoHostProject"
+          )
+        }
         
         Write-Host "[EXEC] Executing build command:"
         Write-Host "  $uat_path $($buildArgs -join ' ')"
