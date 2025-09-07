@@ -220,12 +220,12 @@ running scripts is disabled on this system
 
 **方案A：工作流级别解决（推荐）** ✅
 ```yaml
-# 在每个工作流步骤中使用：
-- name: Setup PowerShell Execution Policy
-  shell: powershell
+# 在每个PowerShell步骤中直接指定执行策略：
+- name: Setup UE Environment
+  shell: pwsh -ExecutionPolicy Bypass {0}
   run: |
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-    Write-Host "✅ PowerShell execution policy set to Bypass"
+    # 您的PowerShell脚本内容...
+    Write-Host "✅ PowerShell running with Bypass execution policy"
 ```
 
 **方案B：自托管运行器全局设置**

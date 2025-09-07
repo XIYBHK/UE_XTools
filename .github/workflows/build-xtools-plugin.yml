@@ -36,15 +36,8 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
       
-    # 设置PowerShell执行策略
-    - name: Setup PowerShell Execution Policy  
-      shell: powershell
-      run: |
-        Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-        Write-Host "✅ PowerShell execution policy set to Bypass for this process"
-        
     - name: Setup UE Environment
-      shell: powershell
+      shell: pwsh -ExecutionPolicy Bypass {0}
       run: |
         # 与您的实际安装路径保持一致的路径检测逻辑
         $ue_paths = @(
@@ -95,7 +88,7 @@ jobs:
         }
         
     - name: Verify UE Installation
-      shell: powershell
+      shell: pwsh -ExecutionPolicy Bypass {0}
       run: |
         $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
         if (Test-Path $uat_path) {
@@ -107,7 +100,7 @@ jobs:
         
     # 🎯 一条命令构建所有平台！
     - name: Build XTools Plugin (All Platforms)
-      shell: powershell
+      shell: pwsh -ExecutionPolicy Bypass {0}
       run: |
         $plugin_path = "${{ github.workspace }}\${{ env.PLUGIN_FILE }}"
         $output_path = "${{ github.workspace }}\PackagedPlugin\${{ env.PLUGIN_NAME }}-UE_${{ matrix.ue_version }}-AllPlatforms"
@@ -146,7 +139,7 @@ jobs:
         
     # 检查和列出构建产物
     - name: List Build Artifacts
-      shell: powershell
+      shell: pwsh -ExecutionPolicy Bypass {0}
       run: |
         $output_path = "${{ github.workspace }}\PackagedPlugin\${{ env.PLUGIN_NAME }}-UE_${{ matrix.ue_version }}-AllPlatforms"
         
@@ -249,7 +242,7 @@ jobs:
     
     steps:
     - name: Build Report
-      shell: powershell
+      shell: pwsh -ExecutionPolicy Bypass {0}
       run: |
         echo "## XTools Plugin Build Report" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY

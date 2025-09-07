@@ -250,17 +250,22 @@ PSSecurityException: running scripts is disabled on this system
 
 **实现方式**：
 ```yaml
-- name: Setup PowerShell Execution Policy
-  shell: powershell
+# 直接在shell配置中指定执行策略，避免"鸡蛋问题"
+- name: Setup UE Environment
+  shell: pwsh -ExecutionPolicy Bypass {0}
   run: |
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-    Write-Host "✅ PowerShell execution policy set to Bypass"
+    # 您的PowerShell脚本可以正常运行
+    Write-Host "✅ PowerShell running with Bypass execution policy"
 ```
 
 这确保了：
 - 🔒 **安全性** - 仅在当前进程中生效
 - 🚀 **可靠性** - 避免执行策略导致的构建失败
 - 🔧 **自动化** - 无需手动干预
+- ⚡ **直接有效** - 避免"鸡蛋问题"，直接在命令级别设置
+
+**为什么使用这种方式？**
+传统方法（在脚本内设置执行策略）会遇到"鸡蛋问题"：需要运行PowerShell脚本来设置执行策略，但执行策略又阻止脚本运行。我们的方案通过在shell命令级别直接指定 `-ExecutionPolicy Bypass` 参数，完全避免了这个问题。
 
 ## 🎯 实施建议
 
