@@ -45,14 +45,13 @@ jobs:
         $temp_project_path = "$temp_project_dir\TempHostProject.uproject"
         New-Item -ItemType Directory -Force -Path $temp_project_dir | Out-Null
         
-        $uproject_content = @'
-        {
-            "FileVersion": 3,
-            "EngineAssociation": "{0}",
-            "Category": "",
-            "Description": ""
-        }
-'@ -f $ue_version
+        $uproject_content = ('{{' + `
+        '    "FileVersion": 3,' + `
+        '    "EngineAssociation": "{0}",' + `
+        '    "Category": "",' + `
+        '    "Description": ""' + `
+        '}}') -f $ue_version
+
         Set-Content -Path $temp_project_path -Value $uproject_content -Encoding UTF8
         Write-Host "[SETUP] Dynamically created temporary host project at: $temp_project_path"
 
