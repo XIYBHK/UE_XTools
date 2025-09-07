@@ -76,7 +76,16 @@ jobs:
         # Step 4: Directly invoke UnrealBuildTool (UBT) to build the temporary project.
         Write-Host "[BUILD] Invoking UBT directly to build the temporary project..."
         $ubt_path = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
-        $dotnet_path = "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\6.0.302\windows\dotnet.exe"
+        
+        # Best Practice: Don't hardcode the dotnet path. Find it relative to UBT,
+        # as it can change between engine versions (e.g., from .NET 6 to .NET 7/8).
+        $dotnet_folder = (Get-Item "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\**\windows\dotnet.exe").DirectoryName
+        if (-not $dotnet_folder) {
+            Write-Error "[ERROR] Could not find dotnet.exe for UE version ${{ matrix.ue_version }}"
+            exit 1
+        }
+        $dotnet_path = Join-Path $dotnet_folder "dotnet.exe"
+        Write-Host "  > Found dotnet.exe at: $dotnet_path"
 
         $ubtArgs = @(
             "UnrealEditor",
