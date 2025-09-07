@@ -18,6 +18,42 @@
 - ✅ PowerShell执行策略允许运行脚本
 - ✅ 网络连接稳定
 
+## ⚙️ 环境配置验证
+
+### 您的实际安装环境
+
+根据您的截图和配置，工作流已优化为以下路径：
+
+**UE安装路径**（F盘）：
+```
+F:\Epic Games\UE_5.3\Engine\
+F:\Epic Games\UE_5.4\Engine\
+F:\Epic Games\UE_5.5\Engine\
+F:\Epic Games\UE_5.6\Engine\
+```
+
+**VS2022安装路径**（E盘）：
+```
+E:\VisualStudio\2022\Common7\IDE\
+```
+
+### 路径验证命令
+
+在继续之前，请验证您的安装：
+
+```powershell
+# 验证UE安装
+Test-Path "F:\Epic Games\UE_5.6\Engine\Build\BatchFiles\RunUAT.bat"  # 应返回True
+
+# 验证VS2022安装
+Test-Path "E:\VisualStudio\2022\Common7\IDE\devenv.exe"             # 应返回True
+
+# 列出所有已安装的UE版本
+Get-ChildItem "F:\Epic Games\" | Where-Object {$_.Name -like "UE_*"} | Select Name
+```
+
+如果任何命令返回 `False` 或出错，请检查您的安装路径。
+
 ## 🚀 快速设置步骤
 
 ### 第1步：获取Runner Token
@@ -39,10 +75,11 @@ mkdir C:\actions-runner
 cd C:\actions-runner
 
 # 2. 下载Runner（使用GitHub页面显示的最新链接）
-Invoke-WebRequest -Uri https://github.com/actions/runner/releases/download/v2.311.0/actions-runner-win-x64-2.311.0.zip -OutFile actions-runner-win-x64-2.311.0.zip
+Invoke-WebRequest -Uri https://github.com/actions/runner/releases/download/v2.328.0/actions-runner-win-x64-2.328.0.zip -OutFile actions-runner-win-x64-2.328.0.zip
 
 # 3. 解压
-Expand-Archive -Path actions-runner-win-x64-2.311.0.zip -DestinationPath .
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory("$PWD\actions-runner-win-x64-2.328.0.zip", "$PWD")
 
 # 4. 配置Runner（使用GitHub页面复制的完整命令）
 .\config.cmd --url https://github.com/YOUR_USERNAME/UE_XTools --token YOUR_RUNNER_TOKEN_HERE
@@ -53,17 +90,27 @@ Expand-Archive -Path actions-runner-win-x64-2.311.0.zip -DestinationPath .
 
 ### 第3步：设置为Windows服务（推荐）
 
-为了让Runner在后台自动运行，设置为Windows服务：
+**注意：根据GitHub官方文档，服务安装必须在初始配置时完成。**
+
+如果在第2步配置时没有选择安装为服务，**必须删除Runner并重新配置**：
 
 ```powershell
-# 安装为服务
-.\svc.cmd install
+# 移除当前配置
+.\config.cmd remove
+
+# 重新配置（需要新的Token）
+.\config.cmd --url https://github.com/YOUR_USERNAME/UE_XTools --token YOUR_NEW_TOKEN
+# 在配置过程中选择 Y 来安装为服务
+
+# 服务管理命令
+# 查看服务状态
+Get-Service actions.runner.*
 
 # 启动服务
-.\svc.cmd start
+Start-Service actions.runner.YOUR_MACHINE_NAME.YOUR_RUNNER_NAME
 
-# 检查状态
-.\svc.cmd status
+# 停止服务
+Stop-Service actions.runner.YOUR_MACHINE_NAME.YOUR_RUNNER_NAME
 ```
 
 ## 🔧 验证安装
@@ -78,7 +125,15 @@ Expand-Archive -Path actions-runner-win-x64-2.311.0.zip -DestinationPath .
 1. 进入 `Actions` 标签页
 2. 选择 `Build XTools Plugin (Simplified)` 工作流
 3. 点击 `Run workflow`
-4. 观察是否在您的电脑上开始运行
+4. 观察构建日志，应该看到路径检测成功：
+
+```
+🎯 Using UE installation at: F:\Epic Games\UE_5.6
+🔧 Found VS2022 at: E:\VisualStudio\2022
+✅ Found UE 5.6 at: F:\Epic Games\UE_5.6
+```
+
+5. 构建应该在您的电脑上成功运行并生成插件包
 
 ## 📁 推荐的目录结构
 
@@ -88,13 +143,19 @@ C:\actions-runner\          # GitHub Actions Runner
 │   └── UE_XTools\         # 您的仓库会被克隆到这里
 ├── config.cmd
 ├── run.cmd
-└── svc.cmd
+└── run-helper.cmd
 
-D:\Program Files\Epic Games\    # 您的UE安装目录
+F:\Epic Games\             # ✅ 您的实际UE安装目录
 ├── UE_5.3\
 ├── UE_5.4\
 ├── UE_5.5\
 └── UE_5.6\
+
+E:\VisualStudio\           # ✅ 您的实际VS2022安装目录
+└── 2022\
+    ├── Common7\
+    │   └── IDE\
+    └── VC\
 ```
 
 ## ⚡ 使用流程
@@ -137,11 +198,16 @@ Test-NetConnection github.com -Port 443
 
 **2. UE版本找不到**
 ```powershell
-# 检查UE安装路径
-Get-ChildItem "D:\Program Files\Epic Games\" | Where-Object {$_.Name -like "UE_*"}
-Get-ChildItem "C:\Program Files\Epic Games\" | Where-Object {$_.Name -like "UE_*"}
+# 检查UE安装路径（按优先级顺序）
+Get-ChildItem "F:\Epic Games\" | Where-Object {$_.Name -like "UE_*"}        # ✅ 您的实际安装路径
+Get-ChildItem "D:\Program Files\Epic Games\" | Where-Object {$_.Name -like "UE_*"}  # 备用路径
+Get-ChildItem "C:\Program Files\Epic Games\" | Where-Object {$_.Name -like "UE_*"}  # 标准路径
 
-# 如果路径不同，请修改工作流中的路径检测逻辑
+# 检查VS2022安装路径
+Get-ChildItem "E:\VisualStudio\2022\" -ErrorAction SilentlyContinue        # ✅ 您的实际安装路径
+Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\" -ErrorAction SilentlyContinue
+
+# 工作流已自动配置了路径检测逻辑，会按优先级检测您的实际安装路径
 ```
 
 **3. PowerShell执行策略错误**
@@ -212,13 +278,13 @@ Remove-Item "C:\actions-runner\_work\*" -Recurse -Force
 
 ```powershell
 # 停止服务
-.\svc.cmd stop
+Stop-Service actions.runner.YOUR_MACHINE_NAME.YOUR_RUNNER_NAME
 
 # 更新Runner（下载新版本并替换）
 # 重新配置和启动
 
 # 启动服务
-.\svc.cmd start
+Start-Service actions.runner.YOUR_MACHINE_NAME.YOUR_RUNNER_NAME
 ```
 
 ---

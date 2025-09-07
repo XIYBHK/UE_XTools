@@ -77,14 +77,20 @@ cd Scripts
 
 **配置要求**:
 ```yaml
-# 需要在GitHub Secrets中配置:
-UE_INSTALL_PATHS: |
-  {
-    "5.3": "C:/Program Files/Epic Games/UE_5.3",
-    "5.4": "C:/Program Files/Epic Games/UE_5.4",
-    "5.5": "C:/Program Files/Epic Games/UE_5.5",
-    "5.6": "C:/Program Files/Epic Games/UE_5.6"
-  }
+# 根据您的实际安装路径，工作流会自动检测以下位置:
+# 优先检测路径（您的实际安装）:
+#   F:/Epic Games/UE_5.3
+#   F:/Epic Games/UE_5.4  
+#   F:/Epic Games/UE_5.5
+#   F:/Epic Games/UE_5.6
+#
+# 备用路径:
+#   D:/Program Files/Epic Games/UE_X.X
+#   C:/Program Files/Epic Games/UE_X.X
+#
+# VS2022路径检测:
+#   E:/VisualStudio/2022 (您的实际安装)
+#   C:/Program Files/Microsoft Visual Studio/2022/*
 ```
 
 ### 3. Docker方案 (CI优化)
@@ -139,12 +145,14 @@ docker build -t ue5-builder:5.6 .
 如果使用GitHub提供的运行器，需要在每次构建时安装UE：
 
 ```yaml
-# 选项1: 缓存UE安装
+# 选项1: 缓存UE安装（根据您的实际安装路径）
 - name: Cache UE Installation
   uses: actions/cache@v4
   with:
-    path: C:\Program Files\Epic Games\
-    key: ue-${{ matrix.ue_version }}-windows
+    path: |
+      F:\Epic Games\
+      E:\VisualStudio\2022\
+    key: ue-${{ matrix.ue_version }}-windows-f-drive
 
 # 选项2: 使用预构建镜像
 # (需要自定义runners或第三方服务)
@@ -161,8 +169,8 @@ CPU: 8核以上
 网络: 高带宽连接
 
 预装软件:
-- Visual Studio 2022 (C++ workload)
-- Unreal Engine 5.3, 5.4, 5.5, 5.6
+- Visual Studio 2022 (C++ workload) - 推荐安装到E:\VisualStudio\2022\
+- Unreal Engine 5.3, 5.4, 5.5, 5.6 - 推荐安装到F:\Epic Games\UE_X.X\
 - Git
 - PowerShell 7+
 ```
@@ -197,6 +205,36 @@ XTools-v1.0.0-UE_5.5-Win64.zip
 XTools-v1.0.0-UE_5.6-Win64.zip
 XTools-v1.0.0-All-Platforms.zip  # 完整包
 ```
+
+## ⚙️ 路径配置重要说明
+
+### 工作流自动路径检测
+
+我们的工作流已经根据您的实际安装环境进行了优化配置：
+
+**UE安装路径检测优先级**：
+1. 🎯 `F:\Epic Games\UE_X.X\` - **您的实际安装路径（最高优先级）**
+2. 📁 `D:\Program Files\Epic Games\UE_X.X\` - 备用路径
+3. 📁 `C:\Program Files\Epic Games\UE_X.X\` - 标准路径
+
+**VS2022安装路径检测优先级**：
+1. 🎯 `E:\VisualStudio\2022\` - **您的实际安装路径（最高优先级）**
+2. 📁 `C:\Program Files\Microsoft Visual Studio\2022\Community\`
+3. 📁 `C:\Program Files\Microsoft Visual Studio\2022\Professional\`
+4. 📁 `C:\Program Files\Microsoft Visual Studio\2022\Enterprise\`
+
+### 路径配置验证
+
+构建开始时，您会在日志中看到：
+```
+🎯 Using UE installation at: F:\Epic Games\UE_5.6
+🔧 Found VS2022 at: E:\VisualStudio\2022
+```
+
+如果路径检测失败，请确认：
+- ✅ UE和VS的安装路径正确
+- ✅ 工作流文件中的路径检测逻辑包含您的安装路径
+- ✅ Self-Hosted Runner有权限访问这些目录
 
 ## 🎯 实施建议
 

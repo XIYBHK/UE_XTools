@@ -38,11 +38,11 @@ jobs:
       
     - name: Setup UE Environment
       run: |
-        # 与您的PowerShell脚本保持一致的路径检测逻辑
+        # 与您的实际安装路径保持一致的路径检测逻辑
         $ue_paths = @(
+          "F:\Epic Games\UE_${{ matrix.ue_version }}",  # 您的实际安装路径（F盘）
           "D:\Program Files\Epic Games\UE_${{ matrix.ue_version }}",
-          "C:\Program Files\Epic Games\UE_${{ matrix.ue_version }}",
-          "F:\ProgramFiles\UE_${{ matrix.ue_version }}"
+          "C:\Program Files\Epic Games\UE_${{ matrix.ue_version }}"
         )
         
         $ue_path = $null
@@ -61,6 +61,30 @@ jobs:
         echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
         echo "UE_VERSION=${{ matrix.ue_version }}" >> $env:GITHUB_ENV
         Write-Host "🎯 Using local UE installation at: $ue_path"
+        
+        # 检测VS2022安装路径（适配您的E盘安装）
+        $vs_paths = @(
+          "E:\VisualStudio\2022",  # 您的实际VS安装路径
+          "C:\Program Files\Microsoft Visual Studio\2022\Community",
+          "C:\Program Files\Microsoft Visual Studio\2022\Professional",
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
+          "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
+        )
+        
+        $vs_path = $null
+        foreach ($path in $vs_paths) {
+          if (Test-Path $path) {
+            $vs_path = $path
+            break
+          }
+        }
+        
+        if ($vs_path) {
+          echo "VS2022INSTALLDIR=$vs_path" >> $env:GITHUB_ENV
+          Write-Host "🔧 Found VS2022 at: $vs_path"
+        } else {
+          Write-Host "⚠️ VS2022 not found in expected locations, UE BuildTool will auto-detect"
+        }
         
     - name: Verify UE Installation
       run: |
