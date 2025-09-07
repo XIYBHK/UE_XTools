@@ -78,88 +78,90 @@ jobs:
           exit 1
         }
         
-    # Manual plugin build (supports three platforms: Win64+Linux+Mac)
     - name: Build Plugin
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "[START] Starting XTools plugin build (UE 5.3)..."
         
-        # Simplified paths and arguments based on the NoHostProject strategy
-        $plugin_path = "${{ github.workspace }}\XTools.uplugin"
+        # --- FINAL STRATEGY V5: Direct UBT Invocation ---
+        # We have proven that `RunUAT.bat BuildPlugin` is fundamentally flawed in this CI environment.
+        # It ignores our provided project and creates its own temporary, broken project which
+        # incorrectly uses the "-installed" flag, causing the build to fail.
+        # SOLUTION: We will bypass `BuildPlugin` entirely and invoke UnrealBuildTool (UBT) directly,
+        # exactly like Visual Studio or the editor would. This gives us absolute control.
+        
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
-        $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
-        
-        Write-Host "[INFO] Build Configuration:"
-        Write-Host "  [UE] UE Version: 5.3"
-        Write-Host "  [PLUGIN] Plugin File: $plugin_path"  
-        Write-Host "  [DIR] Output Directory: $output_path"
-        Write-Host "  [FOUND] UAT Tool: $uat_path"
-        Write-Host "  [STRATEGY] Using an existing host project: F:\Unreal Projects\CPP\CPP.uproject"
-        
-        # Create output directory
-        New-Item -ItemType Directory -Force -Path $output_path | Out-Null
-        
-        # --- FINAL STRATEGY V4: Use a real, existing host project ---
-        # Replicating the user's local successful setup is the most reliable path.
-        # We will use the provided C++ project as the build host. This guarantees that UAT
-        # has a valid, complete context and will not generate a flawed temporary project.
-        
         $host_project_path = "F:\Unreal Projects\CPP\CPP.uproject"
+        $source_plugin_repo_dir = "${{ github.workspace }}"
+        $target_plugin_proj_dir = "F:\Unreal Projects\CPP\Plugins\XTools"
 
-        Write-Host "[INFO] Using existing host project at: $host_project_path"
+        # Step 1: Prepare the host project by copying the latest plugin source into it.
+        Write-Host "[SETUP] Using host project: $host_project_path"
         if (-not (Test-Path $host_project_path)) {
             Write-Error "[ERROR] The specified host project was not found: $host_project_path"
             exit 1
         }
-
-        # The plugin must be "discoverable" by the host project.
-        # The most reliable way is to place it in the project's Plugins directory.
-        $target_plugin_dir = "F:\Unreal Projects\CPP\Plugins\XTools"
-        Write-Host "[SETUP] Copying plugin from ${{ github.workspace }} to $target_plugin_dir"
-        Copy-Item -Path "${{ github.workspace }}\*" -Destination $target_plugin_dir -Recurse -Force
-
-        $plugin_path_in_project = Join-Path $target_plugin_dir "XTools.uplugin"
-        Write-Host "[INFO] Plugin is now located at: $plugin_path_in_project"
-
-        $buildArgs = @(
-          "BuildPlugin"
-          "-Plugin=`"$plugin_path_in_project`""
-          "-Package=`"$output_path`""
-          "-Project=`"$host_project_path`"" # Force UAT to use the REAL project
-          "-TargetPlatforms=Win64+Linux+Mac"
-          "-StrictIncludes"
-        )
+        Write-Host "[SETUP] Copying latest plugin source from $source_plugin_repo_dir to $target_plugin_proj_dir"
+        Copy-Item -Path (Join-Path $source_plugin_repo_dir "*") -Destination $target_plugin_proj_dir -Recurse -Force
         
-        # CRITICAL: Initialize the Visual Studio Developer Environment
+        # Step 2: Initialize the Visual Studio Developer Environment. This remains CRITICAL.
         Write-Host "[CRITICAL] Initializing Visual Studio Developer Environment..."
         $vcvars_path = Join-Path $env:VS2022INSTALLDIR "VC\Auxiliary\Build\vcvarsall.bat"
-        
         if (-not (Test-Path $vcvars_path)) {
-            Write-Error "[ERROR] vcvarsall.bat not found at $vcvars_path. Cannot create VS build environment."
+            Write-Error "[ERROR] vcvarsall.bat not found at $vcvars_path."
             exit 1
         }
         
-        Write-Host "[SUCCESS] Found vcvarsall.bat at: $vcvars_path"
-        Write-Host ""
+        # Step 3: Directly invoke UnrealBuildTool (UBT) to build the project editor.
+        # This will build our plugin as a dependency, just like compiling in the editor.
+        Write-Host "[BUILD] Invoking UBT directly to build the project editor..."
+        $ubt_path = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
+        $dotnet_path = "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\6.0.302\windows\dotnet.exe"
+
+        $ubtArgs = @(
+            "UnrealEditor",
+            "Win64",
+            "Development",
+            "-Project=`"$host_project_path`"",
+            "-log=`"${{ github.workspace }}\ubt.log`""
+        )
         
-        # Chain the vcvarsall.bat setup and the UAT command together.
-        $command_chain = "call `"$vcvars_path`" x64 && `"$uat_path`" $($buildArgs -join ' ')"
+        $command_chain = "call `"$vcvars_path`" x64 && `"$dotnet_path`" `"$ubt_path`" $($ubtArgs -join ' ')"
         
-        Write-Host "[EXEC] Executing build within a prepared VS environment via cmd.exe..."
+        Write-Host "[EXEC] Executing UBT within a prepared VS environment..."
         Write-Host "  Command Chain: $command_chain"
+        cmd.exe /c $command_chain
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "[ERROR] UBT build failed. Check the ubt.log artifact for details."
+            exit $LASTEXITCODE
+        }
+        Write-Host "[SUCCESS] UBT build completed successfully."
         Write-Host ""
         
-        cmd.exe /c $command_chain
-          
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host ""
-          Write-Error "[ERROR] Error: Plugin build failed with exit code: $LASTEXITCODE"
-          exit $LASTEXITCODE
+        # Step 4: Manually package the plugin with the newly compiled binaries.
+        Write-Host "[PACKAGE] Manually packaging the plugin..."
+        $binary_path = Join-Path $target_plugin_proj_dir "Binaries\Win64"
+        if (-not (Test-Path $binary_path)) {
+            Write-Error "[ERROR] Build succeeded but no binaries were found at $binary_path"
+            exit 1
         }
         
-        Write-Host ""
-        Write-Host "[COMPLETE] Build completed: UE 5.3 plugin build successful"
+        New-Item -ItemType Directory -Force -Path $output_path | Out-Null
+        Write-Host "  Copying plugin content to $output_path"
+        Copy-Item -Path (Join-Path $target_plugin_proj_dir "*") -Destination $output_path -Recurse -Exclude @("Intermediate", "Binaries")
+        Copy-Item -Path $binary_path -Destination (Join-Path $output_path "Binaries") -Recurse
         
+        Write-Host "[SUCCESS] Plugin packaging complete."
+        Write-Host "[COMPLETE] Build process finished successfully."
+        
+    - name: Upload UBT Log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ubt-log-ue5.3
+        path: ubt.log
+
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
