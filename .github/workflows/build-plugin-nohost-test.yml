@@ -1,0 +1,176 @@
+name: Build XTools Plugin (NoHost Test)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Windows build (using your local computer as self-hosted runner)
+  build-windows:
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        ue_version: ['5.3']  # Focus on version 5.3 first, add other versions after success
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    # Use pre-installed UE version on your local computer
+    - name: Setup UE Path
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        # Focus on UE 5.3 version - adjust according to your actual installation path
+        # F Drive: F:\Epic Games\UE_5.3\Engine
+        Write-Host "[INFO] Detecting UE 5.3 installation path..."
+        $ue_paths = @(
+          "F:\Epic Games\UE_5.3",  # Your actual installation path (F drive)
+          "D:\Program Files\Epic Games\UE_5.3",
+          "C:\Program Files\Epic Games\UE_5.3"
+        )
+        
+        $ue_path = $null
+        foreach ($path in $ue_paths) {
+          Write-Host "  Checking path: $path"
+          if (Test-Path $path) {
+            $ue_path = $path
+            Write-Host "  [SUCCESS] Found UE installation: $path"
+            break
+          } else {
+            Write-Host "  [ERROR] Path not found: $path"
+          }
+        }
+        
+        if (-not $ue_path) {
+          Write-Error "[ERROR] Error: UE 5.3 not found in any of these locations: $($ue_paths -join ', ')"
+          exit 1
+        }
+        
+        # Verify key files
+        $uat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
+        if (-not (Test-Path $uat_path)) {
+          Write-Error "[ERROR] Error: RunUAT.bat not found at: $uat_path"
+          exit 1
+        }
+        
+        echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
+        echo "UE_VERSION=5.3" >> $env:GITHUB_ENV
+        Write-Host "[TARGET] Using UE 5.3 installation at: $ue_path"
+        Write-Host "[FOUND] Found RunUAT.bat at: $uat_path"
+        
+        # Detect VS2022 installation path (simplified)
+        Write-Host "[CHECK] Detecting VS2022 installation path..."
+        $vs_main_path = "E:\VisualStudio\2022"
+        if (Test-Path $vs_main_path) {
+          echo "VS2022INSTALLDIR=$vs_main_path" >> $env:GITHUB_ENV
+          Write-Host "[FOUND] Found VS2022 at: $vs_main_path"
+        } else {
+          Write-Host "[WARNING] Warning: VS2022 not found at E:\VisualStudio\2022, UE BuildTool will auto-detect"
+        }
+        
+        # Verify plugin file exists
+        $plugin_file = "${{ github.workspace }}\XTools.uplugin"
+        Write-Host "[CHECK] Checking plugin file: $plugin_file"
+        if (Test-Path $plugin_file) {
+          Write-Host "[SUCCESS] Plugin file exists: $plugin_file"
+        } else {
+          Write-Error "[ERROR] Error: Plugin file not found: $plugin_file"
+          exit 1
+        }
+        
+    - name: Build Plugin
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "[START] Starting XTools plugin build (UE 5.3) with NoHostProject strategy..."
+        
+        # This approach perfectly replicates the user's successful local script.
+        # 1. It uses -NoHostProject.
+        # 2. It does NOT involve any other host projects, avoiding UAT confusion.
+        # 3. It uses `vcvarsall.bat` to create a full VS dev environment, which is the key difference
+        #    between the local PS environment and the clean CI environment.
+        
+        $plugin_path = "${{ github.workspace }}\XTools.uplugin"
+        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-NoHost"
+        $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
+        
+        # Create output directory
+        New-Item -ItemType Directory -Force -Path $output_path | Out-Null
+
+        $buildArgs = @(
+          "BuildPlugin"
+          "-Plugin=`"$plugin_path`""
+          "-Package=`"$output_path`""
+          "-TargetPlatforms=Win64+Linux+Mac"
+          "-StrictIncludes"
+          "-NoHostProject"
+        )
+        
+        # CRITICAL: Initialize the Visual Studio Developer Environment
+        Write-Host "[CRITICAL] Initializing Visual Studio Developer Environment..."
+        $vcvars_path = Join-Path $env:VS2022INSTALLDIR "VC\Auxiliary\Build\vcvarsall.bat"
+        if (-not (Test-Path $vcvars_path)) {
+            Write-Error "[ERROR] vcvarsall.bat not found at $vcvars_path."
+            exit 1
+        }
+        
+        $command_chain = "call `"$vcvars_path`" x64 && `"$uat_path`" $($buildArgs -join ' ')"
+        
+        Write-Host "[EXEC] Executing UAT within a prepared VS environment..."
+        Write-Host "  Command Chain: $command_chain"
+        cmd.exe /c $command_chain
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "[ERROR] Build failed with exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
+        Write-Host "[SUCCESS] Build completed successfully."
+        
+    - name: List Build Output
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "[CHECK] Checking UE 5.3 NoHost build output..."
+        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-NoHost"
+        
+        if (Test-Path $output_path) {
+          Write-Host "[SUCCESS] Build output directory exists: $output_path"
+          Get-ChildItem -Path $output_path -Recurse | ForEach-Object { Write-Host "  [FILE] $($_.FullName)" }
+        } else {
+          Write-Error "[ERROR] Error: Build output directory not found: $output_path"
+          exit 1
+        }
+        
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: XTools-UE_5.3-NoHost
+        path: PackagedPlugin/XTools-UE_5.3-NoHost/
+        retention-days: 7
+
+  # Summarize build results
+  summary:
+    if: always()
+    needs: [build-windows]
+    runs-on: self-hosted
+    
+    steps:
+    - name: Build Summary
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "[INFO] Generating build summary report..."
+        
+        echo "## XTools Plugin Build Summary (NoHost Test)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Build Time:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit Hash:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Runner:** Self-Hosted" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### UE 5.3 Build Results" >> $GITHUB_STEP_SUMMARY
+        $buildResult = "${{ needs.build-windows.result }}"
+        if ($buildResult -eq "success") {
+          echo "- **UE 5.3 (NoHost)**: Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: \`XTools-UE_5.3-NoHost\`" >> $GITHUB_STEP_SUMMARY
+        } else {
+          echo "- **UE 5.3 (NoHost)**: Build Failed" >> $GITHUB_STEP_SUMMARY
+        }

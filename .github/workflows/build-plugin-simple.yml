@@ -140,17 +140,47 @@ jobs:
         Write-Host ""
         
         # Step 4: Manually package the plugin with the newly compiled binaries.
-        Write-Host "[PACKAGE] Manually packaging the plugin..."
-        $binary_path = Join-Path $target_plugin_proj_dir "Binaries\Win64"
-        if (-not (Test-Path $binary_path)) {
-            Write-Error "[ERROR] Build succeeded but no binaries were found at $binary_path"
+        Write-Host "[PACKAGE] Manually packaging the plugin with an explicit file list..."
+        $binary_source_path = Join-Path $target_plugin_proj_dir "Binaries\Win64"
+        if (-not (Test-Path $binary_source_path)) {
+            Write-Error "[ERROR] Build succeeded but no binaries were found at $binary_source_path"
             exit 1
         }
         
+        # Create the clean output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
-        Write-Host "  Copying plugin content to $output_path"
-        Copy-Item -Path (Join-Path $target_plugin_proj_dir "*") -Destination $output_path -Recurse -Exclude @("Intermediate", "Binaries")
-        Copy-Item -Path $binary_path -Destination (Join-Path $output_path "Binaries") -Recurse
+        
+        # Define what to include in the final package
+        $include_dirs = @("Content", "Resources", "Source", "ThirdParty")
+        $include_files = @("README.md", "XTools.uplugin")
+        
+        # Copy specified directories
+        foreach ($dir in $include_dirs) {
+            $source_dir = Join-Path $target_plugin_proj_dir $dir
+            if (Test-Path $source_dir) {
+                Write-Host "  Copying directory: $dir"
+                Copy-Item -Path $source_dir -Destination $output_path -Recurse
+            } else {
+                Write-Host "  Skipping directory (not found): $dir"
+            }
+        }
+        
+        # Copy specified files
+        foreach ($file in $include_files) {
+            $source_file = Join-Path $target_plugin_proj_dir $file
+            if (Test-Path $source_file) {
+                Write-Host "  Copying file: $file"
+                Copy-Item -Path $source_file -Destination $output_path
+            } else {
+                Write-Host "  Skipping file (not found): $file"
+            }
+        }
+        
+        # Copy and clean binaries - only keep DLLs
+        $binary_dest_path = Join-Path $output_path "Binaries\Win64"
+        New-Item -ItemType Directory -Force -Path $binary_dest_path | Out-Null
+        Write-Host "  Copying and cleaning binaries (DLLs only)..."
+        Get-ChildItem -Path $binary_source_path -Filter "*.dll" | Copy-Item -Destination $binary_dest_path
         
         Write-Host "[SUCCESS] Plugin packaging complete."
         Write-Host "[COMPLETE] Build process finished successfully."
