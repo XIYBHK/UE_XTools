@@ -77,14 +77,16 @@ jobs:
         Write-Host "[BUILD] Invoking UBT directly to build the temporary project..."
         $ubt_path = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
         
-        # Best Practice: Don't hardcode the dotnet path. Find it relative to UBT,
-        # as it can change between engine versions (e.g., from .NET 6 to .NET 7/8).
-        $dotnet_folder = (Get-Item "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\**\windows\dotnet.exe").DirectoryName
-        if (-not $dotnet_folder) {
-            Write-Error "[ERROR] Could not find dotnet.exe for UE version ${{ matrix.ue_version }}"
+        # Best Practice: Don't hardcode the dotnet path. Find it relative to UBT.
+        # The '**' wildcard is not supported in older PowerShell, so use Get-ChildItem -Recurse.
+        $dotnet_search_path = Join-Path $env:UE_PATH "Engine\Binaries\ThirdParty\DotNet"
+        $dotnet_exe_info = Get-ChildItem -Path $dotnet_search_path -Filter "dotnet.exe" -Recurse | Select-Object -First 1
+        
+        if (-not $dotnet_exe_info) {
+            Write-Error "[ERROR] Could not find dotnet.exe for UE version ${{ matrix.ue_version }} under '$dotnet_search_path'"
             exit 1
         }
-        $dotnet_path = Join-Path $dotnet_folder "dotnet.exe"
+        $dotnet_path = $dotnet_exe_info.FullName
         Write-Host "  > Found dotnet.exe at: $dotnet_path"
 
         $ubtArgs = @(
