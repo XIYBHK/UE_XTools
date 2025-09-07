@@ -210,11 +210,40 @@ Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\" -ErrorAction Sile
 # 工作流已自动配置了路径检测逻辑，会按优先级检测您的实际安装路径
 ```
 
-**3. PowerShell执行策略错误**
-```powershell
-# 设置执行策略
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+**3. PowerShell执行策略错误** ⚡ 
 ```
+PSSecurityException: UnauthorizedAccess
+running scripts is disabled on this system
+```
+
+**解决方案（三种选择）：**
+
+**方案A：工作流级别解决（推荐）** ✅
+```yaml
+# 在每个工作流步骤中使用：
+- name: Setup PowerShell Execution Policy
+  shell: powershell
+  run: |
+    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+    Write-Host "✅ PowerShell execution policy set to Bypass"
+```
+
+**方案B：自托管运行器全局设置**
+```powershell
+# 以管理员权限运行PowerShell，一次性设置
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
+
+# 验证设置
+Get-ExecutionPolicy -List
+```
+
+**方案C：服务用户设置**
+```powershell
+# 为运行Runner服务的用户设置
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+```
+
+**⚠️ 注意：我们的工作流已经采用方案A自动解决此问题。**
 
 **4. 构建权限错误**
 ```powershell

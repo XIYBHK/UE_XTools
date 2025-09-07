@@ -16,8 +16,16 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
       
+    # 设置PowerShell执行策略
+    - name: Setup PowerShell Execution Policy
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+        Write-Host "✅ PowerShell execution policy set to Bypass for this process"
+        
     # 使用您本地电脑上预安装的UE版本
     - name: Setup UE Path
+      shell: powershell
       run: |
         # 根据您的实际UE安装路径调整
         # F盘: F:\Epic Games\UE_5.x\Engine
@@ -68,6 +76,7 @@ jobs:
         
     # 手动构建插件（支持三平台：Win64+Linux+Mac）
     - name: Build Plugin
+      shell: powershell
       run: |
         $plugin_path = "${{ github.workspace }}\XTools.uplugin"
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ matrix.ue_version }}-AllPlatforms"
@@ -97,6 +106,7 @@ jobs:
         Write-Host "Build completed successfully!"
         
     - name: List Build Output
+      shell: powershell
       run: |
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ matrix.ue_version }}-AllPlatforms"
         if (Test-Path $output_path) {
@@ -128,6 +138,7 @@ jobs:
     
     steps:
     - name: Build Summary
+      shell: powershell
       run: |
         echo "## XTools Plugin Build Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY

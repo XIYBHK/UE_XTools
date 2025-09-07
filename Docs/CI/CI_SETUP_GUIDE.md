@@ -236,6 +236,32 @@ XTools-v1.0.0-All-Platforms.zip  # 完整包
 - ✅ 工作流文件中的路径检测逻辑包含您的安装路径
 - ✅ Self-Hosted Runner有权限访问这些目录
 
+### PowerShell执行策略最佳实践
+
+**常见错误**：
+```
+PSSecurityException: running scripts is disabled on this system
+```
+
+**我们的解决方案**：
+- ✅ **自动化处理** - 工作流自动设置执行策略
+- ✅ **进程级别** - 仅影响当前构建进程，安全可控
+- ✅ **无需手动配置** - 无需在运行器上手动设置
+
+**实现方式**：
+```yaml
+- name: Setup PowerShell Execution Policy
+  shell: powershell
+  run: |
+    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+    Write-Host "✅ PowerShell execution policy set to Bypass"
+```
+
+这确保了：
+- 🔒 **安全性** - 仅在当前进程中生效
+- 🚀 **可靠性** - 避免执行策略导致的构建失败
+- 🔧 **自动化** - 无需手动干预
+
 ## 🎯 实施建议
 
 ### 立即开始
