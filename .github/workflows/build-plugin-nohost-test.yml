@@ -83,12 +83,36 @@ jobs:
       run: |
         Write-Host "[START] Starting XTools plugin build (UE 5.3) with NoHostProject strategy..."
         
-        # This approach perfectly replicates the user's successful local script.
-        # 1. It uses -NoHostProject.
-        # 2. It does NOT involve any other host projects, avoiding UAT confusion.
-        # 3. It uses `vcvarsall.bat` to create a full VS dev environment, which is the key difference
-        #    between the local PS environment and the clean CI environment.
+        # --- FINAL STRATEGY V6: Pre-generate Engine Headers ---
+        # The root cause is a corrupted or incomplete installed engine build. It's missing the
+        # pre-generated `.generated.h` files it is supposed to have.
+        # On local machines, opening a .uproject in VS often triggers a repair step that
+        # regenerates these files. We must replicate this repair step in CI.
+        #
+        # STEP 1: Force regeneration of engine headers by generating project files for the host project.
+        # This acts as our "repair engine" step.
+        Write-Host "[REPAIR] Forcing regeneration of engine headers..."
+        $host_project_path = "F:\Unreal Projects\CPP\CPP.uproject"
+        $ubt_path = "$env:UE_PATH\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
+        $dotnet_path = "$env:UE_PATH\Engine\Binaries\ThirdParty\DotNet\6.0.302\windows\dotnet.exe"
         
+        $genProjectArgs = @(
+            "-projectfiles",
+            "-project=`"$host_project_path`"",
+            "-game",
+            "-rocket",
+            "-progress"
+        )
+        & $dotnet_path "$ubt_path" $genProjectArgs
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "[ERROR] Failed to generate project files and repair engine headers."
+            exit $LASTEXITCODE
+        }
+        Write-Host "[SUCCESS] Engine headers regenerated successfully."
+        Write-Host ""
+        
+        # STEP 2: Now that the engine is repaired, build the plugin using the NoHostProject strategy.
+        Write-Host "[BUILD] Building plugin against the repaired engine..."
         $plugin_path = "${{ github.workspace }}\XTools.uplugin"
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-NoHost"
         $uat_path = "$env:UE_PATH\Engine\Build\BatchFiles\RunUAT.bat"
