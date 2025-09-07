@@ -116,61 +116,21 @@ jobs:
           Write-Host "  Can Contain Content: $($pluginContent.CanContainContent)"
         }
         
-        # Use the working C++ project as host (breakthrough solution!)
-        Write-Host "[BUILD] Using your working C++ project as host..."
-        Write-Host "  Discovery: UE5.3 C++ project builds successfully on runner"
-        Write-Host "  Strategy: Use proven working project as plugin host"
+        # Use EXACTLY the same method as your successful BuildPlugin-MultiUE.ps1
+        Write-Host "[BUILD] Using proven BuildPlugin-MultiUE.ps1 method..."
+        Write-Host "  Strategy: UBT automatically handles engine compilation before plugin"
+        Write-Host "  Method: Direct BuildPlugin call with -NoHostProject (your proven approach)"
         Write-Host ""
         
-        $hostProjectPath = "F:\Unreal Projects\CPP\CPP.uproject"
-        if (Test-Path $hostProjectPath) {
-          Write-Host "[SUCCESS] Found working host project: $hostProjectPath"
-          Write-Host "[STRATEGY] Pre-building host project to ensure all engine headers are generated..."
-          
-          # Step 1: Pre-build the host project to generate all engine headers
-          Write-Host "[STEP 1] Pre-building host project to generate headers..."
-          $prebuildArgs = @(
-            "BuildTarget"
-            "-project=`"$hostProjectPath`""
-            "-platform=Win64"
-            "-configuration=Development"
-            "-target=CPPEditor"
-          )
-          
-          Write-Host "[EXEC] Pre-build command:"
-          Write-Host "  $uat_path $($prebuildArgs -join ' ')"
-          Write-Host ""
-          
-          & $uat_path @prebuildArgs
-          
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "[WARNING] Host project pre-build failed, but continuing with plugin build..."
-          } else {
-            Write-Host "[SUCCESS] Host project pre-build completed"
-          }
-          Write-Host ""
-          
-          # Step 2: Build plugin with host project context
-          Write-Host "[STEP 2] Building plugin with host project context..."
-          $buildArgs = @(
-            "BuildPlugin"
-            "-Plugin=`"$plugin_path`""
-            "-Package=`"$output_path`""
-            "-Project=`"$hostProjectPath`""
-            "-TargetPlatforms=Win64+Linux+Mac"
-            "-StrictIncludes"
-          )
-        } else {
-          Write-Host "[FALLBACK] Host project not found, using -NoHostProject"
-          $buildArgs = @(
-            "BuildPlugin"
-            "-Plugin=`"$plugin_path`""
-            "-Package=`"$output_path`""
-            "-TargetPlatforms=Win64+Linux+Mac"
-            "-StrictIncludes"
-            "-NoHostProject"
-          )
-        }
+        # Apply exact same parameters as BuildPlugin-MultiUE.ps1 (lines 47-54)
+        $buildArgs = @(
+          "BuildPlugin"
+          "-Plugin=`"$plugin_path`""
+          "-Package=`"$output_path`""
+          "-TargetPlatforms=Win64+Linux+Mac"
+          "-StrictIncludes"
+          "-NoHostProject"
+        )
         
         Write-Host "[EXEC] Executing build command:"
         Write-Host "  $uat_path $($buildArgs -join ' ')"
