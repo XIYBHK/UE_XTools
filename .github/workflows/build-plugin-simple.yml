@@ -116,61 +116,65 @@ jobs:
           Write-Host "  Can Contain Content: $($pluginContent.CanContainContent)"
         }
         
-        # Use EXACTLY the same method as your successful BuildPlugin-MultiUE.ps1
-        Write-Host "[BUILD] Using proven BuildPlugin-MultiUE.ps1 method..."
-        Write-Host "  Strategy: UBT automatically handles engine compilation before plugin"
-        Write-Host "  Method: Direct BuildPlugin call with -NoHostProject (your proven approach)"
+        # Create a minimal host project for CI environment
+        Write-Host "[BUILD] Creating host project for CI environment..."
+        Write-Host "  Strategy: Use host project to provide proper UE context for header generation"
+        Write-Host "  Method: BuildPlugin with -Project parameter (CI-compatible approach)"
         Write-Host ""
         
-        # CRITICAL: Diagnose CI environment differences (GitHub Official Runner v2.328.0)
-        Write-Host "[DIAGNOSE] CI Environment Analysis (GitHub Actions Runner Service)..."
-        Write-Host "  Current User: $($env:USERNAME)"
-        Write-Host "  Current Domain: $($env:USERDOMAIN)" 
-        Write-Host "  User SID: $([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)"
-        Write-Host "  Temp Directory: $($env:TEMP)"
-        Write-Host "  User Profile: $($env:USERPROFILE)"
-        $serviceMode = switch ($env:USERNAME) {
-          'NETWORK SERVICE' { 'Network Service (Limited Permissions)' }
-          'SYSTEM' { 'Local System (Full Permissions - RECOMMENDED)' }
-          default { "User Account: $($env:USERNAME) (Full Permissions)" }
+        # Create minimal host project
+        $host_project_path = "${{ github.workspace }}\CPP.uproject"
+        
+        Write-Host "[CREATE] Creating host project: $host_project_path"
+        
+        # Create host project JSON content
+        $host_project_json = @{
+          "FileVersion" = 3
+          "EngineAssociation" = "5.3"
+          "Category" = ""
+          "Description" = ""
+          "Modules" = @(
+            @{
+              "Name" = "CPP"
+              "Type" = "Runtime"
+              "LoadingPhase" = "Default"
+            }
+          )
+          "Plugins" = @(
+            @{
+              "Name" = "XTools"
+              "Enabled" = $true
+              "Path" = "./XTools.uplugin"
+            }
+          )
         }
-        Write-Host "  Service Mode: $serviceMode"
+        
+        # Convert to JSON and save
+        $host_project_json | ConvertTo-Json -Depth 10 | Out-File -FilePath $host_project_path -Encoding UTF8
+        
+        # Verify files exist
+        if (-not (Test-Path $host_project_path)) { 
+          Write-Error "[ERROR] Failed to create host project: $host_project_path"
+          exit 1 
+        }
+        if (-not (Test-Path $plugin_path)) { 
+          Write-Error "[ERROR] Plugin not found: $plugin_path"
+          exit 1 
+        }
+        
+        Write-Host "[SUCCESS] Host project created successfully"
+        Write-Host "  Host Project: $host_project_path"
+        Write-Host "  Plugin: $plugin_path"
         Write-Host ""
         
-        # Check UE engine directory permissions
-        Write-Host "[DIAGNOSE] UE Engine Directory Access..."
-        $engineTestPath = "$env:UE_PATH\Engine\Binaries"
-        if (Test-Path $engineTestPath) {
-          $engineAccess = Get-ChildItem $engineTestPath -ErrorAction SilentlyContinue | Measure-Object
-          Write-Host "  Engine Binaries Access: SUCCESS ($($engineAccess.Count) items)"
-        } else {
-          Write-Host "  Engine Binaries Access: FAILED"
-        }
-        
-        # Check if UHT can run directly
-        Write-Host "[DIAGNOSE] Testing UHT Direct Access..."
-        $uhtPath = "$env:UE_PATH\Engine\Binaries\Win64\UnrealHeaderTool.exe"
-        if (Test-Path $uhtPath) {
-          Write-Host "  UHT Path: EXISTS - $uhtPath"
-          try {
-            & $uhtPath -help | Out-Null
-            Write-Host "  UHT Execution: SUCCESS"
-          } catch {
-            Write-Host "  UHT Execution: FAILED - $($_.Exception.Message)"
-          }
-        } else {
-          Write-Host "  UHT Path: NOT FOUND - $uhtPath"
-        }
-        Write-Host ""
-        
-        # Apply exact same parameters as BuildPlugin-MultiUE.ps1 (lines 47-54)
+        # Build with host project (NO -NoHostProject parameter)
         $buildArgs = @(
           "BuildPlugin"
           "-Plugin=`"$plugin_path`""
           "-Package=`"$output_path`""
+          "-Project=`"$host_project_path`""
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
-          "-NoHostProject"
         )
         
         Write-Host "[EXEC] Executing build command:"
@@ -181,7 +185,7 @@ jobs:
           
         if ($LASTEXITCODE -ne 0) {
           Write-Host ""
-          Write-Error "[ERROR] Error: Plugin build failed with exit code: $LASTEXITCODE"
+          Write-Error "[ERROR] Plugin build failed with exit code: $LASTEXITCODE"
           exit $LASTEXITCODE
         }
         
