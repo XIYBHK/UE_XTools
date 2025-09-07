@@ -18,7 +18,7 @@ jobs:
       
     # 使用您本地电脑上预安装的UE版本
     - name: Setup UE Path
-      shell: powershell -ExecutionPolicy Bypass
+      shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
         # 专注于UE 5.3版本 - 根据您的实际安装路径调整
         # F盘: F:\Epic Games\UE_5.3\Engine
@@ -80,7 +80,7 @@ jobs:
         
     # 手动构建插件（支持三平台：Win64+Linux+Mac）
     - name: Build Plugin
-      shell: powershell -ExecutionPolicy Bypass
+      shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "🚀 开始构建XTools插件 (UE 5.3版本)..."
         
@@ -127,7 +127,7 @@ jobs:
         Write-Host "✅ UE 5.3 插件构建成功完成！"
         
     - name: List Build Output
-      shell: powershell -ExecutionPolicy Bypass
+      shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "📦 检查UE 5.3构建产物..."
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_5.3-AllPlatforms"
@@ -187,7 +187,7 @@ jobs:
     
     steps:
     - name: Build Summary
-      shell: powershell -ExecutionPolicy Bypass
+      shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "📋 生成构建汇总报告..."
         
