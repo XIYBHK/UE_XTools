@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Windows 构建 (使用您的本地电脑作为自托管运行器)
+  # Windows build (using your local computer as self-hosted runner)
   build-windows:
     runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
-        ue_version: ['5.3']  # 先专注于5.3版本，跑通后再添加其他版本
+        ue_version: ['5.3']  # Focus on version 5.3 first, add other versions after success
     
     steps:
     - name: Checkout Repository
@@ -46,7 +46,7 @@ jobs:
           exit 1
         }
         
-        # 验证关键文件
+        # Verify key files
         $uat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
         if (-not (Test-Path $uat_path)) {
           Write-Error "❌ Error: RunUAT.bat not found at: $uat_path"
@@ -98,21 +98,10 @@ jobs:
         # Create output directory
         New-Item -ItemType Directory -Force -Path $output_path | Out-Null
         
-        # Create temporary host project to build plugin (fixes generated.h missing issue)
-        $tempProjectPath = "${{ github.workspace }}\TempProject"
-        $tempProjectFile = "$tempProjectPath\TempProject.uproject"
-        
-        Write-Host "🔨 Creating temporary UE project..."
-        New-Item -ItemType Directory -Force -Path $tempProjectPath | Out-Null
-        
-        # Create minimal .uproject file
-        $uprojectContent = '{"FileVersion": 3,"EngineAssociation": "5.3","Category": "","Description": "","Modules": [],"Plugins": [{"Name": "XTools","Enabled": true}]}'
-        
-        $uprojectContent | Out-File -FilePath $tempProjectFile -Encoding UTF8
-        Write-Host "✅ Temporary project created: $tempProjectFile"
+        Write-Host "🔧 Using -Installed flag to build plugin without host project"
         
         # Start building cross-platform plugin
-        Write-Host "🏗️ Building plugin with host project..."
+        Write-Host "🏗️ Building plugin with -Installed engine..."
         Write-Host ""
         
         $buildArgs = @(
@@ -121,7 +110,7 @@ jobs:
           "-Package=`"$output_path`""
           "-TargetPlatforms=Win64+Linux+Mac"
           "-StrictIncludes"
-          "-Project=`"$tempProjectFile`""
+          "-Installed"
         )
         
         Write-Host "⚡ Executing build command:"
@@ -139,13 +128,6 @@ jobs:
         Write-Host ""
         Write-Host "🎉 Build completed: UE 5.3 plugin build successful"
         
-        # Clean up temporary project
-        Write-Host "🧹 Cleaning up temporary project..."
-        if (Test-Path $tempProjectPath) {
-          Remove-Item -Path $tempProjectPath -Recurse -Force
-          Write-Host "✅ Temporary project cleaned up"
-        }
-        
     - name: List Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
@@ -156,7 +138,7 @@ jobs:
           Write-Host "✅ Build output directory exists: $output_path"
           Write-Host ""
           
-          # 统计文件
+          # File statistics
           $allFiles = Get-ChildItem -Path $output_path -Recurse -File
           $totalSize = ($allFiles | Measure-Object -Property Length -Sum).Sum
           Write-Host "📊 Build Statistics:"
@@ -164,25 +146,25 @@ jobs:
           Write-Host "  📏 Total Size: $([math]::Round($totalSize/1MB, 2)) MB"
           Write-Host ""
           
-          # Windows平台文件
+          # Windows platform files
           $winFiles = Get-ChildItem -Path "$output_path" -Filter "*.dll" -Recurse
           Write-Host "🪟 Windows Binary Files ($($winFiles.Count)):"
           $winFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
           Write-Host ""
           
-          # Linux平台文件  
+          # Linux platform files
           $linuxFiles = Get-ChildItem -Path "$output_path" -Filter "*.so" -Recurse
           Write-Host "🐧 Linux Binary Files ($($linuxFiles.Count)):"
           $linuxFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
           Write-Host ""
           
-          # Mac平台文件
+          # Mac platform files
           $macFiles = Get-ChildItem -Path "$output_path" -Filter "*.dylib" -Recurse
           Write-Host "🍎 Mac Binary Files ($($macFiles.Count)):"
           $macFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
           Write-Host ""
           
-          # 插件配置文件
+          # Plugin configuration files
           $upluginFiles = Get-ChildItem -Path "$output_path" -Filter "*.uplugin" -Recurse
           Write-Host "⚙️ Plugin Configuration Files ($($upluginFiles.Count)):"
           $upluginFiles | ForEach-Object { Write-Host "  📄 File: $($_.FullName)" }
