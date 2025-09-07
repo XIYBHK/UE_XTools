@@ -181,7 +181,31 @@ jobs:
         Write-Host "  $uat_path $($buildArgs -join ' ')"
         Write-Host ""
         
-        & $uat_path @buildArgs
+        # CRITICAL FIX: The runner environment, even as the correct user, is missing VS dev variables.
+        # We must explicitly create a developer command prompt environment before running UAT.
+        Write-Host "[CRITICAL] Initializing Visual Studio Developer Environment..."
+        Write-Host "  Strategy: Call vcvarsall.bat to set up the MSVC toolchain environment."
+        
+        $vs_path = $env:VS2022INSTALLDIR
+        $vcvars_path = Join-Path $vs_path "VC\Auxiliary\Build\vcvarsall.bat"
+        
+        if (-not (Test-Path $vcvars_path)) {
+            Write-Error "[ERROR] vcvarsall.bat not found at $vcvars_path. Cannot create VS build environment."
+            exit 1
+        }
+        
+        Write-Host "[SUCCESS] Found vcvarsall.bat at: $vcvars_path"
+        Write-Host ""
+        
+        # Chain the vcvarsall.bat setup and the UAT command together to be executed in a single cmd.exe process.
+        # This ensures UAT runs within the fully initialized developer environment.
+        $command_chain = "call `"$vcvars_path`" x64 && `"$uat_path`" $($buildArgs -join ' ')"
+        
+        Write-Host "[EXEC] Executing build within a prepared VS environment via cmd.exe..."
+        Write-Host "  Command Chain: $command_chain"
+        Write-Host ""
+        
+        cmd.exe /c $command_chain
           
         if ($LASTEXITCODE -ne 0) {
           Write-Host ""
