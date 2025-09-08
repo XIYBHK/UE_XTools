@@ -77,75 +77,58 @@ if (-not (Test-Path $vcvars_path)) {
 }
 Write-Host "  > vcvarsall.bat found."
 
-# Step 4: Directly invoke UnrealBuildTool (UBT) to build the temporary project.
-Write-StepHeader "[4/5] INVOKING UNREAL BUILD TOOL (UBT)"
-$ubt_path = Join-Path $UePath "Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"
+# Step 4: Use RunUAT.bat BuildPlugin on our dynamic host project.
+# This is the standard, most reliable way to create a distributable, pre-compiled plugin.
+Write-StepHeader "[4/5] INVOKING RUNUAT TO BUILD AND PACKAGE PLUGIN"
+$uat_path = Join-Path $UePath "Engine\Build\BatchFiles\RunUAT.bat"
+$plugin_to_build_path = Join-Path $target_plugin_proj_dir "XTools.uplugin"
 
-$dotnet_search_path = Join-Path $UePath "Engine\Binaries\ThirdParty\DotNet"
-$dotnet_exe_info = Get-ChildItem -Path $dotnet_search_path -Filter "dotnet.exe" -Recurse | Select-Object -First 1
+# RunUAT will package the plugin into this temporary directory.
+$package_intermediary_path = Join-Path $Workspace "PackageIntermediary"
+New-Item -ItemType Directory -Force -Path $package_intermediary_path | Out-Null
 
-if (-not $dotnet_exe_info) {
-    throw "[ERROR] Could not find dotnet.exe for UE version $EngineVersion under '$dotnet_search_path'"
-}
-$dotnet_path = $dotnet_exe_info.FullName
-Write-Host "  > Found dotnet.exe at: $dotnet_path"
-
-$ubtArgs = @(
-    "UnrealEditor",
-    "Win64",
-    "Development",
+$buildPluginArgs = @(
+    "BuildPlugin",
+    "-Plugin=`"$plugin_to_build_path`"",
+    "-Package=`"$package_intermediary_path`"",
     "-Project=`"$temp_project_path`"",
-    "-log=`"$Workspace\ubt.log`""
+    # Aligning with the YML, we build for Win64 first. This can be expanded later.
+    "-TargetPlatforms=Win64",
+    "-StrictIncludes"
 )
+$command_chain = "call `"$vcvars_path`" x64 && `"$uat_path`" $($buildPluginArgs -join ' ')"
 
-$command_chain = "call `"$vcvars_path`" x64 && `"$dotnet_path`" `"$ubt_path`" $($ubtArgs -join ' ')"
-
-Write-Host "  > Executing command chain..."
+Write-Host "  > Executing RunUAT.bat BuildPlugin command..."
 Write-Host "    $command_chain"
 cmd.exe /c $command_chain
 
 if ($LASTEXITCODE -ne 0) {
-    throw "[ERROR] UBT build failed with exit code $LASTEXITCODE. Check the ubt.log artifact for details."
+    throw "[ERROR] RunUAT BuildPlugin failed with exit code $LASTEXITCODE. Check logs for details."
 }
-Write-Host "  > UBT build completed successfully."
+Write-Host "  > RunUAT BuildPlugin completed successfully."
 
-# Step 5: Manually package the plugin with the newly compiled binaries.
-Write-StepHeader "[5/5] PACKAGING PLUGIN"
-$output_name = "XTools-UE_${EngineVersion}-Win64" # Renamed to remove "-Test"
+
+# Step 5: Collect the packaged plugin from the intermediary directory.
+Write-StepHeader "[5/5] COLLECTING FINAL ARTIFACT"
+$output_name = "XTools-UE_${EngineVersion}-Win64"
 $final_package_dir = Join-Path $Workspace "PackagedPlugin\$output_name"
 
-$built_plugin_dir = $target_plugin_proj_dir
-$binary_source_path = Join-Path $built_plugin_dir "Binaries\Win64"
-if (-not (Test-Path $binary_source_path)) {
-    throw "[ERROR] Build succeeded but no binaries were found at $binary_source_path"
+# RunUAT creates a subfolder with the plugin name inside the package path.
+# We need to find this folder to copy the final result.
+$packaged_plugin_source = Get-ChildItem -Path $package_intermediary_path -Directory | Select-Object -First 1
+if (-not $packaged_plugin_source) {
+    throw "[ERROR] RunUAT succeeded, but no packaged plugin was found in the intermediary directory."
 }
 
-New-Item -ItemType Directory -Force -Path $final_package_dir | Out-Null
+Write-Host "  > Found packaged plugin at: $($packaged_plugin_source.FullName)"
+Write-Host "  > Copying to final destination: $final_package_dir"
 
-$include_dirs = @("Content", "Resources", "Source", "ThirdParty")
-$include_files = @("README.md", "XTools.uplugin")
-
-foreach ($dir in $include_dirs) {
-    $source_dir = Join-Path $built_plugin_dir $dir
-    if (Test-Path $source_dir) {
-        Write-Host "  > Copying directory: $dir"
-        Copy-Item -Path $source_dir -Destination $final_package_dir -Recurse
-    }
+# Clean the final destination and copy the entire contents from the UAT output.
+if (Test-Path $final_package_dir) {
+    Remove-Item $final_package_dir -Recurse -Force
 }
+Copy-Item -Path $packaged_plugin_source.FullName -Destination $final_package_dir -Recurse
 
-foreach ($file in $include_files) {
-    $source_file = Join-Path $built_plugin_dir $file
-    if (Test-Path $source_file) {
-        Write-Host "  > Copying file: $file"
-        Copy-Item -Path $source_file -Destination $final_package_dir
-    }
-}
-
-$binary_dest_path = Join-Path $final_package_dir "Binaries\Win64"
-New-Item -ItemType Directory -Force -Path $binary_dest_path | Out-Null
-Write-Host "  > Copying and cleaning binaries (DLLs only)..."
-Get-ChildItem -Path $binary_source_path -Filter "*.dll" | Copy-Item -Destination $binary_dest_path
-
-Write-Host "  > Plugin packaging complete to $final_package_dir"
+Write-Host "  > Final package created successfully at $final_package_dir"
 Write-Host ""
 Write-Host "SCRIPT FINISHED SUCCESSFULLY"
