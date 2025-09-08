@@ -51,10 +51,10 @@ jobs:
         name: XTools-UE_${{ matrix.ue_version }}-Win64
         path: ${{ github.workspace }}/PackagedPlugin/XTools-UE_${{ matrix.ue_version }}-Win64
         
-    - name: Upload UBT Log
+    - name: Upload Logs on Failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: ubt-log-UE_${{ matrix.ue_version }}
-        path: ${{ github.workspace }}/ubt.log
+        path: ${{ github.workspace }}/*.log
 

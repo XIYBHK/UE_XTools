@@ -92,7 +92,7 @@ $buildPluginArgs = @(
     "-Plugin=`"$plugin_to_build_path`"",
     "-Package=`"$package_intermediary_path`"",
     "-Project=`"$temp_project_path`"",
-    # Aligning with the YML, we build for Win64 first. This can be expanded later.
+    # Reverting to Win64 only for stability testing.
     "-TargetPlatforms=Win64",
     "-StrictIncludes"
 )
@@ -109,7 +109,7 @@ Write-Host "  > RunUAT BuildPlugin completed successfully."
 
 
 # Step 5: Collect the packaged plugin from the intermediary directory.
-Write-StepHeader "[5/5] COLLECTING FINAL ARTIFACT"
+Write-StepHeader "[5/5] COLLECTING FINAL ARTIFAcT"
 $output_name = "XTools-UE_${EngineVersion}-Win64"
 $final_package_dir = Join-Path $Workspace "PackagedPlugin\$output_name"
 
