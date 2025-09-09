@@ -1,0 +1,365 @@
+name: Build XTools Plugin (Optimized BuildPlugin)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ue_version:
+        description: 'UE Version to build for'
+        required: true
+        default: '5.3'
+        type: choice
+        options:
+        - '5.3'
+        - '5.4'
+        - '5.5'
+        - '5.6'
+      
+jobs:
+  build-windows-optimized:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup UE Environment
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "===========================================================" -ForegroundColor Cyan
+        Write-Host "         XTools 插件自动化构建系统 (优化版)"
+        Write-Host "==========================================================="
+        
+        # 设置输出编码
+        $OutputEncoding = [System.Text.Encoding]::UTF8
+        
+        # UE版本检测 - 支持多版本
+        $ue_version = "${{ github.event.inputs.ue_version }}"
+        if (-not $ue_version) { $ue_version = "5.3" }
+        
+        Write-Host "[INFO] 目标UE版本: $ue_version" -ForegroundColor Green
+        
+        # UE安装路径检测 (多盘符支持)
+        $ue_paths = @(
+          "F:\Epic Games\UE_$ue_version",
+          "D:\Program Files\Epic Games\UE_$ue_version", 
+          "C:\Program Files\Epic Games\UE_$ue_version",
+          "E:\Epic Games\UE_$ue_version"
+        )
+        
+        $ue_path = $null
+        foreach ($path in $ue_paths) {
+          Write-Host "  检查路径: $path"
+          if (Test-Path $path) {
+            $ue_path = $path
+            Write-Host "  [成功] 找到UE安装: $path" -ForegroundColor Green
+            break
+          } else {
+            Write-Host "  [跳过] 路径不存在: $path" -ForegroundColor Gray
+          }
+        }
+        
+        if (-not $ue_path) {
+          Write-Error "[错误] 未找到UE $ue_version 安装，检查路径: $($ue_paths -join ', ')"
+          exit 1
+        }
+        
+        # 验证关键文件
+        $runuat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
+        $ue_editor_path = "$ue_path\Engine\Binaries\Win64\UnrealEditor.exe"
+        
+        if (-not (Test-Path $runuat_path)) {
+          Write-Error "[错误] RunUAT.bat 未找到: $runuat_path"
+          exit 1
+        }
+        
+        if (-not (Test-Path $ue_editor_path)) {
+          Write-Error "[错误] UnrealEditor.exe 未找到: $ue_editor_path"
+          exit 1
+        }
+        
+        # 验证插件文件
+        $plugin_file = "${{ github.workspace }}\XTools.uplugin"
+        if (-not (Test-Path $plugin_file)) {
+          Write-Error "[错误] 插件文件未找到: $plugin_file"
+          exit 1
+        }
+        
+        # 设置环境变量
+        echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
+        echo "UE_VERSION=$ue_version" >> $env:GITHUB_ENV
+        echo "RUNUAT_PATH=$runuat_path" >> $env:GITHUB_ENV
+        echo "UE_EDITOR_PATH=$ue_editor_path" >> $env:GITHUB_ENV
+        echo "PLUGIN_FILE=$plugin_file" >> $env:GITHUB_ENV
+        
+        Write-Host "-----------------------------------------------------------"
+        Write-Host "[环境] UE安装根目录: $ue_path"
+        Write-Host "[环境] RunUAT路径: $runuat_path" 
+        Write-Host "[环境] 插件文件: $plugin_file"
+        Write-Host "-----------------------------------------------------------"
+
+    - name: Build Plugin with BuildPlugin Command
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "===========================================================" -ForegroundColor Cyan
+        Write-Host "         开始优化插件打包流程"
+        Write-Host "==========================================================="
+        
+        # 输出目录设置
+        $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        $temp_output = "${{ github.workspace }}\TempPackage"
+        
+        Write-Host "[配置] 临时输出目录: $temp_output"
+        Write-Host "[配置] 最终输出目录: $output_directory"
+        Write-Host "[配置] 使用优化参数: -NoHostProject -Rocket"
+        
+        # 清理旧的输出目录
+        if (Test-Path $temp_output) {
+          Write-Host "[清理] 删除旧的临时目录..." -ForegroundColor Yellow
+          Remove-Item -Recurse -Force $temp_output
+        }
+        if (Test-Path $output_directory) {
+          Write-Host "[清理] 删除旧的输出目录..." -ForegroundColor Yellow
+          Remove-Item -Recurse -Force $output_directory
+        }
+        
+        # 创建输出目录
+        New-Item -ItemType Directory -Force -Path $temp_output | Out-Null
+        New-Item -ItemType Directory -Force -Path $output_directory | Out-Null
+        
+        Write-Host "[构建] 开始调用RunUAT.bat BuildPlugin..." -ForegroundColor Green
+        Write-Host "[提示] UE ${{ env.UE_VERSION }} 将编译多平台版本，请耐心等待..." -ForegroundColor Yellow
+        
+        # 执行BuildPlugin命令 - 使用与本地脚本相同的优化参数
+        $buildArgs = @(
+          "BuildPlugin"
+          "-Plugin=`"${{ env.PLUGIN_FILE }}`""
+          "-Package=`"$temp_output`""
+          "-CreateSubFolder"
+          "-NoHostProject" 
+          "-Rocket"
+        )
+        
+        Write-Host "[命令] ${{ env.RUNUAT_PATH }} $($buildArgs -join ' ')"
+        Write-Host "-----------------------------------------------------------"
+        
+        & "${{ env.RUNUAT_PATH }}" @buildArgs
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "[错误] BuildPlugin 构建失败，退出代码: $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+        
+        Write-Host ""
+        Write-Host "===========================================================" -ForegroundColor Green
+        Write-Host "      构建成功！开始执行后处理..."
+        Write-Host "===========================================================" -ForegroundColor Green
+
+    - name: Post-Process and Optimize Package
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "===========================================================" -ForegroundColor Cyan
+        Write-Host "         执行构建产物清理和优化"
+        Write-Host "==========================================================="
+        
+        $temp_output = "${{ github.workspace }}\TempPackage"
+        $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        
+        # 查找打包后的插件目录 (BuildPlugin可能创建子目录)
+        $packaged_plugin_path = $temp_output
+        $plugin_subdirs = Get-ChildItem -Path $temp_output -Directory
+        if ($plugin_subdirs.Count -eq 1) {
+          $packaged_plugin_path = $plugin_subdirs[0].FullName
+          Write-Host "[检测] 找到插件子目录: $packaged_plugin_path"
+        }
+        
+        if (-not (Test-Path $packaged_plugin_path)) {
+          Write-Error "[错误] 打包后的插件目录不存在: $packaged_plugin_path"
+          exit 1
+        }
+        
+        Write-Host "[处理] 源目录: $packaged_plugin_path"
+        Write-Host "[处理] 目标目录: $output_directory"
+        
+        # 复制所有文件到最终输出目录
+        Write-Host "[复制] 复制插件文件到最终目录..." -ForegroundColor Green
+        Copy-Item -Path "$packaged_plugin_path\*" -Destination $output_directory -Recurse -Force
+        
+        # 1. 删除 Intermediate 文件夹
+        $intermediate_path = Join-Path $output_directory "Intermediate"
+        if (Test-Path $intermediate_path) {
+          Write-Host "[清理] 删除 Intermediate 文件夹..." -ForegroundColor Yellow
+          Remove-Item -Recurse -Force $intermediate_path
+          Write-Host "[清理] Intermediate 文件夹已删除"
+        } else {
+          Write-Host "[信息] 未找到 Intermediate 文件夹" -ForegroundColor Gray
+        }
+        
+        # 2. 删除所有平台的 PDB 文件
+        $binaries_path = Join-Path $output_directory "Binaries"
+        if (Test-Path $binaries_path) {
+          $pdb_files = Get-ChildItem -Path $binaries_path -Filter "*.pdb" -Recurse
+          if ($pdb_files) {
+            Write-Host "[清理] 删除 $($pdb_files.Count) 个 PDB 文件..." -ForegroundColor Yellow
+            Remove-Item -Force $pdb_files.FullName
+            Write-Host "[清理] PDB 文件已删除"
+          } else {
+            Write-Host "[信息] 未找到 PDB 文件" -ForegroundColor Gray
+          }
+        }
+        
+        # 3. 删除临时构建目录
+        Write-Host "[清理] 删除临时构建目录..." -ForegroundColor Yellow
+        Remove-Item -Recurse -Force $temp_output
+        
+        Write-Host ""
+        Write-Host "===========================================================" -ForegroundColor Green
+        Write-Host "      后处理完成！"
+        Write-Host "===========================================================" -ForegroundColor Green
+
+    - name: Create Distribution Package
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "===========================================================" -ForegroundColor Cyan
+        Write-Host "         创建分发包"
+        Write-Host "==========================================================="
+        
+        $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-AllPlatforms.zip"
+        $zip_filepath = "${{ github.workspace }}\PackagedPlugin\$zip_filename"
+        
+        if (Test-Path $zip_filepath) {
+          Write-Host "[清理] 删除旧的ZIP包..." -ForegroundColor Yellow
+          Remove-Item -Force $zip_filepath
+        }
+        
+        Write-Host "[压缩] 创建分发包: $zip_filename" -ForegroundColor Green
+        Compress-Archive -Path "$output_directory\*" -DestinationPath $zip_filepath
+        
+        $zip_size = [math]::Round((Get-Item $zip_filepath).Length / 1MB, 2)
+        Write-Host "[完成] ZIP包已创建: $zip_filepath ($zip_size MB)" -ForegroundColor Green
+        
+        # 设置环境变量供后续步骤使用
+        echo "ZIP_FILE_PATH=$zip_filepath" >> $env:GITHUB_ENV
+        echo "ZIP_FILE_NAME=$zip_filename" >> $env:GITHUB_ENV
+
+    - name: Validate Build Output
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "===========================================================" -ForegroundColor Cyan
+        Write-Host "         验证构建输出"
+        Write-Host "==========================================================="
+        
+        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        
+        if (-not (Test-Path $output_path)) {
+          Write-Error "[错误] 构建输出目录不存在: $output_path"
+          exit 1
+        }
+        
+        # 统计文件信息
+        $all_files = Get-ChildItem -Path $output_path -Recurse -File
+        $total_size = ($all_files | Measure-Object -Property Length -Sum).Sum
+        
+        Write-Host "[统计] 构建统计信息:"
+        Write-Host "  总文件数: $($all_files.Count)"
+        Write-Host "  总大小: $([math]::Round($total_size/1MB, 2)) MB"
+        Write-Host ""
+        
+        # 验证关键文件
+        $uplugin_file = Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse
+        if ($uplugin_file) {
+          Write-Host "[验证] ✓ 插件配置文件: $($uplugin_file.Name)" -ForegroundColor Green
+        } else {
+          Write-Error "[错误] ✗ 未找到插件配置文件"
+          exit 1
+        }
+        
+        # 验证二进制文件
+        $platforms = @(
+          @{Name="Windows"; Extension="*.dll"; Path="Binaries\Win64"},
+          @{Name="Linux"; Extension="*.so"; Path="Binaries\Linux"},
+          @{Name="Mac"; Extension="*.dylib"; Path="Binaries\Mac"}
+        )
+        
+        foreach ($platform in $platforms) {
+          $platform_path = Join-Path $output_path $platform.Path
+          if (Test-Path $platform_path) {
+            $binaries = Get-ChildItem -Path $platform_path -Filter $platform.Extension
+            if ($binaries) {
+              Write-Host "[验证] ✓ $($platform.Name) 平台: $($binaries.Count) 个二进制文件" -ForegroundColor Green
+            } else {
+              Write-Host "[验证] ✗ $($platform.Name) 平台: 未找到二进制文件" -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "[验证] - $($platform.Name) 平台: 目录不存在 (可能未编译此平台)" -ForegroundColor Gray
+          }
+        }
+        
+        Write-Host ""
+        Write-Host "===========================================================" -ForegroundColor Green
+        Write-Host "      验证完成！"
+        Write-Host "===========================================================" -ForegroundColor Green
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: XTools-UE_${{ env.UE_VERSION }}-AllPlatforms
+        path: PackagedPlugin/XTools-UE_${{ env.UE_VERSION }}-AllPlatforms/
+        retention-days: 30
+
+    - name: Upload Distribution Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: XTools-UE_${{ env.UE_VERSION }}-Distribution
+        path: ${{ env.ZIP_FILE_PATH }}
+        retention-days: 30
+
+  # 构建总结
+  build-summary:
+    if: always()
+    needs: [build-windows-optimized]
+    runs-on: self-hosted
+    
+    steps:
+    - name: Generate Build Summary
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "[信息] 生成构建总结报告..."
+        
+        $build_result = "${{ needs.build-windows-optimized.result }}"
+        $ue_version = "${{ github.event.inputs.ue_version }}"
+        if (-not $ue_version) { $ue_version = "5.3" }
+        
+        echo "## XTools 插件构建总结 (优化版)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**构建时间:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
+        echo "**提交哈希:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**分支:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**UE版本:** $ue_version" >> $GITHUB_STEP_SUMMARY
+        echo "**构建方法:** RunUAT BuildPlugin (优化参数)" >> $GITHUB_STEP_SUMMARY
+        echo "**运行器:** Self-Hosted" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if ($build_result -eq "success") {
+          echo "### ✅ 构建成功" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**构建特性:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 多平台支持 (Windows + Linux + Mac)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 优化构建参数 (-NoHostProject -Rocket)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 自动清理临时文件 (Intermediate, PDB)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 创建分发包 (ZIP)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**构建产物:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 插件文件夹: \`XTools-UE_$ue_version-AllPlatforms\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 分发包: \`XTools-UE_$ue_version-Distribution\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 📅 保留时间: 30天" >> $GITHUB_STEP_SUMMARY
+        } else {
+          echo "### ❌ 构建失败" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**故障排除:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 检查UE安装路径是否正确" >> $GITHUB_STEP_SUMMARY
+          echo "- 检查插件源代码是否有编译错误" >> $GITHUB_STEP_SUMMARY
+          echo "- 查看详细构建日志获取错误信息" >> $GITHUB_STEP_SUMMARY
+        }
+        
+        Write-Host "构建总结报告已生成"
