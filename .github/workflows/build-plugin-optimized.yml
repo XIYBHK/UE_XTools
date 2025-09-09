@@ -178,8 +178,13 @@ jobs:
         
         
         $output_directory = "${{ env.OUTPUT_DIR }}"
-        # 获取最近标签（优先），否则回退到短SHA
-        $tag = & git describe --tags --abbrev=0 2>$null
+        # 获取最近标签（优先），否则回退到短SHA；处理自托管安全目录
+        $repo = "${{ github.workspace }}"
+        & git config --global --add safe.directory $repo 2>$null | Out-Null
+        $tag = ""
+        try {
+          $tag = & git -C $repo describe --tags --abbrev=0 2>$null
+        } catch {}
         if ([string]::IsNullOrWhiteSpace($tag)) {
           $commit = "${{ github.sha }}"
           $tag = $commit.Substring(0,7)
