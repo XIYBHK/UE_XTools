@@ -31,15 +31,13 @@ jobs:
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null  # 设置控制台代码页为UTF-8
 
-        Write-Host '===========================================================' -ForegroundColor Cyan
-        Write-Host '         XTools 插件自动化构建系统 (优化版)' -ForegroundColor Cyan
-        Write-Host '===========================================================' -ForegroundColor Cyan
+        
         
         # UE版本检测 - 支持多版本
         $ue_version = "${{ github.event.inputs.ue_version }}"
         if (-not $ue_version) { $ue_version = "5.3" }
         
-        Write-Host ('[INFO] 目标UE版本: ' + $ue_version) -ForegroundColor Green
+        
         
         # UE安装路径检测 (多盘符支持)
         $ue_paths = @(
@@ -51,13 +49,13 @@ jobs:
         
         $ue_path = $null
         foreach ($path in $ue_paths) {
-          Write-Host ('  检查路径: ' + $path) -ForegroundColor White
+          
           if (Test-Path $path) {
             $ue_path = $path
-            Write-Host ('  [成功] 找到UE安装: ' + $path) -ForegroundColor Green
+            
             break
           } else {
-            Write-Host ('  [跳过] 路径不存在: ' + $path) -ForegroundColor Gray
+            
           }
         }
         
@@ -94,11 +92,7 @@ jobs:
         echo "UE_EDITOR_PATH=$ue_editor_path" >> $env:GITHUB_ENV
         echo "PLUGIN_FILE=$plugin_file" >> $env:GITHUB_ENV
         
-        Write-Host '-----------------------------------------------------------' -ForegroundColor White
-        Write-Host ('[环境] UE安装根目录: ' + $ue_path) -ForegroundColor White
-        Write-Host ('[环境] RunUAT路径: ' + $runuat_path) -ForegroundColor White
-        Write-Host ('[环境] 插件文件: ' + $plugin_file) -ForegroundColor White
-        Write-Host '-----------------------------------------------------------' -ForegroundColor White
+        
 
     - name: Build Plugin with BuildPlugin Command
       shell: powershell -ExecutionPolicy Bypass -File {0}
@@ -109,34 +103,23 @@ jobs:
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null
         
-        Write-Host '===========================================================' -ForegroundColor Cyan
-        Write-Host '         开始优化插件打包流程' -ForegroundColor Cyan
-        Write-Host '===========================================================' -ForegroundColor Cyan
+        
         
         # 输出目录设置
         $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
         $temp_output = "${{ github.workspace }}\TempPackage"
         
-        Write-Host ('[配置] 临时输出目录: ' + $temp_output) -ForegroundColor White
-        Write-Host ('[配置] 最终输出目录: ' + $output_directory) -ForegroundColor White
-        Write-Host '[配置] 使用优化参数: -NoHostProject -Rocket' -ForegroundColor White
+        
         
         # 清理旧的输出目录
-        if (Test-Path $temp_output) {
-          Write-Host "[清理] 删除旧的临时目录..." -ForegroundColor Yellow
-          Remove-Item -Recurse -Force $temp_output
-        }
-        if (Test-Path $output_directory) {
-          Write-Host "[清理] 删除旧的输出目录..." -ForegroundColor Yellow
-          Remove-Item -Recurse -Force $output_directory
-        }
+        if (Test-Path $temp_output) { Remove-Item -Recurse -Force $temp_output }
+        if (Test-Path $output_directory) { Remove-Item -Recurse -Force $output_directory }
         
         # 创建输出目录
         New-Item -ItemType Directory -Force -Path $temp_output | Out-Null
         New-Item -ItemType Directory -Force -Path $output_directory | Out-Null
         
-        Write-Host '[构建] 开始调用RunUAT.bat BuildPlugin...' -ForegroundColor Green
-        Write-Host "[提示] UE ${{ env.UE_VERSION }} 将编译多平台版本，请耐心等待..." -ForegroundColor Yellow
+        
         
         # 执行BuildPlugin命令 - 使用与本地脚本相同的优化参数（避免嵌套引号）
         $pluginPath  = $env:PLUGIN_FILE
@@ -150,20 +133,13 @@ jobs:
           "-Rocket"
         )
         
-        Write-Host "[命令] ${{ env.RUNUAT_PATH }} $($buildArgs -join ' ')" -ForegroundColor White
-        Write-Host '-----------------------------------------------------------' -ForegroundColor White
+        
         
         & "${{ env.RUNUAT_PATH }}" @buildArgs
         
-        if ($LASTEXITCODE -ne 0) {
-          Write-Error "[错误] BuildPlugin 构建失败，退出代码: $LASTEXITCODE"
-          exit $LASTEXITCODE
-        }
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         
-        Write-Host ""
-        Write-Host '===========================================================' -ForegroundColor Green
-        Write-Host '      构建成功！开始执行后处理...' -ForegroundColor Green
-        Write-Host '===========================================================' -ForegroundColor Green
+        
 
     - name: Post-Process and Optimize Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
@@ -174,9 +150,7 @@ jobs:
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null
         
-        Write-Host '===========================================================' -ForegroundColor Cyan
-        Write-Host '         执行构建产物清理和优化' -ForegroundColor Cyan
-        Write-Host '===========================================================' -ForegroundColor Cyan
+        
         
         $temp_output = "${{ github.workspace }}\TempPackage"
         $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
@@ -186,7 +160,7 @@ jobs:
         $plugin_subdirs = Get-ChildItem -Path $temp_output -Directory
         if ($plugin_subdirs.Count -eq 1) {
           $packaged_plugin_path = $plugin_subdirs[0].FullName
-          Write-Host "[检测] 找到插件子目录: $packaged_plugin_path" -ForegroundColor Yellow
+          
         }
         
         if (-not (Test-Path $packaged_plugin_path)) {
@@ -194,21 +168,20 @@ jobs:
           exit 1
         }
         
-        Write-Host "[处理] 源目录: $packaged_plugin_path" -ForegroundColor White
-        Write-Host "[处理] 目标目录: $output_directory" -ForegroundColor White
+        
         
         # 复制所有文件到最终输出目录
-        Write-Host '[复制] 复制插件文件到最终目录...' -ForegroundColor Green
+        
         Copy-Item -Path "$packaged_plugin_path\*" -Destination $output_directory -Recurse -Force
         
         # 1. 删除 Intermediate 文件夹
         $intermediate_path = Join-Path $output_directory "Intermediate"
         if (Test-Path $intermediate_path) {
-          Write-Host '[清理] 删除 Intermediate 文件夹...' -ForegroundColor Yellow
+          
           Remove-Item -Recurse -Force $intermediate_path
-          Write-Host '[清理] Intermediate 文件夹已删除' -ForegroundColor Green
+          
         } else {
-          Write-Host '[信息] 未找到 Intermediate 文件夹' -ForegroundColor Gray
+          
         }
         
         # 2. 删除所有平台的 PDB 文件
@@ -216,22 +189,19 @@ jobs:
         if (Test-Path $binaries_path) {
           $pdb_files = Get-ChildItem -Path $binaries_path -Filter "*.pdb" -Recurse
           if ($pdb_files) {
-            Write-Host "[清理] 删除 $($pdb_files.Count) 个 PDB 文件..." -ForegroundColor Yellow
+            
             Remove-Item -Force $pdb_files.FullName
-            Write-Host '[清理] PDB 文件已删除' -ForegroundColor Green
+            
           } else {
-            Write-Host '[信息] 未找到 PDB 文件' -ForegroundColor Gray
+            
           }
         }
         
         # 3. 删除临时构建目录
-        Write-Host '[清理] 删除临时构建目录...' -ForegroundColor Yellow
+        
         Remove-Item -Recurse -Force $temp_output
         
-        Write-Host ""
-        Write-Host '===========================================================' -ForegroundColor Green
-        Write-Host '      后处理完成！' -ForegroundColor Green
-        Write-Host '===========================================================' -ForegroundColor Green
+        
 
     - name: Create Distribution Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
@@ -242,24 +212,22 @@ jobs:
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null
         
-        Write-Host '===========================================================' -ForegroundColor Cyan
-        Write-Host '         创建分发包' -ForegroundColor Cyan
-        Write-Host '===========================================================' -ForegroundColor Cyan
+        
         
         $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
         $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-AllPlatforms.zip"
         $zip_filepath = "${{ github.workspace }}\PackagedPlugin\$zip_filename"
         
         if (Test-Path $zip_filepath) {
-          Write-Host '[清理] 删除旧的ZIP包...' -ForegroundColor Yellow
+          
           Remove-Item -Force $zip_filepath
         }
         
-        Write-Host ('[压缩] 创建分发包: ' + $zip_filename) -ForegroundColor Green
+        
         Compress-Archive -Path "$output_directory\*" -DestinationPath $zip_filepath
         
         $zip_size = [math]::Round((Get-Item $zip_filepath).Length / 1MB, 2)
-        Write-Host ('[完成] ZIP包已创建: ' + $zip_filepath + ' (' + $zip_size + ' MB)') -ForegroundColor Green
+        
         
         # 设置环境变量供后续步骤使用
         echo "ZIP_FILE_PATH=$zip_filepath" >> $env:GITHUB_ENV
@@ -274,9 +242,7 @@ jobs:
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null
         
-        Write-Host '===========================================================' -ForegroundColor Cyan
-        Write-Host '         验证构建输出' -ForegroundColor Cyan
-        Write-Host '===========================================================' -ForegroundColor Cyan
+        
         
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
         
@@ -289,15 +255,12 @@ jobs:
         $all_files = Get-ChildItem -Path $output_path -Recurse -File
         $total_size = ($all_files | Measure-Object -Property Length -Sum).Sum
         
-        Write-Host "[统计] 构建统计信息:" -ForegroundColor White
-        Write-Host "  总文件数: $($all_files.Count)" -ForegroundColor White
-        Write-Host "  总大小: $([math]::Round($total_size/1MB, 2)) MB" -ForegroundColor White
-        Write-Host ""
+        
         
         # 验证关键文件
         $uplugin_file = Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse
         if ($uplugin_file) {
-          Write-Host ('[验证] ✓ 插件配置文件: ' + $uplugin_file.Name) -ForegroundColor Green
+          
         } else {
           Write-Error "[错误] ✗ 未找到插件配置文件"
           exit 1
@@ -315,19 +278,16 @@ jobs:
           if (Test-Path $platform_path) {
             $binaries = Get-ChildItem -Path $platform_path -Filter $platform.Extension
             if ($binaries) {
-              Write-Host ('[验证] ✓ ' + $platform.Name + ' 平台: ' + $binaries.Count + ' 个二进制文件') -ForegroundColor Green
+              
             } else {
-              Write-Host "[验证] ✗ $($platform.Name) 平台: 未找到二进制文件" -ForegroundColor Yellow
+              
             }
           } else {
-            Write-Host "[验证] - $($platform.Name) 平台: 目录不存在 (可能未编译此平台)" -ForegroundColor Gray
+            
           }
         }
         
-        Write-Host ""
-        Write-Host '===========================================================' -ForegroundColor Green
-        Write-Host '      验证完成！' -ForegroundColor Green
-        Write-Host '===========================================================' -ForegroundColor Green
+        
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
@@ -359,7 +319,7 @@ jobs:
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null
         
-        Write-Host "[信息] 生成构建总结报告..." -ForegroundColor Cyan
+        
         
         $build_result = "${{ needs.build-windows-optimized.result }}"
         $ue_version = "${{ github.event.inputs.ue_version }}"
@@ -397,4 +357,4 @@ jobs:
           echo "- 查看详细构建日志获取错误信息" >> $GITHUB_STEP_SUMMARY
         }
         
-        Write-Host '构建总结报告已生成' -ForegroundColor Green
+        
