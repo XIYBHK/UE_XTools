@@ -1,4 +1,4 @@
-name: Build XTools Plugin (Optimized BuildPlugin)
+﻿name: Build XTools Plugin (Optimized BuildPlugin)
 
 on:
   workflow_dispatch:
