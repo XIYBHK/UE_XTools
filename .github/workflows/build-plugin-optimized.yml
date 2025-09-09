@@ -229,7 +229,7 @@ jobs:
     - name: Upload Distribution Package
       uses: actions/upload-artifact@v4
       with:
-        name: XTools-UE_${{ env.UE_VERSION }}-Distribution
+        name: ${{ env.ZIP_FILE_NAME }}
         path: ${{ env.ZIP_FILE_PATH }}
         retention-days: 30
 
