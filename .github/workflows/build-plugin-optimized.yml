@@ -26,11 +26,14 @@ jobs:
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "===========================================================" -ForegroundColor Cyan
-        Write-Host "         XTools 插件自动化构建系统 (优化版)"
-        Write-Host "==========================================================="
+        Write-Host "         XTools 插件自动化构建系统 (优化版)" -ForegroundColor Cyan
+        Write-Host "===========================================================" -ForegroundColor Cyan
         
-        # 设置输出编码
+        # 设置PowerShell编码 - 确保中文正确显示
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
         $OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001 | Out-Null  # 设置控制台代码页为UTF-8
         
         # UE版本检测 - 支持多版本
         $ue_version = "${{ github.event.inputs.ue_version }}"
@@ -48,7 +51,7 @@ jobs:
         
         $ue_path = $null
         foreach ($path in $ue_paths) {
-          Write-Host "  检查路径: $path"
+          Write-Host "  检查路径: $path" -ForegroundColor White
           if (Test-Path $path) {
             $ue_path = $path
             Write-Host "  [成功] 找到UE安装: $path" -ForegroundColor Green
@@ -91,26 +94,32 @@ jobs:
         echo "UE_EDITOR_PATH=$ue_editor_path" >> $env:GITHUB_ENV
         echo "PLUGIN_FILE=$plugin_file" >> $env:GITHUB_ENV
         
-        Write-Host "-----------------------------------------------------------"
-        Write-Host "[环境] UE安装根目录: $ue_path"
-        Write-Host "[环境] RunUAT路径: $runuat_path" 
-        Write-Host "[环境] 插件文件: $plugin_file"
-        Write-Host "-----------------------------------------------------------"
+        Write-Host "-----------------------------------------------------------" -ForegroundColor White
+        Write-Host "[环境] UE安装根目录: $ue_path" -ForegroundColor White
+        Write-Host "[环境] RunUAT路径: $runuat_path" -ForegroundColor White
+        Write-Host "[环境] 插件文件: $plugin_file" -ForegroundColor White
+        Write-Host "-----------------------------------------------------------" -ForegroundColor White
 
     - name: Build Plugin with BuildPlugin Command
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        # 设置PowerShell编码 - 确保中文正确显示
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+        $OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001 | Out-Null
+        
         Write-Host "===========================================================" -ForegroundColor Cyan
-        Write-Host "         开始优化插件打包流程"
-        Write-Host "==========================================================="
+        Write-Host "         开始优化插件打包流程" -ForegroundColor Cyan
+        Write-Host "===========================================================" -ForegroundColor Cyan
         
         # 输出目录设置
         $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
         $temp_output = "${{ github.workspace }}\TempPackage"
         
-        Write-Host "[配置] 临时输出目录: $temp_output"
-        Write-Host "[配置] 最终输出目录: $output_directory"
-        Write-Host "[配置] 使用优化参数: -NoHostProject -Rocket"
+        Write-Host "[配置] 临时输出目录: $temp_output" -ForegroundColor White
+        Write-Host "[配置] 最终输出目录: $output_directory" -ForegroundColor White
+        Write-Host "[配置] 使用优化参数: -NoHostProject -Rocket" -ForegroundColor White
         
         # 清理旧的输出目录
         if (Test-Path $temp_output) {
@@ -139,8 +148,8 @@ jobs:
           "-Rocket"
         )
         
-        Write-Host "[命令] ${{ env.RUNUAT_PATH }} $($buildArgs -join ' ')"
-        Write-Host "-----------------------------------------------------------"
+        Write-Host "[命令] ${{ env.RUNUAT_PATH }} $($buildArgs -join ' ')" -ForegroundColor White
+        Write-Host "-----------------------------------------------------------" -ForegroundColor White
         
         & "${{ env.RUNUAT_PATH }}" @buildArgs
         
@@ -151,15 +160,21 @@ jobs:
         
         Write-Host ""
         Write-Host "===========================================================" -ForegroundColor Green
-        Write-Host "      构建成功！开始执行后处理..."
+        Write-Host "      构建成功！开始执行后处理..." -ForegroundColor Green
         Write-Host "===========================================================" -ForegroundColor Green
 
     - name: Post-Process and Optimize Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        # 设置PowerShell编码 - 确保中文正确显示
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+        $OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001 | Out-Null
+        
         Write-Host "===========================================================" -ForegroundColor Cyan
-        Write-Host "         执行构建产物清理和优化"
-        Write-Host "==========================================================="
+        Write-Host "         执行构建产物清理和优化" -ForegroundColor Cyan
+        Write-Host "===========================================================" -ForegroundColor Cyan
         
         $temp_output = "${{ github.workspace }}\TempPackage"
         $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
@@ -169,7 +184,7 @@ jobs:
         $plugin_subdirs = Get-ChildItem -Path $temp_output -Directory
         if ($plugin_subdirs.Count -eq 1) {
           $packaged_plugin_path = $plugin_subdirs[0].FullName
-          Write-Host "[检测] 找到插件子目录: $packaged_plugin_path"
+          Write-Host "[检测] 找到插件子目录: $packaged_plugin_path" -ForegroundColor Yellow
         }
         
         if (-not (Test-Path $packaged_plugin_path)) {
@@ -177,8 +192,8 @@ jobs:
           exit 1
         }
         
-        Write-Host "[处理] 源目录: $packaged_plugin_path"
-        Write-Host "[处理] 目标目录: $output_directory"
+        Write-Host "[处理] 源目录: $packaged_plugin_path" -ForegroundColor White
+        Write-Host "[处理] 目标目录: $output_directory" -ForegroundColor White
         
         # 复制所有文件到最终输出目录
         Write-Host "[复制] 复制插件文件到最终目录..." -ForegroundColor Green
@@ -189,7 +204,7 @@ jobs:
         if (Test-Path $intermediate_path) {
           Write-Host "[清理] 删除 Intermediate 文件夹..." -ForegroundColor Yellow
           Remove-Item -Recurse -Force $intermediate_path
-          Write-Host "[清理] Intermediate 文件夹已删除"
+          Write-Host "[清理] Intermediate 文件夹已删除" -ForegroundColor Green
         } else {
           Write-Host "[信息] 未找到 Intermediate 文件夹" -ForegroundColor Gray
         }
@@ -201,7 +216,7 @@ jobs:
           if ($pdb_files) {
             Write-Host "[清理] 删除 $($pdb_files.Count) 个 PDB 文件..." -ForegroundColor Yellow
             Remove-Item -Force $pdb_files.FullName
-            Write-Host "[清理] PDB 文件已删除"
+            Write-Host "[清理] PDB 文件已删除" -ForegroundColor Green
           } else {
             Write-Host "[信息] 未找到 PDB 文件" -ForegroundColor Gray
           }
@@ -213,15 +228,21 @@ jobs:
         
         Write-Host ""
         Write-Host "===========================================================" -ForegroundColor Green
-        Write-Host "      后处理完成！"
+        Write-Host "      后处理完成！" -ForegroundColor Green
         Write-Host "===========================================================" -ForegroundColor Green
 
     - name: Create Distribution Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        # 设置PowerShell编码 - 确保中文正确显示
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+        $OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001 | Out-Null
+        
         Write-Host "===========================================================" -ForegroundColor Cyan
-        Write-Host "         创建分发包"
-        Write-Host "==========================================================="
+        Write-Host "         创建分发包" -ForegroundColor Cyan
+        Write-Host "===========================================================" -ForegroundColor Cyan
         
         $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
         $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-AllPlatforms.zip"
@@ -245,9 +266,15 @@ jobs:
     - name: Validate Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        # 设置PowerShell编码 - 确保中文正确显示
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+        $OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001 | Out-Null
+        
         Write-Host "===========================================================" -ForegroundColor Cyan
-        Write-Host "         验证构建输出"
-        Write-Host "==========================================================="
+        Write-Host "         验证构建输出" -ForegroundColor Cyan
+        Write-Host "===========================================================" -ForegroundColor Cyan
         
         $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
         
@@ -260,9 +287,9 @@ jobs:
         $all_files = Get-ChildItem -Path $output_path -Recurse -File
         $total_size = ($all_files | Measure-Object -Property Length -Sum).Sum
         
-        Write-Host "[统计] 构建统计信息:"
-        Write-Host "  总文件数: $($all_files.Count)"
-        Write-Host "  总大小: $([math]::Round($total_size/1MB, 2)) MB"
+        Write-Host "[统计] 构建统计信息:" -ForegroundColor White
+        Write-Host "  总文件数: $($all_files.Count)" -ForegroundColor White
+        Write-Host "  总大小: $([math]::Round($total_size/1MB, 2)) MB" -ForegroundColor White
         Write-Host ""
         
         # 验证关键文件
@@ -297,7 +324,7 @@ jobs:
         
         Write-Host ""
         Write-Host "===========================================================" -ForegroundColor Green
-        Write-Host "      验证完成！"
+        Write-Host "      验证完成！" -ForegroundColor Green
         Write-Host "===========================================================" -ForegroundColor Green
 
     - name: Upload Build Artifacts
@@ -324,7 +351,13 @@ jobs:
     - name: Generate Build Summary
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "[信息] 生成构建总结报告..."
+        # 设置PowerShell编码 - 确保中文正确显示
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+        $OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001 | Out-Null
+        
+        Write-Host "[信息] 生成构建总结报告..." -ForegroundColor Cyan
         
         $build_result = "${{ needs.build-windows-optimized.result }}"
         $ue_version = "${{ github.event.inputs.ue_version }}"
@@ -362,4 +395,4 @@ jobs:
           echo "- 查看详细构建日志获取错误信息" >> $GITHUB_STEP_SUMMARY
         }
         
-        Write-Host "构建总结报告已生成"
+        Write-Host "构建总结报告已生成" -ForegroundColor Green
