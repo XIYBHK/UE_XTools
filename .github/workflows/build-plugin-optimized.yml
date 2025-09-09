@@ -25,15 +25,15 @@ jobs:
     - name: Setup UE Environment
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "===========================================================" -ForegroundColor Cyan
-        Write-Host "         XTools 插件自动化构建系统 (优化版)" -ForegroundColor Cyan
-        Write-Host "===========================================================" -ForegroundColor Cyan
-        
-        # 设置PowerShell编码 - 确保中文正确显示
+        # 设置PowerShell编码 - 确保中文正确显示（须在任何输出之前）
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         [Console]::InputEncoding = [System.Text.Encoding]::UTF8
         $OutputEncoding = [System.Text.Encoding]::UTF8
         chcp 65001 | Out-Null  # 设置控制台代码页为UTF-8
+
+        Write-Host "===========================================================" -ForegroundColor Cyan
+        Write-Host "         XTools 插件自动化构建系统 (优化版)" -ForegroundColor Cyan
+        Write-Host "===========================================================" -ForegroundColor Cyan
         
         # UE版本检测 - 支持多版本
         $ue_version = "${{ github.event.inputs.ue_version }}"
@@ -138,13 +138,15 @@ jobs:
         Write-Host "[构建] 开始调用RunUAT.bat BuildPlugin..." -ForegroundColor Green
         Write-Host "[提示] UE ${{ env.UE_VERSION }} 将编译多平台版本，请耐心等待..." -ForegroundColor Yellow
         
-        # 执行BuildPlugin命令 - 使用与本地脚本相同的优化参数
+        # 执行BuildPlugin命令 - 使用与本地脚本相同的优化参数（避免嵌套引号）
+        $pluginPath  = $env:PLUGIN_FILE
+        $packagePath = $temp_output
         $buildArgs = @(
-          "BuildPlugin"
-          "-Plugin=`"${{ env.PLUGIN_FILE }}`""
-          "-Package=`"$temp_output`""
-          "-CreateSubFolder"
-          "-NoHostProject" 
+          "BuildPlugin",
+          "-Plugin=$pluginPath",
+          "-Package=$packagePath",
+          "-CreateSubFolder",
+          "-NoHostProject",
           "-Rocket"
         )
         
