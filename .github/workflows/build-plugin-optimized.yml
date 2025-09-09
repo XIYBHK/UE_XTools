@@ -60,8 +60,7 @@ jobs:
         }
         
         if (-not $ue_path) {
-          Write-Error "[错误] 未找到UE $ue_version 安装，检查路径: $($ue_paths -join ', ')"
-          exit 1
+          throw ("UE install not found for version " + $ue_version + ". Checked: " + ($ue_paths -join ', '))
         }
         
         # 验证关键文件
@@ -69,20 +68,17 @@ jobs:
         $ue_editor_path = "$ue_path\Engine\Binaries\Win64\UnrealEditor.exe"
         
         if (-not (Test-Path $runuat_path)) {
-          Write-Error "[错误] RunUAT.bat 未找到: $runuat_path"
-          exit 1
+          throw ("RunUAT.bat not found: " + $runuat_path)
         }
         
         if (-not (Test-Path $ue_editor_path)) {
-          Write-Error "[错误] UnrealEditor.exe 未找到: $ue_editor_path"
-          exit 1
+          throw ("UnrealEditor.exe not found: " + $ue_editor_path)
         }
         
         # 验证插件文件
         $plugin_file = "${{ github.workspace }}\XTools.uplugin"
         if (-not (Test-Path $plugin_file)) {
-          Write-Error "[错误] 插件文件未找到: $plugin_file"
-          exit 1
+          throw ("Plugin file not found: " + $plugin_file)
         }
         
         # 设置环境变量
@@ -105,9 +101,10 @@ jobs:
         
         
         
-        # 输出目录设置
-        $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
-        $temp_output = "${{ github.workspace }}\TempPackage"
+        # 输出目录设置（使用 RUNNER_TEMP，避免写入仓库目录）
+        $base_out = Join-Path $env:RUNNER_TEMP "XTools"
+        $output_directory = Join-Path $base_out ("XTools-UE_" + $env:UE_VERSION + "-AllPlatforms")
+        $temp_output = Join-Path $base_out "TempPackage"
         
         
         
@@ -116,8 +113,12 @@ jobs:
         if (Test-Path $output_directory) { Remove-Item -Recurse -Force $output_directory }
         
         # 创建输出目录
+        New-Item -ItemType Directory -Force -Path $base_out | Out-Null
         New-Item -ItemType Directory -Force -Path $temp_output | Out-Null
         New-Item -ItemType Directory -Force -Path $output_directory | Out-Null
+
+        # 暴露输出目录供后续步骤使用
+        echo ("OUTPUT_DIR=" + $output_directory) >> $env:GITHUB_ENV
         
         
         
@@ -152,8 +153,9 @@ jobs:
         
         
         
-        $temp_output = "${{ github.workspace }}\TempPackage"
-        $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        $base_out = Join-Path $env:RUNNER_TEMP "XTools"
+        $temp_output = Join-Path $base_out "TempPackage"
+        $output_directory = "${{ env.OUTPUT_DIR }}"
         
         # 查找打包后的插件目录 (BuildPlugin可能创建子目录)
         $packaged_plugin_path = $temp_output
@@ -164,8 +166,7 @@ jobs:
         }
         
         if (-not (Test-Path $packaged_plugin_path)) {
-          Write-Error "[错误] 打包后的插件目录不存在: $packaged_plugin_path"
-          exit 1
+          throw ("Packaged plugin directory not found: " + $packaged_plugin_path)
         }
         
         
@@ -214,9 +215,9 @@ jobs:
         
         
         
-        $output_directory = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        $output_directory = "${{ env.OUTPUT_DIR }}"
         $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-AllPlatforms.zip"
-        $zip_filepath = "${{ github.workspace }}\PackagedPlugin\$zip_filename"
+        $zip_filepath = Join-Path $env:RUNNER_TEMP $zip_filename
         
         if (Test-Path $zip_filepath) {
           
@@ -244,21 +245,13 @@ jobs:
         
         
         
-        $output_path = "${{ github.workspace }}\PackagedPlugin\XTools-UE_${{ env.UE_VERSION }}-AllPlatforms"
+        $output_path = "${{ env.OUTPUT_DIR }}"
         
-        if (-not (Test-Path $output_path)) {
-          Write-Error "[错误] 构建输出目录不存在: $output_path"
-          exit 1
-        }
+        if (-not (Test-Path $output_path)) { throw ("Output directory not found: " + $output_path) }
         
         # 验证关键文件（最小化校验）
         $uplugin_file = Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse
-        if ($uplugin_file) {
-          
-        } else {
-          Write-Error "[错误] ✗ 未找到插件配置文件"
-          exit 1
-        }
+        if (-not $uplugin_file) { throw "Plugin .uplugin not found" }
         
         # 跳过平台二进制文件详细校验（最小化验证）
         
@@ -268,7 +261,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: XTools-UE_${{ env.UE_VERSION }}-AllPlatforms
-        path: PackagedPlugin/XTools-UE_${{ env.UE_VERSION }}-AllPlatforms/
+        path: ${{ env.OUTPUT_DIR }}
         retention-days: 30
 
     - name: Upload Distribution Package
