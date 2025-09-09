@@ -251,13 +251,7 @@ jobs:
           exit 1
         }
         
-        # 统计文件信息
-        $all_files = Get-ChildItem -Path $output_path -Recurse -File
-        $total_size = ($all_files | Measure-Object -Property Length -Sum).Sum
-        
-        
-        
-        # 验证关键文件
+        # 验证关键文件（最小化校验）
         $uplugin_file = Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse
         if ($uplugin_file) {
           
@@ -266,26 +260,7 @@ jobs:
           exit 1
         }
         
-        # 验证二进制文件
-        $platforms = @(
-          @{Name="Windows"; Extension="*.dll"; Path="Binaries\Win64"},
-          @{Name="Linux"; Extension="*.so"; Path="Binaries\Linux"},
-          @{Name="Mac"; Extension="*.dylib"; Path="Binaries\Mac"}
-        )
-        
-        foreach ($platform in $platforms) {
-          $platform_path = Join-Path $output_path $platform.Path
-          if (Test-Path $platform_path) {
-            $binaries = Get-ChildItem -Path $platform_path -Filter $platform.Extension
-            if ($binaries) {
-              
-            } else {
-              
-            }
-          } else {
-            
-          }
-        }
+        # 跳过平台二进制文件详细校验（最小化验证）
         
         
 
