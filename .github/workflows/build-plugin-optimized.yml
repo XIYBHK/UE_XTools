@@ -16,15 +16,14 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        fetch-tags: true
       
     - name: Setup UE Environment
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        # 设置PowerShell编码 - 确保中文正确显示（须在任何输出之前）
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
-        chcp 65001 | Out-Null  # 设置控制台代码页为UTF-8
+        
 
         
         
@@ -68,11 +67,7 @@ jobs:
     - name: Build Plugin with BuildPlugin Command
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        # 设置PowerShell编码 - 确保中文正确显示
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
-        chcp 65001 | Out-Null
+        
         
         
         
@@ -120,11 +115,7 @@ jobs:
     - name: Post-Process and Optimize Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        # 设置PowerShell编码 - 确保中文正确显示
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
-        chcp 65001 | Out-Null
+        
         
         
         
@@ -182,19 +173,18 @@ jobs:
     - name: Create Distribution Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        # 设置PowerShell编码 - 确保中文正确显示
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
-        chcp 65001 | Out-Null
+        
         
         
         
         $output_directory = "${{ env.OUTPUT_DIR }}"
-        # 读取Git提交短SHA作为版本号后缀
-        $commit = "${{ github.sha }}"
-        $short = $commit.Substring(0,7)
-        $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-" + $short + ".zip"
+        # 获取最近标签（优先），否则回退到短SHA
+        $tag = & git describe --tags --abbrev=0 2>$null
+        if ([string]::IsNullOrWhiteSpace($tag)) {
+          $commit = "${{ github.sha }}"
+          $tag = $commit.Substring(0,7)
+        }
+        $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-" + $tag + ".zip"
         $zip_filepath = Join-Path $env:RUNNER_TEMP $zip_filename
         
         if (Test-Path $zip_filepath) {
@@ -215,11 +205,7 @@ jobs:
     - name: Validate Build Output
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        # 设置PowerShell编码 - 确保中文正确显示
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
-        chcp 65001 | Out-Null
+        
         
         
         
