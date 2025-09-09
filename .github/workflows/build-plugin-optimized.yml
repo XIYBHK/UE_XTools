@@ -2,21 +2,16 @@
 
 on:
   workflow_dispatch:
-    inputs:
-      ue_version:
-        description: 'UE Version to build for'
-        required: true
-        default: '5.3'
-        type: choice
-        options:
-        - '5.3'
-        - '5.4'
-        - '5.5'
-        - '5.6'
       
 jobs:
   build-windows-optimized:
     runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        ue_version: ['5.3','5.4','5.5','5.6']
+    env:
+      UE_VERSION: ${{ matrix.ue_version }}
     
     steps:
     - name: Checkout Repository
@@ -33,35 +28,15 @@ jobs:
 
         
         
-        # UE版本检测 - 支持多版本
-        $ue_version = "${{ github.event.inputs.ue_version }}"
-        if (-not $ue_version) { $ue_version = "5.3" }
+        # UE版本（来自矩阵）
+        $ue_version = "${{ matrix.ue_version }}"
         
         
         
-        # UE安装路径检测 (多盘符支持)
-        $ue_paths = @(
-          "F:\Epic Games\UE_$ue_version",
-          "D:\Program Files\Epic Games\UE_$ue_version", 
-          "C:\Program Files\Epic Games\UE_$ue_version",
-          "E:\Epic Games\UE_$ue_version"
-        )
+        # 固定UE安装路径（自托管机）
+        $ue_path = "F:\Epic Games\UE_$ue_version"
         
-        $ue_path = $null
-        foreach ($path in $ue_paths) {
-          
-          if (Test-Path $path) {
-            $ue_path = $path
-            
-            break
-          } else {
-            
-          }
-        }
-        
-        if (-not $ue_path) {
-          throw ("UE install not found for version " + $ue_version + ". Checked: " + ($ue_paths -join ', '))
-        }
+        if (-not (Test-Path $ue_path)) { throw ("UE install not found: " + $ue_path) }
         
         # 验证关键文件
         $runuat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
@@ -216,7 +191,10 @@ jobs:
         
         
         $output_directory = "${{ env.OUTPUT_DIR }}"
-        $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-AllPlatforms.zip"
+        # 读取Git提交短SHA作为版本号后缀
+        $commit = "${{ github.sha }}"
+        $short = $commit.Substring(0,7)
+        $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-" + $short + ".zip"
         $zip_filepath = Join-Path $env:RUNNER_TEMP $zip_filename
         
         if (Test-Path $zip_filepath) {
@@ -257,13 +235,6 @@ jobs:
         
         
 
-    - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: XTools-UE_${{ env.UE_VERSION }}-AllPlatforms
-        path: ${{ env.OUTPUT_DIR }}
-        retention-days: 30
-
     - name: Upload Distribution Package
       uses: actions/upload-artifact@v4
       with:
@@ -271,58 +242,3 @@ jobs:
         path: ${{ env.ZIP_FILE_PATH }}
         retention-days: 30
 
-  # 构建总结
-  build-summary:
-    if: always()
-    needs: [build-windows-optimized]
-    runs-on: self-hosted
-    
-    steps:
-    - name: Generate Build Summary
-      shell: powershell -ExecutionPolicy Bypass -File {0}
-      run: |
-        # 设置PowerShell编码 - 确保中文正确显示
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
-        chcp 65001 | Out-Null
-        
-        
-        
-        $build_result = "${{ needs.build-windows-optimized.result }}"
-        $ue_version = "${{ github.event.inputs.ue_version }}"
-        if (-not $ue_version) { $ue_version = "5.3" }
-        
-        echo "## XTools 插件构建总结 (优化版)" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**构建时间:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> $GITHUB_STEP_SUMMARY
-        echo "**提交哈希:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**分支:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**UE版本:** $ue_version" >> $GITHUB_STEP_SUMMARY
-        echo "**构建方法:** RunUAT BuildPlugin (优化参数)" >> $GITHUB_STEP_SUMMARY
-        echo "**运行器:** Self-Hosted" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        if ($build_result -eq "success") {
-          echo "### ✅ 构建成功" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**构建特性:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 多平台支持 (Windows + Linux + Mac)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 优化构建参数 (-NoHostProject -Rocket)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 自动清理临时文件 (Intermediate, PDB)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 创建分发包 (ZIP)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**构建产物:**" >> $GITHUB_STEP_SUMMARY
-          echo "- 📦 插件文件夹: \`XTools-UE_$ue_version-AllPlatforms\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 📦 分发包: \`XTools-UE_$ue_version-Distribution\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 📅 保留时间: 30天" >> $GITHUB_STEP_SUMMARY
-        } else {
-          echo "### ❌ 构建失败" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**故障排除:**" >> $GITHUB_STEP_SUMMARY
-          echo "- 检查UE安装路径是否正确" >> $GITHUB_STEP_SUMMARY
-          echo "- 检查插件源代码是否有编译错误" >> $GITHUB_STEP_SUMMARY
-          echo "- 查看详细构建日志获取错误信息" >> $GITHUB_STEP_SUMMARY
-        }
-        
-        
