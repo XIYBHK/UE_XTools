@@ -166,6 +166,105 @@ private:
     TMap<FGridParametersKey, FGridParameters> Cache;
 };
 
+// ============================================================================
+// 泊松采样结果缓存系统（前置声明，用于清理函数）
+// ============================================================================
+
+    struct FPoissonCacheKey
+    {
+        FVector BoxExtent;
+        FQuat Rotation;
+        float Radius;
+        int32 TargetPointCount;
+        float JitterStrength;
+        bool bIs2D;
+        bool bWorldSpace;
+        
+        bool operator==(const FPoissonCacheKey& Other) const
+        {
+            return BoxExtent.Equals(Other.BoxExtent, 0.1f) &&
+                   Rotation.Equals(Other.Rotation, 0.001f) &&
+                   FMath::IsNearlyEqual(Radius, Other.Radius, 0.1f) &&
+                   TargetPointCount == Other.TargetPointCount &&
+                   FMath::IsNearlyEqual(JitterStrength, Other.JitterStrength, 0.01f) &&
+                   bIs2D == Other.bIs2D &&
+                   bWorldSpace == Other.bWorldSpace;
+        }
+        
+        friend uint32 GetTypeHash(const FPoissonCacheKey& Key)
+        {
+            return HashCombine(
+                HashCombine(
+                    HashCombine(
+                        HashCombine(
+                            HashCombine(GetTypeHash(Key.BoxExtent), GetTypeHash(Key.Rotation)),
+                            GetTypeHash(Key.Radius)
+                        ),
+                        GetTypeHash(Key.TargetPointCount)
+                    ),
+                    GetTypeHash(Key.JitterStrength)
+                ),
+                HashCombine(GetTypeHash(Key.bIs2D), GetTypeHash(Key.bWorldSpace))
+            );
+        }
+    };
+
+class FPoissonResultCache
+{
+public:
+    static FPoissonResultCache& Get()
+    {
+        static FPoissonResultCache Instance;
+        return Instance;
+    }
+    
+    TOptional<TArray<FVector>> GetCached(const FPoissonCacheKey& Key)
+    {
+        FScopeLock Lock(&CacheLock);
+        if (const TArray<FVector>* Found = Cache.Find(Key))
+        {
+            CacheHits++;
+            return *Found;
+        }
+        CacheMisses++;
+        return {};
+    }
+    
+    void Store(const FPoissonCacheKey& Key, const TArray<FVector>& Points)
+    {
+        FScopeLock Lock(&CacheLock);
+        
+        // 限制缓存大小
+        if (Cache.Num() >= 50)
+        {
+            Cache.Empty(25); // 清空一半
+        }
+        
+        Cache.Add(Key, Points);
+    }
+    
+    void ClearCache()
+    {
+        FScopeLock Lock(&CacheLock);
+        Cache.Empty();
+        CacheHits = 0;
+        CacheMisses = 0;
+    }
+    
+    void GetStats(int32& OutHits, int32& OutMisses)
+    {
+        FScopeLock Lock(&CacheLock);
+        OutHits = CacheHits;
+        OutMisses = CacheMisses;
+    }
+    
+private:
+    FCriticalSection CacheLock;
+    TMap<FPoissonCacheKey, TArray<FVector>> Cache;
+    int32 CacheHits = 0;
+    int32 CacheMisses = 0;
+};
+
 // ✅ 平台安全的内存统计工具
 class FPlatformSafeMemoryStats
 {
@@ -566,8 +665,15 @@ FString UXToolsLibrary::ClearPointSamplingCache()
     FGridParametersCache& GridCache = FGridParametersCache::Get();
     GridCache.ClearCache();
 
+    // 清理泊松采样结果缓存
+    FPoissonResultCache& PoissonCache = FPoissonResultCache::Get();
+    int32 CacheHits = 0, CacheMisses = 0;
+    PoissonCache.GetStats(CacheHits, CacheMisses);
+    PoissonCache.ClearCache();
+
     ResultBuilder.Append(TEXT("✅ 点阵生成缓存清理完成\n"));
     ResultBuilder.Append(TEXT("- '在模型中生成点阵'功能缓存已清空\n"));
+    ResultBuilder.Append(FString::Printf(TEXT("- 泊松采样缓存已清空 (命中:%d, 未命中:%d)\n"), CacheHits, CacheMisses));
     ResultBuilder.Append(TEXT("- 计算参数已重置\n"));
     ResultBuilder.Append(TEXT("- 内存已释放\n"));
 
@@ -927,4 +1033,941 @@ static FXToolsSamplingResult SamplePointsInternal(
     }
 }
 
+// ============================================================================
+// 泊松圆盘采样实现
+// ============================================================================
+
+namespace PoissonSamplingHelpers
+{
+    /**
+     * 根据目标点数计算合适的Radius
+     */
+    static float CalculateRadiusFromTargetCount(int32 TargetPointCount, float Width, float Height, float Depth, bool bIs2DPlane)
+    {
+        if (TargetPointCount <= 0)
+        {
+            return -1.0f;
+        }
+        
+        if (bIs2DPlane)
+        {
+            // 2D情况：根据面积估算Radius
+            const float Area = Width * Height;
+            // 泊松采样理论密度约为 0.8 * (1 / (pi * r^2))
+            return FMath::Sqrt(0.8f * Area / (TargetPointCount * PI));
+        }
+        else
+        {
+            // 3D情况：根据体积估算Radius
+            const float Volume = Width * Height * Depth;
+            // 泊松采样理论密度约为 0.6 * (1 / (4/3 * pi * r^3))
+            return FMath::Pow(0.45f * Volume / (TargetPointCount * PI), 1.0f / 3.0f);
+        }
+    }
+    
+    /**
+     * 裁剪点数组到目标数量（使用Fisher-Yates洗牌）
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    static void TrimToTargetCount(TArray<FVector>& Points, int32 TargetPointCount, FRandomStream* Stream = nullptr)
+    {
+        if (TargetPointCount > 0 && Points.Num() > TargetPointCount)
+        {
+            // 使用 Fisher-Yates 洗牌算法随机选择
+            for (int32 i = Points.Num() - 1; i > TargetPointCount; --i)
+            {
+                const int32 j = Stream ? Stream->RandRange(0, i) : FMath::RandRange(0, i);
+                Points.Swap(i, j);
+            }
+            
+            // 裁剪到目标数量
+            Points.SetNum(TargetPointCount);
+        }
+    }
+    
+    /**
+     * 应用扰动噪波到点集
+     * @param Points 要扰动的点数组
+     * @param Radius 参考半径（扰动范围基于此值）
+     * @param JitterStrength 扰动强度 0-1（0=无扰动，1=最大扰动）
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    static void ApplyJitter(TArray<FVector>& Points, float Radius, float JitterStrength, FRandomStream* Stream = nullptr)
+    {
+        if (JitterStrength <= 0.0f || Points.Num() == 0)
+        {
+            return;
+        }
+        
+        // 扰动范围：最大为半径的50%，由强度控制
+        const float MaxJitter = Radius * FMath::Clamp(JitterStrength, 0.0f, 1.0f) * 0.5f;
+        
+        for (FVector& Point : Points)
+        {
+            if (Stream)
+            {
+                Point.X += Stream->FRandRange(-MaxJitter, MaxJitter);
+                Point.Y += Stream->FRandRange(-MaxJitter, MaxJitter);
+                Point.Z += Stream->FRandRange(-MaxJitter, MaxJitter);
+            }
+            else
+            {
+                Point.X += FMath::FRandRange(-MaxJitter, MaxJitter);
+                Point.Y += FMath::FRandRange(-MaxJitter, MaxJitter);
+                Point.Z += FMath::FRandRange(-MaxJitter, MaxJitter);
+            }
+        }
+    }
+    
+    /**
+     * 应用Transform变换（移除缩放，因为Extent已包含缩放）
+     * @param bWorldSpace true=应用位置+旋转（世界坐标），false=仅应用旋转（局部坐标）
+     */
+    static void ApplyTransform(TArray<FVector>& Points, const FTransform& Transform, bool bWorldSpace)
+    {
+        if (bWorldSpace)
+        {
+            // 世界坐标：应用位置+旋转（不应用缩放，因为Extent已包含）
+            FTransform TransformNoScale = Transform;
+            TransformNoScale.SetScale3D(FVector::OneVector);
+            
+            for (FVector& Point : Points)
+            {
+                Point = TransformNoScale.TransformPosition(Point);
+            }
+        }
+        else
+        {
+            // 局部坐标：仅应用旋转，保持局部位置
+            const FQuat Rotation = Transform.GetRotation();
+            
+            for (FVector& Point : Points)
+            {
+                Point = Rotation.RotateVector(Point);
+            }
+        }
+    }
+
+    /**
+     * 在给定点周围生成随机点（2D）
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    static FVector2D GenerateRandomPointAround2D(const FVector2D& Point, float MinDist, float MaxDist, FRandomStream* Stream = nullptr)
+    {
+        const float Angle = Stream ? Stream->FRandRange(0.0f, 2.0f * PI) : FMath::FRandRange(0.0f, 2.0f * PI);
+        const float Distance = Stream ? Stream->FRandRange(MinDist, MaxDist) : FMath::FRandRange(MinDist, MaxDist);
+        return FVector2D(
+            Point.X + Distance * FMath::Cos(Angle),
+            Point.Y + Distance * FMath::Sin(Angle)
+        );
+    }
+
+    /**
+     * 在给定点周围生成随机点（3D）
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    static FVector GenerateRandomPointAround3D(const FVector& Point, float MinDist, float MaxDist, FRandomStream* Stream = nullptr)
+    {
+        // 在球面上均匀采样
+        const float Theta = Stream ? Stream->FRandRange(0.0f, 2.0f * PI) : FMath::FRandRange(0.0f, 2.0f * PI);
+        const float Phi = FMath::Acos(Stream ? Stream->FRandRange(-1.0f, 1.0f) : FMath::FRandRange(-1.0f, 1.0f));
+        const float Distance = Stream ? Stream->FRandRange(MinDist, MaxDist) : FMath::FRandRange(MinDist, MaxDist);
+        
+        return FVector(
+            Point.X + Distance * FMath::Sin(Phi) * FMath::Cos(Theta),
+            Point.Y + Distance * FMath::Sin(Phi) * FMath::Sin(Theta),
+            Point.Z + Distance * FMath::Cos(Phi)
+        );
+    }
+
+    /**
+     * 检查点是否有效（2D）- 优化版：使用平方距离避免开方
+     */
+    static bool IsValidPoint2D(
+        const FVector2D& Point,
+        float Radius,
+        float Width,
+        float Height,
+        const TArray<FVector2D>& Grid,
+        int32 GridWidth,
+        int32 GridHeight,
+        float CellSize)
+    {
+        // 边界检查
+        if (Point.X < 0 || Point.X >= Width || Point.Y < 0 || Point.Y >= Height)
+        {
+            return false;
+        }
+
+        // 计算网格坐标
+        const int32 CellX = FMath::FloorToInt(Point.X / CellSize);
+        const int32 CellY = FMath::FloorToInt(Point.Y / CellSize);
+
+        // 检查周围的网格单元
+        const int32 SearchStartX = FMath::Max(CellX - 2, 0);
+        const int32 SearchStartY = FMath::Max(CellY - 2, 0);
+        const int32 SearchEndX = FMath::Min(CellX + 2, GridWidth - 1);
+        const int32 SearchEndY = FMath::Min(CellY + 2, GridHeight - 1);
+
+        // 使用平方距离比较，避免开方运算
+        const float RadiusSquared = Radius * Radius;
+
+        for (int32 x = SearchStartX; x <= SearchEndX; ++x)
+        {
+            for (int32 y = SearchStartY; y <= SearchEndY; ++y)
+            {
+                const FVector2D& Neighbor = Grid[y * GridWidth + x];
+                if (Neighbor != FVector2D::ZeroVector)
+                {
+                    const float DistSquared = FVector2D::DistSquared(Point, Neighbor);
+                    if (DistSquared < RadiusSquared)
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 检查点是否有效（3D）- 优化版：使用平方距离避免开方
+     */
+    static bool IsValidPoint3D(
+        const FVector& Point,
+        float Radius,
+        float Width,
+        float Height,
+        float Depth,
+        const TArray<FVector>& Grid,
+        int32 GridWidth,
+        int32 GridHeight,
+        int32 GridDepth,
+        float CellSize)
+    {
+        // 边界检查
+        if (Point.X < 0 || Point.X >= Width ||
+            Point.Y < 0 || Point.Y >= Height ||
+            Point.Z < 0 || Point.Z >= Depth)
+        {
+            return false;
+        }
+
+        // 计算网格坐标
+        const int32 CellX = FMath::FloorToInt(Point.X / CellSize);
+        const int32 CellY = FMath::FloorToInt(Point.Y / CellSize);
+        const int32 CellZ = FMath::FloorToInt(Point.Z / CellSize);
+
+        // 检查周围的网格单元
+        const int32 SearchStartX = FMath::Max(CellX - 2, 0);
+        const int32 SearchStartY = FMath::Max(CellY - 2, 0);
+        const int32 SearchStartZ = FMath::Max(CellZ - 2, 0);
+        const int32 SearchEndX = FMath::Min(CellX + 2, GridWidth - 1);
+        const int32 SearchEndY = FMath::Min(CellY + 2, GridHeight - 1);
+        const int32 SearchEndZ = FMath::Min(CellZ + 2, GridDepth - 1);
+
+        // 使用平方距离比较，避免开方运算
+        const float RadiusSquared = Radius * Radius;
+
+        for (int32 x = SearchStartX; x <= SearchEndX; ++x)
+        {
+            for (int32 y = SearchStartY; y <= SearchEndY; ++y)
+            {
+                for (int32 z = SearchStartZ; z <= SearchEndZ; ++z)
+                {
+                    const int32 Index = z * (GridWidth * GridHeight) + y * GridWidth + x;
+                    const FVector& Neighbor = Grid[Index];
+                    if (Neighbor != FVector::ZeroVector)
+                    {
+                        const float DistSquared = FVector::DistSquared(Point, Neighbor);
+                        if (DistSquared < RadiusSquared)
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+}
+
+TArray<FVector2D> UXToolsLibrary::GeneratePoissonPoints2D(float Width, float Height, float Radius, int32 MaxAttempts)
+{
+    using namespace PoissonSamplingHelpers;
+
+    // 输入验证
+    if (Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPoints2D: 无效的输入参数"));
+        return TArray<FVector2D>();
+    }
+
+    TArray<FVector2D> ActivePoints;
+    TArray<FVector2D> Points;
+
+    // 计算网格参数
+    const float CellSize = Radius / FMath::Sqrt(2.0f);
+    const int32 GridWidth = FMath::CeilToInt(Width / CellSize);
+    const int32 GridHeight = FMath::CeilToInt(Height / CellSize);
+
+    // 初始化网格
+    TArray<FVector2D> Grid;
+    Grid.SetNumZeroed(GridWidth * GridHeight);
+
+    // Lambda：获取网格坐标
+    auto GetCellCoords = [CellSize](const FVector2D& Point) -> FIntPoint
+    {
+        return FIntPoint(
+            FMath::FloorToInt(Point.X / CellSize),
+            FMath::FloorToInt(Point.Y / CellSize)
+        );
+    };
+
+    // 生成初始点
+    const FVector2D InitialPoint(FMath::FRandRange(0.0f, Width), FMath::FRandRange(0.0f, Height));
+    ActivePoints.Add(InitialPoint);
+    Points.Add(InitialPoint);
+    
+    const FIntPoint InitialCell = GetCellCoords(InitialPoint);
+    Grid[InitialCell.Y * GridWidth + InitialCell.X] = InitialPoint;
+
+    // 主循环
+    while (ActivePoints.Num() > 0)
+    {
+        const int32 Index = FMath::RandRange(0, ActivePoints.Num() - 1);
+        const FVector2D Point = ActivePoints[Index];
+        bool bFound = false;
+
+        // 尝试在当前点周围生成新点
+        for (int32 i = 0; i < MaxAttempts; ++i)
+        {
+            const FVector2D NewPoint = GenerateRandomPointAround2D(Point, Radius, 2.0f * Radius);
+            
+            if (IsValidPoint2D(NewPoint, Radius, Width, Height, Grid, GridWidth, GridHeight, CellSize))
+            {
+                ActivePoints.Add(NewPoint);
+                Points.Add(NewPoint);
+                
+                const FIntPoint NewCell = GetCellCoords(NewPoint);
+                Grid[NewCell.Y * GridWidth + NewCell.X] = NewPoint;
+                
+                bFound = true;
+                break;
+            }
+        }
+
+        // 如果未找到有效点，将当前点标记为不活跃
+        if (!bFound)
+        {
+            ActivePoints.RemoveAt(Index);
+        }
+    }
+
+    UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPoints2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
+        Points.Num(), Width, Height, Radius);
+
+    return Points;
+}
+
+TArray<FVector> UXToolsLibrary::GeneratePoissonPoints3D(
+    float Width, float Height, float Depth, float Radius, int32 MaxAttempts)
+{
+    using namespace PoissonSamplingHelpers;
+
+    // 输入验证
+    if (Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPoints3D: 无效的输入参数"));
+        return TArray<FVector>();
+    }
+
+    TArray<FVector> ActivePoints;
+    TArray<FVector> Points;
+
+    // 计算网格参数（3D中使用sqrt(3)而不是sqrt(2)）
+    const float CellSize = Radius / FMath::Sqrt(3.0f);
+    const int32 GridWidth = FMath::CeilToInt(Width / CellSize);
+    const int32 GridHeight = FMath::CeilToInt(Height / CellSize);
+    const int32 GridDepth = FMath::CeilToInt(Depth / CellSize);
+
+    // 初始化网格
+    TArray<FVector> Grid;
+    Grid.SetNumZeroed(GridWidth * GridHeight * GridDepth);
+
+    // Lambda：获取网格坐标
+    auto GetCellCoords = [CellSize](const FVector& Point) -> FIntVector
+    {
+        return FIntVector(
+            FMath::FloorToInt(Point.X / CellSize),
+            FMath::FloorToInt(Point.Y / CellSize),
+            FMath::FloorToInt(Point.Z / CellSize)
+        );
+    };
+
+    // 生成初始点
+    const FVector InitialPoint(
+        FMath::FRandRange(0.0f, Width),
+        FMath::FRandRange(0.0f, Height),
+        FMath::FRandRange(0.0f, Depth)
+    );
+    ActivePoints.Add(InitialPoint);
+    Points.Add(InitialPoint);
+    
+    const FIntVector InitialCell = GetCellCoords(InitialPoint);
+    const int32 InitialIndex = InitialCell.Z * (GridWidth * GridHeight) + 
+                               InitialCell.Y * GridWidth + InitialCell.X;
+    Grid[InitialIndex] = InitialPoint;
+
+    // 主循环
+    while (ActivePoints.Num() > 0)
+    {
+        const int32 Index = FMath::RandRange(0, ActivePoints.Num() - 1);
+        const FVector Point = ActivePoints[Index];
+        bool bFound = false;
+
+        // 尝试在当前点周围生成新点
+        for (int32 i = 0; i < MaxAttempts; ++i)
+        {
+            const FVector NewPoint = GenerateRandomPointAround3D(Point, Radius, 2.0f * Radius);
+            
+            if (IsValidPoint3D(NewPoint, Radius, Width, Height, Depth, 
+                              Grid, GridWidth, GridHeight, GridDepth, CellSize))
+            {
+                ActivePoints.Add(NewPoint);
+                Points.Add(NewPoint);
+                
+                const FIntVector NewCell = GetCellCoords(NewPoint);
+                const int32 NewIndex = NewCell.Z * (GridWidth * GridHeight) + 
+                                      NewCell.Y * GridWidth + NewCell.X;
+                Grid[NewIndex] = NewPoint;
+                
+                bFound = true;
+                break;
+            }
+        }
+
+        // 如果未找到有效点，将当前点标记为不活跃
+        if (!bFound)
+        {
+            ActivePoints.RemoveAt(Index);
+        }
+    }
+
+    UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPoints3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
+        Points.Num(), Width, Height, Depth, Radius);
+
+    return Points;
+}
+
+TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBox(
+    UBoxComponent* BoundingBox,
+    float Radius,
+    int32 MaxAttempts,
+    bool bWorldSpace,
+    int32 TargetPointCount,
+    float JitterStrength,
+    bool bUseCache)
+{
+    // 输入验证
+    if (!BoundingBox)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBox: 盒体组件无效"));
+        return TArray<FVector>();
+    }
+
+    if (MaxAttempts <= 0)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBox: MaxAttempts必须大于0"));
+        return TArray<FVector>();
+    }
+
+    // 获取盒体的缩放后尺寸（GetScaledBoxExtent已包含组件缩放）
+    const FVector BoxExtent = BoundingBox->GetScaledBoxExtent();
+    const FTransform BoxTransform = BoundingBox->GetComponentTransform();
+    
+    // 计算完整尺寸（Extent是半尺寸，直接乘2即可）
+    const float Width = BoxExtent.X * 2.0f;
+    const float Height = BoxExtent.Y * 2.0f;
+    const float Depth = BoxExtent.Z * 2.0f;
+
+    // 检测是否为平面（Z接近0）
+    const bool bIs2DPlane = FMath::IsNearlyZero(Depth, 1.0f);
+
+    // 处理目标点数模式：自动计算Radius
+    float ActualRadius = Radius;
+    if (TargetPointCount > 0)
+    {
+        ActualRadius = PoissonSamplingHelpers::CalculateRadiusFromTargetCount(
+            TargetPointCount, Width, Height, Depth, bIs2DPlane);
+        
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 根据目标点数 %d 计算得出 Radius = %.2f"), 
+            TargetPointCount, ActualRadius);
+    }
+
+    // 验证最终的Radius
+    if (ActualRadius <= 0.0f)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBox: 计算出的Radius无效 (%.2f)"), ActualRadius);
+        return TArray<FVector>();
+    }
+
+    // 缓存系统检查（包含旋转信息）
+    if (bUseCache)
+    {
+        FPoissonCacheKey CacheKey;
+        CacheKey.BoxExtent = BoxExtent;
+        CacheKey.Rotation = BoundingBox->GetComponentQuat();  // 包含旋转
+        CacheKey.Radius = ActualRadius;
+        CacheKey.TargetPointCount = TargetPointCount;
+        CacheKey.JitterStrength = JitterStrength;
+        CacheKey.bIs2D = bIs2DPlane;
+        CacheKey.bWorldSpace = bWorldSpace;
+        
+        if (TOptional<TArray<FVector>> CachedPoints = FPoissonResultCache::Get().GetCached(CacheKey))
+        {
+            UE_LOG(LogXTools, Verbose, TEXT("GeneratePoissonPointsInBox: 使用缓存结果 (%d 个点)"), 
+                CachedPoints.GetValue().Num());
+            return CachedPoints.GetValue();
+        }
+    }
+
+    TArray<FVector> Points;
+
+    // 根据是否为平面选择不同的采样方式
+    if (bIs2DPlane)
+    {
+        // 2D平面采样（XY平面）
+        TArray<FVector2D> Points2D = GeneratePoissonPoints2D(Width, Height, ActualRadius, MaxAttempts);
+        
+        // 转换2D点为3D点（Z=0）
+        Points.Reserve(Points2D.Num());
+        for (const FVector2D& Point2D : Points2D)
+        {
+            Points.Add(FVector(Point2D.X, Point2D.Y, 0.0f));
+        }
+        
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 使用2D平面采样 (%.1fx%.1f)"), Width, Height);
+    }
+    else
+    {
+        // 3D体积采样
+        Points = GeneratePoissonPoints3D(Width, Height, Depth, ActualRadius, MaxAttempts);
+        
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 使用3D体积采样 (%.1fx%.1fx%.1f)"), 
+            Width, Height, Depth);
+    }
+
+    // 转换坐标：从 [0, Size] 转换到 [-HalfSize, +HalfSize]
+    for (FVector& Point : Points)
+    {
+        // 转换到局部空间中心对齐
+        Point.X -= BoxExtent.X;
+        Point.Y -= BoxExtent.Y;
+        if (!bIs2DPlane)
+        {
+            Point.Z -= BoxExtent.Z;
+        }
+        // 2D模式下 Point.Z 保持为 0
+    }
+
+    // 如果指定了目标点数，严格裁剪到目标数量
+    const int32 OriginalCount = Points.Num();
+    PoissonSamplingHelpers::TrimToTargetCount(Points, TargetPointCount);
+    
+    if (TargetPointCount > 0 && OriginalCount > Points.Num())
+    {
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 从 %d 个点随机裁剪到目标点数 %d"), 
+            OriginalCount, TargetPointCount);
+    }
+
+    // 应用扰动噪波
+    PoissonSamplingHelpers::ApplyJitter(Points, ActualRadius, JitterStrength);
+
+    // 应用变换（始终应用旋转，世界坐标时额外应用位置）
+    PoissonSamplingHelpers::ApplyTransform(Points, BoxTransform, bWorldSpace);
+    
+    if (bWorldSpace)
+    {
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 生成了 %d 个点 (世界坐标, Radius=%.2f)"), 
+            Points.Num(), ActualRadius);
+    }
+    else
+    {
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 生成了 %d 个点 (局部坐标+旋转, Radius=%.2f)"), 
+            Points.Num(), ActualRadius);
+    }
+
+    // 存入缓存（包含旋转信息）
+    if (bUseCache)
+    {
+        FPoissonCacheKey CacheKey;
+        CacheKey.BoxExtent = BoxExtent;
+        CacheKey.Rotation = BoundingBox->GetComponentQuat();  // 包含旋转
+        CacheKey.Radius = ActualRadius;
+        CacheKey.TargetPointCount = TargetPointCount;
+        CacheKey.JitterStrength = JitterStrength;
+        CacheKey.bIs2D = bIs2DPlane;
+        CacheKey.bWorldSpace = bWorldSpace;
+        
+        FPoissonResultCache::Get().Store(CacheKey, Points);
+    }
+
+    return Points;
+}
+
+TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVector(
+    FVector BoxExtent,
+    FTransform Transform,
+    float Radius,
+    int32 MaxAttempts,
+    bool bWorldSpace,
+    int32 TargetPointCount,
+    float JitterStrength,
+    bool bUseCache)
+{
+    // 输入验证
+    if (BoxExtent.X <= 0.0f || BoxExtent.Y <= 0.0f || BoxExtent.Z < 0.0f)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxByVector: BoxExtent无效 (%s)"), *BoxExtent.ToString());
+        return TArray<FVector>();
+    }
+
+    if (MaxAttempts <= 0)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxByVector: MaxAttempts必须大于0"));
+        return TArray<FVector>();
+    }
+
+    // BoxExtent是半尺寸，计算完整尺寸
+    const float Width = BoxExtent.X * 2.0f;
+    const float Height = BoxExtent.Y * 2.0f;
+    const float Depth = BoxExtent.Z * 2.0f;
+
+    // 检测是否为平面（Z接近0）
+    const bool bIs2DPlane = FMath::IsNearlyZero(Depth, 1.0f);
+
+    // 处理目标点数模式：自动计算Radius
+    float ActualRadius = Radius;
+    if (TargetPointCount > 0)
+    {
+        ActualRadius = PoissonSamplingHelpers::CalculateRadiusFromTargetCount(
+            TargetPointCount, Width, Height, Depth, bIs2DPlane);
+        
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 根据目标点数 %d 计算得出 Radius = %.2f"), 
+            TargetPointCount, ActualRadius);
+    }
+
+    // 验证最终的Radius
+    if (ActualRadius <= 0.0f)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxByVector: 计算出的Radius无效 (%.2f)"), ActualRadius);
+        return TArray<FVector>();
+    }
+
+    // 缓存系统检查（包含旋转信息，使用传入的BoxExtent）
+    if (bUseCache)
+    {
+        FPoissonCacheKey CacheKey;
+        CacheKey.BoxExtent = BoxExtent;
+        CacheKey.Rotation = Transform.GetRotation();  // 包含旋转
+        CacheKey.Radius = ActualRadius;
+        CacheKey.TargetPointCount = TargetPointCount;
+        CacheKey.JitterStrength = JitterStrength;
+        CacheKey.bIs2D = bIs2DPlane;
+        CacheKey.bWorldSpace = bWorldSpace;
+        
+        if (TOptional<TArray<FVector>> CachedPoints = FPoissonResultCache::Get().GetCached(CacheKey))
+        {
+            UE_LOG(LogXTools, Verbose, TEXT("GeneratePoissonPointsInBoxByVector: 使用缓存结果 (%d 个点)"), 
+                CachedPoints.GetValue().Num());
+            return CachedPoints.GetValue();
+        }
+    }
+
+    TArray<FVector> Points;
+
+    // 根据是否为平面选择不同的采样方式
+    if (bIs2DPlane)
+    {
+        // 2D平面采样（XY平面）
+        TArray<FVector2D> Points2D = GeneratePoissonPoints2D(Width, Height, ActualRadius, MaxAttempts);
+        
+        // 转换2D点为3D点（Z=0）
+        Points.Reserve(Points2D.Num());
+        for (const FVector2D& Point2D : Points2D)
+        {
+            Points.Add(FVector(Point2D.X, Point2D.Y, 0.0f));
+        }
+        
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 使用2D平面采样 (%.1fx%.1f)"), Width, Height);
+    }
+    else
+    {
+        // 3D体积采样
+        Points = GeneratePoissonPoints3D(Width, Height, Depth, ActualRadius, MaxAttempts);
+        
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 使用3D体积采样 (%.1fx%.1fx%.1f)"), 
+            Width, Height, Depth);
+    }
+
+    // 转换坐标：从 [0, Size] 转换到 [-HalfSize, +HalfSize] （局部空间，中心对齐）
+    for (FVector& Point : Points)
+    {
+        // 转换到局部空间：从[0,Width]转到[-BoxExtent,+BoxExtent]
+        Point.X -= BoxExtent.X;
+        Point.Y -= BoxExtent.Y;
+        if (!bIs2DPlane)
+        {
+            Point.Z -= BoxExtent.Z;
+        }
+    }
+
+    // 如果指定了目标点数，严格裁剪到目标数量
+    const int32 OriginalCount = Points.Num();
+    PoissonSamplingHelpers::TrimToTargetCount(Points, TargetPointCount);
+    
+    if (TargetPointCount > 0 && OriginalCount > Points.Num())
+    {
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 从 %d 个点随机裁剪到目标点数 %d"), 
+            OriginalCount, TargetPointCount);
+    }
+
+    // 应用扰动噪波
+    PoissonSamplingHelpers::ApplyJitter(Points, ActualRadius, JitterStrength);
+
+    // 应用变换（始终应用旋转，世界坐标时额外应用位置）
+    PoissonSamplingHelpers::ApplyTransform(Points, Transform, bWorldSpace);
+    
+    if (bWorldSpace)
+    {
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 生成了 %d 个点 (世界坐标, Radius=%.2f)"), 
+            Points.Num(), ActualRadius);
+    }
+    else
+    {
+        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 生成了 %d 个点 (局部坐标+旋转, Radius=%.2f)"), 
+            Points.Num(), ActualRadius);
+    }
+
+    // 存入缓存（包含旋转信息）
+    if (bUseCache)
+    {
+        FPoissonCacheKey CacheKey;
+        CacheKey.BoxExtent = BoxExtent;
+        CacheKey.Rotation = Transform.GetRotation();  // 包含旋转
+        CacheKey.Radius = ActualRadius;
+        CacheKey.TargetPointCount = TargetPointCount;
+        CacheKey.JitterStrength = JitterStrength;
+        CacheKey.bIs2D = bIs2DPlane;
+        CacheKey.bWorldSpace = bWorldSpace;
+        
+        FPoissonResultCache::Get().Store(CacheKey, Points);
+    }
+
+    return Points;
+}
+
+// ========== 从流送版本（确定性随机）==========
+
+TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxFromStream(
+    const FRandomStream& RandomStream,
+    UBoxComponent* BoundingBox,
+    float Radius,
+    int32 MaxAttempts,
+    bool bWorldSpace,
+    int32 TargetPointCount,
+    float JitterStrength)
+{
+    if (!BoundingBox)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxFromStream: BoundingBox is nullptr"));
+        return TArray<FVector>();
+    }
+
+    // 调用向量版本
+    return GeneratePoissonPointsInBoxByVectorFromStream(
+        RandomStream,
+        BoundingBox->GetScaledBoxExtent(),
+        BoundingBox->GetComponentTransform(),
+        Radius,
+        MaxAttempts,
+        bWorldSpace,
+        TargetPointCount,
+        JitterStrength
+    );
+}
+
+TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
+    const FRandomStream& RandomStream,
+    FVector BoxExtent,
+    FTransform Transform,
+    float Radius,
+    int32 MaxAttempts,
+    bool bWorldSpace,
+    int32 TargetPointCount,
+    float JitterStrength)
+{
+    using namespace PoissonSamplingHelpers;
+    
+    // 注意：需要修改Stream的内部状态，使用const_cast
+    FRandomStream* Stream = const_cast<FRandomStream*>(&RandomStream);
+
+    const float Width = BoxExtent.X * 2.0f;
+    const float Height = BoxExtent.Y * 2.0f;
+    const float Depth = BoxExtent.Z * 2.0f;
+    const bool bIs2DPlane = FMath::IsNearlyZero(Depth, 1.0f);
+
+    // 计算实际Radius
+    float ActualRadius = Radius;
+    if (TargetPointCount > 0 && Radius <= 0.0f)
+    {
+        ActualRadius = CalculateRadiusFromTargetCount(Width, Height, Depth, TargetPointCount, bIs2DPlane);
+    }
+
+    // 生成点（局部坐标，使用Stream替代FMath随机函数）
+    TArray<FVector> Points;
+    
+    if (bIs2DPlane)
+    {
+        // 2D采样
+        TArray<FVector2D> ActivePoints;
+        TArray<FVector2D> Points2D;
+        
+        const float CellSize = ActualRadius / FMath::Sqrt(2.0f);
+        const int32 GridWidth = FMath::CeilToInt(Width / CellSize);
+        const int32 GridHeight = FMath::CeilToInt(Height / CellSize);
+        
+        TArray<FVector2D> Grid;
+        Grid.SetNumZeroed(GridWidth * GridHeight);
+        
+        // 初始点（使用Stream）
+        const FVector2D InitialPoint(Stream->FRandRange(0.0f, Width), Stream->FRandRange(0.0f, Height));
+        ActivePoints.Add(InitialPoint);
+        Points2D.Add(InitialPoint);
+        
+        const int32 InitCellX = FMath::FloorToInt(InitialPoint.X / CellSize);
+        const int32 InitCellY = FMath::FloorToInt(InitialPoint.Y / CellSize);
+        Grid[InitCellY * GridWidth + InitCellX] = InitialPoint;
+        
+        // 主循环
+        while (ActivePoints.Num() > 0)
+        {
+            const int32 Index = Stream->RandRange(0, ActivePoints.Num() - 1);
+            const FVector2D Point = ActivePoints[Index];
+            bool bFound = false;
+            
+            for (int32 i = 0; i < MaxAttempts; ++i)
+            {
+                const FVector2D NewPoint = GenerateRandomPointAround2D(Point, ActualRadius, 2.0f * ActualRadius, Stream);
+                
+                if (IsValidPoint2D(NewPoint, ActualRadius, Width, Height, Grid, GridWidth, GridHeight, CellSize))
+                {
+                    ActivePoints.Add(NewPoint);
+                    Points2D.Add(NewPoint);
+                    
+                    const int32 CellX = FMath::FloorToInt(NewPoint.X / CellSize);
+                    const int32 CellY = FMath::FloorToInt(NewPoint.Y / CellSize);
+                    Grid[CellY * GridWidth + CellX] = NewPoint;
+                    
+                    bFound = true;
+                    break;
+                }
+            }
+            
+            if (!bFound)
+            {
+                ActivePoints.RemoveAt(Index);
+            }
+        }
+        
+        // 转换为3D
+        Points.Reserve(Points2D.Num());
+        for (const FVector2D& Point2D : Points2D)
+        {
+            Points.Add(FVector(Point2D.X - BoxExtent.X, Point2D.Y - BoxExtent.Y, 0.0f));
+        }
+    }
+    else
+    {
+        // 3D采样
+        TArray<FVector> ActivePoints;
+        
+        const float CellSize = ActualRadius / FMath::Sqrt(3.0f);
+        const int32 GridWidth = FMath::CeilToInt(Width / CellSize);
+        const int32 GridHeight = FMath::CeilToInt(Height / CellSize);
+        const int32 GridDepth = FMath::CeilToInt(Depth / CellSize);
+        
+        TArray<FVector> Grid;
+        Grid.SetNumZeroed(GridWidth * GridHeight * GridDepth);
+        
+        // 初始点
+        const FVector InitialPoint(
+            Stream->FRandRange(0.0f, Width),
+            Stream->FRandRange(0.0f, Height),
+            Stream->FRandRange(0.0f, Depth)
+        );
+        ActivePoints.Add(InitialPoint);
+        Points.Add(InitialPoint);
+        
+        const int32 InitCellX = FMath::FloorToInt(InitialPoint.X / CellSize);
+        const int32 InitCellY = FMath::FloorToInt(InitialPoint.Y / CellSize);
+        const int32 InitCellZ = FMath::FloorToInt(InitialPoint.Z / CellSize);
+        Grid[InitCellZ * GridWidth * GridHeight + InitCellY * GridWidth + InitCellX] = InitialPoint;
+        
+        // 主循环
+        while (ActivePoints.Num() > 0)
+        {
+            const int32 Index = Stream->RandRange(0, ActivePoints.Num() - 1);
+            const FVector Point = ActivePoints[Index];
+            bool bFound = false;
+            
+            for (int32 i = 0; i < MaxAttempts; ++i)
+            {
+                const FVector NewPoint = GenerateRandomPointAround3D(Point, ActualRadius, 2.0f * ActualRadius, Stream);
+                
+                if (IsValidPoint3D(NewPoint, ActualRadius, Width, Height, Depth, Grid, GridWidth, GridHeight, GridDepth, CellSize))
+                {
+                    ActivePoints.Add(NewPoint);
+                    Points.Add(NewPoint);
+                    
+                    const int32 CellX = FMath::FloorToInt(NewPoint.X / CellSize);
+                    const int32 CellY = FMath::FloorToInt(NewPoint.Y / CellSize);
+                    const int32 CellZ = FMath::FloorToInt(NewPoint.Z / CellSize);
+                    Grid[CellZ * GridWidth * GridHeight + CellY * GridWidth + CellX] = NewPoint;
+                    
+                    bFound = true;
+                    break;
+                }
+            }
+            
+            if (!bFound)
+            {
+                ActivePoints.RemoveAt(Index);
+            }
+        }
+        
+        // 转换坐标
+        for (FVector& Point : Points)
+        {
+            Point -= BoxExtent;
+        }
+    }
+
+    // 裁剪到目标数量（使用Stream）
+    TrimToTargetCount(Points, TargetPointCount, Stream);
+
+    // 应用扰动噪波（使用Stream）
+    ApplyJitter(Points, ActualRadius, JitterStrength, Stream);
+
+    // 应用变换
+    ApplyTransform(Points, Transform, bWorldSpace);
+    
+    UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVectorFromStream: 生成了 %d 个点 (确定性随机, Radius=%.2f)"), 
+        Points.Num(), ActualRadius);
+
+    return Points;
+}
 

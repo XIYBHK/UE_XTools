@@ -154,7 +154,174 @@ public:
         ToolTip="清理'在模型中生成点阵'功能的计算缓存\n用途：释放内存、重置计算状态、解决缓存问题\n建议：关卡切换时调用，或遇到点阵生成异常时使用"))
     static FString ClearPointSamplingCache();
 
+    /**
+     * 生成泊松圆盘采样点（2D）
+     * 使用泊松圆盘采样算法在指定区域内生成均匀分布的随机点，确保点之间的最小距离。
+     * 
+     * @param Width 采样区域的宽度
+     * @param Height 采样区域的高度
+     * @param Radius 点之间的最小距离
+     * @param MaxAttempts 在标记一个点为不活跃前的最大尝试次数（默认15）
+     * @return 生成的2D点数组
+     * 
+     * 示例用途：
+     * - 程序化生成均匀分布的植被/道具位置
+     * - 粒子系统的初始位置
+     * - UI元素的布局
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|算法", 
+        meta = (DisplayName = "生成泊松采样点2D",
+               ToolTip = "2D平面泊松采样，生成均匀分布点\n\n参数：Width/Height(区域), Radius(点间距), MaxAttempts(尝试次数)\n用途：植被分布、粒子位置、UI布局"))
+    static TArray<FVector2D> GeneratePoissonPoints2D(
+        float Width = 1000.0f, 
+        float Height = 1000.0f, 
+        float Radius = 50.0f, 
+        int32 MaxAttempts = 15
+    );
 
+    /**
+     * 生成泊松圆盘采样点（3D）
+     * 使用泊松圆盘采样算法在3D空间中生成均匀分布的随机点。
+     * 
+     * @param Width X轴范围
+     * @param Height Y轴范围  
+     * @param Depth Z轴范围
+     * @param Radius 点之间的最小距离
+     * @param MaxAttempts 在标记一个点为不活跃前的最大尝试次数（默认30）
+     * @return 生成的3D点数组
+     * 
+     * 示例用途：
+     * - 3D空间中的物体分布
+     * - 星空生成
+     * - 粒子云效果
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|算法",
+        meta = (DisplayName = "生成泊松采样点3D",
+               ToolTip = "3D空间泊松采样，生成均匀分布点\n\n参数：Width/Height/Depth(区域), Radius(点间距), MaxAttempts(尝试次数)\n用途：物体分布、星空生成、体积填充"))
+    static TArray<FVector> GeneratePoissonPoints3D(
+        float Width = 1000.0f,
+        float Height = 1000.0f,
+        float Depth = 1000.0f,
+        float Radius = 50.0f,
+        int32 MaxAttempts = 30
+    );
+
+    /**
+     * 在盒体范围内生成泊松采样点（自动2D/3D）
+     * 直接使用BoxComponent的范围生成泊松分布点，支持结果缓存
+     * 
+     * @param BoundingBox 用于定义采样区域的Box组件
+     * @param Radius 点之间的最小距离（<=0 时根据目标点数自动计算）
+     * @param MaxAttempts 在标记一个点为不活跃前的最大尝试次数（默认30，构造函数建议5-10）
+     * @param bWorldSpace 是否返回世界坐标（true=世界坐标, false=局部坐标）
+     * @param TargetPointCount 目标点数量（<=0时忽略，由Radius控制；>0时自动计算Radius并严格裁剪到目标数量）
+     * @param bUseCache 是否使用结果缓存（构造函数建议开启，大幅提升重复调用性能。⚠️注意：启用后Actor移动不会触发数据更新）
+     * @return 生成的点数组（局部坐标或世界坐标）
+     * 
+     * 智能特性：
+     * - Z轴为0时自动切换为2D平面采样（XY平面）
+     * - Z轴>0时使用3D体积采样
+     * - 支持通过 Radius 或 TargetPointCount 控制点数量（TargetPointCount严格遵循）
+     * - 结果缓存：相同参数直接返回缓存结果，几乎无开销
+     * 
+     * 控制点数的两种方式：
+     * 1. 方式A：指定 Radius（点间距）→ 点数由算法自动生成
+     * 2. 方式B：指定 TargetPointCount（目标点数）→ 自动计算合适的Radius
+     * 
+     * 性能优化建议：
+     * - 构造函数使用：MaxAttempts=5-10, bUseCache=true
+     * - 运行时使用：MaxAttempts=15-30, bUseCache=false
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|算法",
+        meta = (DisplayName = "在盒体内生成泊松采样点",
+               AdvancedDisplay = "TargetPointCount,JitterStrength,bUseCache",
+               ToolTip = "盒体泊松采样（自动2D/3D，支持缓存）\n\n核心参数：\n• Radius: 点间距（<=0则由TargetPointCount计算）\n• TargetPointCount: 严格遵循目标点数（>0时裁剪到精确数量）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标（位置+旋转）, false=局部坐标（仅旋转）\n• bUseCache: 启用缓存（注意：Actor移动不会更新）"))
+    static TArray<FVector> GeneratePoissonPointsInBox(
+        UBoxComponent* BoundingBox,
+        float Radius = 50.0f,
+        int32 MaxAttempts = 30,
+        bool bWorldSpace = false,
+        int32 TargetPointCount = 0,
+        float JitterStrength = 0.0f,
+        bool bUseCache = true
+    );
+
+    /**
+     * 在指定范围内生成泊松采样点（向量参数版本）
+     * 使用向量直接定义采样范围，不依赖Box组件
+     * 
+     * @param BoxExtent 盒体半尺寸（直接连接GetScaledBoxExtent节点，内部会×2得到完整范围）
+     * @param Transform 盒体的变换（位置、旋转、缩放。⚠️注意：缩放不会重复应用，因为BoxExtent已包含缩放）
+     * @param Radius 点之间的最小距离（<=0 时根据目标点数自动计算）
+     * @param MaxAttempts 在标记一个点为不活跃前的最大尝试次数（默认30）
+     * @param bWorldSpace 是否返回世界坐标（true=世界坐标，false=局部坐标）
+     * @param TargetPointCount 目标点数量（<=0时忽略，由Radius控制；>0时自动计算Radius并严格裁剪到目标数量）
+     * @param bUseCache 是否使用结果缓存（默认true。⚠️注意：启用后Actor移动不会触发数据更新）
+     * @return 生成的点数组
+     * 
+     * 使用方法：
+     * - 直接连接 GetScaledBoxExtent → BoxExtent（半尺寸会自动×2处理）
+     * - 缓存包含旋转信息，正确处理Transform变化
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|算法",
+        meta = (DisplayName = "在范围内生成泊松采样点（向量版）",
+               AdvancedDisplay = "TargetPointCount,JitterStrength,bUseCache",
+               ToolTip = "向量参数泊松采样（不依赖Box组件）\n\n参数：\n• BoxExtent: 半尺寸（直接连GetScaledBoxExtent）\n• Transform: 变换（缩放已含在Extent中）\n• TargetPointCount: 严格遵循目标点数（>0时裁剪到精确数量）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标（位置+旋转）, false=局部坐标（仅旋转）\n• bUseCache: 启用缓存（注意：Actor移动不更新）"))
+    static TArray<FVector> GeneratePoissonPointsInBoxByVector(
+        FVector BoxExtent,
+        FTransform Transform,
+        float Radius = 50.0f,
+        int32 MaxAttempts = 30,
+        bool bWorldSpace = false,
+        int32 TargetPointCount = 0,
+        float JitterStrength = 0.0f,
+        bool bUseCache = true
+    );
+
+    /**
+     * 从流送在盒体内生成泊松采样点（确定性随机）
+     * 
+     * 使用 FRandomStream 进行确定性随机采样，相同种子产生相同结果。
+     * 不使用缓存，每次调用都会重新生成。
+     */
+    UFUNCTION(BlueprintPure, Category = "XTools|算法",
+        meta = (DisplayName = "从流送在盒体内生成泊松采样点",
+               ScriptMethod = "GeneratePoissonPointsInBox",
+               ScriptMethodMutable,
+               AdvancedDisplay = "TargetPointCount,JitterStrength",
+               ToolTip = "确定性泊松采样（相同种子=相同结果）\n\n参数：\n• RandomStream: 随机流（控制种子）\n• BoundingBox: 采样区域\n• TargetPointCount: 严格遵循目标点数\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标, false=局部坐标"))
+    static TArray<FVector> GeneratePoissonPointsInBoxFromStream(
+        const FRandomStream& RandomStream,
+        UBoxComponent* BoundingBox,
+        float Radius = 50.0f,
+        int32 MaxAttempts = 30,
+        bool bWorldSpace = false,
+        int32 TargetPointCount = 0,
+        float JitterStrength = 0.0f
+    );
+
+    /**
+     * 从流送在范围内生成泊松采样点（向量版，确定性随机）
+     * 
+     * 使用 FRandomStream 进行确定性随机采样，相同种子产生相同结果。
+     * 不使用缓存，每次调用都会重新生成。
+     */
+    UFUNCTION(BlueprintPure, Category = "XTools|算法",
+        meta = (DisplayName = "从流送在范围内生成泊松采样点（向量版）",
+               ScriptMethod = "GeneratePoissonPointsInBoxByVector",
+               ScriptMethodMutable,
+               AdvancedDisplay = "TargetPointCount,JitterStrength",
+               ToolTip = "确定性泊松采样-向量版（相同种子=相同结果）\n\n参数：\n• RandomStream: 随机流（控制种子）\n• BoxExtent: 半尺寸（连GetScaledBoxExtent）\n• Transform: 变换\n• TargetPointCount: 严格遵循目标点数\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标, false=局部坐标"))
+    static TArray<FVector> GeneratePoissonPointsInBoxByVectorFromStream(
+        const FRandomStream& RandomStream,
+        FVector BoxExtent,
+        FTransform Transform,
+        float Radius = 50.0f,
+        int32 MaxAttempts = 30,
+        bool bWorldSpace = false,
+        int32 TargetPointCount = 0,
+        float JitterStrength = 0.0f
+    );
 
     /**
      * 在静态模型内部或表面生成点阵
