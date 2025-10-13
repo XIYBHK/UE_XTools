@@ -80,7 +80,11 @@ public class XTools : ModuleRules
 				"UnrealEd",
 				"BlueprintGraph",
 				"GraphEditor",
-				"ComponentTimelineUncooked"
+				"ComponentTimelineUncooked",
+				"AssetRegistry",
+				"KismetCompiler",
+				"EditorStyle",
+				"EditorWidgets"
 			});
 		}
 

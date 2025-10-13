@@ -36,6 +36,29 @@ void UECFSubsystem::Deinitialize()
 	PendingAddActions.Empty();
 }
 
+bool UECFSubsystem::ShouldCreateSubsystem(UObject* Outer) const
+{
+	// ✅ 检查插件设置，如果未启用则不创建子系统
+	if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/XTools.XToolsSettings")))
+	{
+		if (const UObject* Settings = SettingsClass->GetDefaultObject())
+		{
+			const FProperty* Property = SettingsClass->FindPropertyByName(TEXT("bEnableEnhancedCodeFlowSubsystem"));
+			if (Property && Property->IsA<FBoolProperty>())
+			{
+				const FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property);
+				if (BoolProperty && !BoolProperty->GetPropertyValue_InContainer(Settings))
+				{
+					// 设置中未启用增强代码流
+					return false;
+				}
+			}
+		}
+	}
+	
+	return Super::ShouldCreateSubsystem(Outer);
+}
+
 UECFSubsystem* UECFSubsystem::Get(const UObject* WorldContextObject)
 {
 	UWorld* ThisWorld = nullptr;

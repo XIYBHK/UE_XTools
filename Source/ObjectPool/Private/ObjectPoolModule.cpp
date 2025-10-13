@@ -19,8 +19,10 @@ void FObjectPoolModule::StartupModule()
     // ✅ 初始化模块
     InitializeModule();
     
-    // ✅ 注册控制台命令
+    // ✅ 注册控制台命令（仅在非Shipping版本，符合UE最佳实践）
+#if !UE_BUILD_SHIPPING
     RegisterConsoleCommands();
+#endif
     
     bIsInitialized = true;
     
@@ -31,8 +33,10 @@ void FObjectPoolModule::ShutdownModule()
 {
     OBJECTPOOL_LOG(Log, TEXT("ObjectPool模块关闭中..."));
     
-    // ✅ 注销控制台命令
-    UnregisterConsoleCommands();
+    // ✅ 注销控制台命令（仅在非Shipping版本）
+    #if !UE_BUILD_SHIPPING
+        UnregisterConsoleCommands();
+    #endif
     
     // ✅ 清理模块
     CleanupModule();

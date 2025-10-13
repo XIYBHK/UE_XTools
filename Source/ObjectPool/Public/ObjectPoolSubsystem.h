@@ -359,6 +359,9 @@ private:
 
     /** 维护间隔（秒） */
     static constexpr float MAINTENANCE_INTERVAL = 30.0f;
+
+    /** 延迟预热：每帧最大创建数量（避免卡顿） */
+    static constexpr int32 MAX_ACTORS_PER_FRAME_PREWARM = 10;
 };
 
 /**

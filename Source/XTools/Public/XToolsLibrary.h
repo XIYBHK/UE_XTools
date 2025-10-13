@@ -235,7 +235,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "XTools|算法",
         meta = (DisplayName = "在盒体内生成泊松采样点",
                AdvancedDisplay = "TargetPointCount,JitterStrength,bUseCache",
-               ToolTip = "盒体泊松采样（自动2D/3D，支持缓存）\n\n核心参数：\n• Radius: 点间距（<=0则由TargetPointCount计算）\n• TargetPointCount: 严格遵循目标点数（>0时裁剪到精确数量）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标（位置+旋转）, false=局部坐标（仅旋转）\n• bUseCache: 启用缓存（注意：Actor移动不会更新）"))
+               ToolTip = "盒体泊松采样（自动2D/3D，支持缓存）\n\n核心参数：\n• Radius: 点间距（<=0则由TargetPointCount计算）\n• TargetPointCount: 精确点数（智能调整：过多时移除拥挤点，不足时分层网格补充）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标（位置+旋转）, false=局部坐标（仅旋转）\n• bUseCache: 启用缓存（注意：Actor移动不会更新）"))
     static TArray<FVector> GeneratePoissonPointsInBox(
         UBoxComponent* BoundingBox,
         float Radius = 50.0f,
@@ -266,7 +266,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "XTools|算法",
         meta = (DisplayName = "在范围内生成泊松采样点（向量版）",
                AdvancedDisplay = "TargetPointCount,JitterStrength,bUseCache",
-               ToolTip = "向量参数泊松采样（不依赖Box组件）\n\n参数：\n• BoxExtent: 半尺寸（直接连GetScaledBoxExtent）\n• Transform: 变换（缩放已含在Extent中）\n• TargetPointCount: 严格遵循目标点数（>0时裁剪到精确数量）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标（位置+旋转）, false=局部坐标（仅旋转）\n• bUseCache: 启用缓存（注意：Actor移动不更新）"))
+               ToolTip = "向量参数泊松采样（不依赖Box组件）\n\n参数：\n• BoxExtent: 半尺寸（直接连GetScaledBoxExtent）\n• Transform: 变换（缩放已含在Extent中）\n• TargetPointCount: 精确点数（智能调整：过多时移除拥挤点，不足时分层网格补充）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标（位置+旋转）, false=局部坐标（仅旋转）\n• bUseCache: 启用缓存（注意：Actor移动不更新）"))
     static TArray<FVector> GeneratePoissonPointsInBoxByVector(
         FVector BoxExtent,
         FTransform Transform,
@@ -289,7 +289,7 @@ public:
                ScriptMethod = "GeneratePoissonPointsInBox",
                ScriptMethodMutable,
                AdvancedDisplay = "TargetPointCount,JitterStrength",
-               ToolTip = "确定性泊松采样（相同种子=相同结果）\n\n参数：\n• RandomStream: 随机流（控制种子）\n• BoundingBox: 采样区域\n• TargetPointCount: 严格遵循目标点数\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标, false=局部坐标"))
+               ToolTip = "确定性泊松采样（相同种子=相同结果）\n\n参数：\n• RandomStream: 随机流（控制种子）\n• BoundingBox: 采样区域\n• TargetPointCount: 精确点数（智能调整：过多时移除拥挤点，不足时分层网格补充）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标, false=局部坐标"))
     static TArray<FVector> GeneratePoissonPointsInBoxFromStream(
         const FRandomStream& RandomStream,
         UBoxComponent* BoundingBox,
@@ -311,7 +311,7 @@ public:
                ScriptMethod = "GeneratePoissonPointsInBoxByVector",
                ScriptMethodMutable,
                AdvancedDisplay = "TargetPointCount,JitterStrength",
-               ToolTip = "确定性泊松采样-向量版（相同种子=相同结果）\n\n参数：\n• RandomStream: 随机流（控制种子）\n• BoxExtent: 半尺寸（连GetScaledBoxExtent）\n• Transform: 变换\n• TargetPointCount: 严格遵循目标点数\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标, false=局部坐标"))
+               ToolTip = "确定性泊松采样-向量版（相同种子=相同结果）\n\n参数：\n• RandomStream: 随机流（控制种子）\n• BoxExtent: 半尺寸（连GetScaledBoxExtent）\n• Transform: 变换\n• TargetPointCount: 精确点数（智能调整：过多时移除拥挤点，不足时分层网格补充）\n• JitterStrength: 扰动强度0-1（0=规则分布，1=最大随机偏移）\n• bWorldSpace: true=世界坐标, false=局部坐标"))
     static TArray<FVector> GeneratePoissonPointsInBoxByVectorFromStream(
         const FRandomStream& RandomStream,
         FVector BoxExtent,

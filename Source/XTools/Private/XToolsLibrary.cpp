@@ -1053,35 +1053,365 @@ namespace PoissonSamplingHelpers
         {
             // 2D情况：根据面积估算Radius
             const float Area = Width * Height;
-            // 泊松采样理论密度约为 0.8 * (1 / (pi * r^2))
-            return FMath::Sqrt(0.8f * Area / (TargetPointCount * PI));
+            // 泊松采样实际密度约为理论值的2-3倍
+            // 使用1.8倍系数，使生成点数接近目标（略多10-20%，便于裁剪选优）
+            return FMath::Sqrt(1.8f * Area / (TargetPointCount * PI));
         }
         else
         {
             // 3D情况：根据体积估算Radius
             const float Volume = Width * Height * Depth;
-            // 泊松采样理论密度约为 0.6 * (1 / (4/3 * pi * r^3))
-            return FMath::Pow(0.45f * Volume / (TargetPointCount * PI), 1.0f / 3.0f);
+            // 泊松采样实际密度约为理论值的2-3倍
+            // 使用1.0倍系数，使生成点数接近目标
+            return FMath::Pow(1.0f * Volume / (TargetPointCount * PI), 1.0f / 3.0f);
         }
     }
     
     /**
-     * 裁剪点数组到目标数量（使用Fisher-Yates洗牌）
-     * @param Stream 可选的随机流，nullptr时使用全局随机
+     * 找到点的最近邻距离（优化版：使用平方距离）
      */
-    static void TrimToTargetCount(TArray<FVector>& Points, int32 TargetPointCount, FRandomStream* Stream = nullptr)
+    static float FindNearestDistanceSquared(const FVector& Point, const TArray<FVector>& Points, int32 ExcludeIndex = -1)
     {
-        if (TargetPointCount > 0 && Points.Num() > TargetPointCount)
+        float MinDistSq = FLT_MAX;
+        
+        for (int32 i = 0; i < Points.Num(); ++i)
         {
-            // 使用 Fisher-Yates 洗牌算法随机选择
-            for (int32 i = Points.Num() - 1; i > TargetPointCount; --i)
+            if (i == ExcludeIndex) continue;
+            
+            const float DistSq = FVector::DistSquared(Point, Points[i]);
+            if (DistSq < MinDistSq)
             {
-                const int32 j = Stream ? Stream->RandRange(0, i) : FMath::RandRange(0, i);
-                Points.Swap(i, j);
+                MinDistSq = DistSq;
+            }
+        }
+        
+        return MinDistSq;
+    }
+    
+    /**
+     * 智能裁剪：移除最拥挤的点，保持最优分布
+     * @param Points 要裁剪的点数组
+     * @param TargetCount 目标数量
+     */
+    static void TrimToOptimalDistribution(TArray<FVector>& Points, int32 TargetCount)
+    {
+        while (Points.Num() > TargetCount)
+        {
+            // 找出最拥挤的点（与最近邻距离最小）
+            int32 MostCrowdedIndex = 0;
+            float MinNearestDistSq = FLT_MAX;
+            
+            for (int32 i = 0; i < Points.Num(); ++i)
+            {
+                const float NearestDistSq = FindNearestDistanceSquared(Points[i], Points, i);
+                if (NearestDistSq < MinNearestDistSq)
+                {
+                    MinNearestDistSq = NearestDistSq;
+                    MostCrowdedIndex = i;
+                }
             }
             
-            // 裁剪到目标数量
-            Points.SetNum(TargetPointCount);
+            // 移除最拥挤的点
+            Points.RemoveAtSwap(MostCrowdedIndex);
+        }
+    }
+    
+    /**
+     * 分层网格填充：用均匀分层采样补充不足的点
+     * @param Points 已有的点数组（会原地追加）
+     * @param TargetCount 目标总数量
+     * @param BoxSize 采样空间大小（完整尺寸，非半尺寸）
+     * @param MinDist 最小距离约束（放宽的半径）
+     * @param bIs2D 是否为2D平面
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    static void FillWithStratifiedSampling(
+        TArray<FVector>& Points,
+        int32 TargetCount,
+        FVector BoxSize,
+        float MinDist,
+        bool bIs2D,
+        FRandomStream* Stream = nullptr)
+    {
+        const int32 Needed = TargetCount - Points.Num();
+        if (Needed <= 0) return;
+        
+        // 计算网格大小
+        int32 GridSize;
+        if (bIs2D)
+        {
+            GridSize = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(Needed)));
+        }
+        else
+        {
+            GridSize = FMath::CeilToInt(FMath::Pow(static_cast<float>(Needed), 1.0f / 3.0f));
+        }
+        
+        // 计算单元格大小
+        const FVector CellSize = BoxSize / FMath::Max(GridSize, 1);
+        const float MinDistSq = MinDist * MinDist;
+        
+        TArray<FVector> CandidatePoints;
+        CandidatePoints.Reserve(Needed * 2);  // 预留额外空间
+        
+        // 在网格中生成候选点
+        for (int32 i = 0; i < Needed * 2 && CandidatePoints.Num() < Needed * 2; ++i)
+        {
+            // 计算网格索引
+            const int32 x = i % GridSize;
+            const int32 y = (i / GridSize) % GridSize;
+            const int32 z = bIs2D ? 0 : (i / (GridSize * GridSize)) % GridSize;
+            
+            // 在网格单元内随机位置
+            FVector CellMin = FVector(x, y, z) * CellSize;
+            
+            float RandX, RandY, RandZ;
+            if (Stream)
+            {
+                RandX = Stream->FRand();
+                RandY = Stream->FRand();
+                RandZ = bIs2D ? 0.0f : Stream->FRand();
+            }
+            else
+            {
+                RandX = FMath::FRand();
+                RandY = FMath::FRand();
+                RandZ = bIs2D ? 0.0f : FMath::FRand();
+            }
+            
+            FVector NewPoint = CellMin + FVector(
+                RandX * CellSize.X,
+                RandY * CellSize.Y,
+                RandZ * CellSize.Z
+            );
+            
+            // 转换到局部空间（中心对齐）
+            NewPoint -= BoxSize * 0.5f;
+            if (bIs2D) NewPoint.Z = 0.0f;
+            
+            // 检查与已有泊松点的距离
+            bool bValid = true;
+            for (const FVector& ExistingPoint : Points)
+            {
+                if (FVector::DistSquared(NewPoint, ExistingPoint) < MinDistSq)
+                {
+                    bValid = false;
+                    break;
+                }
+            }
+            
+            // 检查与已生成候选点的距离（避免候选点之间重叠）
+            if (bValid)
+            {
+                for (const FVector& CandidatePoint : CandidatePoints)
+                {
+                    if (FVector::DistSquared(NewPoint, CandidatePoint) < MinDistSq)
+                    {
+                        bValid = false;
+                        break;
+                    }
+                }
+            }
+            
+            if (bValid)
+            {
+                CandidatePoints.Add(NewPoint);
+            }
+        }
+        
+        // 如果候选点不够，降低距离约束继续生成
+        if (CandidatePoints.Num() < Needed)
+        {
+            const float RelaxedMinDistSq = MinDistSq * 0.5f;  // 进一步放宽到50%
+            
+            for (int32 i = 0; i < Needed * 2 && CandidatePoints.Num() < Needed; ++i)
+            {
+                FVector RandomPoint;
+                if (Stream)
+                {
+                    RandomPoint = FVector(
+                        Stream->FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
+                        Stream->FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
+                        bIs2D ? 0.0f : Stream->FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
+                    );
+                }
+                else
+                {
+                    RandomPoint = FVector(
+                        FMath::FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
+                        FMath::FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
+                        bIs2D ? 0.0f : FMath::FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
+                    );
+                }
+                
+                bool bValid = true;
+                for (const FVector& ExistingPoint : Points)
+                {
+                    if (FVector::DistSquared(RandomPoint, ExistingPoint) < RelaxedMinDistSq)
+                    {
+                        bValid = false;
+                        break;
+                    }
+                }
+                
+                // 检查与已生成候选点的距离
+                if (bValid)
+                {
+                    for (const FVector& CandidatePoint : CandidatePoints)
+                    {
+                        if (FVector::DistSquared(RandomPoint, CandidatePoint) < RelaxedMinDistSq)
+                        {
+                            bValid = false;
+                            break;
+                        }
+                    }
+                }
+                
+                if (bValid)
+                {
+                    CandidatePoints.Add(RandomPoint);
+                }
+            }
+        }
+        
+        // 如果还不够，继续填充（保留极小距离约束，避免完全重叠）
+        if (CandidatePoints.Num() < Needed)
+        {
+            const float MinimalDistSq = MinDistSq * 0.25f;  // 25%的约束
+            const int32 MaxAttempts = Needed * 10;  // 限制尝试次数，避免死循环
+            int32 Attempts = 0;
+            
+            while (CandidatePoints.Num() < Needed && Attempts < MaxAttempts)
+            {
+                Attempts++;
+                
+                FVector RandomPoint;
+                if (Stream)
+                {
+                    RandomPoint = FVector(
+                        Stream->FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
+                        Stream->FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
+                        bIs2D ? 0.0f : Stream->FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
+                    );
+                }
+                else
+                {
+                    RandomPoint = FVector(
+                        FMath::FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
+                        FMath::FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
+                        bIs2D ? 0.0f : FMath::FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
+                    );
+                }
+                
+                // 检查与泊松点的极小距离（避免完全重叠）
+                bool bValid = true;
+                for (const FVector& ExistingPoint : Points)
+                {
+                    if (FVector::DistSquared(RandomPoint, ExistingPoint) < MinimalDistSq)
+                    {
+                        bValid = false;
+                        break;
+                    }
+                }
+                
+                // 检查与候选点的极小距离
+                if (bValid)
+                {
+                    for (const FVector& CandidatePoint : CandidatePoints)
+                    {
+                        if (FVector::DistSquared(RandomPoint, CandidatePoint) < MinimalDistSq)
+                        {
+                            bValid = false;
+                            break;
+                        }
+                    }
+                }
+                
+                if (bValid)
+                {
+                    CandidatePoints.Add(RandomPoint);
+                }
+            }
+            
+            // 如果尝试次数耗尽仍不够，记录警告
+            if (CandidatePoints.Num() < Needed)
+            {
+                UE_LOG(LogXTools, Warning, 
+                    TEXT("泊松采样: 空间过小，无法在保持最小距离的前提下生成 %d 个点，实际补充 %d 个（已有泊松点 %d 个）"),
+                    Needed, CandidatePoints.Num(), Points.Num());
+            }
+        }
+        
+        // 随机选择需要的点数追加到原数组
+        if (Stream)
+        {
+            // 使用流进行Fisher-Yates洗牌
+            for (int32 i = CandidatePoints.Num() - 1; i > 0; --i)
+            {
+                const int32 j = Stream->RandRange(0, i);
+                CandidatePoints.Swap(i, j);
+            }
+        }
+        else
+        {
+            // 使用FMath进行Fisher-Yates洗牌
+            for (int32 i = CandidatePoints.Num() - 1; i > 0; --i)
+            {
+                const int32 j = FMath::RandRange(0, i);
+                CandidatePoints.Swap(i, j);
+            }
+        }
+        
+        // 追加到原数组
+        for (int32 i = 0; i < Needed && i < CandidatePoints.Num(); ++i)
+        {
+            Points.Add(CandidatePoints[i]);
+        }
+    }
+    
+    /**
+     * 智能调整点数到目标数量（混合策略）
+     * @param Points 点数组
+     * @param TargetCount 目标数量
+     * @param BoxSize 采样空间大小（完整尺寸）
+     * @param Radius 参考半径
+     * @param bIs2D 是否为2D平面
+     * @param Stream 可选的随机流
+     */
+    static void AdjustToTargetCount(
+        TArray<FVector>& Points,
+        int32 TargetCount,
+        FVector BoxSize,
+        float Radius,
+        bool bIs2D,
+        FRandomStream* Stream = nullptr)
+    {
+        if (TargetCount <= 0) return;
+        
+        const int32 CurrentCount = Points.Num();
+        
+        if (CurrentCount == TargetCount)
+        {
+            // 完美匹配，无需调整
+            return;
+        }
+        else if (CurrentCount > TargetCount)
+        {
+            // 点太多：智能裁剪（保留最分散的点）
+            UE_LOG(LogXTools, Log, TEXT("泊松采样: 从 %d 个点智能裁剪到 %d（移除拥挤点）"), 
+                CurrentCount, TargetCount);
+            
+            TrimToOptimalDistribution(Points, TargetCount);
+        }
+        else
+        {
+            // 点不足：分层网格补充
+            const float RelaxedRadius = Radius * 0.6f;  // 放宽到60%
+            
+            UE_LOG(LogXTools, Log, TEXT("泊松采样: 从 %d 个点补充到 %d（分层网格填充，距离约束=%.1f）"), 
+                CurrentCount, TargetCount, RelaxedRadius);
+            
+            FillWithStratifiedSampling(Points, TargetCount, BoxSize, RelaxedRadius, bIs2D, Stream);
         }
     }
     
@@ -1573,18 +1903,15 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBox(
         // 2D模式下 Point.Z 保持为 0
     }
 
-    // 如果指定了目标点数，严格裁剪到目标数量
-    const int32 OriginalCount = Points.Num();
-    PoissonSamplingHelpers::TrimToTargetCount(Points, TargetPointCount);
-    
-    if (TargetPointCount > 0 && OriginalCount > Points.Num())
-    {
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 从 %d 个点随机裁剪到目标点数 %d"), 
-            OriginalCount, TargetPointCount);
-    }
-
-    // 应用扰动噪波
+    // 应用扰动噪波（在调整点数之前）
     PoissonSamplingHelpers::ApplyJitter(Points, ActualRadius, JitterStrength);
+
+    // 如果指定了目标点数，智能调整到精确数量（泊松主体 + 分层网格补充）
+    if (TargetPointCount > 0)
+    {
+        const FVector BoxSize(Width, Height, Depth);
+        PoissonSamplingHelpers::AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane);
+    }
 
     // 应用变换（始终应用旋转，世界坐标时额外应用位置）
     PoissonSamplingHelpers::ApplyTransform(Points, BoxTransform, bWorldSpace);
@@ -1702,15 +2029,16 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVector(
             Points.Add(FVector(Point2D.X, Point2D.Y, 0.0f));
         }
         
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 使用2D平面采样 (%.1fx%.1f)"), Width, Height);
+        UE_LOG(LogXTools, Log, TEXT("泊松采样: 2D平面 | BoxExtent=(%.1f,%.1f) | 采样空间=[0,%.1f]x[0,%.1f] | 结果范围=[±%.1f,±%.1f]"), 
+            BoxExtent.X, BoxExtent.Y, Width, Height, BoxExtent.X, BoxExtent.Y);
     }
     else
     {
         // 3D体积采样
         Points = GeneratePoissonPoints3D(Width, Height, Depth, ActualRadius, MaxAttempts);
         
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 使用3D体积采样 (%.1fx%.1fx%.1f)"), 
-            Width, Height, Depth);
+        UE_LOG(LogXTools, Log, TEXT("泊松采样: 3D体积 | BoxExtent=(%.1f,%.1f,%.1f) | 采样空间=[0,%.1f]x[0,%.1f]x[0,%.1f] | 结果范围=[±%.1f,±%.1f,±%.1f]"), 
+            BoxExtent.X, BoxExtent.Y, BoxExtent.Z, Width, Height, Depth, BoxExtent.X, BoxExtent.Y, BoxExtent.Z);
     }
 
     // 转换坐标：从 [0, Size] 转换到 [-HalfSize, +HalfSize] （局部空间，中心对齐）
@@ -1725,32 +2053,21 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVector(
         }
     }
 
-    // 如果指定了目标点数，严格裁剪到目标数量
-    const int32 OriginalCount = Points.Num();
-    PoissonSamplingHelpers::TrimToTargetCount(Points, TargetPointCount);
-    
-    if (TargetPointCount > 0 && OriginalCount > Points.Num())
-    {
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 从 %d 个点随机裁剪到目标点数 %d"), 
-            OriginalCount, TargetPointCount);
-    }
-
-    // 应用扰动噪波
+    // 应用扰动噪波（在调整点数之前）
     PoissonSamplingHelpers::ApplyJitter(Points, ActualRadius, JitterStrength);
+
+    // 如果指定了目标点数，智能调整到精确数量（泊松主体 + 分层网格补充）
+    if (TargetPointCount > 0)
+    {
+        const FVector BoxSize(Width, Height, Depth);
+        PoissonSamplingHelpers::AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane);
+    }
 
     // 应用变换（始终应用旋转，世界坐标时额外应用位置）
     PoissonSamplingHelpers::ApplyTransform(Points, Transform, bWorldSpace);
     
-    if (bWorldSpace)
-    {
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 生成了 %d 个点 (世界坐标, Radius=%.2f)"), 
-            Points.Num(), ActualRadius);
-    }
-    else
-    {
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVector: 生成了 %d 个点 (局部坐标+旋转, Radius=%.2f)"), 
-            Points.Num(), ActualRadius);
-    }
+    UE_LOG(LogXTools, Log, TEXT("泊松采样完成: %d个点 | Radius=%.2f | 坐标=%s"), 
+        Points.Num(), ActualRadius, bWorldSpace ? TEXT("世界") : TEXT("局部+旋转"));
 
     // 存入缓存（包含旋转信息）
     if (bUseCache)
@@ -1956,11 +2273,15 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
         }
     }
 
-    // 裁剪到目标数量（使用Stream）
-    TrimToTargetCount(Points, TargetPointCount, Stream);
-
-    // 应用扰动噪波（使用Stream）
+    // 应用扰动噪波（使用Stream，在调整点数之前）
     ApplyJitter(Points, ActualRadius, JitterStrength, Stream);
+
+    // 如果指定了目标点数，智能调整到精确数量（泊松主体 + 分层网格补充）
+    if (TargetPointCount > 0)
+    {
+        const FVector BoxSize(Width, Height, Depth);
+        AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane, Stream);
+    }
 
     // 应用变换
     ApplyTransform(Points, Transform, bWorldSpace);

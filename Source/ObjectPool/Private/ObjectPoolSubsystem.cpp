@@ -98,6 +98,26 @@ void UObjectPoolSubsystem::Deinitialize()
 
 bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
+    // ✅ 检查插件设置，如果未启用则不创建子系统
+    // 注意：这里不能直接include XToolsSettings.h，因为会产生循环依赖
+    // 使用LoadObject动态加载配置
+    if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/XTools.XToolsSettings")))
+    {
+        if (const UObject* Settings = SettingsClass->GetDefaultObject())
+        {
+            const FProperty* Property = SettingsClass->FindPropertyByName(TEXT("bEnableObjectPoolSubsystem"));
+            if (Property && Property->IsA<FBoolProperty>())
+            {
+                const FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property);
+                if (BoolProperty && !BoolProperty->GetPropertyValue_InContainer(Settings))
+                {
+                    // 设置中未启用对象池
+                    return false;
+                }
+            }
+        }
+    }
+    
     // 只在游戏世界中创建
     if (UWorld* World = Cast<UWorld>(Outer))
     {
@@ -143,11 +163,12 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
         return false;
     }
 
-    // ✅ 标准对象池预热机制 - 组件自动激活问题已通过DisableAutoActivateComponents解决
+    // ✅ 使用延迟预热避免开始游戏时卡顿
     if (InitialSize > 0)
     {
-        NewPool->PrewarmPool(GetWorld(), InitialSize);
-        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("注册Actor类并预热: %s, 预热数量=%d"), 
+        // 队列延迟预热，避免在同一帧创建大量Actor
+        QueueDelayedPrewarm(ActorClass, InitialSize);
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("注册Actor类并队列延迟预热: %s, 预热数量=%d"), 
             *ActorClass->GetName(), InitialSize);
     }
     else
@@ -692,40 +713,103 @@ void UObjectPoolSubsystem::QueueDelayedPrewarm(UClass* ActorClass, int32 Count)
 
 void UObjectPoolSubsystem::ProcessDelayedPrewarmQueue()
 {
+    if (DelayedPrewarmQueue.Num() == 0)
+    {
+        return;
+    }
+    
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("开始处理延迟预热队列，队列大小=%d"), DelayedPrewarmQueue.Num());
     
-    for (const FDelayedPrewarmInfo& PrewarmInfo : DelayedPrewarmQueue)
+    // ✅ 分帧创建：每帧最多创建指定数量的Actor，避免单帧卡顿
+    // 从设置中读取配置值
+    int32 MaxActorsPerFrame = MAX_ACTORS_PER_FRAME_PREWARM;
+    
+    if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/XTools.XToolsSettings")))
     {
-        if (IsValid(PrewarmInfo.ActorClass))
+        if (const UObject* Settings = SettingsClass->GetDefaultObject())
         {
-            // 获取或创建池
-            TSharedPtr<FActorPool> Pool = GetOrCreatePool(PrewarmInfo.ActorClass);
-            if (Pool.IsValid())
+            const FProperty* Property = SettingsClass->FindPropertyByName(TEXT("ObjectPoolMaxPrewarmPerFrame"));
+            if (Property && Property->IsA<FIntProperty>())
             {
-                // 现在在不同帧中执行PrewarmPool应该是安全的
-                Pool->PrewarmPool(GetWorld(), PrewarmInfo.Count);
-                
-                OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热完成: %s, 数量=%d"), 
-                    *PrewarmInfo.PoolName, PrewarmInfo.Count);
-            }
-            else
-            {
-                OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("延迟预热失败，无法获取池: %s"), 
-                    *PrewarmInfo.PoolName);
+                const FIntProperty* IntProperty = CastField<FIntProperty>(Property);
+                if (IntProperty)
+                {
+                    MaxActorsPerFrame = IntProperty->GetPropertyValue_InContainer(Settings);
+                }
             }
         }
-        else
+    }
+    int32 ActorsCreatedThisFrame = 0;
+    
+    for (int32 i = DelayedPrewarmQueue.Num() - 1; i >= 0; --i)
+    {
+        if (ActorsCreatedThisFrame >= MaxActorsPerFrame)
+        {
+            // 本帧已达上限，设置Timer在下一帧继续
+            if (UWorld* World = GetWorld())
+            {
+                World->GetTimerManager().SetTimer(
+                    DelayedPrewarmTimerHandle,
+                    this,
+                    &UObjectPoolSubsystem::ProcessDelayedPrewarmQueue,
+                    0.016f,  // ~1帧后（60fps）
+                    false
+                );
+            }
+            
+            OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("本帧已创建 %d 个Actor，延迟到下一帧继续"), 
+                ActorsCreatedThisFrame);
+            return;
+        }
+        
+        FDelayedPrewarmInfo& PrewarmInfo = DelayedPrewarmQueue[i];
+        
+        if (!IsValid(PrewarmInfo.ActorClass))
         {
             OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("延迟预热失败，Actor类无效: %s"), 
                 *PrewarmInfo.PoolName);
+            DelayedPrewarmQueue.RemoveAtSwap(i);
+            continue;
+        }
+        
+        // 获取或创建池
+        TSharedPtr<FActorPool> Pool = GetOrCreatePool(PrewarmInfo.ActorClass);
+        if (!Pool.IsValid())
+        {
+            OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("延迟预热失败，无法获取池: %s"), 
+                *PrewarmInfo.PoolName);
+            DelayedPrewarmQueue.RemoveAtSwap(i);
+            continue;
+        }
+        
+        // 本帧可创建的数量
+        const int32 RemainingBudget = MaxActorsPerFrame - ActorsCreatedThisFrame;
+        const int32 CountThisFrame = FMath::Min(PrewarmInfo.Count, RemainingBudget);
+        
+        // 创建Actor
+        Pool->PrewarmPool(GetWorld(), CountThisFrame);
+        ActorsCreatedThisFrame += CountThisFrame;
+        
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("延迟预热进度: %s, 本次创建=%d, 剩余=%d"), 
+            *PrewarmInfo.PoolName, CountThisFrame, PrewarmInfo.Count - CountThisFrame);
+        
+        // 更新剩余数量
+        PrewarmInfo.Count -= CountThisFrame;
+        
+        // 如果这个池已完成，移除
+        if (PrewarmInfo.Count <= 0)
+        {
+            OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热完成: %s"), *PrewarmInfo.PoolName);
+            DelayedPrewarmQueue.RemoveAtSwap(i);
         }
     }
     
-    // 清空队列和Timer
-    DelayedPrewarmQueue.Empty();
-    DelayedPrewarmTimerHandle.Invalidate();
-    
-    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热队列处理完成"));
+    // 队列已清空
+    if (DelayedPrewarmQueue.Num() == 0)
+    {
+        DelayedPrewarmTimerHandle.Invalidate();
+        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热队列全部处理完成"));
+    }
 }
 
 void UObjectPoolSubsystem::ClearDelayedPrewarmTimer()

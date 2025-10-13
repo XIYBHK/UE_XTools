@@ -28,6 +28,7 @@ protected:
 	/** UGameInstanceSubsystem interface implementation */
 	void Initialize(FSubsystemCollectionBase& Collection) override;
 	void Deinitialize() override;
+	bool ShouldCreateSubsystem(UObject* Outer) const override;
 
 	/** FTickableGameObject interface implementation */
 	void Tick(float DeltaTime) override;
