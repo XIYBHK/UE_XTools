@@ -47,7 +47,6 @@ XTools 是一个为 Unreal Engine 5.3 设计的综合性实用工具插件，提
 ### 🛠️ 资产编辑器工具 (X_AssetEditor Module)
 **专业的资产管理和处理工具**
 - **批量UE原生碰撞**: 球体、盒体、胶囊体、KDOP等碰撞类型批量设置
-- **SIGGRAPH 2022 CoACD算法**: 智能凸包分解，支持复杂模型高质量碰撞
 - **材质函数批量应用**: 快速为材质添加材质函数
 - **资产命名规范化**: 自动化资产命名管理
 - **前缀管理**: 智能的资产前缀系统
@@ -60,14 +59,6 @@ XTools 是一个为 Unreal Engine 5.3 设计的综合性实用工具插件，提
 - **性能优化**: 高效的包围盒剔除算法
 - **随机扰动**: 可选的噪点扰动，使分布更自然
 - **调试可视化**: 丰富的调试和可视化选项
-
-### 🔧 异步工具 (AsyncTools Module)
-**高级时间插值和动画系统**
-- **时间插值**: 支持线性或曲线驱动的数值插值
-- **事件委托**: 完整的开始/更新/完成/进度事件系统
-- **灵活控制**: 暂停/恢复/取消/循环等控制接口
-- **时间缩放**: 支持时间缩放和动态参数更新
-- **调试系统**: 内置调试信息显示
 
 ### 📏 贝塞尔曲线工具 (Bezier Module)
 **专业的曲线计算和可视化**
@@ -252,7 +243,6 @@ EnhancedCodeFlow 模块支持：
 ## ⚠️ 注意事项
 
 ### 使用建议
-- **异步工具**: 使用时注意保存引用，避免过早被垃圾回收
 - **贝塞尔曲线**: 匀速模式计算量较大，不建议每帧大量调用
 - **几何工具**: 采样点数量与网格大小成正比，注意性能影响
 - **组件时间轴**: 需在 BeginPlay 中初始化
@@ -277,13 +267,11 @@ EnhancedCodeFlow 模块支持：
 - ✅ **智能状态重置**: 自动重置Actor的Transform、组件状态、物理属性等
 - ✅ **智能池管理**: 支持预热、自适应扩池、内存优化策略
 - ✅ **性能监控**: 内置池使用率统计和优化建议系统
-- 🆕 **高级碰撞工具**: 集成SIGGRAPH 2022 CoACD算法智能凸包分解
 - ✅ **批量碰撞生成**: 支持UE原生碰撞类型批量设置
 - ✅ **VS Code集成**: 完整的编译和Live Coding任务配置
 - ✅ **多版本打包**: 支持UE 5.4/5.5/5.6自动化打包流程
 
 ### v1.7.0
-- ✅ **重构 AsyncTools 模块**: 改进调试信息显示系统
 - ✅ **重构 X_AssetEditor 模块**: 优化材质函数处理和资产命名系统
 - ✅ **优化组件查找**: 改进 GetTopmostAttachedActor 函数性能
 - ✅ **增强贝塞尔曲线**: 支持匀速模式和优化计算
@@ -345,15 +333,9 @@ EnhancedCodeFlow 模块支持：
 - **Component Timeline** 模块基于 Tomasz Klin 的贡献
 - **Random Shuffles** 模块基于 Anthony Arnold (RK4XYZ) 的实现
 - **PRD 算法** 参考了 DOTA2 的标准实现
-- **CoACD 算法** 基于 Wei、et al. SIGGRAPH 2022 论文 ([详细引用](ThirdParty/CoACD/CREDITS.md))
-- **CoACD 项目** 原作者开源实现 ([GitHub](https://github.com/SarahWeiii/CoACD))
 
 ## 📞 联系方式
 
 - **作者**: XIYBHK
 - **GitHub**: [XTools Repository](https://github.com/XIYBHK/UE_XTools)
 - **问题反馈**: 请通过 GitHub Issues 提交
-
----
-
-**XTools** - 让 Unreal Engine 开发更高效！ 🚀

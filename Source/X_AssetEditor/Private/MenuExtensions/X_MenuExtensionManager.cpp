@@ -11,8 +11,6 @@
 #include "CollisionTools/X_CollisionSettingsDialog.h"
 #include "CollisionTools/X_AutoConvexDialog.h"
 #include "RawMesh.h"
-#include "CollisionTools/X_CoACDIntegration.h"
-#include "CollisionTools/SX_CoACDDialog.h"
 #include "StaticMeshEditorSubsystem.h"
 #include "StaticMeshEditorSubsystemHelpers.h"
 
@@ -374,22 +372,6 @@ void FX_MenuExtensionManager::AddCollisionManagementMenuEntry(FMenuBuilder& Menu
                                     Sys->BulkSetConvexDecompositionCollisionsWithNotification(Meshes, HullCount, MaxHullVerts, HullPrecision, true);
                                 }
                             }
-                        }
-                    }))
-                );
-
-                // CoACD算法碰撞（基于SIGGRAPH 2022论文）
-                SubMenu.AddSeparator();
-                SubMenu.AddMenuEntry(
-                    LOCTEXT("CoACDAlgCollision", "CoACD算法碰撞(参数)"),
-                    LOCTEXT("CoACDAlgCollisionTip", "基于SIGGRAPH 2022论文的碰撞感知凸分解算法\n使用蒙特卡洛树搜索优化切割策略\n适合复杂几何体的高质量分解"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "PhysicsAssetEditor.NewBody"),
-                    FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
-                    {
-                        FX_CoACDArgs Args; // 从保存中读取默认
-                        if (SX_CoACDDialog::ShowDialog(Args))
-                        {
-                            FX_CoACDIntegration::GenerateForAssets(SelectedAssets, Args);
                         }
                     }))
                 );

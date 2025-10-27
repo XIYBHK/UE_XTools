@@ -86,30 +86,11 @@ public class X_AssetEditor : ModuleRules
 		// ✅ 编译器优化设置
 		OptimizeCode = CodeOptimization.InShippingBuildsOnly;
 
-		// ✅ 添加模块定义
-		PublicDefinitions.AddRange(new string[] {
-			"WITH_X_ASSETEDITOR=1",
-			"WITH_EDITOR=1",
-			"UE_PLUGIN=1"
-		});
-
-		// ✅ UE最佳实践：第三方DLL运行时依赖配置
-		string CoACDDllPath = Path.Combine(PluginDirectory, "ThirdParty", "CoACD", "DLL", "lib_coacd.dll");
-		if (File.Exists(CoACDDllPath))
-		{
-			// 添加运行时依赖，确保DLL被正确打包和部署
-			RuntimeDependencies.Add(CoACDDllPath);
-			
-			// 添加延迟加载，符合UE性能最佳实践
-			PublicDelayLoadDLLs.Add("lib_coacd.dll");
-			
-			// 标记为第三方库，启用特殊处理
-			PublicDefinitions.Add("WITH_COACD_DLL=1");
-		}
-		else
-		{
-			// 开发时警告
-			PublicDefinitions.Add("WITH_COACD_DLL=0");
-		}
+	// ✅ 添加模块定义
+	PublicDefinitions.AddRange(new string[] {
+		"WITH_X_ASSETEDITOR=1",
+		"WITH_EDITOR=1",
+		"UE_PLUGIN=1"
+	});
 	}
 } 

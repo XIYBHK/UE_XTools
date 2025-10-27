@@ -173,39 +173,63 @@ private:
     struct FPoissonCacheKey
     {
         FVector BoxExtent;
+        FVector Position;            // 世界空间位置（仅World空间使用）
         FQuat Rotation;
         float Radius;
         int32 TargetPointCount;
         float JitterStrength;
         bool bIs2D;
-        bool bWorldSpace;
+        EPoissonCoordinateSpace CoordinateSpace;  // 替换 bWorldSpace
         
         bool operator==(const FPoissonCacheKey& Other) const
         {
-            return BoxExtent.Equals(Other.BoxExtent, 0.1f) &&
+            // 基础参数比较
+            bool bBasicMatch = BoxExtent.Equals(Other.BoxExtent, 0.1f) &&
                    Rotation.Equals(Other.Rotation, 0.001f) &&
                    FMath::IsNearlyEqual(Radius, Other.Radius, 0.1f) &&
                    TargetPointCount == Other.TargetPointCount &&
                    FMath::IsNearlyEqual(JitterStrength, Other.JitterStrength, 0.01f) &&
                    bIs2D == Other.bIs2D &&
-                   bWorldSpace == Other.bWorldSpace;
+                   CoordinateSpace == Other.CoordinateSpace;
+            
+            // 仅World空间比较Position（Local/Raw空间输出相对坐标，与Position无关）
+            if (bBasicMatch && CoordinateSpace == EPoissonCoordinateSpace::World)
+            {
+                return Position.Equals(Other.Position, 0.1f);
+            }
+            
+            return bBasicMatch;
         }
         
         friend uint32 GetTypeHash(const FPoissonCacheKey& Key)
         {
-            return HashCombine(
+            // 基础Hash（所有空间共用）
+            uint32 Hash = HashCombine(
                 HashCombine(
                     HashCombine(
                         HashCombine(
-                            HashCombine(GetTypeHash(Key.BoxExtent), GetTypeHash(Key.Rotation)),
-                            GetTypeHash(Key.Radius)
+                            GetTypeHash(Key.BoxExtent),
+                            GetTypeHash(Key.Rotation)
                         ),
-                        GetTypeHash(Key.TargetPointCount)
+                        GetTypeHash(Key.Radius)
                     ),
-                    GetTypeHash(Key.JitterStrength)
+                    GetTypeHash(Key.TargetPointCount)
                 ),
-                HashCombine(GetTypeHash(Key.bIs2D), GetTypeHash(Key.bWorldSpace))
+                GetTypeHash(Key.JitterStrength)
             );
+            
+            // 仅World空间包含Position的Hash
+            if (Key.CoordinateSpace == EPoissonCoordinateSpace::World)
+            {
+                Hash = HashCombine(Hash, GetTypeHash(Key.Position));
+            }
+            
+            // 添加bIs2D和CoordinateSpace
+            Hash = HashCombine(Hash, 
+                HashCombine(GetTypeHash(Key.bIs2D), static_cast<uint32>(Key.CoordinateSpace))
+            );
+            
+            return Hash;
         }
     };
 
@@ -223,6 +247,9 @@ public:
         FScopeLock Lock(&CacheLock);
         if (const TArray<FVector>* Found = Cache.Find(Key))
         {
+            // ✅ LRU策略：更新访问时间
+            AccessTimes.Add(Key, FPlatformTime::Seconds());
+            
             CacheHits++;
             return *Found;
         }
@@ -234,19 +261,21 @@ public:
     {
         FScopeLock Lock(&CacheLock);
         
-        // 限制缓存大小
-        if (Cache.Num() >= 50)
+        // ✅ LRU淘汰策略：缓存满时移除最久未使用的条目
+        if (Cache.Num() >= MaxCacheSize)
         {
-            Cache.Empty(25); // 清空一半
+            RemoveLRUEntry();
         }
         
         Cache.Add(Key, Points);
+        AccessTimes.Add(Key, FPlatformTime::Seconds());
     }
     
     void ClearCache()
     {
         FScopeLock Lock(&CacheLock);
         Cache.Empty();
+        AccessTimes.Empty();
         CacheHits = 0;
         CacheMisses = 0;
     }
@@ -259,8 +288,36 @@ public:
     }
     
 private:
+    // ✅ 移除最久未使用的条目（LRU淘汰）
+    void RemoveLRUEntry()
+    {
+        if (Cache.Num() == 0) return;
+        
+        // 找到最早访问的条目
+        FPoissonCacheKey OldestKey;
+        double OldestTime = TNumericLimits<double>::Max();
+        
+        for (const auto& Pair : AccessTimes)
+        {
+            if (Pair.Value < OldestTime)
+            {
+                OldestTime = Pair.Value;
+                OldestKey = Pair.Key;
+            }
+        }
+        
+        // 删除最旧的条目
+        Cache.Remove(OldestKey);
+        AccessTimes.Remove(OldestKey);
+        
+        UE_LOG(LogXTools, Verbose, TEXT("泊松缓存: LRU淘汰一个条目，剩余 %d 个"), Cache.Num());
+    }
+    
+    static constexpr int32 MaxCacheSize = 50;
+    
     FCriticalSection CacheLock;
     TMap<FPoissonCacheKey, TArray<FVector>> Cache;
+    TMap<FPoissonCacheKey, double> AccessTimes;  // ✅ 记录每个条目的最后访问时间
     int32 CacheHits = 0;
     int32 CacheMisses = 0;
 };
@@ -1123,7 +1180,8 @@ namespace PoissonSamplingHelpers
      * @param BoxSize 采样空间大小（完整尺寸，非半尺寸）
      * @param MinDist 最小距离约束（放宽的半径）
      * @param bIs2D 是否为2D平面
-     * @param Stream 可选的随机流，nullptr时使用全局随机
+     * @param Stream 可选的随机流（const指针）
+     * ✅ const指针：FRandomStream的方法是const但使用mutable成员
      */
     static void FillWithStratifiedSampling(
         TArray<FVector>& Points,
@@ -1131,7 +1189,7 @@ namespace PoissonSamplingHelpers
         FVector BoxSize,
         float MinDist,
         bool bIs2D,
-        FRandomStream* Stream = nullptr)
+        const FRandomStream* Stream = nullptr)
     {
         const int32 Needed = TargetCount - Points.Num();
         if (Needed <= 0) return;
@@ -1376,7 +1434,8 @@ namespace PoissonSamplingHelpers
      * @param BoxSize 采样空间大小（完整尺寸）
      * @param Radius 参考半径
      * @param bIs2D 是否为2D平面
-     * @param Stream 可选的随机流
+     * @param Stream 可选的随机流（const指针）
+     * ✅ const指针：FRandomStream的方法是const但使用mutable成员
      */
     static void AdjustToTargetCount(
         TArray<FVector>& Points,
@@ -1384,7 +1443,7 @@ namespace PoissonSamplingHelpers
         FVector BoxSize,
         float Radius,
         bool bIs2D,
-        FRandomStream* Stream = nullptr)
+        const FRandomStream* Stream = nullptr)
     {
         if (TargetCount <= 0) return;
         
@@ -1420,9 +1479,10 @@ namespace PoissonSamplingHelpers
      * @param Points 要扰动的点数组
      * @param Radius 参考半径（扰动范围基于此值）
      * @param JitterStrength 扰动强度 0-1（0=无扰动，1=最大扰动）
-     * @param Stream 可选的随机流，nullptr时使用全局随机
+     * @param Stream 可选的随机流（const指针）
+     * ✅ const指针：FRandomStream的方法是const但使用mutable成员
      */
-    static void ApplyJitter(TArray<FVector>& Points, float Radius, float JitterStrength, FRandomStream* Stream = nullptr)
+    static void ApplyJitter(TArray<FVector>& Points, float Radius, float JitterStrength, const FRandomStream* Stream = nullptr)
     {
         if (JitterStrength <= 0.0f || Points.Num() == 0)
         {
@@ -1450,30 +1510,69 @@ namespace PoissonSamplingHelpers
     }
     
     /**
-     * 应用Transform变换（移除缩放，因为Extent已包含缩放）
-     * @param bWorldSpace true=应用位置+旋转（世界坐标），false=仅应用旋转（局部坐标）
+     * 应用Transform变换
+     * @param CoordinateSpace 坐标空间类型：
+     *        - World：世界坐标（应用位置+旋转到世界空间）
+     *        - Local：局部坐标（仅应用旋转，位置相对于Box中心）
+     *        - Raw：原始坐标（完全不变换，供用户自行处理）
+     * @param ScaleCompensation 缩放补偿（保留接口兼容性，未使用）
      */
-    static void ApplyTransform(TArray<FVector>& Points, const FTransform& Transform, bool bWorldSpace)
+    static void ApplyTransform(TArray<FVector>& Points, const FTransform& Transform, EPoissonCoordinateSpace CoordinateSpace, const FVector& ScaleCompensation = FVector::OneVector)
     {
-        if (bWorldSpace)
+        switch (CoordinateSpace)
         {
-            // 世界坐标：应用位置+旋转（不应用缩放，因为Extent已包含）
-            FTransform TransformNoScale = Transform;
-            TransformNoScale.SetScale3D(FVector::OneVector);
-            
-            for (FVector& Point : Points)
+            case EPoissonCoordinateSpace::World:
             {
-                Point = TransformNoScale.TransformPosition(Point);
+                // 世界空间：应用位置+旋转（不应用缩放，因为Extent已包含）
+                FTransform TransformNoScale = Transform;
+                TransformNoScale.SetScale3D(FVector::OneVector);
+                
+                for (FVector& Point : Points)
+                {
+                    Point = TransformNoScale.TransformPosition(Point);
+                }
+                break;
             }
-        }
-        else
-        {
-            // 局部坐标：仅应用旋转，保持局部位置
-            const FQuat Rotation = Transform.GetRotation();
             
-            for (FVector& Point : Points)
+            case EPoissonCoordinateSpace::Local:
             {
-                Point = Rotation.RotateVector(Point);
+                // 局部空间：应用缩放补偿，输出相对于Box中心的点
+                // 适用场景：AddInstance(World Space = false)
+                // - 使用ScaledBoxExtent采样（保证点数随缩放增加）
+                // - 输出时除以父缩放（避免AddInstance的双重缩放）
+                // - 旋转由HISMC的父变换自动处理
+                const FVector ParentScale = Transform.GetScale3D();
+                
+                for (FVector& Point : Points)
+                {
+                    // 除以父缩放，补偿AddInstance会再次应用的缩放
+                    Point.X /= ParentScale.X;
+                    Point.Y /= ParentScale.Y;
+                    Point.Z /= ParentScale.Z;
+                }
+                break;
+            }
+            
+            case EPoissonCoordinateSpace::Raw:
+            {
+                // 原始空间：应用缩放补偿（与Local相同的逻辑）
+                // 点相对于Box中心，未旋转，已补偿缩放
+                // 供用户自行处理坐标变换
+                const FVector ParentScale = Transform.GetScale3D();
+                
+                for (FVector& Point : Points)
+                {
+                    Point.X /= ParentScale.X;
+                    Point.Y /= ParentScale.Y;
+                    Point.Z /= ParentScale.Z;
+                }
+                break;
+            }
+            
+            default:
+            {
+                checkNoEntry();  // 不应到达此处
+                break;
             }
         }
     }
@@ -1481,8 +1580,9 @@ namespace PoissonSamplingHelpers
     /**
      * 在给定点周围生成随机点（2D）
      * @param Stream 可选的随机流，nullptr时使用全局随机
+     * ✅ const指针：FRandomStream的方法是const但使用mutable成员
      */
-    static FVector2D GenerateRandomPointAround2D(const FVector2D& Point, float MinDist, float MaxDist, FRandomStream* Stream = nullptr)
+    static FVector2D GenerateRandomPointAround2D(const FVector2D& Point, float MinDist, float MaxDist, const FRandomStream* Stream = nullptr)
     {
         const float Angle = Stream ? Stream->FRandRange(0.0f, 2.0f * PI) : FMath::FRandRange(0.0f, 2.0f * PI);
         const float Distance = Stream ? Stream->FRandRange(MinDist, MaxDist) : FMath::FRandRange(MinDist, MaxDist);
@@ -1495,8 +1595,9 @@ namespace PoissonSamplingHelpers
     /**
      * 在给定点周围生成随机点（3D）
      * @param Stream 可选的随机流，nullptr时使用全局随机
+     * ✅ const指针：FRandomStream的方法是const但使用mutable成员
      */
-    static FVector GenerateRandomPointAround3D(const FVector& Point, float MinDist, float MaxDist, FRandomStream* Stream = nullptr)
+    static FVector GenerateRandomPointAround3D(const FVector& Point, float MinDist, float MaxDist, const FRandomStream* Stream = nullptr)
     {
         // 在球面上均匀采样
         const float Theta = Stream ? Stream->FRandRange(0.0f, 2.0f * PI) : FMath::FRandRange(0.0f, 2.0f * PI);
@@ -1796,7 +1897,7 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBox(
     UBoxComponent* BoundingBox,
     float Radius,
     int32 MaxAttempts,
-    bool bWorldSpace,
+    EPoissonCoordinateSpace CoordinateSpace,
     int32 TargetPointCount,
     float JitterStrength,
     bool bUseCache)
@@ -1814,9 +1915,11 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBox(
         return TArray<FVector>();
     }
 
-    // 获取盒体的缩放后尺寸（GetScaledBoxExtent已包含组件缩放）
-    const FVector BoxExtent = BoundingBox->GetScaledBoxExtent();
+    // 采样区域：统一使用ScaledExtent，确保采样范围随Box视觉大小变化
+    // - 当父Actor缩放时，采样范围变大，点数增加，保持视觉密度不变
+    // - Local/Raw空间会在ApplyTransform中对坐标除以父缩放，补偿AddInstance的缩放
     const FTransform BoxTransform = BoundingBox->GetComponentTransform();
+    const FVector BoxExtent = BoundingBox->GetScaledBoxExtent();
     
     // 计算完整尺寸（Extent是半尺寸，直接乘2即可）
     const float Width = BoxExtent.X * 2.0f;
@@ -1844,17 +1947,18 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBox(
         return TArray<FVector>();
     }
 
-    // 缓存系统检查（包含旋转信息）
+    // 缓存系统检查（根据坐标空间模式使用对应的变换）
     if (bUseCache)
     {
         FPoissonCacheKey CacheKey;
         CacheKey.BoxExtent = BoxExtent;
-        CacheKey.Rotation = BoundingBox->GetComponentQuat();  // 包含旋转
+        CacheKey.Position = BoxTransform.GetLocation();   // Position仅在World空间参与缓存比较
+        CacheKey.Rotation = BoxTransform.GetRotation();
         CacheKey.Radius = ActualRadius;
         CacheKey.TargetPointCount = TargetPointCount;
         CacheKey.JitterStrength = JitterStrength;
         CacheKey.bIs2D = bIs2DPlane;
-        CacheKey.bWorldSpace = bWorldSpace;
+        CacheKey.CoordinateSpace = CoordinateSpace;
         
         if (TOptional<TArray<FVector>> CachedPoints = FPoissonResultCache::Get().GetCached(CacheKey))
         {
@@ -1913,31 +2017,21 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBox(
         PoissonSamplingHelpers::AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane);
     }
 
-    // 应用变换（始终应用旋转，世界坐标时额外应用位置）
-    PoissonSamplingHelpers::ApplyTransform(Points, BoxTransform, bWorldSpace);
-    
-    if (bWorldSpace)
-    {
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 生成了 %d 个点 (世界坐标, Radius=%.2f)"), 
-            Points.Num(), ActualRadius);
-    }
-    else
-    {
-        UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBox: 生成了 %d 个点 (局部坐标+旋转, Radius=%.2f)"), 
-            Points.Num(), ActualRadius);
-    }
+    // 应用变换（根据坐标空间类型）
+    PoissonSamplingHelpers::ApplyTransform(Points, BoxTransform, CoordinateSpace);
 
-    // 存入缓存（包含旋转信息）
+    // 存入缓存（根据坐标空间模式使用对应的变换）
     if (bUseCache)
     {
         FPoissonCacheKey CacheKey;
         CacheKey.BoxExtent = BoxExtent;
-        CacheKey.Rotation = BoundingBox->GetComponentQuat();  // 包含旋转
+        CacheKey.Position = BoxTransform.GetLocation();   // Position仅在World空间参与缓存比较
+        CacheKey.Rotation = BoxTransform.GetRotation();
         CacheKey.Radius = ActualRadius;
         CacheKey.TargetPointCount = TargetPointCount;
         CacheKey.JitterStrength = JitterStrength;
         CacheKey.bIs2D = bIs2DPlane;
-        CacheKey.bWorldSpace = bWorldSpace;
+        CacheKey.CoordinateSpace = CoordinateSpace;
         
         FPoissonResultCache::Get().Store(CacheKey, Points);
     }
@@ -1950,7 +2044,7 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVector(
     FTransform Transform,
     float Radius,
     int32 MaxAttempts,
-    bool bWorldSpace,
+    EPoissonCoordinateSpace CoordinateSpace,
     int32 TargetPointCount,
     float JitterStrength,
     bool bUseCache)
@@ -1994,17 +2088,18 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVector(
         return TArray<FVector>();
     }
 
-    // 缓存系统检查（包含旋转信息，使用传入的BoxExtent）
+    // 缓存系统检查（包含位置和旋转信息，使用传入的BoxExtent）
     if (bUseCache)
     {
         FPoissonCacheKey CacheKey;
         CacheKey.BoxExtent = BoxExtent;
-        CacheKey.Rotation = Transform.GetRotation();  // 包含旋转
+        CacheKey.Position = Transform.GetLocation();  // Position仅在World空间参与缓存比较
+        CacheKey.Rotation = Transform.GetRotation();
         CacheKey.Radius = ActualRadius;
         CacheKey.TargetPointCount = TargetPointCount;
         CacheKey.JitterStrength = JitterStrength;
         CacheKey.bIs2D = bIs2DPlane;
-        CacheKey.bWorldSpace = bWorldSpace;
+        CacheKey.CoordinateSpace = CoordinateSpace;
         
         if (TOptional<TArray<FVector>> CachedPoints = FPoissonResultCache::Get().GetCached(CacheKey))
         {
@@ -2063,23 +2158,29 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVector(
         PoissonSamplingHelpers::AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane);
     }
 
-    // 应用变换（始终应用旋转，世界坐标时额外应用位置）
-    PoissonSamplingHelpers::ApplyTransform(Points, Transform, bWorldSpace);
+    // 应用变换（根据坐标空间类型）
+    PoissonSamplingHelpers::ApplyTransform(Points, Transform, CoordinateSpace);
+    
+    // 日志输出
+    const TCHAR* SpaceTypeName = 
+        (CoordinateSpace == EPoissonCoordinateSpace::World) ? TEXT("世界空间") :
+        (CoordinateSpace == EPoissonCoordinateSpace::Local) ? TEXT("局部空间") : TEXT("原始空间");
     
     UE_LOG(LogXTools, Log, TEXT("泊松采样完成: %d个点 | Radius=%.2f | 坐标=%s"), 
-        Points.Num(), ActualRadius, bWorldSpace ? TEXT("世界") : TEXT("局部+旋转"));
+        Points.Num(), ActualRadius, SpaceTypeName);
 
-    // 存入缓存（包含旋转信息）
+    // 存入缓存（包含位置和旋转信息）
     if (bUseCache)
     {
         FPoissonCacheKey CacheKey;
         CacheKey.BoxExtent = BoxExtent;
-        CacheKey.Rotation = Transform.GetRotation();  // 包含旋转
+        CacheKey.Position = Transform.GetLocation();  // Position仅在World空间参与缓存比较
+        CacheKey.Rotation = Transform.GetRotation();
         CacheKey.Radius = ActualRadius;
         CacheKey.TargetPointCount = TargetPointCount;
         CacheKey.JitterStrength = JitterStrength;
         CacheKey.bIs2D = bIs2DPlane;
-        CacheKey.bWorldSpace = bWorldSpace;
+        CacheKey.CoordinateSpace = CoordinateSpace;
         
         FPoissonResultCache::Get().Store(CacheKey, Points);
     }
@@ -2094,7 +2195,7 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxFromStream(
     UBoxComponent* BoundingBox,
     float Radius,
     int32 MaxAttempts,
-    bool bWorldSpace,
+    EPoissonCoordinateSpace CoordinateSpace,
     int32 TargetPointCount,
     float JitterStrength)
 {
@@ -2104,14 +2205,26 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxFromStream(
         return TArray<FVector>();
     }
 
+    if (MaxAttempts <= 0)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxFromStream: MaxAttempts必须大于0"));
+        return TArray<FVector>();
+    }
+
+    // 采样区域：统一使用ScaledExtent，确保采样范围随Box视觉大小变化
+    // - 当父Actor缩放时，采样范围变大，点数增加，保持视觉密度不变
+    // - Local/Raw空间会在ApplyTransform中对坐标除以父缩放，补偿AddInstance的缩放
+    const FTransform BoxTransform = BoundingBox->GetComponentTransform();
+    const FVector BoxExtent = BoundingBox->GetScaledBoxExtent();
+    
     // 调用向量版本
     return GeneratePoissonPointsInBoxByVectorFromStream(
         RandomStream,
-        BoundingBox->GetScaledBoxExtent(),
-        BoundingBox->GetComponentTransform(),
+        BoxExtent,
+        BoxTransform,
         Radius,
         MaxAttempts,
-        bWorldSpace,
+        CoordinateSpace,
         TargetPointCount,
         JitterStrength
     );
@@ -2123,14 +2236,24 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
     FTransform Transform,
     float Radius,
     int32 MaxAttempts,
-    bool bWorldSpace,
+    EPoissonCoordinateSpace CoordinateSpace,
     int32 TargetPointCount,
     float JitterStrength)
 {
     using namespace PoissonSamplingHelpers;
     
-    // 注意：需要修改Stream的内部状态，使用const_cast
-    FRandomStream* Stream = const_cast<FRandomStream*>(&RandomStream);
+    // 输入验证
+    if (BoxExtent.X <= 0.0f || BoxExtent.Y <= 0.0f || BoxExtent.Z < 0.0f)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxByVectorFromStream: BoxExtent无效 (%s)"), *BoxExtent.ToString());
+        return TArray<FVector>();
+    }
+
+    if (MaxAttempts <= 0)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxByVectorFromStream: MaxAttempts必须大于0"));
+        return TArray<FVector>();
+    }
 
     const float Width = BoxExtent.X * 2.0f;
     const float Height = BoxExtent.Y * 2.0f;
@@ -2142,6 +2265,13 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
     if (TargetPointCount > 0 && Radius <= 0.0f)
     {
         ActualRadius = CalculateRadiusFromTargetCount(Width, Height, Depth, TargetPointCount, bIs2DPlane);
+    }
+
+    // 验证最终的Radius
+    if (ActualRadius <= 0.0f)
+    {
+        UE_LOG(LogXTools, Warning, TEXT("GeneratePoissonPointsInBoxByVectorFromStream: 计算出的Radius无效 (%.2f)，请指定有效的Radius或TargetPointCount"), ActualRadius);
+        return TArray<FVector>();
     }
 
     // 生成点（局部坐标，使用Stream替代FMath随机函数）
@@ -2160,8 +2290,8 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
         TArray<FVector2D> Grid;
         Grid.SetNumZeroed(GridWidth * GridHeight);
         
-        // 初始点（使用Stream）
-        const FVector2D InitialPoint(Stream->FRandRange(0.0f, Width), Stream->FRandRange(0.0f, Height));
+        // 初始点（使用RandomStream）
+        const FVector2D InitialPoint(RandomStream.FRandRange(0.0f, Width), RandomStream.FRandRange(0.0f, Height));
         ActivePoints.Add(InitialPoint);
         Points2D.Add(InitialPoint);
         
@@ -2172,13 +2302,14 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
         // 主循环
         while (ActivePoints.Num() > 0)
         {
-            const int32 Index = Stream->RandRange(0, ActivePoints.Num() - 1);
+            const int32 Index = RandomStream.RandRange(0, ActivePoints.Num() - 1);
             const FVector2D Point = ActivePoints[Index];
             bool bFound = false;
             
             for (int32 i = 0; i < MaxAttempts; ++i)
             {
-                const FVector2D NewPoint = GenerateRandomPointAround2D(Point, ActualRadius, 2.0f * ActualRadius, Stream);
+                // ✅ 传递const指针
+                const FVector2D NewPoint = GenerateRandomPointAround2D(Point, ActualRadius, 2.0f * ActualRadius, &RandomStream);
                 
                 if (IsValidPoint2D(NewPoint, ActualRadius, Width, Height, Grid, GridWidth, GridHeight, CellSize))
                 {
@@ -2220,11 +2351,11 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
         TArray<FVector> Grid;
         Grid.SetNumZeroed(GridWidth * GridHeight * GridDepth);
         
-        // 初始点
+        // 初始点（使用RandomStream）
         const FVector InitialPoint(
-            Stream->FRandRange(0.0f, Width),
-            Stream->FRandRange(0.0f, Height),
-            Stream->FRandRange(0.0f, Depth)
+            RandomStream.FRandRange(0.0f, Width),
+            RandomStream.FRandRange(0.0f, Height),
+            RandomStream.FRandRange(0.0f, Depth)
         );
         ActivePoints.Add(InitialPoint);
         Points.Add(InitialPoint);
@@ -2237,13 +2368,14 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
         // 主循环
         while (ActivePoints.Num() > 0)
         {
-            const int32 Index = Stream->RandRange(0, ActivePoints.Num() - 1);
+            const int32 Index = RandomStream.RandRange(0, ActivePoints.Num() - 1);
             const FVector Point = ActivePoints[Index];
             bool bFound = false;
             
             for (int32 i = 0; i < MaxAttempts; ++i)
             {
-                const FVector NewPoint = GenerateRandomPointAround3D(Point, ActualRadius, 2.0f * ActualRadius, Stream);
+                // ✅ 传递const指针
+                const FVector NewPoint = GenerateRandomPointAround3D(Point, ActualRadius, 2.0f * ActualRadius, &RandomStream);
                 
                 if (IsValidPoint3D(NewPoint, ActualRadius, Width, Height, Depth, Grid, GridWidth, GridHeight, GridDepth, CellSize))
                 {
@@ -2273,21 +2405,18 @@ TArray<FVector> UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream(
         }
     }
 
-    // 应用扰动噪波（使用Stream，在调整点数之前）
-    ApplyJitter(Points, ActualRadius, JitterStrength, Stream);
+    // 应用扰动噪波（使用RandomStream，在调整点数之前）
+    ApplyJitter(Points, ActualRadius, JitterStrength, &RandomStream);
 
     // 如果指定了目标点数，智能调整到精确数量（泊松主体 + 分层网格补充）
     if (TargetPointCount > 0)
     {
         const FVector BoxSize(Width, Height, Depth);
-        AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane, Stream);
+        AdjustToTargetCount(Points, TargetPointCount, BoxSize, ActualRadius, bIs2DPlane, &RandomStream);
     }
 
-    // 应用变换
-    ApplyTransform(Points, Transform, bWorldSpace);
-    
-    UE_LOG(LogXTools, Log, TEXT("GeneratePoissonPointsInBoxByVectorFromStream: 生成了 %d 个点 (确定性随机, Radius=%.2f)"), 
-        Points.Num(), ActualRadius);
+    // 应用变换（根据坐标空间类型）
+    ApplyTransform(Points, Transform, CoordinateSpace);
 
     return Points;
 }

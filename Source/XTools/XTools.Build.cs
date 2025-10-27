@@ -37,17 +37,15 @@ public class XTools : ModuleRules
 		bUsePrecompiled = false;
 		bEnableUndefinedIdentifierWarnings = false;
 
-		// ✅ 简化的公共包含路径 - 移除不必要的引擎内部路径
-		PublicIncludePaths.AddRange(new string[] {
-			ModuleDirectory + "/Public",
-			ModuleDirectory + "/AsyncTools"
-		});
+	// ✅ 简化的公共包含路径 - 移除不必要的引擎内部路径
+	PublicIncludePaths.AddRange(new string[] {
+		ModuleDirectory + "/Public"
+	});
 
-		// ✅ 简化的私有包含路径
-		PrivateIncludePaths.AddRange(new string[] {
-			ModuleDirectory + "/Private",
-			ModuleDirectory + "/AsyncTools"
-		});
+	// ✅ 简化的私有包含路径
+	PrivateIncludePaths.AddRange(new string[] {
+		ModuleDirectory + "/Private"
+	});
 
 		// Public dependencies
 		PublicDependencyModuleNames.AddRange(new string[] {
