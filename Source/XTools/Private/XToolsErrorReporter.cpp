@@ -33,16 +33,20 @@ namespace
     }
 }
 
-void FXToolsErrorReporter::Report(FLogCategoryBase& Category,
-                                  ELogVerbosity::Type Verbosity,
-                                  const FString& Message,
-                                  const FName Context,
-                                  bool bNotifyOnScreen,
-                                  float DisplayTime)
+void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
+                                          ELogVerbosity::Type Verbosity,
+                                          const FString& Message,
+                                          const FName Context,
+                                          bool bNotifyOnScreen,
+                                          float DisplayTime)
 {
     const FString FullMessage = BuildFullMessage(Message, Context);
 
-    FMsg::Logf(__FILE__, __LINE__, Category.GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
+    // 只在有有效日志分类时记录日志
+    if (Category)
+    {
+        FMsg::Logf(__FILE__, __LINE__, Category->GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
+    }
 
     if (bNotifyOnScreen && GEngine)
     {
@@ -66,21 +70,6 @@ void FXToolsErrorReporter::Report(FLogCategoryBase& Category,
         }
     }
 #endif
-}
-
-void FXToolsErrorReporter::Error(FLogCategoryBase& Category, const FString& Message, const FName Context, bool bNotifyOnScreen, float DisplayTime)
-{
-    Report(Category, ELogVerbosity::Error, Message, Context, bNotifyOnScreen, DisplayTime);
-}
-
-void FXToolsErrorReporter::Warning(FLogCategoryBase& Category, const FString& Message, const FName Context, bool bNotifyOnScreen, float DisplayTime)
-{
-    Report(Category, ELogVerbosity::Warning, Message, Context, bNotifyOnScreen, DisplayTime);
-}
-
-void FXToolsErrorReporter::Info(FLogCategoryBase& Category, const FString& Message, const FName Context, bool bNotifyOnScreen, float DisplayTime)
-{
-    Report(Category, ELogVerbosity::Log, Message, Context, bNotifyOnScreen, DisplayTime);
 }
 
 

@@ -1,4 +1,5 @@
 # 2025-10-31
+- 修复 Shipping 构建中 `FXToolsErrorReporter` 的编译错误，使用模板方法支持所有日志分类类型（包括 `FNoLoggingCategory`），该方案已被 UE 社区广泛采用，适用于纯插件项目且零性能开销。
 - 统一各模块日志输出，移除 `LogTemp`，使用模块日志类别或 `FXToolsErrorReporter`，满足 UE 日志最佳实践。
 - 补充 `ComponentTimelineRuntime`、`EnhancedCodeFlow` 等模块的日志类别定义。
 - 调整材质函数选取 UI 的日志类别，保持编辑器调试输出一致。
