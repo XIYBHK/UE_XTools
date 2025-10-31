@@ -1,23 +1,27 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
 
-// ✅ 遵循IWYU原则的头文件包含
+
+//  遵循IWYU原则的头文件包含
 #include "ActorStateResetter.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/ActorComponent.h"
 
-// ✅ 组件依赖
+//  组件依赖
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Components/AudioComponent.h"
 #include "GameFramework/MovementComponent.h"
 #include "Components/MeshComponent.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPool.h"
 
 FActorStateResetter::FActorStateResetter()
@@ -43,7 +47,7 @@ bool FActorStateResetter::ResetActorState(AActor* Actor, const FTransform& Spawn
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("开始重置Actor状态: %s"), *Actor->GetName());
 
-    // ✅ 1. 重置基本属性
+    //  1. 重置基本属性
     if (ResetConfig.bResetTransform)
     {
         ResetBasicProperties(Actor, true, SpawnTransform);
@@ -53,46 +57,46 @@ bool FActorStateResetter::ResetActorState(AActor* Actor, const FTransform& Spawn
         ResetBasicProperties(Actor, false);
     }
 
-    // ✅ 2. 重置物理状态
+    //  2. 重置物理状态
     if (ResetConfig.bResetPhysics)
     {
         ResetPhysicsState(Actor);
     }
 
-    // ✅ 3. 重置组件状态
+    //  3. 重置组件状态
     ResetComponentStates(Actor, ResetConfig);
 
-    // ✅ 4. 清理定时器和事件
+    //  4. 清理定时器和事件
     if (ResetConfig.bClearTimers)
     {
         ClearTimersAndEvents(Actor);
     }
 
-    // ✅ 5. 重置AI状态
+    //  5. 重置AI状态
     if (ResetConfig.bResetAI)
     {
         ResetAIState(Actor);
     }
 
-    // ✅ 6. 重置动画状态
+    //  6. 重置动画状态
     if (ResetConfig.bResetAnimation)
     {
         ResetAnimationState(Actor);
     }
 
-    // ✅ 7. 重置音频状态
+    //  7. 重置音频状态
     if (ResetConfig.bResetAudio)
     {
         ResetAudioState(Actor);
     }
 
-    // ✅ 8. 重置粒子系统
+    //  8. 重置粒子系统
     if (ResetConfig.bResetParticles)
     {
         ResetParticleState(Actor);
     }
 
-    // ✅ 9. 重置网络状态
+    //  9. 重置网络状态
     if (ResetConfig.bResetNetwork)
     {
         ResetNetworkState(Actor);
@@ -100,7 +104,7 @@ bool FActorStateResetter::ResetActorState(AActor* Actor, const FTransform& Spawn
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("完成重置Actor状态: %s"), *Actor->GetName());
 
-    // ✅ 更新统计信息
+    //  更新统计信息
     double EndTime = FPlatformTime::Seconds();
     float ResetTimeMs = (EndTime - StartTime) * 1000.0f;
     UpdateResetStats(bSuccess, ResetTimeMs);
@@ -145,7 +149,7 @@ bool FActorStateResetter::ResetActorForPooling(AActor* Actor)
         return false;
     }
 
-    // ✅ 池化专用配置：重置所有状态但不改变Transform
+    //  池化专用配置：重置所有状态但不改变Transform
     FActorResetConfig PoolingConfig;
     PoolingConfig.bResetTransform = false; // 保持当前位置
     PoolingConfig.bResetPhysics = true;
@@ -166,7 +170,7 @@ bool FActorStateResetter::ActivateActorFromPool(AActor* Actor, const FTransform&
         return false;
     }
 
-    // ✅ 激活专用配置：重置到新状态
+    //  激活专用配置：重置到新状态
     FActorResetConfig ActivationConfig;
     ActivationConfig.bResetTransform = true;
     ActivationConfig.bResetPhysics = true;
@@ -187,13 +191,13 @@ void FActorStateResetter::ResetBasicProperties(AActor* Actor, bool bResetTransfo
         return;
     }
 
-    // ✅ 重置Transform
+    //  重置Transform
     if (bResetTransform)
     {
         Actor->SetActorTransform(NewTransform);
     }
 
-    // ✅ 重置基本状态
+    //  重置基本状态
     Actor->SetActorHiddenInGame(false);
     Actor->SetActorEnableCollision(true);
     Actor->SetActorTickEnabled(true);
@@ -208,14 +212,14 @@ void FActorStateResetter::ResetPhysicsState(AActor* Actor)
         return;
     }
 
-    // ✅ 重置根组件的物理状态
+    //  重置根组件的物理状态
     if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
     {
         RootPrimitive->SetPhysicsLinearVelocity(FVector::ZeroVector);
         RootPrimitive->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
     }
 
-    // ✅ 重置所有物理组件
+    //  重置所有物理组件
     TArray<UPrimitiveComponent*> PrimitiveComponents;
     Actor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
 
@@ -238,7 +242,7 @@ void FActorStateResetter::ResetComponentStates(AActor* Actor, const FActorResetC
         return;
     }
 
-    // ✅ 获取所有组件并重置
+    //  获取所有组件并重置
     TArray<UActorComponent*> Components;
     Actor->GetComponents<UActorComponent>(Components);
 
@@ -260,7 +264,7 @@ void FActorStateResetter::ResetSingleComponent(UActorComponent* Component, const
         return;
     }
 
-    // ✅ 检查自定义重置器
+    //  检查自定义重置器
     UClass* ComponentClass = Component->GetClass();
     if (CustomComponentResetters.Contains(ComponentClass))
     {
@@ -268,7 +272,7 @@ void FActorStateResetter::ResetSingleComponent(UActorComponent* Component, const
         return;
     }
 
-    // ✅ 基础组件重置 - 处理常见组件类型
+    //  基础组件重置 - 处理常见组件类型
     ResetCommonComponentTypes(Component, ResetConfig);
 }
 
@@ -291,14 +295,14 @@ void FActorStateResetter::ResetCommonComponentTypes(UActorComponent* Component, 
         return;
     }
 
-    // ✅ ProjectileMovement组件重置
+    //  ProjectileMovement组件重置
     if (UProjectileMovementComponent* ProjectileComp = Cast<UProjectileMovementComponent>(Component))
     {
         ResetProjectileMovementComponent(ProjectileComp, ResetConfig);
         return;
     }
 
-    // ✅ 粒子系统组件重置
+    //  粒子系统组件重置
     if (UParticleSystemComponent* ParticleComp = Cast<UParticleSystemComponent>(Component))
     {
         if (ResetConfig.bResetParticles)
@@ -309,7 +313,7 @@ void FActorStateResetter::ResetCommonComponentTypes(UActorComponent* Component, 
         return;
     }
 
-    // ✅ 音频组件重置
+    //  音频组件重置
     if (UAudioComponent* AudioComp = Cast<UAudioComponent>(Component))
     {
         if (ResetConfig.bResetAudio)
@@ -321,7 +325,7 @@ void FActorStateResetter::ResetCommonComponentTypes(UActorComponent* Component, 
         return;
     }
 
-    // ✅ 移动组件重置
+    //  移动组件重置
     if (UMovementComponent* MovementComp = Cast<UMovementComponent>(Component))
     {
         if (ResetConfig.bResetPhysics)
@@ -332,7 +336,7 @@ void FActorStateResetter::ResetCommonComponentTypes(UActorComponent* Component, 
         return;
     }
 
-    // ✅ 网格组件重置
+    //  网格组件重置
     if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Component))
     {
         MeshComp->SetVisibility(true);
@@ -350,19 +354,19 @@ void FActorStateResetter::ResetProjectileMovementComponent(UProjectileMovementCo
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("重置ProjectileMovement组件"));
 
-    // ✅ 停止当前移动
+    //  停止当前移动
     ProjectileComp->StopMovementImmediately();
 
-    // ✅ 重置速度
+    //  重置速度
     ProjectileComp->Velocity = FVector::ZeroVector;
 
-    // ✅ 重置位置（如果需要）
+    //  重置位置（如果需要）
     if (ResetConfig.bResetTransform)
     {
         // 位置重置由Actor的Transform处理，这里不需要额外操作
     }
 
-    // ✅ 重置物理状态
+    //  重置物理状态
     if (ResetConfig.bResetPhysics)
     {
         // 重置重力相关
@@ -376,21 +380,21 @@ void FActorStateResetter::ResetProjectileMovementComponent(UProjectileMovementCo
         ProjectileComp->Friction = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->Friction;
     }
 
-    // ✅ 重置初始速度（保持原始设计的初始速度）
+    //  重置初始速度（保持原始设计的初始速度）
     ProjectileComp->InitialSpeed = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->InitialSpeed;
     ProjectileComp->MaxSpeed = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->MaxSpeed;
 
-    // ✅ 重置生命周期（在UE5.3中可能没有这个属性，跳过）
+    //  重置生命周期（在UE5.3中可能没有这个属性，跳过）
     // ProjectileComp->ProjectileLifeSpan = ProjectileComp->GetClass()->GetDefaultObject<UProjectileMovementComponent>()->ProjectileLifeSpan;
 
-    // ✅ 重新激活组件（如果之前被停用）
+    //  重新激活组件（如果之前被停用）
     ProjectileComp->SetActive(true);
     ProjectileComp->SetComponentTickEnabled(true);
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("ProjectileMovement组件重置完成"));
 }
 
-// ✅ 简化的实现，后续可以扩展
+//  简化的实现，后续可以扩展
 void FActorStateResetter::ClearTimersAndEvents(AActor* Actor) {}
 void FActorStateResetter::ResetAIState(AActor* Actor) {}
 void FActorStateResetter::ResetAnimationState(AActor* Actor) {}

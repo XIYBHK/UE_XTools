@@ -3,16 +3,16 @@
  */
 #pragma once
 
-#include <cmath>
+// 只使用UE核心头文件
 #include "CoreMinimal.h"
 #include "MinIndexQueue.h"
 
 namespace RandomShuffles {
 
-// ✅ 使用UE容器 - 均匀分布的随机采样实现
+// 使用UE容器 - 均匀分布的随机采样实现
 template<typename It, typename Out, typename Rand>
 Out UniformRandomSample(It begin, It end, Out out, int32 count, Rand randFunc) {
-    // ✅ 使用UE兼容的迭代器计算方式
+    // 使用UE兼容的迭代器计算方式
     int32 sampleSize = 0;
     for (It it = begin; it != end; ++it) {
         ++sampleSize;
@@ -22,11 +22,11 @@ Out UniformRandomSample(It begin, It end, Out out, int32 count, Rand randFunc) {
         return out;
     }
 
-    // ✅ 使用UE容器 - 创建索引数组
+    // 使用UE容器 - 创建索引数组
     TArray<int32> indices;
     indices.Reserve(sampleSize);
     for(int32 i = 0; i < sampleSize; ++i) {
-        indices.Add(i);  // ✅ 使用UE容器方法
+        indices.Add(i);  // 使用UE容器方法
     }
 
     // 进行count次采样
@@ -38,29 +38,33 @@ Out UniformRandomSample(It begin, It end, Out out, int32 count, Rand randFunc) {
             selectedIdx = sampleSize - 1;
         }
 
-        // ✅ 使用UE算法 - 输出选中的元素
+        // 使用UE算法 - 输出选中的元素
         *out++ = *(begin + indices[selectedIdx]);
     }
     
     return out;
 }
 
+// 使用UE类型和容器 - 加权随机采样实现
 template<typename It, typename Wt, typename Out, typename Rand>
-Out RandomSample(It begin, It end, Wt weightBegin, Out out, std::size_t count, Rand randFunc) {
-    using std::distance;
-    auto sampleSize = static_cast<std::size_t>(std::distance(begin, end));
+Out RandomSample(It begin, It end, Wt weightBegin, Out out, int32 count, Rand randFunc) {
+    // 使用UE兼容的迭代器计算方式
+    int32 sampleSize = 0;
+    for (It it = begin; it != end; ++it) {
+        ++sampleSize;
+    }
     
-    // 首先保存所有权重
-    std::vector<float> weights;
-    weights.reserve(sampleSize);
+    // 使用UE容器 - 保存所有权重
+    TArray<float> weights;
+    weights.Reserve(sampleSize);
     
     // 第一遍：保存权重并检查是否均匀分布
     bool isUniform = true;
     float firstWeight = -1.0f;
     
-    for(size_t idx = 0; idx < sampleSize; ++idx) {
+    for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = static_cast<float>(*weightBegin++);
-        weights.push_back(weight);
+        weights.Add(weight);  // 使用UE容器方法
         
         if(idx == 0) {
             firstWeight = weight;
@@ -75,7 +79,7 @@ Out RandomSample(It begin, It end, Wt weightBegin, Out out, std::size_t count, R
     }
     
     // 计算有效元素数量
-    size_t validCount = 0;
+    int32 validCount = 0;
     for(float weight : weights) {
         if(weight > 0.0f) {
             validCount++;
@@ -90,33 +94,33 @@ Out RandomSample(It begin, It end, Wt weightBegin, Out out, std::size_t count, R
     MinIndexQueue H(validCount);
 
     // 将所有有效元素推入优先队列
-    for(size_t idx = 0; idx < sampleSize; ++idx) {
+    for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = weights[idx];
         if (weight > 0.0f) {
             float U = randFunc(0.0f, 1.0f);
-            float R = std::pow(U, 1.0f/weight);
+            float R = FMath::Pow(U, 1.0f/weight);  // 使用UE数学函数
             H.Push(R, idx);
         }
     }
 
-    // 进行count次采样
-    std::vector<size_t> indices;
-    indices.reserve(count);
+    // 使用UE容器 - 进行count次采样
+    TArray<int32> indices;
+    indices.Reserve(count);
     
-    for(size_t sampleIdx = 0; sampleIdx < count; ++sampleIdx) {
-        size_t selectedIndex = H.ExtractMin();
-        indices.push_back(selectedIndex);
+    for(int32 sampleIdx = 0; sampleIdx < count; ++sampleIdx) {
+        int32 selectedIndex = H.ExtractMin();
+        indices.Add(selectedIndex);  // 使用UE容器方法
         
         // 重新计算该索引的R值并放回队列
         float weight = weights[selectedIndex];
         float U = randFunc(0.0f, 1.0f);
-        float R = std::pow(U, 1.0f/weight);
+        float R = FMath::Pow(U, 1.0f/weight);  // 使用UE数学函数
         H.Push(R, selectedIndex);
     }
 
     // 输出结果
-    for(size_t idx : indices) {
-        *out++ = *std::next(begin, idx);
+    for(int32 idx : indices) {
+        *out++ = *(begin + idx);
     }
     
     return out;

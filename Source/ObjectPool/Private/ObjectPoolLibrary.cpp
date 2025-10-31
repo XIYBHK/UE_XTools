@@ -1,25 +1,29 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
 
-// ✅ 遵循IWYU原则的头文件包含
+
+//  遵循IWYU原则的头文件包含
 #include "ObjectPoolLibrary.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPool.h"
 #include "ObjectPoolSubsystem.h"
 
 
 bool UObjectPoolLibrary::RegisterActorClass(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
 {
-    // ✅ 获取子系统
+    //  获取子系统
     UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
     if (Subsystem)
     {
-        // ✅ 调用子系统的RegisterActorClass进行安全的注册和预热
+        //  调用子系统的RegisterActorClass进行安全的注册和预热
         bool bSuccess = Subsystem->RegisterActorClass(ActorClass, InitialSize, HardLimit);
 
         OBJECTPOOL_LOG(Log, TEXT("UObjectPoolLibrary::RegisterActorClass: 注册Actor类: %s, 初始大小=%d, 结果: %s"),
@@ -36,7 +40,7 @@ bool UObjectPoolLibrary::RegisterActorClass(const UObject* WorldContext, TSubcla
 
 AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform)
 {
-    // ✅ 获取对象池子系统
+    //  获取对象池子系统
     UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
     if (PoolSubsystem)
     {
@@ -52,7 +56,7 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
     {
         OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 无法获取对象池子系统，尝试直接创建"));
         
-        // ✅ 多级回退机制：即使子系统不可用也要尝试创建Actor
+        //  多级回退机制：即使子系统不可用也要尝试创建Actor
         UWorld* World = nullptr;
 
         // 首先尝试从WorldContext获取
@@ -97,7 +101,7 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
             }
         }
 
-        // ✅ 所有回退机制均失败：直接返回 nullptr，由上层决定是否改用 SpawnActor 兜底
+        //  所有回退机制均失败：直接返回 nullptr，由上层决定是否改用 SpawnActor 兜底
         OBJECTPOOL_LOG(Error, TEXT("UObjectPoolLibrary: 所有回退机制都失败，返回 nullptr"));
         return nullptr;
     }
@@ -128,7 +132,7 @@ AActor* UObjectPoolLibrary::SpawnActorFromPoolEx(const UObject* WorldContext, TS
 
 void UObjectPoolLibrary::ReturnActorToPool(const UObject* WorldContext, AActor* Actor)
 {
-    // ✅ 获取对象池子系统
+    //  获取对象池子系统
     UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
     if (PoolSubsystem)
     {
@@ -140,7 +144,7 @@ void UObjectPoolLibrary::ReturnActorToPool(const UObject* WorldContext, AActor* 
         return;
     }
     
-    // ✅ 如果没有子系统可用，直接销毁Actor避免内存泄漏
+    //  如果没有子系统可用，直接销毁Actor避免内存泄漏
     OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::ReturnActorToPool: 无法获取对象池子系统，直接销毁Actor"));
 
     if (IsValid(Actor))
@@ -192,12 +196,12 @@ int32 UObjectPoolLibrary::BatchSpawnActors(const UObject* WorldContext, TSubclas
         return 0;
     }
 
-    // ✅ 预分配输出数组
+    //  预分配输出数组
     OutActors.Reserve(SpawnTransforms.Num());
     
     int32 SuccessCount = 0;
     
-    // ✅ 批量生成Actor
+    //  批量生成Actor
     for (const FTransform& Transform : SpawnTransforms)
     {
         AActor* Actor = SpawnActorFromPool(WorldContext, ActorClass, Transform);
@@ -208,7 +212,7 @@ int32 UObjectPoolLibrary::BatchSpawnActors(const UObject* WorldContext, TSubclas
         }
         else
         {
-            // ✅ 即使单个失败也继续处理其他的
+            //  即使单个失败也继续处理其他的
             OutActors.Add(nullptr);
             OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::BatchSpawnActors: 生成Actor失败"));
         }
@@ -281,7 +285,7 @@ int32 UObjectPoolLibrary::BatchSpawnActorsEx(const UObject* WorldContext, TSubcl
 
 bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
-    // ✅ 优先使用简化子系统
+    //  优先使用简化子系统
     UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
     if (!PoolSubsystem)
     {
@@ -289,10 +293,10 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
         return false;
     }
 
-    // ✅ 极简API设计：通过PrewarmPool(0)检查池是否存在
+    //  极简API设计：通过PrewarmPool(0)检查池是否存在
     // 注意：这是内部实现细节，用户应该使用极简API
     bool bRegistered = false;
-    // ✅ 通过PrewarmPool(0)检查池是否已注册（不使用异常）
+    //  通过PrewarmPool(0)检查池是否已注册（不使用异常）
     int32 AvailableCount = PoolSubsystem->PrewarmPool(ActorClass, 0);
     bRegistered = (AvailableCount >= 0);
     
@@ -310,13 +314,13 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
 
 FObjectPoolStats UObjectPoolLibrary::GetPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
-    // ✅ 极简API：直接返回空统计，避免死代码路径
+    //  极简API：直接返回空统计，避免死代码路径
     return FObjectPoolStats();
 }
 
 void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, bool bShowOnScreen, bool bPrintToLog, float DisplayDuration, FLinearColor TextColor)
 {
-    // ✅ 构建统计信息字符串
+    //  构建统计信息字符串
     FString StatsText;
 
     if (ActorClass)
@@ -338,12 +342,12 @@ void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclass
         // 显示所有池的统计信息
         StatsText = TEXT("=== 所有对象池统计信息 ===\n");
 
-        // ✅ 优先使用简化子系统
-        // ✅ 极简API设计：移除统计功能
+        //  优先使用简化子系统
+        //  极简API设计：移除统计功能
         StatsText += TEXT("统计功能已被移除（极简API设计）");
     }
 
-    // ✅ 显示到屏幕（使用固定的键值确保不被覆盖）
+    //  显示到屏幕（使用固定的键值确保不被覆盖）
     if (bShowOnScreen && GEngine)
     {
         // 使用非常小的负数作为键值，确保显示在最顶部且不被覆盖
@@ -353,7 +357,7 @@ void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclass
         GEngine->AddOnScreenDebugMessage(PoolStatsKey, DisplayDuration, DisplayColor, StatsText);
     }
 
-    // ✅ 输出到日志
+    //  输出到日志
     if (bPrintToLog)
     {
         OBJECTPOOL_LOG(Warning, TEXT("\n%s"), *StatsText);
@@ -368,7 +372,7 @@ bool UObjectPoolLibrary::PrewarmPool(const UObject* WorldContext, TSubclassOf<AA
         return false;
     }
 
-    // ✅ 获取子系统
+    //  获取子系统
     UObjectPoolSubsystem* Subsystem = GetSubsystemSafe(WorldContext);
     if (!Subsystem)
     {
@@ -376,7 +380,7 @@ bool UObjectPoolLibrary::PrewarmPool(const UObject* WorldContext, TSubclassOf<AA
         return false;
     }
 
-    // ✅ 调用子系统预热方法
+    //  调用子系统预热方法
     Subsystem->PrewarmPool(ActorClass, Count);
 
     OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary::PrewarmPool: %s, 数量: %d"),
@@ -394,7 +398,7 @@ bool UObjectPoolLibrary::ClearPool(const UObject* WorldContext, TSubclassOf<AAct
         return false;
     }
 
-    // ✅ 极简API设计：ClearPool功能已被移除
+    //  极简API设计：ClearPool功能已被移除
     OBJECTPOOL_LOG(Warning, TEXT("ClearPool功能已被移除（极简API设计）"));
     // 用户应该通过RegisterActorClass重新注册来实现清理功能
 
@@ -431,7 +435,7 @@ UObjectPoolSubsystem* UObjectPoolLibrary::GetSubsystemSafe(const UObject* WorldC
         return nullptr;
     }
 
-    // ✅ 使用子系统的静态方法获取实例
+    //  使用子系统的静态方法获取实例
     UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::Get(WorldContext);
     if (!Subsystem)
     {
@@ -451,7 +455,7 @@ bool UObjectPoolLibrary::CallLifecycleEvent(const UObject* WorldContext, AActor*
         return false;
     }
 
-    // ✅ 使用增强的生命周期事件系统
+    //  使用增强的生命周期事件系统
     bool bSuccess = IObjectPoolInterface::CallLifecycleEventEnhanced(Actor, EventType, bAsync, 1000);
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::CallLifecycleEvent: %s, 事件: %d, 结果: %s"),
@@ -468,7 +472,7 @@ int32 UObjectPoolLibrary::BatchCallLifecycleEvents(const UObject* WorldContext, 
         return 0;
     }
 
-    // ✅ 使用接口的批量调用方法
+    //  使用接口的批量调用方法
     int32 SuccessCount = IObjectPoolInterface::BatchCallLifecycleEvents(Actors, EventType, bAsync);
 
     OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary::BatchCallLifecycleEvents: 请求 %d 个，成功 %d 个"),
@@ -485,7 +489,7 @@ bool UObjectPoolLibrary::HasLifecycleEventSupport(const UObject* WorldContext, A
         return false;
     }
 
-    // ✅ 使用接口的检查方法
+    //  使用接口的检查方法
     bool bSupported = IObjectPoolInterface::HasLifecycleEvent(Actor, EventType);
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::HasLifecycleEventSupport: %s, 事件: %d, 支持: %s"),
@@ -504,7 +508,7 @@ int32 UObjectPoolLibrary::BatchReturnActors(const UObject* WorldContext, const T
 
     int32 SuccessCount = 0;
     
-    // ✅ 批量归还Actor
+    //  批量归还Actor
     for (AActor* Actor : Actors)
     {
         if (IsValid(Actor))

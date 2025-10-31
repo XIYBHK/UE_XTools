@@ -1,3 +1,8 @@
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 #include "SortLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Logging/LogMacros.h"
@@ -962,8 +967,11 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
         Indices[i] = i;
     }
 
-    // 使用快速排序
-    QuickSortByProperty(ArrayHelper, ArrayProp->Inner, SortProp, Indices, 0, ArrayHelper.Num() - 1, bAscending);
+    // 计算深度限制（IntroSort模式：2*log2(n)）
+    const int32 DepthLimit = ArrayHelper.Num() > 0 ? 2 * FMath::CeilLogTwo(ArrayHelper.Num()) : 0;
+    
+    // 使用带深度限制的快速排序（IntroSort）
+    QuickSortByProperty(ArrayHelper, ArrayProp->Inner, SortProp, Indices, 0, ArrayHelper.Num() - 1, bAscending, DepthLimit);
 
     // 根据排序后的索引重新排列数组
     TArray<uint8> TempStorage;
@@ -1074,13 +1082,72 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
     return bResult == bAscending;
 }
 
-void USortLibrary::QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
+void USortLibrary::HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
 {
+    // 使用TFunction替代lambda递归
+    TFunction<void(int32, int32)> Heapify;
+    Heapify = [&](int32 Root, int32 End)
+    {
+        int32 Largest = Root;
+        int32 Left = 2 * Root + 1 - Low;
+        int32 Right = 2 * Root + 2 - Low;
+
+        if (Left <= End - Low)
+        {
+            void* LeftValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Left + Low]);
+            void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
+            if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, LeftValue, bAscending))
+            {
+                Largest = Left + Low;
+            }
+        }
+
+        if (Right <= End - Low)
+        {
+            void* RightValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Right + Low]);
+            void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
+            if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, RightValue, bAscending))
+            {
+                Largest = Right + Low;
+            }
+        }
+
+        if (Largest != Root)
+        {
+            Indices.Swap(Root, Largest);
+            Heapify(Largest, End);
+        }
+    };
+
+    // Build heap
+    for (int32 i = (High - Low) / 2 - 1 + Low; i >= Low; --i)
+    {
+        Heapify(i, High);
+    }
+
+    // Extract elements from heap
+    for (int32 i = High; i > Low; --i)
+    {
+        Indices.Swap(Low, i);
+        Heapify(Low, i - 1);
+    }
+}
+
+void USortLibrary::QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, int32 DepthLimit)
+{
+    // 深度限制保护：防止栈溢出
+    if (DepthLimit == 0)
+    {
+        // 回退到堆排序（非递归）
+        HeapSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, High, bAscending);
+        return;
+    }
+
     if (Low < High)
     {
         const int32 PivotIndex = PartitionByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, High, bAscending);
-        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, PivotIndex - 1, bAscending);
-        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, PivotIndex + 1, High, bAscending);
+        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, PivotIndex - 1, bAscending, DepthLimit - 1);
+        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, PivotIndex + 1, High, bAscending, DepthLimit - 1);
     }
 }
 

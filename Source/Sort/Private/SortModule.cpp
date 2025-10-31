@@ -1,3 +1,8 @@
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 #include "SortModule.h"
 
 #define LOCTEXT_NAMESPACE "FSortModule"

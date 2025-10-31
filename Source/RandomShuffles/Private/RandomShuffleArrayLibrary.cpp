@@ -316,7 +316,7 @@ void URandomShuffleArrayLibrary::GenericArray_RandomSample(
     if (WeightsProp) {
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
         if (WeightsHelper.Num() < ArrayHelper.Num()) {
-            UE_LOG(LogRandomShuffle, Error, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
+            ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
             return;
         }
 
@@ -361,7 +361,7 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
     if (WeightsProp) {
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
         if (WeightsHelper.Num() < ArrayHelper.Num()) {
-            UE_LOG(LogRandomShuffle, Error, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
+            ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
             return;
         }
 

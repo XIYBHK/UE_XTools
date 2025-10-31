@@ -1,19 +1,23 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolSubsystem.h"
 // 前向声明
 
-// ✅ 生成的头文件必须放在最后
+//  生成的头文件必须放在最后
 #include "ObjectPoolLibrary.generated.h"
 
 /**
@@ -42,7 +46,7 @@ class OBJECTPOOL_API UObjectPoolLibrary : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
-    // ✅ 核心静态接口 - 简化版本
+    //  核心静态接口 - 简化版本
 
     /**
      * 注册Actor类到对象池（静态版本）
@@ -117,7 +121,7 @@ public:
         UPARAM(DisplayName = "Actor") AActor* Actor,
         UPARAM(DisplayName = "结果") EPoolOpResult& OutResult);
 
-    // ✅ 便捷接口 - 常用操作的简化版本（已简化至统一使用FTransform的入口）
+    //  便捷接口 - 常用操作的简化版本（已简化至统一使用FTransform的入口）
 
     /**
      * 批量生成Actor
@@ -222,7 +226,7 @@ public:
         const UObject* WorldContext,
         UPARAM(DisplayName = "Actor") const AActor* Actor);
 
-    // ✅ 查询和管理接口
+    //  查询和管理接口
 
     /**
      * 检查Actor类是否已注册
@@ -333,7 +337,7 @@ public:
 
 
 
-    // ✅ 生命周期事件管理接口
+    //  生命周期事件管理接口
 
     /**
      * 手动调用Actor的生命周期事件

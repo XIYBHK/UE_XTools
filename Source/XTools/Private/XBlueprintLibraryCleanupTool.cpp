@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "XBlueprintLibraryCleanupTool.h"
 
@@ -396,7 +400,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
     {
         if (bLogToConsole)
         {
-            UE_LOG(LogTemp, Warning, TEXT("✅ 未发现需要清理的【未连接】World Context参数"));
+            UE_LOG(LogTemp, Warning, TEXT(" 未发现需要清理的【未连接】World Context参数"));
         }
         return 0;
     }

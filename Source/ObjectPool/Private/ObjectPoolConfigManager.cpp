@@ -1,17 +1,21 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "ObjectPoolConfigManager.h"
 #include "ActorPool.h"
 #include "ObjectPoolUtils.h"
 #include "ObjectPool.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 
-// ✅ 日志和统计
+//  日志和统计
 DEFINE_LOG_CATEGORY(LogObjectPoolConfigManager);
 
 #if STATS
@@ -19,7 +23,7 @@ DEFINE_STAT(STAT_ConfigManager_ValidateConfig);
 DEFINE_STAT(STAT_ConfigManager_ApplyConfig);
 #endif
 
-// ✅ 构造函数和析构函数
+//  构造函数和析构函数
 
 FObjectPoolConfigManager::FObjectPoolConfigManager()
     : bIsInitialized(false)
@@ -39,7 +43,7 @@ FObjectPoolConfigManager::~FObjectPoolConfigManager()
     }
 }
 
-// ✅ 移动语义实现
+//  移动语义实现
 
 FObjectPoolConfigManager::FObjectPoolConfigManager(FObjectPoolConfigManager&& Other) noexcept
     : ActorConfigs(MoveTemp(Other.ActorConfigs))
@@ -64,7 +68,7 @@ FObjectPoolConfigManager& FObjectPoolConfigManager::operator=(FObjectPoolConfigM
     return *this;
 }
 
-// ✅ 配置管理功能实现
+//  配置管理功能实现
 
 bool FObjectPoolConfigManager::SetConfig(UClass* ActorClass, const FObjectPoolConfig& Config)
 {
@@ -83,7 +87,7 @@ bool FObjectPoolConfigManager::SetConfig(UClass* ActorClass, const FObjectPoolCo
 
     FScopeLock Lock(&ConfigLock);
 
-    // ✅ 使用FindOrAdd避免重复添加时的问题
+    //  使用FindOrAdd避免重复添加时的问题
     FObjectPoolConfig& ExistingConfig = ActorConfigs.FindOrAdd(ActorClass);
     ExistingConfig = Config;
 
@@ -148,7 +152,7 @@ void FObjectPoolConfigManager::ClearAllConfigs()
     CONFIG_MANAGER_LOG(Log, TEXT("清空所有配置"));
 }
 
-// ✅ 默认配置管理实现
+//  默认配置管理实现
 
 FObjectPoolConfig FObjectPoolConfigManager::GetDefaultConfig() const
 {
@@ -186,7 +190,7 @@ FObjectPoolConfig FObjectPoolConfigManager::GenerateRecommendedConfig(UClass* Ac
     return ApplyStrategy(BaseConfig, Strategy);
 }
 
-// ✅ 配置验证实现
+//  配置验证实现
 
 bool FObjectPoolConfigManager::ValidateConfig(const FObjectPoolConfig& Config, FString& OutErrorMessage) const
 {
@@ -286,7 +290,7 @@ FObjectPoolConfig FObjectPoolConfigManager::FixInvalidConfig(const FObjectPoolCo
     return FixedConfig;
 }
 
-// ✅ 配置应用实现
+//  配置应用实现
 
 bool FObjectPoolConfigManager::ApplyConfigToPool(FActorPool& Pool, const FObjectPoolConfig& Config) const
 {
@@ -321,7 +325,7 @@ FObjectPoolConfig FObjectPoolConfigManager::ExtractConfigFromPool(const FActorPo
     return Config;
 }
 
-// ✅ 统计和分析实现
+//  统计和分析实现
 
 FString FObjectPoolConfigManager::GetConfigStats() const
 {
@@ -379,7 +383,7 @@ FString FObjectPoolConfigManager::AnalyzeConfigUsage() const
     );
 }
 
-// ✅ 内部辅助方法实现
+//  内部辅助方法实现
 
 void FObjectPoolConfigManager::InitializeDefaultConfig()
 {

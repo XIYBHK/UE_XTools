@@ -1,9 +1,13 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
 
-// ✅ 遵循IWYU原则的头文件包含
+
+//  遵循IWYU原则的头文件包含
 #include "ObjectPoolInterface.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
@@ -12,7 +16,7 @@
 #include "UObject/UnrealType.h"
 #include "Async/Async.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPool.h"
 
 void IObjectPoolInterface::SafeCallLifecycleEvent(AActor* Actor, const FString& EventType)
@@ -23,7 +27,7 @@ void IObjectPoolInterface::SafeCallLifecycleEvent(AActor* Actor, const FString& 
         return;
     }
 
-    // ✅ 检查Actor是否实现了接口
+    //  检查Actor是否实现了接口
     if (!DoesActorImplementInterface(Actor))
     {
         // 这不是错误，只是Actor没有实现接口
@@ -34,7 +38,7 @@ void IObjectPoolInterface::SafeCallLifecycleEvent(AActor* Actor, const FString& 
 
     OBJECTPOOL_LOG(Verbose, TEXT("调用Actor %s 的生命周期事件: %s"), *Actor->GetName(), *EventType);
 
-    // ✅ 根据事件类型调用相应的函数
+    //  根据事件类型调用相应的函数
     if (EventType == TEXT("OnPoolActorCreated"))
     {
         ExecuteBlueprintEvent(Actor, FName("OnPoolActorCreated"));
@@ -78,7 +82,7 @@ void IObjectPoolInterface::ExecuteBlueprintEvent(AActor* Actor, const FName& Fun
         return;
     }
 
-    // ✅ 查找蓝图函数
+    //  查找蓝图函数
     UFunction* Function = Actor->GetClass()->FindFunctionByName(FunctionName);
     if (!Function)
     {
@@ -88,20 +92,20 @@ void IObjectPoolInterface::ExecuteBlueprintEvent(AActor* Actor, const FName& Fun
         return;
     }
 
-    // ✅ 检查函数是否是蓝图事件（简化版本）
+    //  检查函数是否是蓝图事件（简化版本）
     if (!Function->HasAnyFunctionFlags(FUNC_BlueprintEvent))
     {
         OBJECTPOOL_LOG(VeryVerbose, TEXT("函数 %s 不是蓝图事件"), *FunctionName.ToString());
         // 继续执行，不返回
     }
 
-    // ✅ 安全调用蓝图函数（不使用 C++ 异常）
+    //  安全调用蓝图函数（不使用 C++ 异常）
     Actor->ProcessEvent(Function, nullptr);
     OBJECTPOOL_LOG(VeryVerbose, TEXT("成功调用Actor %s 的蓝图事件: %s"), 
         *Actor->GetName(), *FunctionName.ToString());
 }
 
-// ✅ 接口的默认实现已在头文件中定义
+//  接口的默认实现已在头文件中定义
 
 bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPoolLifecycleEvent EventType, bool bAsync, int32 TimeoutMs)
 {
@@ -111,18 +115,18 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
         return false;
     }
 
-    // ✅ 检查Actor是否实现了接口
+    //  检查Actor是否实现了接口
     if (!DoesActorImplementInterface(Actor))
     {
         OBJECTPOOL_LOG(VeryVerbose, TEXT("CallLifecycleEventEnhanced: Actor %s 没有实现对象池接口"), *Actor->GetName());
         return false;
     }
 
-    // ✅ 记录开始时间（用于性能统计）
+    //  记录开始时间（用于性能统计）
     double StartTime = FPlatformTime::Seconds();
     bool bSuccess = false;
 
-    // ✅ 根据事件类型调用相应的方法
+    //  根据事件类型调用相应的方法
     FString EventName;
     switch (EventType)
     {
@@ -142,7 +146,7 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
 
     if (bAsync)
     {
-        // ✅ 异步调用（在游戏线程的下一帧执行）
+        //  异步调用（在游戏线程的下一帧执行）
         AsyncTask(ENamedThreads::GameThread, [Actor, EventName]()
         {
             if (IsValid(Actor))
@@ -171,7 +175,7 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
     }
     else
     {
-        // ✅ 同步调用（不使用 C++ 异常）
+        //  同步调用（不使用 C++ 异常）
         ExecuteBlueprintEvent(Actor, FName(*EventName));
 
         // 同时调用C++版本
@@ -193,7 +197,7 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
         bSuccess = true;
     }
 
-    // ✅ 记录性能统计
+    //  记录性能统计
     double EndTime = FPlatformTime::Seconds();
     float ExecutionTimeUs = (EndTime - StartTime) * 1000000.0f;
 
@@ -213,7 +217,7 @@ int32 IObjectPoolInterface::BatchCallLifecycleEvents(const TArray<AActor*>& Acto
 
     int32 SuccessCount = 0;
 
-    // ✅ 批量调用生命周期事件
+    //  批量调用生命周期事件
     for (AActor* Actor : Actors)
     {
         if (CallLifecycleEventEnhanced(Actor, EventType, bAsync))
@@ -235,13 +239,13 @@ bool IObjectPoolInterface::HasLifecycleEvent(AActor* Actor, EObjectPoolLifecycle
         return false;
     }
 
-    // ✅ 检查是否实现了接口
+    //  检查是否实现了接口
     if (!DoesActorImplementInterface(Actor))
     {
         return false;
     }
 
-    // ✅ 检查是否有对应的蓝图事件
+    //  检查是否有对应的蓝图事件
     FString EventName;
     switch (EventType)
     {
@@ -258,7 +262,7 @@ bool IObjectPoolInterface::HasLifecycleEvent(AActor* Actor, EObjectPoolLifecycle
         return false;
     }
 
-    // ✅ 检查蓝图中是否有该事件
+    //  检查蓝图中是否有该事件
     UClass* ActorClass = Actor->GetClass();
     if (ActorClass)
     {
@@ -269,7 +273,7 @@ bool IObjectPoolInterface::HasLifecycleEvent(AActor* Actor, EObjectPoolLifecycle
         }
     }
 
-    // ✅ 检查C++接口实现
+    //  检查C++接口实现
     if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
     {
         return true; // 如果实现了接口，就认为有事件
@@ -287,7 +291,7 @@ FObjectPoolLifecycleStats IObjectPoolInterface::GetLifecycleStats(AActor* Actor)
         return Stats;
     }
 
-    // ✅ 这里可以从Actor的组件或属性中获取统计信息
+    //  这里可以从Actor的组件或属性中获取统计信息
     // 目前返回默认统计，后续可以扩展
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("GetLifecycleStats: %s"), *Actor->GetName());

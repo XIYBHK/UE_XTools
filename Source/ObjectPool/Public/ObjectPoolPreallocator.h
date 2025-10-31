@@ -1,20 +1,26 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "HAL/CriticalSection.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include <atomic>
 
-// ✅ 对象池模块依赖
+//  UE版本兼容性
+#include "XToolsVersionCompat.h"
+
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 
 
 
-// ✅ 前向声明
+//  前向声明
 class FActorPool;
 
 /**
@@ -44,7 +50,7 @@ public:
     /** 析构函数 */
     ~FObjectPoolPreallocator();
 
-    // ✅ 核心预分配接口
+    //  核心预分配接口
 
     /**
      * 启动智能预分配
@@ -75,9 +81,9 @@ public:
      * 是否正在预分配
      * @return true if preallocation is active
      */
-    bool IsPreallocating() const { return bIsActive.load(); }
+    bool IsPreallocating() const { return XTOOLS_ATOMIC_LOAD(bIsActive); }
 
-    // ✅ 动态调整接口
+    //  动态调整接口
 
     /**
      * 检查是否需要动态调整
@@ -105,7 +111,7 @@ public:
      */
     int32 PredictRequiredCount() const;
 
-    // ✅ 内存管理接口
+    //  内存管理接口
 
     /**
      * 检查内存预算
@@ -122,7 +128,7 @@ public:
     int32 EstimateActorMemorySize(UClass* ActorClass) const;
 
 private:
-    // ✅ 预分配策略实现
+    //  预分配策略实现
 
     /**
      * 立即预分配策略
@@ -151,7 +157,7 @@ private:
      */
     void ExecuteAdaptivePreallocation(UWorld* World, float DeltaTime);
 
-    // ✅ 辅助方法
+    //  辅助方法
 
     /**
      * 创建单个Actor到池中
@@ -182,10 +188,10 @@ private:
     mutable FObjectPoolPreallocationStats Stats;
 
     /** 是否激活 */
-    std::atomic<bool> bIsActive{false};
+    TAtomic<bool> bIsActive{false};
 
     /** 当前进度 */
-    std::atomic<int32> CurrentProgress{0};
+    TAtomic<int32> CurrentProgress{0};
 
     /** 累计时间 */
     float AccumulatedTime = 0.0f;

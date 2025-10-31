@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -40,15 +44,25 @@ private:
      */
     void InitializeManagers();
 
-    /**
-     * 清理所有管理器
-     */
-    void CleanupManagers();
+	/**
+	 * 清理所有管理器
+	 */
+	void CleanupManagers();
 
-    /**
-     * 延迟注册菜单 - 等待工具菜单系统就绪
-     */
-    void RegisterMenusWhenReady();
+	/**
+	 * 注册设置页面自定义
+	 */
+	void RegisterSettingsCustomization();
+
+	/**
+	 * 注销设置页面自定义
+	 */
+	void UnregisterSettingsCustomization();
+
+	/**
+	 * 延迟注册菜单 - 等待工具菜单系统就绪
+	 */
+	void RegisterMenusWhenReady();
 
     /**
      * 验证模块状态 - 用于测试和调试
@@ -56,7 +70,7 @@ private:
     bool ValidateModuleState() const;
 
 private:
-    // ✅ 性能优化 - 缓存模块状态，避免重复检查
+    //  性能优化 - 缓存模块状态，避免重复检查
     mutable bool bIsInitialized = false;
     mutable bool bIsShuttingDown = false;
 };

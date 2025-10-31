@@ -1,8 +1,12 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
@@ -68,10 +72,10 @@ private:
     bool bIsInitialized = false;
 };
 
-// ✅ 模块日志类别定义
+//  模块日志类别定义
 DECLARE_LOG_CATEGORY_EXTERN(LogObjectPool, Log, All);
 
-// ✅ 性能统计宏定义
+//  性能统计宏定义
 #if !OBJECTPOOL_SHIPPING
     #define OBJECTPOOL_STAT(StatName) SCOPE_CYCLE_COUNTER(STAT_##StatName)
     #define OBJECTPOOL_LOG(Verbosity, Format, ...) UE_LOG(LogObjectPool, Verbosity, Format, ##__VA_ARGS__)

@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Internationalization/Text.h"
 #include "Components/SceneComponent.h"
-// ✅ 移除STL包含，使用UE内置类型检查
+//  移除STL包含，使用UE内置类型检查
 
 DEFINE_LOG_CATEGORY_STATIC(SortTestLog, Log, All);
 

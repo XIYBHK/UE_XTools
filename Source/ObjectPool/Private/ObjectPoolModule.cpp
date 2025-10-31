@@ -1,25 +1,29 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
 
-// ✅ 遵循IWYU原则的头文件包含
+
+//  遵循IWYU原则的头文件包含
 #include "ObjectPool.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/Engine.h"
 #include "HAL/IConsoleManager.h"
 
-// ✅ 定义日志类别
+//  定义日志类别
 DEFINE_LOG_CATEGORY(LogObjectPool);
 
 void FObjectPoolModule::StartupModule()
 {
     OBJECTPOOL_LOG(Log, TEXT("ObjectPool模块启动中..."));
     
-    // ✅ 初始化模块
+    //  初始化模块
     InitializeModule();
     
-    // ✅ 注册控制台命令（仅在非Shipping版本，符合UE最佳实践）
+    //  注册控制台命令（仅在非Shipping版本，符合UE最佳实践）
 #if !UE_BUILD_SHIPPING
     RegisterConsoleCommands();
 #endif
@@ -33,12 +37,12 @@ void FObjectPoolModule::ShutdownModule()
 {
     OBJECTPOOL_LOG(Log, TEXT("ObjectPool模块关闭中..."));
     
-    // ✅ 注销控制台命令（仅在非Shipping版本）
+    //  注销控制台命令（仅在非Shipping版本）
     #if !UE_BUILD_SHIPPING
         UnregisterConsoleCommands();
     #endif
     
-    // ✅ 清理模块
+    //  清理模块
     CleanupModule();
     
     bIsInitialized = false;
@@ -48,7 +52,7 @@ void FObjectPoolModule::ShutdownModule()
 
 void FObjectPoolModule::InitializeModule()
 {
-    // ✅ 模块初始化逻辑
+    //  模块初始化逻辑
     // 这里可以添加模块启动时需要的初始化代码
     
     OBJECTPOOL_LOG(Verbose, TEXT("ObjectPool模块初始化完成"));
@@ -56,7 +60,7 @@ void FObjectPoolModule::InitializeModule()
 
 void FObjectPoolModule::CleanupModule()
 {
-    // ✅ 模块清理逻辑
+    //  模块清理逻辑
     // 这里可以添加模块关闭时需要的清理代码
     
     OBJECTPOOL_LOG(Verbose, TEXT("ObjectPool模块清理完成"));
@@ -64,7 +68,7 @@ void FObjectPoolModule::CleanupModule()
 
 void FObjectPoolModule::RegisterConsoleCommands()
 {
-    // ✅ 注册调试用的控制台命令
+    //  注册调试用的控制台命令
     
     // 显示对象池统计信息
     ConsoleCommands.Add(IConsoleManager::Get().RegisterConsoleCommand(
@@ -114,7 +118,7 @@ void FObjectPoolModule::RegisterConsoleCommands()
 
 void FObjectPoolModule::UnregisterConsoleCommands()
 {
-    // ✅ 注销所有控制台命令
+    //  注销所有控制台命令
     for (IConsoleCommand* Command : ConsoleCommands)
     {
         if (Command)
@@ -128,5 +132,5 @@ void FObjectPoolModule::UnregisterConsoleCommands()
     OBJECTPOOL_LOG(Verbose, TEXT("控制台命令注销完成"));
 }
 
-// ✅ 实现模块接口
+//  实现模块接口
 IMPLEMENT_MODULE(FObjectPoolModule, ObjectPool)

@@ -1,18 +1,22 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
 #include "HAL/CriticalSection.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 
-// ✅ 前向声明
+//  前向声明
 class UProjectileMovementComponent;
 class UParticleSystemComponent;
 class UAudioComponent;
@@ -45,7 +49,7 @@ public:
     /** 析构函数 */
     ~FActorStateResetter();
 
-    // ✅ 核心重置接口
+    //  核心重置接口
 
     /**
      * 完整重置Actor状态
@@ -80,7 +84,7 @@ public:
      */
     bool ActivateActorFromPool(AActor* Actor, const FTransform& SpawnTransform);
 
-    // ✅ 分类重置方法
+    //  分类重置方法
 
     /**
      * 重置基本Actor属性
@@ -139,7 +143,7 @@ public:
      */
     void ResetNetworkState(AActor* Actor);
 
-    // ✅ 配置和统计
+    //  配置和统计
 
     /**
      * 设置默认重置配置
@@ -172,7 +176,7 @@ public:
     void UnregisterCustomComponentResetter(UClass* ComponentClass);
 
 private:
-    // ✅ 内部实现方法
+    //  内部实现方法
 
     /**
      * 重置特定类型的组件

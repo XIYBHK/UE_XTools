@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "CollisionTools/X_CollisionBlueprintLibrary.h"
 #include "CollisionTools/X_CollisionManager.h"

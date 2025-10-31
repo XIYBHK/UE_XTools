@@ -1,4 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -7,7 +11,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 
 // 前向声明
@@ -51,16 +55,16 @@ public:
     /** 析构函数 */
     ~FObjectPoolConfigManager();
 
-    // ✅ 禁用拷贝构造和赋值
+    //  禁用拷贝构造和赋值
     FObjectPoolConfigManager(const FObjectPoolConfigManager&) = delete;
     FObjectPoolConfigManager& operator=(const FObjectPoolConfigManager&) = delete;
 
-    // ✅ 支持移动语义
+    //  支持移动语义
     FObjectPoolConfigManager(FObjectPoolConfigManager&& Other) noexcept;
     FObjectPoolConfigManager& operator=(FObjectPoolConfigManager&& Other) noexcept;
 
 public:
-    // ✅ 配置管理功能
+    //  配置管理功能
 
     /**
      * 设置指定Actor类的配置
@@ -96,7 +100,7 @@ public:
      */
     void ClearAllConfigs();
 
-    // ✅ 默认配置管理
+    //  默认配置管理
 
     /**
      * 获取默认配置
@@ -118,7 +122,7 @@ public:
      */
     FObjectPoolConfig GenerateRecommendedConfig(UClass* ActorClass, EConfigStrategy Strategy = EConfigStrategy::Balanced) const;
 
-    // ✅ 配置验证
+    //  配置验证
 
     /**
      * 验证配置是否有效
@@ -135,7 +139,7 @@ public:
      */
     FObjectPoolConfig FixInvalidConfig(const FObjectPoolConfig& Config) const;
 
-    // ✅ 配置应用
+    //  配置应用
 
     /**
      * 将配置应用到池
@@ -152,7 +156,7 @@ public:
      */
     FObjectPoolConfig ExtractConfigFromPool(const FActorPool& Pool) const;
 
-    // ✅ 统计和分析
+    //  统计和分析
 
     /**
      * 获取配置统计信息
@@ -167,7 +171,7 @@ public:
     FString AnalyzeConfigUsage() const;
 
 private:
-    // ✅ 内部数据成员
+    //  内部数据成员
 
     /** 配置存储：Actor类 -> 配置 */
     TMap<UClass*, FObjectPoolConfig> ActorConfigs;
@@ -182,7 +186,7 @@ private:
     bool bIsInitialized;
 
 private:
-    // ✅ 内部辅助方法
+    //  内部辅助方法
 
     /**
      * 初始化默认配置
@@ -218,7 +222,7 @@ private:
      */
     static FString GetStrategyName(EConfigStrategy Strategy);
 
-    // ✅ 常量定义
+    //  常量定义
 
     /** 默认初始池大小 */
     static constexpr int32 DEFAULT_INITIAL_SIZE = 10;

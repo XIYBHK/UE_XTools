@@ -1,15 +1,19 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "ActorPoolMemoryOptimizer.h"
 #include "ActorPool.h"
 #include "ObjectPool.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "HAL/PlatformFilemanager.h"
 
-// ✅ 日志和统计
+//  日志和统计
 DEFINE_LOG_CATEGORY(LogActorPoolMemoryOptimizer);
 
 #if STATS
@@ -18,7 +22,7 @@ DEFINE_STAT(STAT_MemoryOptimizer_Preallocation);
 DEFINE_STAT(STAT_MemoryOptimizer_Compaction);
 #endif
 
-// ✅ 构造函数和析构函数
+//  构造函数和析构函数
 
 FActorPoolMemoryOptimizer::FActorPoolMemoryOptimizer(EOptimizationStrategy InStrategy)
     : CurrentStrategy(InStrategy)
@@ -35,7 +39,7 @@ FActorPoolMemoryOptimizer::~FActorPoolMemoryOptimizer()
         OptimizationStats.TotalOptimizations, OptimizationStats.TotalMemorySaved);
 }
 
-// ✅ 移动语义实现
+//  移动语义实现
 
 FActorPoolMemoryOptimizer::FActorPoolMemoryOptimizer(FActorPoolMemoryOptimizer&& Other) noexcept
     : CurrentStrategy(Other.CurrentStrategy)
@@ -60,7 +64,7 @@ FActorPoolMemoryOptimizer& FActorPoolMemoryOptimizer::operator=(FActorPoolMemory
     return *this;
 }
 
-// ✅ 内存监控功能实现
+//  内存监控功能实现
 
 FActorPoolMemoryOptimizer::FMemoryStats FActorPoolMemoryOptimizer::AnalyzeMemoryUsage(const FActorPool& Pool) const
 {
@@ -157,7 +161,7 @@ bool FActorPoolMemoryOptimizer::ShouldOptimizeMemory(const FActorPool& Pool) con
     return MemStats.FragmentationRatio > FragmentationThreshold;
 }
 
-// ✅ 预分配优化功能实现
+//  预分配优化功能实现
 
 bool FActorPoolMemoryOptimizer::ShouldPreallocate(const FActorPool& Pool) const
 {
@@ -218,7 +222,7 @@ int32 FActorPoolMemoryOptimizer::PerformSmartPreallocation(FActorPool& Pool, UWo
         return 0;
     }
     
-    // ✅ 内存优化预热机制 - 组件自动激活问题已解决
+    //  内存优化预热机制 - 组件自动激活问题已解决
     Pool.PrewarmPool(World, PreallocCount);
     
     MEMORY_OPTIMIZER_LOG(Log, TEXT("内存优化预热完成: 预分配数量=%d"), PreallocCount);
@@ -229,7 +233,7 @@ int32 FActorPoolMemoryOptimizer::PerformSmartPreallocation(FActorPool& Pool, UWo
     return PreallocCount;
 }
 
-// ✅ 内存压缩功能实现
+//  内存压缩功能实现
 
 float FActorPoolMemoryOptimizer::AnalyzeFragmentation(const FActorPool& Pool) const
 {
@@ -270,7 +274,7 @@ int64 FActorPoolMemoryOptimizer::CompactMemory(FActorPool& Pool) const
     return MemorySaved;
 }
 
-// ✅ 配置管理实现
+//  配置管理实现
 
 void FActorPoolMemoryOptimizer::SetOptimizationStrategy(EOptimizationStrategy NewStrategy)
 {
@@ -293,7 +297,7 @@ void FActorPoolMemoryOptimizer::SetPreallocationConfig(const FPreallocationConfi
         NewConfig.GrowthFactor, NewConfig.TriggerThreshold);
 }
 
-// ✅ 性能分析实现
+//  性能分析实现
 
 FString FActorPoolMemoryOptimizer::GeneratePerformanceReport(const FActorPool& Pool) const
 {
@@ -367,7 +371,7 @@ FString FActorPoolMemoryOptimizer::GetOptimizationStats() const
     );
 }
 
-// ✅ 内部辅助方法实现
+//  内部辅助方法实现
 
 void FActorPoolMemoryOptimizer::InitializeConfigForStrategy(EOptimizationStrategy Strategy)
 {

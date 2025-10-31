@@ -1,15 +1,19 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "ObjectPoolManager.h"
 #include "ActorPool.h"
 #include "ObjectPool.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "HAL/PlatformFilemanager.h"
 
-// ✅ 日志和统计
+//  日志和统计
 DEFINE_LOG_CATEGORY(LogObjectPoolManager);
 
 #if STATS
@@ -18,7 +22,7 @@ DEFINE_STAT(STAT_PoolManager_AutoResize);
 DEFINE_STAT(STAT_PoolManager_SmartPreallocation);
 #endif
 
-// ✅ 构造函数和析构函数
+//  构造函数和析构函数
 
 FObjectPoolManager::FObjectPoolManager(EManagementStrategy InStrategy)
     : CurrentStrategy(InStrategy)
@@ -32,7 +36,7 @@ FObjectPoolManager::~FObjectPoolManager()
     POOL_MANAGER_LOG(Log, TEXT("池管理器已销毁: 总维护次数=%d"), Stats.TotalMaintenanceCount);
 }
 
-// ✅ 移动语义实现
+//  移动语义实现
 
 FObjectPoolManager::FObjectPoolManager(FObjectPoolManager&& Other) noexcept
     : CurrentStrategy(Other.CurrentStrategy)
@@ -59,7 +63,7 @@ FObjectPoolManager& FObjectPoolManager::operator=(FObjectPoolManager&& Other) no
     return *this;
 }
 
-// ✅ 池生命周期管理实现
+//  池生命周期管理实现
 
 void FObjectPoolManager::OnPoolCreated(UClass* ActorClass, TSharedPtr<FActorPool> Pool)
 {
@@ -142,7 +146,7 @@ bool FObjectPoolManager::ShouldDestroyPool(UClass* ActorClass, const FActorPool&
     return false;
 }
 
-// ✅ 智能管理功能实现
+//  智能管理功能实现
 
 void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools, EMaintenanceType MaintenanceType)
 {
@@ -295,7 +299,7 @@ int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPo
     // 限制预分配数量
     PreallocCount = FMath::Min(PreallocCount, 10);
 
-    // ✅ 智能预分配机制 - 组件自动激活问题已解决
+    //  智能预分配机制 - 组件自动激活问题已解决
     Pool.PrewarmPool(World, PreallocCount);
 
             POOL_MANAGER_LOG(Log, TEXT("预分配完成: %s, 预分配数量=%d"), 
@@ -304,7 +308,7 @@ int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPo
     return PreallocCount;
 }
 
-// ✅ 策略管理实现
+//  策略管理实现
 
 void FObjectPoolManager::SetManagementStrategy(EManagementStrategy NewStrategy)
 {
@@ -328,7 +332,7 @@ void FObjectPoolManager::SetAutoManagementEnabled(bool bEnable)
     }
 }
 
-// ✅ 统计和监控实现
+//  统计和监控实现
 
 FObjectPoolManager::FManagementStats FObjectPoolManager::GetManagementStats() const
 {
@@ -401,7 +405,7 @@ void FObjectPoolManager::ResetStats()
     POOL_MANAGER_LOG(Log, TEXT("管理统计已重置"));
 }
 
-// ✅ 内部辅助方法实现
+//  内部辅助方法实现
 
 float FObjectPoolManager::AnalyzeUsageTrend(UClass* ActorClass, const FActorPool& Pool) const
 {

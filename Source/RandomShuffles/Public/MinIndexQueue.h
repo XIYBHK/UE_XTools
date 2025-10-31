@@ -1,30 +1,66 @@
-/**
- * Copyright Anthony Arnold (RK4XYZ), 2023.
- */
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 #pragma once
 
-#include <queue>
-#include <vector>
+#include "CoreMinimal.h"
 
 namespace RandomShuffles {
 
-class MinIndexQueue {
+/**
+ * 最小索引优先队列
+ * 使用 UE TArray 实现的最小堆，替代 STL priority_queue
+ */
+class MinIndexQueue
+{
 public:
-	MinIndexQueue(std::size_t MaxSize); // 构造函数，初始化最大大小
-	float MinimumKey() const; // Get the minimum key value
-	std::size_t ExtractMin(); // 提取最小值
-	void Push(float Priority, std::size_t Index); // 推入优先级和索引
-	std::size_t Size() const; // 获取队列大小
+	/** 构造函数，初始化最大大小 */
+	MinIndexQueue(int32 MaxSize);
+
+	/** 获取最小优先级 */
+	float MinimumKey() const;
+
+	/** 提取最小值索引 */
+	int32 ExtractMin();
+
+	/** 推入优先级和索引 */
+	void Push(float Priority, int32 Index);
+
+	/** 获取队列大小 */
+	int32 Size() const;
 
 private:
-	struct Compare {
-		const MinIndexQueue* Queue;
+	/** 存储每个索引的优先级 */
+	TArray<float> Priorities;
 
-		bool operator()(std::size_t left, std::size_t right) const; // 比较两个索引的优先级
-	};
+	/** 最小堆存储索引 */
+	TArray<int32> Heap;
 
-	std::vector<float> Priorities; // 存储优先级的向量
-	std::priority_queue<std::size_t, std::vector<std::size_t>, Compare> Queue; // 优先队列
+	/** 上浮操作 */
+	void HeapifyUp(int32 HeapIndex);
+
+	/** 下沉操作 */
+	void HeapifyDown(int32 HeapIndex);
+
+	/** 获取父节点索引 */
+	FORCEINLINE int32 ParentIndex(int32 ChildIndex) const
+	{
+		return (ChildIndex - 1) / 2;
+	}
+
+	/** 获取左子节点索引 */
+	FORCEINLINE int32 LeftChildIndex(int32 ParentIndex) const
+	{
+		return 2 * ParentIndex + 1;
+	}
+
+	/** 获取右子节点索引 */
+	FORCEINLINE int32 RightChildIndex(int32 ParentIndex) const
+	{
+		return 2 * ParentIndex + 2;
+	}
 };
 
 }

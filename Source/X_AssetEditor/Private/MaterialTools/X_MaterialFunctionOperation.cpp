@@ -234,7 +234,7 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         return nullptr;
     }
 
-    // ✅ 检查是否为引擎自带材质
+    //  检查是否为引擎自带材质
     if (IsEngineMaterial(Material))
     {
         FString ErrorMessage = FString::Printf(

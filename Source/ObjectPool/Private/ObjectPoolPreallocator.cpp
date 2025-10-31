@@ -1,15 +1,19 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
 
-// ✅ 遵循IWYU原则的头文件包含
+
+//  遵循IWYU原则的头文件包含
 #include "ObjectPoolPreallocator.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
 #include "HAL/PlatformFilemanager.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPool.h"
 #include "ActorPool.h"
 #include "ObjectPoolSubsystem.h"
@@ -39,24 +43,24 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
         return false;
     }
 
-    if (bIsActive.load())
+    if (XTOOLS_ATOMIC_LOAD(bIsActive))
     {
         OBJECTPOOL_LOG(Warning, TEXT("StartPreallocation: 预分配已在进行中"));
         return false;
     }
 
-    // ✅ 保存配置
+    //  保存配置
     {
         FScopeLock Lock(&PreallocatorLock);
         Config = InConfig;
         Stats = FObjectPoolPreallocationStats();
         Stats.TargetCount = Config.PreallocationCount;
         Stats.PreallocationStartTime = FDateTime::Now();
-        CurrentProgress.store(0);
+        XTOOLS_ATOMIC_STORE(CurrentProgress, 0);
         AccumulatedTime = 0.0f;
     }
 
-    // ✅ 检查内存预算
+    //  检查内存预算
     int32 EstimatedActorSize = EstimateActorMemorySize(OwnerPool->GetActorClass());
     int64 EstimatedTotalMemory = (int64)EstimatedActorSize * Config.PreallocationCount;
     
@@ -66,9 +70,9 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
         return false;
     }
 
-    bIsActive.store(true);
+    XTOOLS_ATOMIC_STORE(bIsActive, true);
 
-    // ✅ 根据策略执行预分配
+    //  根据策略执行预分配
     switch (Config.Strategy)
     {
     case EObjectPoolPreallocationStrategy::Immediate:
@@ -83,7 +87,7 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
         
     default:
         OBJECTPOOL_LOG(Warning, TEXT("StartPreallocation: 不支持的预分配策略"));
-        bIsActive.store(false);
+        XTOOLS_ATOMIC_STORE(bIsActive, false);
         return false;
     }
 
@@ -95,12 +99,12 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
 
 void FObjectPoolPreallocator::StopPreallocation()
 {
-    if (!bIsActive.load())
+    if (!XTOOLS_ATOMIC_LOAD(bIsActive))
     {
         return;
     }
 
-    bIsActive.store(false);
+    XTOOLS_ATOMIC_STORE(bIsActive, false);
     
     {
         FScopeLock Lock(&PreallocatorLock);
@@ -114,20 +118,20 @@ void FObjectPoolPreallocator::StopPreallocation()
 
 void FObjectPoolPreallocator::Tick(float DeltaTime)
 {
-    if (!bIsActive.load() || !OwnerPool)
+    if (!XTOOLS_ATOMIC_LOAD(bIsActive) || !OwnerPool)
     {
         return;
     }
 
     AccumulatedTime += DeltaTime;
 
-    // ✅ 检查延迟时间
+    //  检查延迟时间
     if (AccumulatedTime < Config.PreallocationDelay)
     {
         return;
     }
 
-    // ✅ 使用子系统的智能World获取方法
+    //  使用子系统的智能World获取方法
     UWorld* World = nullptr;
     if (UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::Get(nullptr))
     {
@@ -140,7 +144,7 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
         return;
     }
 
-    // ✅ 根据策略执行预分配
+    //  根据策略执行预分配
     switch (Config.Strategy)
     {
     case EObjectPoolPreallocationStrategy::Progressive:
@@ -160,10 +164,10 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
         break;
     }
 
-    // ✅ 更新统计信息
+    //  更新统计信息
     UpdateStats();
 
-    // ✅ 检查是否完成
+    //  检查是否完成
     if (!ShouldContinuePreallocation())
     {
         StopPreallocation();
@@ -188,14 +192,14 @@ void FObjectPoolPreallocator::ExecuteImmediatePreallocation(UWorld* World, int32
         if (CreateSingleActor(World))
         {
             ++SuccessCount;
-            CurrentProgress.store(SuccessCount);
+            XTOOLS_ATOMIC_STORE(CurrentProgress, SuccessCount);
         }
         else
         {
             OBJECTPOOL_LOG(Warning, TEXT("ExecuteImmediatePreallocation: 创建Actor失败，索引: %d"), i);
         }
 
-        // ✅ 检查内存预算
+        //  检查内存预算
         if (Config.bEnableMemoryBudget)
         {
             int64 CurrentMemory = OwnerPool->CalculateMemoryUsage();
@@ -221,18 +225,18 @@ void FObjectPoolPreallocator::ExecuteImmediatePreallocation(UWorld* World, int32
         SuccessCount, Count, TotalTime);
 
     // 立即预分配完成后停止
-    bIsActive.store(false);
+    XTOOLS_ATOMIC_STORE(bIsActive, false);
 }
 
 void FObjectPoolPreallocator::ExecuteProgressivePreallocation(UWorld* World, float DeltaTime)
 {
-    int32 CurrentCount = CurrentProgress.load();
+    int32 CurrentCount = XTOOLS_ATOMIC_LOAD(CurrentProgress);
     if (CurrentCount >= Config.PreallocationCount)
     {
         return; // 已完成
     }
 
-    // ✅ 每帧分配指定数量
+    //  每帧分配指定数量
     int32 AllocationsThisFrame = FMath::Min(Config.MaxAllocationsPerFrame, 
         Config.PreallocationCount - CurrentCount);
 
@@ -240,7 +244,7 @@ void FObjectPoolPreallocator::ExecuteProgressivePreallocation(UWorld* World, flo
     {
         if (CreateSingleActor(World))
         {
-            CurrentProgress.fetch_add(1);
+            XTOOLS_ATOMIC_INCREMENT(CurrentProgress);
         }
         else
         {
@@ -250,14 +254,14 @@ void FObjectPoolPreallocator::ExecuteProgressivePreallocation(UWorld* World, flo
     }
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("ExecuteProgressivePreallocation: 本帧分配 %d 个，总进度: %d/%d"),
-        AllocationsThisFrame, CurrentProgress.load(), Config.PreallocationCount);
+        AllocationsThisFrame, XTOOLS_ATOMIC_LOAD(CurrentProgress), Config.PreallocationCount);
 }
 
 void FObjectPoolPreallocator::ExecutePredictivePreallocation(UWorld* World)
 {
-    // ✅ 基于使用模式预测需要的数量
+    //  基于使用模式预测需要的数量
     int32 PredictedCount = PredictRequiredCount();
-    int32 CurrentCount = CurrentProgress.load();
+    int32 CurrentCount = XTOOLS_ATOMIC_LOAD(CurrentProgress);
 
     if (PredictedCount > CurrentCount)
     {
@@ -267,7 +271,7 @@ void FObjectPoolPreallocator::ExecutePredictivePreallocation(UWorld* World)
         {
             if (CreateSingleActor(World))
             {
-                CurrentProgress.fetch_add(1);
+                XTOOLS_ATOMIC_INCREMENT(CurrentProgress);
             }
         }
 
@@ -278,7 +282,7 @@ void FObjectPoolPreallocator::ExecutePredictivePreallocation(UWorld* World)
 
 void FObjectPoolPreallocator::ExecuteAdaptivePreallocation(UWorld* World, float DeltaTime)
 {
-    // ✅ 自适应策略：结合当前使用情况和性能指标
+    //  自适应策略：结合当前使用情况和性能指标
     FObjectPoolStats PoolStats = OwnerPool->GetStats();
 
     // 计算使用率
@@ -302,7 +306,7 @@ void FObjectPoolPreallocator::ExecuteAdaptivePreallocation(UWorld* World, float 
         AllocationsThisFrame = FMath::Max(AllocationsThisFrame / 2, 1);
     }
 
-    int32 CurrentCount = CurrentProgress.load();
+    int32 CurrentCount = XTOOLS_ATOMIC_LOAD(CurrentProgress);
     if (CurrentCount < Config.PreallocationCount)
     {
         int32 NeedToCreate = FMath::Min(AllocationsThisFrame, Config.PreallocationCount - CurrentCount);
@@ -311,7 +315,7 @@ void FObjectPoolPreallocator::ExecuteAdaptivePreallocation(UWorld* World, float 
         {
             if (CreateSingleActor(World))
             {
-                CurrentProgress.fetch_add(1);
+                XTOOLS_ATOMIC_INCREMENT(CurrentProgress);
             }
         }
 
@@ -329,7 +333,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
 
     double StartTime = FPlatformTime::Seconds();
 
-    // ✅ 通过对象池创建Actor
+    //  通过对象池创建Actor
     FTransform DefaultTransform = FTransform::Identity;
             bool bSuccess = OwnerPool->CreateNewActor(World) != nullptr;
 
@@ -338,7 +342,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
         double EndTime = FPlatformTime::Seconds();
         double CreationTime = (EndTime - StartTime) * 1000.0; // 毫秒
 
-        // ✅ 更新性能指标
+        //  更新性能指标
         PerformanceMetrics.TotalCreationTimeMs += CreationTime;
         PerformanceMetrics.CreationCount++;
         PerformanceMetrics.AverageCreationTimeMs =
@@ -352,7 +356,7 @@ void FObjectPoolPreallocator::UpdateStats()
 {
     FScopeLock Lock(&PreallocatorLock);
 
-    int32 CurrentCount = CurrentProgress.load();
+    int32 CurrentCount = XTOOLS_ATOMIC_LOAD(CurrentProgress);
     int64 MemoryUsage = OwnerPool ? OwnerPool->CalculateMemoryUsage() : 0;
 
     Stats.UpdateStats(CurrentCount, Config.PreallocationCount, MemoryUsage);
@@ -360,15 +364,15 @@ void FObjectPoolPreallocator::UpdateStats()
 
 bool FObjectPoolPreallocator::ShouldContinuePreallocation() const
 {
-    int32 CurrentCount = CurrentProgress.load();
+    int32 CurrentCount = XTOOLS_ATOMIC_LOAD(CurrentProgress);
 
-    // ✅ 检查是否达到目标数量
+    //  检查是否达到目标数量
     if (CurrentCount >= Config.PreallocationCount)
     {
         return false;
     }
 
-    // ✅ 检查内存预算
+    //  检查内存预算
     if (Config.bEnableMemoryBudget && OwnerPool)
     {
         int64 CurrentMemory = OwnerPool->CalculateMemoryUsage();
@@ -399,7 +403,7 @@ int32 FObjectPoolPreallocator::EstimateActorMemorySize(UClass* ActorClass) const
         return 1024; // 默认估算值
     }
 
-    // ✅ 简单的内存估算（可以根据需要优化）
+    //  简单的内存估算（可以根据需要优化）
     int32 BaseSize = sizeof(AActor);
     int32 ClassSize = ActorClass->GetStructureSize();
 
@@ -419,7 +423,7 @@ int32 FObjectPoolPreallocator::PredictRequiredCount() const
         return Config.PreallocationCount;
     }
 
-    // ✅ 简单的预测算法：基于最近的使用模式
+    //  简单的预测算法：基于最近的使用模式
     int32 RecentSum = 0;
     int32 RecentCount = FMath::Min(10, UsageHistory.Num()); // 使用最近10次的数据
 
@@ -430,10 +434,10 @@ int32 FObjectPoolPreallocator::PredictRequiredCount() const
 
     float AverageUsage = (float)RecentSum / RecentCount;
 
-    // ✅ 预测下次需要的数量（增加20%的缓冲）
+    //  预测下次需要的数量（增加20%的缓冲）
     int32 PredictedCount = FMath::CeilToInt(AverageUsage * 1.2f);
 
-    // ✅ 限制在合理范围内
+    //  限制在合理范围内
     PredictedCount = FMath::Clamp(PredictedCount, 1, Config.PreallocationCount * 2);
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("PredictRequiredCount: 平均使用 %.1f，预测需要 %d"),

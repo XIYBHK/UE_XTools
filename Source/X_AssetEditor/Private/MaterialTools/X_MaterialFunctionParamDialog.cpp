@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "MaterialTools/X_MaterialFunctionParamDialog.h"
 #include "X_AssetEditor.h"

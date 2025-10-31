@@ -7,6 +7,7 @@
 #include "Async/Async.h"
 #include "ECFTypes.h"
 #include "Async/TaskGraphInterfaces.h"
+#include "XToolsVersionCompat.h"  // UE版本兼容性
 #include "ECFRunAsyncThen.generated.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
@@ -62,7 +63,7 @@ protected:
 				bTimedOut = false;
 			}
 
-			bIsAsyncTaskDone = false;
+			XTOOLS_ATOMIC_STORE(bIsAsyncTaskDone, false);
 
 			TWeakObjectPtr<ThisClass> WeakThis(this);
 			AsyncTask(ThreadType, [WeakThis]()
@@ -70,7 +71,7 @@ protected:
 				if (ThisClass* StrongThis = WeakThis.Get())
 				{
 					StrongThis->AsyncTaskFunc();
-					StrongThis->bIsAsyncTaskDone = true;
+					XTOOLS_ATOMIC_STORE(StrongThis->bIsAsyncTaskDone, true);
 				}
 			});
 
@@ -135,7 +136,7 @@ protected:
 			}
 		}
 
-		if (bIsAsyncTaskDone)
+		if (XTOOLS_ATOMIC_LOAD(bIsAsyncTaskDone))
 		{
 			Complete(false);
 			MarkAsFinished();

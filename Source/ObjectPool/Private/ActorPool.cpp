@@ -1,12 +1,16 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "ActorPool.h"
 #include "ObjectPool.h"
 
-// ✅ 生命周期接口
+//  生命周期接口
 #include "ObjectPoolInterface.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Components/PrimitiveComponent.h"
@@ -14,7 +18,7 @@
 
 
 
-// ✅ 日志和统计
+//  日志和统计
 DEFINE_LOG_CATEGORY(LogActorPool);
 
 #if STATS
@@ -23,7 +27,7 @@ DEFINE_STAT(STAT_ActorPool_ReturnActor);
 DEFINE_STAT(STAT_ActorPool_CreateActor);
 #endif
 
-// ✅ 构造函数和析构函数
+//  构造函数和析构函数
 
 FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLimit)
     : ActorClass(InActorClass)
@@ -34,25 +38,25 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
     , TotalCreated(0)
     , bIsInitialized(false)
 {
-    // ✅ 验证输入参数
+    //  验证输入参数
     if (!IsValid(ActorClass))
     {
         ACTORPOOL_LOG(Error, TEXT("FActorPool: 无效的Actor类"));
         return;
     }
 
-    // ✅ UE标准优化：预分配和缓存初始化
+    //  UE标准优化：预分配和缓存初始化
     AvailableActors.Reserve(InitialSize);
     ActiveActors.Reserve(InitialSize);
     PreallocationCache.Reserve(InitialSize / 2); // 预分配缓存
     
-    // ✅ 缓存Actor类引用，减少查找开销
+    //  缓存Actor类引用，减少查找开销
     CachedActorClass = TSoftObjectPtr<UClass>(ActorClass);
     
-    // ✅ 与UE垃圾回收系统协调
+    //  与UE垃圾回收系统协调
     if (GEngine)
     {
-        // ✅ 注册垃圾回收回调，确保池与GC协调工作 - 保存句柄以便安全清理
+        //  注册垃圾回收回调，确保池与GC协调工作 - 保存句柄以便安全清理
         GCDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddLambda([this]()
         {
             FScopeLock Lock(&GCSection);
@@ -70,7 +74,7 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
 
 FActorPool::~FActorPool()
 {
-    // ✅ 首先清理GC委托，防止悬挂指针崩溃
+    //  首先清理GC委托，防止悬挂指针崩溃
     if (GCDelegateHandle.IsValid())
     {
         FCoreUObjectDelegates::GetPreGarbageCollectDelegate().Remove(GCDelegateHandle);
@@ -86,7 +90,7 @@ FActorPool::~FActorPool()
     }
 }
 
-// ✅ 移动语义实现
+//  移动语义实现
 
 FActorPool::FActorPool(FActorPool&& Other) noexcept
     : ActorClass(Other.ActorClass)
@@ -98,19 +102,19 @@ FActorPool::FActorPool(FActorPool&& Other) noexcept
     , bIsInitialized(Other.bIsInitialized)
     , AvailableActors(MoveTemp(Other.AvailableActors))
     , ActiveActors(MoveTemp(Other.ActiveActors))
-    , GCDelegateHandle(MoveTemp(Other.GCDelegateHandle)) // ✅ 移动GC委托句柄
+    , GCDelegateHandle(MoveTemp(Other.GCDelegateHandle)) //  移动GC委托句柄
 {
     // 重置源对象
     Other.ActorClass = nullptr;
     Other.bIsInitialized = false;
-    Other.GCDelegateHandle.Reset(); // ✅ 重置源对象的委托句柄
+    Other.GCDelegateHandle.Reset(); //  重置源对象的委托句柄
 }
 
 FActorPool& FActorPool::operator=(FActorPool&& Other) noexcept
 {
     if (this != &Other)
     {
-        // ✅ 首先清理当前对象的GC委托，避免泄漏
+        //  首先清理当前对象的GC委托，避免泄漏
         if (GCDelegateHandle.IsValid())
         {
             FCoreUObjectDelegates::GetPreGarbageCollectDelegate().Remove(GCDelegateHandle);
@@ -130,17 +134,17 @@ FActorPool& FActorPool::operator=(FActorPool&& Other) noexcept
         bIsInitialized = Other.bIsInitialized;
         AvailableActors = MoveTemp(Other.AvailableActors);
         ActiveActors = MoveTemp(Other.ActiveActors);
-        GCDelegateHandle = MoveTemp(Other.GCDelegateHandle); // ✅ 移动GC委托句柄
+        GCDelegateHandle = MoveTemp(Other.GCDelegateHandle); //  移动GC委托句柄
 
         // 重置源对象
         Other.ActorClass = nullptr;
         Other.bIsInitialized = false;
-        Other.GCDelegateHandle.Reset(); // ✅ 重置源对象的委托句柄
+        Other.GCDelegateHandle.Reset(); //  重置源对象的委托句柄
     }
     return *this;
 }
 
-// ✅ 核心池管理功能实现
+//  核心池管理功能实现
 
 AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
 {
@@ -155,7 +159,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
     ++TotalRequests;
     AActor* ResultActor = nullptr;
 
-    // ✅ 直接使用写锁避免锁升级死锁问题
+    //  直接使用写锁避免锁升级死锁问题
     {
         FWriteScopeLock WriteLock(PoolLock);
 
@@ -200,7 +204,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         }
     }
 
-    // ✅ 池中没有可用Actor，尝试创建新的（锁外创建与激活）
+    //  池中没有可用Actor，尝试创建新的（锁外创建与激活）
     if (!ResultActor && CanCreateMoreActors())
     {
         // 在锁外创建Actor以避免长时间持有锁
@@ -226,7 +230,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         }
     }
 
-    // ✅ 无法获取或创建Actor
+    //  无法获取或创建Actor
     UpdateStats(false, false);
     ACTORPOOL_LOG(Warning, TEXT("无法获取Actor: %s"), *ActorClass->GetName());
     return nullptr;
@@ -340,7 +344,7 @@ bool FActorPool::ReturnActor(AActor* Actor)
 
     FWriteScopeLock WriteLock(PoolLock);
 
-    // ✅ 从活跃列表中移除
+    //  从活跃列表中移除
     bool bFoundInActive = ActiveActors.RemoveSwap(Actor) > 0;
 
     if (!bFoundInActive)
@@ -349,14 +353,14 @@ bool FActorPool::ReturnActor(AActor* Actor)
         // 仍然尝试重置和添加到池中
     }
 
-    // ✅ 使用工具类重置Actor状态
+    //  使用工具类重置Actor状态
     if (!FObjectPoolUtils::ResetActorForPooling(Actor))
     {
         ACTORPOOL_LOG(Warning, TEXT("重置Actor状态失败: %s"), *Actor->GetName());
         return false;
     }
 
-    // ✅ 检查池是否已满
+    //  检查池是否已满
     if (AvailableActors.Num() >= MaxPoolSize)
     {
         ACTORPOOL_DEBUG(TEXT("池已满，销毁Actor: %s"), *Actor->GetName());
@@ -367,7 +371,7 @@ bool FActorPool::ReturnActor(AActor* Actor)
         return true; // 仍然算作成功归还
     }
 
-    // ✅ 添加到可用列表
+    //  添加到可用列表
     AvailableActors.Add(Actor);
 
     ACTORPOOL_DEBUG(TEXT("Actor归还到池: %s"), *Actor->GetName());
@@ -385,7 +389,7 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
 
     FWriteScopeLock WriteLock(PoolLock);
 
-    // ✅ 直接计算池大小，避免调用GetPoolSize()导致的嵌套锁死锁
+    //  直接计算池大小，避免调用GetPoolSize()导致的嵌套锁死锁
     int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
     int32 ActualCount = FMath::Min(Count, MaxPoolSize - CurrentPoolSize);
 
@@ -400,7 +404,7 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
         
         if (NewActor)
         {
-            // ✅ 预热阶段只需要基本的状态重置，不调用生命周期事件
+            //  预热阶段只需要基本的状态重置，不调用生命周期事件
             // 避免在预热时触发OnReturnToPool导致死锁
             
             // 隐藏Actor并禁用Tick
@@ -429,7 +433,7 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
     ACTORPOOL_LOG(Log, TEXT("预热完成: %s, 实际创建=%d"), *ActorClass->GetName(), AvailableActors.Num());
 }
 
-// ✅ 状态查询功能实现
+//  状态查询功能实现
 
 FObjectPoolStats FActorPool::GetStats() const
 {
@@ -482,7 +486,7 @@ bool FActorPool::IsEmpty() const
 bool FActorPool::IsFull() const
 {
     FReadScopeLock ReadLock(PoolLock);
-    // ✅ 直接计算池大小，避免嵌套锁调用
+    //  直接计算池大小，避免嵌套锁调用
     int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
     return CurrentPoolSize >= MaxPoolSize;
 }
@@ -515,7 +519,7 @@ bool FActorPool::ContainsActor(const AActor* Actor) const
     return false;
 }
 
-// ✅ 管理功能实现
+//  管理功能实现
 
 void FActorPool::ClearPool()
 {
@@ -566,7 +570,7 @@ void FActorPool::SetMaxSize(int32 NewMaxSize)
     int32 OldMaxSize = MaxPoolSize;
     MaxPoolSize = NewMaxSize;
 
-    // ✅ 直接计算池大小，避免嵌套锁调用
+    //  直接计算池大小，避免嵌套锁调用
     int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
     
     // 如果新大小小于当前池大小，需要移除多余的Actor
@@ -590,7 +594,7 @@ void FActorPool::SetMaxSize(int32 NewMaxSize)
         ActorClass ? *ActorClass->GetName() : TEXT("Unknown"), OldMaxSize, NewMaxSize);
 }
 
-// ✅ 内部辅助方法实现
+//  内部辅助方法实现
 
 AActor* FActorPool::CreateNewActor(UWorld* World)
 {
@@ -601,7 +605,7 @@ AActor* FActorPool::CreateNewActor(UWorld* World)
         return nullptr;
     }
 
-    // ✅ 网络最佳实践：正确的预热Actor创建
+    //  网络最佳实践：正确的预热Actor创建
     FActorSpawnParameters SpawnParams;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     SpawnParams.bDeferConstruction = true; // 延迟构造，避免BeginPlay中的问题
@@ -612,7 +616,7 @@ AActor* FActorPool::CreateNewActor(UWorld* World)
 
     if (IsValid(NewActor))
     {
-        // ✅ 最安全策略：预热时完全不调用FinishSpawning，避免任何BeginPlay相关问题
+        //  最安全策略：预热时完全不调用FinishSpawning，避免任何BeginPlay相关问题
         // Actor保持延迟构造状态，直到从池中获取时才完成初始化
         
         ACTORPOOL_LOG(VeryVerbose, TEXT("Actor预热创建成功（延迟构造状态）: %s"), *NewActor->GetName());
@@ -622,7 +626,7 @@ AActor* FActorPool::CreateNewActor(UWorld* World)
         
         ++TotalCreated;
 
-        // ✅ OnPoolActorCreated事件已移动到ActivateActorFromPool中的FinishSpawning之后调用
+        //  OnPoolActorCreated事件已移动到ActivateActorFromPool中的FinishSpawning之后调用
         // 确保在Actor完全初始化后才触发生命周期事件，避免递归调用
         
         ACTORPOOL_DEBUG(TEXT("创建新Actor用于池化: %s"), *NewActor->GetName());
@@ -744,7 +748,7 @@ void FActorPool::UpdateStats(bool bWasPoolHit, bool bActorCreated)
 bool FActorPool::CanCreateMoreActors() const
 {
     FReadScopeLock ReadLock(PoolLock);
-    // ✅ 直接计算池大小，避免嵌套锁调用
+    //  直接计算池大小，避免嵌套锁调用
     int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
     return CurrentPoolSize < MaxPoolSize;
 }
@@ -756,7 +760,7 @@ void FActorPool::InitializePool(UWorld* World)
         return;
     }
 
-    // ✅ 重新启用安全预热机制 - 预热池到初始大小
+    //  重新启用安全预热机制 - 预热池到初始大小
     if (InitialSize > 0)
     {
         PrewarmPool(World, InitialSize);

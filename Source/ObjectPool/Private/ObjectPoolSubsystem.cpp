@@ -1,23 +1,27 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "ObjectPoolSubsystem.h"
 #include "ObjectPool.h"
 
-// ✅ 独立工具类
+//  独立工具类
 #include "ObjectPoolConfigManager.h"
 #include "ObjectPoolManager.h"
 
-// ✅ 生命周期接口
+//  生命周期接口
 #include "ObjectPoolInterface.h"
 // #include "ObjectPoolMonitor.h" // 暂时移除，后续实现
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "UObject/UObjectGlobals.h"
 #include "TimerManager.h"
 
-// ✅ 日志和统计
+//  日志和统计
 DEFINE_LOG_CATEGORY(LogObjectPoolSubsystem);
 
 #if STATS
@@ -26,7 +30,7 @@ DEFINE_STAT(STAT_ObjectPoolSubsystem_ReturnActor);
 DEFINE_STAT(STAT_ObjectPoolSubsystem_GetOrCreatePool);
 #endif
 
-// ✅ USubsystem接口实现
+//  USubsystem接口实现
 
 void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -34,20 +38,20 @@ void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统开始初始化"));
 
-    // ✅ UE官方智能指针最佳实践
+    //  UE官方智能指针最佳实践
     ConfigManager = MakeUnique<FObjectPoolConfigManager>();
     PoolManager = MakeUnique<FObjectPoolManager>();
     
-    // ✅ UE官方容器预分配优化
+    //  UE官方容器预分配优化
     ActorPools.Reserve(DefaultPoolCapacity);
     
     // 监控器是可选的
     bMonitoringEnabled = false;
 
-    // ✅ 初始化缓存
+    //  初始化缓存
     LastAccessedClass = nullptr;
 
-    // ✅ 与UE垃圾回收系统深度集成
+    //  与UE垃圾回收系统深度集成
     if (UWorld* World = GetWorld())
     {
         // 注册GC回调，确保与UE垃圾回收系统协调工作
@@ -72,14 +76,14 @@ void UObjectPoolSubsystem::Deinitialize()
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("对象池子系统开始清理"));
 
-        // ✅ 取消GC回调注册 - 防止野指针
+        //  取消GC回调注册 - 防止野指针
         FCoreUObjectDelegates::GetPreGarbageCollectDelegate().RemoveAll(this);
         FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
 
-        // ✅ 清理延迟预热Timer和队列
+        //  清理延迟预热Timer和队列
         ClearDelayedPrewarmTimer();
 
-        // ✅ 确保线程安全的清理
+        //  确保线程安全的清理
         // 清空所有池（内部已有锁保护）
         ClearAllPools();
 
@@ -98,10 +102,10 @@ void UObjectPoolSubsystem::Deinitialize()
 
 bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-    // ✅ 检查插件设置，如果未启用则不创建子系统
-    // 注意：这里不能直接include XToolsSettings.h，因为会产生循环依赖
-    // 使用LoadObject动态加载配置
-    if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/XTools.XToolsSettings")))
+    //  检查插件设置，如果未启用则不创建子系统
+    // 注意：这里不能直接include X_AssetEditorSettings.h，因为会产生循环依赖
+    // 使用FindObject动态加载配置
+    if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
     {
         if (const UObject* Settings = SettingsClass->GetDefaultObject())
         {
@@ -126,7 +130,7 @@ bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
     return false;
 }
 
-// ✅ 核心对象池API实现 - 设计文档第177-210行的极简API设计
+//  核心对象池API实现 - 设计文档第177-210行的极简API设计
 
 bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
 {
@@ -163,7 +167,7 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
         return false;
     }
 
-    // ✅ 使用延迟预热避免开始游戏时卡顿
+    //  使用延迟预热避免开始游戏时卡顿
     if (InitialSize > 0)
     {
         // 队列延迟预热，避免在同一帧创建大量Actor
@@ -186,7 +190,7 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
 {
     SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_SpawnActor);
 
-    // ✅ 更新统计信息
+    //  更新统计信息
     ++SubsystemStats.TotalSpawnCalls;
 
     if (!ValidateActorClass(ActorClass))
@@ -206,7 +210,7 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
     // 从池中获取Actor
     AActor* Actor = Pool->GetActor(GetWorld(), SpawnTransform);
     
-    // ✅ 永不失败机制：如果从池中获取失败，自动回退到正常生成
+    //  永不失败机制：如果从池中获取失败，自动回退到正常生成
     if (!Actor)
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("池中无可用Actor，回退到正常生成: %s"), *ActorClass->GetName());
@@ -290,7 +294,7 @@ bool UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
 {
     SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_ReturnActor);
 
-    // ✅ 更新统计信息
+    //  更新统计信息
     ++SubsystemStats.TotalReturnCalls;
 
     if (!IsValid(Actor))
@@ -342,7 +346,7 @@ int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
         return 0;
     }
 
-    // ✅ 标准对象池预热机制 - 安全的组件处理
+    //  标准对象池预热机制 - 安全的组件处理
     Pool->PrewarmPool(GetWorld(), Count);
     
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("子系统预热池完成: %s, 预热数量=%d"), 
@@ -351,7 +355,7 @@ int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
     return Pool->GetAvailableCount();
 }
 
-// ✅ 池管理功能实现
+//  池管理功能实现
 
 TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
 {
@@ -362,7 +366,7 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
         return nullptr;
     }
 
-    // ✅ 快速缓存检查（无锁优化）
+    //  快速缓存检查（无锁优化）
     {
         FScopeLock CacheReadLock(&CacheLock);
         if (LastAccessedClass == ActorClass && LastAccessedPool.IsValid())
@@ -375,7 +379,7 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
         }
     }
 
-    // ✅ 优化的双重检查锁定模式
+    //  优化的双重检查锁定模式
     // 首先使用读锁进行快速检查
     TSharedPtr<FActorPool> FoundPool;
     {
@@ -388,7 +392,7 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
 
     if (FoundPool.IsValid())
     {
-        // ✅ 更新缓存
+        //  更新缓存
         UpdatePoolCache(ActorClass, FoundPool);
         return FoundPool;
     }
@@ -422,7 +426,7 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetPool(UClass* ActorClass) const
         return nullptr;
     }
 
-    // ✅ 使用读锁进行高效查找
+    //  使用读锁进行高效查找
     FReadScopeLock ReadLock(PoolsRWLock);
 
     if (const TSharedPtr<FActorPool>* Pool = ActorPools.Find(ActorClass))
@@ -449,7 +453,7 @@ void UObjectPoolSubsystem::ClearAllPools()
 
     ActorPools.Empty();
 
-    // ✅ 清理缓存
+    //  清理缓存
     ClearPoolCache();
 
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清空所有池"));
@@ -459,7 +463,7 @@ void UObjectPoolSubsystem::ClearAllPools()
 
 
 
-// ✅ 静态访问方法
+//  静态访问方法
 
 UObjectPoolSubsystem* UObjectPoolSubsystem::Get(const UObject* WorldContext)
 {
@@ -488,7 +492,7 @@ bool UObjectPoolSubsystem::IsActorPooled(const AActor* Actor) const
     return Pool->ContainsActor(Actor);
 }
 
-// ✅ 内部辅助方法实现
+//  内部辅助方法实现
 
 TSharedPtr<FActorPool> UObjectPoolSubsystem::CreatePool(UClass* ActorClass)
 {
@@ -515,7 +519,7 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::CreatePool(UClass* ActorClass)
         // 添加到映射
         ActorPools.Add(ActorClass, NewPool);
 
-        // ✅ 更新统计信息
+        //  更新统计信息
         ++SubsystemStats.TotalPoolsCreated;
 
         // 通知池管理器
@@ -591,13 +595,13 @@ void UObjectPoolSubsystem::PerformMaintenance()
     //     Monitor->UpdateGlobalStats(ActorPools);
     // }
 
-    // ✅ 更新维护时间
+    //  更新维护时间
     SubsystemStats.LastMaintenanceTime = FPlatformTime::Seconds();
 
     OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("执行定期维护"));
 }
 
-// ✅ 性能统计功能实现
+//  性能统计功能实现
 
 FObjectPoolSubsystemStats UObjectPoolSubsystem::GetSubsystemStats() const
 {
@@ -605,9 +609,9 @@ FObjectPoolSubsystemStats UObjectPoolSubsystem::GetSubsystemStats() const
     return SubsystemStats;
 }
 
-// ✅ UE官方垃圾回收系统集成实现
+//  UE官方垃圾回收系统集成实现
 
-// ✅ GC集成现在通过委托处理，不需要手动AddReferencedObjects
+//  GC集成现在通过委托处理，不需要手动AddReferencedObjects
 
 void UObjectPoolSubsystem::OnPreGarbageCollect()
 {
@@ -657,7 +661,7 @@ void UObjectPoolSubsystem::OnPostGarbageCollect()
 
 
 
-// ✅ 性能优化方法实现
+//  性能优化方法实现
 
 void UObjectPoolSubsystem::UpdatePoolCache(UClass* ActorClass, TSharedPtr<FActorPool> Pool) const
 {
@@ -678,7 +682,7 @@ void UObjectPoolSubsystem::ClearPoolCache() const
     LastAccessedPool.Reset();
 }
 
-// ✅ 安全延迟预热机制实现
+//  安全延迟预热机制实现
 
 void UObjectPoolSubsystem::QueueDelayedPrewarm(UClass* ActorClass, int32 Count)
 {
@@ -720,25 +724,9 @@ void UObjectPoolSubsystem::ProcessDelayedPrewarmQueue()
     
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("开始处理延迟预热队列，队列大小=%d"), DelayedPrewarmQueue.Num());
     
-    // ✅ 分帧创建：每帧最多创建指定数量的Actor，避免单帧卡顿
-    // 从设置中读取配置值
-    int32 MaxActorsPerFrame = MAX_ACTORS_PER_FRAME_PREWARM;
-    
-    if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/XTools.XToolsSettings")))
-    {
-        if (const UObject* Settings = SettingsClass->GetDefaultObject())
-        {
-            const FProperty* Property = SettingsClass->FindPropertyByName(TEXT("ObjectPoolMaxPrewarmPerFrame"));
-            if (Property && Property->IsA<FIntProperty>())
-            {
-                const FIntProperty* IntProperty = CastField<FIntProperty>(Property);
-                if (IntProperty)
-                {
-                    MaxActorsPerFrame = IntProperty->GetPropertyValue_InContainer(Settings);
-                }
-            }
-        }
-    }
+    //  分帧创建：每帧最多创建指定数量的Actor，避免单帧卡顿
+    // 使用硬编码默认值（流畅优先）
+    const int32 MaxActorsPerFrame = MAX_ACTORS_PER_FRAME_PREWARM;
     int32 ActorsCreatedThisFrame = 0;
     
     for (int32 i = DelayedPrewarmQueue.Num() - 1; i >= 0; --i)

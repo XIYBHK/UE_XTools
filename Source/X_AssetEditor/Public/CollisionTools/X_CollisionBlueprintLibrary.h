@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -6,7 +10,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Engine.h"
-#include "PhysicsEngine/PhysicsSettings.h"  // ✅ 修复：包含 ECollisionTraceFlag 定义
+#include "PhysicsEngine/PhysicsSettings.h"  //  修复：包含 ECollisionTraceFlag 定义
 #include "CollisionTools/X_CollisionManager.h"
 #include "X_CollisionBlueprintLibrary.generated.h"
 

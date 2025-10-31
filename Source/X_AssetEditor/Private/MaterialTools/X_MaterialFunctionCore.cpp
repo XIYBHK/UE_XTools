@@ -16,13 +16,13 @@
 
 // 插件相关
 #include "Interfaces/IPluginManager.h"
+#include "Settings/X_AssetEditorSettings.h"
 
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
-#include "MaterialTools/X_MaterialToolsSettings.h"
 #include "UObject/UnrealType.h"
 
 UMaterial* FX_MaterialFunctionCore::GetBaseMaterial(UMaterialInterface* MaterialInterface)
@@ -176,13 +176,6 @@ void FX_MaterialFunctionCore::RecompileMaterial(UMaterial* Material)
         return;
     }
     
-    // 检查调试日志
-    const UX_MaterialToolsSettings* Settings = GetDefault<UX_MaterialToolsSettings>();
-    if (Settings && Settings->bEnableDebugLog)
-    {
-        UE_LOG(LogX_AssetEditor, Log, TEXT("正在重新编译材质: %s"), *Material->GetName());
-    }
-
     // 标记材质为已修改
     Material->MarkPackageDirty();
     

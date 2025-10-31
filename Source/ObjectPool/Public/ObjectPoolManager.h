@@ -1,4 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -8,7 +12,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 
 // 前向声明
@@ -103,16 +107,16 @@ public:
     /** 析构函数 */
     ~FObjectPoolManager();
 
-    // ✅ 禁用拷贝构造和赋值
+    //  禁用拷贝构造和赋值
     FObjectPoolManager(const FObjectPoolManager&) = delete;
     FObjectPoolManager& operator=(const FObjectPoolManager&) = delete;
 
-    // ✅ 支持移动语义
+    //  支持移动语义
     FObjectPoolManager(FObjectPoolManager&& Other) noexcept;
     FObjectPoolManager& operator=(FObjectPoolManager&& Other) noexcept;
 
 public:
-    // ✅ 池生命周期管理
+    //  池生命周期管理
 
     /**
      * 通知池已创建
@@ -142,7 +146,7 @@ public:
      */
     bool ShouldDestroyPool(UClass* ActorClass, const FActorPool& Pool) const;
 
-    // ✅ 智能管理功能
+    //  智能管理功能
 
     /**
      * 执行定期维护
@@ -177,7 +181,7 @@ public:
      */
     int32 PerformSmartPreallocation(UClass* ActorClass, FActorPool& Pool, UWorld* World) const;
 
-    // ✅ 策略管理
+    //  策略管理
 
     /**
      * 设置管理策略
@@ -203,7 +207,7 @@ public:
      */
     bool IsAutoManagementEnabled() const { return bAutoManagementEnabled; }
 
-    // ✅ 统计和监控
+    //  统计和监控
 
     /**
      * 获取管理统计信息
@@ -224,7 +228,7 @@ public:
     void ResetStats();
 
 private:
-    // ✅ 内部数据成员
+    //  内部数据成员
 
     /** 当前管理策略 */
     EManagementStrategy CurrentStrategy;
@@ -242,7 +246,7 @@ private:
     mutable FCriticalSection ManagementLock;
 
 private:
-    // ✅ 内部辅助方法
+    //  内部辅助方法
 
     /**
      * 分析池的使用趋势
@@ -295,7 +299,7 @@ private:
      */
     static FString GetMaintenanceTypeName(EMaintenanceType MaintenanceType);
 
-    // ✅ 常量定义
+    //  常量定义
 
     /** 使用历史记录的最大长度 */
     static constexpr int32 MAX_USAGE_HISTORY = 10;

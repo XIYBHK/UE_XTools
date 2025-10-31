@@ -59,6 +59,7 @@ void SGraphPinStructPropertyName::RefreshNameList()
         {
             // 获取可排序的属性列表
             TArray<FString> AvailableProperties = SmartSortNode->GetAvailableProperties(ConnectedType);
+            PropertyOptions.Reserve(AvailableProperties.Num());
 
             for (const FString& PropName : AvailableProperties)
             {
@@ -80,6 +81,7 @@ UK2Node_SmartSort* SGraphPinStructPropertyName::GetSmartSortNode() const
 void SGraphPinStructPropertyName::RefreshNameListFromArray(const TArray<FString>& InPropertyNames)
 {
     PropertyOptions.Empty();
+    PropertyOptions.Reserve(InPropertyNames.Num());
 
     for (const FString& PropName : InPropertyNames)
     {

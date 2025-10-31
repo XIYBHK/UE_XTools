@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -117,7 +121,7 @@ struct FX_MaterialFunctionParams
 		bConnectToAO = false;
 		bUseMaterialAttributes = false;
 
-		// ✅ 优先检测MaterialAttributes函数
+		//  优先检测MaterialAttributes函数
 		if (FunctionName.Contains(TEXT("MaterialAttributes")) ||
 			FunctionName.Contains(TEXT("MA_")) ||
 			FunctionName.Contains(TEXT("MakeMA")) ||

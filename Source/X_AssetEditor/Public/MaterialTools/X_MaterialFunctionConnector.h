@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -178,7 +182,7 @@ private:
                                                EMaterialProperty MaterialProperty,
                                                int32 OutputIndex);
 
-    // ✅ 错误恢复机制：使用UE内置事务系统
+    //  错误恢复机制：使用UE内置事务系统
     
     /**
      * 准备材质对象用于修改（调用Modify方法支持撤销/重做）
@@ -203,10 +207,10 @@ private:
             return false;
         }
         
-        // ✅ 使用FScopedTransaction自动管理事务范围
+        //  使用FScopedTransaction自动管理事务范围
         FScopedTransaction Transaction(TransactionText);
         
-        // ✅ 准备对象用于修改（支持撤销/重做）
+        //  准备对象用于修改（支持撤销/重做）
         if (!PrepareForModification(Material))
         {
             UE_LOG(LogX_AssetEditor, Warning, TEXT("准备材质修改失败，取消事务"));
@@ -216,12 +220,12 @@ private:
         UE_LOG(LogX_AssetEditor, Log, TEXT("开始事务: %s，材质: %s"), 
             *TransactionText.ToString(), *Material->GetName());
         
-        // ✅ 执行用户操作
+        //  执行用户操作
         bool bOperationSuccess = Operation();
         
         if (bOperationSuccess)
         {
-            // ✅ 操作成功，标记材质为已修改并重新编译
+            //  操作成功，标记材质为已修改并重新编译
             Material->MarkPackageDirty();
             Material->PostEditChange();
             
@@ -230,7 +234,7 @@ private:
         else
         {
             UE_LOG(LogX_AssetEditor, Warning, TEXT("事务操作失败: %s，将自动回滚"), *TransactionText.ToString());
-            // ✅ FScopedTransaction析构时会自动回滚事务
+            //  FScopedTransaction析构时会自动回滚事务
         }
         
         return bOperationSuccess;

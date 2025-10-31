@@ -1,17 +1,21 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 
 
 
-// ✅ 生成的头文件必须放在最后
+//  生成的头文件必须放在最后
 #include "ObjectPoolInterface.generated.h"
 
 /**

@@ -1,12 +1,16 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "MenuExtensions/X_MenuExtensionManager.h"
 #include "AssetNaming/X_AssetNamingManager.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
-#include "MaterialTools/X_MaterialFunctionManager.h"  // ✅ 添加：材质函数管理器
-#include "MaterialTools/X_MaterialFunctionParamDialog.h"  // ✅ 添加：参数对话框
-#include "MaterialTools/X_MaterialFunctionParams.h"  // ✅ 添加：参数结构体
-#include "MaterialTools/X_MaterialFunctionUI.h"  // ✅ 添加：UI函数声明
+#include "MaterialTools/X_MaterialFunctionManager.h"  //  添加：材质函数管理器
+#include "MaterialTools/X_MaterialFunctionParamDialog.h"  //  添加：参数对话框
+#include "MaterialTools/X_MaterialFunctionParams.h"  //  添加：参数结构体
+#include "MaterialTools/X_MaterialFunctionUI.h"  //  添加：UI函数声明
 #include "CollisionTools/X_CollisionManager.h"
 #include "CollisionTools/X_CollisionSettingsDialog.h"
 #include "CollisionTools/X_AutoConvexDialog.h"
@@ -217,7 +221,7 @@ void FX_MenuExtensionManager::AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBui
 {
     MenuBuilder.BeginSection("MaterialFunctions", LOCTEXT("MaterialFunctions", "材质函数"));
     {
-        // ✅ 添加任意指定材质函数功能（完整工作流程）
+        //  添加任意指定材质函数功能（完整工作流程）
         MenuBuilder.AddMenuEntry(
             LOCTEXT("AddCustomMaterialFunction", "添加材质函数"),
             LOCTEXT("AddCustomMaterialFunctionTooltip", "选择并配置材质函数参数，然后添加到选中资产的材质中\n支持：材质、材质实例、静态网格体、骨骼网格体、蓝图类"),
@@ -227,7 +231,7 @@ void FX_MenuExtensionManager::AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBui
             )
         );
 
-        // ✅ 保留原有的菲涅尔函数快捷功能
+        //  保留原有的菲涅尔函数快捷功能
         MenuBuilder.AddMenuEntry(
             LOCTEXT("AddFresnelFunction", "添加菲涅尔函数"),
             LOCTEXT("AddFresnelFunctionTooltip", "为选中资产的材质添加菲涅尔效果\n支持：材质、材质实例、静态网格体、骨骼网格体、蓝图类"),
@@ -399,7 +403,7 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
 {
     MenuBuilder.BeginSection("ActorMaterials", LOCTEXT("ActorMaterials", "Actor材质"));
     {
-        // ✅ 添加任意指定材质函数功能（完整工作流程）
+        //  添加任意指定材质函数功能（完整工作流程）
         MenuBuilder.AddMenuEntry(
             LOCTEXT("AddCustomMaterialFunctionToActors", "添加材质函数"),
             LOCTEXT("AddCustomMaterialFunctionToActorsTooltip", "选择并配置材质函数参数，然后添加到选中Actor的材质"),
@@ -407,14 +411,14 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
             FUIAction(
                 FExecuteAction::CreateLambda([SelectedActors]()
                 {
-                    // ✅ 修复：直接使用SelectedActors，与原代码一致
+                    //  修复：直接使用SelectedActors，与原代码一致
                     // 使用简单版选择器
                     FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(
                         FOnMaterialFunctionSelected::CreateLambda([SelectedActors](UMaterialFunctionInterface* SelectedFunction)
                         {
                             if (SelectedFunction)
                             {
-                                // ✅ 修复：创建参数结构体（与原代码方式一致）
+                                //  修复：创建参数结构体（与原代码方式一致）
                                 FX_MaterialFunctionParams Params;
 
                                 // 设置默认参数
@@ -427,7 +431,7 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
                                 // 根据函数名称自动设置连接选项
                                 Params.SetupConnectionsByFunctionName(SelectedFunction->GetName());
 
-                                // ✅ 修复：根据材质函数的输入输出引脚情况设置智能连接选项（与原代码一致）
+                                //  修复：根据材质函数的输入输出引脚情况设置智能连接选项（与原代码一致）
                                 int32 InputCount = 0;
                                 int32 OutputCount = 0;
                                 FX_MaterialFunctionOperation::GetFunctionInputOutputCount(SelectedFunction, InputCount, OutputCount);
@@ -449,7 +453,7 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
 
                                 if (SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope))
                                 {
-                                    // ✅ 修复：使用与原代码一致的调用方式
+                                    //  修复：使用与原代码一致的调用方式
                                     FX_MaterialFunctionOperation::ProcessActorMaterialFunction(
                                         SelectedActors,
                                         SelectedFunction,
@@ -464,7 +468,7 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
             )
         );
 
-        // ✅ 保留原有的菲涅尔函数快捷功能
+        //  保留原有的菲涅尔函数快捷功能
         MenuBuilder.AddMenuEntry(
             LOCTEXT("AddFresnelToActors", "添加菲涅尔效果"),
             LOCTEXT("AddFresnelToActorsTooltip", "为选中Actor的材质添加菲涅尔效果"),

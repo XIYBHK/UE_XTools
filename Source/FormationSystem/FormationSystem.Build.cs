@@ -10,29 +10,28 @@ public class FormationSystem : ModuleRules
 {
 	public FormationSystem(ReadOnlyTargetRules Target) : base(Target)
 	{
-		// ✅ UE5.3+ 标准配置
+		//  UE5.3+ 标准配置
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		// ✅ 添加模块定义
+		//  添加模块定义
 		PublicDefinitions.AddRange(new string[] {
 			"WITH_FORMATIONSYSTEM=1",
 			"DLLEXPORT=__declspec(dllexport)",
 			"DLLIMPORT=__declspec(dllimport)"
 		});
 
-		// ✅ UE5.3+ C++20 标准配置
+		//  UE5.3+ C++20 标准配置
 		CppStandard = CppStandardVersion.Default;
 
-		// ✅ IWYU 强制执行 - 提升编译速度和代码质量 (UE5.2+)
+		//  IWYU 强制执行 - 提升编译速度和代码质量 (UE5.2+)
 		IWYUSupport = IWYUSupport.Full;
 
-		// ✅ 开发时配置 - 确保代码质量
+		//  开发时配置 - 确保代码质量
 		bUseUnity = false;
 
-		// ✅ UE 标准设置 - 符合引擎最佳实践
-		bEnableExceptions = false;
-		        bEnableExceptions = true;
-        bUseRTTI = false;
+	//  UE 标准设置 - 符合引擎最佳实践
+	bEnableExceptions = false;
+	bUseRTTI = false;
 
 		// 编译优化设置
 		bUsePrecompiled = false;

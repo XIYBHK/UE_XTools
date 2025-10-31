@@ -1,3 +1,8 @@
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -554,9 +559,12 @@ private:
     // 属性值比较函数
     static bool ComparePropertyValues(const FProperty* Property, const void* LeftValuePtr, const void* RightValuePtr, bool bAscending);
 
-    // 快速排序实现
-    static void QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending);
+    // 快速排序实现（带深度限制的IntroSort）
+    static void QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, int32 DepthLimit = -1);
     static int32 PartitionByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending);
+    
+    // 堆排序回退算法（用于防止栈溢出）
+    static void HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending);
 
     // 属性值访问辅助函数
     static void* GetPropertyValuePtr(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, int32 ElementIndex);

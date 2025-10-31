@@ -1,8 +1,12 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "HAL/ThreadSafeBool.h"
 #include "HAL/CriticalSection.h"
@@ -11,7 +15,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolUtils.h"
 
@@ -61,16 +65,16 @@ public:
     /** 析构函数 */
     ~FActorPool();
 
-    // ✅ 禁用拷贝构造和赋值，确保线程安全
+    //  禁用拷贝构造和赋值，确保线程安全
     FActorPool(const FActorPool&) = delete;
     FActorPool& operator=(const FActorPool&) = delete;
 
-    // ✅ 支持移动语义
+    //  支持移动语义
     FActorPool(FActorPool&& Other) noexcept;
     FActorPool& operator=(FActorPool&& Other) noexcept;
 
 public:
-    // ✅ 核心池管理功能
+    //  核心池管理功能
 
     /**
      * 从池中获取Actor
@@ -110,7 +114,7 @@ public:
      */
     void PrewarmPool(UWorld* World, int32 Count);
 
-    // ✅ 状态查询功能
+    //  状态查询功能
 
     /**
      * 获取池的统计信息
@@ -159,7 +163,7 @@ public:
      */
     bool ContainsActor(const AActor* Actor) const;
 
-    // ✅ 管理功能
+    //  管理功能
 
     /**
      * 清空池中的所有Actor
@@ -189,7 +193,7 @@ public:
 
 
 private:
-    // ✅ 数据成员（遵循单一职责原则）
+    //  数据成员（遵循单一职责原则）
 
     /** 要池化的Actor类 */
     UClass* ActorClass;
@@ -212,7 +216,7 @@ private:
     /** 是否已初始化 */
     bool bIsInitialized;
 
-    // ✅ 基于UE标准的Actor存储优化
+    //  基于UE标准的Actor存储优化
     
     /** 可用的Actor列表 - 使用动态分配器支持压力测试 */
     TArray<TWeakObjectPtr<AActor>> AvailableActors;
@@ -236,7 +240,7 @@ private:
     FDelegateHandle GCDelegateHandle;
 
 private:
-    // ✅ 内部辅助方法
+    //  内部辅助方法
     
 
 
@@ -292,7 +296,7 @@ public:
      */
     void InitializePool(UWorld* World);
 
-    // ✅ 常量定义
+    //  常量定义
 
     /** 默认的池大小 */
     static constexpr int32 DEFAULT_POOL_SIZE = 10;

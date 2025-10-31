@@ -1,14 +1,18 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
-// ✅ 遵循IWYU原则的头文件包含
+//  遵循IWYU原则的头文件包含
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolInterface.h"
 
@@ -30,7 +34,7 @@
 class OBJECTPOOL_API FObjectPoolUtils
 {
 public:
-    // ✅ Actor状态重置工具方法
+    //  Actor状态重置工具方法
 
     /**
      * 重置Actor到池化状态（归还时调用）
@@ -64,7 +68,7 @@ public:
      */
     static bool BasicActorReset(AActor* Actor, const FTransform& NewTransform, bool bResetPhysics = true);
 
-    // ✅ 配置管理工具方法
+    //  配置管理工具方法
 
     /**
      * 验证配置的有效性
@@ -92,7 +96,7 @@ public:
      */
     static FObjectPoolConfig CreateDefaultConfig(TSubclassOf<AActor> ActorClass, const FString& PoolType = TEXT(""));
 
-    // ✅ 调试和监控工具方法
+    //  调试和监控工具方法
 
     /**
      * 获取池的调试信息
@@ -128,7 +132,7 @@ public:
      */
     static TArray<FString> GetPerformanceSuggestions(const FObjectPoolStats& Stats);
 
-    // ✅ 性能分析工具方法
+    //  性能分析工具方法
 
     /**
      * 计算池的内存使用估算
@@ -156,7 +160,7 @@ public:
      */
     static TArray<FString> GetOptimizationSuggestions(const FObjectPoolConfig& Config, const FObjectPoolStats& Stats);
 
-    // ✅ 实用工具方法
+    //  实用工具方法
 
     /**
      * 安全地调用Actor的生命周期接口
@@ -192,7 +196,7 @@ public:
     static FString GeneratePoolId(TSubclassOf<AActor> ActorClass);
 
 private:
-    // ✅ 内部辅助方法
+    //  内部辅助方法
 
     /**
      * 重置Actor的基本属性
@@ -254,7 +258,7 @@ private:
      */
     static void RestoreRuntimeSpecificProperties(class UActorComponent* Component);
 
-    // ✅ 常量定义
+    //  常量定义
 
     /** 默认的池大小配置 */
     static constexpr int32 DEFAULT_POOL_SIZE = 10;

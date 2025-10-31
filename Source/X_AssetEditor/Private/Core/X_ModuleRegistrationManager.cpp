@@ -1,11 +1,13 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "Core/X_ModuleRegistrationManager.h"
-#include "MaterialTools/X_MaterialToolsSettings.h"
 
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
-#include "ISettingsModule.h"
 #include "ThumbnailRendering/ThumbnailManager.h"
 
 TUniquePtr<FX_ModuleRegistrationManager> FX_ModuleRegistrationManager::Instance = nullptr;
@@ -81,33 +83,12 @@ void FX_ModuleRegistrationManager::RegisterThumbnailRenderer()
 
 void FX_ModuleRegistrationManager::RegisterSettings()
 {
-    RegisterMaterialToolsSettings();
+    // UX_AssetEditorSettings 继承自 UDeveloperSettings，会自动注册到编辑器设置中
+    // 不需要手动注册
 }
 
 void FX_ModuleRegistrationManager::UnregisterSettings()
 {
-    UnregisterMaterialToolsSettings();
-}
-
-void FX_ModuleRegistrationManager::RegisterMaterialToolsSettings()
-{
-    if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
-    {
-        SettingsModule->RegisterSettings(
-            "Project",
-            "Plugins",
-            "X_MaterialTools",
-            NSLOCTEXT("X_MaterialTools", "MaterialToolsSettingsName", "XTools 材质工具"),
-            NSLOCTEXT("X_MaterialTools", "MaterialToolsSettingsDescription", "配置XTools材质工具的设置"),
-            GetMutableDefault<UX_MaterialToolsSettings>()
-        );
-    }
-}
-
-void FX_ModuleRegistrationManager::UnregisterMaterialToolsSettings()
-{
-    if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
-    {
-        SettingsModule->UnregisterSettings("Project", "Plugins", "X_MaterialTools");
-    }
+    // UDeveloperSettings 会自动注销
+    // 不需要手动注销
 }

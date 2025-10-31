@@ -1060,28 +1060,48 @@ FString UK2Node_SmartSort::GetTypeDisplayName(const FEdGraphPinType& PinType) co
 			return Class->GetDisplayNameText().ToString();
 		}
 	}
-	else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Struct &&
-			 PinType.PinSubCategoryObject == TBaseStructure<FVector>::Get())
+	else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && PinType.PinSubCategoryObject.IsValid())
 	{
-		return TEXT("向量");
+		// 特殊处理 FVector（返回简短名称）
+		if (PinType.PinSubCategoryObject == TBaseStructure<FVector>::Get())
+		{
+			return TEXT("Vector");
+		}
+
+		// 其他结构体返回实际名称
+		if (UScriptStruct* StructType = Cast<UScriptStruct>(PinType.PinSubCategoryObject.Get()))
+		{
+			// 返回结构体的显示名称，移除 'F' 前缀（如果有）
+			FString StructName = StructType->GetDisplayNameText().ToString();
+			if (StructName.IsEmpty())
+			{
+				StructName = StructType->GetName();
+				// 移除 'F' 前缀（UE 结构体命名约定）
+				if (StructName.StartsWith(TEXT("F")) && StructName.Len() > 1 && FChar::IsUpper(StructName[1]))
+				{
+					StructName.RemoveAt(0);
+				}
+			}
+			return StructName;
+		}
 	}
 	else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Int)
 	{
-		return TEXT("整数");
+		return TEXT("Integer");
 	}
 	else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Float ||
-			 PinType.PinCategory == UEdGraphSchema_K2::PC_Double ||
-			 PinType.PinCategory == UEdGraphSchema_K2::PC_Real)
+		 PinType.PinCategory == UEdGraphSchema_K2::PC_Double ||
+		 PinType.PinCategory == UEdGraphSchema_K2::PC_Real)
 	{
-		return TEXT("浮点数");
+		return TEXT("Float");
 	}
 	else if (PinType.PinCategory == UEdGraphSchema_K2::PC_String)
 	{
-		return TEXT("字符串");
+		return TEXT("String");
 	}
 	else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Name)
 	{
-		return TEXT("命名");
+		return TEXT("Name");
 	}
 
 	// 未知类型，使用类型名称
@@ -1124,6 +1144,7 @@ TArray<TSharedPtr<FString>> UK2Node_SmartSort::GetPropertyOptions() const
 	{
 		FEdGraphPinType ConnectedType = ArrayInputPin->LinkedTo[0]->PinType;
 		TArray<FString> PropertyNames = GetAvailableProperties(ConnectedType);
+		Options.Reserve(PropertyNames.Num());
 
 		for (const FString& PropertyName : PropertyNames)
 		{

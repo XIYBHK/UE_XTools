@@ -1,4 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -10,7 +14,7 @@
 #include "Templates/SharedPointer.h"
 #include "Engine/Engine.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ActorPool.h"
 #include "ObjectPoolConfigManager.h"
@@ -100,20 +104,20 @@ class OBJECTPOOL_API UObjectPoolSubsystem : public UWorldSubsystem
     GENERATED_BODY()
 
 public:
-    // ✅ UE官方子系统完整生命周期 - 深度集成引擎机制
+    //  UE官方子系统完整生命周期 - 深度集成引擎机制
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
     virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
 
 public:
-    // ✅ 核心对象池API - 设计文档第177-210行的极简API设计
+    //  核心对象池API - 设计文档第177-210行的极简API设计
 
     /**
      * 注册Actor类到对象池
      * @param ActorClass 要池化的Actor类
-     * @param InitialSize 初始池大小  
-     * @param HardLimit 池的最大限制 (0表示无限制)
+     * @param InitialSize 初始池大小
+     * @param HardLimit 池的最大限制（0表示无限制）
      * @return 注册是否成功
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
@@ -173,7 +177,7 @@ public:
         Keywords = "对象池,预热,优化,性能"))
     int32 PrewarmPool(UClass* ActorClass, int32 Count);
 
-    // ✅ 静态访问方法（设计文档第295行要求）
+    //  静态访问方法（设计文档第295行要求）
 
     /**
      * 获取对象池子系统实例
@@ -194,7 +198,7 @@ public:
 
 
 private:
-    // ✅ 核心数据成员
+    //  核心数据成员
 
     /** 池存储：Actor类 -> 池实例 (UE官方智能指针最佳实践) */
     TMap<UClass*, TSharedPtr<FActorPool>> ActorPools;
@@ -205,7 +209,7 @@ private:
     /** 池访问读写锁（优化并发性能） */
     mutable FRWLock PoolsRWLock;
 
-    // ✅ 性能优化缓存
+    //  性能优化缓存
 
     /** 最近访问的池缓存（提高热点访问性能） */
     mutable TWeakPtr<FActorPool> LastAccessedPool;
@@ -217,7 +221,7 @@ private:
     /** 是否已初始化 */
     bool bIsInitialized;
 
-    // ✅ UE官方垃圾回收系统集成
+    //  UE官方垃圾回收系统集成
     
     /** GC回调：垃圾回收前的清理 */
     UFUNCTION()
@@ -227,7 +231,7 @@ private:
     UFUNCTION()
     void OnPostGarbageCollect();
 
-    // ✅ 独立工具类（组合模式，基于UE智能指针）
+    //  独立工具类（组合模式，基于UE智能指针）
 
     /** 配置管理器 */
     TUniquePtr<FObjectPoolConfigManager> ConfigManager;
@@ -238,7 +242,7 @@ private:
     /** 是否启用监控 */
     bool bMonitoringEnabled;
 
-    // ✅ 安全延迟预热机制
+    //  安全延迟预热机制
     
     /** 待预热信息结构体 */
     struct FDelayedPrewarmInfo
@@ -260,12 +264,12 @@ private:
     /** 延迟预热Timer句柄 */
     FTimerHandle DelayedPrewarmTimerHandle;
 
-    // ✅ 基本性能统计
+    //  基本性能统计
 
     /** 子系统统计信息实例 */
     FObjectPoolSubsystemStats SubsystemStats;
 
-    // ✅ 内部辅助方法
+    //  内部辅助方法
 
     /**
      * 获取或创建指定类型的池
@@ -310,7 +314,7 @@ private:
      */
     void PerformMaintenance();
 
-    // ✅ 性能优化方法
+    //  性能优化方法
 
     /**
      * 更新池缓存
@@ -330,7 +334,7 @@ private:
      */
     FObjectPoolSubsystemStats GetSubsystemStats() const;
 
-    // ✅ 安全延迟预热方法
+    //  安全延迟预热方法
 
     /**
      * 队列延迟预热请求（避免同帧死锁）
@@ -349,7 +353,7 @@ private:
      */
     void ClearDelayedPrewarmTimer();
 
-    // ✅ 常量定义
+    //  常量定义
 
     /** 默认池初始大小 */
     static constexpr int32 DEFAULT_POOL_INITIAL_SIZE = 10;

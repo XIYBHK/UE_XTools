@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "CollisionTools/X_CollisionManager.h"
 #include "X_AssetEditor.h"
@@ -370,7 +374,7 @@ bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, EC
         return false;
     }
 
-    // ✅ 使用UE错误处理模式，不使用异常
+    //  使用UE错误处理模式，不使用异常
     UBodySetup* BodySetup = StaticMesh->GetBodySetup();
     if (!BodySetup)
     {

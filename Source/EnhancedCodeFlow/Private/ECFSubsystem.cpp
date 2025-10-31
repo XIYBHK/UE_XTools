@@ -38,8 +38,8 @@ void UECFSubsystem::Deinitialize()
 
 bool UECFSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-	// ✅ 检查插件设置，如果未启用则不创建子系统
-	if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/XTools.XToolsSettings")))
+	//  检查插件设置，如果未启用则不创建子系统
+	if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
 	{
 		if (const UObject* Settings = SettingsClass->GetDefaultObject())
 		{

@@ -1,10 +1,14 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #include "ObjectPoolUtils.h"
 #include "ObjectPool.h"
 #include "ObjectPoolInterface.h"
 
-// ✅ UE核心依赖
+//  UE核心依赖
 #include "Engine/World.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -12,14 +16,14 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 
-// ✅ 组件依赖
+//  组件依赖
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Components/AudioComponent.h"
 #include "GameFramework/MovementComponent.h"
 #include "Components/MeshComponent.h"
 
-// ✅ 日志和统计
+//  日志和统计
 DEFINE_LOG_CATEGORY(LogObjectPoolUtils);
 
 #if STATS
@@ -28,7 +32,7 @@ DEFINE_STAT(STAT_ActivateActorFromPool);
 DEFINE_STAT(STAT_ValidateConfig);
 #endif
 
-// ✅ Actor状态重置实现
+//  Actor状态重置实现
 
 bool FObjectPoolUtils::ResetActorForPooling(AActor* Actor)
 {
@@ -40,16 +44,16 @@ bool FObjectPoolUtils::ResetActorForPooling(AActor* Actor)
         return false;
     }
 
-    // ✅ 基本状态重置
+    //  基本状态重置
     ResetBasicActorProperties(Actor, true);
     
-    // ✅ 重置物理状态
+    //  重置物理状态
     ResetActorPhysics(Actor);
     
-    // ✅ 重置组件状态
+    //  重置组件状态
     ResetActorComponents(Actor);
     
-    // ✅ 调用生命周期接口
+    //  调用生命周期接口
     SafeCallLifecycleInterface(Actor, TEXT("ReturnedToPool"));
     
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("成功重置Actor到池化状态: %s"), *Actor->GetName());
@@ -66,7 +70,7 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         return false;
     }
 
-    // ✅ 最安全策略：检查是否需要完成延迟构造
+    //  最安全策略：检查是否需要完成延迟构造
     bool bWasUninitialized = !Actor->IsActorInitialized();
     if (bWasUninitialized)
     {
@@ -77,7 +81,7 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         
         OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("FinishSpawning完成: %s"), *Actor->GetName());
         
-        // ✅ 首次初始化时调用OnPoolActorCreated事件
+        //  首次初始化时调用OnPoolActorCreated事件
         if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
         {
             if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
@@ -94,25 +98,25 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("Actor已初始化，直接重用: %s"), *Actor->GetName());
     }
 
-    // ✅ 应用新的Transform
+    //  应用新的Transform
     ApplyTransformToActor(Actor, SpawnTransform);
 
     // 复用路径的 Construction Script 重跑移至 FinalizeDeferred，确保顺序与原生更一致
     
-    // ✅ 激活Actor
+    //  激活Actor
     ResetBasicActorProperties(Actor, false); // 显示Actor
     
-    // ✅ 启用物理
+    //  启用物理
     if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
     {
         RootPrimitive->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         RootPrimitive->SetSimulatePhysics(false); // 通常池化对象不需要物理模拟
     }
     
-    // ✅ 启用Tick
+    //  启用Tick
     Actor->SetActorTickEnabled(true);
 
-    // ✅ 重新启用ProjectileMovement组件
+    //  重新启用ProjectileMovement组件
     TArray<UProjectileMovementComponent*> ProjectileComponents;
     Actor->GetComponents<UProjectileMovementComponent>(ProjectileComponents);
 
@@ -123,14 +127,14 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
             ProjectileComp->SetActive(true);
             ProjectileComp->SetComponentTickEnabled(true);
 
-            // ✅ 重新设置初始速度 - 使用新的SpawnTransform的方向
+            //  重新设置初始速度 - 使用新的SpawnTransform的方向
             FVector ForwardDirection = SpawnTransform.GetRotation().GetForwardVector();
             ProjectileComp->Velocity = ProjectileComp->InitialSpeed * ForwardDirection;
 
-            // ✅ 确保组件状态正确
+            //  确保组件状态正确
             ProjectileComp->UpdateComponentVelocity();
 
-            // ✅ 重置内部状态
+            //  重置内部状态
             ProjectileComp->bSimulationEnabled = true;
 
             OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("激活ProjectileMovement: 速度=%s, 方向=%s, InitialSpeed=%f"),
@@ -138,7 +142,7 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         }
     }
 
-    // ✅ 调用生命周期接口（记录调试信息）
+    //  调用生命周期接口（记录调试信息）
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("即将触发Activated生命周期: %s"), *Actor->GetName());
     SafeCallLifecycleInterface(Actor, TEXT("Activated"));
     
@@ -173,13 +177,13 @@ bool FObjectPoolUtils::BasicActorReset(AActor* Actor, const FTransform& NewTrans
         return false;
     }
 
-    // ✅ 应用Transform
+    //  应用Transform
     ApplyTransformToActor(Actor, NewTransform);
     
-    // ✅ 基本重置
+    //  基本重置
     ResetBasicActorProperties(Actor, false);
     
-    // ✅ 可选的物理重置
+    //  可选的物理重置
     if (bResetPhysics)
     {
         ResetActorPhysics(Actor);
@@ -188,7 +192,7 @@ bool FObjectPoolUtils::BasicActorReset(AActor* Actor, const FTransform& NewTrans
     return true;
 }
 
-// ✅ 配置管理实现
+//  配置管理实现
 
 bool FObjectPoolUtils::ValidateConfig(const FObjectPoolConfig& Config, FString& OutErrorMessage)
 {
@@ -230,7 +234,7 @@ void FObjectPoolUtils::ApplyDefaultConfig(FObjectPoolConfig& Config)
         return;
     }
     
-    // ✅ 应用默认值
+    //  应用默认值
     if (Config.InitialSize <= 0)
     {
         GetDefaultConfigForActorClass(Config.ActorClass, Config.InitialSize, Config.HardLimit);
@@ -241,7 +245,7 @@ void FObjectPoolUtils::ApplyDefaultConfig(FObjectPoolConfig& Config)
         Config.HardLimit = FMath::Max(Config.InitialSize * 5, DEFAULT_HARD_LIMIT);
     }
     
-    // ✅ 确保配置合理
+    //  确保配置合理
     Config.InitialSize = FMath::Clamp(Config.InitialSize, 1, 1000);
     Config.HardLimit = FMath::Max(Config.HardLimit, Config.InitialSize);
 }
@@ -251,7 +255,7 @@ FObjectPoolConfig FObjectPoolUtils::CreateDefaultConfig(TSubclassOf<AActor> Acto
     FObjectPoolConfig Config;
     Config.ActorClass = ActorClass;
     
-    // ✅ 根据池类型设置默认值
+    //  根据池类型设置默认值
     if (PoolType.Contains(TEXT("子弹")) || PoolType.Contains(TEXT("Bullet")))
     {
         Config.InitialSize = 50;
@@ -277,7 +281,7 @@ FObjectPoolConfig FObjectPoolUtils::CreateDefaultConfig(TSubclassOf<AActor> Acto
     return Config;
 }
 
-// ✅ 调试和监控实现
+//  调试和监控实现
 
 FObjectPoolDebugInfo FObjectPoolUtils::GetDebugInfo(const FObjectPoolStats& Stats, const FString& PoolName)
 {
@@ -285,10 +289,10 @@ FObjectPoolDebugInfo FObjectPoolUtils::GetDebugInfo(const FObjectPoolStats& Stat
     DebugInfo.PoolName = PoolName;
     // DebugInfo.Stats = Stats; // Stats字段不存在，移除这行
     
-    // ✅ 健康检查
+    //  健康检查
     DebugInfo.bIsHealthy = IsPoolHealthy(Stats);
     
-    // ✅ 添加性能建议
+    //  添加性能建议
     if (!DebugInfo.bIsHealthy)
     {
         TArray<FString> Suggestions = GetPerformanceSuggestions(Stats);
@@ -327,13 +331,13 @@ void FObjectPoolUtils::LogPoolStats(const FObjectPoolStats& Stats, const FString
 
 bool FObjectPoolUtils::IsPoolHealthy(const FObjectPoolStats& Stats)
 {
-    // ✅ 命中率检查
+    //  命中率检查
     if (Stats.HitRate < MIN_HEALTHY_HIT_RATE && Stats.TotalCreated > 10)
     {
         return false;
     }
     
-    // ✅ 未使用对象比例检查
+    //  未使用对象比例检查
     if (Stats.TotalCreated > 0)
     {
         float UnusedRatio = static_cast<float>(Stats.CurrentAvailable) / static_cast<float>(Stats.TotalCreated);
@@ -377,7 +381,7 @@ TArray<FString> FObjectPoolUtils::GetPerformanceSuggestions(const FObjectPoolSta
     return Suggestions;
 }
 
-// ✅ 性能分析实现
+//  性能分析实现
 
 int64 FObjectPoolUtils::EstimateMemoryUsage(TSubclassOf<AActor> ActorClass, int32 PoolSize)
 {
@@ -422,11 +426,11 @@ TArray<FString> FObjectPoolUtils::GetOptimizationSuggestions(const FObjectPoolCo
 {
     TArray<FString> Suggestions;
     
-    // ✅ 基于统计数据的建议
+    //  基于统计数据的建议
     TArray<FString> PerfSuggestions = GetPerformanceSuggestions(Stats);
     Suggestions.Append(PerfSuggestions);
     
-    // ✅ 基于配置的建议
+    //  基于配置的建议
     if (Config.InitialSize > Stats.TotalCreated * 2 && Stats.TotalCreated > 10)
     {
         Suggestions.Add(TEXT("初始大小可能过大，考虑减少"));
@@ -440,7 +444,7 @@ TArray<FString> FObjectPoolUtils::GetOptimizationSuggestions(const FObjectPoolCo
     return Suggestions;
 }
 
-// ✅ 实用工具实现
+//  实用工具实现
 
 void FObjectPoolUtils::SafeCallLifecycleInterface(AActor* Actor, const FString& EventType)
 {
@@ -472,7 +476,7 @@ bool FObjectPoolUtils::IsActorSuitableForPooling(TSubclassOf<AActor> ActorClass)
         return false;
     }
 
-    // ✅ 检查是否是合适的Actor类型
+    //  检查是否是合适的Actor类型
     if (ActorClass->IsChildOf<APawn>())
     {
         // Pawn通常需要特殊处理，但可以池化
@@ -485,7 +489,7 @@ bool FObjectPoolUtils::IsActorSuitableForPooling(TSubclassOf<AActor> ActorClass)
         return true;
     }
 
-    // ✅ 大部分Actor都适合池化
+    //  大部分Actor都适合池化
     return true;
 }
 
@@ -514,7 +518,7 @@ FString FObjectPoolUtils::GeneratePoolId(TSubclassOf<AActor> ActorClass)
     return FString::Printf(TEXT("Pool_%s_%u"), *ActorClass->GetName(), GetTypeHash(ActorClass));
 }
 
-// ✅ 内部辅助方法实现
+//  内部辅助方法实现
 
 void FObjectPoolUtils::ResetBasicActorProperties(AActor* Actor, bool bHideActor)
 {
@@ -523,13 +527,13 @@ void FObjectPoolUtils::ResetBasicActorProperties(AActor* Actor, bool bHideActor)
         return;
     }
 
-    // ✅ 设置可见性
+    //  设置可见性
     Actor->SetActorHiddenInGame(bHideActor);
 
-    // ✅ 设置Tick状态
+    //  设置Tick状态
     Actor->SetActorTickEnabled(!bHideActor);
 
-    // ✅ 设置所有PrimitiveComponent的碰撞（包括子组件）
+    //  设置所有PrimitiveComponent的碰撞（包括子组件）
     TArray<UPrimitiveComponent*> PrimitiveComponents;
     Actor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
 
@@ -551,7 +555,7 @@ void FObjectPoolUtils::ResetBasicActorProperties(AActor* Actor, bool bHideActor)
         }
     }
 
-    // ✅ 归还到池时，移动到池外位置
+    //  归还到池时，移动到池外位置
     if (bHideActor)
     {
         // 移动到远离游戏世界的位置
@@ -567,7 +571,7 @@ void FObjectPoolUtils::ResetActorPhysics(AActor* Actor)
         return;
     }
 
-    // ✅ 重置根组件物理
+    //  重置根组件物理
     if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
     {
         RootPrimitive->SetSimulatePhysics(false);
@@ -575,7 +579,7 @@ void FObjectPoolUtils::ResetActorPhysics(AActor* Actor)
         RootPrimitive->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
     }
 
-    // ✅ 重置所有物理组件
+    //  重置所有物理组件
     TArray<UPrimitiveComponent*> PrimitiveComponents;
     Actor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
 
@@ -597,7 +601,7 @@ void FObjectPoolUtils::ResetActorComponents(AActor* Actor)
         return;
     }
 
-    // ✅ 重置ProjectileMovement组件
+    //  重置ProjectileMovement组件
     TArray<UProjectileMovementComponent*> ProjectileComponents;
     Actor->GetComponents<UProjectileMovementComponent>(ProjectileComponents);
 
@@ -609,7 +613,7 @@ void FObjectPoolUtils::ResetActorComponents(AActor* Actor)
         }
     }
 
-    // ✅ 重置粒子系统组件
+    //  重置粒子系统组件
     TArray<UParticleSystemComponent*> ParticleComponents;
     Actor->GetComponents<UParticleSystemComponent>(ParticleComponents);
 
@@ -622,7 +626,7 @@ void FObjectPoolUtils::ResetActorComponents(AActor* Actor)
         }
     }
 
-    // ✅ 重置音频组件
+    //  重置音频组件
     TArray<UAudioComponent*> AudioComponents;
     Actor->GetComponents<UAudioComponent>(AudioComponents);
 
@@ -636,7 +640,7 @@ void FObjectPoolUtils::ResetActorComponents(AActor* Actor)
         }
     }
 
-    // ✅ 重置移动组件
+    //  重置移动组件
     TArray<UMovementComponent*> MovementComponents;
     Actor->GetComponents<UMovementComponent>(MovementComponents);
 
@@ -649,7 +653,7 @@ void FObjectPoolUtils::ResetActorComponents(AActor* Actor)
         }
     }
 
-    // ✅ 重置网格组件
+    //  重置网格组件
     TArray<UMeshComponent*> MeshComponents;
     Actor->GetComponents<UMeshComponent>(MeshComponents);
 
@@ -682,17 +686,17 @@ void FObjectPoolUtils::ResetProjectileMovementComponent(UProjectileMovementCompo
 
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("重置ProjectileMovement组件"));
 
-    // ✅ 停止当前移动
+    //  停止当前移动
     ProjectileComp->StopMovementImmediately();
 
-    // ✅ 使用UE官方推荐的方式：从CDO重新初始化所有属性
+    //  使用UE官方推荐的方式：从CDO重新初始化所有属性
     // 这会自动重置所有UPROPERTY标记的属性到默认值
     ProjectileComp->ReinitializeProperties();
 
-    // ✅ 重置运行时状态
+    //  重置运行时状态
     ProjectileComp->Velocity = FVector::ZeroVector;
 
-    // ✅ 停用组件（归还到池时应该停用）
+    //  停用组件（归还到池时应该停用）
     ProjectileComp->SetActive(false);
     ProjectileComp->SetComponentTickEnabled(false);
 
@@ -708,7 +712,7 @@ void FObjectPoolUtils::ResetComponentFromCDO(UActorComponent* Component)
 
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("使用CDO重置组件: %s"), *Component->GetName());
 
-    // ✅ 使用UE官方推荐的方式：从CDO重新初始化所有属性
+    //  使用UE官方推荐的方式：从CDO重新初始化所有属性
     // 这会自动重置所有UPROPERTY标记的属性到默认值
     Component->ReinitializeProperties();
 
@@ -775,7 +779,7 @@ void FObjectPoolUtils::GetDefaultConfigForActorClass(TSubclassOf<AActor> ActorCl
         return;
     }
 
-    // ✅ 根据Actor类型调整默认值
+    //  根据Actor类型调整默认值
     if (ActorClass->IsChildOf<ACharacter>())
     {
         OutInitialSize = 5;  // Character通常较重
@@ -800,10 +804,10 @@ int64 FObjectPoolUtils::CalculateActorMemoryFootprint(TSubclassOf<AActor> ActorC
         return BASE_ACTOR_MEMORY;
     }
 
-    // ✅ 基础内存 + 组件估算
+    //  基础内存 + 组件估算
     int64 EstimatedMemory = BASE_ACTOR_MEMORY;
 
-    // ✅ 根据Actor类型调整估算
+    //  根据Actor类型调整估算
     if (ActorClass->IsChildOf<ACharacter>())
     {
         EstimatedMemory += COMPONENT_MEMORY_ESTIMATE * 10; // Character有更多组件
@@ -820,7 +824,7 @@ int64 FObjectPoolUtils::CalculateActorMemoryFootprint(TSubclassOf<AActor> ActorC
     return EstimatedMemory;
 }
 
-// ✅ 性能计时器实现
+//  性能计时器实现
 
 FObjectPoolUtilsTimer::FObjectPoolUtilsTimer(const FString& OperationName)
     : Operation(OperationName)

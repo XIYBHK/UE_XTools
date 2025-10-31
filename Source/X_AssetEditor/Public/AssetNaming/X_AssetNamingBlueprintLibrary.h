@@ -1,4 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -89,45 +93,6 @@ public:
     UFUNCTION(BlueprintPure, Category = "XTools|资产命名", meta = (DisplayName = "获取所有资产前缀规则"))
     static void GetAllAssetPrefixRules(TArray<FString>& OutAssetTypes, TArray<FString>& OutPrefixes);
 
-    // === 测试节点 ===
-
-    /**
-     * 测试资产命名管理器的基础功能
-     * @return 测试结果消息
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|测试", meta = (DisplayName = "测试资产命名管理器"))
-    static FString TestAssetNamingManager();
-
-    /**
-     * 测试前缀规则的完整性
-     * @return 测试结果消息
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|测试", meta = (DisplayName = "测试前缀规则完整性"))
-    static FString TestPrefixRulesIntegrity();
-
-    /**
-     * 测试资产类名解析功能
-     * @param TestAssetPaths 测试用的资产路径数组
-     * @return 测试结果消息
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|测试", meta = (DisplayName = "测试资产类名解析"))
-    static FString TestAssetClassNameParsing(const TArray<FString>& TestAssetPaths);
-
-    /**
-     * 性能测试：批量处理资产命名
-     * @param AssetCount 测试的资产数量
-     * @return 性能测试结果
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|测试", meta = (DisplayName = "性能测试资产命名"))
-    static FString PerformanceTestAssetNaming(int32 AssetCount = 100);
-
-    /**
-     * 验证命名规范化的正确性
-     * @return 验证结果消息
-     */
-    UFUNCTION(BlueprintCallable, Category = "XTools|测试", meta = (DisplayName = "验证命名规范化正确性"))
-    static FString ValidateNamingNormalization();
-
 private:
     /**
      * 从资产路径获取资产数据
@@ -135,13 +100,4 @@ private:
      * @return 资产数据，如果无效则返回空
      */
     static FAssetData GetAssetDataFromPath(const FString& AssetPath);
-
-    /**
-     * 创建测试结果消息
-     * @param TestName 测试名称
-     * @param bSuccess 是否成功
-     * @param Details 详细信息
-     * @return 格式化的测试结果消息
-     */
-    static FString CreateTestResultMessage(const FString& TestName, bool bSuccess, const FString& Details);
 };

@@ -1,4 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+/*
+* Copyright (c) 2025 XIYBHK
+* Licensed under UE_XTools License
+*/
+
 
 #pragma once
 
@@ -9,7 +13,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
-// ✅ 对象池模块依赖
+//  对象池模块依赖
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolUtils.h"
 
@@ -119,16 +123,16 @@ public:
     /** 析构函数 */
     ~FActorPoolMemoryOptimizer();
 
-    // ✅ 禁用拷贝构造和赋值
+    //  禁用拷贝构造和赋值
     FActorPoolMemoryOptimizer(const FActorPoolMemoryOptimizer&) = delete;
     FActorPoolMemoryOptimizer& operator=(const FActorPoolMemoryOptimizer&) = delete;
 
-    // ✅ 支持移动语义
+    //  支持移动语义
     FActorPoolMemoryOptimizer(FActorPoolMemoryOptimizer&& Other) noexcept;
     FActorPoolMemoryOptimizer& operator=(FActorPoolMemoryOptimizer&& Other) noexcept;
 
 public:
-    // ✅ 内存监控功能
+    //  内存监控功能
 
     /**
      * 分析池的内存使用情况
@@ -151,7 +155,7 @@ public:
      */
     bool ShouldOptimizeMemory(const FActorPool& Pool) const;
 
-    // ✅ 预分配优化功能
+    //  预分配优化功能
 
     /**
      * 检查是否应该进行预分配
@@ -175,7 +179,7 @@ public:
      */
     int32 PerformSmartPreallocation(FActorPool& Pool, UWorld* World) const;
 
-    // ✅ 内存压缩功能
+    //  内存压缩功能
 
     /**
      * 分析内存碎片化程度
@@ -191,7 +195,7 @@ public:
      */
     int64 CompactMemory(FActorPool& Pool) const;
 
-    // ✅ 配置管理
+    //  配置管理
 
     /**
      * 设置优化策略
@@ -217,7 +221,7 @@ public:
      */
     const FPreallocationConfig& GetPreallocationConfig() const { return PreallocConfig; }
 
-    // ✅ 性能分析
+    //  性能分析
 
     /**
      * 生成性能报告
@@ -233,7 +237,7 @@ public:
     FString GetOptimizationStats() const;
 
 private:
-    // ✅ 内部数据成员
+    //  内部数据成员
 
     /** 当前优化策略 */
     EOptimizationStrategy CurrentStrategy;
@@ -259,7 +263,7 @@ private:
     } OptimizationStats;
 
 private:
-    // ✅ 内部辅助方法
+    //  内部辅助方法
 
     /**
      * 根据策略初始化配置
