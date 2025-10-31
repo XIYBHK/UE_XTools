@@ -28,7 +28,13 @@ int32 MinIndexQueue::ExtractMin()
 
 	// 将最后一个元素移到根节点
 	Heap[0] = Heap.Last();
+	
+	// UE 5.5+ API 变更：Pop 参数从 bool 改为 EAllowShrinking 枚举
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
+	Heap.Pop(EAllowShrinking::No);
+#else
 	Heap.Pop(false);  // false = 不缩容
+#endif
 
 	// 如果还有元素，执行下沉操作
 	if (Heap.Num() > 0)
