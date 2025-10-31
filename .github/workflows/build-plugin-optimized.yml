@@ -113,7 +113,8 @@ jobs:
           "-Rocket"
         )
         
-        Write-Host "`n开始构建..." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "开始构建..." -ForegroundColor Yellow
         & "${{ env.RUNUAT_PATH }}" @buildArgs
         
         if ($LASTEXITCODE -ne 0) {
@@ -123,7 +124,8 @@ jobs:
         
         $build_duration = (Get-Date) - $build_start
         $duration_str = "{0:N0} 分 {1:N0} 秒" -f $build_duration.TotalMinutes, $build_duration.Seconds
-        Write-Host "`n[OK] 构建完成，耗时: $duration_str" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "[OK] 构建完成，耗时: $duration_str" -ForegroundColor Green
         
         echo "BUILD_DURATION=$duration_str" >> $env:GITHUB_ENV
 
@@ -172,7 +174,8 @@ jobs:
         
         # 计算最终包大小
         $final_size = (Get-ChildItem $output_directory -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
-        Write-Host "`n[OK] 优化完成，最终大小: $([math]::Round($final_size, 2)) MB" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "[OK] 优化完成，最终大小: $([math]::Round($final_size, 2)) MB" -ForegroundColor Green
         
         echo "PACKAGE_SIZE_MB=$([math]::Round($final_size, 2))" >> $env:GITHUB_ENV
         
@@ -222,7 +225,8 @@ jobs:
           Write-Host "[OK] 找到 $dll_count 个二进制文件"
         }
         
-        Write-Host "`n[OK] 验证通过" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "[OK] 验证通过" -ForegroundColor Green
 
     - name: Generate Job Summary
       if: always()

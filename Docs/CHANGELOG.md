@@ -2,6 +2,7 @@
 
 ## 构建系统更新
 - CI 工作流支持 UE 5.0-5.6 版本构建（5.0, 5.2, 5.3, 5.4, 5.5, 5.6）
+- 修复 PowerShell 脚本换行符导致的解析错误，使用 `Write-Host ""` 替代 `` `n``
 
 ## 构建系统优化
 - 修复 Shipping 构建中 `FXToolsErrorReporter` 的编译错误，使用模板方法支持所有日志分类类型（包括 `FNoLoggingCategory`），该方案已被 UE 社区广泛采用，适用于纯插件项目且零性能开销。
