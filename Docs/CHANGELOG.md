@@ -2,6 +2,8 @@
 
 ## 构建系统更新
 - CI 工作流支持 UE 5.0-5.6 版本构建（5.0, 5.2, 5.3, 5.4, 5.5, 5.6）
+- 修复 UE 5.2 编译错误：在所有模块 Build.cs 中添加 `bTreatWarningsAsErrors = false`，解决新版 VS 2022（14.44+）与 UE 5.2 引擎的兼容性问题（C4668/C4067 警告）
+- 修复 UE 5.0 依赖问题：需要安装 .NET Desktop Runtime 3.1.x
 - 修复 PowerShell 中文字符编码问题，将所有日志消息改为英文，避免乱码和解析错误
 - 修复 PowerShell 脚本换行符导致的解析错误，使用 `Write-Host ""` 替代 `` `n``
 

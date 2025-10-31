@@ -12,6 +12,10 @@ public class XTools : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		// UE 5.2 兼容性修复：禁用将警告视为错误
+		// 解决 VS 2022 新版本编译器与 UE 5.2 的兼容性问题
+		bTreatWarningsAsErrors = false;
+
 		// 添加模块定义
 		PublicDefinitions.AddRange(new string[] {
 			"WITH_XTOOLS=1",

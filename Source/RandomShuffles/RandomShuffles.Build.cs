@@ -14,6 +14,9 @@ public class RandomShuffles : ModuleRules
 {
 	public RandomShuffles(ReadOnlyTargetRules Target) : base(Target)
 	{
+		// UE 5.2 兼容性修复
+		bTreatWarningsAsErrors = false;
+
 		//  UE5.3+ 标准配置
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
