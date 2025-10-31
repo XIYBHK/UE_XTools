@@ -52,10 +52,17 @@ def run_as_admin() -> bool:
     
     return True
 
-def normalize_path(path_str: str) -> Path:
-    """规范化路径，去除首尾空格和引号"""
+def normalize_path(path_str: str, resolve: bool = True) -> Path:
+    """
+    规范化路径，去除首尾空格和引号
+    
+    Args:
+        path_str: 路径字符串
+        resolve: 是否解析为绝对路径（对于软链接检查应设为False）
+    """
     path_str = path_str.strip().strip('"').strip("'")
-    return Path(path_str).resolve()
+    path = Path(path_str)
+    return path.resolve() if resolve else path.absolute()
 
 def validate_source_path(source_path: Path) -> Tuple[bool, Optional[str]]:
     """验证源路径是否有效"""
@@ -96,18 +103,36 @@ def execute_mklink(link_path: Path, source_path: Path) -> Tuple[bool, str]:
 def create_symlink():
     """引导用户创建目录软链接"""
     print("\n--- 创建软链接 ---")
+    print("提示：如果路径包含空格，可以使用引号包裹，也可以不使用")
+    print("示例：C:\\Source\\Folder 或 \"C:\\Source\\Folder\"")
     
-    source_input = input("请输入【源文件夹】的完整路径 (即您想要引用的文件夹):\n> ")
-    link_input = input("请输入【软链接】的完整路径 (即您想在何处创建链接文件夹):\n> ")
-    
+    source_input = input("\n请输入【源文件夹】的完整路径 (即您想要引用的文件夹):\n> ")
     source_path = normalize_path(source_input)
-    link_path = normalize_path(link_input)
     
     # 验证源路径
     is_valid, error_msg = validate_source_path(source_path)
     if not is_valid:
         print(f"\n错误：{error_msg}")
         return
+    
+    print(f"\n源文件夹已确认: {source_path}")
+    print(f"源文件夹名称: {source_path.name}")
+    
+    # 获取目标路径
+    print("\n请输入【软链接位置】:")
+    print("  方式1: 输入父目录路径，将自动使用源文件夹的名称")
+    print(f"         例如: E:\\Target\\Path  (将创建 E:\\Target\\Path\\{source_path.name})")
+    print("  方式2: 输入完整的链接路径")
+    print(f"         例如: E:\\Target\\Path\\MyLink")
+    
+    link_input = input("> ")
+    link_path = normalize_path(link_input)
+    
+    # 智能判断：如果目标路径已存在且是目录，则自动添加源文件夹名称
+    if link_path.exists() and link_path.is_dir():
+        link_path = link_path / source_path.name
+        print(f"\n检测到目标是已存在的目录，自动创建子链接:")
+        print(f"  最终链接路径: {link_path}")
     
     # 验证链接路径
     is_valid, error_msg = validate_link_path(link_path)
@@ -120,11 +145,17 @@ def create_symlink():
     print(f"  源文件夹: {source_path}")
     print(f"  创建链接: {link_path}")
     
+    if not confirm_operation("确认创建？"):
+        print("操作已取消。")
+        return
+    
     # 执行创建
     success, message = execute_mklink(link_path, source_path)
     if success:
         print("\n成功！软链接已创建。")
         print(f"输出: {message}")
+        print(f"\n现在您可以通过以下路径访问源文件夹:")
+        print(f"  {link_path}")
     else:
         print(f"\n错误：创建软链接失败。")
         print(f"详情: {message}")
@@ -137,31 +168,48 @@ def confirm_operation(prompt: str) -> bool:
 def remove_symlink():
     """引导用户移除目录软链接"""
     print("\n--- 移除软链接 ---")
+    print("提示：请输入软链接本身的路径，而不是它指向的源文件夹路径")
     
-    link_input = input("请输入要【移除的软链接】的完整路径:\n> ")
-    link_path = normalize_path(link_input)
+    link_input = input("\n请输入要【移除的软链接】的完整路径:\n> ")
+    # 重要：不要resolve，保留软链接本身的路径
+    link_path = normalize_path(link_input, resolve=False)
     
     # 校验路径是否存在
     if not link_path.exists():
         print(f"\n错误：路径不存在: {link_path}")
         return
     
-    # 检查是否为软链接
-    if not link_path.is_symlink():
-        print(f"\n警告：'{link_path}' 不是一个标准的符号链接。")
-        print("这可能是一个真实的文件夹或Junction点。")
-        if not confirm_operation("确认要继续移除吗？"):
-            print("操作已取消。")
-            return
+    # 显示路径信息
+    print(f"\n链接路径: {link_path}")
+    if link_path.is_symlink():
+        real_path = link_path.resolve()
+        print(f"指向目标: {real_path}")
+        print(f"链接类型: 符号链接 (Symbolic Link)")
+    else:
+        print(f"警告：这不是一个标准的符号链接")
+        print(f"可能是真实文件夹或Junction点")
+    
+    # 确认操作
+    if not confirm_operation("\n确认要移除此链接吗？"):
+        print("操作已取消。")
+        return
     
     # 执行删除
     try:
-        link_path.rmdir()
-        print(f"\n成功！软链接已被移除: {link_path}")
-        print("注意：原始的源文件夹未受任何影响。")
+        if link_path.is_symlink() or link_path.is_junction():
+            # 对于符号链接和Junction点，使用rmdir
+            link_path.rmdir()
+            print(f"\n成功！软链接已被移除: {link_path}")
+            print("注意：原始的源文件夹未受任何影响。")
+        else:
+            print(f"\n错误：这不是软链接或Junction点，拒绝删除以防误操作。")
+            print(f"如果确实需要删除，请手动操作。")
     except OSError as e:
         print(f"\n错误：移除软链接失败: {e}")
-        print("请检查路径是否正确，或者该链接是否正在被其他程序使用。")
+        print("可能的原因：")
+        print("  1. 该链接正在被其他程序使用")
+        print("  2. 没有足够的权限")
+        print("  3. 这不是一个软链接")
     except Exception as e:
         print(f"\n发生未知错误: {e}")
 
