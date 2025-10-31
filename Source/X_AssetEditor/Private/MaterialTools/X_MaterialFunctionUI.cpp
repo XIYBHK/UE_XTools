@@ -12,6 +12,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Logging/LogMacros.h"
 #include "MaterialTools/X_MaterialFunctionCore.h"
+#include "X_AssetEditor.h"
 
 // 内容浏览器相关
 #include "ContentBrowserModule.h"
@@ -123,7 +124,7 @@ FReply SX_MaterialNodePicker::OnNodeSelected(TSharedPtr<FName> NodeName)
 TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FOnMaterialFunctionSelected OnFunctionSelected)
 {
     // 打印日志，标明使用了哪个方法
-    UE_LOG(LogTemp, Warning, TEXT("### 调用了 FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow - 使用新版选择器"));
+    UE_LOG(LogX_AssetEditor, Warning, TEXT("FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow 调用 - 使用新版选择器"));
     
     // 创建窗口
     TSharedRef<SWindow> Window = SNew(SWindow)
@@ -131,6 +132,8 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
         .ClientSize(FVector2D(400, 600))
         .SupportsMaximize(false)
         .SupportsMinimize(false);
+
+    const TWeakPtr<SWindow> WeakWindow = Window;
 
     // 配置资产选择器
     FAssetPickerConfig AssetPickerConfig;
@@ -157,7 +160,7 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
 
     // 配置选择回调
     AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateLambda(
-        [OnFunctionSelected, &Window](const FAssetData& AssetData)
+        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
         {
             UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
             if (MaterialFunction && OnFunctionSelected.IsBound())
@@ -166,12 +169,15 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
             }
             
             // 关闭窗口
-            Window->RequestDestroyWindow();
+            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
+            {
+                PinnedWindow->RequestDestroyWindow();
+            }
         });
 
     // 配置双击回调
     AssetPickerConfig.OnAssetDoubleClicked = FOnAssetDoubleClicked::CreateLambda(
-        [OnFunctionSelected, &Window](const FAssetData& AssetData)
+        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
         {
             UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
             if (MaterialFunction && OnFunctionSelected.IsBound())
@@ -180,7 +186,10 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
             }
             
             // 关闭窗口
-            Window->RequestDestroyWindow();
+            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
+            {
+                PinnedWindow->RequestDestroyWindow();
+            }
         });
 
     // 创建资产选择器小部件

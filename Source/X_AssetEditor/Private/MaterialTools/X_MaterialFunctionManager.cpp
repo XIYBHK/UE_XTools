@@ -38,6 +38,7 @@
 #include "MaterialTools/X_MaterialFunctionCore.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
 #include "MaterialTools/X_MaterialFunctionUI.h"
+#include "X_AssetEditor.h"
 
 // 不再需要外部函数声明，直接使用FX_MaterialFunctionUI类
 
@@ -184,7 +185,7 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionManager::CreateMater
 TSharedRef<SWindow> FX_MaterialFunctionManager::CreateMaterialFunctionPickerWindow(FOnMaterialFunctionSelected OnFunctionSelected)
 {
     // 打印日志，标明使用了哪个方法
-    UE_LOG(LogTemp, Warning, TEXT("### 调用了 FX_MaterialFunctionManager::CreateMaterialFunctionPickerWindow"));
+    UE_LOG(LogX_AssetEditor, Warning, TEXT("FX_MaterialFunctionManager::CreateMaterialFunctionPickerWindow 调用"));
     // 使用新版的选择器实现
     return ShowNewMaterialFunctionPicker(OnFunctionSelected);
 }
@@ -192,7 +193,7 @@ TSharedRef<SWindow> FX_MaterialFunctionManager::CreateMaterialFunctionPickerWind
 TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FOnMaterialFunctionSelected OnFunctionSelected)
 {
     // 打印日志，标明使用了哪个方法
-    UE_LOG(LogTemp, Warning, TEXT("### 调用了 FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker - 使用新版选择器"));
+    UE_LOG(LogX_AssetEditor, Warning, TEXT("FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker 调用 - 使用新版选择器"));
     
     // 创建窗口
     TSharedRef<SWindow> Window = SNew(SWindow)
@@ -200,6 +201,8 @@ TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FO
         .ClientSize(FVector2D(400, 600))
         .SupportsMaximize(false)
         .SupportsMinimize(false);
+
+    const TWeakPtr<SWindow> WeakWindow = Window;
 
     // 配置资产选择器
     FAssetPickerConfig AssetPickerConfig;
@@ -214,7 +217,7 @@ TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FO
 
     // 选择回调
     AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateLambda(
-        [OnFunctionSelected, &Window](const FAssetData& AssetData)
+        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
         {
             UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
             if (MaterialFunction && OnFunctionSelected.IsBound())
@@ -222,12 +225,15 @@ TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FO
                 OnFunctionSelected.Execute(MaterialFunction);
             }
             
-            Window->RequestDestroyWindow();
+            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
+            {
+                PinnedWindow->RequestDestroyWindow();
+            }
         });
 
     // 双击回调
     AssetPickerConfig.OnAssetDoubleClicked = FOnAssetDoubleClicked::CreateLambda(
-        [OnFunctionSelected, &Window](const FAssetData& AssetData)
+        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
         {
             UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
             if (MaterialFunction && OnFunctionSelected.IsBound())
@@ -235,7 +241,10 @@ TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FO
                 OnFunctionSelected.Execute(MaterialFunction);
             }
             
-            Window->RequestDestroyWindow();
+            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
+            {
+                PinnedWindow->RequestDestroyWindow();
+            }
         });
 
     // 创建资产选择器小部件

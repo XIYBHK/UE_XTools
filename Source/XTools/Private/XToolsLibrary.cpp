@@ -9,6 +9,7 @@
 
 //  插件模块依赖
 #include "XToolsDefines.h"
+#include "XToolsErrorReporter.h"
 #include "RandomShuffleArrayLibrary.h"
 #include "FormationSystem.h"
 #include "FormationLibrary.h"
@@ -219,7 +220,9 @@ AActor* UXToolsLibrary::GetTopmostAttachedActor(USceneComponent* StartComponent,
 {
     if (!StartComponent)
     {
-        UE_LOG(LogXTools, Warning, TEXT("GetTopmostAttachedActor: 提供的起始组件无效 (StartComponent is null)."));
+        FXToolsErrorReporter::Warning(LogXTools,
+            TEXT("GetTopmostAttachedActor: 提供的起始组件无效 (StartComponent is null)."),
+            TEXT("GetTopmostAttachedActor"));
         return nullptr;
     }
 
@@ -255,11 +258,124 @@ AActor* UXToolsLibrary::GetTopmostAttachedActor(USceneComponent* StartComponent,
     return HighestMatchingActor;
 }
 
+FVector UXToolsLibrary::EvaluateBezierConstantSpeed(
+        UWorld* World,
+        const TArray<FVector>& Points,
+        float Progress,
+        bool bShowDebug,
+        float Duration,
+        const FBezierDebugColors& DebugColors,
+        const FBezierSpeedOptions& SpeedOptions,
+        TArray<FVector>& WorkPoints)
+{
+    float AdjustedProgress = Progress;
+    if (SpeedOptions.SpeedCurve)
+    {
+        AdjustedProgress = SpeedOptions.SpeedCurve->GetFloatValue(AdjustedProgress);
+    }
+
+    const int32 Segments = 100;
+    TArray<float> SegmentLengths;
+    SegmentLengths.Reserve(Segments);
+    float TotalLength = 0.0f;
+
+    FVector PreviousPoint = CalculatePointAtParameter(Points, 0.0f, WorkPoints);
+    for (int32 Index = 1; Index <= Segments; ++Index)
+    {
+        const float T = static_cast<float>(Index) / Segments;
+        const FVector CurrentPoint = CalculatePointAtParameter(Points, T, WorkPoints);
+        const float SegmentLength = FVector::Distance(PreviousPoint, CurrentPoint);
+        SegmentLengths.Add(SegmentLength);
+        TotalLength += SegmentLength;
+
+        if (bShowDebug)
+        {
+            DrawDebugLine(World, PreviousPoint, CurrentPoint, DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+        }
+
+        PreviousPoint = CurrentPoint;
+    }
+
+    if (FMath::IsNearlyZero(TotalLength))
+    {
+        return Points[0];
+    }
+
+    const float TargetDistance = TotalLength * AdjustedProgress;
+    float AccumulatedLength = 0.0f;
+    float Parameter = 1.0f;
+
+    for (int32 Index = 0; Index < Segments; ++Index)
+    {
+        const float CurrentSegment = SegmentLengths[Index];
+        if (AccumulatedLength + CurrentSegment >= TargetDistance)
+        {
+            const float ExcessLength = (AccumulatedLength + CurrentSegment) - TargetDistance;
+            const float SegmentProgress = (CurrentSegment > KINDA_SMALL_NUMBER)
+                ? 1.0f - (ExcessLength / CurrentSegment)
+                : 1.0f;
+
+            const float PreviousT = static_cast<float>(Index) / Segments;
+            const float CurrentT = static_cast<float>(Index + 1) / Segments;
+            Parameter = FMath::Lerp(PreviousT, CurrentT, SegmentProgress);
+            break;
+        }
+
+        AccumulatedLength += CurrentSegment;
+    }
+
+    return CalculatePointAtParameter(Points, Parameter, WorkPoints);
+}
+
+void UXToolsLibrary::DrawBezierDebug(
+        UWorld* World,
+        const TArray<FVector>& Points,
+        const TArray<FVector>& WorkPoints,
+        const FBezierDebugColors& DebugColors,
+        float Duration,
+        const FVector& ResultPoint)
+{
+    for (const FVector& Point : Points)
+    {
+        DrawDebugSphere(World, Point, 8.0f, 8, DebugColors.ControlPointColor.ToFColor(true), false, Duration);
+    }
+
+    for (int32 Index = 0; Index < Points.Num() - 1; ++Index)
+    {
+        DrawDebugLine(World, Points[Index], Points[Index + 1], DebugColors.ControlLineColor.ToFColor(true), false, Duration);
+    }
+
+    const int32 PointCount = Points.Num();
+    int32 CurrentIndex = PointCount;
+    for (int32 Level = 1; Level < PointCount; ++Level)
+    {
+        const int32 LevelPoints = PointCount - Level;
+        for (int32 I = 0; I < LevelPoints; ++I)
+        {
+            const FVector& P1 = WorkPoints[CurrentIndex - LevelPoints - 1];
+            const FVector& P2 = WorkPoints[CurrentIndex - LevelPoints];
+
+            DrawDebugPoint(World, WorkPoints[CurrentIndex], 4.0f,
+                DebugColors.IntermediatePointColor.ToFColor(true), false, Duration);
+            DrawDebugLine(World, P1, P2,
+                DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+
+            CurrentIndex++;
+        }
+    }
+
+    const float ResultPointDuration = Duration * 5.0f;
+    DrawDebugPoint(World, ResultPoint, 20.0f, DebugColors.ResultPointColor.ToFColor(true), false, ResultPointDuration);
+}
+
 FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray<FVector>& Points, float Progress, bool bShowDebug, float Duration, FBezierDebugColors DebugColors, FBezierSpeedOptions SpeedOptions)
 {
     UWorld* World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
     if (!World)
     {
+        FXToolsErrorReporter::Error(LogXTools,
+            TEXT("CalculateBezierPoint: 无效的世界上下文对象"),
+            TEXT("CalculateBezierPoint"));
         return FVector::ZeroVector;
     }
     
@@ -274,122 +390,18 @@ FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray
 
     FVector ResultPoint;
     TArray<FVector> WorkPoints;
-    
     if (SpeedOptions.SpeedMode == EBezierSpeedMode::Constant)
     {
-        // --- 优化后的匀速模式 ---
-
-        // 在匀速模式下应用速率曲线
-        if (SpeedOptions.SpeedCurve)
-        {
-            Progress = SpeedOptions.SpeedCurve->GetFloatValue(Progress);
-        }
-
-        // 1. 一次性采样曲线，计算总长度和各分段长度
-        const int32 Segments = 100; // 采样分段数，可以根据精度需求调整
-        TArray<float> SegmentLengths;
-        SegmentLengths.Reserve(Segments);
-        float TotalLength = 0.0f;
-        
-        FVector PrevPoint = CalculatePointAtParameter(Points, 0.0f, WorkPoints);
-
-        for (int32 i = 1; i <= Segments; ++i)
-        {
-            const float t = static_cast<float>(i) / Segments;
-            const FVector CurrentPoint = CalculatePointAtParameter(Points, t, WorkPoints);
-            const float SegmentLength = FVector::Distance(PrevPoint, CurrentPoint);
-            SegmentLengths.Add(SegmentLength);
-            TotalLength += SegmentLength;
-
-            // 【新增】在调试模式下，绘制构成曲线的采样线段
-            if (bShowDebug)
-            {
-                DrawDebugLine(World, PrevPoint, CurrentPoint, DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
-            }
-            
-            PrevPoint = CurrentPoint;
-        }
-
-        if (FMath::IsNearlyZero(TotalLength))
-        {
-            ResultPoint = Points[0];
-        }
-        else
-        {
-            // 2. 根据总长度和进度计算目标距离
-            const float TargetDistance = TotalLength * Progress;
-            float AccumulatedLength = 0.0f;
-            float Parameter = 1.0f; // 默认参数为1
-
-            // 3. 从预计算的长度表中查找对应的参数t
-            for (int32 i = 0; i < Segments; ++i)
-            {
-                if (AccumulatedLength + SegmentLengths[i] >= TargetDistance)
-                {
-                    const float ExcessLength = (AccumulatedLength + SegmentLengths[i]) - TargetDistance;
-                    // SegmentLengths[i]为0时可能导致除零，增加检查
-                    const float SegmentProgress = (SegmentLengths[i] > KINDA_SMALL_NUMBER) ? 1.0f - (ExcessLength / SegmentLengths[i]) : 1.0f;
-                    
-                    const float PrevT = static_cast<float>(i) / Segments;
-                    const float CurrentT = static_cast<float>(i + 1) / Segments;
-                    Parameter = FMath::Lerp(PrevT, CurrentT, SegmentProgress);
-                    break;
-                }
-                AccumulatedLength += SegmentLengths[i];
-            }
-
-            // 4. 计算最终点
-            // 注意：如果需要调试绘制中间点，这里的WorkPoints需要重新计算
-            // 但由于性能优化是首要目标，我们只计算最终结果
-            ResultPoint = CalculatePointAtParameter(Points, Parameter, WorkPoints);
-        }
+        ResultPoint = EvaluateBezierConstantSpeed(World, Points, Progress, bShowDebug, Duration, DebugColors, SpeedOptions, WorkPoints);
     }
     else
     {
-        // 默认模式（直接使用参数t，不应用速率曲线）
         ResultPoint = CalculatePointAtParameter(Points, Progress, WorkPoints);
     }
 
-    // 如果开启调试，绘制控制点和连线
     if (bShowDebug)
     {
-        // 绘制控制点
-        for (const FVector& Point : Points)
-        {
-            DrawDebugSphere(World, Point, 8.0f, 8, DebugColors.ControlPointColor.ToFColor(true), false, Duration);
-        }
-
-        // 绘制控制点之间的连线
-        for (int32 i = 0; i < Points.Num() - 1; ++i)
-        {
-            DrawDebugLine(World, Points[i], Points[i + 1], DebugColors.ControlLineColor.ToFColor(true), false, Duration);
-        }
-
-        // 绘制中间计算过程
-        const int32 PointCount = Points.Num();
-        int32 CurrentIndex = PointCount;
-        for (int32 Level = 1; Level < PointCount; ++Level)
-        {
-            const int32 LevelPoints = PointCount - Level;
-            for (int32 i = 0; i < LevelPoints; ++i)
-            {
-                const FVector& P1 = WorkPoints[CurrentIndex - LevelPoints - 1];
-                const FVector& P2 = WorkPoints[CurrentIndex - LevelPoints];
-                
-                // 绘制中间点
-                DrawDebugPoint(World, WorkPoints[CurrentIndex], 4.0f, 
-                    DebugColors.IntermediatePointColor.ToFColor(true), false, Duration);
-                // 绘制中间连线
-                DrawDebugLine(World, P1, P2, 
-                    DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
-                
-                CurrentIndex++;
-            }
-        }
-
-        // 绘制结果点（显示时间更长）
-        const float ResultPointDuration = Duration * 5.0f;
-        DrawDebugPoint(World, ResultPoint, 20.0f, DebugColors.ResultPointColor.ToFColor(true), false, ResultPointDuration);
+        DrawBezierDebug(World, Points, WorkPoints, DebugColors, Duration, ResultPoint);
     }
 
     return ResultPoint;
@@ -471,7 +483,9 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     //  输入验证 - 使用配置常量
     if (BaseChance <= 0.0f || BaseChance > 1.0f)
     {
-        UE_LOG(LogXTools, Warning, TEXT("TestPRDDistribution: 基础概率必须在(0,1]范围内，当前值: %.3f"), BaseChance);
+        FXToolsErrorReporter::Warning(LogXTools,
+            FString::Printf(TEXT("TestPRDDistribution: 基础概率必须在(0,1]范围内，当前值: %.3f"), BaseChance),
+            TEXT("TestPRDDistribution"));
         TArray<int32> EmptyDistribution;
         EmptyDistribution.Init(0, PRD_ARRAY_SIZE);
         return EmptyDistribution;
@@ -522,10 +536,12 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     }
 
     //  优化的日志输出 - 减少字符串操作
-    UE_LOG(LogXTools, Log, TEXT("=== PRD 分布测试结果 ==="));
-    UE_LOG(LogXTools, Log, TEXT("基础概率: %.3f | 总测试次数: %d | 总成功次数: %d"), BaseChance, TotalTests, TotalSuccesses);
-    UE_LOG(LogXTools, Log, TEXT("失败次数 | 成功次数 | 实际成功率 | 理论成功率 | 测试次数"));
-    UE_LOG(LogXTools, Log, TEXT("---------|----------|------------|------------|----------"));
+    FXToolsErrorReporter::Info(LogXTools, TEXT("=== PRD 分布测试结果 ==="), TEXT("TestPRDDistribution"));
+    FXToolsErrorReporter::Info(LogXTools,
+        FString::Printf(TEXT("基础概率: %.3f | 总测试次数: %d | 总成功次数: %d"), BaseChance, TotalTests, TotalSuccesses),
+        TEXT("TestPRDDistribution"));
+    FXToolsErrorReporter::Info(LogXTools, TEXT("失败次数 | 成功次数 | 实际成功率 | 理论成功率 | 测试次数"), TEXT("TestPRDDistribution"));
+    FXToolsErrorReporter::Info(LogXTools, TEXT("---------|----------|------------|------------|----------"), TEXT("TestPRDDistribution"));
 
     //  优化循环 - 使用配置常量和线程安全
     for (int32 i = 0; i <= PRD_MAX_FAILURE_COUNT; ++i)
@@ -544,15 +560,17 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
         const float ActualSuccessRate = (FailureTests[i] > 0) ?
             static_cast<float>(Distribution[i]) / static_cast<float>(FailureTests[i]) : 0.0f;
 
-        UE_LOG(LogXTools, Log, TEXT("%8d | %8d | %9.2f%% | %9.2f%% | %8d"),
-            i,
-            Distribution[i],
-            ActualSuccessRate * PERCENTAGE_MULTIPLIER,
-            TheoreticalChance * PERCENTAGE_MULTIPLIER,
-            FailureTests[i]);
+        FXToolsErrorReporter::Info(LogXTools,
+            FString::Printf(TEXT("%8d | %8d | %9.2f%% | %9.2f%% | %8d"),
+                i,
+                Distribution[i],
+                ActualSuccessRate * PERCENTAGE_MULTIPLIER,
+                TheoreticalChance * PERCENTAGE_MULTIPLIER,
+                FailureTests[i]),
+            TEXT("TestPRDDistribution"));
     }
 
-    UE_LOG(LogXTools, Log, TEXT("=== 测试完成 ==="));
+    FXToolsErrorReporter::Info(LogXTools, TEXT("=== 测试完成 ==="), TEXT("TestPRDDistribution"));
 
     return Distribution;
 }
@@ -575,7 +593,9 @@ FString UXToolsLibrary::ClearPointSamplingCache()
     ResultBuilder.Append(TEXT("- 网格参数缓存已清空\n"));
     ResultBuilder.Append(TEXT("- 内存已释放\n"));
     const FString Result = ResultBuilder.ToString();
-    UE_LOG(LogXTools, Log, TEXT("点阵生成缓存清理: %s"), *Result);
+    FXToolsErrorReporter::Info(LogXTools,
+        FString::Printf(TEXT("点阵生成缓存清理: %s"), *Result),
+        TEXT("ClearPointSamplingCache"));
 
     return Result;
 }
@@ -677,7 +697,10 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
     UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
     if (!World)
     {
-        UE_LOG(LogXTools, Error, TEXT("在模型中生成点阵: 无效的世界上下文对象"));
+        FXToolsErrorReporter::Error(LogXTools,
+            TEXT("在模型中生成点阵: 无效的世界上下文对象"),
+            TEXT("SamplePointsInsideStaticMeshWithBoxOptimized"),
+            true);
         return;
     }
 
@@ -693,20 +716,20 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
         OutPoints = Result.Points;
 
         //  改进的日志输出
-        if (bEnableBoundsCulling)
-        {
-            UE_LOG(LogXTools, Log, TEXT("采样完成: 检测 %d 个点, 剔除 %d 个点, 在 %s 内生成 %d 个有效点"),
-                Result.TotalPointsChecked, Result.CulledPoints, *TargetActor->GetName(), OutPoints.Num());
-        }
-        else
-        {
-            UE_LOG(LogXTools, Log, TEXT("采样完成: 检测 %d 个点, 在 %s 内生成 %d 个有效点"),
+        const FString SuccessMessage = bEnableBoundsCulling
+            ? FString::Printf(TEXT("采样完成: 检测 %d 个点, 剔除 %d 个点, 在 %s 内生成 %d 个有效点"),
+                Result.TotalPointsChecked, Result.CulledPoints, *TargetActor->GetName(), OutPoints.Num())
+            : FString::Printf(TEXT("采样完成: 检测 %d 个点, 在 %s 内生成 %d 个有效点"),
                 Result.TotalPointsChecked, *TargetActor->GetName(), OutPoints.Num());
-        }
+
+        FXToolsErrorReporter::Info(LogXTools, SuccessMessage, TEXT("SamplePointsInsideStaticMeshWithBoxOptimized"));
     }
     else
     {
-        UE_LOG(LogXTools, Error, TEXT("采样失败: %s"), *Result.ErrorMessage);
+        FXToolsErrorReporter::Error(LogXTools,
+            FString::Printf(TEXT("采样失败: %s"), *Result.ErrorMessage),
+            TEXT("SamplePointsInsideStaticMeshWithBoxOptimized"),
+            true);
     }
 }
 

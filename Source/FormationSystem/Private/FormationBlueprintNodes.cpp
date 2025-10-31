@@ -36,7 +36,7 @@ bool UFormationBlueprintNodes::QuickFormationTransition(
 
     if (Units.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("QuickFormationTransition: 单位数组为空"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("QuickFormationTransition: 单位数组为空"));
         OutFormationManager = nullptr;
         return false;
     }
@@ -103,7 +103,7 @@ UFormationManagerComponent* UFormationBlueprintNodes::CreateFormationManager(AAc
 {
     if (!IsValid(TargetActor))
     {
-        UE_LOG(LogTemp, Warning, TEXT("CreateFormationManager: 目标Actor无效"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("CreateFormationManager: 目标Actor无效"));
         return nullptr;
     }
 
@@ -327,7 +327,7 @@ bool UFormationBlueprintNodes::CharacterFormationMovement(
 
     if (Characters.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("CharacterFormationMovement: Character数组为空"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("CharacterFormationMovement: Character数组为空"));
         OutTargetPositions.Empty();
         return false;
     }
@@ -344,7 +344,7 @@ bool UFormationBlueprintNodes::CharacterFormationMovement(
 
     if (ValidCharacters.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("CharacterFormationMovement: 没有有效的Character"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("CharacterFormationMovement: 没有有效的Character"));
         OutTargetPositions.Empty();
         return false;
     }
@@ -446,7 +446,7 @@ bool UFormationBlueprintNodes::CharacterFormationMovement(
                     else if (APlayerController* PlayerController = Cast<APlayerController>(Pawn->GetController()))
                     {
                         // 如果是玩家控制，可以在这里添加其他逻辑
-                        UE_LOG(LogTemp, Log, TEXT("CharacterFormationMovement: 玩家控制的角色，跳过AI移动"));
+                        UE_LOG(LogFormationSystem, Log, TEXT("CharacterFormationMovement: 玩家控制的角色，跳过AI移动"));
                     }
                 }
             }
@@ -486,7 +486,7 @@ bool UFormationBlueprintNodes::CharacterFormationMovement(
         // 简化日志输出
         FString ComponentInfo = AddedComponents > 0 ? FString::Printf(TEXT("，添加了%d个移动组件"), AddedComponents) : TEXT("");
 
-        UE_LOG(LogTemp, Log, TEXT("CharacterFormationMovement: %d个角色开始移动%s"),
+        UE_LOG(LogFormationSystem, Log, TEXT("CharacterFormationMovement: %d个角色开始移动%s"),
                MovingCharacters, *ComponentInfo);
     }
 
@@ -550,7 +550,7 @@ bool UFormationBlueprintNodes::RTSFlockFormationTransition(
 
     if (Units.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("RTSFlockFormationTransition: 单位数组为空"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("RTSFlockFormationTransition: 单位数组为空"));
         OutFormationManager = nullptr;
         return false;
     }
@@ -633,7 +633,7 @@ bool UFormationBlueprintNodes::PathAwareFormationTransition(
 
     if (Units.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("PathAwareFormationTransition: 单位数组为空"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("PathAwareFormationTransition: 单位数组为空"));
         OutFormationManager = nullptr;
         return false;
     }

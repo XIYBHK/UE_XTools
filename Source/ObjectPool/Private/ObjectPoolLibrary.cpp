@@ -16,6 +16,58 @@
 #include "ObjectPool.h"
 #include "ObjectPoolSubsystem.h"
 
+namespace XTools::ObjectPool
+{
+    static UWorld* ResolveWorld(const UObject* WorldContext)
+    {
+        UWorld* World = nullptr;
+
+        if (WorldContext)
+        {
+            World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull);
+        }
+
+        if (!World)
+        {
+            if (UObjectPoolSubsystem* TempSubsystem = UObjectPoolSubsystem::Get(WorldContext))
+            {
+                World = TempSubsystem->GetWorld();
+            }
+        }
+
+        return World;
+    }
+
+    static AActor* SpawnFallbackActor(UWorld* World, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform)
+    {
+        if (!World)
+        {
+            return nullptr;
+        }
+
+        if (ActorClass)
+        {
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            if (AActor* Actor = World->SpawnActor<AActor>(ActorClass, SpawnTransform, SpawnParams))
+            {
+                OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary: 回退创建成功: %s"), *Actor->GetName());
+                return Actor;
+            }
+        }
+
+        FActorSpawnParameters DefaultParams;
+        DefaultParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        DefaultParams.bNoFail = true;
+        if (AActor* DefaultActor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform, DefaultParams))
+        {
+            OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary: 回退到默认Actor: %s"), *DefaultActor->GetName());
+            return DefaultActor;
+        }
+
+        return nullptr;
+    }
+}
 
 bool UObjectPoolLibrary::RegisterActorClass(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
 {
@@ -53,58 +105,19 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
 
         return Actor;
     }
+
+    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 无法获取对象池子系统，尝试直接创建"));
+
+    if (UWorld* World = XTools::ObjectPool::ResolveWorld(WorldContext))
     {
-        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 无法获取对象池子系统，尝试直接创建"));
-        
-        //  多级回退机制：即使子系统不可用也要尝试创建Actor
-        UWorld* World = nullptr;
-
-        // 首先尝试从WorldContext获取
-        if (WorldContext)
+        if (AActor* Actor = XTools::ObjectPool::SpawnFallbackActor(World, ActorClass, SpawnTransform))
         {
-            World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull);
+            return Actor;
         }
-
-        // 如果失败，尝试使用子系统的智能获取方法
-        if (!World)
-        {
-            if (UObjectPoolSubsystem* TempSubsystem = UObjectPoolSubsystem::Get(WorldContext))
-            {
-                World = TempSubsystem->GetWorld(); // 使用USubsystem::GetWorld()方法
-            }
-        }
-
-        if (World)
-        {
-            // 第一级回退：尝试创建指定类型
-            if (ActorClass)
-            {
-                FActorSpawnParameters SpawnParams;
-                SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-                AActor* Actor = World->SpawnActor<AActor>(ActorClass, SpawnTransform, SpawnParams);
-                if (Actor)
-                {
-                    OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary: 回退创建成功: %s"), *Actor->GetName());
-                    return Actor;
-                }
-            }
-
-            // 第二级回退：创建默认Actor
-            FActorSpawnParameters DefaultParams;
-            DefaultParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            DefaultParams.bNoFail = true;
-            AActor* DefaultActor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform, DefaultParams);
-            if (DefaultActor)
-            {
-                OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary: 回退到默认Actor: %s"), *DefaultActor->GetName());
-                return DefaultActor;
-            }
-        }
-
-        //  所有回退机制均失败：直接返回 nullptr，由上层决定是否改用 SpawnActor 兜底
-        OBJECTPOOL_LOG(Error, TEXT("UObjectPoolLibrary: 所有回退机制都失败，返回 nullptr"));
-        return nullptr;
     }
+
+    OBJECTPOOL_LOG(Error, TEXT("UObjectPoolLibrary: 所有回退机制都失败，返回 nullptr"));
+    return nullptr;
 }
 
 AActor* UObjectPoolLibrary::SpawnActorFromPoolEx(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform, EPoolOpResult& OutResult)

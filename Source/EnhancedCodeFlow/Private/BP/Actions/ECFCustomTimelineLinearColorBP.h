@@ -20,6 +20,6 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnECFCustomTimelineLinearColorBPEvent OnFinished;
 	
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings", ToolTip = "添加一个由颜色曲线定义的自定义时间轴", DisplayName = "ECF - 自定义颜色时间轴"), Category = "XTools|ECF|时间轴")
-	static UECFCustomTimelineLinearColorBP* ECFCustomTimelineLinearColor(const UObject* WorldContextObject, class UCurveLinearColor* CurveLinearColor, FECFActionSettings Settings, FECFHandleBP& Handle);
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, PlayRate", ToolTip = "添加一个由线性色彩曲线驱动的自定义时间轴，支持 PlayRate 调节", DisplayName = "ECF - 自定义颜色时间轴"), Category = "XTools|ECF|时间轴")
+	static UECFCustomTimelineLinearColorBP* ECFCustomTimelineLinearColor(const UObject* WorldContextObject, class UCurveLinearColor* CurveLinearColor, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate = 1.f);
 };

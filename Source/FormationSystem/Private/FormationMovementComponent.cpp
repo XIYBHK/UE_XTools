@@ -1,4 +1,5 @@
 #include "FormationMovementComponent.h"
+#include "FormationLog.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/Engine.h"
@@ -27,7 +28,7 @@ void UFormationMovementComponent::BeginPlay()
     OwnerCharacter = Cast<ACharacter>(GetOwner());
     if (!OwnerCharacter)
     {
-        UE_LOG(LogTemp, Warning, TEXT("FormationMovementComponent: Owner不是Character类型"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("FormationMovementComponent: Owner不是Character类型"));
     }
 }
 
@@ -45,7 +46,7 @@ void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, 
 {
     if (!OwnerCharacter)
     {
-        UE_LOG(LogTemp, Warning, TEXT("FormationMovementComponent: 无效的Character"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("FormationMovementComponent: 无效的Character"));
         return;
     }
 
@@ -56,7 +57,7 @@ void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, 
     // 检查是否已经在目标位置
     if (HasReachedTarget())
     {
-        UE_LOG(LogTemp, Log, TEXT("FormationMovementComponent: 已在目标位置"));
+        UE_LOG(LogFormationSystem, Log, TEXT("FormationMovementComponent: 已在目标位置"));
         return;
     }
     
@@ -64,7 +65,7 @@ void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, 
     SetComponentTickEnabled(true);
     
     // 简化日志输出 - 只在VeryVerbose级别输出详细信息
-    UE_LOG(LogTemp, VeryVerbose, TEXT("FormationMovementComponent: 开始移动到位置 %s"), *TargetLocation.ToString());
+    UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 开始移动到位置 %s"), *TargetLocation.ToString());
 }
 
 void UFormationMovementComponent::StopMovement()
@@ -89,7 +90,7 @@ void UFormationMovementComponent::StopMovement()
         }
     }
 
-    UE_LOG(LogTemp, VeryVerbose, TEXT("FormationMovementComponent: 完全停止移动并清除所有移动状态"));
+    UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 完全停止移动并清除所有移动状态"));
 }
 
 float UFormationMovementComponent::GetDistanceToTarget() const
@@ -153,7 +154,7 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
         StopMovement();
         OnMovementCompleted.Broadcast(this);
 
-        UE_LOG(LogTemp, VeryVerbose, TEXT("FormationMovementComponent: 到达目标位置，距离=%.2f"), DistanceToTarget);
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 到达目标位置，距离=%.2f"), DistanceToTarget);
         return;
     }
 
@@ -165,7 +166,7 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
     // 如果方向无效，停止移动
     if (Direction.IsNearlyZero())
     {
-        UE_LOG(LogTemp, Warning, TEXT("FormationMovementComponent: 无效的移动方向，停止移动"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("FormationMovementComponent: 无效的移动方向，停止移动"));
         StopMovement();
         return;
     }
@@ -178,7 +179,7 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
         // 进入制动阶段，停止输入让角色自然减速
         OwnerCharacter->AddMovementInput(FVector::ZeroVector, 0.0f);
 
-        UE_LOG(LogTemp, VeryVerbose, TEXT("FormationMovementComponent: 制动中，距离=%.2f，制动距离=%.2f，当前速度=%.2f"),
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 制动中，距离=%.2f，制动距离=%.2f，当前速度=%.2f"),
                DistanceToTarget, BrakingDistance, CurrentSpeed);
 
         // 不执行旋转，让角色自然停止
@@ -196,7 +197,7 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
             float Alpha = (ClampedDistance - AcceptanceRadius) / (SlowDownDistance - AcceptanceRadius);
             SpeedMultiplier = FMath::Lerp(MinSlowDownSpeed, 1.0f, Alpha);
 
-            UE_LOG(LogTemp, VeryVerbose, TEXT("FormationMovementComponent: 减速中，距离=%.2f，Alpha=%.2f，速度倍数=%.2f"),
+            UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 减速中，距离=%.2f，Alpha=%.2f，速度倍数=%.2f"),
                    DistanceToTarget, Alpha, SpeedMultiplier);
         }
     }

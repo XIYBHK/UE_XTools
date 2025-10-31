@@ -1,5 +1,6 @@
 #include "FormationTestActor.h"
 #include "FormationSystem.h"
+#include "FormationLog.h"
 #include "FormationLibrary.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -94,14 +95,14 @@ void AFormationTestActor::InitializePredefinedFormations()
     );
     PredefinedFormations.Add(InvertedTriangleFormation);
 
-    UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 初始化了 %d 个预定义阵型"), PredefinedFormations.Num());
+    UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 初始化了 %d 个预定义阵型"), PredefinedFormations.Num());
 }
 
 void AFormationTestActor::SwitchToNextFormation()
 {
     if (PredefinedFormations.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("FormationTestActor: 没有可用的预定义阵型"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("FormationTestActor: 没有可用的预定义阵型"));
         return;
     }
 
@@ -113,19 +114,19 @@ void AFormationTestActor::SwitchToFormation(int32 FormationIndex)
 {
     if (!PredefinedFormations.IsValidIndex(FormationIndex))
     {
-        UE_LOG(LogTemp, Warning, TEXT("FormationTestActor: 无效的阵型索引 %d"), FormationIndex);
+        UE_LOG(LogFormationSystem, Warning, TEXT("FormationTestActor: 无效的阵型索引 %d"), FormationIndex);
         return;
     }
 
     if (TestUnits.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("FormationTestActor: 没有测试单位"));
+        UE_LOG(LogFormationSystem, Warning, TEXT("FormationTestActor: 没有测试单位"));
         return;
     }
 
     if (FormationManager->IsTransitioning())
     {
-        UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 正在进行阵型变换，跳过此次请求"));
+        UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 正在进行阵型变换，跳过此次请求"));
         return;
     }
 
@@ -159,7 +160,7 @@ void AFormationTestActor::SwitchToFormation(int32 FormationIndex)
         CurrentFormationIndex = FormationIndex;
         LastTransitionTime = GetWorld()->GetTimeSeconds();
         
-        UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 开始变换到阵型 '%s' (索引: %d)"), 
+        UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 开始变换到阵型 '%s' (索引: %d)"), 
                *GetFormationName(FormationIndex), FormationIndex);
 
         // 绘制调试信息
@@ -171,7 +172,7 @@ void AFormationTestActor::SwitchToFormation(int32 FormationIndex)
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("FormationTestActor: 阵型变换启动失败"));
+        UE_LOG(LogFormationSystem, Error, TEXT("FormationTestActor: 阵型变换启动失败"));
     }
 }
 
@@ -231,7 +232,7 @@ void AFormationTestActor::CreateTestUnits(int32 UnitCount, TSubclassOf<AActor> U
 #endif
     }
 
-    UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 创建了 %d 个测试单位"), TestUnits.Num());
+    UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 创建了 %d 个测试单位"), TestUnits.Num());
 }
 
 void AFormationTestActor::ClearTestUnits()
@@ -262,7 +263,7 @@ void AFormationTestActor::StartDemo()
     bAutoLoop = true;
     LastTransitionTime = GetWorld()->GetTimeSeconds();
     
-    UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 开始演示模式"));
+    UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 开始演示模式"));
 }
 
 void AFormationTestActor::StopDemo()
@@ -274,7 +275,7 @@ void AFormationTestActor::StopDemo()
         FormationManager->StopFormationTransition(false);
     }
     
-    UE_LOG(LogTemp, Log, TEXT("FormationTestActor: 停止演示模式"));
+    UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 停止演示模式"));
 }
 
 FString AFormationTestActor::GetFormationName(int32 FormationIndex) const

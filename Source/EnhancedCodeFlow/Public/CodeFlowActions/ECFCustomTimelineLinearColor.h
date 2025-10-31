@@ -25,15 +25,17 @@ protected:
 
 	FLinearColor CurrentValue = FLinearColor::Black;
 	float CurrentTime = 0.f;
+	float PlayRate = 1.0f;
 
 	UPROPERTY(Transient)
 	UCurveLinearColor* CurveLinearColor = nullptr;
 
-	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float, bool)>&& InCallbackFunc = nullptr)
+	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float, bool)>&& InCallbackFunc, float InPlayRate)
 	{
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
 		CurveLinearColor = InCurveLinearColor;
+		PlayRate = (FMath::Abs(InPlayRate) > KINDA_SMALL_NUMBER) ? FMath::Abs(InPlayRate) : 1.0f;
 
 		if (TickFunc && CurveLinearColor)
 		{
@@ -44,6 +46,8 @@ protected:
 			FOnTimelineEvent FinishFunction;
 			FinishFunction.BindUFunction(this, FName("HandleFinish"));
 			MyTimeline.SetTimelineFinishedFunc(FinishFunction);
+			MyTimeline.SetPlayRate(PlayRate);
+			SetMaxActionTime(MyTimeline.GetTimelineLength() / FMath::Max(FMath::Abs(PlayRate), KINDA_SMALL_NUMBER));
 
 			MyTimeline.PlayFromStart();
 
@@ -56,7 +60,7 @@ protected:
 		}
 	}
 
-	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float)>&& InCallbackFunc = nullptr)
+	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float)>&& InCallbackFunc, float InPlayRate)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InCurveLinearColor, MoveTemp(InTickFunc), [this](FLinearColor Value, float Time, bool bStopped)
@@ -65,7 +69,7 @@ protected:
 			{
 				CallbackFunc_NoStopped(Value, Time);
 			}
-		});
+		}, InPlayRate);
 	}
 
 	void Tick(float DeltaTime) override

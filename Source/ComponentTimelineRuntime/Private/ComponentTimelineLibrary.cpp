@@ -16,6 +16,8 @@
 #include "Curves/CurveLinearColor.h"
 #include "Curves/CurveVector.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogComponentTimelineRuntime, Log, All);
+
 namespace
 {
 	/**
@@ -163,11 +165,11 @@ namespace
  */
 void UComponentTimelineLibrary::InitializeComponentTimelines(UActorComponent* Component)
 {
-	if (!IsValid(Component))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[InitializeComponentTimelines] 无效的组件对象"));
-		return;
-	}
+    if (!IsValid(Component))
+    {
+        UE_LOG(LogComponentTimelineRuntime, Error, TEXT("InitializeComponentTimelines: 无效的组件对象"));
+        return;
+    }
 
 	InitializeTimelines(Component, Component->GetOwner());
 }
@@ -179,11 +181,11 @@ void UComponentTimelineLibrary::InitializeComponentTimelines(UActorComponent* Co
  */
 void UComponentTimelineLibrary::InitializeTimelines(UObject* BlueprintOwner, AActor* ActorOwner)
 {
-	if (!IsValid(BlueprintOwner) || !IsValid(ActorOwner))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[UComponentTimelineLibrary] 无效的对象"));
-		return;
-	}
+    if (!IsValid(BlueprintOwner) || !IsValid(ActorOwner))
+    {
+        UE_LOG(LogComponentTimelineRuntime, Error, TEXT("InitializeTimelines: BlueprintOwner 或 ActorOwner 无效"));
+        return;
+    }
 
 	// 生成该Actor的父蓝图层次结构，以便我们可以按顺序运行所有构造脚本
 	TArray<const UBlueprintGeneratedClass*> ParentBPClassStack;

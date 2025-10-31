@@ -5,6 +5,7 @@
 
 
 #include "XBlueprintLibraryCleanupTool.h"
+#include "XToolsDefines.h"
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -27,19 +28,19 @@ UBlueprint* UXBlueprintLibraryCleanupTool::GetBlueprintFromAssetData(const FAsse
     UObject* ExistingAsset = FindObject<UBlueprint>(nullptr, *AssetData.GetObjectPathString());
     if (ExistingAsset)
     {
-        UE_LOG(LogTemp, Log, TEXT("   从内存中找到蓝图: %s"), *AssetData.AssetName.ToString());
+        UE_LOG(LogXTools, Log, TEXT("   从内存中找到蓝图: %s"), *AssetData.AssetName.ToString());
         return Cast<UBlueprint>(ExistingAsset);
     }
     
     // 2. 尝试FastGetAsset（不强制加载）
     if (UObject* FastAsset = AssetData.FastGetAsset(false))
     {
-        UE_LOG(LogTemp, Log, TEXT("   通过FastGetAsset获取: %s"), *AssetData.AssetName.ToString());
+        UE_LOG(LogXTools, Log, TEXT("   通过FastGetAsset获取: %s"), *AssetData.AssetName.ToString());
         return Cast<UBlueprint>(FastAsset);
     }
     
     // 3. 最后才从磁盘加载（可能覆盖内存中的修改）
-    UE_LOG(LogTemp, Warning, TEXT("   从磁盘加载蓝图: %s (可能覆盖内存修改)"), *AssetData.AssetName.ToString());
+    UE_LOG(LogXTools, Warning, TEXT("   从磁盘加载蓝图: %s (可能覆盖内存修改)"), *AssetData.AssetName.ToString());
     return Cast<UBlueprint>(AssetData.GetAsset());
 }
 
@@ -100,15 +101,15 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
     TArray<FAssetData> AssetDataArray;
     AssetRegistry.GetAssets(Filter, AssetDataArray);
     
-    UE_LOG(LogTemp, Warning, TEXT("找到 %d 个蓝图资产"), AssetDataArray.Num());
+    UE_LOG(LogXTools, Warning, TEXT("找到 %d 个蓝图资产"), AssetDataArray.Num());
     
     if (AssetDataArray.Num() == 0)
     {
-        UE_LOG(LogTemp, Error, TEXT("没有找到任何蓝图资产！可能的原因："));
-        UE_LOG(LogTemp, Error, TEXT("   1. 路径过滤太严格 - 蓝图可能不在 /Game 或 /Plugins 路径"));
-        UE_LOG(LogTemp, Error, TEXT("   2. 资产注册表未更新 - 尝试重新扫描项目"));
-        UE_LOG(LogTemp, Error, TEXT("   3. 使用了错误的搜索参数"));
-        UE_LOG(LogTemp, Warning, TEXT("建议：检查蓝图函数库是否确实位于 Content 文件夹中"));
+        UE_LOG(LogXTools, Error, TEXT("没有找到任何蓝图资产！可能的原因："));
+        UE_LOG(LogXTools, Error, TEXT("   1. 路径过滤太严格 - 蓝图可能不在 /Game 或 /Plugins 路径"));
+        UE_LOG(LogXTools, Error, TEXT("   2. 资产注册表未更新 - 尝试重新扫描项目"));
+        UE_LOG(LogXTools, Error, TEXT("   3. 使用了错误的搜索参数"));
+        UE_LOG(LogXTools, Warning, TEXT("建议：检查蓝图函数库是否确实位于 Content 文件夹中"));
     }
     
     // 使用元数据检查，避免不必要的蓝图加载
@@ -152,7 +153,7 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
     }
     
     // 智能加载策略
-    UE_LOG(LogTemp, Warning, TEXT("开始加载 %d 个蓝图函数库..."), FunctionLibraryAssets.Num());
+    UE_LOG(LogXTools, Warning, TEXT("开始加载 %d 个蓝图函数库..."), FunctionLibraryAssets.Num());
     double LoadStartTime = FPlatformTime::Seconds();
     
     // 尝试从内存中获取已加载的蓝图
@@ -181,9 +182,9 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
     }
     
     double LoadEndTime = FPlatformTime::Seconds();
-    UE_LOG(LogTemp, Warning, TEXT("加载完成，耗时: %.3f 秒"), LoadEndTime - LoadStartTime);
-    UE_LOG(LogTemp, Warning, TEXT("   从内存获取: %d 个"), FromMemory);
-    UE_LOG(LogTemp, Warning, TEXT("   从磁盘加载: %d 个"), FromDisk);
+    UE_LOG(LogXTools, Warning, TEXT("加载完成，耗时: %.3f 秒"), LoadEndTime - LoadStartTime);
+    UE_LOG(LogXTools, Warning, TEXT("   从内存获取: %d 个"), FromMemory);
+    UE_LOG(LogXTools, Warning, TEXT("   从磁盘加载: %d 个"), FromDisk);
     
     return BlueprintLibraries;
 }
@@ -306,14 +307,14 @@ TArray<UXBlueprintLibraryCleanupTool::FWorldContextScanResult> UXBlueprintLibrar
     double EndTime = FPlatformTime::Seconds();
     double ElapsedTime = EndTime - StartTime;
     
-    UE_LOG(LogTemp, Warning, TEXT("扫描性能统计:"));
-    UE_LOG(LogTemp, Warning, TEXT("   扫描时间: %.3f 秒"), ElapsedTime);
-    UE_LOG(LogTemp, Warning, TEXT("   处理蓝图: %d"), Blueprints.Num());
-    UE_LOG(LogTemp, Warning, TEXT("   处理图形: %d"), TotalGraphs);
-    UE_LOG(LogTemp, Warning, TEXT("   检查节点: %d"), TotalNodes);
-    UE_LOG(LogTemp, Warning, TEXT("   函数入口: %d"), FunctionEntryNodes);
-    UE_LOG(LogTemp, Warning, TEXT("   检查引脚: %d"), TotalPins);
-    UE_LOG(LogTemp, Warning, TEXT("   找到结果: %d"), Results.Num());
+    UE_LOG(LogXTools, Warning, TEXT("扫描性能统计:"));
+    UE_LOG(LogXTools, Warning, TEXT("   扫描时间: %.3f 秒"), ElapsedTime);
+    UE_LOG(LogXTools, Warning, TEXT("   处理蓝图: %d"), Blueprints.Num());
+    UE_LOG(LogXTools, Warning, TEXT("   处理图形: %d"), TotalGraphs);
+    UE_LOG(LogXTools, Warning, TEXT("   检查节点: %d"), TotalNodes);
+    UE_LOG(LogXTools, Warning, TEXT("   函数入口: %d"), FunctionEntryNodes);
+    UE_LOG(LogXTools, Warning, TEXT("   检查引脚: %d"), TotalPins);
+    UE_LOG(LogXTools, Warning, TEXT("   找到结果: %d"), Results.Num());
     
     return Results;
 }
@@ -322,11 +323,11 @@ int32 UXBlueprintLibraryCleanupTool::PreviewCleanupWorldContextParams(bool bLogT
 {
     if (bLogToConsole)
     {
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
-        UE_LOG(LogTemp, Warning, TEXT("[XTools] 开始扫描蓝图函数库中的World Context参数..."));
-        UE_LOG(LogTemp, Warning, TEXT("安全限制：只处理用户自定义蓝图函数库"));
-        UE_LOG(LogTemp, Warning, TEXT("注意：只会处理【未连接】的World Context参数"));
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("[XTools] 开始扫描蓝图函数库中的World Context参数..."));
+        UE_LOG(LogXTools, Warning, TEXT("安全限制：只处理用户自定义蓝图函数库"));
+        UE_LOG(LogXTools, Warning, TEXT("注意：只会处理【未连接】的World Context参数"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
     }
     
     // 获取所有蓝图函数库
@@ -336,17 +337,17 @@ int32 UXBlueprintLibraryCleanupTool::PreviewCleanupWorldContextParams(bool bLogT
     
     if (bLogToConsole)
     {
-        UE_LOG(LogTemp, Warning, TEXT("找到 %d 个用户自定义蓝图函数库"), BlueprintLibraries.Num());
+        UE_LOG(LogXTools, Warning, TEXT("找到 %d 个用户自定义蓝图函数库"), BlueprintLibraries.Num());
         
         // 显示找到的蓝图函数库列表
         for (UBlueprint* BP : BlueprintLibraries)
         {
             if (BP)
             {
-                UE_LOG(LogTemp, Warning, TEXT("  %s"), *BP->GetName());
+                UE_LOG(LogXTools, Warning, TEXT("  %s"), *BP->GetName());
             }
         }
-        UE_LOG(LogTemp, Warning, TEXT("注意：已自动排除UE引擎内置的蓝图函数库"));
+        UE_LOG(LogXTools, Warning, TEXT("注意：已自动排除UE引擎内置的蓝图函数库"));
     }
     
     // 扫描World Context参数
@@ -356,24 +357,24 @@ int32 UXBlueprintLibraryCleanupTool::PreviewCleanupWorldContextParams(bool bLogT
     {
         if (ScanResults.Num() == 0)
         {
-            UE_LOG(LogTemp, Warning, TEXT("未发现需要清理的【未连接】World Context参数"));
+            UE_LOG(LogXTools, Warning, TEXT("未发现需要清理的【未连接】World Context参数"));
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("发现 %d 个需要清理的【未连接】World Context参数:"), ScanResults.Num());
-            UE_LOG(LogTemp, Warning, TEXT("----------------------------------------"));
+            UE_LOG(LogXTools, Warning, TEXT("发现 %d 个需要清理的【未连接】World Context参数:"), ScanResults.Num());
+            UE_LOG(LogXTools, Warning, TEXT("----------------------------------------"));
             
             for (const FWorldContextScanResult& Result : ScanResults)
             {
-                UE_LOG(LogTemp, Warning, TEXT("蓝图: %s"), *Result.Blueprint->GetName());
-                UE_LOG(LogTemp, Warning, TEXT("   函数: %s"), *Result.FunctionName);
-                UE_LOG(LogTemp, Warning, TEXT("   参数: %s (未连接)"), *Result.PinName);
+                UE_LOG(LogXTools, Warning, TEXT("蓝图: %s"), *Result.Blueprint->GetName());
+                UE_LOG(LogXTools, Warning, TEXT("   函数: %s"), *Result.FunctionName);
+                UE_LOG(LogXTools, Warning, TEXT("   参数: %s (未连接)"), *Result.PinName);
             }
         }
         
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
-        UE_LOG(LogTemp, Warning, TEXT("[XTools] 扫描完成！如需执行清理，请调用ExecuteCleanupWorldContextParams"));
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("[XTools] 扫描完成！如需执行清理，请调用ExecuteCleanupWorldContextParams"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
     }
     
     return ScanResults.Num();
@@ -383,11 +384,11 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
 {
     if (bLogToConsole)
     {
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
-        UE_LOG(LogTemp, Warning, TEXT("[XTools] 开始执行World Context参数清理..."));
-        UE_LOG(LogTemp, Warning, TEXT("注意：只会清理【未连接】的World Context参数"));
-        UE_LOG(LogTemp, Warning, TEXT("警告：这将修改蓝图资产，请确保已备份！"));
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("[XTools] 开始执行World Context参数清理..."));
+        UE_LOG(LogXTools, Warning, TEXT("注意：只会清理【未连接】的World Context参数"));
+        UE_LOG(LogXTools, Warning, TEXT("警告：这将修改蓝图资产，请确保已备份！"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
     }
     
     // 获取所有蓝图函数库
@@ -400,7 +401,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
     {
         if (bLogToConsole)
         {
-            UE_LOG(LogTemp, Warning, TEXT(" 未发现需要清理的【未连接】World Context参数"));
+            UE_LOG(LogXTools, Warning, TEXT(" 未发现需要清理的【未连接】World Context参数"));
         }
         return 0;
     }
@@ -422,7 +423,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
         
         if (bLogToConsole)
         {
-            UE_LOG(LogTemp, Warning, TEXT("处理蓝图: %s"), *Blueprint->GetName());
+            UE_LOG(LogXTools, Warning, TEXT("处理蓝图: %s"), *Blueprint->GetName());
         }
         
         bool bBlueprintModified = false;
@@ -480,7 +481,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             {
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogTemp, Error, TEXT("   ❌ 移除用户定义引脚时发生异常: %s::%s"), 
+                                    UE_LOG(LogXTools, Error, TEXT("   ❌ 移除用户定义引脚时发生异常: %s::%s"), 
                                            *Result.FunctionName, *Result.PinName);
                                 }
                             }
@@ -495,7 +496,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                                 
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogTemp, Warning, TEXT("   🔧 通过普通方式移除: %s::%s"), 
+                                    UE_LOG(LogXTools, Warning, TEXT("   🔧 通过普通方式移除: %s::%s"), 
                                            *Result.FunctionName, *Result.PinName);
                                 }
                             }
@@ -503,7 +504,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             {
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogTemp, Error, TEXT("   ❌ 移除引脚时发生异常: %s::%s"), 
+                                    UE_LOG(LogXTools, Error, TEXT("   ❌ 移除引脚时发生异常: %s::%s"), 
                                            *Result.FunctionName, *Result.PinName);
                                 }
                             }
@@ -522,7 +523,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             
                             if (bLogToConsole)
                             {
-                                UE_LOG(LogTemp, Warning, TEXT("   已移除参数: %s::%s"), 
+                                UE_LOG(LogXTools, Warning, TEXT("   已移除参数: %s::%s"), 
                                        *Result.FunctionName, *Result.PinName);
                             }
                         }
@@ -536,7 +537,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                         FailureCount++;
                         if (bLogToConsole)
                         {
-                            UE_LOG(LogTemp, Error, TEXT("   ❌ 未找到参数: %s::%s"), 
+                            UE_LOG(LogXTools, Error, TEXT("   ❌ 未找到参数: %s::%s"), 
                                    *Result.FunctionName, *Result.PinName);
                         }
                     }
@@ -565,7 +566,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                 {
                     if (bLogToConsole)
                     {
-                        UE_LOG(LogTemp, Error, TEXT("   ❌ 蓝图编译失败: %s"), *Blueprint->GetName());
+                        UE_LOG(LogXTools, Error, TEXT("   ❌ 蓝图编译失败: %s"), *Blueprint->GetName());
                     }
                 }
                 else
@@ -575,7 +576,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                     
                     if (bLogToConsole)
                     {
-                        UE_LOG(LogTemp, Warning, TEXT("   已重新编译蓝图"));
+                        UE_LOG(LogXTools, Warning, TEXT("   已重新编译蓝图"));
                     }
                 }
             }
@@ -583,7 +584,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
             {
                 if (bLogToConsole)
                 {
-                    UE_LOG(LogTemp, Error, TEXT("   ⚠️  蓝图编译过程中发生异常: %s"), *Blueprint->GetName());
+                    UE_LOG(LogXTools, Error, TEXT("   ⚠️  蓝图编译过程中发生异常: %s"), *Blueprint->GetName());
                 }
             }
         }
@@ -591,15 +592,15 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
     
     if (bLogToConsole)
     {
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
-        UE_LOG(LogTemp, Warning, TEXT("[XTools] 清理完成！"));
-        UE_LOG(LogTemp, Warning, TEXT("成功清理: %d 个参数"), SuccessCount);
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("[XTools] 清理完成！"));
+        UE_LOG(LogXTools, Warning, TEXT("成功清理: %d 个参数"), SuccessCount);
         if (FailureCount > 0)
         {
-            UE_LOG(LogTemp, Warning, TEXT("清理失败: %d 个参数"), FailureCount);
+            UE_LOG(LogXTools, Warning, TEXT("清理失败: %d 个参数"), FailureCount);
         }
-        UE_LOG(LogTemp, Warning, TEXT("建议：全量编译项目以确保所有调用点正确更新"));
-        UE_LOG(LogTemp, Warning, TEXT("========================================"));
+        UE_LOG(LogXTools, Warning, TEXT("建议：全量编译项目以确保所有调用点正确更新"));
+        UE_LOG(LogXTools, Warning, TEXT("========================================"));
     }
     
     return SuccessCount;
@@ -609,13 +610,13 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
 
 int32 UXBlueprintLibraryCleanupTool::PreviewCleanupWorldContextParams(bool bLogToConsole)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"));
+    UE_LOG(LogXTools, Warning, TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"));
     return 0;
 }
 
 int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogToConsole)
 {
-    UE_LOG(LogTemp, Warning, TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"));
+    UE_LOG(LogXTools, Warning, TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"));
     return 0;
 }
 

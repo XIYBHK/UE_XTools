@@ -588,7 +588,7 @@ TArray<int32> UFormationManagerComponent::CalculateDistancePriorityAssignment(
     const TArray<FVector>& ToPositions)
 {
     // 已弃用，使用空间排序映射代替
-    UE_LOG(LogTemp, Warning, TEXT("CalculateDistancePriorityAssignment已弃用，使用CalculateSpatialOrderMapping代替"));
+    UE_LOG(LogFormationSystem, Warning, TEXT("CalculateDistancePriorityAssignment已弃用，使用CalculateSpatialOrderMapping代替"));
     return CalculateSpatialOrderMapping(FromPositions, ToPositions);
 }
 

@@ -25,15 +25,18 @@ protected:
 	float Time;
 	EECFBlendFunc BlendFunc;
 	float BlendExp;
+	float PlayRate = 1.0f;
 
 	float CurrentTime;
 	float CurrentValue;
 
-	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float, bool)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp)
+	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float, bool)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate)
 	{
 		StartValue = InStartValue;
 		StopValue = InStopValue;
 		Time = InTime;
+		const float EffectiveRate = FMath::Abs(InPlayRate);
+		PlayRate = (EffectiveRate > KINDA_SMALL_NUMBER) ? EffectiveRate : 1.0f;
 
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
@@ -43,7 +46,7 @@ protected:
 
 		if (TickFunc && Time > 0 && BlendExp != 0 && StartValue != StopValue)
 		{
-			SetMaxActionTime(Time);
+			SetMaxActionTime(Time / PlayRate);
 			CurrentTime = 0.f;
 			return true;
 		}
@@ -54,7 +57,7 @@ protected:
 		}
 	}
 
-	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp)
+	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), [this](float FwdValue, float FwdTime, bool bStopped)
@@ -63,7 +66,7 @@ protected:
 			{
 				CallbackFunc_NoStopped(FwdValue, FwdTime);
 			}
-		}, InBlendFunc, InBlendExp);
+		}, InBlendFunc, InBlendExp, InPlayRate);
 	}
 
 	void Tick(float DeltaTime) override
@@ -71,7 +74,7 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline - Tick"), STAT_ECFDETAILS_TIMELINE, STATGROUP_ECFDETAILS);
 #endif
-		CurrentTime = FMath::Clamp(CurrentTime + DeltaTime, 0.f, Time);
+		CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
 
 		switch (BlendFunc)
 		{

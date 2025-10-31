@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFTimelineBP* UECFTimelineBP::ECFTimeline(const UObject* WorldContextObject, float StartValue, float StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc /*= EECFBlendFunc::ECFBlend_Linear*/, float BlendExp /*= 1.f*/)
+UECFTimelineBP* UECFTimelineBP::ECFTimeline(const UObject* WorldContextObject, float StartValue, float StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc /*= EECFBlendFunc::ECFBlend_Linear*/, float BlendExp /*= 1.f*/, float PlayRate /*= 1.f*/)
 {
 	UECFTimelineBP* Proxy = NewObject<UECFTimelineBP>();
 	if (Proxy)
@@ -28,7 +28,7 @@ UECFTimelineBP* UECFTimelineBP::ECFTimeline(const UObject* WorldContextObject, f
 					Proxy->ClearAsyncBPAction();
 				}
 			},
-			BlendFunc, BlendExp, Settings);
+			BlendFunc, BlendExp, PlayRate, Settings);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}
 

@@ -253,8 +253,8 @@ public:
 	 * @param InBlendExp -      [optional] an exponent, used by certain blend functions (EaseIn, EaseOut, EaseInOut) to control the shape of the timeline curve.
 	 * @param Settings [optional] - an extra settings to apply to this action.
 	 */
-	static FECFHandle AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, const FECFActionSettings& Settings = {});
-	static FECFHandle AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
 
 	/**
 	 * Stops timelines. Will not launch callback functions.
@@ -279,8 +279,8 @@ public:
 	 * @param InBlendExp -      [optional] an exponent, used by certain blend functions (EaseIn, EaseOut, EaseInOut) to control the shape of the timeline curve.
 	 * @param Settings [optional] - an extra settings to apply to this action.
 	 */
-	static FECFHandle AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, const FECFActionSettings& Settings = {});
-	static FECFHandle AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
 
 	static void RemoveAllTimelinesVector(const UObject* WorldContextObject, bool bComplete = false, UObject* InOwner = nullptr);
 	
@@ -299,8 +299,8 @@ public:
 	 * @param InBlendExp -      [optional] an exponent, used by certain blend functions (EaseIn, EaseOut, EaseInOut) to control the shape of the timeline curve.
 	 * @param Settings [optional] - an extra settings to apply to this action.
 	 */
-	static FECFHandle AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, const FECFActionSettings& Settings = {});
-	static FECFHandle AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, EECFBlendFunc InBlendFunc = EECFBlendFunc::ECFBlend_Linear, float InBlendExp = 1.f, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
 
 	static void RemoveAllTimelinesLinearColor(const UObject* WorldContextObject, bool bComplete = false, UObject* InOwner = nullptr);
 
@@ -315,8 +315,8 @@ public:
 	 *	[](float CurrentValue, float CurrentTime) -> void.
 	 * @param Settings [optional] - an extra settings to apply to this action.
 	 */
-	static FECFHandle AddCustomTimeline(const UObject* InOwner, class UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, const FECFActionSettings& Settings = {});
-	static FECFHandle AddCustomTimeline(const UObject* InOwner, class UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, const FECFActionSettings& Settings = {});
+	static FECFHandle AddCustomTimeline(const UObject* InOwner, class UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddCustomTimeline(const UObject* InOwner, class UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
 
 	/**
 	 * Stops custom timelines. Will not launch callback functions.
@@ -337,8 +337,8 @@ public:
 	 *	[](FVector CurrentValue, float CurrentTime) -> void.
 	 * @param Settings [optional] - an extra settings to apply to this action.
 	 */
-	static FECFHandle AddCustomTimelineVector(const UObject* InOwner, class UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, const FECFActionSettings& Settings = {});
-	static FECFHandle AddCustomTimelineVector(const UObject* InOwner, class UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, const FECFActionSettings& Settings = {});
+	static FECFHandle AddCustomTimelineVector(const UObject* InOwner, class UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddCustomTimelineVector(const UObject* InOwner, class UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
 
 	/**
 	 * Stops custom timelines vector. Will not launch callback functions.
@@ -359,8 +359,8 @@ public:
 	 *	[](LinearColor CurrentValue, float CurrentTime) -> void.
 	 * @param Settings [optional] - an extra settings to apply to this action.
 	 */
-	static FECFHandle AddCustomTimelineLinearColor(const UObject* InOwner, class UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, const FECFActionSettings& Settings = {});
-	static FECFHandle AddCustomTimelineLinearColor(const UObject* InOwner, class UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, const FECFActionSettings& Settings = {});
+	static FECFHandle AddCustomTimelineLinearColor(const UObject* InOwner, class UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc = nullptr, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
+	static FECFHandle AddCustomTimelineLinearColor(const UObject* InOwner, class UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc = nullptr, float InPlayRate = 1.f, const FECFActionSettings& Settings = {});
 
 	/**
 	 * Stops custom timelines linear color. Will not launch callback functions.

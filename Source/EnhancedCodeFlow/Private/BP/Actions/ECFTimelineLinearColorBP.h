@@ -21,6 +21,6 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnECFTimelineLinearColorBPEvent OnFinished;
 	
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, BlendFunc, BlendExp", ToolTip = "添加一个在指定时间内在给定范围内运行的颜色时间轴", DisplayName = "ECF - 颜色时间轴"), Category = "XTools|ECF|时间轴")
-	static UECFTimelineLinearColorBP* ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc = EECFBlendFunc::ECFBlend_Linear, float BlendExp = 1.f);
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, BlendFunc, BlendExp, PlayRate", ToolTip = "添加一个在指定时间内在给定范围内运行的颜色时间轴。\nPlayRate 用于统一控制播放快慢。", DisplayName = "ECF - 颜色时间轴"), Category = "XTools|ECF|时间轴")
+	static UECFTimelineLinearColorBP* ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc = EECFBlendFunc::ECFBlend_Linear, float BlendExp = 1.f, float PlayRate = 1.f);
 };

@@ -119,6 +119,10 @@ public class XTools : ModuleRules
 				"EditorStyle",
 				"EditorWidgets"
 			});
+
+			PrivateDependencyModuleNames.AddRange(new string[] {
+				"MessageLog"
+			});
 		}
 
 		// Dynamically loaded modules

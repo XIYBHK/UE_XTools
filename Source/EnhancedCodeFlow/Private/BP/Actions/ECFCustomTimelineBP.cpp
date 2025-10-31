@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* WorldContextObject, UCurveFloat* CurveFloat, FECFActionSettings Settings, FECFHandleBP& Handle)
+UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* WorldContextObject, UCurveFloat* CurveFloat, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/)
 {
 	UECFCustomTimelineBP* Proxy = NewObject<UECFCustomTimelineBP>();
 	if (Proxy)
@@ -27,7 +27,7 @@ UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* Wor
 					Proxy->ClearAsyncBPAction();
 				}
 			},
-		Settings);
+		PlayRate, Settings);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}
 

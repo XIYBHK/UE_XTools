@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc /*= EECFBlendFunc::ECFBlend_Linear*/, float BlendExp /*= 1.f*/)
+UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc /*= EECFBlendFunc::ECFBlend_Linear*/, float BlendExp /*= 1.f*/, float PlayRate /*= 1.f*/)
 {
 	UECFTimelineLinearColorBP* Proxy = NewObject<UECFTimelineLinearColorBP>();
 	if (Proxy)
@@ -28,7 +28,7 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 					Proxy->ClearAsyncBPAction();
 				}
 			},
-			BlendFunc, BlendExp, Settings);
+			BlendFunc, BlendExp, PlayRate, Settings);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}
 

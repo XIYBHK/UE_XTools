@@ -25,15 +25,17 @@ protected:
 
 	FVector CurrentValue = FVector::ZeroVector;
 	float CurrentTime = 0.f;
+	float PlayRate = 1.0f;
 
 	UPROPERTY(Transient)
 	UCurveVector* CurveVector = nullptr;
 
-	bool Setup(UCurveVector* InCurveVector, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float, bool)>&& InCallbackFunc = nullptr)
+	bool Setup(UCurveVector* InCurveVector, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float, bool)>&& InCallbackFunc, float InPlayRate)
 	{
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
 		CurveVector = InCurveVector;
+		PlayRate = (FMath::Abs(InPlayRate) > KINDA_SMALL_NUMBER) ? FMath::Abs(InPlayRate) : 1.0f;
 
 		if (TickFunc && CurveVector)
 		{
@@ -44,6 +46,8 @@ protected:
 			FOnTimelineEvent FinishFunction;
 			FinishFunction.BindUFunction(this, FName("HandleFinish"));
 			MyTimeline.SetTimelineFinishedFunc(FinishFunction);
+			MyTimeline.SetPlayRate(PlayRate);
+			SetMaxActionTime(MyTimeline.GetTimelineLength() / FMath::Max(FMath::Abs(PlayRate), KINDA_SMALL_NUMBER));
 
 			MyTimeline.PlayFromStart();
 
@@ -56,7 +60,7 @@ protected:
 		}
 	}
 
-	bool Setup(UCurveVector* InCurveVector, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float)>&& InCallbackFunc = nullptr)
+	bool Setup(UCurveVector* InCurveVector, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float)>&& InCallbackFunc, float InPlayRate)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InCurveVector, MoveTemp(InTickFunc), [this](FVector Value, float Time, bool bStopped)
@@ -65,7 +69,7 @@ protected:
 			{
 				CallbackFunc_NoStopped(Value, Time);
 			}
-		});
+		}, InPlayRate);
 	}
 
 	void Tick(float DeltaTime) override

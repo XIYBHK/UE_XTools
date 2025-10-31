@@ -20,6 +20,6 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnECFCustomTimelineBPEvent OnFinished;
 	
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings", ToolTip = "添加一个由浮点曲线定义的自定义时间轴", DisplayName = "ECF - 自定义时间轴"), Category = "XTools|ECF|时间轴")
-	static UECFCustomTimelineBP* ECFCustomTimeline(const UObject* WorldContextObject, class UCurveFloat* CurveFloat, FECFActionSettings Settings, FECFHandleBP& Handle);
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, PlayRate", ToolTip = "添加一个由浮点曲线定义的自定义时间轴，可通过 PlayRate 调整播放速率", DisplayName = "ECF - 自定义时间轴"), Category = "XTools|ECF|时间轴")
+	static UECFCustomTimelineBP* ECFCustomTimeline(const UObject* WorldContextObject, class UCurveFloat* CurveFloat, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate = 1.f);
 };
