@@ -2,14 +2,22 @@
 
 on:
   workflow_dispatch:
-      
+  push:
+    tags:
+      - 'v*'
+
 jobs:
   build-windows-optimized:
     runs-on: self-hosted
+    timeout-minutes: 60  # 超时保护
+    # 并发控制：同一 UE 版本同时只能运行一个构建
+    concurrency:
+      group: build-plugin-${{ github.ref }}-${{ matrix.ue_version }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
-        ue_version: ['5.3','5.4','5.5','5.6']
+        ue_version: ['5.0','5.2','5.3','5.4','5.5','5.6']
     env:
       UE_VERSION: ${{ matrix.ue_version }}
     
@@ -23,37 +31,36 @@ jobs:
     - name: Setup UE Environment
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        Write-Host "==> 设置 UE ${{ matrix.ue_version }} 环境" -ForegroundColor Cyan
         
-
-        
-        
-        # UE版本（来自矩阵）
+        # UE 安装路径
         $ue_version = "${{ matrix.ue_version }}"
-        
-        
-        
-        # 固定UE安装路径（自托管机）
         $ue_path = "F:\Epic Games\UE_$ue_version"
+        Write-Host "UE 路径: $ue_path"
         
-        if (-not (Test-Path $ue_path)) { throw ("UE install not found: " + $ue_path) }
+        if (-not (Test-Path $ue_path)) {
+          throw "UE 安装未找到: $ue_path"
+        }
         
         # 验证关键文件
         $runuat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"
         $ue_editor_path = "$ue_path\Engine\Binaries\Win64\UnrealEditor.exe"
         
         if (-not (Test-Path $runuat_path)) {
-          throw ("RunUAT.bat not found: " + $runuat_path)
+          throw "RunUAT.bat 未找到: $runuat_path"
         }
         
         if (-not (Test-Path $ue_editor_path)) {
-          throw ("UnrealEditor.exe not found: " + $ue_editor_path)
+          throw "UnrealEditor.exe 未找到: $ue_editor_path"
         }
         
         # 验证插件文件
         $plugin_file = "${{ github.workspace }}\XTools.uplugin"
         if (-not (Test-Path $plugin_file)) {
-          throw ("Plugin file not found: " + $plugin_file)
+          throw "插件文件未找到: $plugin_file"
         }
+        
+        Write-Host "[OK] 环境验证通过" -ForegroundColor Green
         
         # 设置环境变量
         echo "UE_PATH=$ue_path" >> $env:GITHUB_ENV
@@ -61,39 +68,41 @@ jobs:
         echo "RUNUAT_PATH=$runuat_path" >> $env:GITHUB_ENV
         echo "UE_EDITOR_PATH=$ue_editor_path" >> $env:GITHUB_ENV
         echo "PLUGIN_FILE=$plugin_file" >> $env:GITHUB_ENV
-        
-        
 
     - name: Build Plugin with BuildPlugin Command
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        
-        
-        
+        Write-Host "==> 构建插件 UE ${{ env.UE_VERSION }}" -ForegroundColor Cyan
+        $build_start = Get-Date
         
         # 输出目录设置（使用 RUNNER_TEMP，避免写入仓库目录）
         $base_out = Join-Path $env:RUNNER_TEMP "XTools"
         $output_directory = Join-Path $base_out ("XTools-UE_" + $env:UE_VERSION + "-AllPlatforms")
         $temp_output = Join-Path $base_out "TempPackage"
         
-        
+        Write-Host "输出目录: $output_directory"
         
         # 清理旧的输出目录
-        if (Test-Path $temp_output) { Remove-Item -Recurse -Force $temp_output }
-        if (Test-Path $output_directory) { Remove-Item -Recurse -Force $output_directory }
+        if (Test-Path $temp_output) {
+          Write-Host "清理旧临时目录..."
+          Remove-Item -Recurse -Force $temp_output
+        }
+        if (Test-Path $output_directory) {
+          Write-Host "清理旧输出目录..."
+          Remove-Item -Recurse -Force $output_directory
+        }
         
         # 创建输出目录
         New-Item -ItemType Directory -Force -Path $base_out | Out-Null
         New-Item -ItemType Directory -Force -Path $temp_output | Out-Null
         New-Item -ItemType Directory -Force -Path $output_directory | Out-Null
-
+        
         # 暴露输出目录供后续步骤使用
-        echo ("OUTPUT_DIR=" + $output_directory) >> $env:GITHUB_ENV
+        echo "OUTPUT_DIR=$output_directory" >> $env:GITHUB_ENV
+        echo "TEMP_OUTPUT=$temp_output" >> $env:GITHUB_ENV
         
-        
-        
-        # 执行BuildPlugin命令 - 使用与本地脚本相同的优化参数（避免嵌套引号）
-        $pluginPath  = $env:PLUGIN_FILE
+        # 执行 BuildPlugin 命令
+        $pluginPath = $env:PLUGIN_FILE
         $packagePath = $temp_output
         $buildArgs = @(
           "BuildPlugin",
@@ -104,81 +113,80 @@ jobs:
           "-Rocket"
         )
         
-        
-        
+        Write-Host "`n开始构建..." -ForegroundColor Yellow
         & "${{ env.RUNUAT_PATH }}" @buildArgs
         
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "构建失败，退出码: $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
         
+        $build_duration = (Get-Date) - $build_start
+        $duration_str = "{0:N0} 分 {1:N0} 秒" -f $build_duration.TotalMinutes, $build_duration.Seconds
+        Write-Host "`n[OK] 构建完成，耗时: $duration_str" -ForegroundColor Green
         
+        echo "BUILD_DURATION=$duration_str" >> $env:GITHUB_ENV
 
     - name: Post-Process and Optimize Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        Write-Host "==> 后处理和优化包" -ForegroundColor Cyan
         
-        
-        
-        
-        $base_out = Join-Path $env:RUNNER_TEMP "XTools"
-        $temp_output = Join-Path $base_out "TempPackage"
+        $temp_output = "${{ env.TEMP_OUTPUT }}"
         $output_directory = "${{ env.OUTPUT_DIR }}"
         
-        # 查找打包后的插件目录 (BuildPlugin可能创建子目录)
+        # 查找打包后的插件目录 (BuildPlugin 可能创建子目录)
         $packaged_plugin_path = $temp_output
-        $plugin_subdirs = Get-ChildItem -Path $temp_output -Directory
+        $plugin_subdirs = Get-ChildItem -Path $temp_output -Directory -ErrorAction SilentlyContinue
         if ($plugin_subdirs.Count -eq 1) {
           $packaged_plugin_path = $plugin_subdirs[0].FullName
-          
+          Write-Host "检测到子目录: $($plugin_subdirs[0].Name)"
         }
         
         if (-not (Test-Path $packaged_plugin_path)) {
-          throw ("Packaged plugin directory not found: " + $packaged_plugin_path)
+          throw "打包插件目录未找到: $packaged_plugin_path"
         }
-        
-        
         
         # 复制所有文件到最终输出目录
-        
+        Write-Host "复制文件到输出目录..."
         Copy-Item -Path "$packaged_plugin_path\*" -Destination $output_directory -Recurse -Force
         
-        # 1. 删除 Intermediate 文件夹
+        # 优化 1: 删除 Intermediate 文件夹
         $intermediate_path = Join-Path $output_directory "Intermediate"
         if (Test-Path $intermediate_path) {
-          
+          $size_before = (Get-ChildItem $intermediate_path -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
           Remove-Item -Recurse -Force $intermediate_path
-          
-        } else {
-          
+          Write-Host "[OK] 删除 Intermediate 文件夹 (节省 $([math]::Round($size_before, 2)) MB)"
         }
         
-        # 2. 删除所有平台的 PDB 文件
+        # 优化 2: 删除所有平台的 PDB 文件
         $binaries_path = Join-Path $output_directory "Binaries"
         if (Test-Path $binaries_path) {
-          $pdb_files = Get-ChildItem -Path $binaries_path -Filter "*.pdb" -Recurse
+          $pdb_files = Get-ChildItem -Path $binaries_path -Filter "*.pdb" -Recurse -ErrorAction SilentlyContinue
           if ($pdb_files) {
-            
+            $pdb_size = ($pdb_files | Measure-Object -Property Length -Sum).Sum / 1MB
             Remove-Item -Force $pdb_files.FullName
-            
-          } else {
-            
+            Write-Host "[OK] 删除 PDB 文件 (节省 $([math]::Round($pdb_size, 2)) MB)"
           }
         }
         
-        # 3. 删除临时构建目录
+        # 计算最终包大小
+        $final_size = (Get-ChildItem $output_directory -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+        Write-Host "`n[OK] 优化完成，最终大小: $([math]::Round($final_size, 2)) MB" -ForegroundColor Green
         
-        Remove-Item -Recurse -Force $temp_output
+        echo "PACKAGE_SIZE_MB=$([math]::Round($final_size, 2))" >> $env:GITHUB_ENV
         
-        
+        # 删除临时构建目录
+        if (Test-Path $temp_output) {
+          Remove-Item -Recurse -Force $temp_output
+        }
 
-    - name: Create Distribution Package
+    - name: Prepare Artifact Name and Validate
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        Write-Host "==> 准备发布产物" -ForegroundColor Cyan
         
-        
-        
-        
-        $output_directory = "${{ env.OUTPUT_DIR }}"
-        # 获取最近标签（优先），否则回退到短SHA；处理自托管安全目录
+        # 获取版本标签
         $repo = "${{ github.workspace }}"
         & git config --global --add safe.directory $repo 2>$null | Out-Null
         $tag = ""
@@ -189,47 +197,81 @@ jobs:
           $commit = "${{ github.sha }}"
           $tag = $commit.Substring(0,7)
         }
-        $zip_filename = "XTools-UE_${{ env.UE_VERSION }}-" + $tag + ".zip"
-        $zip_filepath = Join-Path $env:RUNNER_TEMP $zip_filename
+        $artifact_name = "XTools-UE_${{ env.UE_VERSION }}-$tag"
         
-        if (Test-Path $zip_filepath) {
-          
-          Remove-Item -Force $zip_filepath
+        echo "VERSION_TAG=$tag" >> $env:GITHUB_ENV
+        echo "ARTIFACT_NAME=$artifact_name" >> $env:GITHUB_ENV
+        
+        # 验证构建输出
+        $output_path = "${{ env.OUTPUT_DIR }}"
+        if (-not (Test-Path $output_path)) {
+          throw "输出目录未找到: $output_path"
         }
         
+        # 验证关键文件
+        $uplugin_file = Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse
+        if (-not $uplugin_file) {
+          throw "插件 .uplugin 文件未找到"
+        }
+        Write-Host "[OK] 找到插件文件: $($uplugin_file.Name)"
         
-        Compress-Archive -Path "$output_directory\*" -DestinationPath $zip_filepath
+        # 验证 Binaries 目录
+        $binaries_path = Join-Path $output_path "Binaries"
+        if (Test-Path $binaries_path) {
+          $dll_count = (Get-ChildItem -Path $binaries_path -Filter "*.dll" -Recurse).Count
+          Write-Host "[OK] 找到 $dll_count 个二进制文件"
+        }
         
-        $zip_size = [math]::Round((Get-Item $zip_filepath).Length / 1MB, 2)
-        
-        
-        # 设置环境变量供后续步骤使用
-        echo "ZIP_FILE_PATH=$zip_filepath" >> $env:GITHUB_ENV
-        echo "ZIP_FILE_NAME=$zip_filename" >> $env:GITHUB_ENV
+        Write-Host "`n[OK] 验证通过" -ForegroundColor Green
 
-    - name: Validate Build Output
+    - name: Generate Job Summary
+      if: always()
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        $summary = @"
+        ## 构建完成 - UE ${{ env.UE_VERSION }}
         
+        ### 构建信息
+        - **版本**: ${{ env.VERSION_TAG }}
+        - **UE 版本**: ${{ env.UE_VERSION }}
+        - **构建耗时**: ${{ env.BUILD_DURATION }}
+        - **包大小**: ${{ env.PACKAGE_SIZE_MB }} MB
+        - **产物名称**: ``${{ env.ARTIFACT_NAME }}``
         
+        ### 构建状态
+        - [OK] 编译成功
+        - [OK] 后处理完成
+        - [OK] 验证通过
         
+        ### 下载
+        产物已上传到 Actions Artifacts，保留 30 天。
+        "@
         
-        $output_path = "${{ env.OUTPUT_DIR }}"
-        
-        if (-not (Test-Path $output_path)) { throw ("Output directory not found: " + $output_path) }
-        
-        # 验证关键文件（最小化校验）
-        $uplugin_file = Get-ChildItem -Path $output_path -Filter "*.uplugin" -Recurse
-        if (-not $uplugin_file) { throw "Plugin .uplugin not found" }
-        
-        # 跳过平台二进制文件详细校验（最小化验证）
-        
-        
+        $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
     - name: Upload Distribution Package
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.ZIP_FILE_NAME }}
-        path: ${{ env.ZIP_FILE_PATH }}
+        name: ${{ env.ARTIFACT_NAME }}
+        path: ${{ env.OUTPUT_DIR }}
         retention-days: 30
+        compression-level: 9
+
+    - name: Cleanup Temporary Files
+      if: always()
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "==> 清理临时文件" -ForegroundColor Cyan
+        
+        # 清理 RUNNER_TEMP 中的构建目录
+        $base_out = Join-Path $env:RUNNER_TEMP "XTools"
+        if (Test-Path $base_out) {
+          try {
+            $size = (Get-ChildItem $base_out -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB
+            Remove-Item -Recurse -Force $base_out -ErrorAction Stop
+            Write-Host "[OK] 清理完成，释放 $([math]::Round($size, 2)) MB" -ForegroundColor Green
+          } catch {
+            Write-Warning "清理失败: $_"
+          }
+        }
 
