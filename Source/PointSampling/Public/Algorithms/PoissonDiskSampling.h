@@ -61,7 +61,7 @@ public:
 	/**
 	 * 通过Box参数采样
 	 *  原签名：UXToolsLibrary::GeneratePoissonPointsInBoxByVector
-	 * ⚠️ Transform是值传递（保持与原实现一致）
+	 *  Transform是值传递（保持与原实现一致）
 	 */
 	static TArray<FVector> GeneratePoissonInBoxByVector(
 		FVector BoxExtent,
@@ -95,7 +95,7 @@ public:
 	/**
 	 * 通过Box参数采样（确定性随机）
 	 *  原签名：UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream
-	 * ⚠️ 注意：原实现没有bUseCache参数
+	 *  注意：原实现没有bUseCache参数
 	 */
 	static TArray<FVector> GeneratePoissonInBoxByVectorFromStream(
 		const FRandomStream& RandomStream,

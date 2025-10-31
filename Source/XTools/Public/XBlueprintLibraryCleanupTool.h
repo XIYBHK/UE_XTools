@@ -42,7 +42,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "XTools|蓝图清理", CallInEditor, meta = (
         DisplayName = "执行清理World Context参数",
         Keywords = "cleanup world context execute remove",
-        ToolTip = "实际清理蓝图函数库中【未连接】的World Context参数\n安全特性：只处理未连接的参数，已连接的参数会被保留\n⚠️ 会修改蓝图资产，建议先备份"))
+        ToolTip = "实际清理蓝图函数库中【未连接】的World Context参数\n安全特性：只处理未连接的参数，已连接的参数会被保留\n警告：会修改蓝图资产，建议先备份"))
     static int32 ExecuteCleanupWorldContextParams(bool bLogToConsole = true);
 
 private:

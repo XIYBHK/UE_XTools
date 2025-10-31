@@ -111,7 +111,7 @@ public:
     FPathConflictInfo CheckFormationPathConflicts(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
 
 protected:
-    /** 🎯 核心算法委托 - 简化架构，提高可维护性 */
+    /** 核心算法委托 - 简化架构，提高可维护性 */
 
     /** 计算分配方案的核心接口 */
     TArray<int32> CalculateAssignmentByMode(
@@ -119,7 +119,7 @@ protected:
         const TArray<FVector>& ToPositions,
         EFormationTransitionMode Mode);
 
-    /** 🔧 算法工具函数 */
+    /** 算法工具函数 */
 
     /** 创建成本矩阵 */
     TArray<TArray<float>> CreateCostMatrix(
@@ -127,7 +127,7 @@ protected:
         const TArray<FVector>& ToPositions,
         bool bUseRelativePosition = true);
 
-    /** 🚀 成本矩阵计算函数 */
+    /** 成本矩阵计算函数 */
     TArray<TArray<float>> CalculateRelativePositionCostMatrix(
         const TArray<FVector>& FromPositions,
         const TArray<FVector>& ToPositions);
@@ -152,7 +152,7 @@ protected:
     /** 通用分配问题求解器 */
     TArray<int32> SolveAssignmentProblem(const TArray<TArray<float>>& CostMatrix);
 
-    /** 🚀 特殊分配算法 */
+    /** 特殊分配算法 */
     TArray<int32> CalculateDirectRelativePositionMatching(
         const TArray<FVector>& FromPositions,
         const TArray<FVector>& ToPositions);
@@ -176,7 +176,7 @@ protected:
     /** 检测路径冲突 */
     FPathConflictInfo DetectPathConflicts(const TArray<int32>& Assignment, const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
 
-    /** 🚀 辅助函数 */
+    /** 辅助函数 */
     bool DetectSpiralFormation(const TArray<FSpatialSortData>& SortedData);
 
     float CalculateSpiralParameter(float Angle, float Distance);
@@ -200,7 +200,7 @@ protected:
     void NotifyFormationInterfaceActors(const TArray<AActor*>& Units, const TArray<int32>& Assignment, const FFormationData& ToFormation);
 
 private:
-    /** 🚀 性能优化：智能缓存系统 */
+    /** 性能优化：智能缓存系统 */
 
     /** 成本矩阵缓存结构 */
     struct FCostMatrixCache

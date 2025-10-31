@@ -8,7 +8,7 @@
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 
-// 🚀 性能优化配置常量（外部声明）
+// 性能优化配置常量（外部声明）
 namespace FormationPerformanceConfig
 {
     /** 缓存生命周期（秒） */
@@ -245,7 +245,7 @@ TArray<int32> UFormationManagerComponent::CalculateOptimalAssignment(
     const TArray<FVector>& ToPositions,
     EFormationTransitionMode TransitionMode)
 {
-    // 🚀 性能优化：条件日志记录，避免不必要的字符串构造
+    // 性能优化：条件日志记录，避免不必要的字符串构造
     UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationManager: 开始计算最优分配，单位数量: %d"), FromPositions.Num());
 
     if (FromPositions.Num() == 0 || ToPositions.Num() == 0)
@@ -259,10 +259,10 @@ TArray<int32> UFormationManagerComponent::CalculateOptimalAssignment(
         return TArray<int32>();
     }
 
-    // 🚀 性能监控：计算耗时统计
+    // 性能监控：计算耗时统计
     double StartTime = FPlatformTime::Seconds();
 
-    // 🎯 简化的算法选择 - 使用统一的成本矩阵方法
+    // 简化的算法选择 - 使用统一的成本矩阵方法
     TArray<int32> Result = CalculateAssignmentByMode(FromPositions, ToPositions, TransitionMode);
 
     double ElapsedTime = FPlatformTime::Seconds() - StartTime;
@@ -276,7 +276,7 @@ TArray<int32> UFormationManagerComponent::CalculateAssignmentByMode(
     const TArray<FVector>& ToPositions,
     EFormationTransitionMode Mode)
 {
-    // 🔧 统一的成本矩阵创建和求解流程
+    // 统一的成本矩阵创建和求解流程
 
     // 1. 根据模式确定是否使用相对位置
     bool bUseRelativePosition = (Mode == EFormationTransitionMode::OptimizedAssignment);
@@ -291,14 +291,14 @@ TArray<int32> UFormationManagerComponent::CalculateAssignmentByMode(
     return SolveAssignmentProblem(CostMatrix);
 }
 
-// 🔧 简化的工具函数实现
+// 简化的工具函数实现
 
 TArray<TArray<float>> UFormationManagerComponent::CreateCostMatrix(
     const TArray<FVector>& FromPositions,
     const TArray<FVector>& ToPositions,
     bool bUseRelativePosition)
 {
-    // 🚀 性能优化：智能缓存检查
+    // 性能优化：智能缓存检查
     EFormationTransitionMode CacheMode = bUseRelativePosition ?
         EFormationTransitionMode::OptimizedAssignment :
         EFormationTransitionMode::SimpleAssignment;
@@ -308,7 +308,7 @@ TArray<TArray<float>> UFormationManagerComponent::CreateCostMatrix(
 
     if (CostMatrixCache.IsValid(PositionsHash, CacheMode, CurrentTime))
     {
-        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("🚀 使用缓存的成本矩阵"));
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("使用缓存的成本矩阵"));
         return CostMatrixCache.CostMatrix;
     }
 
@@ -323,7 +323,7 @@ TArray<TArray<float>> UFormationManagerComponent::CreateCostMatrix(
         NewCostMatrix = CalculateAbsoluteDistanceCostMatrix(FromPositions, ToPositions);
     }
 
-    // 🚀 更新缓存
+    // 更新缓存
     CostMatrixCache.UpdateCache(PositionsHash, CacheMode, NewCostMatrix, CurrentTime);
 
     return NewCostMatrix;
@@ -333,7 +333,7 @@ uint32 UFormationManagerComponent::CalculatePositionsHash(
     const TArray<FVector>& FromPositions,
     const TArray<FVector>& ToPositions) const
 {
-    // 🚀 性能优化：高效的位置哈希计算
+    // 性能优化：高效的位置哈希计算
     uint32 Hash = 0;
 
     // 使用 UE 内置的哈希函数
@@ -350,7 +350,7 @@ uint32 UFormationManagerComponent::CalculatePositionsHash(
     return Hash;
 }
 
-// 🚀 缓存系统实现
+// 缓存系统实现
 
 bool UFormationManagerComponent::FCostMatrixCache::IsValid(
     uint32 NewHash,

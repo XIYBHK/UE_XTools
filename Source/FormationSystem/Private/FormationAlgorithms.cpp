@@ -6,7 +6,7 @@
 #include "FormationLog.h"
 #include "Kismet/KismetMathLibrary.h"
 
-// 🚀 性能优化配置常量（本地定义）
+// 性能优化配置常量（本地定义）
 namespace FormationPerformanceConfig
 {
     constexpr int32 HungarianAlgorithmThreshold = 50;
@@ -21,21 +21,21 @@ TArray<TArray<float>> UFormationManagerComponent::CalculateRelativePositionCostM
     int32 NumPositions = FromPositions.Num();
     TArray<TArray<float>> CostMatrix;
 
-    // 🚀 性能优化：预分配内存避免重复分配
+    // 性能优化：预分配内存避免重复分配
     CostMatrix.Reserve(NumPositions);
     CostMatrix.SetNum(NumPositions);
 
-    // 🚀 性能优化：使用 UE 内置的高效包围盒计算
+    // 性能优化：使用 UE 内置的高效包围盒计算
     FBox FromAABB = FBox(FromPositions);
     FBox ToAABB = FBox(ToPositions);
 
-    // 🚀 性能优化：缓存中心点和尺寸，避免重复计算
+    // 性能优化：缓存中心点和尺寸，避免重复计算
     const FVector FromCenter = FromAABB.GetCenter();
     const FVector ToCenter = ToAABB.GetCenter();
     const FVector FromSize = FromAABB.GetSize();
     const FVector ToSize = ToAABB.GetSize();
 
-    // 🚀 性能优化：预计算归一化因子，避免重复除法运算
+    // 性能优化：预计算归一化因子，避免重复除法运算
     const FVector FromSizeInv = FVector(
         FromSize.X > 1.0f ? 1.0f / FromSize.X : 0.0f,
         FromSize.Y > 1.0f ? 1.0f / FromSize.Y : 0.0f,
@@ -47,7 +47,7 @@ TArray<TArray<float>> UFormationManagerComponent::CalculateRelativePositionCostM
         ToSize.Z > 1.0f ? 1.0f / ToSize.Z : 0.0f
     );
 
-    // 🚀 性能优化：预计算归一化位置数组，避免重复计算
+    // 性能优化：预计算归一化位置数组，避免重复计算
     TArray<FVector> FromNormalized;
     TArray<FVector> ToNormalized;
     FromNormalized.Reserve(NumPositions);
@@ -62,7 +62,7 @@ TArray<TArray<float>> UFormationManagerComponent::CalculateRelativePositionCostM
         ToNormalized.Add(ToRelative * ToSizeInv);
     }
 
-    // 🚀 性能优化：使用常量权重，避免重复乘法
+    // 性能优化：使用常量权重，避免重复乘法
     constexpr float RelativeWeight = 0.7f;
     constexpr float AbsoluteWeight = 0.3f;
     constexpr float RelativeScale = 1000.0f;
@@ -75,7 +75,7 @@ TArray<TArray<float>> UFormationManagerComponent::CalculateRelativePositionCostM
 
         for (int32 j = 0; j < NumPositions; j++)
         {
-            // 🚀 性能优化：使用预计算的归一化位置
+            // 性能优化：使用预计算的归一化位置
             float RelativePositionCost = FVector::Dist(FromNormalized[i], ToNormalized[j]) * RelativeScale;
             float AbsoluteDistanceCost = FVector::Dist(FromPositions[i], ToPositions[j]);
 
@@ -94,11 +94,11 @@ TArray<TArray<float>> UFormationManagerComponent::CalculateAbsoluteDistanceCostM
     int32 NumPositions = FromPositions.Num();
     TArray<TArray<float>> CostMatrix;
 
-    // 🚀 性能优化：预分配内存
+    // 性能优化：预分配内存
     CostMatrix.Reserve(NumPositions);
     CostMatrix.SetNum(NumPositions);
 
-    // 🚀 性能优化：使用更高效的距离计算
+    // 性能优化：使用更高效的距离计算
     for (int32 i = 0; i < NumPositions; i++)
     {
         CostMatrix[i].Reserve(NumPositions);
@@ -124,16 +124,16 @@ TArray<int32> UFormationManagerComponent::SolveAssignmentProblem(const TArray<TA
         return TArray<int32>();
     }
 
-    // 🚀 性能优化：使用配置常量进行算法选择
+    // 性能优化：使用配置常量进行算法选择
     // 对于小规模问题使用匈牙利算法（精确），大规模问题使用贪心算法（快速）
     if (CostMatrix.Num() <= FormationPerformanceConfig::HungarianAlgorithmThreshold)
     {
-        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("🧮 使用匈牙利算法求解 %d×%d 分配问题"), CostMatrix.Num(), CostMatrix.Num());
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("使用匈牙利算法求解 %d×%d 分配问题"), CostMatrix.Num(), CostMatrix.Num());
         return SolveAssignmentHungarian(CostMatrix);
     }
     else
     {
-        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("🧮 使用贪心算法求解 %d×%d 分配问题"), CostMatrix.Num(), CostMatrix.Num());
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("使用贪心算法求解 %d×%d 分配问题"), CostMatrix.Num(), CostMatrix.Num());
         return SolveAssignmentGreedy(CostMatrix);
     }
 }
@@ -191,7 +191,7 @@ TArray<int32> UFormationManagerComponent::SolveAssignmentHungarian(const TArray<
         return Assignment;
     }
 
-    // 🚀 性能优化：预分配内存避免重复分配
+    // 性能优化：预分配内存避免重复分配
     TArray<TArray<float>> Matrix;
     Matrix.Reserve(n);
     Matrix.SetNum(n);

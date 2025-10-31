@@ -22,7 +22,7 @@
 
 UBlueprint* UXBlueprintLibraryCleanupTool::GetBlueprintFromAssetData(const FAssetData& AssetData)
 {
-    // 🔍 调试：优先使用内存中的版本，避免重新加载覆盖已修改的蓝图
+    // 调试：优先使用内存中的版本，避免重新加载覆盖已修改的蓝图
     
     // 1. 首先尝试通过对象路径在内存中查找
     UObject* ExistingAsset = FindObject<UBlueprint>(nullptr, *AssetData.GetObjectPathString());
@@ -88,7 +88,7 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
     FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
     IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
     
-    // 🚀 高性能搜索算法
+    // 高性能搜索算法
     FARFilter Filter;
     Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
     Filter.bRecursiveClasses = true;
@@ -203,7 +203,7 @@ bool UXBlueprintLibraryCleanupTool::IsWorldContextPin(const UEdGraphPin* Pin)
         return false;
     }
     
-    // 🛡️ 安全检查：跳过所有隐藏的引脚
+    // 安全检查：跳过所有隐藏的引脚
     // 隐藏的引脚通常是系统自动生成的，不会造成用户可见的问题
     if (Pin->bHidden)
     {
@@ -247,7 +247,7 @@ TArray<UXBlueprintLibraryCleanupTool::FWorldContextScanResult> UXBlueprintLibrar
         {
             TotalGraphs++;
             
-            // 🚀 优化：预先过滤节点类型，避免不必要的Cast
+            // 优化：预先过滤节点类型，避免不必要的Cast
             TArray<UK2Node_FunctionEntry*> EntryNodes;
             EntryNodes.Reserve(Graph->Nodes.Num() / 10); // 预估容量
             
@@ -261,7 +261,7 @@ TArray<UXBlueprintLibraryCleanupTool::FWorldContextScanResult> UXBlueprintLibrar
                 }
             }
             
-            // 🚀 优化：只处理函数入口节点
+            // 优化：只处理函数入口节点
             for (UK2Node_FunctionEntry* EntryNode : EntryNodes)
             {
                 // 确保这是用户定义的函数，而不是系统生成的
@@ -279,7 +279,7 @@ TArray<UXBlueprintLibraryCleanupTool::FWorldContextScanResult> UXBlueprintLibrar
                     continue;
                 }
                 
-                // 🚀 优化：预先过滤引脚，只检查输出引脚且名称可能包含WorldContext
+                // 优化：预先过滤引脚，只检查输出引脚且名称可能包含WorldContext
                 for (UEdGraphPin* Pin : EntryNode->Pins)
                 {
                     TotalPins++;
@@ -481,7 +481,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             {
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogXTools, Error, TEXT("   ❌ 移除用户定义引脚时发生异常: %s::%s"), 
+                                    UE_LOG(LogXTools, Error, TEXT("   移除用户定义引脚时发生异常: %s::%s"), 
                                            *Result.FunctionName, *Result.PinName);
                                 }
                             }
@@ -496,7 +496,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                                 
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogXTools, Warning, TEXT("   🔧 通过普通方式移除: %s::%s"), 
+                                    UE_LOG(LogXTools, Warning, TEXT("   通过普通方式移除: %s::%s"), 
                                            *Result.FunctionName, *Result.PinName);
                                 }
                             }
@@ -504,7 +504,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             {
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogXTools, Error, TEXT("   ❌ 移除引脚时发生异常: %s::%s"), 
+                                    UE_LOG(LogXTools, Error, TEXT("   移除引脚时发生异常: %s::%s"), 
                                            *Result.FunctionName, *Result.PinName);
                                 }
                             }
@@ -537,7 +537,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                         FailureCount++;
                         if (bLogToConsole)
                         {
-                            UE_LOG(LogXTools, Error, TEXT("   ❌ 未找到参数: %s::%s"), 
+                            UE_LOG(LogXTools, Error, TEXT("   未找到参数: %s::%s"), 
                                    *Result.FunctionName, *Result.PinName);
                         }
                     }
@@ -566,7 +566,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                 {
                     if (bLogToConsole)
                     {
-                        UE_LOG(LogXTools, Error, TEXT("   ❌ 蓝图编译失败: %s"), *Blueprint->GetName());
+                        UE_LOG(LogXTools, Error, TEXT("   蓝图编译失败: %s"), *Blueprint->GetName());
                     }
                 }
                 else
@@ -584,7 +584,7 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
             {
                 if (bLogToConsole)
                 {
-                    UE_LOG(LogXTools, Error, TEXT("   ⚠️  蓝图编译过程中发生异常: %s"), *Blueprint->GetName());
+                    UE_LOG(LogXTools, Error, TEXT("   蓝图编译过程中发生异常: %s"), *Blueprint->GetName());
                 }
             }
         }

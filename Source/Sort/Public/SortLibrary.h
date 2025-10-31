@@ -537,7 +537,7 @@ public:
             ArrayParm = "TargetArray",
             DisplayName = "通用属性排序（原地）",
             Keywords = "排序,属性,结构体,对象,通用,原地",
-            ToolTip = "对任意类型的数组按指定属性进行原地排序。\n⚠️ 注意：这会直接修改输入数组的顺序！\n\n支持类型：\n• 结构体数组 - 按结构体的任意属性排序\n• 对象数组 - 按对象的任意属性排序\n\n参数:\n• TargetArray - 要排序的数组（会被直接修改）\n• PropertyName - 要排序的属性名称\n• bAscending - 是否升序排序\n\n输出:\n• OriginalIndices - 排序后每个元素在原数组中的原始索引"
+            ToolTip = "对任意类型的数组按指定属性进行原地排序。\n 注意：这会直接修改输入数组的顺序！\n\n支持类型：\n• 结构体数组 - 按结构体的任意属性排序\n• 对象数组 - 按对象的任意属性排序\n\n参数:\n• TargetArray - 要排序的数组（会被直接修改）\n• PropertyName - 要排序的属性名称\n• bAscending - 是否升序排序\n\n输出:\n• OriginalIndices - 排序后每个元素在原数组中的原始索引"
         ))
     static void SortArrayByPropertyInPlace(
         UPARAM(ref, DisplayName="目标数组") TArray<int32>& TargetArray,
