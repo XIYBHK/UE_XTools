@@ -27,6 +27,10 @@ public class X_AssetEditor : ModuleRules
 		// UE 标准设置 - 符合引擎最佳实践
 		bEnableExceptions = false;
 		bUseRTTI = false;
+
+		// 跨版本兼容：定义引擎版本宏（用于条件编译）
+		PublicDefinitions.Add("ENGINE_MAJOR_VERSION=" + Target.Version.MajorVersion);
+		PublicDefinitions.Add("ENGINE_MINOR_VERSION=" + Target.Version.MinorVersion);
 		
 		// 简化的包含路径 - 移除不必要的引擎内部路径
 		PublicIncludePaths.AddRange(new string[] {

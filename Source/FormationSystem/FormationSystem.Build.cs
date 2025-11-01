@@ -35,7 +35,6 @@ public class FormationSystem : ModuleRules
 
 		// 编译优化设置
 		bUsePrecompiled = false;
-		bEnableUndefinedIdentifierWarnings = false;
 
 		// Public包含路径
 		PublicIncludePaths.AddRange(new string[] {

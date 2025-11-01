@@ -100,7 +100,12 @@ FString FX_AssetNamingManager::GetSimpleClassName(const FAssetData& AssetData) c
     // 移除 _C 后缀（如果有的话）
     if (ClassName.EndsWith(TEXT("_C")))
     {
+        // UE 5.5+ API 变更：LeftChopInline 参数从 bool 改为 EAllowShrinking 枚举
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
+        ClassName.LeftChopInline(2, EAllowShrinking::No);
+#else
         ClassName.LeftChopInline(2, false);
+#endif
     }
 
     // 如果类名为空，使用资产名称作为备选
@@ -237,7 +242,12 @@ FString FX_AssetNamingManager::GetCorrectPrefix(const FAssetData& AssetData, con
                 // 移除可能的 _C 后缀
                 if (ParentSimpleClassName.EndsWith(TEXT("_C")))
                 {
+                    // UE 5.5+ API 变更：LeftChopInline 参数从 bool 改为 EAllowShrinking 枚举
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
+                    ParentSimpleClassName.LeftChopInline(2, EAllowShrinking::No);
+#else
                     ParentSimpleClassName.LeftChopInline(2, false);
+#endif
                 }
 
                 // 尝试在 AssetPrefixMappings 中查找

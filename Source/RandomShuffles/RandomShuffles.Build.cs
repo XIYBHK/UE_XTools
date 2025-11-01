@@ -35,6 +35,10 @@ public class RandomShuffles : ModuleRules
 			"WITH_RANDOMSHUFFLES=1"
 		});
 
+		// 跨版本兼容：定义引擎版本宏（用于条件编译）
+		PublicDefinitions.Add("ENGINE_MAJOR_VERSION=" + Target.Version.MajorVersion);
+		PublicDefinitions.Add("ENGINE_MINOR_VERSION=" + Target.Version.MinorVersion);
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{

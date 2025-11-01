@@ -70,7 +70,6 @@ public class XTools : ModuleRules
 
 		// 编译优化设置
 		bUsePrecompiled = false;
-		bEnableUndefinedIdentifierWarnings = false;
 
 	//  简化的公共包含路径 - 移除不必要的引擎内部路径
 	PublicIncludePaths.AddRange(new string[] {

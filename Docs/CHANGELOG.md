@@ -12,9 +12,13 @@
 - **UE 5.2**: 引擎源码 `ConcurrentLinearAllocator.h` 与新版 VS 2022 (14.44+) 存在兼容性 Bug（C4668/C4067），无法在插件层面修复
 - **业界做法**: 大多数商业插件也跳过有兼容性问题的旧版本，专注于稳定版本
 
-### 跨版本兼容性实现
-- **UE 5.5 API 变更**: 使用条件编译 `#if ENGINE_MINOR_VERSION >= 5` 处理 `TArray::Pop()` 参数变更
-- **版本宏定义**: 在 Build.cs 中自动设置 `ENGINE_MAJOR_VERSION` 和 `ENGINE_MINOR_VERSION`
+### 跨版本兼容性实现（符合 UE 官方最佳实践）
+- **条件编译**: 使用 `#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5` 处理 API 变更
+- **版本宏定义**: 在 Build.cs 中自动设置 `ENGINE_MAJOR_VERSION` 和 `ENGINE_MINOR_VERSION`（参考 UE 引擎源码 Version.h）
+- **API 变更处理**:
+  - `TArray::Pop(bool)` → `Pop(EAllowShrinking)`（MinIndexQueue.cpp）
+  - `FString::LeftChopInline(int, bool)` → `LeftChopInline(int, EAllowShrinking)`（X_AssetNamingManager.cpp）
+- **移除弃用 API**: 删除 UE 5.5 中弃用的 `bEnableUndefinedIdentifierWarnings`
 - **编译时选择**: 预处理器自动选择正确 API，零运行时开销
 
 ### CI/CD 优化
