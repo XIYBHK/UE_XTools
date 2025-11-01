@@ -1,11 +1,11 @@
-# XTools - Unreal Engine 5.3 实用工具插件
+# XTools - Unreal Engine 5.3+ 实用工具插件
 
-[![UE Version](https://img.shields.io/badge/UE-5.3-blue.svg)](https://www.unrealengine.com/)
+[![UE Version](https://img.shields.io/badge/UE-5.3--5.6-blue.svg)](https://www.unrealengine.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 [![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
 
-XTools 是一个为 Unreal Engine 5.3 设计的综合性实用工具插件，提供了丰富的蓝图节点和 C++ 功能，旨在提升开发效率和游戏体验。
+XTools 是一个为 Unreal Engine 5.3-5.6 设计的综合性实用工具插件，提供了丰富的蓝图节点和 C++ 功能，旨在提升开发效率和游戏体验。
 
 ## 🚀 主要特性
 
@@ -180,8 +180,8 @@ XTools 需要以下插件支持：
 
 #### 多版本插件打包
 ```powershell
-# 自动化多版本UE插件打包
-.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.4","UE_5.5","UE_5.6" -Follow
+# 自动化多版本UE插件打包 (支持 5.3-5.6)
+.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.3","UE_5.4","UE_5.5","UE_5.6" -Follow
 
 # 支持的参数
 -EngineRoots    # 指定UE引擎路径列表
@@ -213,10 +213,12 @@ EnhancedCodeFlow 模块支持：
 ## 🔧 技术细节
 
 ### 系统要求
-- **Unreal Engine**: 5.3+
+- **Unreal Engine**: 5.3, 5.4, 5.5, 5.6
 - **平台**: Windows (主要), Mac/Linux (部分模块)
 - **C++ 标准**: C++20
 - **编译器**: MSVC 2022
+
+> **注意**: UE 5.0-5.2 不受支持。5.0 需要额外 .NET 3.1 依赖，5.2 存在引擎级编译器兼容性问题。
 
 
 ## 📚 API 参考
@@ -313,7 +315,7 @@ EnhancedCodeFlow 模块支持：
 
 ### 开发环境设置
 1. 克隆仓库到项目的 Plugins 目录
-2. 使用 UE 5.3 打开项目
+2. 使用 UE 5.3 或更高版本打开项目
 3. 生成项目文件并编译
 4. 在编辑器中启用插件
 

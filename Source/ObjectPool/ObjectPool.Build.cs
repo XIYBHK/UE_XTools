@@ -6,9 +6,6 @@ public class ObjectPool : ModuleRules
 {
     public ObjectPool(ReadOnlyTargetRules Target) : base(Target)
     {
-        // UE 5.2 兼容性修复
-        bTreatWarningsAsErrors = false;
-
         //  遵循UE最佳实践的编译配置
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
         IWYUSupport = IWYUSupport.Full;
