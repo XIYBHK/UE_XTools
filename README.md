@@ -87,6 +87,41 @@ XTools 是一个为 Unreal Engine 5.3-5.6 设计的综合性实用工具插件�
 - **性能监控**: 内置池使用率统计和优化建议
 - **蓝图友好**: 简化的静态函数库接口，无需手动获取子系统
 
+### 🎯 蓝图扩展 (BlueprintExtensions Module) 🆕
+**强大的蓝图编辑器增强工具集**
+
+#### 增强的循环节点 (14个自定义K2节点)
+- **ForLoop**: 支持Break的增强ForLoop节点
+- **ForEachArray**: 数组正向遍历（带Index和Break）
+- **ForEachArrayReverse**: 数组反向遍历
+- **ForEachMap**: Map完整遍历（Key+Value+Index+Break）
+- **ForEachSet**: Set遍历支持
+- **Assign**: 通配符赋值节点
+- **Map嵌套容器操作**: Map<Key, Array/Set/Map>的特殊操作节点
+
+#### Map容器扩展操作
+- **按索引访问**: GetKey、GetValue、SetValueAt
+- **值查找**: ContainsValue、KeysFromValue
+- **批量操作**: RemoveEntries、RemoveEntriesWithValue
+- **随机获取**: RandomMapItem（支持随机流）
+- **嵌套容器**: Map<Key, Struct{Array/Set/Map}>操作
+
+#### 变量反射系统
+- **动态访问**: 通过字符串名称读写对象变量
+- **类型信息**: 获取类的所有变量名称列表
+- **数据驱动**: 支持配置文件、存档系统等场景
+
+#### 数学工具扩展
+- **帧率稳定**: StableFrame平滑帧率计算
+- **精度控制**: KeepDecimals保留小数位（Float/Vector2D/Vector3D）
+- **排序插入**: SortInsertFloat有序数组插入
+- **单位转换**: 米/MPH/角度等单位快速转换
+
+#### 游戏功能特性
+- **炮塔旋转系统**: 自动计算炮塔跟踪目标的旋转角度
+- **样条线轨迹**: 车辆/飞行器沿样条线运动
+- **支撑系统**: 多点支撑动态计算
+
 ## 📦 模块架构
 
 XTools 插件采用模块化设计，包含以下核心模块：
@@ -102,7 +137,8 @@ XTools/
 │   ├── ComponentTimelineUncooked/ # 组件时间轴编辑器
 │   ├── X_AssetEditor/             # 资产编辑器工具
 │   ├── ObjectPool/                # 对象池系统
-│   └── ObjectPoolEditor/          # 对象池编辑器工具
+│   ├── ObjectPoolEditor/          # 对象池编辑器工具
+│   └── BlueprintExtensions/       # 🆕 蓝图扩展工具
 ├── Scripts/                       # 自动化脚本工具
 ├── .vscode/                       # VS Code 配置
 ├── Content/                       # 插件内容
@@ -159,6 +195,14 @@ XTools 需要以下插件支持：
 - **从池生成Actor**: 自定义K2节点，替代原生"从类生成Actor"
 - **注册Actor类**: 配置池化参数和预热设置
 - **池管理**: 获取池状态、清理池资源
+
+### XTools|Blueprint Extensions 🆕
+- **Loops**: ForLoop、ForEachArray、ForEachMap、ForEachSet等增强循环
+- **Array**: 数组遍历和反向遍历
+- **Map**: Map容器扩展操作（索引访问、值查找、随机获取等）
+- **Variable**: 变量反射和动态访问
+- **Math**: 数学工具和单位转换
+- **Features**: 炮塔旋转、样条线轨迹等游戏功能
 
 
 ## 🛠️ 开发工具集

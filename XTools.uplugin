@@ -135,6 +135,31 @@
 				"Android",
 				"iOS"
 			]
+		},
+		{
+			"Name": "BlueprintExtensionsRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android",
+				"iOS"
+			]
+		},
+		{
+			"Name": "BlueprintExtensions",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PostDefault",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			],
+			"AdditionalDependencies": [
+				"BlueprintExtensionsRuntime"
+			]
 		}
 	],
 	"Plugins": [

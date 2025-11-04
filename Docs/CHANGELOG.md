@@ -1,49 +1,114 @@
+# 2025-11-04
+
+## ⏱️ 新增带延迟的循环节点
+
+### K2Node_ForLoopWithDelay - 带延迟的范围循环
+- **引脚**: FirstIndex, LastIndex, Delay → Index, Loop Body, Completed, Break
+- **用途**: 逐个生成对象、序列动画、分帧处理
+- **实现**: 使用UKismetSystemLibrary::Delay，通过ExpandNode生成循环逻辑
+
+### K2Node_ForEachLoopWithDelay - 带延迟的数组遍历
+- **引脚**: Array, Delay → Value, Index, Loop Body, Completed, Break
+- **用途**: 逐个显示UI、对话系统、序列播放
+- **关键词**: `foreach loop each delay 遍历 数组 循环 延迟 等待`
+
+---
+
+## 🔍 添加Loop节点搜索关键词
+
+为所有循环节点添加`GetKeywords()`方法，支持中英文搜索：
+- **K2Node_ForEachArray**: `foreach loop each 遍历 数组 循环 for array`
+- **K2Node_ForEachArrayReverse**: `foreach loop each reverse 遍历 数组 循环 倒序 反向`
+- **K2Node_ForEachSet**: `foreach loop each 遍历 循环 set 集合 for`
+- **K2Node_ForEachMap**: `foreach loop each map 遍历 字典 循环 键值对 for`
+- **K2Node_ForLoop**: `for loop 循环 for each 遍历 计数`
+
+---
+
+## 🌐 模块完整中文化
+
+### K2Node节点（15个）
+- **Map操作**: MapFindRef(查找引用)、MapIdentical(完全相同)、MapAppend(合并)
+- **Map嵌套**: MapAdd/RemoveArrayItem、MapAdd/RemoveMapItem、MapAdd/RemoveSetItem
+- **Loop循环**: ForLoop、ForEachArray、ForEachArrayReverse、ForEachSet、ForEachMap
+- **变量**: Assign(引用赋值)
+
+### BlueprintFunctionLibrary（11个库，60+函数）
+- **MapExtensions**: 按索引访问、值查找、批量操作、随机获取（13函数）
+- **MathExtensions**: 稳定帧、保留小数、排序插入、单位转换（10函数）
+- **ObjectExtensions**: 从Map获取对象、清空/复制对象（5函数）
+- **ProcessExtensions**: 按名称调用函数/事件（2函数）
+- **SplineExtensions**: 路径有效性、获取起终点、简化样条（5函数）
+- **TraceExtensions**: 线性/球形追踪（通道/对象）（10函数）
+- **TransformExtensions**: 获取位置/旋转/各轴向（5函数）
+- **VariableReflection**: 变量名列表、按字符串读写（3函数）
+
+### 游戏功能（3个库）
+- **SplineTrajectory**: 样条轨迹-平射/抛射/导弹
+- **TurretRotation**: 计算炮塔旋转角度
+- **SupportSystem**: 获取支点变换、稳定高度
+
+### 清理Pironlot残留
+- 内部常量: `PironlotBPFL_*` → `MapLibrary_*`
+- Category: `Pironlot|*` → `XTools|Blueprint Extensions|*`
+
+---
+
+## 📋 最佳实践检查
+
+### ✅ 关键修复
+1. **模块架构重构**: 创建BlueprintExtensionsRuntime(Runtime)，K2Node保留在UncookedOnly
+2. **K2Node错误处理**: 8个节点，50+处修复 - LOCTEXT本地化、BreakAllNodeLinks()、空指针检查
+3. **节点分类统一**: `XTools|Blueprint Extensions|...` - Loops/Map/Variables层级清晰
+4. **编译兼容性**: K2Node_MapFindRef使用标准ExpandNode，不依赖自定义枚举
+
+### ✅ 已检查符合标准
+- API导出宏正确、Build.cs依赖正确、节点图标完整(15/15)、模块类型正确
+
+---
+
+## 🏗️ BlueprintExtensions 模块架构
+
+### 双模块设计
+- **BlueprintExtensionsRuntime**(Runtime): 所有BPFL和游戏功能，支持Win64/Mac/Linux/Android/iOS
+- **BlueprintExtensions**(UncookedOnly): 所有K2Node，仅编辑器使用，依赖Runtime模块
+
+### 命名标准化
+- 函数库: `XBPLib_*` → `U*ExtensionsLibrary`
+- 游戏功能: `XBPFeature_*` → `U*Library`
+
+### 核心功能
+- **15个K2节点**: Loop系列、Map嵌套操作、引用赋值
+- **Map扩展**: 按索引访问、值查找、批量操作、随机获取(20+函数)
+- **变量反射**: 通过字符串动态读写对象变量
+- **数学工具**: 稳定帧、精度控制、排序、单位转换
+- **游戏功能**: 炮塔旋转、样条轨迹、支撑系统
+
+---
+
 # 2025-11-01
 
-## 多版本兼容性方案（一套代码支持 UE 5.3-5.6）
+## 多版本兼容（UE 5.3-5.6）
 
-### 版本支持策略
-- **支持版本**: UE 5.3, 5.4, 5.5, 5.6
-- **不支持**: UE 5.0-5.2（详见下方原因）
-- **方法**: 使用条件编译处理 API 差异，遵循 UE 官方最佳实践
+### 版本策略
+- **支持**: UE 5.3, 5.4, 5.5, 5.6
+- **不支持**: UE 5.0（.NET Runtime 3.1依赖）、5.2（VS2022兼容性Bug）
+- **实现**: 条件编译处理API差异，使用`ENGINE_MAJOR/MINOR_VERSION`宏
 
-### UE 5.0/5.2 移除原因
-- **UE 5.0**: 需要额外的 .NET Desktop Runtime 3.1.x 依赖，增加部署复杂度
-- **UE 5.2**: 引擎源码 `ConcurrentLinearAllocator.h` 与新版 VS 2022 (14.44+) 存在兼容性 Bug（C4668/C4067），无法在插件层面修复
-- **业界做法**: 大多数商业插件也跳过有兼容性问题的旧版本，专注于稳定版本
+### API变更处理
+- `TArray::Pop(bool)` → `Pop(EAllowShrinking)`
+- `FString::LeftChopInline(int, bool)` → `LeftChopInline(int, EAllowShrinking)`
+- 移除UE 5.5弃用的`bEnableUndefinedIdentifierWarnings`
 
-### 跨版本兼容性实现（符合 UE 官方最佳实践）
-- **条件编译**: 使用 `#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5` 处理 API 变更
-- **版本宏定义**: 在 Build.cs 中自动设置 `ENGINE_MAJOR_VERSION` 和 `ENGINE_MINOR_VERSION`（参考 UE 引擎源码 Version.h）
-- **API 变更处理**:
-  - `TArray::Pop(bool)` → `Pop(EAllowShrinking)`（MinIndexQueue.cpp）
-  - `FString::LeftChopInline(int, bool)` → `LeftChopInline(int, EAllowShrinking)`（X_AssetNamingManager.cpp）
-- **移除弃用 API**: 删除 UE 5.5 中弃用的 `bEnableUndefinedIdentifierWarnings`
-- **编译时选择**: 预处理器自动选择正确 API，零运行时开销
-
-### CI/CD 优化
-- 修复 PowerShell 中文字符编码问题，所有日志改为英文
-- 修复 PowerShell 换行符解析错误
-- 修复产物双重压缩问题（`.zip.zip`）
+## CI/CD优化
+- 修复PowerShell编码问题、产物双重压缩(`.zip.zip`)
+- 并发控制(`concurrency`)、60分钟超时保护
+- Job Summary、构建时间统计、自托管runner清理
+- 支持tag推送自动触发构建
 
 ## 构建系统优化
-- 修复 Shipping 构建中 `FXToolsErrorReporter` 的编译错误，使用模板方法支持所有日志分类类型（包括 `FNoLoggingCategory`），该方案已被 UE 社区广泛采用，适用于纯插件项目且零性能开销。
-- 修复 CI 工作流产物双重压缩问题（`.zip.zip`），直接上传构建目录，由 GitHub Actions 自动打包。
-
-## CI/CD 最佳实践改进（已通过 Context7 验证符合 GitHub Actions 官方标准）
-- 添加并发控制（`concurrency`），防止同一 UE 版本同时运行多个构建，使用 `cancel-in-progress` 自动取消过期构建
-- 添加 60 分钟超时保护（`timeout-minutes`），防止构建卡住消耗资源
-- 添加详细日志输出和彩色终端提示，提升可读性
-- 添加构建时间统计和包大小监控，可观测性提升
-- 添加 Job Summary（`GITHUB_STEP_SUMMARY`），直观展示构建结果（版本、耗时、大小等）
-- 添加自托管 runner 的清理步骤（`if: always()`），使用 `RUNNER_TEMP` 自动释放临时文件
-- 支持 tag 推送自动触发构建（`on: push: tags`）
-- 清理冗余空行和 emoji，提升代码可读性和专业性
-
-## 日志系统优化
-- 统一各模块日志输出，移除 `LogTemp`，使用模块日志类别或 `FXToolsErrorReporter`，满足 UE 日志最佳实践。
-- 补充 `ComponentTimelineRuntime`、`EnhancedCodeFlow` 等模块的日志类别定义。
-- 调整材质函数选取 UI 的日志类别，保持编辑器调试输出一致。
+- 修复Shipping构建`FXToolsErrorReporter`编译错误(模板方法支持所有日志类型)
+- 统一日志系统，移除`LogTemp`，使用模块日志类别
 
 ## 功能新增
-- EnhancedCodeFlow 时间轴（标量/向量/颜色及自定义版本）新增 `PlayRate` 播放速率参数，默认 1.0，可快速整体加速或减缓动画；蓝图节点同步支持。
+- EnhancedCodeFlow时间轴新增`PlayRate`播放速率参数(默认1.0)
