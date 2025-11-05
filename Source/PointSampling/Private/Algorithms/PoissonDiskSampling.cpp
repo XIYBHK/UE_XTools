@@ -380,7 +380,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 }
 
 // ============================================================================
-// FromStream版本（确定性随机，原XToolsLibrary实现的直接复制）
+// FromStream版本（流送，原XToolsLibrary实现的直接复制）
 // ============================================================================
 
 TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxFromStream(

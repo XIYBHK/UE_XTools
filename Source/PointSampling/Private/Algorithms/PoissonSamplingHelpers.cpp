@@ -69,28 +69,90 @@ namespace PoissonSamplingHelpers
      * 智能裁剪：移除最拥挤的点，保持最优分布
      * @param Points 要裁剪的点数组
      * @param TargetCount 目标数量
+     * 
+     * 优化版本：批量裁剪，从O(K × N²)降低到O(N² + N log N)
+     * - 一次性计算所有点的最近邻距离 O(N²)
+     * - 排序 O(N log N)
+     * - 批量移除 O(N)
+     * 
+     * 大规模裁剪时性能提升10-100倍
      */
     void TrimToOptimalDistribution(TArray<FVector>& Points, int32 TargetCount)
     {
-        while (Points.Num() > TargetCount)
+        if (Points.Num() <= TargetCount)
         {
-            // 找出最拥挤的点（与最近邻距离最小）
-            int32 MostCrowdedIndex = 0;
-            float MinNearestDistSq = FLT_MAX;
-            
-            for (int32 i = 0; i < Points.Num(); ++i)
-            {
-                const float NearestDistSq = FindNearestDistanceSquared(Points[i], Points, i);
-                if (NearestDistSq < MinNearestDistSq)
-                {
-                    MinNearestDistSq = NearestDistSq;
-                    MostCrowdedIndex = i;
-                }
-            }
-            
-            // 移除最拥挤的点
-            Points.RemoveAtSwap(MostCrowdedIndex);
+            return;
         }
+        
+        const int32 ToRemove = Points.Num() - TargetCount;
+        
+        // 小规模裁剪（<10个点）：使用原有的逐个移除算法
+        // 原因：小规模时批量算法的开销反而更大
+        if (ToRemove < 10)
+        {
+            while (Points.Num() > TargetCount)
+            {
+                int32 MostCrowdedIndex = 0;
+                float MinNearestDistSq = FLT_MAX;
+                
+                for (int32 i = 0; i < Points.Num(); ++i)
+                {
+                    const float NearestDistSq = FindNearestDistanceSquared(Points[i], Points, i);
+                    if (NearestDistSq < MinNearestDistSq)
+                    {
+                        MinNearestDistSq = NearestDistSq;
+                        MostCrowdedIndex = i;
+                    }
+                }
+                
+                Points.RemoveAtSwap(MostCrowdedIndex);
+            }
+            return;
+        }
+        
+        // 大规模裁剪：批量移除算法
+        
+        // 1. 计算所有点的最近邻距离（一次O(N²)）
+        TArray<TPair<float, int32>> DistanceIndexPairs;
+        DistanceIndexPairs.Reserve(Points.Num());
+        
+        for (int32 i = 0; i < Points.Num(); ++i)
+        {
+            const float NearestDistSq = FindNearestDistanceSquared(Points[i], Points, i);
+            DistanceIndexPairs.Add(TPair<float, int32>(NearestDistSq, i));
+        }
+        
+        // 2. 排序：最拥挤的点在前面（O(N log N)）
+        DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
+            return A.Key < B.Key;
+        });
+        
+        // 3. 批量移除前ToRemove个最拥挤的点（O(N)）
+        TSet<int32> IndicesToRemove;
+        IndicesToRemove.Reserve(ToRemove);
+        
+        for (int32 i = 0; i < ToRemove; ++i)
+        {
+            IndicesToRemove.Add(DistanceIndexPairs[i].Value);
+        }
+        
+        // 4. 构建新数组，只保留未被标记的点
+        TArray<FVector> NewPoints;
+        NewPoints.Reserve(TargetCount);
+        
+        for (int32 i = 0; i < Points.Num(); ++i)
+        {
+            if (!IndicesToRemove.Contains(i))
+            {
+                NewPoints.Add(Points[i]);
+            }
+        }
+        
+        // 5. 移动语义转移，避免拷贝
+        Points = MoveTemp(NewPoints);
+        
+        UE_LOG(LogPointSampling, Verbose, TEXT("批量裁剪: 从 %d 移除 %d 个最拥挤点，保留 %d"), 
+            Points.Num() + ToRemove, ToRemove, Points.Num());
     }
     
     /**
@@ -102,6 +164,11 @@ namespace PoissonSamplingHelpers
      * @param bIs2D 是否为2D平面
      * @param Stream 可选的随机流（const指针）
      *  const指针：FRandomStream的方法是const但使用mutable成员
+     * 
+     * 优化版本：使用空间哈希加速距离检查，从O(N × M)降低到O(N + M)
+     * - 构建空间哈希表 O(N)
+     * - 每个新点只检查邻近单元格（27个）O(1)
+     * - 总体复杂度从O(N × M)降低到O(N + M × 27) ≈ O(N + M)
      */
     void FillWithStratifiedSampling(
         TArray<FVector>& Points,
@@ -129,10 +196,62 @@ namespace PoissonSamplingHelpers
         const FVector CellSize = BoxSize / FMath::Max(GridSize, 1);
         const float MinDistSq = MinDist * MinDist;
         
-        TArray<FVector> CandidatePoints;
-        CandidatePoints.Reserve(Needed * 2);  // 预留额外空间
+        // 构建空间哈希：用于快速邻域查找
+        const float HashCellSize = MinDist;  // 哈希单元格大小等于最小距离
         
-        // 在网格中生成候选点
+        auto GetHashKey = [HashCellSize](const FVector& P) -> FIntVector
+        {
+            return FIntVector(
+                FMath::FloorToInt(P.X / HashCellSize),
+                FMath::FloorToInt(P.Y / HashCellSize),
+                FMath::FloorToInt(P.Z / HashCellSize)
+            );
+        };
+        
+        // Lambda：检查点是否与空间哈希中的点冲突
+        auto IsValidAgainstHash = [&](const FVector& NewPoint, const TMap<FIntVector, TArray<FVector>>& SpatialHash) -> bool
+        {
+            const FIntVector CellKey = GetHashKey(NewPoint);
+            
+            // 检查3×3×3=27个邻近单元格
+            for (int32 dx = -1; dx <= 1; ++dx)
+            {
+                for (int32 dy = -1; dy <= 1; ++dy)
+                {
+                    for (int32 dz = -1; dz <= 1; ++dz)
+                    {
+                        const FIntVector NeighborKey = CellKey + FIntVector(dx, dy, dz);
+                        
+                        if (const TArray<FVector>* Neighbors = SpatialHash.Find(NeighborKey))
+                        {
+                            for (const FVector& Neighbor : *Neighbors)
+                            {
+                                if (FVector::DistSquared(NewPoint, Neighbor) < MinDistSq)
+                                {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return true;
+        };
+        
+        // 1. 将已有的泊松点加入空间哈希
+        TMap<FIntVector, TArray<FVector>> SpatialHash;
+        SpatialHash.Reserve(Points.Num() / 4 + Needed / 4);  // 估算容量
+        
+        for (const FVector& P : Points)
+        {
+            SpatialHash.FindOrAdd(GetHashKey(P)).Add(P);
+        }
+        
+        // 2. 在网格中生成候选点（使用空间哈希加速）
+        TArray<FVector> CandidatePoints;
+        CandidatePoints.Reserve(Needed * 2);
+        
         for (int32 i = 0; i < Needed * 2 && CandidatePoints.Num() < Needed * 2; ++i)
         {
             // 计算网格索引
@@ -167,40 +286,48 @@ namespace PoissonSamplingHelpers
             NewPoint -= BoxSize * 0.5f;
             if (bIs2D) NewPoint.Z = 0.0f;
             
-            // 检查与已有泊松点的距离
-            bool bValid = true;
-            for (const FVector& ExistingPoint : Points)
-            {
-                if (FVector::DistSquared(NewPoint, ExistingPoint) < MinDistSq)
-                {
-                    bValid = false;
-                    break;
-                }
-            }
-            
-            // 检查与已生成候选点的距离（避免候选点之间重叠）
-            if (bValid)
-            {
-                for (const FVector& CandidatePoint : CandidatePoints)
-                {
-                    if (FVector::DistSquared(NewPoint, CandidatePoint) < MinDistSq)
-                    {
-                        bValid = false;
-                        break;
-                    }
-                }
-            }
-            
-            if (bValid)
+            // 使用空间哈希检查有效性（O(1)而非O(N)）
+            if (IsValidAgainstHash(NewPoint, SpatialHash))
             {
                 CandidatePoints.Add(NewPoint);
+                SpatialHash.FindOrAdd(GetHashKey(NewPoint)).Add(NewPoint);
             }
         }
         
-        // 如果候选点不够，降低距离约束继续生成
+        // 3. 如果候选点不够，降低距离约束继续生成（使用空间哈希）
         if (CandidatePoints.Num() < Needed)
         {
-            const float RelaxedMinDistSq = MinDistSq * 0.5f;  // 进一步放宽到50%
+            const float RelaxedMinDistSq = MinDistSq * 0.5f;
+            
+            // Lambda：检查放宽距离约束的有效性
+            auto IsValidWithRelaxedDistance = [&](const FVector& NewPoint, float CheckDistSq) -> bool
+            {
+                const FIntVector CellKey = GetHashKey(NewPoint);
+                
+                for (int32 dx = -1; dx <= 1; ++dx)
+                {
+                    for (int32 dy = -1; dy <= 1; ++dy)
+                    {
+                        for (int32 dz = -1; dz <= 1; ++dz)
+                        {
+                            const FIntVector NeighborKey = CellKey + FIntVector(dx, dy, dz);
+                            
+                            if (const TArray<FVector>* Neighbors = SpatialHash.Find(NeighborKey))
+                            {
+                                for (const FVector& Neighbor : *Neighbors)
+                                {
+                                    if (FVector::DistSquared(NewPoint, Neighbor) < CheckDistSq)
+                                    {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return true;
+            };
             
             for (int32 i = 0; i < Needed * 2 && CandidatePoints.Num() < Needed; ++i)
             {
@@ -222,42 +349,50 @@ namespace PoissonSamplingHelpers
                     );
                 }
                 
-                bool bValid = true;
-                for (const FVector& ExistingPoint : Points)
-                {
-                    if (FVector::DistSquared(RandomPoint, ExistingPoint) < RelaxedMinDistSq)
-                    {
-                        bValid = false;
-                        break;
-                    }
-                }
-                
-                // 检查与已生成候选点的距离
-                if (bValid)
-                {
-                    for (const FVector& CandidatePoint : CandidatePoints)
-                    {
-                        if (FVector::DistSquared(RandomPoint, CandidatePoint) < RelaxedMinDistSq)
-                        {
-                            bValid = false;
-                            break;
-                        }
-                    }
-                }
-                
-                if (bValid)
+                if (IsValidWithRelaxedDistance(RandomPoint, RelaxedMinDistSq))
                 {
                     CandidatePoints.Add(RandomPoint);
+                    SpatialHash.FindOrAdd(GetHashKey(RandomPoint)).Add(RandomPoint);
                 }
             }
         }
         
-        // 如果还不够，继续填充（保留极小距离约束，避免完全重叠）
+        // 4. 如果还不够，继续填充（保留极小距离约束，避免完全重叠）
         if (CandidatePoints.Num() < Needed)
         {
-            const float MinimalDistSq = MinDistSq * 0.25f;  // 25%的约束
-            const int32 MaxAttempts = Needed * 10;  // 限制尝试次数，避免死循环
+            const float MinimalDistSq = MinDistSq * 0.25f;
+            const int32 MaxAttempts = Needed * 10;
             int32 Attempts = 0;
+            
+            // Lambda：检查极小距离约束
+            auto IsValidWithMinimalDistance = [&](const FVector& NewPoint) -> bool
+            {
+                const FIntVector CellKey = GetHashKey(NewPoint);
+                
+                for (int32 dx = -1; dx <= 1; ++dx)
+                {
+                    for (int32 dy = -1; dy <= 1; ++dy)
+                    {
+                        for (int32 dz = -1; dz <= 1; ++dz)
+                        {
+                            const FIntVector NeighborKey = CellKey + FIntVector(dx, dy, dz);
+                            
+                            if (const TArray<FVector>* Neighbors = SpatialHash.Find(NeighborKey))
+                            {
+                                for (const FVector& Neighbor : *Neighbors)
+                                {
+                                    if (FVector::DistSquared(NewPoint, Neighbor) < MinimalDistSq)
+                                    {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return true;
+            };
             
             while (CandidatePoints.Num() < Needed && Attempts < MaxAttempts)
             {
@@ -281,33 +416,10 @@ namespace PoissonSamplingHelpers
                     );
                 }
                 
-                // 检查与泊松点的极小距离（避免完全重叠）
-                bool bValid = true;
-                for (const FVector& ExistingPoint : Points)
-                {
-                    if (FVector::DistSquared(RandomPoint, ExistingPoint) < MinimalDistSq)
-                    {
-                        bValid = false;
-                        break;
-                    }
-                }
-                
-                // 检查与候选点的极小距离
-                if (bValid)
-                {
-                    for (const FVector& CandidatePoint : CandidatePoints)
-                    {
-                        if (FVector::DistSquared(RandomPoint, CandidatePoint) < MinimalDistSq)
-                        {
-                            bValid = false;
-                            break;
-                        }
-                    }
-                }
-                
-                if (bValid)
+                if (IsValidWithMinimalDistance(RandomPoint))
                 {
                     CandidatePoints.Add(RandomPoint);
+                    SpatialHash.FindOrAdd(GetHashKey(RandomPoint)).Add(RandomPoint);
                 }
             }
             

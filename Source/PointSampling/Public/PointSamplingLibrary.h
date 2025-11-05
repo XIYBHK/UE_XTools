@@ -80,11 +80,11 @@ public:
 	);
 
 	// ============================================================================
-	// FromStream版本（确定性随机）
+	// FromStream版本（流送）
 	// ============================================================================
 
-	UFUNCTION(BlueprintCallable, Category = "Point Sampling|Poisson|Advanced",
-		meta = (DisplayName = "泊松采样（确定性-Box组件）",
+	UFUNCTION(BlueprintCallable, Category = "Point Sampling|Poisson|Stream",
+		meta = (DisplayName = "泊松采样（流送-Box组件）",
 			AdvancedDisplay = "TargetPointCount,JitterStrength"))
 	static TArray<FVector> GeneratePoissonPointsInBoxFromStream(
 		const FRandomStream& RandomStream,
@@ -96,8 +96,8 @@ public:
 		float JitterStrength = 0.0f
 	);
 
-	UFUNCTION(BlueprintCallable, Category = "Point Sampling|Poisson|Advanced",
-		meta = (DisplayName = "泊松采样（确定性-Box参数）",
+	UFUNCTION(BlueprintCallable, Category = "Point Sampling|Poisson|Stream",
+		meta = (DisplayName = "泊松采样（流送-Box参数）",
 			ScriptMethod = "GeneratePoissonPointsInBoxByVector",
 			AdvancedDisplay = "TargetPointCount,JitterStrength"))
 	static TArray<FVector> GeneratePoissonPointsInBoxByVectorFromStream(

@@ -75,11 +75,11 @@ public:
 	);
 
 	// ============================================================================
-	// FromStream版本（确定性随机）
+	// FromStream版本（流送）
 	// ============================================================================
 
 	/**
-	 * Box组件内泊松采样（确定性随机）
+	 * Box组件内泊松采样（流送）
 	 *  原签名：UXToolsLibrary::GeneratePoissonPointsInBoxFromStream
 	 */
 	static TArray<FVector> GeneratePoissonInBoxFromStream(
@@ -93,7 +93,7 @@ public:
 	);
 
 	/**
-	 * 通过Box参数采样（确定性随机）
+	 * 通过Box参数采样（流送）
 	 *  原签名：UXToolsLibrary::GeneratePoissonPointsInBoxByVectorFromStream
 	 *  注意：原实现没有bUseCache参数
 	 */

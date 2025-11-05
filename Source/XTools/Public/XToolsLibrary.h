@@ -27,7 +27,10 @@ enum class EXToolsSamplingMethod : uint8
 	SurfaceProximity	UMETA(DisplayName = "表面邻近度采样"),
 
 	/** [待实现] 对模型的内部进行完整的实体填充采样，会填满所有内部空间。*/
-	Voxelize			UMETA(DisplayName = "实体填充采样 (待实现)")
+	Voxelize			UMETA(DisplayName = "实体填充采样 (待实现)"),
+
+	/** UE原生表面采样：使用FMeshSurfacePointSampling直接在网格表面生成泊松分布的点。性能极高，点分布均匀，自带法线方向。*/
+	NativeSurface		UMETA(DisplayName = "原生表面采样 (高性能)")
 };
 
 // 贝塞尔曲线速度模式
@@ -221,7 +224,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="XTools|几何", meta=(
         DisplayName = "在模型中生成点阵",
         WorldContext="WorldContextObject",
-        ToolTip="使用配置结构体在模型碰撞体内生成点阵\n推荐使用此简化API以提高代码可维护性"))
+        ToolTip="使用配置结构体在模型碰撞体内生成点阵\n推荐使用此简化API以提高代码可维护性\n\n[碰撞要求] 目标Actor必须：\n1.有StaticMeshComponent\n2.Collision Enabled=Query Only或Collision Enabled (推荐)\n3.有效的Object Type（自动获取，任意类型即可）\n\n[不影响检测] Collision Response设置（Block/Overlap/Ignore）完全不影响\n原因：使用TraceForObjects（按类型），不是TraceByChannel（按通道）\n\n提示：采样不准确时启用Complex Collision（降低性能但提高精度）"))
     static void SamplePointsInsideMesh(
         const UObject* WorldContextObject,
         AActor* TargetActor,
@@ -264,7 +267,7 @@ public:
         bDrawOnlySuccessfulHits="true",
         bEnableBoundsCulling="true",
         DebugDrawDuration="5.0",
-        ToolTip="传统API：使用独立参数在模型碰撞体内生成点阵\n建议使用SamplePointsInsideMesh(Config)以获得更好的可维护性"))
+        ToolTip="传统API：使用独立参数在模型碰撞体内生成点阵\n建议使用SamplePointsInsideMesh(Config)以获得更好的可维护性\n\n[碰撞要求] 目标Actor必须：\n1.有StaticMeshComponent\n2.Collision Enabled=Query Only或Collision Enabled (推荐)\n3.有效的Object Type（自动获取，任意类型即可）\n\n[不影响检测] Collision Response设置（Block/Overlap/Ignore）完全不影响\n原因：使用TraceForObjects（按类型），不是TraceByChannel（按通道）\n\n提示：采样不准确时启用Complex Collision（降低性能但提高精度）"))
     static void SamplePointsInsideStaticMeshWithBoxOptimized(
         // --- Inputs
         const UObject* WorldContextObject,

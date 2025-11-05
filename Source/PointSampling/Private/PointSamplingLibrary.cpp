@@ -77,7 +77,7 @@ TArray<FVector> UPointSamplingLibrary::GeneratePoissonPointsInBoxByVector(
 }
 
 // ============================================================================
-// FromStream版本（确定性随机）
+// FromStream版本（流送）
 // ============================================================================
 
 TArray<FVector> UPointSamplingLibrary::GeneratePoissonPointsInBoxFromStream(

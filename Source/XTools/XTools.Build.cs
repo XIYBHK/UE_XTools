@@ -81,19 +81,23 @@ public class XTools : ModuleRules
 		ModuleDirectory + "/Private"
 	});
 
-		// Public dependencies
-		PublicDependencyModuleNames.AddRange(new string[] {
-			"Core",
-			"CoreUObject",
-			"Engine",
-			"InputCore",
-			"Slate",
-			"SlateCore",
-			"UMG",
-			"ComponentTimelineRuntime",
-			"RandomShuffles",
-			"FormationSystem"
-		});
+	// Public dependencies
+	PublicDependencyModuleNames.AddRange(new string[] {
+		"Core",
+		"CoreUObject",
+		"Engine",
+		"InputCore",
+		"Slate",
+		"SlateCore",
+		"UMG",
+		"ComponentTimelineRuntime",
+		"RandomShuffles",
+		"FormationSystem",
+		// UE Geometry modules for native surface sampling
+		"GeometryCore",           // FMeshSurfacePointSampling, FDynamicMesh3
+		"MeshConversion",         // StaticMesh <-> DynamicMesh conversion
+		"GeometryFramework"       // Geometry processing framework
+	});
 
 		// Private dependencies
 		PrivateDependencyModuleNames.AddRange(new string[] {
