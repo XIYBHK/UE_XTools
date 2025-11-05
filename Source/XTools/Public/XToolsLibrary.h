@@ -29,8 +29,8 @@ enum class EXToolsSamplingMethod : uint8
 	/** [待实现] 对模型的内部进行完整的实体填充采样，会填满所有内部空间。*/
 	Voxelize			UMETA(DisplayName = "实体填充采样 (待实现)"),
 
-	/** UE原生表面采样：使用FMeshSurfacePointSampling直接在网格表面生成泊松分布的点。性能极高，点分布均匀，自带法线方向。*/
-	NativeSurface		UMETA(DisplayName = "原生表面采样 (高性能)")
+	/** UE原生表面采样：使用FMeshSurfacePointSampling直接在网格表面生成泊松分布的点。性能极高，点分布均匀，自带法线方向。⚠️ 仅在编辑器中可用（依赖MeshDescription）。*/
+	NativeSurface		UMETA(DisplayName = "原生表面采样 (仅编辑器)")
 };
 
 // 贝塞尔曲线速度模式

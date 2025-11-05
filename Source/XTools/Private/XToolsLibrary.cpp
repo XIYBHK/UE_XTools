@@ -14,15 +14,18 @@
 #include "FormationSystem.h"
 #include "FormationLibrary.h"
 
-//  UE Geometry 依赖 (原生表面采样)
+//  UE Geometry 依赖 (原生表面采样 - 仅编辑器)
+#if WITH_EDITORONLY_DATA
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Sampling/MeshSurfacePointSampling.h"
 #include "DynamicMeshToMeshDescription.h"
 #include "MeshDescriptionToDynamicMesh.h"
+#endif // WITH_EDITORONLY_DATA
 
 //  UE 核心依赖
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -771,12 +774,16 @@ static FXToolsSamplingResult ValidateInputs(AActor* TargetActor, UBoxComponent* 
     return FXToolsSamplingResult::MakeSuccess({});
 }
 
-//  前向声明：UE原生表面采样
+//  前向声明：UE原生表面采样（仅编辑器）
+#if WITH_EDITORONLY_DATA
 static FXToolsSamplingResult PerformNativeSurfaceSampling(
     UWorld* World,
     UStaticMeshComponent* TargetMeshComponent,
     const FGridParameters& GridParams,
-    float GridSpacing);
+    float GridSpacing,
+    bool bEnableDebugDraw,
+    float DebugDrawDuration);
+#endif // WITH_EDITORONLY_DATA
 
 //  支持缓存的网格参数计算
 static FGridParameters CalculateGridParameters(UBoxComponent* BoundingBox, float GridSpacing)
@@ -1055,7 +1062,12 @@ static FXToolsSamplingResult SamplePointsInternal(
             return FXToolsSamplingResult::MakeError(TEXT("实体填充采样(Voxelize)模式尚未实现"));
 
         case EXToolsSamplingMethod::NativeSurface:
-            return PerformNativeSurfaceSampling(World, TargetMeshComponent, GridParams, GridSpacing);
+#if WITH_EDITORONLY_DATA
+            return PerformNativeSurfaceSampling(World, TargetMeshComponent, GridParams, GridSpacing, 
+                bEnableDebugDraw, DebugDrawDuration);
+#else
+            return FXToolsSamplingResult::MakeError(TEXT("原生表面采样仅在编辑器中可用（依赖MeshDescription）"));
+#endif
 
         default:
             return FXToolsSamplingResult::MakeError(TEXT("未知的采样模式"));
@@ -1063,11 +1075,15 @@ static FXToolsSamplingResult SamplePointsInternal(
 }
 
 //  原生表面采样实现 - 使用UE GeometryCore
+//  注意：此功能依赖MeshDescription，仅在编辑器中可用
+#if WITH_EDITORONLY_DATA
 static FXToolsSamplingResult PerformNativeSurfaceSampling(
     UWorld* World,
     UStaticMeshComponent* TargetMeshComponent,
     const FGridParameters& GridParams,
-    float GridSpacing)
+    float GridSpacing,
+    bool bEnableDebugDraw,
+    float DebugDrawDuration)
 {
     using namespace UE::Geometry;
 
@@ -1086,7 +1102,7 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
     // 步骤1：将StaticMesh转换为DynamicMesh（优化版本）
     FDynamicMesh3 DynamicMesh;
     
-    // 获取MeshDescription（UE的网格数据结构）
+    // 获取MeshDescription（UE的网格数据结构 - 编辑器专用）
     FMeshDescription* MeshDescription = StaticMesh->GetMeshDescription(0);
     if (!MeshDescription)
     {
@@ -1105,26 +1121,63 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
         return FXToolsSamplingResult::MakeError(TEXT("DynamicMesh没有三角形数据"));
     }
 
-    // 步骤2：配置表面采样器 - 优化3：自适应SubSampleDensity
-    FMeshSurfacePointSampling Sampler;
-    Sampler.SampleRadius = GridSpacing / 2.0;      // 采样半径=间距的一半
+    // 获取网格边界信息（用于诊断和参数调整）
+    FAxisAlignedBox3d MeshBounds = DynamicMesh.GetBounds();
+    double MeshDiagonal = MeshBounds.DiagonalLength();
+    double MeshMaxDim = MeshBounds.MaxDim();
     
-    // 根据GridSpacing自适应调整子采样密度（平衡速度与质量）
-    if (GridSpacing < 5.0)
+    // 步骤2：配置表面采样器 - 优化3：自适应参数计算
+    FMeshSurfacePointSampling Sampler;
+    
+    // 智能计算SampleRadius（核心算法）
+    // 基于网格复杂度和期望点数的动态调整
+    const double EstimatedSurfaceArea = MeshDiagonal * MeshDiagonal / 2.0;  // 粗略估算表面积
+    const double DesiredPointDensity = 1.0 / (GridSpacing * GridSpacing);  // 期望点密度（点/单位面积²）
+    const double EstimatedPoints = EstimatedSurfaceArea * DesiredPointDensity;
+    
+    // 根据三角形数量估算平均三角形尺寸
+    const double AvgTriangleEdge = MeshDiagonal / FMath::Sqrt((double)DynamicMesh.TriangleCount());
+    
+    // 计算SampleRadius：确保相对于平均三角形尺寸合理
+    // 规则：SampleRadius应该是GridSpacing和平均三角形边长的较小值
+    double CalculatedRadius = FMath::Min(GridSpacing / 2.0, AvgTriangleEdge * 0.8);
+    
+    // 应用边界限制
+    const double MinRadius = 1.0;  // 最小半径1单位
+    const double MaxRadius = MeshMaxDim / 10.0;  // 最大半径不超过网格最大尺寸的1/10
+    
+    Sampler.SampleRadius = FMath::Clamp(CalculatedRadius, MinRadius, MaxRadius);
+    
+    // 自适应SubSampleDensity：更小的SampleRadius需要更高的密度
+    if (Sampler.SampleRadius < 5.0)
     {
-        Sampler.SubSampleDensity = 12.0;  // 高密度采样，需要更高精度
+        Sampler.SubSampleDensity = 15.0;  // 极小半径，需要非常高的子采样密度
     }
-    else if (GridSpacing < 20.0)
+    else if (Sampler.SampleRadius < 10.0)
     {
-        Sampler.SubSampleDensity = 10.0;  // 中密度采样，平衡速度与质量
+        Sampler.SubSampleDensity = 12.0;  // 小半径，高子采样密度
+    }
+    else if (Sampler.SampleRadius < 30.0)
+    {
+        Sampler.SubSampleDensity = 10.0;  // 中等半径，标准子采样密度
     }
     else
     {
-        Sampler.SubSampleDensity = 7.0;   // 低密度采样，优先速度
+        Sampler.SubSampleDensity = 8.0;   // 大半径，较低子采样密度
     }
+    
+    // 设置MaxSamples以防止过度采样
+    const int32 ReasonableMaxSamples = FMath::Max(100, FMath::Min(100000, (int32)(EstimatedPoints * 2.0)));
+    Sampler.MaxSamples = ReasonableMaxSamples;
     
     Sampler.RandomSeed = FMath::Rand();            // 随机种子
     Sampler.bComputeBarycentrics = false;          // 不需要重心坐标
+    
+    // 诊断日志
+    UE_LOG(LogXTools, Log, TEXT("[NativeSurfaceSampling] 网格信息: 三角形=%d, 对角线=%.2f, 最大尺寸=%.2f"), 
+        DynamicMesh.TriangleCount(), MeshDiagonal, MeshMaxDim);
+    UE_LOG(LogXTools, Log, TEXT("[NativeSurfaceSampling] 采样配置: GridSpacing=%.2f, 平均三角形边长=%.2f, SampleRadius=%.2f, SubSampleDensity=%.2f, MaxSamples=%d"), 
+        GridSpacing, AvgTriangleEdge, Sampler.SampleRadius, Sampler.SubSampleDensity, Sampler.MaxSamples);
 
     // 步骤3：执行泊松采样
     Sampler.ComputePoissonSampling(DynamicMesh);
@@ -1144,7 +1197,19 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
 
     if (Sampler.Samples.Num() == 0)
     {
-        return FXToolsSamplingResult::MakeError(TEXT("泊松采样未生成任何点"));
+        // 提供详细的诊断信息
+        FString DiagnosticInfo = FString::Printf(
+            TEXT("泊松采样未生成任何点。诊断信息:\n")
+            TEXT("- GridSpacing: %.2f\n")
+            TEXT("- SampleRadius: %.2f\n")
+            TEXT("- 网格最大尺寸: %.2f\n")
+            TEXT("- 三角形数: %d\n")
+            TEXT("- 可能原因: GridSpacing相对于网格过大，建议减小GridSpacing或增大网格尺寸"),
+            GridSpacing, Sampler.SampleRadius, MeshMaxDim, DynamicMesh.TriangleCount()
+        );
+        
+        UE_LOG(LogXTools, Error, TEXT("[NativeSurfaceSampling] %s"), *DiagnosticInfo);
+        return FXToolsSamplingResult::MakeError(DiagnosticInfo);
     }
 
     // 步骤4：转换为世界坐标 - 优化4：批量转换（提升20%）
@@ -1155,14 +1220,33 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
     const FTransform& ComponentTransform = TargetMeshComponent->GetComponentTransform();
     const FMatrix TransformMatrix = ComponentTransform.ToMatrixWithScale();  // 展开Transform矩阵
 
-    // 批量转换（编译器可向量化优化）
+    // 批量转换（编译器可向量化优化）+ 可视化调试
     for (int32 i = 0; i < NumSamples; ++i)
     {
-        const FVector3d& Origin = Sampler.Samples[i].Origin;
-        // 直接使用矩阵变换（减少函数调用开销）
-        ValidPoints[i] = TransformMatrix.TransformPosition(FVector(Origin.X, Origin.Y, Origin.Z));
+        const FFrame3d& Sample = Sampler.Samples[i];
+        const FVector3d& Origin = Sample.Origin;
+        
+        // 转换点到世界坐标
+        FVector WorldPoint = TransformMatrix.TransformPosition(FVector(Origin.X, Origin.Y, Origin.Z));
+        ValidPoints[i] = WorldPoint;
+        
+        // 可视化调试（绘制点和法线）
+        if (bEnableDebugDraw)
+        {
+            // 绘制采样点（蓝色球体）
+            DrawDebugSphere(World, WorldPoint, 5.0f, 8, FColor::Blue, false, DebugDrawDuration);
+            
+            // 绘制表面法线（绿色线段）
+            const FVector3d& Normal = Sample.Z();  // Frame的Z轴是法线方向
+            FVector WorldNormal = ComponentTransform.TransformVector(FVector(Normal.X, Normal.Y, Normal.Z));
+            DrawDebugLine(World, WorldPoint, WorldPoint + WorldNormal * 20.0f, 
+                FColor::Green, false, DebugDrawDuration, 0, 1.0f);
+        }
     }
 
+    UE_LOG(LogXTools, Log, TEXT("[NativeSurfaceSampling] 采样完成：生成 %d 个表面点"), NumSamples);
+    
     return FXToolsSamplingResult::MakeSuccess(ValidPoints, ValidPoints.Num(), 0);
 }
+#endif // WITH_EDITORONLY_DATA
 

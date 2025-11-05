@@ -1,5 +1,40 @@
 # 2025-11-05
 
+## 🔧 MaterialTools API优化与智能连接系统增强
+
+### 代码优化
+基于UE5.3源码深度分析，全面优化材质工具模块：
+
+**核心优化**：
+- ✅ **简化GetBaseMaterial实现**：直接使用UE官方API `MaterialInterface->GetMaterial()`，移除冗余的手动递归逻辑
+- ✅ **优化MaterialAttributes检测**：使用官方`IsResultMaterialAttributes()` API替代手动检查，更准确可靠
+- ✅ **代码质量提升**：减少代码行数，提高可读性，与UE官方最佳实践保持一致
+
+**智能连接系统增强**：
+- ✅ **更准确的类型检测**：采用UE官方虚方法判断MaterialAttributes类型
+- ✅ **备用检测机制**：保留函数名称推断作为备用方案，确保兼容性
+- ✅ **Substrate材质支持准备**：为UE 5.1+ Substrate/Strata材质系统预留扩展点
+
+**分析报告**：
+- API对比分析：`Docs/MaterialTools_API分析报告.md`
+- 智能连接优化方案：`Docs/MaterialTools_智能连接系统优化方案.md`
+- 核心结论：XTools材质功能未重复造轮子，在UE官方API基础上构建了完整的批量处理业务逻辑
+- 架构评分：5/5 - 模块化设计清晰，职责划分合理
+
+**保持的核心优势**：
+- ✅ 批量处理多种资产类型（静态网格体、骨骼网格体、蓝图等）
+- ✅ 智能MaterialAttributes连接系统
+- ✅ 并行处理优化，提升大规模资产处理性能
+- ✅ 自动创建Add/Multiply节点
+- ✅ 完善的参数配置和UI界面
+
+**未来扩展**：
+- 📋 Substrate/Strata材质系统支持（UE 5.1+）
+- 📋 统一特殊材质类型检测框架
+- 📋 更智能的类型不匹配提示
+
+---
+
 ## ⭐ XTools采样功能新增UE原生表面采样模式
 
 ### 新功能：原生表面采样（NativeSurface）
@@ -19,8 +54,38 @@
 
 **性能优化**（相比初始实现提升50-70%）：
 - ✅ **转换器优化**：禁用不需要的索引映射和材质组（提升30%转换速度）
-- ✅ **自适应密度**：根据GridSpacing自动调整SubSampleDensity（平衡速度与质量）
+- ✅ **自适应密度**：根据SampleRadius动态调整SubSampleDensity（平衡速度与质量）
 - ✅ **批量转换**：预分配数组+矩阵展开，减少函数调用开销（提升20%）
+
+**智能参数计算**（核心算法改进）：
+- ✅ **网格复杂度感知**：基于三角形数量和对角线长度估算平均三角形尺寸
+- ✅ **自适应SampleRadius**：取 `GridSpacing/2` 和 `平均三角形边长*0.8` 的较小值
+- ✅ **边界保护**：SampleRadius限制在 `[1.0, 网格最大尺寸/10]` 范围内
+- ✅ **动态SubSampleDensity**：根据SampleRadius大小自动调整（1.0-5.0用15，5-10用12，10-30用10，>30用8）
+- ✅ **智能MaxSamples**：基于估算表面积和期望点密度自动限制最大采样点数（防止过度采样）
+- ✅ **详细诊断日志**：输出平均三角形边长、计算出的参数和估算点数，便于调试
+
+**可视化调试**（原生表面采样）：
+- ✅ **采样点绘制**：蓝色球体标记每个采样点（半径5单位）
+- ✅ **法线方向**：绿色线段显示每个点的表面法线（长度20单位）
+- ✅ **与UE标准一致**：使用`DrawDebugSphere`和`DrawDebugLine`，效果与表面邻近度采样一致
+- ✅ **性能友好**：仅在启用调试时绘制，不影响正常采样性能
+
+**头文件修复**（UE 5.3兼容性）：
+- ✅ `SupportSystemLibrary.h`：添加 `Engine/EngineTypes.h` 以解析 `ETraceTypeQuery`
+- ✅ `XToolsLibrary.cpp`：添加 `Engine/StaticMesh.h` 以支持原生表面采样功能
+
+**打包兼容性修复**（运行时环境）：
+- ✅ **GeometryCore头文件条件编译**：将 `DynamicMesh3.h`、`MeshSurfacePointSampling.h` 等头文件包裹在 `#if WITH_EDITORONLY_DATA` 中
+- ✅ **前向声明保护**：`PerformNativeSurfaceSampling` 函数声明也添加条件编译保护
+- ✅ **完全隔离**：确保所有编辑器专用代码在打包时完全不被编译，避免链接错误
+- 💡 **原理**：打包后没有 MeshDescription 相关符号，必须完全隔离避免未定义引用
+
+**重要限制**（运行时兼容性）：
+- ⚠️ **原生表面采样仅在编辑器中可用**：依赖 `MeshDescription` API（`WITH_EDITORONLY_DATA`）
+- ✅ 打包后自动回退到错误提示，不会导致崩溃
+- ✅ 表面邻近度采样仍然在运行时完全可用
+- 💡 **建议**：在编辑器中使用原生表面采样预生成点，打包后使用保存的点数据
 
 **适用场景**：
 - 模型表面粒子发射点

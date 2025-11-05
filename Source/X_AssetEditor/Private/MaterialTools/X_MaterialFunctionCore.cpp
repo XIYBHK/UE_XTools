@@ -33,20 +33,9 @@ UMaterial* FX_MaterialFunctionCore::GetBaseMaterial(UMaterialInterface* Material
         return nullptr;
     }
 
-    if (UMaterial* Material = Cast<UMaterial>(MaterialInterface))
-    {
-        return Material;
-    }
-    else if (UMaterialInstance* MaterialInstance = Cast<UMaterialInstance>(MaterialInterface))
-    {
-        UMaterialInterface* Parent = MaterialInstance->Parent;
-        if (Parent)
-        {
-            return GetBaseMaterial(Parent);
-        }
-    }
-
-    return nullptr;
+    // UMaterialInterface::GetMaterial() 已经实现了递归查找基础材质的逻辑
+    // 优化：直接使用UE官方API，无需手动递归
+    return MaterialInterface->GetMaterial();
 }
 
 TArray<UMaterialFunctionInterface*> FX_MaterialFunctionCore::GetAllMaterialFunctions()

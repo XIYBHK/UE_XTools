@@ -30,6 +30,7 @@ class X_ASSETEDITOR_API FX_MaterialFunctionConnector
 public:
     /**
      * 检测材质函数是否使用MaterialAttributes模式
+     * 优化：使用UE官方IsResultMaterialAttributes() API，更准确可靠
      * @param FunctionCall - 材质函数调用
      * @return 是否使用MaterialAttributes
      */

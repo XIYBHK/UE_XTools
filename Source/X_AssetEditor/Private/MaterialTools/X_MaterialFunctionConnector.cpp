@@ -831,44 +831,42 @@ UMaterialExpressionMultiply* FX_MaterialFunctionConnector::CreateMultiplyConnect
 
 bool FX_MaterialFunctionConnector::IsUsingMaterialAttributes(UMaterialExpressionMaterialFunctionCall* FunctionCall)
 {
-    if (!FunctionCall || !FunctionCall->MaterialFunction)
+    if (!FunctionCall)
     {
         return false;
     }
     
-    // 检查材质函数是否有MaterialAttributes类型的输出
-    const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
-    for (const FFunctionExpressionOutput& Output : FunctionOutputs)
+    #if WITH_EDITOR
+    // 优化：使用UE官方API进行判断，更准确可靠
+    // IsResultMaterialAttributes是UMaterialExpression的虚方法
+    // 各种特殊表达式（如SetMaterialAttributes）会覆盖此方法返回true
+    bool bIsResultMaterialAttributes = FunctionCall->IsResultMaterialAttributes(0);
+    
+    if (bIsResultMaterialAttributes)
     {
-        // MaterialAttributes输出通常没有名称或包含"MaterialAttributes"
-        FString OutputName = Output.Output.OutputName.ToString();
-        if (OutputName.IsEmpty() || 
-            OutputName.Contains(TEXT("MaterialAttributes")) ||
-            OutputName.Contains(TEXT("Material Attributes")))
+        UE_LOG(LogX_AssetEditor, Log, TEXT("通过UE官方API检测到MaterialAttributes输出"));
+        return true;
+    }
+    
+    // 备用检测：通过函数名称进行推断（处理某些边界情况）
+    if (FunctionCall->MaterialFunction)
+    {
+        FString FunctionName = FunctionCall->MaterialFunction->GetName();
+        if (FunctionName.Contains(TEXT("MaterialAttributes")) ||
+            FunctionName.Contains(TEXT("MA_")) ||
+            FunctionName.Contains(TEXT("MakeMA")) ||
+            FunctionName.Contains(TEXT("SetMA")) ||
+            FunctionName.Contains(TEXT("BlendMA")) ||
+            FunctionName.Contains(TEXT("SM_")) ||
+            FunctionName.Contains(TEXT("MF_SM_")) ||
+            FunctionName.Contains(TEXT("SurfaceMaterial")) ||
+            FunctionName.Contains(TEXT("LayerMaterial")))
         {
-            UE_LOG(LogX_AssetEditor, Log, TEXT("通过输出引脚检测到MaterialAttributes模式"));
+            UE_LOG(LogX_AssetEditor, Log, TEXT("通过函数名称推断MaterialAttributes模式: %s"), *FunctionName);
             return true;
         }
     }
-    
-    // 通过材质函数名称进行推断
-    FString FunctionName = FunctionCall->MaterialFunction->GetName();
-    if (FunctionName.Contains(TEXT("MaterialAttributes")) ||
-        FunctionName.Contains(TEXT("MA_")) ||  // 常见的MaterialAttributes命名前缀
-        FunctionName.Contains(TEXT("MakeMA")) ||
-        FunctionName.Contains(TEXT("SetMA")) ||
-        FunctionName.Contains(TEXT("BlendMA")) ||
-        //  扩展检测规则：Surface Material和Fresnel函数
-        FunctionName.Contains(TEXT("SM_")) ||  // Surface Material前缀
-        FunctionName.Contains(TEXT("MF_SM_")) ||  // Material Function Surface Material前缀
-        FunctionName.Contains(TEXT("Fresnel")) ||  // Fresnel效果通常输出完整材质属性
-        FunctionName.Contains(TEXT("SurfaceMaterial")) ||
-        FunctionName.Contains(TEXT("ComplexMaterial")) ||  // 复合材质函数
-        FunctionName.Contains(TEXT("LayerMaterial")))  // 分层材质函数
-    {
-        UE_LOG(LogX_AssetEditor, Log, TEXT("通过函数名称检测到MaterialAttributes模式: %s"), *FunctionName);
-        return true;
-    }
+    #endif
     
     return false;
 }
