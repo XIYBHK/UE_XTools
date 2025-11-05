@@ -26,6 +26,7 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -652,7 +653,8 @@ static FXToolsSamplingResult SamplePointsInternal(
     bool bDrawOnlySuccessfulHits,
     bool bEnableBoundsCulling,
     float DebugDrawDuration,
-    bool bUseComplexCollision);
+    bool bUseComplexCollision,
+    bool bIgnoreSelf);
 
 // 新的简化API - 使用配置结构体（推荐）
 void UXToolsLibrary::SamplePointsInsideMesh(
@@ -723,10 +725,10 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
         return;
     }
 
-    //  调用内部实现
+    //  调用内部实现（bIgnoreSelf默认为true，不暴露给用户）
     const FXToolsSamplingResult Result = SamplePointsInternal(
         World, TargetActor, BoundingBox, Method, GridSpacing, Noise, TraceRadius,
-        bEnableDebugDraw, bDrawOnlySuccessfulHits, bEnableBoundsCulling, DebugDrawDuration, bUseComplexCollision);
+        bEnableDebugDraw, bDrawOnlySuccessfulHits, bEnableBoundsCulling, DebugDrawDuration, bUseComplexCollision, true);
 
     //  设置输出参数
     bSuccess = Result.bSuccess;
@@ -734,15 +736,18 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
     {
         OutPoints = Result.Points;
 
-        //  改进的日志输出（添加空指针保护）
+        //  改进的日志输出（添加空指针保护，避免重复输出）
         const FString ActorName = TargetActor ? TargetActor->GetName() : TEXT("Unknown");
-        const FString SuccessMessage = bEnableBoundsCulling
-            ? FString::Printf(TEXT("采样完成: 检测 %d 个点, 剔除 %d 个点, 在 %s 内生成 %d 个有效点"),
-                Result.TotalPointsChecked, Result.CulledPoints, *ActorName, OutPoints.Num())
-            : FString::Printf(TEXT("采样完成: 检测 %d 个点, 在 %s 内生成 %d 个有效点"),
+        if (bEnableBoundsCulling)
+        {
+            UE_LOG(LogXTools, Log, TEXT("[SamplePointsInsideStaticMeshWithBoxOptimized] 采样完成: 检测 %d 个点, 剔除 %d 个点, 在 %s 内生成 %d 个有效点"),
+                Result.TotalPointsChecked, Result.CulledPoints, *ActorName, OutPoints.Num());
+        }
+        else
+        {
+            UE_LOG(LogXTools, Log, TEXT("[SamplePointsInsideStaticMeshWithBoxOptimized] 采样完成: 检测 %d 个点, 在 %s 内生成 %d 个有效点"),
                 Result.TotalPointsChecked, *ActorName, OutPoints.Num());
-
-        FXToolsErrorReporter::Info(LogXTools, SuccessMessage, TEXT("SamplePointsInsideStaticMeshWithBoxOptimized"));
+        }
     }
     else
     {
@@ -892,18 +897,81 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
     float DebugDrawDuration,
     bool bUseComplexCollision,
     const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes,
-    EDrawDebugTrace::Type DebugDrawType)
+    EDrawDebugTrace::Type DebugDrawType,
+    AActor* TargetActor,
+    UBoxComponent* BoundingBoxComponent,
+    bool bIgnoreSelf)
 {
     TArray<FVector> ValidPoints;
     ValidPoints.Reserve(GridParams.TotalPoints / 4); // 预分配内存，估计25%的点有效
 
     int32 TotalPointsChecked = 0;
     int32 CulledPoints = 0;
+    int32 DiagnosticLogCount = 0;           // 诊断日志计数器
+    int32 HitButNotMatchCount = 0;          // 命中但组件不匹配的计数
 
     // 空指针检查：防止崩溃
     if (!World || !TargetMeshComponent)
     {
         return FXToolsSamplingResult::MakeError(TEXT("World或TargetMeshComponent为空指针"));
+    }
+    
+    // 性能优化：局部空间查询构建忽略列表
+    // 策略：只查询采样区域附近的Actor，而不是遍历整个场景
+    // 优势：复杂度从O(场景Actor数)降低到O(局部Actor数)，通常只有几个到几十个
+    TArray<AActor*> ActorsToIgnore;
+    
+    // 计算查询中心（采样区域的中心）
+    const FVector QueryCenter = GridParams.BoxTransform.GetLocation();
+    const FQuat QueryRotation = GridParams.BoxTransform.GetRotation();
+    
+    // 使用OverlapMulti查询采样区域内的所有对象（高效的空间加速结构）
+    TArray<FOverlapResult> OverlapResults;
+    FCollisionShape CollisionShape = FCollisionShape::MakeBox(GridParams.ScaledBoxExtent * 1.2f); // 稍微扩大查询范围
+    
+    FCollisionObjectQueryParams ObjectQueryParams;
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_Pawn);
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_PhysicsBody);
+    ObjectQueryParams.AddObjectTypesToQuery(ECC_Destructible);
+    
+    World->OverlapMultiByObjectType(
+        OverlapResults,
+        QueryCenter,
+        QueryRotation,
+        ObjectQueryParams,
+        CollisionShape
+    );
+    
+    // 构建忽略列表：只包含查询范围内的非目标Actor
+    if (OverlapResults.Num() > 0)
+    {
+        TSet<AActor*> UniqueActors; // 使用Set去重
+        for (const FOverlapResult& Result : OverlapResults)
+        {
+            AActor* OverlappedActor = Result.GetActor();
+            if (OverlappedActor && OverlappedActor != TargetActor)
+            {
+                UniqueActors.Add(OverlappedActor);
+            }
+        }
+        ActorsToIgnore = UniqueActors.Array();
+        
+        UE_LOG(LogXTools, Log, TEXT("[采样诊断] 局部空间查询: 采样区域内发现 %d 个其他Actor（已排除目标Actor）"), 
+            ActorsToIgnore.Num());
+    }
+    
+    // 忽略自身：将BoundingBox所属的Actor加入忽略列表（参考UE官方ConfigureCollisionParams实现）
+    if (bIgnoreSelf && BoundingBoxComponent)
+    {
+        AActor* SelfActor = BoundingBoxComponent->GetOwner();
+        if (SelfActor && SelfActor != TargetActor)
+        {
+            ActorsToIgnore.AddUnique(SelfActor);
+            UE_LOG(LogXTools, Log, TEXT("[采样诊断] 忽略自身: 已将BoundingBox所属Actor '%s' 加入忽略列表"), 
+                *SelfActor->GetName());
+        }
     }
     
     // 获取目标模型的AABB用于粗筛
@@ -978,7 +1046,7 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
                     TraceRadius,
                     ObjectTypes,
                     bUseComplexCollision,
-                    TArray<AActor*>(), // 空的忽略列表
+                    ActorsToIgnore, // 关键修复：忽略目标Actor之外的所有Actor，防止BoundingBox被其他对象遮挡
                     DebugDrawType,
                     HitResult,
                     true,
@@ -987,22 +1055,63 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
                     DebugDrawDuration
                 );
 
-                // 关键修复：验证命中的是否是目标组件，避免检测到场景中其他对象（如地板、墙壁）
-                // 使用GetComponent()是UE推荐的方式（见FHitResult源码第220行）
-                if (bHit && HitResult.GetComponent() == TargetMeshComponent)
+                // 关键修复1：验证命中的Actor是否是目标Actor（避免场景中同名组件的干扰）
+                // 关键修复2：验证命中的Component是否是目标Component（避免检测到Actor的其他组件，如Box）
+                if (bHit)
                 {
-                    ValidPoints.Add(WorldPoint);
-
-                    // 只绘制成功命中的点
-                    if (bEnableDebugDraw && bDrawOnlySuccessfulHits)
+                    AActor* HitActor = HitResult.GetActor();
+                    UPrimitiveComponent* HitComponent = HitResult.GetComponent();
+                    
+                    // 双重验证：必须同时满足Actor匹配和Component匹配
+                    const bool bActorMatch = (HitActor == TargetActor);
+                    const bool bComponentMatch = (HitComponent == TargetMeshComponent);
+                    const bool bValidHit = bActorMatch && bComponentMatch;
+                    
+                    // 诊断日志：简化输出（仅前3个点）
+                    if (DiagnosticLogCount < 3)
                     {
-                        DrawDebugSphere(World, WorldPoint, TraceRadius, 12, FColor::Blue, false, DebugDrawDuration);
+                        UE_LOG(LogXTools, Log, TEXT("[采样诊断] 点%d: 命中Actor=%s, 命中组件=%s, 结果=%s"), 
+                            DiagnosticLogCount + 1,
+                            HitActor ? *HitActor->GetName() : TEXT("NULL"),
+                            HitComponent ? *HitComponent->GetName() : TEXT("NULL"),
+                            bValidHit ? TEXT("有效") : TEXT("无效"));
+                        DiagnosticLogCount++;
+                    }
+                    
+                    if (bValidHit)
+                    {
+                        ValidPoints.Add(WorldPoint);
+
+                        // 只绘制成功命中的点
+                        if (bEnableDebugDraw && bDrawOnlySuccessfulHits)
+                        {
+                            DrawDebugSphere(World, WorldPoint, TraceRadius, 12, FColor::Blue, false, DebugDrawDuration);
+                        }
+                    }
+                    else
+                    {
+                        // 统计命中但验证失败的情况
+                        HitButNotMatchCount++;
                     }
                 }
             }
         }
     }
 
+    // 诊断总结：如果有大量命中但验证失败的情况，输出性能提示
+    if (HitButNotMatchCount > TotalPointsChecked * 0.5f) // 超过50%的检测点命中了其他对象
+    {
+        UE_LOG(LogXTools, Warning, TEXT("[采样诊断] 发现 %d 个检测点（%.1f%%）命中了非目标对象，这会影响性能。建议：1.目标mesh设置为独特的对象类型（避免与场景中大量对象相同） 2.减小采样范围（BoundingBox）以避开其他对象"), 
+            HitButNotMatchCount, 
+            (float)HitButNotMatchCount / TotalPointsChecked * 100.0f);
+    }
+    else if (HitButNotMatchCount > 0)
+    {
+        UE_LOG(LogXTools, Log, TEXT("[采样诊断] 过滤了 %d 个非目标对象的命中（%.1f%%），性能影响较小"), 
+            HitButNotMatchCount,
+            (float)HitButNotMatchCount / TotalPointsChecked * 100.0f);
+    }
+    
     return FXToolsSamplingResult::MakeSuccess(ValidPoints, TotalPointsChecked, CulledPoints);
 }
 
@@ -1019,7 +1128,8 @@ static FXToolsSamplingResult SamplePointsInternal(
     bool bDrawOnlySuccessfulHits,
     bool bEnableBoundsCulling,
     float DebugDrawDuration,
-    bool bUseComplexCollision)
+    bool bUseComplexCollision,
+    bool bIgnoreSelf)
 {
     // 步骤1：基本输入验证
     const FXToolsSamplingResult ValidationResult = ValidateInputs(TargetActor, BoundingBox, GridSpacing);
@@ -1045,9 +1155,21 @@ static FXToolsSamplingResult SamplePointsInternal(
 
     // 步骤4：设置追踪参数
     
+    const ECollisionChannel CollisionChannel = TargetMeshComponent->GetCollisionObjectType();
     const TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes = { 
-        UEngineTypes::ConvertToObjectType(TargetMeshComponent->GetCollisionObjectType()) 
+        UEngineTypes::ConvertToObjectType(CollisionChannel) 
     };
+    
+    // 诊断日志：输出碰撞类型信息（显示为名称便于理解）
+    // 碰撞通道名称（例如：ECC_WorldDynamic）
+    const FString CollisionChannelName = UEnum::GetValueAsString(CollisionChannel);
+    
+    // 对象类型查询实际对应的碰撞通道名称（更直观）
+    // 直接显示碰撞通道，因为对象类型查询本质上就是从碰撞通道转换而来
+    UE_LOG(LogXTools, Log, TEXT("[采样诊断] 目标组件: %s, 碰撞通道: %s"), 
+        *TargetMeshComponent->GetName(), 
+        *CollisionChannelName);
+    
     const EDrawDebugTrace::Type DebugDrawType = (bEnableDebugDraw && !bDrawOnlySuccessfulHits) ? 
         EDrawDebugTrace::ForDuration : EDrawDebugTrace::None;
 
@@ -1056,7 +1178,7 @@ static FXToolsSamplingResult SamplePointsInternal(
     {
         case EXToolsSamplingMethod::SurfaceProximity:
             return PerformSurfaceProximitySampling(World, TargetMeshComponent, GridParams, Noise, TraceRadius,
-                bEnableDebugDraw, bDrawOnlySuccessfulHits, bEnableBoundsCulling, DebugDrawDuration, bUseComplexCollision, ObjectTypes, DebugDrawType);
+                bEnableDebugDraw, bDrawOnlySuccessfulHits, bEnableBoundsCulling, DebugDrawDuration, bUseComplexCollision, ObjectTypes, DebugDrawType, TargetActor, BoundingBox, bIgnoreSelf);
 
         case EXToolsSamplingMethod::Voxelize:
             return FXToolsSamplingResult::MakeError(TEXT("实体填充采样(Voxelize)模式尚未实现"));
