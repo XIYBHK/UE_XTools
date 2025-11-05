@@ -26,6 +26,8 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/HitResult.h"
+#include "WorldCollision.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Components/BoxComponent.h"
@@ -35,7 +37,6 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "CollisionShape.h"
 #include "Curves/CurveFloat.h"
-#include "WorldCollision.h"
 
 //  UObject 系统
 #include "UObject/UObjectGlobals.h"

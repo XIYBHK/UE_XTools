@@ -5,8 +5,9 @@
 ### XTools采样功能（UE 5.4/5.5）
 **问题**：`FOverlapResult` 类型未定义导致编译失败
 **修复**：
-- ✅ 添加正确的头文件引用 `#include "WorldCollision.h"`（UE碰撞查询结构定义）
-- ✅ 遵循IWYU原则，确保类型定义完整性
+- ✅ 添加碰撞查询核心头文件：`#include "Engine/HitResult.h"` + `#include "WorldCollision.h"`
+- ✅ 包含顺序优化：确保 `HitResult.h` 在 `WorldCollision.h` 之前，避免前向声明问题
+- ✅ 遵循IWYU原则，`HitResult.h` 包含完整的 `FHitResult`、`FOverlapResult` 等结构定义
 - ✅ 验证在UE 5.4和5.5环境下编译通过
 
 ### FieldSystemExtensions（UE 5.6）
@@ -14,9 +15,9 @@
 **修复**：
 - ✅ UE 5.6+：使用新API `BufferFieldCommand_Internal`（物理线程专用）
 - ✅ UE 5.5及以下：保持使用 `BufferCommand` 以维护兼容性
-- ✅ 使用预处理器条件编译实现版本适配：
+- ✅ 使用更可靠的版本检测（增加括号确保优先级）：
   ```cpp
-  #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+  #if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
       PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
   #else
       PhysicsProxy->BufferCommand(Solver, NewCommand);
