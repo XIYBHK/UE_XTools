@@ -27,6 +27,7 @@
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/HitResult.h"
+#include "Engine/OverlapResult.h"
 #include "WorldCollision.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"

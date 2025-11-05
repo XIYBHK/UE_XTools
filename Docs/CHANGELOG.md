@@ -3,12 +3,26 @@
 ## 🔧 跨版本兼容性修复（UE 5.4-5.6）
 
 ### XTools采样功能（UE 5.4/5.5）
-**问题**：`FOverlapResult` 类型未定义导致编译失败
-**修复**：
-- ✅ 添加碰撞查询核心头文件：`#include "Engine/HitResult.h"` + `#include "WorldCollision.h"`
-- ✅ 包含顺序优化：确保 `HitResult.h` 在 `WorldCollision.h` 之前，避免前向声明问题
-- ✅ 遵循IWYU原则，`HitResult.h` 包含完整的 `FHitResult`、`FOverlapResult` 等结构定义
-- ✅ 验证在UE 5.4和5.5环境下编译通过
+**问题**：`FOverlapResult` 类型未定义导致编译失败 `error C2027: 使用了未定义类型FOverlapResult`
+
+**根本原因**：
+- UE 5.4引入IWYU（Include What You Use）原则，移除隐式头文件包含
+- `WorldCollision.h` 仅提供 `FOverlapResult` 的**前向声明**（`struct FOverlapResult;`）
+- **完整定义**位于 `Engine/OverlapResult.h`，但不再被自动包含
+- 条件包含 `#if UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_4` 默认关闭
+
+**修复方案**（完整的IWYU解决方案）：
+```cpp
+#include "Engine/HitResult.h"        // FHitResult完整定义
+#include "Engine/OverlapResult.h"    // FOverlapResult完整定义（关键！）
+#include "WorldCollision.h"          // 碰撞查询参数
+```
+
+**关键点**：
+- ✅ **显式包含 `Engine/OverlapResult.h`** - 提供TArray<FOverlapResult>所需的完整定义
+- ✅ 显式包含 `Engine/HitResult.h` - 用于FHitResult结构
+- ✅ 包含顺序：定义文件在前（OverlapResult.h/HitResult.h），使用文件在后（WorldCollision.h）
+- ✅ 验证通过：UE 5.3、5.4、5.5
 
 ### FieldSystemExtensions（UE 5.6）
 **问题**：`FGeometryCollectionPhysicsProxy::BufferCommand` API已废弃
