@@ -5,7 +5,7 @@
 ### XTools采样功能（UE 5.4/5.5）
 **问题**：`FOverlapResult` 类型未定义导致编译失败
 **修复**：
-- ✅ 添加缺失的头文件引用 `#include "Engine/OverlapResult.h"`
+- ✅ 添加正确的头文件引用 `#include "WorldCollision.h"`（UE碰撞查询结构定义）
 - ✅ 遵循IWYU原则，确保类型定义完整性
 - ✅ 验证在UE 5.4和5.5环境下编译通过
 
