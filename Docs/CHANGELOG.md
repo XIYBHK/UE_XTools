@@ -1,5 +1,38 @@
 # 2025-11-05
 
+## 🔧 跨版本兼容性修复（UE 5.4-5.6）
+
+### XTools采样功能（UE 5.4/5.5）
+**问题**：`FOverlapResult` 类型未定义导致编译失败
+**修复**：
+- ✅ 添加缺失的头文件引用 `#include "Engine/OverlapResult.h"`
+- ✅ 遵循IWYU原则，确保类型定义完整性
+- ✅ 验证在UE 5.4和5.5环境下编译通过
+
+### FieldSystemExtensions（UE 5.6）
+**问题**：`FGeometryCollectionPhysicsProxy::BufferCommand` API已废弃
+**修复**：
+- ✅ UE 5.6+：使用新API `BufferFieldCommand_Internal`（物理线程专用）
+- ✅ UE 5.5及以下：保持使用 `BufferCommand` 以维护兼容性
+- ✅ 使用预处理器条件编译实现版本适配：
+  ```cpp
+  #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+      PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
+  #else
+      PhysicsProxy->BufferCommand(Solver, NewCommand);
+  #endif
+  ```
+- ✅ 修复位置：
+  - `RegisterToCachedGCsIfNeeded()` - GC初始化字段注册逻辑
+  - `ApplyCurrentFieldToFilteredGCs()` - 手动字段应用逻辑
+
+**影响范围**：
+- 涉及文件：`XToolsLibrary.cpp`（XTools模块）、`XFieldSystemActor.cpp`（FieldSystemExtensions模块）
+- 支持版本：UE 5.3、5.4、5.5、5.6
+- 保持向后兼容性，无需修改现有蓝图或配置
+
+---
+
 ## 🔧 MaterialTools API优化与智能连接系统增强
 
 ### 代码优化

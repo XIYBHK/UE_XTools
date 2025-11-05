@@ -330,7 +330,12 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 		// 提交命令到Solver（复制UGeometryCollectionComponent::DispatchFieldCommand的实现）
 		Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
 		{
+			// UE 5.6+ 使用新的API
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+			PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
+#else
 			PhysicsProxy->BufferCommand(Solver, NewCommand);
+#endif
 		});
 
 		AppliedCount++;
@@ -437,7 +442,12 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 			// 提交命令到Solver
 			Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
 			{
+				// UE 5.6+ 使用新的API
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+				PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
+#else
 				PhysicsProxy->BufferCommand(Solver, NewCommand);
+#endif
 			});
 
 			TotalApplied++;

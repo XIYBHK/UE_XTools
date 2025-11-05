@@ -26,6 +26,7 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/OverlapResult.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Components/BoxComponent.h"
