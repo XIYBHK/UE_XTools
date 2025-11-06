@@ -28,7 +28,7 @@ struct FPinLink;
 
 // UE 5.6+ 兼容性：前向声明
 #if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-struct FMetaData;
+class FMetaData;  // UE 5.6: FMetaData 是 class，不是 struct
 #else
 class UMetaData;
 #endif
