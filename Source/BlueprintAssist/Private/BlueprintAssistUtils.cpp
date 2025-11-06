@@ -3127,7 +3127,8 @@ UEdGraphNode* FBAUtils::GetNodeFromGraph(const UEdGraph* Graph, const FGuid& Nod
 
 bool FBAUtils::IsExtraRootNode(UEdGraphNode* Node)
 {
-	if (UMetaData* MetaData = GetNodeMetaData(Node))
+	// 使用 auto 以兼容 UMetaData* (5.5-) 和 FMetaData* (5.6+)
+	if (auto* MetaData = GetNodeMetaData(Node))
 	{
 		if (MetaData->HasValue(Node, FNodeMetadata::DefaultGraphNode))
 		{
@@ -3511,7 +3512,7 @@ FString FBAUtils::GetVariableName(const FString& Name, const FName& PinCategory,
 	return Name;
 }
 
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
 FMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
 {
 	if (UPackage* Package = Node->GetOutermost())

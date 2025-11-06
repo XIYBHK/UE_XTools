@@ -25,7 +25,13 @@ class FEdGraphFormatter;
 class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
-class UMetaData;  // UE 5.6+ 兼容性：前向声明 UMetaData
+
+// UE 5.6+ 兼容性：前向声明
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+struct FMetaData;
+#else
+class UMetaData;
+#endif
 
 #define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
 #define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)
@@ -593,7 +599,7 @@ struct BLUEPRINTASSIST_API FBAUtils
 
 	static FBlueprintEditor* GetBlueprintEditorForGraph(const UEdGraph* Graph);
 
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
 	static FMetaData* GetNodeMetaData(UEdGraphNode* Node);
 #else
 	static UMetaData* GetNodeMetaData(UEdGraphNode* Node);

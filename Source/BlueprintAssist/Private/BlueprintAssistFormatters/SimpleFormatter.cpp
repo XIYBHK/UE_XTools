@@ -253,7 +253,7 @@ void FSimpleFormatter::FormatNode(UEdGraphNode* Node)
 		FormattedNode->NodePosX += DeltaX;
 		FormattedNode->NodePosY += DeltaY;
 
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
 		// UE 5.6: MoveTo 接受 FVector2f 而不是 FVector2D
 		FVector2f NewPos(FormattedNode->NodePosX, FormattedNode->NodePosY);
 #else
