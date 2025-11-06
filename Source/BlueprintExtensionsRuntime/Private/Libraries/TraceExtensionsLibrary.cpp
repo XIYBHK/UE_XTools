@@ -1,6 +1,7 @@
 ﻿#include "Libraries/TraceExtensionsLibrary.h"
 
 #include "Engine/World.h"
+#include "Engine/HitResult.h"       // FHitResult完整定义（UE 5.4+ IWYU必需）
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "UObject/UnrealType.h"

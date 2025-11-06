@@ -63,10 +63,13 @@
 - `Source/BlueprintExtensionsRuntime/Public/Libraries/MapExtensionsLibrary.h` - 抑制警告
 - `Source/BlueprintExtensionsRuntime/Private/Libraries/MapExtensionsLibrary.cpp` - 抑制警告
 
-**CI修复**：
-- ❌ 初次CI失败：`XToolsVersionCompat.h` 跨模块访问失败
-- ✅ 解决方案：在 `FieldSystemExtensions.Build.cs` 添加 `"XTools"` 依赖
-- ✅ 补充修复：`.cpp` 文件也需要抑制 `ElementSize` 警告
+**CI修复记录**：
+- ❌ **CI #1失败**：`XToolsVersionCompat.h` 跨模块访问失败
+  - ✅ 解决：`FieldSystemExtensions.Build.cs` 添加 `"XTools"` 依赖
+  - ✅ 解决：`.cpp` 文件也需要抑制 `ElementSize` 警告
+- ❌ **CI #2失败**（5.4/5.5）：`TraceExtensionsLibrary.cpp` - FHitResult未定义
+  - ✅ 解决：添加 `#include "Engine/HitResult.h"`（IWYU原则）
+  - ✅ 结果：5.3/5.6已成功，修复后5.4/5.5也应成功
 
 ---
 
