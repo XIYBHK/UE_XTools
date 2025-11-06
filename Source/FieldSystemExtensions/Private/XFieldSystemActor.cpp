@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "XFieldSystemActor.h"
+#include "XToolsVersionCompat.h"
 #include "Field/FieldSystemComponent.h"
 #include "GameFramework/Character.h"
 #include "EngineUtils.h"  // For TActorIterator
@@ -330,8 +331,8 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 		// 提交命令到Solver（复制UGeometryCollectionComponent::DispatchFieldCommand的实现）
 		Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
 		{
-			// UE 5.6+ 使用新的API (ENGINE_VERSION = MAJOR*10000 + MINOR*100 + PATCH)
-#if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+			// UE 5.5+ BufferCommand已弃用，使用BufferFieldCommand_Internal
+#if XTOOLS_ENGINE_5_5_OR_LATER
 			PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
 #else
 			PhysicsProxy->BufferCommand(Solver, NewCommand);
@@ -442,8 +443,8 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 			// 提交命令到Solver
 			Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
 			{
-				// UE 5.6+ 使用新的API (ENGINE_VERSION = MAJOR*10000 + MINOR*100 + PATCH)
-#if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+				// UE 5.5+ BufferCommand已弃用，使用BufferFieldCommand_Internal
+#if XTOOLS_ENGINE_5_5_OR_LATER
 				PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
 #else
 				PhysicsProxy->BufferCommand(Solver, NewCommand);

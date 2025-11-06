@@ -1,3 +1,68 @@
+# 2025-11-06
+
+## 🔧 版本宏系统重构
+
+### 问题背景
+项目中版本判断分散在多处，条件编译逻辑不一致，维护困难：
+- 15处版本判断使用不同的条件表达式
+- 版本号判断错误（BufferCommand实际5.5弃用，误写为5.6）
+- 弃用警告（ElementSize）未抑制
+
+### 解决方案：统一版本宏系统
+
+**设计原则**：
+- ✅ 统一版本判断宏，避免重复逻辑
+- ✅ 保持API原样调用，不强制封装（避免过度设计）
+- ✅ 遵循UE官方实践（参考CoreUObject/Property.cpp）
+- ✅ 最小改动原则
+
+**实施内容**：
+
+1. **扩展 `XToolsVersionCompat.h`**
+   ```cpp
+   #define XTOOLS_ENGINE_VERSION_AT_LEAST(Major, Minor) \
+       ((ENGINE_MAJOR_VERSION > Major) || \
+        (ENGINE_MAJOR_VERSION == Major && ENGINE_MINOR_VERSION >= Minor))
+   
+   #define XTOOLS_ENGINE_5_5_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 5)
+   ```
+   - 添加API变更文档注释
+
+2. **修复 `XFieldSystemActor.cpp`**（2处）
+   ```cpp
+   // 修正版本判断错误：>= 5.6 → >= 5.5（BufferCommand实际5.5弃用）
+   #if XTOOLS_ENGINE_5_5_OR_LATER
+       PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
+   #else
+       PhysicsProxy->BufferCommand(Solver, NewCommand);
+   #endif
+   ```
+
+3. **抑制 `MapExtensionsLibrary.h` 弃用警告**
+   ```cpp
+   // 文件头部
+   PRAGMA_DISABLE_DEPRECATION_WARNINGS
+   
+   // ... ElementSize使用保持不变 ...
+   
+   // 文件尾部
+   PRAGMA_ENABLE_DEPRECATION_WARNINGS
+   ```
+   - 遵循Epic做法（详见CoreUObject/Property.cpp:859）
+
+**效果**：
+- ✅ UE 5.6 编译0警告
+- ✅ 版本判断统一规范
+- ✅ 代码可读性提升
+- ✅ 未来版本适配只需修改一处
+
+**文件变更**：
+- `Source/XTools/Public/XToolsVersionCompat.h` - 扩展版本宏
+- `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp` - 修复版本错误
+- `Source/BlueprintExtensionsRuntime/Public/Libraries/MapExtensionsLibrary.h` - 抑制警告
+
+---
+
 # 2025-11-05
 
 ## 🔧 跨版本兼容性修复（UE 5.4-5.6）

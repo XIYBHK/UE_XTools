@@ -6,15 +6,17 @@
 * 
 * 用于处理不同UE版本之间的API差异，确保插件可以在多个UE版本中正常编译和运行。
 * 
-* 当前支持版本：UE 5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7+
+* 当前支持版本：UE 5.3, 5.4, 5.5, 5.6+
 * 
 * 主要处理的API变化：
 * - TAtomic API (UE 5.3+支持直接赋值，5.0-5.2需要load/store)
+* - FProperty::ElementSize (UE 5.5+弃用，使用GetElementSize/SetElementSize)
+* - BufferCommand (UE 5.5+弃用，使用BufferFieldCommand_Internal)
 * 
 * 使用说明：
 * 1. 包含本头文件： #include "XToolsVersionCompat.h"
-* 2. 使用兼容性宏替代直接操作：XTOOLS_ATOMIC_LOAD() / XTOOLS_ATOMIC_STORE() 等
-* 3. 详细文档请参考：Docs/UE版本兼容性使用指南.md
+* 2. 使用版本宏进行条件编译： #if XTOOLS_ENGINE_5_5_OR_LATER
+* 3. 保持API原样调用，不强制封装
 */
 
 #pragma once
@@ -22,20 +24,38 @@
 #include "CoreMinimal.h"
 #include "Templates/Atomic.h"
 
-// UE版本宏定义检查
-// 
-// UE最佳实践：
-// 1. UE引擎通常在编译时自动定义 ENGINE_MAJOR_VERSION 和 ENGINE_MINOR_VERSION
-// 2. 如果引擎未定义（某些特殊情况），Build.cs 会通过 Target.Version 自动定义
-// 3. 本头文件使用这些宏进行条件编译，确保跨版本兼容性
+// ===================================================================
+// 版本判断宏 - 统一处理UE版本API变迁
+// ===================================================================
+
+/**
+ * 版本比较宏（核心工具）
+ * 用法: #if XTOOLS_ENGINE_VERSION_AT_LEAST(5, 5)
+ */
+#define XTOOLS_ENGINE_VERSION_AT_LEAST(Major, Minor) \
+    ((ENGINE_MAJOR_VERSION > Major) || \
+     (ENGINE_MAJOR_VERSION == Major && ENGINE_MINOR_VERSION >= Minor))
+
+/**
+ * 常用版本开关（提高可读性）
+ */
+#define XTOOLS_ENGINE_5_4_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 4)
+#define XTOOLS_ENGINE_5_5_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 5)
+#define XTOOLS_ENGINE_5_6_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 6)
+
+// ===================================================================
+// API变更记录（文档参考）
+// ===================================================================
+// UE 5.4:
+//   - IWYU原则引入，需要显式包含头文件（如Engine/OverlapResult.h）
 //
-// 注意：如果宏仍未定义，回退策略是假设使用UE 5.3+ API（直接赋值）
-// 这是因为在UE 5.3+中，TAtomic支持直接赋值操作，而旧版本需要load/store
-#if !defined(ENGINE_MAJOR_VERSION) || !defined(ENGINE_MINOR_VERSION)
-	// 回退策略：假设是UE 5.3+（当前编译环境）
-	// 这个假设基于：如果TAtomic不支持fetch_add/fetch_sub，说明是5.3+
-	// 注意：理想情况下，Build.cs应该已经通过 Target.Version 定义了这些宏
-#endif
+// UE 5.5:
+//   - FProperty::ElementSize 弃用 → 使用GetElementSize()/SetElementSize()
+//   - BufferCommand 弃用 → 使用BufferFieldCommand_Internal
+//
+// UE 5.6:
+//   - 编译器对弃用警告更严格（-Werror）
+// ===================================================================
 
 /**
  * UE版本兼容性工具类

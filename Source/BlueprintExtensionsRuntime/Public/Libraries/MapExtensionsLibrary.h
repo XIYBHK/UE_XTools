@@ -8,6 +8,10 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "MapExtensionsLibrary.generated.h"
 
+// UE 5.5+ FProperty::ElementSize 已弃用，但该模块暂未迁移到新API
+// 抑制弃用警告，避免编译中断（遵循Epic官方做法，详见CoreUObject/Property.cpp）
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+
 UCLASS()
 class BLUEPRINTEXTENSIONSRUNTIME_API UMapExtensionsLibrary : public UBlueprintFunctionLibrary
 {
@@ -739,3 +743,5 @@ private:
 	static constexpr int32 MaxSupportedMapSize = TNumericLimits<int32>::Max();
 	
 };
+
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
