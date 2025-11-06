@@ -221,34 +221,43 @@ FBAMetaData* FBAUtils::GetPackageMetaData(UPackage* Package)
 
 症状：
 ```
-error C2664: 无法将参数 1 从"FVector2D"转换为"const FVector2f &"
-error C2672: "FMath::ClosestPointOnSegment2D": 未找到匹配的重载函数
+error C2440: 无法从 FVector2D 转换为 UE::Math::TVector2<float>
+error C2664: 无法将参数从 const FVector2D 转换为 const FBAVector2&
 ```
 
 原因：
-- UE 5.6 将 `FVector2D` 弃用为 `FDeprecateSlateVector2D`
-- Slate 相关 API 改用 `FVector2f`（单精度）
-- `SGraphNode::MoveTo()` 参数从 `FVector2D` 改为 `FVector2f`
+- UE 5.6 Slate API 从 `FVector2D` (double) 改为 `FVector2f` (float)
+- 但某些API（如 `GetPasteLocation()`, `GetCursorPos()`）仍返回 `FVector2D`
+- `FVector2f` 和 `FVector2D` 之间**无隐式转换**
+- `FMath::ClosestPointOnSegment2D()` 在5.6返回 `FVector2f` 而非 `FVector2D`
 
-解决方案 1（类型别名）：
+解决方案 1（类型别名 + 显式转换）：
 ```cpp
-// BlueprintAssistGlobals.h
-using FBAVector2 = FVector2f;  // UE 5.6
+// BlueprintAssistGlobals.h - 定义类型别名
+#if BA_UE_VERSION_OR_LATER(5, 6)
+using FBAVector2 = FVector2f;
+#else
+using FBAVector2 = FVector2D;
+#endif
 
-// BlueprintAssistGraphHandler.cpp
-GraphNode->MoveTo(FBAVector2(NewNodePos.X, NewNodePos.Y), NodeSet, false);
+// 使用场景 - 需要显式转换API返回值
+const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();  // 返回FVector2D
+const FBAVector2 MenuLocation(CursorPos.X, CursorPos.Y);  // 显式转换为FBAVector2
+OpenContextMenu(MenuLocation, ...);  // 函数接受FBAVector2参数
 ```
 
-解决方案 2（显式转换）：
+解决方案 2（FMath API 返回值转换）：
 ```cpp
 // ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp
 #if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
     ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-    const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(
+    // UE 5.6: FMath API 返回 FVector2f，需要转换回 FVector2D
+    const FVector2f ClosestPointF = FMath::ClosestPointOnSegment2D(
         FVector2f(LocalMousePosition), 
         FVector2f(Start), 
         FVector2f(End)
     );
+    const FVector2D TemporaryPoint(ClosestPointF.X, ClosestPointF.Y);  // 显式转换
 #else
     const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(
         LocalMousePosition, Start, End
@@ -256,8 +265,20 @@ GraphNode->MoveTo(FBAVector2(NewNodePos.X, NewNodePos.Y), NodeSet, false);
 #endif
 ```
 
+**关键点**：
+- ⚠️ **无隐式转换**：`FVector2f` 和 `FVector2D` 不能自动转换
+- ✅ **使用构造函数转换**：`FBAVector2(x, y)` 是类型安全的显式转换
+- ✅ **中间变量正确类型**：用原始类型接收API返回值，再转换
+- ❌ **避免 reinterpret_cast**：使用构造函数而非指针转换
+
 影响版本：UE 5.6  
 影响模块：BlueprintAssist, ElectronicNodes
+
+**修复文件**：
+- `BlueprintAssist/Private/BlueprintAssistWidgets/BABlueprintActionMenu.cpp`
+- `BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistGraphActions.cpp`
+- `BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistNodeActions.cpp`
+- `ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp`
 
 ---
 
