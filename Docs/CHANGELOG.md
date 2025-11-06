@@ -1,5 +1,125 @@
 # 2025-11-06
 
+## 🎨 集成 ElectronicNodes 插件并完成全面汉化
+
+### 插件信息
+- **名称**: Electronic Nodes
+- **作者**: Hugo ATTAL
+- **来源**: [UE Marketplace](https://www.unrealengine.com/marketplace/electronic-nodes)
+- **许可**: 市场购买版本，本地使用和定制
+- **集成位置**: `Source/ElectronicNodes/`
+
+### 核心功能
+一个强大的连线美化插件，用于改善UE编辑器中各种图表的连线视觉效果：
+
+1. **连线样式**
+   - 曼哈顿风格（90度直角）
+   - 地铁风格（45度角）
+   - 可自定义连线粗细、圆角半径、对齐方式
+
+2. **图表支持**
+   - 蓝图图表
+   - 材质图表
+   - 动画图表
+   - Niagara、Metasound、Control Rig
+   - 行为树、引用查看器
+   - VoxelPlugin（需要单独安装）
+
+3. **高级特性**
+   - 带状线缆模式（重叠连线）
+   - 移动气泡动画
+   - 执行线单独样式
+   - 全局/项目级设置管理
+   - 热补丁支持（Windows）
+
+### 跨版本兼容性修复
+- **EditorStyle 模块处理**
+  - UE 5.0+ 已废弃，条件移除
+  - UE 4.x 仍保留依赖
+  - 使用版本检测确保向下兼容
+
+- **样式 API 跨版本处理**（修复文件：`ENUpdatePopup.cpp`）
+  - 条件引用头文件：UE 5.0+ 使用 `Styling/AppStyle.h`，UE 4.x 使用 `EditorStyleSet.h`
+  - 条件使用样式类：UE 5.0+ 使用 `FAppStyle`，UE 4.x 使用 `FEditorStyle`
+  - 修复 `.BorderImage()`、`.TextStyle()`、`.DecoratorStyleSet()` 跨版本兼容
+
+### 完整汉化
+**汉化内容**（43项配置 + 6个枚举）：
+1. **6个枚举类型**
+   - `EWireStyle`: 连线样式（默认/曼哈顿/地铁）
+   - `EWireAlignment`: 连线对齐（左/右）
+   - `EWirePriority`: 连线优先级（无/节点/引脚）
+   - `EMinDistanceStyle`: 短距离样式（直线/曲线）
+   - `EBubbleDisplayRule`: 气泡显示规则（始终/选中显示/选中移动）
+   - `ESelectionRule`: 选择范围（相邻/全部关联）
+
+2. **Activation 激活类别**（11项）
+   - 主开关、全局设置、更新弹窗
+   - 蓝图/材质/动画/Niagara/Metasound等各图表类型开关
+   - 热补丁开关及调试选项
+
+3. **Wire Style 连线样式类别**（9项）
+   - 样式、对齐、优先级、圆角、粗细
+   - 最小距离、偏移、位移修复
+
+4. **Exec Wire Style 执行线样式类别**（4项）
+   - 单独样式开关、样式、对齐、优先级
+
+5. **Ribbon Style 带状线缆类别**（4项）
+   - 启用开关、线间距、合并偏移、外推模式
+
+6. **Bubbles Style 气泡样式类别**（8项）
+   - 显示开关、执行线限定、显示规则、选择范围
+   - 缩放阈值、大小、速度、间距
+
+7. **命令汉化**
+   - Toggle Master Activation → "切换插件启用"
+
+### 汉化技术要点
+- **枚举**: 使用 `UMETA(DisplayName = "...")` 直接翻译
+- **属性**: 使用 `meta = (DisplayName = "...", Tooltip = "...")` 双语标注
+- **命令**: 使用 `LOCTEXT` 宏替代 `FText::FromString`
+- **风格统一**: 延续 AutoSizeComments 和 BlueprintAssist 的汉化规范
+
+### 技术细节
+**文件修改**：
+- `ElectronicNodes.Build.cs`: 条件依赖 EditorStyle（UE 5.0+ 移除）
+- `ElectronicNodesSettings.h`: 完整汉化所有枚举和属性
+- `ENCommands.h`: 命令文本汉化
+- `ENUpdatePopup.cpp`: 修复 EditorStyleSet.h 和 FAppStyle/FEditorStyle 跨版本兼容
+
+**设置位置**: 编辑器首选项 > Plugins > Electronic Nodes Plugin
+
+### 默认设置优化
+根据用户配置文件 `Electronic_Nodes_Plugin_Backup_2023-05-25_110908.ini` 和社区最佳实践，调整了以下默认值以提供更好的开箱即用体验：
+
+**Wire Style（连线样式）**：
+- `WireThickness`: 1.0 → **1.2**（更粗更清晰，在高分辨率显示器上效果更好）
+
+**Exec Wire Style（执行线样式）**：
+- `OverwriteExecWireStyle`: false → **true**（启用执行线专属样式）
+- 效果：数据流使用 Subway（45°角），执行流使用 Manhattan（90°直角），一眼区分
+
+**Ribbon Style（带状线缆）**：
+- `ActivateRibbon`: false → **true**（启用带状线缆效果）
+- `RibbonOffset`: 4 → **2**（更紧凑的线间距）
+
+**Bubbles Style（气泡样式）**：
+- `ForceDrawBubbles`: false → **true**（启用移动气泡动画）
+- `BubbleDisplayRule`: Always → **DisplayOnSelection**（仅选中时显示，减少视觉干扰）
+- `BubbleSize`: 2.0 → **1.5**（更小更精致的气泡）
+- `BubbleSpeed`: 4.0 → **1.0**（更慢更清晰的动画）
+- `BubbleSpace`: 20.0 → **50.0**（更大的间距，视觉更清爽）
+
+### 集成优势
+- **零冲突**: 完全独立于其他模块运行
+- **可定制**: 提供全局和项目级设置
+- **热补丁**: 支持更深层次的引擎功能扩展（可选）
+- **持久化**: 设置可跨项目共享
+- **优化体验**: 默认配置经过精心调整，适合日常使用
+
+---
+
 ## 🐛 修复K2Node通配符引脚类型丢失问题
 
 ### 问题描述
