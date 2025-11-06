@@ -8,9 +8,11 @@
 #define ASC_UE_VERSION_OR_LATER(major, minor) (ENGINE_MAJOR_VERSION == major && ENGINE_MINOR_VERSION >= minor) || ENGINE_MAJOR_VERSION > major
 
 #if ASC_UE_VERSION_OR_LATER(5, 0)
+#include "Styling/AppStyle.h"
 #define ASC_GET_STYLE_SET_NAME FAppStyle::GetAppStyleSetName
 #define ASC_STYLE_CLASS FAppStyle
 #else
+#include "EditorStyle.h"
 #define ASC_GET_STYLE_SET_NAME FEditorStyle::GetStyleSetName
 #define ASC_STYLE_CLASS FEditorStyle
 #endif

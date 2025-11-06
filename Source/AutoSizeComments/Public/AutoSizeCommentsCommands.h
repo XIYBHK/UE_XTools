@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "AutoSizeCommentsMacros.h"
-#include "EditorStyleSet.h"
 #include "Framework/Commands/Commands.h"
 
 class FUICommandList;

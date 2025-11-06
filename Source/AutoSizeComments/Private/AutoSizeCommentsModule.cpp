@@ -36,13 +36,13 @@ void FAutoSizeCommentsModule::OnPostEngineInit()
 	ASCNodeFactory = MakeShareable(new FAutoSizeCommentsGraphPanelNodeFactory());
 	FEdGraphUtilities::RegisterVisualNodeFactory(ASCNodeFactory);
 
-	// Register custom settings to appear in the project settings
+	// Register custom settings to appear in the editor preferences
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 	{
 		SettingsModule->RegisterSettings(
 			"Editor", "Plugins", "AutoSizeComments",
-			LOCTEXT("AutoSizeCommentsName", "Auto Size Comments"),
-			LOCTEXT("AutoSizeCommentsNameDesc", "Configure the Auto Size Comments plugin"),
+			LOCTEXT("AutoSizeCommentsName", "自动调整注释框"),
+			LOCTEXT("AutoSizeCommentsNameDesc", "配置自动调整注释框插件的行为和外观"),
 			GetMutableDefault<UAutoSizeCommentsSettings>()
 		);
 

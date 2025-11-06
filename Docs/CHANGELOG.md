@@ -13,13 +13,56 @@
 2. 更新 `AutoSizeComments.Build.cs`
    - 添加版权和集成说明注释
    - 适配 UE 5.0+ EditorStyle 弃用（条件编译）
-3. 保持原有版本宏系统（ASC_UE_VERSION_OR_LATER）
-4. 无需IWYU修复（模块不涉及引擎碰撞/物理类型）
+3. 修复 UE 5.0+ 编译错误
+   - 移除 `AutoSizeCommentsCommands.h` 中的 `EditorStyleSet.h` 包含
+   - 在 `AutoSizeCommentsMacros.h` 中添加条件编译的样式头文件：
+     - UE 5.0+: `Styling/AppStyle.h`
+     - UE 4.x: `EditorStyle.h`
+   - 使用宏 `ASC_GET_STYLE_SET_NAME()` 处理样式 API 版本差异
+4. 保持原有版本宏系统（ASC_UE_VERSION_OR_LATER）
+
+**默认设置优化**（基于个人使用习惯）：
+- 启用随机颜色：`DefaultCommentColorMethod = Random`
+- 使用预定义颜色列表：`bUseRandomColorFromList = true`
+- 自定义随机颜色数组（8个精心挑选的配色）：
+  - 红色 (0.956, 0.117, 0.122)
+  - 粉红色 (1.0, 0.347, 0.423)
+  - 橙色 (0.880, 0.468, 0.212)
+  - 黄色 (1.0, 0.939, 0.283)
+  - 绿色 (0.429, 1.0, 0.407)
+  - 蓝色 (0.254, 0.546, 1.0)
+  - 深蓝色 (0.332, 0.279, 0.991)
+  - 紫色 (0.687, 0.279, 1.0)
+- 缓存保存位置：Plugin（避免污染项目目录）
+- 退出时保存数据：`bSaveCommentDataOnExit = true`
+- 启用工具提示：`bDisableTooltip = false`
+
+**本地化改进**（完整中文化）：
+- **设置页面本地化**：
+  - 页面标题：`"自动调整注释框"`
+  - 页面描述：`"配置自动调整注释框插件的行为和外观"`
+  - 设置位置：编辑器偏好设置 > 插件 > 自动调整注释框
+    - 理由：个人视觉偏好设置，不应团队共享
+- **全部设置项中文化**（60+项配置）：
+  - UI分类：默认字体大小、使用默认字体大小、使用简洁标题栏样式
+  - Color分类：默认注释颜色方法、标题栏颜色方法、随机颜色不透明度、预定义随机颜色列表等
+  - Styles分类：标题样式、预设样式、标签预设
+  - CommentBubble分类：隐藏注释气泡、启用注释气泡默认值、默认着色气泡、默认缩放时显示气泡
+  - CommentCache分类：缓存保存方法、缓存保存位置、保存图表时保存注释数据、退出时保存注释数据、美化JSON输出
+  - Initialization分类：对现有节点应用颜色、调整现有节点大小
+  - Misc分类：调整大小模式、自动插入注释、自动重命名新注释、点击引脚时选择节点、注释节点内边距、注释文本对齐等（30+项）
+  - Controls分类：调整大小快捷键、角落锚点大小、侧边内边距、隐藏调整大小按钮、隐藏标题按钮、隐藏预设按钮等
+  - Experimental分类：修复排序深度问题
+  - Debug分类：调试图表、禁用包清理、禁用ASC图表节点
 
 **文件变更**：
 - `XTools.uplugin` - 添加 AutoSizeComments 模块
 - `Source/AutoSizeComments/AutoSizeComments.Build.cs` - 版权声明 + UE5兼容性
-- `Source/AutoSizeComments/**` - 原始代码未修改
+- `Source/AutoSizeComments/Public/AutoSizeCommentsMacros.h` - 添加样式头文件包含
+- `Source/AutoSizeComments/Public/AutoSizeCommentsCommands.h` - 移除过时的 EditorStyleSet.h
+- `Source/AutoSizeComments/Public/AutoSizeCommentsSettings.h` - 添加60+项配置的中文DisplayName和Tooltip
+- `Source/AutoSizeComments/Private/AutoSizeCommentsSettings.cpp` - 自定义默认设置
+- `Source/AutoSizeComments/Private/AutoSizeCommentsModule.cpp` - 中文本地化设置页标题和描述
 
 **许可证信息**：
 - 许可证：CC-BY-4.0 (Creative Commons Attribution 4.0 International)

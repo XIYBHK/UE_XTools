@@ -27,17 +27,21 @@ UAutoSizeCommentsSettings::UAutoSizeCommentsSettings(const FObjectInitializer& O
 	CommentTextAlignment = ETextJustify::Left;
 	DefaultFontSize = 18;
 	bUseDefaultFontSize = false;
-	DefaultCommentColorMethod = EASCDefaultCommentColorMethod::None;
+	DefaultCommentColorMethod = EASCDefaultCommentColorMethod::Random;  // 使用随机颜色
 	HeaderColorMethod = EASCDefaultCommentColorMethod::Default;
 	RandomColorOpacity = 1.f;
-	bUseRandomColorFromList = false;
-	PredefinedRandomColorList.Add(FLinearColor(1, 0, 0));
-	PredefinedRandomColorList.Add(FLinearColor(0, 1, 0));
-	PredefinedRandomColorList.Add(FLinearColor(0, 0, 1));
-	PredefinedRandomColorList.Add(FLinearColor(0, 1, 1));
-	PredefinedRandomColorList.Add(FLinearColor(1, 1, 0));
-	PredefinedRandomColorList.Add(FLinearColor(0, 1, 1));
-	PredefinedRandomColorList.Add(FLinearColor(1, 0, 1));
+	bUseRandomColorFromList = true;  // 从预定义列表中选择随机颜色
+	
+	// 自定义随机颜色列表（来自用户配置）
+	PredefinedRandomColorList.Add(FLinearColor(0.955973f, 0.116971f, 0.122139f, 1.0f));  // 红色
+	PredefinedRandomColorList.Add(FLinearColor(1.0f, 0.346704f, 0.423268f, 1.0f));       // 粉红色
+	PredefinedRandomColorList.Add(FLinearColor(0.879622f, 0.467784f, 0.212231f, 1.0f));  // 橙色
+	PredefinedRandomColorList.Add(FLinearColor(1.0f, 0.938686f, 0.283149f, 1.0f));       // 黄色
+	PredefinedRandomColorList.Add(FLinearColor(0.428690f, 1.0f, 0.407240f, 1.0f));       // 绿色
+	PredefinedRandomColorList.Add(FLinearColor(0.254152f, 0.545724f, 1.0f, 1.0f));       // 蓝色
+	PredefinedRandomColorList.Add(FLinearColor(0.332452f, 0.278894f, 0.991102f, 1.0f));  // 深蓝色
+	PredefinedRandomColorList.Add(FLinearColor(0.686685f, 0.278894f, 1.0f, 1.0f));       // 紫色
+	
 	MinimumControlOpacity = 0.f;
 	DefaultCommentColor = FLinearColor::White;
 	HeaderStyle.Color = FLinearColor::Gray;
@@ -66,9 +70,9 @@ UAutoSizeCommentsSettings::UAutoSizeCommentsSettings(const FObjectInitializer& O
 	bDefaultColorCommentBubble = false;
 	bDefaultShowBubbleWhenZoomed = true;
 	CacheSaveMethod = EASCCacheSaveMethod::MetaData;
-	CacheSaveLocation = EASCCacheSaveLocation::Project;
+	CacheSaveLocation = EASCCacheSaveLocation::Plugin;  // 保存到插件目录
 	bSaveCommentDataOnSavingGraph = true;
-	bSaveCommentDataOnExit = false;
+	bSaveCommentDataOnExit = true;  // 退出时保存数据
 	bPrettyPrintCommentCacheJSON = false;
 	bApplyColorToExistingNodes = false;
 	bResizeExistingNodes = false;
@@ -85,7 +89,7 @@ UAutoSizeCommentsSettings::UAutoSizeCommentsSettings(const FObjectInitializer& O
 	bIgnoreKnotNodesWhenResizing = false;
 	bIgnoreSelectedNodesOnCreation = false;
 	bRefreshContainingNodesOnMove = false;
-	bDisableTooltip = true;
+	bDisableTooltip = false;  // 启用工具提示
 	bHighlightContainingNodesOnSelection = true;
 	bUseMaxDetailNodes = false;
 	IgnoredGraphs.Add("ControlRigGraph");
