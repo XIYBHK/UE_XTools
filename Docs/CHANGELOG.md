@@ -21,10 +21,11 @@
 - `Source/AutoSizeComments/AutoSizeComments.Build.cs` - 版权声明 + UE5兼容性
 - `Source/AutoSizeComments/**` - 原始代码未修改
 
-**注意事项**：
-- 仅供个人使用，不可公开分享
-- 原插件许可证：MIT License（假定）
-- 原作者保留所有权利
+**许可证信息**：
+- 许可证：CC-BY-4.0 (Creative Commons Attribution 4.0 International)
+- 原始仓库：https://github.com/fpwong/AutoSizeComments
+- 允许：商业使用、修改、分发
+- 要求：保留原作者署名、注明许可证、说明修改内容
 
 ---
 

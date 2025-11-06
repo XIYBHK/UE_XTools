@@ -2,8 +2,9 @@
 // 本模块源自第三方插件（个人使用集成）
 // - 原作者：fpwong
 // - 原插件：AutoSizeComments
-// - 许可证：MIT License (假定，请查看原始LICENSE文件)
-// - 修改内容：集成到XTools，可能包含本地化修改
+// - 许可证：CC-BY-4.0 (Creative Commons Attribution 4.0 International)
+// - 原始仓库：https://github.com/fpwong/AutoSizeComments
+// - 修改内容：集成到XTools插件，适配UE 5.0+版本
 // ============================================
 // Copyright 2021 fpwong. All Rights Reserved.
 
