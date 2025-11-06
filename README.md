@@ -3,7 +3,7 @@
 [![UE Version](https://img.shields.io/badge/UE-5.3--5.6-blue.svg)](https://www.unrealengine.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
+[![Version](https://img.shields.io/badge/Version-1.9.0-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
 
 XTools 是一个为 Unreal Engine 5.3-5.6 设计的综合性实用工具插件，提供了丰富的蓝图节点和 C++ 功能，旨在提升开发效率和游戏体验。
 
@@ -306,7 +306,15 @@ EnhancedCodeFlow 模块支持：
 
 ## 📈 版本历史
 
-### v1.8.0 (当前版本)
+### v1.9.0 (当前版本)
+- 🎨 **集成第三方编辑器插件**: AutoSizeComments、BlueprintAssist、ElectronicNodes
+- 🌏 **全面汉化**: 所有集成插件完整本地化（150+ 配置项）
+- ⚙️ **优化默认配置**: 基于最佳实践精心调整的默认设置
+- 🐛 **修复K2Node通配符问题**: 修复ForEach系列节点类型丢失问题
+- 🔧 **跨版本兼容性**: 完美支持 UE 5.3-5.6（零警告）
+- 📝 **完善文档**: 详细的集成说明和使用指南
+
+### v1.8.0
 - 🆕 **新增对象池模块**: Actor对象池系统
 - ✅ **自定义K2节点**: "从池生成Actor"节点，完全兼容原生节点
 - ✅ **ExposeOnSpawn支持**: 完整支持蓝图生成时公开属性设置

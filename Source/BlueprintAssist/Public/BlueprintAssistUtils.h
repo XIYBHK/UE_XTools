@@ -25,6 +25,7 @@ class FEdGraphFormatter;
 class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
+class UMetaData;  // UE 5.6+ 兼容性：前向声明 UMetaData
 
 #define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
 #define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)

@@ -1,4 +1,15 @@
-# 2025-11-06
+# XTools 更新日志 (CHANGELOG)
+
+## 📌 版本 v1.9.0 (2025-11-06)
+
+**主要更新**：
+- 🎨 集成三大编辑器增强插件（AutoSizeComments、BlueprintAssist、ElectronicNodes）
+- 🌏 完整汉化所有集成插件（150+ 配置项）
+- 🐛 修复 K2Node 通配符引脚类型丢失问题
+- 🔧 实现 UE 5.3-5.6 完美跨版本兼容（零警告）
+- 📝 完善文档和开发工具
+
+---
 
 ## 🎨 集成 ElectronicNodes 插件并完成全面汉化
 
@@ -42,6 +53,11 @@
   - 条件引用头文件：UE 5.0+ 使用 `Styling/AppStyle.h`，UE 4.x 使用 `EditorStyleSet.h`
   - 条件使用样式类：UE 5.0+ 使用 `FAppStyle`，UE 4.x 使用 `FEditorStyle`
   - 修复 `.BorderImage()`、`.TextStyle()`、`.DecoratorStyleSet()` 跨版本兼容
+
+- **BlueprintAssist UE 5.6 修复**（修复文件：`BlueprintAssistUtils.h`）
+  - 添加 `UMetaData` 前向声明
+  - 修复 `error C2143: 语法错误: 缺少';'(在'*'的前面)`
+  - 原因：UE 5.6 中 `UMetaData` 类型需要显式前向声明才能正确识别
 
 ### 完整汉化
 **汉化内容**（43项配置 + 6个枚举）：
@@ -321,7 +337,11 @@ void UK2Node_GetArrayItem::PostReconstructNode()
    - `BlueprintAssistCommands.h` - 条件编译 EditorStyleSet.h
    - `BAFilteredList.h` - 条件编译 EditorStyleSet.h
    - `BlueprintAssistGraphCommands.cpp` - 条件编译 EditorStyleSet.h
-4. 保持原有版本宏系统（BA_UE_VERSION_OR_LATER）
+4. 修复 UE 5.6 编译错误
+   - `BlueprintAssistUtils.h` - 添加 `UMetaData` 前向声明
+   - 错误：`error C2143: 语法错误: 缺少';'(在'*'的前面)`
+   - 原因：UE 5.6 中 `UMetaData` 类型需要显式前向声明
+5. 保持原有版本宏系统（BA_UE_VERSION_OR_LATER）
    - 已内置完整的 UE 5.0+ 兼容性处理
    - 使用宏 `BA_GET_STYLE_SET_NAME()` 和 `BA_STYLE_CLASS` 处理样式 API
 

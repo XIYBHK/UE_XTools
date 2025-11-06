@@ -387,25 +387,25 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 		const FText SectionName = FText::Format(LOCTEXT("GraphSettingsFormat", "{0} 设置"), FText::FromString(GraphClassName));
 		MenuBuilder.BeginSection("FormattingSettings", SectionName);
 		{
-		MenuBuilder.AddSubMenu(
+			MenuBuilder.AddSubMenu(
 			LOCTEXT("AutoFormattingSubMenu", "自动格式化行为"),
 			LOCTEXT("AutoFormattingSubMenu_Tooltip", "设置向图表添加新节点时的自动格式化行为"),
-			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeAutoFormattingSubMenu));
+				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeAutoFormattingSubMenu));
 
-		MenuBuilder.AddSubMenu(
+			MenuBuilder.AddSubMenu(
 			LOCTEXT("FormattingStyleSubMenu", "格式化样式"),
 			LOCTEXT("FormattingStyleSubMenu_Tooltip", "设置格式化样式"),
-			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeFormattingStyleSubMenu));
+				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeFormattingStyleSubMenu));
 
-		MenuBuilder.AddSubMenu(
+			MenuBuilder.AddSubMenu(
 			LOCTEXT("ParameterStyleSubMenu", "参数样式"),
 			LOCTEXT("ParameterStyleSubMenu_Tooltip", "设置格式化时的参数样式"),
-			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeParameterStyleSubMenu));
+				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeParameterStyleSubMenu));
 
-		MenuBuilder.AddSubMenu(
+			MenuBuilder.AddSubMenu(
 			LOCTEXT("FormatAllInsertStyleSubMenu", "全部格式化样式"),
 			LOCTEXT("FormatAllInsertStyle_Tooltip", "设置全部格式化样式"),
-			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeFormatAllStyleSubMenu));
+				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeFormatAllStyleSubMenu));
 
 			TSharedRef<SWidget> ApplyCommentPaddingCheckbox = SNew(SBox)
 			[
