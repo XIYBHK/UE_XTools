@@ -1,5 +1,13 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 📌 版本 v1.9.1 (2025-11-06)
+
+**主要更新**：
+- 🔧 修复 UE 5.6 完整兼容性（UMetaData/FVector2D/MaterialGraphPolicy API 变化）
+- ✅ 验证所有 UE 版本（5.3-5.6）编译成功
+
+---
+
 ## 📌 版本 v1.9.0 (2025-11-06)
 
 **主要更新**：
@@ -8,6 +16,53 @@
 - 🐛 修复 K2Node 通配符引脚类型丢失问题
 - 🔧 实现 UE 5.3-5.6 完美跨版本兼容（零警告）
 - 📝 完善文档和开发工具
+
+### UE 5.6 深度兼容性修复
+
+**问题背景**：UE 5.6 引入了多个破坏性 API 变化
+
+#### 1. **UMetaData → FMetaData** (重大类型变化)
+- **变化**: `UPackage::GetMetaData()` 返回类型从 `UMetaData*` (指针) 改为 `FMetaData&` (引用)
+- **影响**: `UMetaData` (UObject 基类) 被弃用，改为 `FMetaData` (纯结构体)
+- **修复文件**:
+  - `BlueprintAssistCache.cpp` - 3 处函数（SaveGraphDataToPackageMetaData, LoadGraphDataFromPackageMetaData, ClearPackageMetaData）
+  - `BlueprintAssistUtils.h/.cpp` - GetNodeMetaData 函数签名和实现
+- **解决方案**: 条件编译处理指针/引用差异，UE 5.6 中返回引用的地址以保持 API 兼容性
+
+#### 2. **FVector2D → FVector2f** (精度类型变化)
+- **变化**: `SGraphNode::MoveTo()` 参数从 `FVector2D` (double) 改为 `FVector2f` (float)
+- **影响**: 所有节点移动操作的类型不匹配
+- **修复文件**:
+  - `BlueprintAssistGraphHandler.cpp` - 2 处 MoveTo 调用
+  - `SimpleFormatter.cpp` - 1 处 MoveTo 调用
+- **解决方案**: 条件编译使用 `FVector2f`（5.6+）或 `FVector2D`（5.5-）
+
+#### 3. **MaterialGraphConnectionDrawingPolicy** (头文件包含变化)
+- **变化**: UE 5.6 中不再允许直接包含 `.cpp` 文件
+- **影响**: ElectronicNodes 的材质图表连接绘制策略编译失败
+- **修复文件**:
+  - `ENMaterialGraphConnectionDrawingPolicy.h` - include 路径修复
+- **解决方案**: UE 5.6 中包含 `.h` 文件而不是 `.cpp` 文件
+
+**技术细节**：
+```cpp
+// UE 5.6 前后对比
+// 旧版本 (5.3-5.5):
+UMetaData* MetaData = Package->GetMetaData();
+FVector2D NodePos(...);
+#include "MaterialGraphConnectionDrawingPolicy.cpp"
+
+// 新版本 (5.6):
+FMetaData& MetaData = Package->GetMetaData();
+FVector2f NodePos(...);
+#include "MaterialGraphConnectionDrawingPolicy.h"
+```
+
+**验证结果**：
+- ✅ UE 5.3 - 编译成功
+- ✅ UE 5.4 - 编译成功
+- ✅ UE 5.5 - 编译成功
+- ✅ UE 5.6 - 编译成功（修复后）
 
 ---
 

@@ -5,7 +5,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+// UE 5.6: MaterialGraphConnectionDrawingPolicy 应该包含 .h 而不是 .cpp
+#include "MaterialGraphConnectionDrawingPolicy.h"
+#else
 #include "MaterialGraphConnectionDrawingPolicy.cpp"
+#endif
 #include "ENConnectionDrawingPolicy.h"
 
 class FENMaterialGraphConnectionDrawingPolicy : public FMaterialGraphConnectionDrawingPolicy

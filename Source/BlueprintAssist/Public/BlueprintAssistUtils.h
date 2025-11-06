@@ -593,7 +593,11 @@ struct BLUEPRINTASSIST_API FBAUtils
 
 	static FBlueprintEditor* GetBlueprintEditorForGraph(const UEdGraph* Graph);
 
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+	static FMetaData* GetNodeMetaData(UEdGraphNode* Node);
+#else
 	static UMetaData* GetNodeMetaData(UEdGraphNode* Node);
+#endif
 	static FString GetVariableName(const FString& Name, const FName& PinCategory, EPinContainerType ContainerType);
 
 	static UEdGraphPin* GetKnotPinByDirection(UK2Node_Knot* KnotNode, EEdGraphPinDirection Direction);

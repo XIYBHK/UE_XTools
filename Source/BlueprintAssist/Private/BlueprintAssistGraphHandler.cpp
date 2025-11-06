@@ -2685,7 +2685,12 @@ void FBAGraphHandler::SimpleFormatAll()
 		if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetGraphNode(GetGraphPanel(), Node))
 		{
 			TSet<TWeakPtr<SNodePanel::SNode>> NodeSet;
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+			// UE 5.6: MoveTo 接受 FVector2f 而不是 FVector2D
+			FVector2f NodePos(Node->NodePosX, Node->NodePosY);
+#else
 			FVector2D NodePos(Node->NodePosX, Node->NodePosY);
+#endif
 			GraphNode->MoveTo(NodePos, NodeSet);
 		}
 	}
@@ -2799,7 +2804,12 @@ void FBAGraphHandler::SmartFormatAll()
 		if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetGraphNode(GetGraphPanel(), Node))
 		{
 			TSet<TWeakPtr<SNodePanel::SNode>> NodeSet;
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+			// UE 5.6: MoveTo 接受 FVector2f 而不是 FVector2D
+			FVector2f NodePos(Node->NodePosX, Node->NodePosY);
+#else
 			FVector2D NodePos(Node->NodePosX, Node->NodePosY);
+#endif
 			GraphNode->MoveTo(NodePos, NodeSet);
 		}
 	}

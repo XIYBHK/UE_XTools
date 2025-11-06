@@ -3511,6 +3511,17 @@ FString FBAUtils::GetVariableName(const FString& Name, const FName& PinCategory,
 	return Name;
 }
 
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+FMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
+{
+	if (UPackage* Package = Node->GetOutermost())
+	{
+		// UE 5.6: GetMetaData() 返回 FMetaData& 引用，返回其地址
+		return &(Package->GetMetaData());
+	}
+	return nullptr;
+}
+#else
 UMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
 {
 	if (UPackage* Package = Node->GetOutermost())
@@ -3519,6 +3530,7 @@ UMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
 	}
 	return nullptr;
 }
+#endif
 
 UEdGraphPin* FBAUtils::GetKnotPinByDirection(UK2Node_Knot* KnotNode, EEdGraphPinDirection Direction)
 {
