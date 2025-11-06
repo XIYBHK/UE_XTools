@@ -137,8 +137,8 @@ void FASCSettingsDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 
 	const auto DeleteSizeCache = [&SizeCache]()
 	{
-		static FText Title = INVTEXT("Clear comment cache");
-		static FText Message = INVTEXT("Are you sure you want to delete the comment cache?");
+		static FText Title = INVTEXT("清除注释缓存");
+		static FText Message = INVTEXT("确定要删除注释缓存吗？");
 
 #if ASC_UE_VERSION_OR_LATER(5, 3)
 		const EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
@@ -158,11 +158,11 @@ void FASCSettingsDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 		return FReply::Handled();
 	};
 
-	GeneralCategory.AddCustomRow(INVTEXT("Clear comment cache"))
+	GeneralCategory.AddCustomRow(INVTEXT("清除注释缓存"))
 		.NameContent()
 		[
 			SNew(STextBlock)
-			.Text(INVTEXT("Clear comment cache"))
+			.Text(INVTEXT("清除注释缓存"))
 			.Font(ASC_GET_FONT_STYLE(TEXT("PropertyWindow.NormalFont")))
 		]
 		.ValueContent()
@@ -171,8 +171,8 @@ void FASCSettingsDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 			+ SHorizontalBox::Slot().Padding(5).AutoWidth()
 			[
 				SNew(SButton)
-				.Text(INVTEXT("Clear comment cache"))
-				.ToolTipText(FText::FromString(FString::Printf(TEXT("Delete comment cache file located at: %s"), *CachePath)))
+				.Text(INVTEXT("清除注释缓存"))
+				.ToolTipText(FText::FromString(FString::Printf(TEXT("删除位于此处的注释缓存文件: %s"), *CachePath)))
 				.OnClicked_Lambda(DeleteSizeCache)
 			]
 		];

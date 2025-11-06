@@ -39,9 +39,9 @@
 
 **本地化改进**（完整中文化）：
 - **设置页面本地化**：
-  - 页面标题：`"自动调整注释框"`
+  - 页面标题：`"Auto Size Comments"`（保持插件原名）
   - 页面描述：`"配置自动调整注释框插件的行为和外观"`
-  - 设置位置：编辑器偏好设置 > 插件 > 自动调整注释框
+  - 设置位置：编辑器偏好设置 > 插件 > Auto Size Comments
     - 理由：个人视觉偏好设置，不应团队共享
 - **全部设置项中文化**（60+项配置）：
   - UI分类：默认字体大小、使用默认字体大小、使用简洁标题栏样式
@@ -54,15 +54,34 @@
   - Controls分类：调整大小快捷键、角落锚点大小、侧边内边距、隐藏调整大小按钮、隐藏标题按钮、隐藏预设按钮等
   - Experimental分类：修复排序深度问题
   - Debug分类：调试图表、禁用包清理、禁用ASC图表节点
+- **枚举值中文化**（6个枚举类型）：
+  - 缓存保存方法：文件、包元数据
+  - 缓存保存位置：插件文件夹、项目文件夹
+  - 调整大小模式：始终、响应式、禁用
+  - 碰撞方法：点、重叠、包含、禁用
+  - 自动插入注释：从不、始终、被包围时
+  - 注释颜色方法：无、随机、默认
+- **按钮和消息中文化**：
+  - 清除注释缓存按钮及确认对话框
+  - 按钮工具提示中的文件路径说明
+- **结构体属性中文化**：
+  - FPresetCommentStyle：颜色、字体大小、设置为标题
+  - FASCGraphSettings：调整大小模式
 
 **文件变更**：
 - `XTools.uplugin` - 添加 AutoSizeComments 模块
 - `Source/AutoSizeComments/AutoSizeComments.Build.cs` - 版权声明 + UE5兼容性
 - `Source/AutoSizeComments/Public/AutoSizeCommentsMacros.h` - 添加样式头文件包含
 - `Source/AutoSizeComments/Public/AutoSizeCommentsCommands.h` - 移除过时的 EditorStyleSet.h
-- `Source/AutoSizeComments/Public/AutoSizeCommentsSettings.h` - 添加60+项配置的中文DisplayName和Tooltip
-- `Source/AutoSizeComments/Private/AutoSizeCommentsSettings.cpp` - 自定义默认设置
-- `Source/AutoSizeComments/Private/AutoSizeCommentsModule.cpp` - 中文本地化设置页标题和描述
+- `Source/AutoSizeComments/Public/AutoSizeCommentsSettings.h` - 完整汉化
+  - 60+项配置属性的中文DisplayName和Tooltip
+  - 6个枚举类型的中文DisplayName
+  - 2个结构体属性的中文DisplayName和Tooltip
+  - 修复UHT不支持的中文引号问题
+- `Source/AutoSizeComments/Private/AutoSizeCommentsSettings.cpp` - 完整汉化
+  - 自定义默认设置（随机颜色列表等）
+  - 清除缓存按钮和对话框文本中文化
+- `Source/AutoSizeComments/Private/AutoSizeCommentsModule.cpp` - 设置页标题和描述本地化
 
 **许可证信息**：
 - 许可证：CC-BY-4.0 (Creative Commons Attribution 4.0 International)

@@ -13,73 +13,73 @@ UENUM()
 enum class EASCCacheSaveMethod : uint8
 {
 	/** Save the cache to an external json file */
-	File UMETA(DisplayName = "File"),
+	File UMETA(DisplayName = "文件"),
 
 	/** Save to cache in the package's meta data (the .uasset) */
-	MetaData UMETA(DisplayName = "Package Meta Data"),
+	MetaData UMETA(DisplayName = "包元数据"),
 };
 
 UENUM()
 enum class EASCCacheSaveLocation : uint8
 {
 	/** Save to PluginFolder/ASCCache/PROJECT_ID.json */
-	Plugin UMETA(DisplayName = "Plugin"),
+	Plugin UMETA(DisplayName = "插件文件夹"),
 
 	/** Save to ProjectFolder/Saved/AutoSizeComments/AutoSizeCommentsCache.json */
-	Project UMETA(DisplayName = "Project"),
+	Project UMETA(DisplayName = "项目文件夹"),
 };
 
 UENUM()
 enum class EASCResizingMode : uint8
 {
 	/** Resize to containing nodes on tick */
-	Always UMETA(DisplayName = "Always"),
+	Always UMETA(DisplayName = "始终"),
 
 	/** Resize when we detect a containing node moves or changes size */
-	Reactive UMETA(DisplayName = "Reactive"),
+	Reactive UMETA(DisplayName = "响应式"),
 
 	/** Never resize */
-	Disabled UMETA(DisplayName = "Disabled"),
+	Disabled UMETA(DisplayName = "禁用"),
 };
 
 UENUM()
 enum class ECommentCollisionMethod : uint8
 {
 	/** Add the node if the top-left corner is inside the comment */
-	Point UMETA(DisplayName = "Point"),
+	Point UMETA(DisplayName = "点"),
 
 	/** Add the node if it is intersecting the comment */
-	Intersect UMETA(DisplayName = "Overlap"),
+	Intersect UMETA(DisplayName = "重叠"),
 
 	/** Add the node if it is fully contained in the comment */
-	Contained UMETA(DisplayName = "Contained"),
-	Disabled UMETA(DisplayName = "Disabled"),
+	Contained UMETA(DisplayName = "包含"),
+	Disabled UMETA(DisplayName = "禁用"),
 };
 
 UENUM()
 enum class EASCAutoInsertComment : uint8
 {
 	/** Never insert new nodes into comments */
-	Never UMETA(DisplayName = "Never"),
+	Never UMETA(DisplayName = "从不"),
 
 	/** Insert new nodes when a node is created from a pin */
-	Always UMETA(DisplayName = "Always"),
+	Always UMETA(DisplayName = "始终"),
 
 	/** Insert new nodes when a node is created from a pin (and is surrounded by multiple nodes inside the comment) */
-	Surrounded UMETA(DisplayName = "Surrounded"),
+	Surrounded UMETA(DisplayName = "被包围时"),
 };
 
 UENUM()
 enum class EASCDefaultCommentColorMethod : uint8
 {
 	/** Do not change the color */
-	None UMETA(DisplayName = "None"),
+	None UMETA(DisplayName = "无"),
 
 	/** Use a random color when spawning the comment */
-	Random UMETA(DisplayName = "Random"),
+	Random UMETA(DisplayName = "随机"),
 
 	/** Apply the default color defined in the settings here */
-	Default UMETA(DisplayName = "Default"),
+	Default UMETA(DisplayName = "默认"),
 };
 
 USTRUCT()
@@ -87,13 +87,13 @@ struct FPresetCommentStyle
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, config, Category = Default)
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "颜色", Tooltip = "预设的颜色"))
 	FLinearColor Color = FLinearColor::White;
 
-	UPROPERTY(EditAnywhere, config, Category = Default)
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "字体大小", Tooltip = "预设的字体大小"))
 	int FontSize = 18;
 
-	UPROPERTY(EditAnywhere, config, Category = Default)
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "设置为标题", Tooltip = "是否设置为标题样式"))
 	bool bSetHeader = false;
 };
 
@@ -102,7 +102,7 @@ struct FASCGraphSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, config, Category = Default)
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "调整大小模式", Tooltip = "该图表类型的调整大小模式"))
 	EASCResizingMode ResizingMode = EASCResizingMode::Always;
 };
 
@@ -127,7 +127,7 @@ public:
 	EASCDefaultCommentColorMethod DefaultCommentColorMethod;
 
 	/** How to color the comment when pressing the `Toggle Header` button */
-	UPROPERTY(EditAnywhere, Config, Category = Color, meta = (DisplayName = "标题栏颜色方法", Tooltip = "按下"切换标题"按钮时如何着色"))
+	UPROPERTY(EditAnywhere, Config, Category = Color, meta = (DisplayName = "标题栏颜色方法", Tooltip = "按下切换标题按钮时如何着色"))
 	EASCDefaultCommentColorMethod HeaderColorMethod;
 
 	/** Comment boxes will spawn with this default color */
@@ -179,11 +179,11 @@ public:
 	bool bEnableCommentBubbleDefaults;
 
 	/** Default value for "Color Bubble" */
-	UPROPERTY(EditAnywhere, config, Category = CommentBubble, meta = (EditCondition = "bEnableCommentBubbleDefaults", DisplayName = "默认着色气泡", Tooltip = ""着色气泡"的默认值"))
+	UPROPERTY(EditAnywhere, config, Category = CommentBubble, meta = (EditCondition = "bEnableCommentBubbleDefaults", DisplayName = "默认着色气泡", Tooltip = "着色气泡选项的默认值"))
 	bool bDefaultColorCommentBubble;
 
 	/** Default value for "Show Bubble When Zoomed" */
-	UPROPERTY(EditAnywhere, config, Category = CommentBubble, meta = (EditCondition = "bEnableCommentBubbleDefaults", DisplayName = "默认缩放时显示气泡", Tooltip = ""缩放时显示气泡"的默认值"))
+	UPROPERTY(EditAnywhere, config, Category = CommentBubble, meta = (EditCondition = "bEnableCommentBubbleDefaults", DisplayName = "默认缩放时显示气泡", Tooltip = "缩放时显示气泡选项的默认值"))
 	bool bDefaultShowBubbleWhenZoomed;
 
 	/** The auto resizing behavior for comments (always: on tick | reactive: upon detecting node movement) */

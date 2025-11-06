@@ -41,7 +41,7 @@ void FAutoSizeCommentsModule::OnPostEngineInit()
 	{
 		SettingsModule->RegisterSettings(
 			"Editor", "Plugins", "AutoSizeComments",
-			LOCTEXT("AutoSizeCommentsName", "自动调整注释框"),
+			LOCTEXT("AutoSizeCommentsName", "Auto Size Comments"),
 			LOCTEXT("AutoSizeCommentsNameDesc", "配置自动调整注释框插件的行为和外观"),
 			GetMutableDefault<UAutoSizeCommentsSettings>()
 		);
