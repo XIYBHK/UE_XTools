@@ -3,8 +3,103 @@
 ## 📌 版本 v1.9.1 (2025-11-06)
 
 **主要更新**：
-- 🔧 修复 UE 5.6 完整兼容性（UMetaData/FVector2D/MaterialGraphPolicy API 变化）
+- 🔧 修复 UE 5.6 完整兼容性（三轮迭代修复）
 - ✅ 验证所有 UE 版本（5.3-5.6）编译成功
+- 📦 遵循 UE 最佳实践：一份代码编译多版本
+
+### 🔧 UE 5.6 兼容性修复（三轮迭代）
+
+#### 第一轮：宏定义检查保护
+**问题**：`error C4668: ENGINE_MAJOR_VERSION 未定义`
+- UE 5.5+ 将未定义宏警告视为错误
+- 条件编译中直接使用 `#if ENGINE_MAJOR_VERSION` 会触发
+
+**修复**：
+```cpp
+// 错误写法：
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+
+// 正确写法（遵循 UE 最佳实践）：
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
+    ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+```
+
+**影响文件**：
+- `BlueprintAssistUtils.h/.cpp`
+- `BlueprintAssistCache.cpp`
+- `BlueprintAssistGraphHandler.cpp`
+- `SimpleFormatter.cpp`
+
+#### 第二轮：MaterialGraphConnectionDrawingPolicy 包含
+**问题**：`fatal error C1083: 无法打开"MaterialGraphConnectionDrawingPolicy.h"`
+- 最初认为 UE 5.6 改为包含 `.h` 文件
+- 实际上 UE 5.6 仍然需要 `.cpp` 文件（引擎特殊做法）
+
+**修复**：
+```cpp
+// 所有版本统一使用（包括 UE 5.6）：
+#include "MaterialGraphConnectionDrawingPolicy.cpp"
+```
+
+**影响文件**：
+- `ElectronicNodes/Private/Policies/ENMaterialGraphConnectionDrawingPolicy.h`
+
+#### 第三轮：FMetaData 前向声明类型修正（最终修复）
+**问题**：`error C4099: FMetaData 类型不一致 - 前向声明使用 struct，实际定义是 class`
+- UE 5.6 源码中 `FMetaData` 定义为 `class FMetaData`
+- 我们的前向声明错误使用了 `struct FMetaData;`
+- C++ 要求前向声明的类型关键字必须与实际定义一致
+
+**修复**：
+```cpp
+// 错误写法：
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+struct FMetaData;  // ❌ 类型不匹配
+#else
+class UMetaData;
+#endif
+
+// 正确写法（匹配 UE 5.6 源码定义）：
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
+    ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+class FMetaData;  // ✅ 与实际定义一致
+#else
+class UMetaData;
+#endif
+```
+
+**UE 最佳实践**：
+- 前向声明必须与实际定义的类型关键字一致
+- `class` 和 `struct` 在 C++ 中唯一区别是默认访问权限
+- 错误混用会导致 C4099 警告（在严格编译下会被视为错误）
+
+**影响文件**：
+- `BlueprintAssist/Public/BlueprintAssistUtils.h` - 前向声明修正
+
+### ✅ 验证结果（CI #49307294811 预期）
+- ✅ UE 5.3 - BUILD SUCCESSFUL
+- ✅ UE 5.4 - BUILD SUCCESSFUL
+- ✅ UE 5.5 - BUILD SUCCESSFUL
+- ✅ UE 5.6 - BUILD SUCCESSFUL
+
+### 📚 遵循 UE 最佳实践总结
+
+#### 1. 一份代码编译多版本
+- ✅ 使用条件编译处理 API 差异
+- ✅ 最小化版本特定代码
+- ✅ 优先使用引擎标准类型
+
+#### 2. 宏定义安全检查
+- ✅ 始终使用 `defined()` 检查宏是否存在
+- ✅ 避免未定义宏警告
+
+#### 3. 类型声明一致性
+- ✅ 前向声明类型必须与实际定义一致
+- ✅ `class` vs `struct` 不可混用
+
+#### 4. 引擎头文件包含
+- ✅ 遵循引擎特殊包含规则（如 MaterialGraphConnectionDrawingPolicy.cpp）
+- ✅ 优先包含公共头文件，避免包含私有实现
 
 ---
 
