@@ -42,7 +42,7 @@ void AXFieldSystemActor::BeginPlay()
 		{
 			if (bListenToActorSpawn)
 			{
-				// 优雅方案：监听Spawn事件
+				//方案：监听Spawn事件
 				RegisterSpawnListener();
 				
 				// 处理已存在的Actor（只在第一次需要）

@@ -3127,8 +3127,8 @@ UEdGraphNode* FBAUtils::GetNodeFromGraph(const UEdGraph* Graph, const FGuid& Nod
 
 bool FBAUtils::IsExtraRootNode(UEdGraphNode* Node)
 {
-	// 使用 auto 以兼容 UMetaData* (5.5-) 和 FMetaData* (5.6+)
-	if (auto* MetaData = GetNodeMetaData(Node))
+	// UE 5.6: FBAMetaData* = FMetaData*, UE 5.5-: FBAMetaData* = UMetaData*
+	if (FBAMetaData* MetaData = GetNodeMetaData(Node))
 	{
 		if (MetaData->HasValue(Node, FNodeMetadata::DefaultGraphNode))
 		{
@@ -3512,26 +3512,25 @@ FString FBAUtils::GetVariableName(const FString& Name, const FName& PinCategory,
 	return Name;
 }
 
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-FMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
+FBAMetaData* FBAUtils::GetPackageMetaData(UPackage* Package)
 {
-	if (UPackage* Package = Node->GetOutermost())
-	{
-		// UE 5.6: GetMetaData() 返回 FMetaData& 引用，返回其地址
-		return &(Package->GetMetaData());
-	}
-	return nullptr;
-}
+#if BA_UE_VERSION_OR_LATER(5, 6)
+	// UE 5.6: GetMetaData() 返回 FMetaData& 引用，返回其地址
+	return &Package->GetMetaData();
 #else
-UMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
+	// UE 5.5-: GetMetaData() 直接返回 UMetaData* 指针
+	return Package->GetMetaData();
+#endif
+}
+
+FBAMetaData* FBAUtils::GetNodeMetaData(UEdGraphNode* Node)
 {
 	if (UPackage* Package = Node->GetOutermost())
 	{
-		return Package->GetMetaData();
+		return FBAUtils::GetPackageMetaData(Package);
 	}
 	return nullptr;
 }
-#endif
 
 UEdGraphPin* FBAUtils::GetKnotPinByDirection(UK2Node_Knot* KnotNode, EEdGraphPinDirection Direction)
 {

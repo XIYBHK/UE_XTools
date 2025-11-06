@@ -26,12 +26,9 @@ class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
 
-// UE 5.6+ 兼容性：包含正确的头文件
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-#include "UObject/MetaData.h"  // UE 5.6: 直接包含 FMetaData 定义
-#else
-class UMetaData;  // UE 5.5-: 前向声明即可
-#endif
+// UE 5.6+ 兼容性：前向声明（类型别名在 BlueprintAssistGlobals.h 中定义）
+class UMetaData;
+class FMetaData;
 
 #define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
 #define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)
@@ -599,11 +596,9 @@ struct BLUEPRINTASSIST_API FBAUtils
 
 	static FBlueprintEditor* GetBlueprintEditorForGraph(const UEdGraph* Graph);
 
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-	static FMetaData* GetNodeMetaData(UEdGraphNode* Node);
-#else
-	static UMetaData* GetNodeMetaData(UEdGraphNode* Node);
-#endif
+	// UE 5.6: FBAMetaData = FMetaData*, UE 5.5-: FBAMetaData = UMetaData*
+	static FBAMetaData* GetPackageMetaData(UPackage* Package);
+	static FBAMetaData* GetNodeMetaData(UEdGraphNode* Node);
 	static FString GetVariableName(const FString& Name, const FName& PinCategory, EPinContainerType ContainerType);
 
 	static UEdGraphPin* GetKnotPinByDirection(UK2Node_Knot* KnotNode, EEdGraphPinDirection Direction);

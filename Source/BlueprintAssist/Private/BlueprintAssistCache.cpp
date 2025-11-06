@@ -263,19 +263,7 @@ void FBACache::SaveGraphDataToPackageMetaData(UEdGraph* Graph)
 
 	if (UPackage* AssetPackage = Graph->GetPackage())
 	{
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-		FMetaData& MetaData = AssetPackage->GetMetaData();
-		FBAGraphData& GraphData = GetGraphData(Graph);
-
-		GraphData.CleanupGraph(Graph);
-		
-		FString GraphDataAsString;
-		if (FJsonObjectConverter::UStructToJsonObjectString(GraphData, GraphDataAsString))
-		{
-			MetaData.SetValue(Graph, NAME_BA_GRAPH_DATA, *GraphDataAsString);
-		}
-#else
-		if (UMetaData* MetaData = AssetPackage->GetMetaData())
+		if (FBAMetaData* MetaData = FBAUtils::GetPackageMetaData(AssetPackage))
 		{
 			FBAGraphData& GraphData = GetGraphData(Graph);
 
@@ -287,7 +275,6 @@ void FBACache::SaveGraphDataToPackageMetaData(UEdGraph* Graph)
 				MetaData->SetValue(Graph, NAME_BA_GRAPH_DATA, *GraphDataAsString);
 			}
 		}
-#endif
 	}
 }
 
@@ -305,18 +292,7 @@ bool FBACache::LoadGraphDataFromPackageMetaData(UEdGraph* Graph, FBAGraphData& G
 
 	if (UPackage* AssetPackage = Graph->GetPackage())
 	{
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-		FMetaData& MetaData = AssetPackage->GetMetaData();
-		if (const FString* GraphDataAsString = MetaData.FindValue(Graph, NAME_BA_GRAPH_DATA))
-		{
-			if (FJsonObjectConverter::JsonObjectStringToUStruct(*GraphDataAsString, &GraphData, 0, 0))
-			{
-				GraphData.bTriedLoadingMetaData = true;
-				return true;
-			}
-		}
-#else
-		if (UMetaData* MetaData = AssetPackage->GetMetaData())
+		if (FBAMetaData* MetaData = FBAUtils::GetPackageMetaData(AssetPackage))
 		{
 			if (const FString* GraphDataAsString = MetaData->FindValue(Graph, NAME_BA_GRAPH_DATA))
 			{
@@ -327,7 +303,6 @@ bool FBACache::LoadGraphDataFromPackageMetaData(UEdGraph* Graph, FBAGraphData& G
 				}
 			}
 		}
-#endif
 	}
 
 	return false;
@@ -337,15 +312,10 @@ void FBACache::ClearPackageMetaData(UEdGraph* Graph)
 {
 	if (UPackage* AssetPackage = Graph->GetPackage())
 	{
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-		FMetaData& MetaData = AssetPackage->GetMetaData();
-		MetaData.RemoveValue(Graph, NAME_BA_GRAPH_DATA);
-#else
-		if (UMetaData* MetaData = AssetPackage->GetMetaData())
+		if (FBAMetaData* MetaData = FBAUtils::GetPackageMetaData(AssetPackage))
 		{
 			MetaData->RemoveValue(Graph, NAME_BA_GRAPH_DATA);
 		}
-#endif
 	}
 }
 

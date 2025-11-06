@@ -626,7 +626,12 @@ void FENConnectionDrawingPolicy::DrawDebugPoint(const FVector2D& Position, FLine
 
 void FENConnectionDrawingPolicy::ENComputeClosestPoint(const FVector2D& Start, const FVector2D& End)
 {
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+	// UE 5.6: 显式转换为 FVector2f 以匹配模板参数
+	const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(FVector2f(LocalMousePosition), FVector2f(Start), FVector2f(End));
+#else
 	const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(LocalMousePosition, Start, End);
+#endif
 	const float TemporaryDistance = (LocalMousePosition - TemporaryPoint).SizeSquared();
 
 	if (TemporaryDistance < ClosestDistanceSquared)
@@ -652,10 +657,15 @@ void FENConnectionDrawingPolicy::ENComputeClosestPointDefault(const FVector2D& S
 		FVector2D PointOnSpline1 = FMath::CubicInterp(Start, StartTangent * Tangent, End, EndTangent * Tangent, 0.0f);
 		for (float TestAlpha = 0.0f; TestAlpha < 1.0f; TestAlpha += StepInterval)
 		{
-			const FVector2D PointOnSpline2 = FMath::CubicInterp(Start, StartTangent * Tangent, End, EndTangent * Tangent, TestAlpha + StepInterval);
+		const FVector2D PointOnSpline2 = FMath::CubicInterp(Start, StartTangent * Tangent, End, EndTangent * Tangent, TestAlpha + StepInterval);
 
-			const FVector2D ClosestPointToSegment = FMath::ClosestPointOnSegment2D(LocalMousePosition, PointOnSpline1, PointOnSpline2);
-			const float DistanceSquared = (LocalMousePosition - ClosestPointToSegment).SizeSquared();
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+		// UE 5.6: 显式转换为 FVector2f 以匹配模板参数
+		const FVector2D ClosestPointToSegment = FMath::ClosestPointOnSegment2D(FVector2f(LocalMousePosition), FVector2f(PointOnSpline1), FVector2f(PointOnSpline2));
+#else
+		const FVector2D ClosestPointToSegment = FMath::ClosestPointOnSegment2D(LocalMousePosition, PointOnSpline1, PointOnSpline2);
+#endif
+		const float DistanceSquared = (LocalMousePosition - ClosestPointToSegment).SizeSquared();
 
 			if (DistanceSquared < ClosestDistanceSquared)
 			{
