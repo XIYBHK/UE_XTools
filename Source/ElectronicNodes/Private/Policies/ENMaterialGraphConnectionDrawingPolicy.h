@@ -5,7 +5,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-// 所有版本（包括 UE 5.6）都包含 .cpp 文件（UE 引擎的特殊做法）
+
+// UE 5.6 兼容性：MaterialGraphConnectionDrawingPolicy.cpp 在 UE 5.6 中可能不存在或路径改变
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+// UE 5.6: 暂时禁用 Material Graph 连接绘制增强（等待引擎 API 稳定）
+#warning "ElectronicNodes: Material Graph connection drawing is disabled in UE 5.6 (MaterialGraphConnectionDrawingPolicy.cpp not found)"
+#else
+// UE 5.5-: 包含 .cpp 文件（UE 引擎的特殊做法）
 #include "MaterialGraphConnectionDrawingPolicy.cpp"
 #include "ENConnectionDrawingPolicy.h"
 
@@ -33,3 +39,4 @@ public:
 private:
 	FENConnectionDrawingPolicy* ConnectionDrawingPolicy;
 };
+#endif  // UE 5.5-

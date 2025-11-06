@@ -26,11 +26,11 @@ class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
 
-// UE 5.6+ 兼容性：前向声明
+// UE 5.6+ 兼容性：包含正确的头文件
 #if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-class FMetaData;  // UE 5.6: FMetaData 是 class，不是 struct
+#include "UObject/MetaData.h"  // UE 5.6: 直接包含 FMetaData 定义
 #else
-class UMetaData;
+class UMetaData;  // UE 5.5-: 前向声明即可
 #endif
 
 #define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)

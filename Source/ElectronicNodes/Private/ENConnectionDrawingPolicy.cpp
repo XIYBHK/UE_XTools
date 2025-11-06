@@ -9,7 +9,11 @@
 #include "MaterialGraph/MaterialGraphSchema.h"
 #include "Policies/ENAnimGraphConnectionDrawingPolicy.h"
 #include "Policies/ENBehaviorTreeConnectionDrawingPolicy.h"
+
+// UE 5.6: Material Graph 连接绘制在 UE 5.6 中暂时禁用
+#if !defined(ENGINE_MAJOR_VERSION) || !defined(ENGINE_MINOR_VERSION) || ENGINE_MAJOR_VERSION < 5 || ENGINE_MINOR_VERSION < 6
 #include "Policies/ENMaterialGraphConnectionDrawingPolicy.h"
+#endif
 
 FConnectionDrawingPolicy* FENConnectionDrawingPolicyFactory::CreateConnectionPolicy(const class UEdGraphSchema* Schema, int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const class FSlateRect& InClippingRect, class FSlateWindowElementList& InDrawElements, class UEdGraph* InGraphObj) const
 {
@@ -76,7 +80,12 @@ FConnectionDrawingPolicy* FENConnectionDrawingPolicyFactory::CreateConnectionPol
 
 	if (ElectronicNodesSettings.ActivateOnMaterial && Schema->IsA(UMaterialGraphSchema::StaticClass()))
 	{
+#if !defined(ENGINE_MAJOR_VERSION) || !defined(ENGINE_MINOR_VERSION) || ENGINE_MAJOR_VERSION < 5 || ENGINE_MINOR_VERSION < 6
 		return new FENMaterialGraphConnectionDrawingPolicy(InBackLayerID, InFrontLayerID, ZoomFactor, InClippingRect, InDrawElements, InGraphObj);
+#else
+		// UE 5.6: Material Graph 连接绘制暂时禁用，回退到标准绘制策略
+		return new FENConnectionDrawingPolicy(InBackLayerID, InFrontLayerID, ZoomFactor, InClippingRect, InDrawElements, InGraphObj);
+#endif
 	}
 
 	for (const auto& Type : ElectronicNodesSettings.CustomGraphSchemas)
