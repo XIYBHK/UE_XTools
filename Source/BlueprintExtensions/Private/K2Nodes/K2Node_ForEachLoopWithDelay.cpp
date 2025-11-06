@@ -258,7 +258,38 @@ void UK2Node_ForEachLoopWithDelay::GetMenuActions(FBlueprintActionDatabaseRegist
 void UK2Node_ForEachLoopWithDelay::PostReconstructNode()
 {
 	Super::PostReconstructNode();
-	PropagatePinType();
+	
+	// 【修复】仅在有连接时才传播类型，避免重载时丢失已序列化的类型信息
+	// 参考 UE 源码 K2Node_GetArrayItem::PostReconstructNode 实现
+	UEdGraphPin* ArrayPin = GetArrayPin();
+	UEdGraphPin* ValuePin = GetValuePin();
+	
+	if (ArrayPin && ValuePin)
+	{
+		if (ArrayPin->LinkedTo.Num() > 0 || ValuePin->LinkedTo.Num() > 0)
+		{
+			PropagatePinType();
+		}
+		else
+		{
+			// 【额外修复】无连接时，如果一个引脚有确定类型，另一个是Wildcard，则同步类型
+			bool bArrayIsWildcard = (ArrayPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard);
+			bool bValueIsWildcard = (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard);
+			
+			if (!bArrayIsWildcard && bValueIsWildcard)
+			{
+				ValuePin->PinType = ArrayPin->PinType;
+				ValuePin->PinType.ContainerType = EPinContainerType::None;
+				GetGraph()->NotifyGraphChanged();
+			}
+			else if (bArrayIsWildcard && !bValueIsWildcard)
+			{
+				ArrayPin->PinType = ValuePin->PinType;
+				ArrayPin->PinType.ContainerType = EPinContainerType::Array;
+				GetGraph()->NotifyGraphChanged();
+			}
+		}
+	}
 }
 
 #pragma endregion
@@ -366,22 +397,128 @@ UEdGraphPin* UK2Node_ForEachLoopWithDelay::GetIndexPin() const
 
 void UK2Node_ForEachLoopWithDelay::PropagatePinType() const
 {
+	bool bNotifyGraphChanged = false;
 	UEdGraphPin* ArrayPin = GetArrayPin();
 	UEdGraphPin* ValuePin = GetValuePin();
 
-	if (ArrayPin && ValuePin)
+	if (!ArrayPin || !ValuePin)
 	{
-		if (ArrayPin->LinkedTo.Num() > 0)
+		return;
+	}
+
+	// 【修复】无连接的情况：仅在引脚当前为Wildcard时才重置
+	// 这样可以保留加载时已序列化的类型信息
+	if (ArrayPin->LinkedTo.Num() == 0 && ValuePin->LinkedTo.Num() == 0)
+	{
+		// 只有在引脚类型确实是Wildcard时才重置
+		bool bArrayIsWildcard = (ArrayPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard);
+		bool bValueIsWildcard = (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard);
+
+		if (!bArrayIsWildcard || !bValueIsWildcard)
 		{
-			const UEdGraphPin* LinkedPin = ArrayPin->LinkedTo[0];
-			ValuePin->PinType = LinkedPin->PinType;
-			ValuePin->PinType.ContainerType = EPinContainerType::None;
+			// 引脚已有确定的类型（从序列化数据恢复），保留它
+			return;
 		}
-		else if (ArrayPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+
+		// 重置为Wildcard
+		ArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+		ArrayPin->PinType.PinSubCategory = NAME_None;
+		ArrayPin->PinType.PinSubCategoryObject = nullptr;
+		ArrayPin->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
+		ArrayPin->PinType.PinValueType.TerminalSubCategory = NAME_None;
+		ArrayPin->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+		ArrayPin->BreakAllPinLinks(true);
+
+		ValuePin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+		ValuePin->PinType.PinSubCategory = NAME_None;
+		ValuePin->PinType.PinSubCategoryObject = nullptr;
+		ValuePin->BreakAllPinLinks(true);
+
+		bNotifyGraphChanged = true;
+	}
+
+	// 只有 Array 引脚有连接
+	else if (ArrayPin->LinkedTo.Num() > 0 && ValuePin->LinkedTo.Num() == 0)
+	{
+		UEdGraphPin* LinkedPin = ArrayPin->LinkedTo[0];
+		if (LinkedPin->PinType.ContainerType == EPinContainerType::Array &&
+			LinkedPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 		{
-			ValuePin->PinType = ArrayPin->PinType;
-			ValuePin->PinType.ContainerType = EPinContainerType::None;
+			ArrayPin->PinType.PinCategory = LinkedPin->PinType.PinCategory;
+			ArrayPin->PinType.PinSubCategory = LinkedPin->PinType.PinSubCategory;
+			ArrayPin->PinType.PinSubCategoryObject = LinkedPin->PinType.PinSubCategoryObject;
+			ArrayPin->PinType.ContainerType = EPinContainerType::Array;
+
+			ValuePin->PinType.PinCategory = LinkedPin->PinType.PinCategory;
+			ValuePin->PinType.PinSubCategory = LinkedPin->PinType.PinSubCategory;
+			ValuePin->PinType.PinSubCategoryObject = LinkedPin->PinType.PinSubCategoryObject;
+
+			bNotifyGraphChanged = true;
 		}
+	}
+
+	// 只有 Value 引脚有连接
+	else if (ArrayPin->LinkedTo.Num() == 0 && ValuePin->LinkedTo.Num() > 0)
+	{
+		UEdGraphPin* LinkedPin = ValuePin->LinkedTo[0];
+		if (LinkedPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+		{
+			ArrayPin->PinType.PinCategory = LinkedPin->PinType.PinCategory;
+			ArrayPin->PinType.PinSubCategory = LinkedPin->PinType.PinSubCategory;
+			ArrayPin->PinType.PinSubCategoryObject = LinkedPin->PinType.PinSubCategoryObject;
+			ArrayPin->PinType.ContainerType = EPinContainerType::Array;
+
+			ValuePin->PinType.PinCategory = LinkedPin->PinType.PinCategory;
+			ValuePin->PinType.PinSubCategory = LinkedPin->PinType.PinSubCategory;
+			ValuePin->PinType.PinSubCategoryObject = LinkedPin->PinType.PinSubCategoryObject;
+
+			bNotifyGraphChanged = true;
+		}
+	}
+
+	// 【修复】两个引脚都有连接：尝试从连接推断类型
+	else if (ArrayPin->LinkedTo.Num() > 0 && ValuePin->LinkedTo.Num() > 0)
+	{
+		UEdGraphPin* ArrayLinkedPin = ArrayPin->LinkedTo[0];
+
+		// 优先从Array连接推断
+		if (ArrayLinkedPin->PinType.ContainerType == EPinContainerType::Array &&
+			ArrayLinkedPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+		{
+			ArrayPin->PinType.PinCategory = ArrayLinkedPin->PinType.PinCategory;
+			ArrayPin->PinType.PinSubCategory = ArrayLinkedPin->PinType.PinSubCategory;
+			ArrayPin->PinType.PinSubCategoryObject = ArrayLinkedPin->PinType.PinSubCategoryObject;
+			ArrayPin->PinType.ContainerType = EPinContainerType::Array;
+
+			ValuePin->PinType.PinCategory = ArrayLinkedPin->PinType.PinCategory;
+			ValuePin->PinType.PinSubCategory = ArrayLinkedPin->PinType.PinSubCategory;
+			ValuePin->PinType.PinSubCategoryObject = ArrayLinkedPin->PinType.PinSubCategoryObject;
+
+			bNotifyGraphChanged = true;
+		}
+		// Array连接是Wildcard，尝试从Value连接推断
+		else
+		{
+			UEdGraphPin* ValueLinkedPin = ValuePin->LinkedTo[0];
+			if (ValueLinkedPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+			{
+				ArrayPin->PinType.PinCategory = ValueLinkedPin->PinType.PinCategory;
+				ArrayPin->PinType.PinSubCategory = ValueLinkedPin->PinType.PinSubCategory;
+				ArrayPin->PinType.PinSubCategoryObject = ValueLinkedPin->PinType.PinSubCategoryObject;
+				ArrayPin->PinType.ContainerType = EPinContainerType::Array;
+
+				ValuePin->PinType.PinCategory = ValueLinkedPin->PinType.PinCategory;
+				ValuePin->PinType.PinSubCategory = ValueLinkedPin->PinType.PinSubCategory;
+				ValuePin->PinType.PinSubCategoryObject = ValueLinkedPin->PinType.PinSubCategoryObject;
+
+				bNotifyGraphChanged = true;
+			}
+		}
+	}
+
+	if (bNotifyGraphChanged)
+	{
+		GetGraph()->NotifyGraphChanged();
 	}
 }
 
