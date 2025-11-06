@@ -59,7 +59,14 @@
 **文件变更**：
 - `Source/XTools/Public/XToolsVersionCompat.h` - 扩展版本宏
 - `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp` - 修复版本错误
+- `Source/FieldSystemExtensions/FieldSystemExtensions.Build.cs` - 添加XTools模块依赖
 - `Source/BlueprintExtensionsRuntime/Public/Libraries/MapExtensionsLibrary.h` - 抑制警告
+- `Source/BlueprintExtensionsRuntime/Private/Libraries/MapExtensionsLibrary.cpp` - 抑制警告
+
+**CI修复**：
+- ❌ 初次CI失败：`XToolsVersionCompat.h` 跨模块访问失败
+- ✅ 解决方案：在 `FieldSystemExtensions.Build.cs` 添加 `"XTools"` 依赖
+- ✅ 补充修复：`.cpp` 文件也需要抑制 `ElementSize` 警告
 
 ---
 

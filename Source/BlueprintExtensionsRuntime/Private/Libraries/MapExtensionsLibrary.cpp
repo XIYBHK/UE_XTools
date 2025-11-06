@@ -3,6 +3,9 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(MapExtensionsLibrary)
 
+// UE 5.5+ FProperty::ElementSize 已弃用，抑制弃用警告
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #pragma region GetKey
@@ -1352,3 +1355,5 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 #pragma endregion
 
 //————————————————————————————————————————————————————————————————————————————————————————————————————
+
+PRAGMA_ENABLE_DEPRECATION_WARNINGS

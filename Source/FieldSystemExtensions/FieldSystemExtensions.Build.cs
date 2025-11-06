@@ -26,18 +26,19 @@ public class FieldSystemExtensions : ModuleRules
 		
 		PublicDefinitions.Add("WITH_FIELDSYSTEMEXTENSIONS=1");
 		
-		PublicDependencyModuleNames.AddRange(
-			new string[]
-			{
-				"Core",
-				"CoreUObject",
-				"Engine",
-				"FieldSystemEngine",  // Field System核心模块
-				"Chaos",  // Chaos物理系统
-				"GeometryCollectionEngine",  // GeometryCollection组件
-				"ChaosSolverEngine"  // Chaos Solver模块
-			}
-		);
+	PublicDependencyModuleNames.AddRange(
+		new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"FieldSystemEngine",  // Field System核心模块
+			"Chaos",  // Chaos物理系统
+			"GeometryCollectionEngine",  // GeometryCollection组件
+			"ChaosSolverEngine",  // Chaos Solver模块
+			"XTools"  // XTools版本兼容层（XToolsVersionCompat.h）
+		}
+	);
 
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
