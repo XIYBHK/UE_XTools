@@ -2,6 +2,18 @@
 
 on:
   workflow_dispatch:
+    inputs:
+      ue_version:
+        description: 'UE Version to build (select "all" to build all versions)'
+        required: true
+        type: choice
+        options:
+          - 'all'
+          - '5.3'
+          - '5.4'
+          - '5.5'
+          - '5.6'
+        default: 'all'
   push:
     tags:
       - 'v*'
@@ -17,7 +29,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ue_version: ['5.3','5.4','5.5','5.6']
+        ue_version: ${{ 
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.ue_version != 'all') 
+          && fromJSON(format('["{0}"]', github.event.inputs.ue_version))
+          || fromJSON('["5.3","5.4","5.5","5.6"]') 
+        }}
     env:
       UE_VERSION: ${{ matrix.ue_version }}
     
@@ -232,11 +248,19 @@ jobs:
       if: always()
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
+        $trigger_info = ""
+        if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          $selected_version = "${{ github.event.inputs.ue_version }}"
+          $trigger_info = "- **Trigger**: Manual (Selected: $selected_version)`n"
+        } else {
+          $trigger_info = "- **Trigger**: Tag push`n"
+        }
+        
         $summary = @"
         ## Build Completed - UE ${{ env.UE_VERSION }}
         
         ### Build Information
-        - **Version**: ${{ env.VERSION_TAG }}
+        $trigger_info- **Version**: ${{ env.VERSION_TAG }}
         - **UE Version**: ${{ env.UE_VERSION }}
         - **Build Duration**: ${{ env.BUILD_DURATION }}
         - **Package Size**: ${{ env.PACKAGE_SIZE_MB }} MB

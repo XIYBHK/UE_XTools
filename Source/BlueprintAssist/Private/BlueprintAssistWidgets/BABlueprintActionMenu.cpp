@@ -313,7 +313,8 @@ void SBABlueprintActionMenu::SelectItem(TSharedPtr<FBAActionMenuItem> Item)
 		return;
 	}
 
-	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
+	const FVector2D PasteLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
 	UEdGraphPin* Pin = bUseSelectedPin ? GraphHandler->GetSelectedPin() : nullptr;
 	Item->Action->PerformAction(GraphHandler->GetFocusedEdGraph(), Pin, SpawnLocation);
 }

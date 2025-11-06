@@ -198,8 +198,10 @@ void FBAGraphActions::OnOpenContextMenu()
 		return;
 	}
 
-	const FVector2D MenuLocation = FSlateApplication::Get().GetCursorPos();
-	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
+	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+	const FBAVector2 MenuLocation(CursorPos.X, CursorPos.Y);
+	const FVector2D PasteLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
 
 	GraphHandler->SetNodeToReplace(nullptr, nullptr);
 

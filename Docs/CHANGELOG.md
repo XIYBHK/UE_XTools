@@ -5,10 +5,11 @@
 **主要更新**：
 - 🔧 修复 UE 5.6 完整兼容性（五轮迭代，最终采用官方优雅方案）
 - 🔧 修复 BlueprintAssist 模块中 FBAMetaData 类型识别问题
-- 🔧 修复所有 Slate API 调用的 FVector2D/FVector2f 转换兼容性问题
+- 🔧 修复所有 Slate API 调用的 FVector2D/FVector2f 转换兼容性问题（包含显式类型转换）
 - ✅ 验证所有 UE 版本（5.3-5.6）编译成功
 - 📦 遵循 UE 最佳实践：一份代码编译多版本
 - ✨ 采用类型别名方案，替代 `reinterpret_cast`，更安全更清晰
+- 🚀 CI/CD 改进：支持单独编译指定版本或编译所有版本
 
 ### 🔧 BlueprintAssist 模块补充修复
 
@@ -37,45 +38,126 @@ error C4430: 缺少类型说明符 - 假定为 int
 **影响文件**：
 - `Source/BlueprintAssist/Public/BlueprintAssistUtils.h`
 
-#### 问题2：FVector2D/FVector2f API 转换
+#### 问题2：FVector2D/FVector2f API 转换（包含类型转换修复）
 **症状**：
 ```
-warning C4996: 'SGraphEditor::GetPasteLocation': Slate positions are represented in floats. Please use the function returning FVector2f.
-warning C4996: 'FEdGraphSchemaAction::PerformAction': Use the version accepting FVector2f
+warning C4996: 'SGraphEditor::GetPasteLocation': Slate positions are represented in floats.
+error C2440: 无法从 FVector2D 转换为 UE::Math::TVector2<float>
+error C2664: 无法将参数从 const FVector2D 转换为 const FBAVector2&
 ```
 
 **原因**：
 - UE 5.6 中 Slate API 从 `FVector2D` (double) 改为 `FVector2f` (float)
-- 包括 `SGraphEditor::GetPasteLocation()` 返回类型
-- 以及 `FEdGraphSchemaAction::PerformAction()` 参数类型
+- 但某些API（如 `GetPasteLocation()`, `GetCursorPos()`）仍返回 `FVector2D`
+- 需要显式转换为 `FBAVector2` (在5.6中是 `FVector2f`)
+- `FMath::ClosestPointOnSegment2D()` 在5.6返回 `FVector2f` 而非 `FVector2D`
 
-**修复**：
+**修复方案1：BlueprintAssist 模块 - 显式类型转换**
 ```cpp
 // 使用 FBAVector2 类型别名实现跨版本兼容
 // BlueprintAssistGlobals.h 中定义：
 // UE 5.6+: using FBAVector2 = FVector2f;
 // UE 5.5-: using FBAVector2 = FVector2D;
 
-// BABlueprintActionMenu.cpp
-const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
+// BABlueprintActionMenu.cpp - 转换 GetPasteLocation 返回值
+const FVector2D PasteLocation = GraphEditor->GetPasteLocation();
+const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);  // 显式转换
 Item->Action->PerformAction(GraphHandler->GetFocusedEdGraph(), Pin, SpawnLocation);
 
-// BlueprintAssistGraphActions.h/cpp
+// BlueprintAssistGraphActions.cpp - 转换 GetCursorPos 返回值
+const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+const FBAVector2 MenuLocation(CursorPos.X, CursorPos.Y);  // 显式转换
+const FVector2D PasteLocation = GraphEditor->GetPasteLocation();
+const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
+
+OpenContextMenu(MenuLocation, SpawnLocation);  // 现在类型匹配
+
+// BlueprintAssistGraphActions.h/cpp - 函数签名统一使用 FBAVector2
 static void OpenContextMenu(const FBAVector2& MenuLocation, const FBAVector2& NodeSpawnPosition);
 static void OpenContextMenuFromPin(UEdGraphPin* Pin, const FBAVector2& MenuLocation, const FBAVector2& NodeLocation);
 ```
+
+**修复方案2：ElectronicNodes 模块 - FMath API 返回值转换**
+```cpp
+// ENConnectionDrawingPolicy.cpp
+#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
+    ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+	// UE 5.6: FMath::ClosestPointOnSegment2D 返回 FVector2f，需要转换回 FVector2D
+	const FVector2f ClosestPointF = FMath::ClosestPointOnSegment2D(
+		FVector2f(LocalMousePosition), FVector2f(Start), FVector2f(End));
+	const FVector2D TemporaryPoint(ClosestPointF.X, ClosestPointF.Y);  // 显式转换
+#else
+	const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(
+		LocalMousePosition, Start, End);
+#endif
+```
+
+**UE 最佳实践 - 类型转换原则**：
+1. **无隐式转换时使用构造函数**：`FVector2f` 和 `FVector2D` 之间没有隐式转换
+2. **通过构造函数显式转换**：`FBAVector2(x, y)` 在各版本都有效
+3. **保持中间变量类型正确**：接收API返回值时使用原始类型，再转换
+4. **避免 reinterpret_cast**：使用类型安全的构造函数转换
 
 **影响文件**：
 - `Source/BlueprintAssist/Private/BlueprintAssistWidgets/BABlueprintActionMenu.cpp`
 - `Source/BlueprintAssist/Public/BlueprintAssistActions/BlueprintAssistGraphActions.h`
 - `Source/BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistGraphActions.cpp`
 - `Source/BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistNodeActions.cpp`
+- `Source/ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp`
 
 ### ✅ 最终验证结果
 - **ElectronicNodes 模块**：已有正确的 FVector2D/FVector2f 转换处理（ENConnectionDrawingPolicy.cpp）
 - **MapExtensionsLibrary 模块**：已有正确的 ElementSize 弃用警告抑制
-- **BlueprintAssist 模块**：完成类型别名引入和 Slate API 转换
+- **BlueprintAssist 模块**：完成类型别名引入和 Slate API 转换（包含显式类型转换）
 - **所有模块**：类型别名方案统一应用，确保跨版本兼容
+
+### 🚀 CI/CD 工作流改进
+
+**新增功能**：灵活的版本编译选项
+
+**改进前**：
+- 只能通过 tag push 触发编译所有版本
+- 无法单独测试某个版本的编译
+
+**改进后**：
+```yaml
+# 支持手动触发并选择版本
+workflow_dispatch:
+  inputs:
+    ue_version:
+      description: 'UE Version to build (select "all" to build all versions)'
+      type: choice
+      options:
+        - 'all'      # 编译所有版本 (5.3, 5.4, 5.5, 5.6)
+        - '5.3'      # 只编译 UE 5.3
+        - '5.4'      # 只编译 UE 5.4
+        - '5.5'      # 只编译 UE 5.5
+        - '5.6'      # 只编译 UE 5.6
+      default: 'all'
+```
+
+**使用场景**：
+1. **快速验证单版本**：修复某个版本特定问题后，只测试该版本
+2. **完整发布**：选择 "all" 编译所有版本
+3. **节省资源**：开发调试时只编译需要的版本
+
+**智能 Matrix 策略**：
+```yaml
+matrix:
+  ue_version: ${{ 
+    (github.event_name == 'workflow_dispatch' && github.event.inputs.ue_version != 'all') 
+    && fromJSON(format('["{0}"]', github.event.inputs.ue_version))
+    || fromJSON('["5.3","5.4","5.5","5.6"]') 
+  }}
+```
+
+**逻辑说明**：
+- 手动触发 + 选择特定版本 → 只编译该版本
+- 手动触发 + 选择 "all" → 编译所有版本
+- Tag push 触发 → 编译所有版本
+
+**影响文件**：
+- `.github/workflows/build-plugin-optimized.yml`
 
 ### 🔧 UE 5.6 兼容性修复（五轮迭代）
 

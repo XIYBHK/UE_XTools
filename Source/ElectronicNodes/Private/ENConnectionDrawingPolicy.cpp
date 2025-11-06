@@ -627,8 +627,9 @@ void FENConnectionDrawingPolicy::DrawDebugPoint(const FVector2D& Position, FLine
 void FENConnectionDrawingPolicy::ENComputeClosestPoint(const FVector2D& Start, const FVector2D& End)
 {
 #if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-	// UE 5.6: 显式转换为 FVector2f 以匹配模板参数
-	const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(FVector2f(LocalMousePosition), FVector2f(Start), FVector2f(End));
+	// UE 5.6: FMath::ClosestPointOnSegment2D 返回 FVector2f，需要转换回 FVector2D
+	const FVector2f ClosestPointF = FMath::ClosestPointOnSegment2D(FVector2f(LocalMousePosition), FVector2f(Start), FVector2f(End));
+	const FVector2D TemporaryPoint(ClosestPointF.X, ClosestPointF.Y);
 #else
 	const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(LocalMousePosition, Start, End);
 #endif
@@ -660,8 +661,9 @@ void FENConnectionDrawingPolicy::ENComputeClosestPointDefault(const FVector2D& S
 		const FVector2D PointOnSpline2 = FMath::CubicInterp(Start, StartTangent * Tangent, End, EndTangent * Tangent, TestAlpha + StepInterval);
 
 #if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-		// UE 5.6: 显式转换为 FVector2f 以匹配模板参数
-		const FVector2D ClosestPointToSegment = FMath::ClosestPointOnSegment2D(FVector2f(LocalMousePosition), FVector2f(PointOnSpline1), FVector2f(PointOnSpline2));
+		// UE 5.6: FMath::ClosestPointOnSegment2D 返回 FVector2f，需要转换回 FVector2D
+		const FVector2f ClosestPointF = FMath::ClosestPointOnSegment2D(FVector2f(LocalMousePosition), FVector2f(PointOnSpline1), FVector2f(PointOnSpline2));
+		const FVector2D ClosestPointToSegment(ClosestPointF.X, ClosestPointF.Y);
 #else
 		const FVector2D ClosestPointToSegment = FMath::ClosestPointOnSegment2D(LocalMousePosition, PointOnSpline1, PointOnSpline2);
 #endif
