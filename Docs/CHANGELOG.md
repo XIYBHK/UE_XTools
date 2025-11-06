@@ -1,5 +1,33 @@
 # 2025-11-06
 
+## 🔌 集成第三方编辑器插件
+
+### AutoSizeComments 集成
+
+**来源**：fpwong 开源项目（个人使用集成）
+
+**功能**：蓝图编辑器注释框自动调整大小
+
+**适配内容**：
+1. 添加模块到 `XTools.uplugin`（Editor 类型）
+2. 更新 `AutoSizeComments.Build.cs`
+   - 添加版权和集成说明注释
+   - 适配 UE 5.0+ EditorStyle 弃用（条件编译）
+3. 保持原有版本宏系统（ASC_UE_VERSION_OR_LATER）
+4. 无需IWYU修复（模块不涉及引擎碰撞/物理类型）
+
+**文件变更**：
+- `XTools.uplugin` - 添加 AutoSizeComments 模块
+- `Source/AutoSizeComments/AutoSizeComments.Build.cs` - 版权声明 + UE5兼容性
+- `Source/AutoSizeComments/**` - 原始代码未修改
+
+**注意事项**：
+- 仅供个人使用，不可公开分享
+- 原插件许可证：MIT License（假定）
+- 原作者保留所有权利
+
+---
+
 ## 🔧 版本宏系统重构
 
 ### 问题背景

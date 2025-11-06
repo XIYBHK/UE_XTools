@@ -172,6 +172,14 @@
 				"Android",
 				"iOS"
 			]
+		},
+		{
+			"Name": "AutoSizeComments",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
 		}
 	],
 	"Plugins": [
