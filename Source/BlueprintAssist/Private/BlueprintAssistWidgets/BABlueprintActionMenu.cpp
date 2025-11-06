@@ -4,6 +4,7 @@
 
 #if BA_UE_VERSION_OR_LATER(5, 1)
 
+#include "BlueprintAssistGlobals.h"
 #include "BlueprintActionMenuBuilder.h"
 #include "BlueprintActionMenuItem.h"
 #include "BlueprintActionMenuUtils.h"
@@ -312,7 +313,7 @@ void SBABlueprintActionMenu::SelectItem(TSharedPtr<FBAActionMenuItem> Item)
 		return;
 	}
 
-	const FVector2D SpawnLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
 	UEdGraphPin* Pin = bUseSelectedPin ? GraphHandler->GetSelectedPin() : nullptr;
 	Item->Action->PerformAction(GraphHandler->GetFocusedEdGraph(), Pin, SpawnLocation);
 }

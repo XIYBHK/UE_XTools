@@ -790,7 +790,7 @@ void FBANodeActions::OnGetContextMenuActions(const bool bUsePin)
 
 	TSharedPtr<SGraphEditor> GraphEditor = GraphHandler->GetGraphEditor();
 	const FVector2D MenuLocation = FSlateApplication::Get().GetCursorPos();
-	const FVector2D SpawnLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
 
 	UEdGraphNode* Node = GraphHandler->GetSelectedNode();
 
@@ -823,7 +823,7 @@ void FBANodeActions::ReplaceNodeWith()
 	}
 
 	const FVector2D MenuLocation = FSlateApplication::Get().GetCursorPos();
-	const FVector2D SpawnLocation(SelectedNode->NodePosX, SelectedNode->NodePosY);
+	const FBAVector2 SpawnLocation(SelectedNode->NodePosX, SelectedNode->NodePosY);
 
 	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "ReplaceNodeWith", "Replace Node With")));
 

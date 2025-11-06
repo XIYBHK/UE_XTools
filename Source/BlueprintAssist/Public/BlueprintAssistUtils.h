@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BlueprintAssistGlobals.h"
 #include "EdGraph/EdGraphSchema.h" // EGraphType, EEdGraphPinDirection
 #include "Engine/Blueprint.h" // FBPVariableDescription
 #include "BlueprintAssistUtils.generated.h"
@@ -25,10 +26,6 @@ class FEdGraphFormatter;
 class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
-
-// UE 5.6+ 兼容性：前向声明（类型别名在 BlueprintAssistGlobals.h 中定义）
-class UMetaData;
-class FMetaData;
 
 #define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
 #define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)

@@ -4,9 +4,78 @@
 
 **主要更新**：
 - 🔧 修复 UE 5.6 完整兼容性（五轮迭代，最终采用官方优雅方案）
+- 🔧 修复 BlueprintAssist 模块中 FBAMetaData 类型识别问题
+- 🔧 修复所有 Slate API 调用的 FVector2D/FVector2f 转换兼容性问题
 - ✅ 验证所有 UE 版本（5.3-5.6）编译成功
 - 📦 遵循 UE 最佳实践：一份代码编译多版本
 - ✨ 采用类型别名方案，替代 `reinterpret_cast`，更安全更清晰
+
+### 🔧 BlueprintAssist 模块补充修复
+
+#### 问题1：FBAMetaData 类型无法识别
+**症状**：
+```
+error C2143: 语法错误: 缺少 ';' 在 '*' 前面
+error C4430: 缺少类型说明符 - 假定为 int
+```
+
+**原因**：
+- `BlueprintAssistUtils.h` 声明了使用 `FBAMetaData*` 的函数
+- 但头文件未包含定义类型别名的 `BlueprintAssistGlobals.h`
+- 导致编译器无法识别 `FBAMetaData` 类型
+
+**修复**：
+```cpp
+// BlueprintAssistUtils.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "BlueprintAssistGlobals.h"  // 添加此行以引入类型别名
+#include "EdGraph/EdGraphSchema.h"
+```
+
+**影响文件**：
+- `Source/BlueprintAssist/Public/BlueprintAssistUtils.h`
+
+#### 问题2：FVector2D/FVector2f API 转换
+**症状**：
+```
+warning C4996: 'SGraphEditor::GetPasteLocation': Slate positions are represented in floats. Please use the function returning FVector2f.
+warning C4996: 'FEdGraphSchemaAction::PerformAction': Use the version accepting FVector2f
+```
+
+**原因**：
+- UE 5.6 中 Slate API 从 `FVector2D` (double) 改为 `FVector2f` (float)
+- 包括 `SGraphEditor::GetPasteLocation()` 返回类型
+- 以及 `FEdGraphSchemaAction::PerformAction()` 参数类型
+
+**修复**：
+```cpp
+// 使用 FBAVector2 类型别名实现跨版本兼容
+// BlueprintAssistGlobals.h 中定义：
+// UE 5.6+: using FBAVector2 = FVector2f;
+// UE 5.5-: using FBAVector2 = FVector2D;
+
+// BABlueprintActionMenu.cpp
+const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
+Item->Action->PerformAction(GraphHandler->GetFocusedEdGraph(), Pin, SpawnLocation);
+
+// BlueprintAssistGraphActions.h/cpp
+static void OpenContextMenu(const FBAVector2& MenuLocation, const FBAVector2& NodeSpawnPosition);
+static void OpenContextMenuFromPin(UEdGraphPin* Pin, const FBAVector2& MenuLocation, const FBAVector2& NodeLocation);
+```
+
+**影响文件**：
+- `Source/BlueprintAssist/Private/BlueprintAssistWidgets/BABlueprintActionMenu.cpp`
+- `Source/BlueprintAssist/Public/BlueprintAssistActions/BlueprintAssistGraphActions.h`
+- `Source/BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistGraphActions.cpp`
+- `Source/BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistNodeActions.cpp`
+
+### ✅ 最终验证结果
+- **ElectronicNodes 模块**：已有正确的 FVector2D/FVector2f 转换处理（ENConnectionDrawingPolicy.cpp）
+- **MapExtensionsLibrary 模块**：已有正确的 ElementSize 弃用警告抑制
+- **BlueprintAssist 模块**：完成类型别名引入和 Slate API 转换
+- **所有模块**：类型别名方案统一应用，确保跨版本兼容
 
 ### 🔧 UE 5.6 兼容性修复（五轮迭代）
 

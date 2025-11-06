@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistTabActions.h"
 
 class UEdGraphPin;
@@ -18,8 +19,8 @@ class BLUEPRINTASSIST_API FBAGraphActions final : public FBAGraphActionsBase
 public:
 	virtual void Init() override;
 
-	static void OpenContextMenu(const FVector2D& MenuLocation, const FVector2D& NodeSpawnPosition);
-	static void OpenContextMenuFromPin(UEdGraphPin* Pin, const FVector2D& MenuLocation, const FVector2D& NodeLocation);
+	static void OpenContextMenu(const FBAVector2& MenuLocation, const FBAVector2& NodeSpawnPosition);
+	static void OpenContextMenuFromPin(UEdGraphPin* Pin, const FBAVector2& MenuLocation, const FBAVector2& NodeLocation);
 
 	// Graph commands
 	TSharedPtr<FUICommandList> GraphCommands;

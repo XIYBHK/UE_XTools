@@ -1,6 +1,7 @@
 ﻿#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
 
 #include "BlueprintAssistCommands.h"
+#include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings_Advanced.h"
 #include "EdGraphSchema_K2_Actions.h"
@@ -84,7 +85,7 @@ void FBAGraphActions::OnFormatAllEvents() const
 	}
 }
 
-void FBAGraphActions::OpenContextMenu(const FVector2D& MenuLocation, const FVector2D& NodeSpawnPosition)
+void FBAGraphActions::OpenContextMenu(const FBAVector2& MenuLocation, const FBAVector2& NodeSpawnPosition)
 {
 	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
 	if (!GraphHandler)
@@ -139,7 +140,7 @@ void FBAGraphActions::OpenContextMenu(const FVector2D& MenuLocation, const FVect
 	}
 }
 
-void FBAGraphActions::OpenContextMenuFromPin(UEdGraphPin* Pin, const FVector2D& MenuLocation, const FVector2D& NodeLocation)
+void FBAGraphActions::OpenContextMenuFromPin(UEdGraphPin* Pin, const FBAVector2& MenuLocation, const FBAVector2& NodeLocation)
 {
 	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
 	if (!GraphHandler)
@@ -198,7 +199,7 @@ void FBAGraphActions::OnOpenContextMenu()
 	}
 
 	const FVector2D MenuLocation = FSlateApplication::Get().GetCursorPos();
-	const FVector2D SpawnLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
 
 	GraphHandler->SetNodeToReplace(nullptr, nullptr);
 
