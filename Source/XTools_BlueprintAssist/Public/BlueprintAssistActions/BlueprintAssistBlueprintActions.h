@@ -1,0 +1,30 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "BlueprintAssistActionsBase.h"
+
+class FUICommandList;
+
+class XTOOLS_BLUEPRINTASSIST_API FBABlueprintActionsBase : public FBAActionsBase
+{
+public:
+	bool HasOpenBlueprintEditor() const;
+};
+
+class XTOOLS_BLUEPRINTASSIST_API FBABlueprintActions final : public FBABlueprintActionsBase
+{
+public:
+	virtual void Init() override;
+
+	TSharedPtr<FUICommandList> BlueprintCommands;
+
+	void OpenVariableSelectorMenu();
+
+	void OpenCreateSymbolMenu();
+
+	void OpenGoToSymbolMenu();
+
+	void GoBackInTabHistory();
+
+	void GoForwardInTabHistory();
+};

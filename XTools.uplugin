@@ -174,7 +174,7 @@
 			]
 		},
 		{
-			"Name": "AutoSizeComments",
+			"Name": "XTools_AutoSizeComments",
 			"Type": "Editor",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
@@ -182,7 +182,7 @@
 			]
 		},
 		{
-			"Name": "BlueprintAssist",
+			"Name": "XTools_BlueprintAssist",
 			"Type": "Editor",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
@@ -190,7 +190,7 @@
 			]
 		},
 		{
-			"Name": "ElectronicNodes",
+			"Name": "XTools_ElectronicNodes",
 			"Type": "Editor",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
