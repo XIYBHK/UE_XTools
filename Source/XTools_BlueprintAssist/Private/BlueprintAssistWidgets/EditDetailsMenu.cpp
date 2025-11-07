@@ -29,7 +29,7 @@ void SEditDetailsMenu::Construct(const FArguments& InArgs)
 		.OnSelectItem(this, &SEditDetailsMenu::SelectItem)
 		.OnMarkActiveSuggestion(this, &SEditDetailsMenu::MarkActiveSuggestion)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Edit Details"))
+		.MenuTitle(FString("编辑详细信息"))
 	];
 }
 
@@ -194,3 +194,4 @@ void SEditDetailsMenu::HighlightProperty(FPropertyPath Property)
 		DetailView->HighlightProperty(Property);
 	}
 }
+

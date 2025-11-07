@@ -20,7 +20,7 @@ void SBATabSwitcher::Construct(
 		.OnMarkActiveSuggestion(this, &SBATabSwitcher::MarkActiveSuggestion)
 		.OnSelectItem(this, &SBATabSwitcher::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Tab Switcher"))
+		.MenuTitle(FString("标签切换器"))
 	];
 }
 
@@ -121,3 +121,4 @@ FString FBATabSwitcherItem::ToString() const
 {
 	return Tab->GetTabLabel().ToString();
 }
+

@@ -186,7 +186,7 @@ void SBABlueprintActionMenu::Construct(const FArguments& InArgs)
 				.OnGenerateRow(this, &SBABlueprintActionMenu::CreateItemWidget)
 				.OnSelectItem(this, &SBABlueprintActionMenu::SelectItem)
 				.WidgetSize(GetWidgetSize())
-				.MenuTitle(FString("Blueprint Action Menu"))
+				.MenuTitle(FString("蓝图操作菜单"))
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[

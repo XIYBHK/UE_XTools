@@ -25,7 +25,7 @@ void SGoToSymbolMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SGoToSymbolMenu::CreateItemWidget)
 		.OnSelectItem(this, &SGoToSymbolMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Go To Symbol"))
+		.MenuTitle(FString("转到符号"))
 	];
 }
 
@@ -183,3 +183,4 @@ FString FGoToSymbolStruct::GetTypeDescription() const
 		? FString("Event")
 		: FBAUtils::GraphTypeToString(FBAUtils::GetGraphType(Graph));
 }
+

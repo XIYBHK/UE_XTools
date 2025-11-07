@@ -299,7 +299,7 @@ void SOpenWindowMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SOpenWindowMenu::CreateItemWidget)
 		.OnSelectItem(this, &SOpenWindowMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Open Window"))
+		.MenuTitle(FString("打开窗口"))
 	];
 }
 
@@ -944,3 +944,4 @@ void SOpenWindowMenu::SelectItem(TSharedPtr<FOpenWindowItem_Base> Item)
 {
 	Item->SelectItem();
 }
+

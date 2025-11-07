@@ -65,7 +65,7 @@ void SAddSymbolMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SAddSymbolMenu::CreateItemWidget)
 		.OnSelectItem(this, &SAddSymbolMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Add Symbol"))
+		.MenuTitle(FString("添加符号"))
 	];
 }
 
@@ -171,3 +171,4 @@ void SAddSymbolMenu::SelectItem(TSharedPtr<FAddSymbolStruct> Item)
 		FBAUtils::InteractWithWidget(Item->Widget);
 	}
 }
+

@@ -22,7 +22,7 @@ void SFocusSearchBoxMenu::Construct(
 		.OnGenerateRow(this, &SFocusSearchBoxMenu::CreateItemWidget)
 		.OnSelectItem(this, &SFocusSearchBoxMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Focus Search Box"))
+		.MenuTitle(FString("聚焦搜索框"))
 	];
 }
 
@@ -130,3 +130,4 @@ FString FSearchBoxStruct::GetTabLabel() const
 {
 	return DockTab->GetTabLabel().ToString();
 }
+

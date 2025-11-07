@@ -20,7 +20,7 @@ void SBAOpenFileMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SBAOpenFileMenu::CreateItemWidget)
 		.OnSelectItem(this, &SBAOpenFileMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Blueprint Assist Hotkeys"))
+		.MenuTitle(FString("蓝图辅助快捷键"))
 	];
 }
 
@@ -72,3 +72,4 @@ void SBAOpenFileMenu::SelectItem(TSharedPtr<FBAFileItem> Item)
 		GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Item->FilePath);
 	}
 }
+

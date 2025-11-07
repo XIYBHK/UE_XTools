@@ -20,7 +20,7 @@ FBAHotkeyItem::FBAHotkeyItem(TSharedPtr<FUICommandInfo> Command)
 
 	if (CommandChord.IsEmptyOrWhitespace())
 	{
-		CommandChord = FText::FromString("Unbound");
+		CommandChord = FText::FromString(TEXT("未绑定"));
 	}
 
 	CommandDesc = Command->GetDescription();
@@ -37,7 +37,7 @@ void SBAHotkeyMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SBAHotkeyMenu::CreateItemWidget)
 		// .OnSelectItem(this, &SBAHotkeyMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Blueprint Assist Hotkeys"))
+		.MenuTitle(FString(TEXT("蓝图辅助快捷键")))
 		.CloseWhenSelecting(false)
 	];
 }

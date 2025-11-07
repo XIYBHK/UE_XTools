@@ -41,7 +41,7 @@ void SVariableSelectorMenu::Construct(const FArguments& InArgs)
 		.OnSelectItem(this, &SVariableSelectorMenu::SelectItem)
 		.OnMarkActiveSuggestion(this, &SVariableSelectorMenu::MarkActiveSuggestion)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("Select Variable"))
+		.MenuTitle(FString("选择变量"))
 	];
 }
 
@@ -335,3 +335,4 @@ FString FVariableSelectorStruct::ToString() const
 {
 	return DisplayName;
 }
+

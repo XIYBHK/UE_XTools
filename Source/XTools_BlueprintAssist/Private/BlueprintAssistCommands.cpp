@@ -10,480 +10,480 @@ void FBACommandsImpl::RegisterCommands()
 {
 	UI_COMMAND(
 		OpenContextMenu,
-		"Open Blueprint Creation Menu",
-		"Opens the blueprint creation menu for the selected pin",
+		"打开蓝图创建菜单",
+		"为选中的引脚打开蓝图创建菜单",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::Tab));
 
 	UI_COMMAND(
 		ReplaceNodeWith,
-		"Replace Node With",
-		"Opens the blueprint creation menu to replace the current node",
+		"替换节点",
+		"打开蓝图创建菜单以替换当前节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::H));
 
 	UI_COMMAND(
 		RenameSelectedNode,
-		"Rename Selected Node",
-		"Rename the selected variable, macro or function in a graph",
+		"重命名选中节点",
+		"重命名图表中选中的变量、宏或函数",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::F2));
 
 	UI_COMMAND(
 		EditNodeComment,
-		"Edit Node Comment",
-		"Edit the comment bubble text for the selected node",
+		"编辑节点注释",
+		"编辑选中节点的注释气泡文本",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::F2));
 
 	UI_COMMAND(
 		FormatNodes,
-		"Format Nodes",
-		"Automatically positions all connected nodes",
+		"格式化节点",
+		"自动定位所有连接的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::F));
 
 	UI_COMMAND(
 		FormatNodes_Selectively,
-		"Format nodes selectively",
-		"Only formats the selected nodes. If only 1 node is selected, formats the nodes to the right",
+		"选择性格式化节点",
+		"仅格式化选中的节点。如果只选中1个节点，则格式化右侧节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::F));
 
 	UI_COMMAND(
 		FormatNodes_Helixing,
-		"Format Nodes using Helixing",
-		"Forces helixing setting and formats nodes",
+		"使用螺旋模式格式化节点",
+		"强制使用螺旋设置并格式化节点",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 
 	UI_COMMAND(
 		FormatNodes_LHS,
-		"Format Nodes using LHS",
-		"Forces LHS setting and formats nodes",
+		"使用LHS模式格式化节点",
+		"强制使用LHS设置并格式化节点",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 
 	UI_COMMAND(
 		DeleteAndLink,
-		"Delete and Keep Links",
-		"Deletes the node in a chain A-B-C and links A-C",
+		"删除节点并保持链接",
+		"删除链A-B-C中的节点并链接A-C",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::Delete));
 	
 	UI_COMMAND(
 		CutAndLink,
-		"Cut and Keep Links",
-		"Cuts the node in a chain A-B-C and links A-C",
+		"剪切节点并保持链接",
+		"剪切链A-B-C中的节点并链接A-C",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::X));
 
 	UI_COMMAND(
 		LinkNodesBetweenWires,
-		"Link nodes between wires",
-		"Inserts the selected nodes between the highlighted wire",
+		"在连线之间插入节点",
+		"将选中的节点插入到高亮的连线之间",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Q));
 
 	UI_COMMAND(
 		ConnectUnlinkedPins,
-		"Connect unlinked pins",
-		"Attempts to connect any unlinked pins to any nearby nodes",
+		"连接未连接的引脚",
+		"尝试将任何未连接的引脚连接到附近的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::Q));
 
 	UI_COMMAND(
 		LinkToHoveredPin,
-		"Link To Hovered Pin",
-		"Links the selected pin to the hovered pin",
+		"链接到悬停的引脚",
+		"将选中的引脚链接到悬停的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::Q));
 
 	UI_COMMAND(
 		SplitPin,
-		"Split current pin",
-		"Split the selected or hovered pin",
+		"拆分当前引脚",
+		"拆分选中或悬停的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::Q));
 
 	UI_COMMAND(
 		RecombinePin,
-		"Recombine pin",
-		"Recombine the selected or hovered pin",
+		"重组引脚",
+		"重组选中或悬停的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt | EModifierKey::Control, EKeys::Q));
 
 	UI_COMMAND(
 		FormatAllEvents,
-		"Format All Events",
-		"Repositions all custom events in the graph",
+		"格式化所有事件",
+		"重新定位图表中的所有自定义事件",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::R));
 
 	UI_COMMAND(
 		ToggleContext,
-		"Toggle Context",
-		"Toggles the current context (BP creation menu, WBP IsVariable, BP selected node purity)",
+		"切换上下文",
+		"切换当前上下文(蓝图创建菜单、WBP的IsVariable、蓝图节点纯度)",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::T));
 
 	UI_COMMAND(
 		SelectNodeUp,
-		"Select Node Up",
-		"Selects a node above the selected one",
+		"选择上方节点",
+		"选择当前节点上方的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Up));
 	UI_COMMAND(
 		SelectNodeDown,
-		"Select Node Down",
-		"Selects a node below the selected one",
+		"选择下方节点",
+		"选择当前节点下方的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Down));
 	UI_COMMAND(
 		SelectNodeLeft,
-		"Select Node Left",
-		"Selects a node left to the selected one",
+		"选择左侧节点",
+		"选择当前节点左侧的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Left));
 	UI_COMMAND(
 		SelectNodeRight,
-		"Select Node Right",
-		"Selects a node right to the selected one",
+		"选择右侧节点",
+		"选择当前节点右侧的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Right));
 
 	UI_COMMAND(
 		ExpandNodeSelection,
-		"Expand Node Selection",
-		"Expand the selection of nodes to the next logical block",
+		"扩展节点选择",
+		"将节点选择扩展到下一个逻辑块",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Quote));
 
 	UI_COMMAND(
 		ExpandSelectionLeft,
-		"Expand Selection Left",
-		"Expand the selection of nodes to all nodes to the left of the hovered node",
+		"向左扩展选择",
+		"将节点选择扩展到悬停节点左侧的所有节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::Z));
 
 	UI_COMMAND(
 		ExpandSelectionRight,
-		"Expand Selection Right",
-		"Expand the selection of nodes to all nodes to the left of the hovered node",
+		"向右扩展选择",
+		"将节点选择扩展到悬停节点左侧的所有节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::X));
 
 	UI_COMMAND(
 		ShiftCameraUp,
-		"Shift Camera Up",
-		"Shifts the camera up",
+		"向上移动相机",
+		"向上移动相机",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::Up));
 	UI_COMMAND(
 		ShiftCameraDown,
-		"Shift Camera Down",
-		"Shifts the camera down",
+		"向下移动相机",
+		"向下移动相机",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::Down));
 	UI_COMMAND(
 		ShiftCameraLeft,
-		"Shift Camera Left",
-		"Shifts the camera left",
+		"向左移动相机",
+		"向左移动相机",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::Left));
 	UI_COMMAND(
 		ShiftCameraRight,
-		"Shift Camera Right",
-		"Shifts the camera right",
+		"向右移动相机",
+		"向右移动相机",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Shift, EKeys::Right));
 
 	UI_COMMAND(
 		SwapNodeLeft,
-		"Swap Node Left",
-		"Swaps node with the linked node to the left",
+		"与左侧节点交换",
+		"与左侧链接的节点交换位置",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::Left));
 
 	UI_COMMAND(
 		SwapNodeRight,
-		"Swap Node Right",
-		"Swaps node with the linked node to the right",
+		"与右侧节点交换",
+		"与右侧链接的节点交换位置",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::Right));
 
 	UI_COMMAND(
 		SwapConnectionUp,
-		"Swap pin connection up",
-		"Swap links or values with the next matching pin above",
+		"向上交换引脚连接",
+		"与上方匹配的引脚交换连接或值",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::Up));
 	UI_COMMAND(
 		SwapConnectionDown,
-		"Swap pin connection down",
-		"Swap links or values with the next matching pin below",
+		"向下交换引脚连接",
+		"与下方匹配的引脚交换连接或值",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::Down));
 
 	UI_COMMAND(
 		GoToInGraph,
-		"Go to symbol in graph",
-		"Go to a symbol in the current graph",
+		"转到图表中的符号",
+		"转到当前图表中的符号",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::G));
 
 	UI_COMMAND(
 		OpenWindow,
-		"Open Window",
-		"Opens the Open Window Menu",
+		"打开窗口",
+		"打开窗口菜单",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::K));
 
 	UI_COMMAND(
 		DuplicateNodeForEachLink,
-		"Duplicate Variable Node",
-		"Creates a copy of the node for each link",
+		"复制变量节点",
+		"为每个连接创建节点的副本",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::V));
 
 	UI_COMMAND(
 		MergeSelectedNodes,
-		"Merge Selected Nodes",
-		"Merges the selected nodes, keeping links",
+		"合并选中节点",
+		"合并选中的节点，保持连接",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt | EModifierKey::Shift, EKeys::M));
 
 	UI_COMMAND(
 		RefreshNodeSizes,
-		"Refresh node sizes",
-		"Recalculates the size of selected nodes (if no nodes are selected, all nodes are refreshed)",
+		"刷新节点大小",
+		"重新计算选中节点的大小(如果未选中节点，则刷新所有节点)",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::R));
 
 	UI_COMMAND(
 		EditSelectedPinValue,
-		"Edit selected pin value",
-		"Edit the value of the currently selected pin",
+		"编辑选中引脚值",
+		"编辑当前选中引脚的值",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::E));
 
 	UI_COMMAND(
 		DisconnectNodeExecution,
-		"Disconnect execution on selected node",
-		"Disconnect all execution pins on selected node",
+		"断开选中节点的执行连接",
+		"断开选中节点上的所有执行引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::D));
 
 	UI_COMMAND(
 		DisconnectPinLink,
-		"Disconnect pin link",
-		"Disconnect selected pin or hovered wire",
+		"断开引脚连接",
+		"断开选中的引脚或悬停的连线",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::D));
 
 	UI_COMMAND(
 		DisconnectAllNodeLinks,
-		"Disconnect links on selected node",
-		"Disconnect all links on selected node",
+		"断开选中节点的所有连接",
+		"断开选中节点上的所有连接",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt | EModifierKey::Shift, EKeys::D));
 
 	UI_COMMAND(
 		ZoomToNodeTree,
-		"Zoom to node tree",
-		"Zoom to fit all nodes connected to the currently selected node",
+		"缩放到节点树",
+		"缩放以适应当前选中节点连接的所有节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Equals));
 
 	UI_COMMAND(
 		GetContextMenuForPin,
-		"Get context menu actions for the selected pin",
-		"Gets the context menu actions for the currently selected pin",
+		"获取选中引脚的上下文菜单操作",
+		"获取当前选中引脚的上下文菜单操作",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::M));
 	UI_COMMAND(
 		GetContextMenuForNode,
-		"Get context menu actions for the selected node",
-		"Gets the context menu actions for the currently selected node",
+		"获取选中节点的上下文菜单操作",
+		"获取当前选中节点的上下文菜单操作",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::M));
 
 	UI_COMMAND(
 		SelectPinUp,
-		"Select Pin Up",
-		"Selects the pin above the currently selected pin",
+		"选择上方引脚",
+		"选择当前引脚上方的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::Up));
 	UI_COMMAND(
 		SelectPinDown,
-		"Select Pin Down",
-		"Selects the pin below the currently selected pin",
+		"选择下方引脚",
+		"选择当前引脚下方的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::Down));
 	UI_COMMAND(
 		SelectPinLeft,
-		"Select Pin Left",
-		"Selects the pin to the left of the currently selected pin",
+		"选择左侧引脚",
+		"选择当前引脚左侧的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::Left));
 	UI_COMMAND(
 		SelectPinRight,
-		"Select Pin Right",
-		"Selects the pin to the right of the currently selected pin",
+		"选择右侧引脚",
+		"选择当前引脚右侧的引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EKeys::Right));
 
 	UI_COMMAND(
 		FocusSearchBoxMenu,
-		"Search box menu",
-		"Opens a menu that allows you to focus a seach box in the current window",
+		"搜索框菜单",
+		"打开菜单以聚焦当前窗口中的搜索框",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Alt, EKeys::F));
 
 	UI_COMMAND(
 		VariableSelectorMenu,
-		"Variable selector menu",
-		"Opens a menu that allows you to select variables",
+		"变量选择器菜单",
+		"打开菜单以选择变量",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::G));
 
 	UI_COMMAND(
 		AddSymbolMenu,
-		"Create symbol menu",
-		"Opens a menu that allows you create a symbol",
+		"创建符号菜单",
+		"打开菜单以创建符号",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::A));
 
 	UI_COMMAND(
 		EditDetailsMenu,
-		"Edit details menu",
-		"Opens a menu that allows you to edit the current variable details",
+		"编辑详细信息菜单",
+		"打开菜单以编辑当前变量的详细信息",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::E));
 
 	UI_COMMAND(
 		LinkPinMenu,
-		"Link pin menu",
-		"Opens a menu that allows you to link to another pin on the graph",
+		"链接引脚菜单",
+		"打开菜单以链接到图表上的另一个引脚",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::L));
 
 	UI_COMMAND(
 		TabSwitcherMenu,
-		"Tab switcher menu",
-		"Opens a menu that allows you to switch tabs",
+		"标签切换菜单",
+		"打开菜单以切换标签",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::Tab));
 
 	UI_COMMAND(
 		ToggleNode,
-		"Toggle node(s)",
-		"Toggle selected nodes disabled state. Requires the setting 'Allow Explicit Impure Node Disabling' in Editor Preferences.",
+		"切换节点状态",
+		"切换选中节点的禁用状态。需要在编辑器首选项中启用\'允许显式禁用不纯节点\'设置。",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::Slash));
 
 	UI_COMMAND(
 		CreateRerouteNode,
-		"Create reroute node",
-		"Creates a reroute node from the currently selected pin (or selected reroute node)",
+		"创建重定向节点",
+		"从当前选中的引脚(或选中的重定向节点)创建重定向节点",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 
 	UI_COMMAND(
 		OpenBlueprintAssistHotkeySheet,
-		"Open blueprint assist hotkey sheet",
-		"Opens a menu displaying all the commands and hotkeys for the Blueprint Assist plugin",
+		"打开蓝图辅助快捷键表",
+		"打开菜单显示蓝图辅助插件的所有命令和快捷键",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::F1));
 
 	UI_COMMAND(
 		ToggleFullscreen,
-		"Toggle Fullscreen",
-		"Toggles fullscreen for the current window",
+		"切换全屏",
+		"切换当前窗口的全屏模式",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::Enter));
 
 	UI_COMMAND(
 		SwitchWorkflowMode,
-		"Switch workflow mode",
-		"Opens a menu which allows you to switch workflow mode",
+		"切换工作流模式",
+		"打开菜单以切换工作流模式",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::O));
 
 	UI_COMMAND(
 		OpenAssetCreationMenu,
-		"Open asset creation menu",
-		"Opens a menu which allows you to create a new asset",
+		"打开资产创建菜单",
+		"打开菜单以创建新资产",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt | EModifierKey::Control, EKeys::N));
 
 	UI_COMMAND(
 		FocusGraphPanel,
-		"Focus graph panel",
-		"Set keyboard focus to the graph panel if it is open",
+		"聚焦图表面板",
+		"如果图表面板已打开，则将键盘焦点设置到图表面板",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 
 	UI_COMMAND(
 		OpenBlueprintAssistDebugMenu,
-		"Open Blueprint Assist Debug Menu",
-		"Open the blueprint assist debug menu showing info about the asset editor, graph and more",
+		"打开蓝图辅助调试菜单",
+		"打开蓝图辅助调试菜单，显示资产编辑器、图表等信息",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift | EModifierKey::Alt, EKeys::F12));
 
 	UI_COMMAND(
 		FocusSearchBox,
-		"Focus search box",
-		"Give keyboard focus to the search box in the focused tab",
+		"聚焦搜索框",
+		"将键盘焦点设置到当前标签的搜索框",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control, EKeys::F));
 
 	UI_COMMAND(
 		GoToParentClassDefinition,
-		"Go to parent class definition",
-		"Navigate to the current asset's parent class in the Unreal or code editor",
+		"转到父类定义",
+		"在虚幻或代码编辑器中导航到当前资产的父类",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Control | EModifierKey::Shift, EKeys::B));
 
 	UI_COMMAND(
 		ToggleLockNode,
-		"Toggle Lock Node",
-		"Lock a node on the graph so it is ignored by the BlueprintAssist formatter",
+		"切换锁定节点",
+		"锁定图表上的节点，使其被蓝图辅助格式化工具忽略",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::L));
 
 	UI_COMMAND(
 		GroupNodes,
-		"Group Nodes",
-		"Group selected nodes on a graph so they move together",
+		"组合节点",
+		"组合图表上选中的节点，使它们一起移动",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::G));
 
 	UI_COMMAND(
 		UngroupNodes,
-		"Ungroup Nodes",
-		"Ungroup selected nodes on graph",
+		"取消组合节点",
+		"取消组合图表上选中的节点",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt | EModifierKey::Control, EKeys::G));
 
 	UI_COMMAND(
 		ToggleNodeAdvancedDisplay,
-		"Toggle Node Advanced Display",
-		"Toggle the advanced display for nodes to show hidden pins (mainly used for print string)",
+		"切换节点高级显示",
+		"切换节点的高级显示以显示隐藏的引脚(主要用于打印字符串)",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt | EModifierKey::Control,  EKeys::A));
 
 	UI_COMMAND(
 		GoForwardInTabHistory,
-		"Go forwards in tab history",
-		"Focus the next tab in the history (blueprint graph only). Do not rebind using CTRL!",
+		"在标签历史中前进",
+		"聚焦历史中的下一个标签(仅蓝图图表)。不要使用CTRL重新绑定！",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::End));
 
 	UI_COMMAND(
 		GoBackInTabHistory,
-		"Go backwards in tab history",
-		"Focus the previous tab in the history (blueprint graph only). Do not rebind using CTRL!",
+		"在标签历史中后退",
+		"聚焦历史中的上一个标签(仅蓝图图表)。不要使用CTRL重新绑定！",
 		EUserInterfaceActionType::Button,
 		FInputChord(EModifierKey::Alt, EKeys::Home));
 }
@@ -506,3 +506,10 @@ void FBACommands::Unregister()
 }
 
 #undef LOCTEXT_NAMESPACE
+
+
+
+
+
+
+
