@@ -198,6 +198,16 @@ jobs:
           }
         }
         
+        # Optimization 3: Remove static lib and export files
+        if (Test-Path $binaries_path) {
+          $lib_files = Get-ChildItem -Path $binaries_path -Include "*.lib","*.exp" -Recurse -ErrorAction SilentlyContinue
+          if ($lib_files) {
+            $lib_size = ($lib_files | Measure-Object -Property Length -Sum).Sum / 1MB
+            Remove-Item -Force $lib_files.FullName
+            Write-Host "[OK] Removed lib/exp files (saved $([math]::Round($lib_size, 2)) MB)"
+          }
+        }
+        
         # Calculate final package size
         $final_size = (Get-ChildItem $output_directory -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
         Write-Host ""
@@ -294,6 +304,7 @@ jobs:
         path: ${{ env.OUTPUT_DIR }}
         retention-days: 30
         compression-level: 9
+        if-no-files-found: error
 
     - name: Cleanup Temporary Files
       if: always()
