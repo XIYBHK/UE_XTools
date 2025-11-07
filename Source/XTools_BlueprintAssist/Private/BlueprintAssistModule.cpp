@@ -123,6 +123,7 @@ void FBlueprintAssistModule::ShutdownModule()
 		UE_LOG(LogBlueprintAssist, Log, TEXT("Remove BlueprintAssist Root Object"));
 		RootObject->Cleanup();
 		RootObject->RemoveFromRoot();
+		RootObject.Reset();  // Clear the TWeakObjectPtr reference
 	}
 
 #if WITH_EDITOR

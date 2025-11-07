@@ -77,12 +77,13 @@ public:
 	TArray<FString> ExcludedAssetClasses;
 
 	/**
-	 * 要排除自动重命名的文件夹路径
-	 * 使用以 /Game/ 或 /Engine/ 开头的相对路径
+	 * 要排除自动重命名的文件夹路径（仅在 /Game/ 内）
+	 * 注意：自动重命名功能仅处理 /Game/ 路径下的项目内容
+	 * 所有引擎内容和插件内容已自动排除，无需配置
 	 */
 	UPROPERTY(config, EditAnywhere, Category="资产命名排除规则", meta=(
 		DisplayName="排除的文件夹",
-		ToolTip="这些文件夹中的资产将被排除自动重命名（例如：/Game/ThirdParty/）",
+		ToolTip="在 /Game/ 路径下额外排除的文件夹（例如：/Game/ThirdParty/）。引擎和插件内容已自动排除。",
 		EditCondition="bAutoRenameOnImport || bAutoRenameOnCreate", EditConditionHides))
 	TArray<FString> ExcludedFolders;
 

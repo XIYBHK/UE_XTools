@@ -761,6 +761,16 @@ bool FX_AssetNamingManager::IsAssetExcluded(const FAssetData& AssetData) const
     {
         return false;
     }
+    
+    // ========== 核心规则：只允许 /Game/ 路径（项目内容） ==========
+    // 排除所有引擎内容、引擎插件、第三方插件
+    FString PackagePath = AssetData.PackagePath.ToString();
+    if (!PackagePath.StartsWith(TEXT("/Game/")))
+    {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset excluded (not in /Game/): %s (path: %s)"),
+            *AssetData.AssetName.ToString(), *PackagePath);
+        return true;
+    }
 
     // 检查排除的资产类型
     FString ClassName = AssetData.AssetClassPath.GetAssetName().ToString();
@@ -771,8 +781,7 @@ bool FX_AssetNamingManager::IsAssetExcluded(const FAssetData& AssetData) const
         return true;
     }
 
-    // 检查排除的文件夹
-    FString PackagePath = AssetData.PackagePath.ToString();
+    // 检查排除的文件夹（在 /Game/ 内的额外排除）
     for (const FString& ExcludedFolder : Settings->ExcludedFolders)
     {
         if (!ExcludedFolder.IsEmpty() && PackagePath.StartsWith(ExcludedFolder))

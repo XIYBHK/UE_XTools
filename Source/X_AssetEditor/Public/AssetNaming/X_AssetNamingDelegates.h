@@ -66,45 +66,17 @@ private:
 	FOnAssetNeedsRename RenameCallback;
 
 	/** 委托句柄 */
-	FDelegateHandle OnAssetAddedHandle;
-	FDelegateHandle OnAssetRemovedHandle;
+	FDelegateHandle OnInMemoryAssetCreatedHandle;
 	FDelegateHandle OnAssetPostImportHandle;
-	FDelegateHandle OnFilesLoadedHandle;
 
 	/** 激活状态 */
 	bool bIsActive = false;
 
-	/** 资产注册表加载状态 */
-	bool bAssetRegistryLoaded = false;
-
 	/**
-	 * 跟踪最近删除的资产以检测重命名操作
-	 * Key: PackagePath (例如: "/Game/TEST")
-	 * Value: 已删除资产名称数组及时间戳
+	 * 当内存中创建新资产时调用（编辑器中创建但未保存）
+	 * @param InObject - 新创建的资产对象
 	 */
-	struct FRemovedAssetInfo
-	{
-		FString AssetName;
-		double RemovalTimestamp;
-	};
-	TMap<FString, TArray<FRemovedAssetInfo>> RecentlyRemovedAssets;
-
-	/**
-	 * 当资产注册表完成初始扫描时调用
-	 */
-	void OnFilesLoaded();
-
-	/**
-	 * 当新资产添加到注册表时调用
-	 * @param AssetData - 新添加的资产
-	 */
-	void OnAssetAdded(const FAssetData& AssetData);
-
-	/**
-	 * 当资产从注册表移除时调用
-	 * @param AssetData - 被移除的资产
-	 */
-	void OnAssetRemoved(const FAssetData& AssetData);
+	void OnInMemoryAssetCreated(UObject* InObject);
 
 	/**
 	 * 资产导入或重新导入后调用

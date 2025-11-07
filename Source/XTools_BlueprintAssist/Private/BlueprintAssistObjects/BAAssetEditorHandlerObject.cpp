@@ -38,6 +38,9 @@ void UBAAssetEditorHandlerObject::Init()
 void UBAAssetEditorHandlerObject::Cleanup()
 {
 	UnbindDelegates();
+	
+	// Clean up all blueprint handlers
+	BlueprintHandlers.Empty();
 }
 
 void UBAAssetEditorHandlerObject::Tick()

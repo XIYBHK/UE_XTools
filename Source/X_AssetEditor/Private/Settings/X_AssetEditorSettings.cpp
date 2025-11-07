@@ -19,6 +19,11 @@ UX_AssetEditorSettings::UX_AssetEditorSettings()
 {
 	// 默认排除关卡地图
 	ExcludedAssetClasses.Add(TEXT("World"));
+	
+	// 注意：自动重命名功能仅处理 /Game/ 路径下的项目内容
+	// 所有引擎内容和插件内容已在代码层面自动排除
+	// ExcludedFolders 用于在 /Game/ 内排除特定文件夹，例如：
+	// ExcludedFolders.Add(TEXT("/Game/ThirdParty/"));
 
 	// 初始化内置前缀规则（用户可在设置中修改）
 	InitializeDefaultPrefixMappings();
