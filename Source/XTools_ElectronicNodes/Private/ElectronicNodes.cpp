@@ -30,7 +30,7 @@ void FElectronicNodesModule::StartupModule()
 		FExecuteAction::CreateRaw(this, &FElectronicNodesModule::ToggleMasterActivation)
 	);
 
-	FString GlobalSettingsPath = IPluginManager::Get().FindPlugin(TEXT("ElectronicNodes"))->GetBaseDir();
+	FString GlobalSettingsPath = IPluginManager::Get().FindPlugin(TEXT("XTools"))->GetBaseDir();
 	GlobalSettingsPath /= "Settings.ini";
 	GlobalSettingsFile = FConfigCacheIni::NormalizeConfigIniPath(GlobalSettingsPath);
 

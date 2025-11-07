@@ -79,9 +79,9 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Activation", meta = (EditCondition = "UseGlobalSettings", DisplayName = "重新加载全局设置", Tooltip = "强制重新加载全局设置（例如在外部修改后）"))
 	bool LoadGlobalSettings = false;
 
-	/* Display a popup with changelog on update. Default: tru */
-	UPROPERTY(config, EditAnywhere, Category = "Activation", meta = (DisplayName = "更新时显示弹窗", Tooltip = "插件更新时显示更新日志弹窗。默认: true"))
-	bool ActivatePopupOnUpdate = true;
+	/* Display a popup with changelog on update. Default: false */
+	UPROPERTY(config, EditAnywhere, Category = "Activation", meta = (DisplayName = "更新时显示弹窗", Tooltip = "插件更新时显示更新日志弹窗。默认: false"))
+	bool ActivatePopupOnUpdate = false;
 
 	/* Activate Electronic Nodes on Blueprint graphs. Default: true */
 	UPROPERTY(config, EditAnywhere, Category = "Activation|Schema", meta = (EditCondition = "MasterActivate", DisplayName = "蓝图图表", Tooltip = "在蓝图图表上启用 Electronic Nodes。默认: true"))

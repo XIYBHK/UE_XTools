@@ -24,12 +24,12 @@ public:
 
 	static FBlueprintAssistModule& Get()
 	{
-		return FModuleManager::LoadModuleChecked<FBlueprintAssistModule>("BlueprintAssist");
+		return FModuleManager::LoadModuleChecked<FBlueprintAssistModule>("XTools_BlueprintAssist");
 	}
 
 	static bool IsAvailable()
 	{
-		return FModuleManager::Get().IsModuleLoaded("BlueprintAssist");
+		return FModuleManager::Get().IsModuleLoaded("XTools_BlueprintAssist");
 	}
 
 	UBARootObject* GetRootObject() const

@@ -322,7 +322,7 @@ FString FAutoSizeCommentsCacheFile::GetProjectCachePath(bool bFullPath)
 
 FString FAutoSizeCommentsCacheFile::GetPluginCachePath(bool bFullPath)
 {
-	FString PluginDir = IPluginManager::Get().FindPlugin("AutoSizeComments")->GetBaseDir();
+	FString PluginDir = IPluginManager::Get().FindPlugin("XTools")->GetBaseDir();
 
 	if (bFullPath)
 	{

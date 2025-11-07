@@ -210,7 +210,7 @@ FString FBACache::GetProjectSavedCachePath(bool bFullPath)
 
 FString FBACache::GetPluginCachePath(bool bFullPath)
 {
-	FString PluginDir = IPluginManager::Get().FindPlugin("BlueprintAssist")->GetBaseDir();
+	FString PluginDir = IPluginManager::Get().FindPlugin("XTools")->GetBaseDir();
 
 	if (bFullPath)
 	{

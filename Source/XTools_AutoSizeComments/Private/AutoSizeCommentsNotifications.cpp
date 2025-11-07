@@ -164,7 +164,7 @@ bool FAutoSizeCommentsNotifications::ShouldShowSourceControlNotification()
 
 void FAutoSizeCommentsNotifications::ShowBlueprintAssistNotification()
 {
-	if (!FModuleManager::Get().IsModuleLoaded("BlueprintAssist"))
+	if (!FModuleManager::Get().IsModuleLoaded("XTools_BlueprintAssist"))
 	{
 		return;
 	}

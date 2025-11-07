@@ -63,7 +63,7 @@ void FBAStyle::InitBlueprintAssistStyleSet()
 
 	BlueprintAssistStyleSet = MakeShareable(new FSlateStyleSet("BlueprintAssistStyle"));
 
-	BlueprintAssistStyleSet->SetContentRoot(IPluginManager::Get().FindPlugin("BlueprintAssist")->GetBaseDir() / TEXT("Resources"));
+	BlueprintAssistStyleSet->SetContentRoot(IPluginManager::Get().FindPlugin("XTools")->GetBaseDir() / TEXT("Resources"));
 
 	BlueprintAssistStyleSet->Set("BlueprintAssist.Lock", new BA_IMAGE_BRUSH(BlueprintAssistStyleSet, "Lock", FVector2D(64.0f/64.0f)));
 

@@ -23,12 +23,12 @@ public:
 
 	static FAutoSizeCommentsModule& Get()
 	{
-		return FModuleManager::LoadModuleChecked<FAutoSizeCommentsModule>("AutoSizeComments");
+		return FModuleManager::LoadModuleChecked<FAutoSizeCommentsModule>("XTools_AutoSizeComments");
 	}
 
 	static bool IsAvailable()
 	{
-		return FModuleManager::Get().IsModuleLoaded("AutoSizeComments");
+		return FModuleManager::Get().IsModuleLoaded("XTools_AutoSizeComments");
 	}
 
 private:

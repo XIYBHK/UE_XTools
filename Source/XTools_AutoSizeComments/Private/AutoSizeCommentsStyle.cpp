@@ -35,7 +35,7 @@ void FASCStyle::Initialize()
 
 	StyleSet = MakeShareable(new FSlateStyleSet("AutoSizeCommentsStyle"));
 
-	StyleSet->SetContentRoot(IPluginManager::Get().FindPlugin("AutoSizeComments")->GetBaseDir() / TEXT("Resources"));
+	StyleSet->SetContentRoot(IPluginManager::Get().FindPlugin("XTools")->GetBaseDir() / TEXT("Resources"));
 
 	StyleSet->Set("ASC.AnchorBox", new ASC_BOX_BRUSH("AnchorBox", FMargin(18.0f/64.0f), FLinearColor(1.0f, 1.0f, 1.0f, 1.0f)));
 

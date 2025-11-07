@@ -25,7 +25,7 @@ void ENUpdatePopup::OnBrowserLinkClicked(const FSlateHyperlinkRun::FMetadata& Me
 
 void ENUpdatePopup::Register()
 {
-	FString UpdateConfigPath = IPluginManager::Get().FindPlugin(TEXT("ElectronicNodes"))->GetBaseDir();
+	FString UpdateConfigPath = IPluginManager::Get().FindPlugin(TEXT("XTools"))->GetBaseDir();
 	UpdateConfigPath /= "UpdateConfig.ini";
 	const FString UpdateConfigFile = FConfigCacheIni::NormalizeConfigIniPath(UpdateConfigPath);
 	const FString CurrentPluginVersion = "3.14";
