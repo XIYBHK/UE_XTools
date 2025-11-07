@@ -178,7 +178,7 @@ void FKnotNodeTrack::SetTrackHeight(TSharedPtr<FFormatterInterface> Formatter)
 
 	// set starting point
 	float TestSolution = GraphHandler->GetPinY(ParentPin.GetPin());
-
+	
 	// TODO test new method for baseline location
 	if (UBASettings::HasDebugSetting("NewBaseline"))
 	{

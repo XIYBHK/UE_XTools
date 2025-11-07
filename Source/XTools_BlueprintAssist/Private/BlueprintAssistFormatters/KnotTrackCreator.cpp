@@ -236,26 +236,36 @@ void FKnotTrackCreator::CreateKnotTracks()
 
 		TSharedPtr<FKnotNodeCreation> LastCreation = nullptr;
 		const int NumCreations = KnotTrack->KnotCreations.Num();
-		for (int i = 0; i < NumCreations; i++)
+	for (int i = 0; i < NumCreations; i++)
+	{
+		TSharedPtr<FKnotNodeCreation> Creation = KnotTrack->KnotCreations[i];
+
+		FVector2D KnotPos = Creation->KnotPos;
+		KnotPos.Y = KnotTrack->GetTrackHeight();
+
+		// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Making knot creation at %s %d"), *KnotPos.ToString(), i);
+		// for (FBAGraphPinHandle Pin : Creation->PinHandlesToConnectTo)
+		// {
+		// 	UE_LOG(LogKnotTrackCreator, Warning, TEXT("\tPin %s"), *FBAUtils::GetPinName(Pin.GetPin()));
+		// }
+
+		if (PinToAlignTo != nullptr)
 		{
-			TSharedPtr<FKnotNodeCreation> Creation = KnotTrack->KnotCreations[i];
+			KnotPos.Y = SavedPinHeight.Contains(KnotTrack) ? SavedPinHeight[KnotTrack] : GraphHandler->GetPinY(PinToAlignTo);
+			// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Created knot aligned to %s"), *FBAUtils::GetNodeName(PinToAlignTo->GetOwningNode()));
+		}
+		
+		// 为同一track的多个knot应用微小偏移，仅用于区分连线，不影响整体布局
+		// 使用非常小的偏移量（横向8px，竖向3px），保持视觉整洁
+		if (NumCreations > 1)
+		{
+			const float KnotVerticalSpacing = 3.0f;   // 竖向间距极小
+			const float KnotHorizontalSpacing = 8.0f; // 横向间距也很小
+			KnotPos.Y += (i * KnotVerticalSpacing);
+			KnotPos.X += (i * KnotHorizontalSpacing);
+		}
 
-			FVector2D KnotPos = Creation->KnotPos;
-			KnotPos.Y = KnotTrack->GetTrackHeight();
-
-			// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Making knot creation at %s %d"), *KnotPos.ToString(), i);
-			// for (FBAGraphPinHandle Pin : Creation->PinHandlesToConnectTo)
-			// {
-			// 	UE_LOG(LogKnotTrackCreator, Warning, TEXT("\tPin %s"), *FBAUtils::GetPinName(Pin.GetPin()));
-			// }
-
-			if (PinToAlignTo != nullptr)
-			{
-				KnotPos.Y = SavedPinHeight.Contains(KnotTrack) ? SavedPinHeight[KnotTrack] : GraphHandler->GetPinY(PinToAlignTo);
-				// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Created knot aligned to %s"), *FBAUtils::GetNodeName(PinToAlignTo->GetOwningNode()));
-			}
-
-			if (!LastCreation.IsValid()) // create a knot linked to the first pin (the fallback pin)
+		if (!LastCreation.IsValid()) // create a knot linked to the first pin (the fallback pin)
 			{
 				UEdGraphPin* ParentPin = KnotTrack->GetParentPin();
 
@@ -1248,21 +1258,25 @@ void FKnotTrackCreator::AddNomadKnotsIntoComments()
 
 		for (TSharedPtr<FKnotNodeTrack> Track : KnotTracks)
 		{
-			if (Track->KnotCreations.Num() != 1)
-			{
-				continue;
-			}
-
-			if (TSharedPtr<FKnotNodeCreation> Creation = Track->KnotCreations[0])
+			// 修复：处理所有 knot，不再限制只处理单个 knot
+			// 使用位置判断而不是节点包含关系判断
+			for (TSharedPtr<FKnotNodeCreation> Creation : Track->KnotCreations)
 			{
 				if (UK2Node_Knot* CreatedKnotNode = Creation->CreatedKnot)
 				{
-					// Add nomad knots if they are located in a comment
+					// 跳过已经在注释中的 knot
+					if (KnotsInComments.Contains(CreatedKnotNode))
+					{
+						continue;
+					}
+
+					// Add knots if they are located in the comment bounds
 					const FVector2D KnotPos(CreatedKnotNode->NodePosX, CreatedKnotNode->NodePosY);
 					if (CommentBounds.ContainsPoint(KnotPos))
 					{
 						// UE_LOG(LogTemp, Warning, TEXT("Added knot %s into %s"), *FBAUtils::GetNodeName(CreatedKnotNode), *FBAUtils::GetNodeName(Comment));
 						CommentHandler->AddNodeIntoComment(Comment, CreatedKnotNode);
+						KnotsInComments.Add(CreatedKnotNode);
 
 						if (UBASettings::HasDebugSetting("DebugNomadKnots"))
 						{

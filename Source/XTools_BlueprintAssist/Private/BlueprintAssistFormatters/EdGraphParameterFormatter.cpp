@@ -140,8 +140,9 @@ void FEdGraphParameterFormatter::FormatNode(UEdGraphNode* InNode)
 		ApplyCommentPaddingY();
 	}
 
-	if (UBASettings::Get().bExpandParametersByHeight && FBAUtils::IsNodePure(RootNode))
+	if (UBASettings::Get().bExpandParametersByHeight)
 	{
+		// 移除纯节点限制，允许不纯节点也能按高度展开
 		ExpandByHeight();
 	}
 
@@ -907,10 +908,8 @@ void FEdGraphParameterFormatter::FormatY(
 
 		if (bCenterBranches && Direction == EGPD_Input && ChildBranches.Num() >= NumRequiredBranches && !bChildrenTooBig)
 		{
-			if (FBAUtils::IsNodePure(CurrentNode))
-			{
-				CenterBranches(CurrentNode, ChildBranches, VisitedNodes);
-			}
+			// 移除纯节点限制，允许不纯节点（如 Spawn Actor）也能居中对齐
+			CenterBranches(CurrentNode, ChildBranches, VisitedNodes);
 		}
 	}
 

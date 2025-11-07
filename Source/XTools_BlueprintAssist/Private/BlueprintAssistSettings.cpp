@@ -85,12 +85,12 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	// 禁用全局自动格式化（基于用户习惯）
 	bGloballyDisableAutoFormatting = true;
 	FormattingStyle = EBANodeFormattingStyle::Expanded;
-	ParameterStyle = EBAParameterFormattingStyle::Helixing;
+	ParameterStyle = EBAParameterFormattingStyle::LeftSide;
 
-	BlueprintParameterPadding = FIntPoint(40, 25);
+	BlueprintParameterPadding = FIntPoint(40, 18);
 	BlueprintKnotTrackSpacing = 26;
 	VerticalPinSpacing = 26;
-	ParameterVerticalPinSpacing = 26;
+	ParameterVerticalPinSpacing = 18;
 
 	bDisableHelixingWithMultiplePins = true;
 	DisableHelixingPinCount = 2;
@@ -249,7 +249,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	bCenterBranches = false;
 	NumRequiredBranches = 3;
 
-	bCenterBranchesForParameters = false;
+	bCenterBranchesForParameters = true;
 	NumRequiredBranchesForParameters = 2;
 
 	bAddKnotNodesToComments = true;
@@ -267,7 +267,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 
 	bExpandNodesAheadOfParameters = true;
 	bExpandNodesByHeight = true;
-	bExpandParametersByHeight = false;
+	bExpandParametersByHeight = true;
 
 	bSnapToGrid = false;
 	bAlignExecNodesTo8x8Grid = false;
