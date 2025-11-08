@@ -74,8 +74,8 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 	);
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnAssetRenamed 委托"));
 
-	// 4. 【方案1：队列机制】绑定 OnFilesLoaded 委托
-	// 当 AssetRegistry 完成文件加载时，处理队列中待重命名的资产
+	// 4. 绑定 OnFilesLoaded（AssetRegistry 加载完成时触发）
+	// 用于区分启动时扫描的已存在资产和用户新创建的资产
 	OnFilesLoadedHandle = AssetRegistry.OnFilesLoaded().AddRaw(
 		this, &FX_AssetNamingDelegates::OnFilesLoaded
 	);
@@ -86,12 +86,10 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 	if (bIsAssetRegistryReady)
 	{
 		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 已加载完成，可以立即处理资产重命名"));
-		// 如果已经加载完成，处理队列中的资产（如果有的话）
-		ProcessPendingAssets();
 	}
 	else
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 仍在加载中，资产将加入队列等待处理"));
+		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 仍在加载中，启动时的资产将被跳过，加载完成后新创建的资产将被处理"));
 	}
 
 	bIsActive = true;
@@ -151,8 +149,7 @@ void FX_AssetNamingDelegates::Shutdown()
 		OnFilesLoadedHandle.Reset();
 	}
 
-	// 清空待处理队列和重入标志
-	PendingAssets.Empty();
+	// 清空重入标志
 	bIsProcessingAsset = false;
 	bIsAssetRegistryReady = false;
 
@@ -209,21 +206,19 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		return;
 	}
 
-	// ========== 【方案1：队列机制】检查 AssetRegistry 状态 ==========
-	// 如果 AssetRegistry 仍在加载，将资产加入队列等待处理
+	// ========== 【优化】启动时跳过已存在的资产 ==========
+	// AssetRegistry 加载期间触发的 OnAssetAdded 是已存在的资产，不需要重命名
+	// 只处理 AssetRegistry 加载完成后新创建/导入的资产
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 	
-	// ========== 【安全修复】双重检查：标志位 + 实时状态 ==========
-	// 防止标志位与实际情况不同步
 	if (!bIsAssetRegistryReady || AssetRegistry.IsLoadingAssets())
 	{
-		// AssetRegistry 未准备好，加入队列
-		PendingAssets.Add(AssetData);
+		// AssetRegistry 仍在加载中，说明这是启动时扫描到的已存在资产
+		// 跳过处理，避免启动时批量检查所有资产
 		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("AssetRegistry 未准备好，资产已加入队列 - bReady=%d, IsLoading=%d: %s（包路径: %s）"),
-			bIsAssetRegistryReady, AssetRegistry.IsLoadingAssets(),
-			*AssetData.AssetName.ToString(), *AssetData.PackageName.ToString());
+			TEXT("AssetRegistry 加载中，跳过已存在资产: %s"),
+			*AssetData.AssetName.ToString());
 		return;
 	}
 	
@@ -321,13 +316,12 @@ void FX_AssetNamingDelegates::OnAssetPostImport(UFactory* Factory, UObject* Crea
 		return;
 	}
 
-	// ========== 【方案1：队列机制】检查 AssetRegistry 状态 ==========
+	// ========== 【优化】检查 AssetRegistry 状态 ==========
+	// 如果 AssetRegistry 仍在加载，说明这是启动时导入的资产，跳过处理
 	if (!bIsAssetRegistryReady || AssetRegistry.IsLoadingAssets())
 	{
-		// AssetRegistry 未准备好，加入队列
-		PendingAssets.Add(AssetData);
 		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("AssetRegistry 未准备好，导入资产已加入队列: %s（包路径: %s）"),
+			TEXT("AssetRegistry 加载中，跳过导入资产: %s（包路径: %s）"),
 			*AssetData.AssetName.ToString(), *AssetData.PackageName.ToString());
 		return;
 	}
@@ -413,69 +407,7 @@ bool FX_AssetNamingDelegates::ShouldProcessAsset(const FAssetData& AssetData) co
 
 void FX_AssetNamingDelegates::OnFilesLoaded()
 {
-	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，开始处理队列中的资产"));
-	
+	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，之后创建的资产将被自动重命名"));
 	bIsAssetRegistryReady = true;
-	
-	// 处理队列中待重命名的资产
-	ProcessPendingAssets();
-}
-
-void FX_AssetNamingDelegates::ProcessPendingAssets()
-{
-	if (PendingAssets.Num() == 0)
-	{
-		return;
-	}
-
-	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("开始处理队列中的 %d 个资产"), PendingAssets.Num());
-
-	// 再次确认 AssetRegistry 状态
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-	
-	if (AssetRegistry.IsLoadingAssets())
-	{
-		UE_LOG(LogX_AssetNamingDelegates, Warning, 
-			TEXT("AssetRegistry 仍在加载中，延迟处理队列"));
-		return;
-	}
-
-	// 批量处理队列中的资产
-	TArray<FAssetData> AssetsToProcess = PendingAssets;
-	PendingAssets.Empty();
-
-	int32 ProcessedCount = 0;
-	int32 SkippedCount = 0;
-
-	for (const FAssetData& AssetData : AssetsToProcess)
-	{
-		// 验证资产是否仍然有效（可能在队列期间被删除）
-		if (!AssetData.IsValid())
-		{
-			SkippedCount++;
-			UE_LOG(LogX_AssetNamingDelegates, Verbose, 
-				TEXT("跳过无效资产（可能在队列期间被删除）"));
-			continue;
-		}
-
-		// 再次验证是否需要处理
-		if (!ShouldProcessAsset(AssetData))
-		{
-			SkippedCount++;
-			continue;
-		}
-
-		// 执行重命名回调
-		if (RenameCallback.IsBound())
-		{
-			RenameCallback.Execute(AssetData);
-			ProcessedCount++;
-		}
-	}
-
-	UE_LOG(LogX_AssetNamingDelegates, Log, 
-		TEXT("队列处理完成: 已处理 %d 个资产，跳过 %d 个资产"), 
-		ProcessedCount, SkippedCount);
 }
 

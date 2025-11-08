@@ -77,9 +77,6 @@ private:
 	/** AssetRegistry 是否已加载完成 */
 	bool bIsAssetRegistryReady = false;
 
-	/** 待处理的资产队列（AssetRegistry 加载期间收集） */
-	TArray<FAssetData> PendingAssets;
-
 	/** 重入保护标志（防止递归重命名导致崩溃）
 	 * 因为所有操作都在 GameThread 上同步执行，使用简单的布尔标志即可
 	 * 当 OnAssetAdded 正在处理时，阻止嵌套调用
@@ -115,14 +112,8 @@ private:
 
 	/**
 	 * 当 AssetRegistry 完成文件加载时调用
-	 * 处理队列中待重命名的资产
+	 * 用于标记 AssetRegistry 已就绪，之后的所有 OnAssetAdded 都是新创建的资产
 	 */
 	void OnFilesLoaded();
-
-	/**
-	 * 处理队列中待重命名的资产
-	 * 在 AssetRegistry 加载完成后批量处理
-	 */
-	void ProcessPendingAssets();
 };
 

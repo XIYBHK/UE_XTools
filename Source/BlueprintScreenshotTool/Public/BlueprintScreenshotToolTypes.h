@@ -12,6 +12,19 @@ struct BLUEPRINTSCREENSHOTTOOL_API FBSTScreenshotData
 {
 	GENERATED_BODY()
 
+	/** 默认构造函数，初始化所有成员 */
+	FBSTScreenshotData()
+		: Size(0, 0, 0)
+	{
+	}
+
+	/** 带参数的构造函数，用于便捷初始化 */
+	FBSTScreenshotData(const TArray<FColor>& InColorData, const FIntVector& InSize)
+		: ColorData(InColorData)
+		, Size(InSize)
+	{
+	}
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Screenshot Data")
 	TArray<FColor> ColorData;
 

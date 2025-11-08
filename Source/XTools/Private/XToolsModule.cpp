@@ -1,6 +1,5 @@
 #include "XToolsModule.h"
 #include "XToolsDefines.h"
-#include "Popup/XToolsWelcomePopup.h"
 
 #define LOCTEXT_NAMESPACE "FXToolsModule"
 
@@ -9,9 +8,6 @@ DEFINE_LOG_CATEGORY(LogXTools);
 void FXToolsModule::StartupModule()
 {
 	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
-	
-	// 注册欢迎弹窗（首次打开或更新时显示）
-	FXToolsWelcomePopup::Register();
 }
 
 void FXToolsModule::ShutdownModule()

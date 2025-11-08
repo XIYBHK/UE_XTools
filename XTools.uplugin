@@ -18,7 +18,7 @@
 	"Modules": [
 		{
 			"Name": "XTools",
-			"Type": "Runtime",
+			"Type": "Editor",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
 				"Win64"

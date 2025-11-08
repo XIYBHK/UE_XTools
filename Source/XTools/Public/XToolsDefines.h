@@ -8,8 +8,8 @@
 
 // Plugin version
 #define XTOOLS_VERSION_MAJOR 1
-#define XTOOLS_VERSION_MINOR 0
-#define XTOOLS_VERSION_PATCH 0
+#define XTOOLS_VERSION_MINOR 9
+#define XTOOLS_VERSION_PATCH 1
 
 // Debugging
 #if !UE_BUILD_SHIPPING
