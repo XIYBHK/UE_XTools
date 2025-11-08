@@ -5,11 +5,14 @@
 
 #include "Settings/X_AssetEditorSettings.h"
 #include "AssetNaming/X_AssetNamingManager.h"
+#include "X_AssetEditor.h"
+#include "Engine/Engine.h"
 
 #define LOCTEXT_NAMESPACE "X_AssetEditorSettings"
 
 UX_AssetEditorSettings::UX_AssetEditorSettings()
-	: bAutoRenameOnImport(true)
+	: PluginLogVerbosity(EXToolsLogVerbosity::Warning)
+	, bAutoRenameOnImport(true)
 	, bAutoRenameOnCreate(true)
 	, bAutoFixupRedirectors(true)
 	// 子系统开关默认值
@@ -19,7 +22,7 @@ UX_AssetEditorSettings::UX_AssetEditorSettings()
 {
 	// 默认排除关卡地图
 	ExcludedAssetClasses.Add(TEXT("World"));
-	
+
 	// 注意：自动重命名功能仅处理 /Game/ 路径下的项目内容
 	// 所有引擎内容和插件内容已在代码层面自动排除
 	// ExcludedFolders 用于在 /Game/ 内排除特定文件夹，例如：
@@ -259,6 +262,45 @@ void UX_AssetEditorSettings::InitializeParentClassPrefixMappings()
 	ParentClassPrefixMappings.Add(TEXT("TriggerSphere"), TEXT("BP_TS_"));
 }
 
+void UX_AssetEditorSettings::ApplyPluginLogVerbosity()
+{
+	// XTools 插件所有日志分类列表
+	TArray<FName> XToolsLogCategories = {
+		TEXT("LogXTools"),
+		TEXT("LogX_AssetEditor"),
+		TEXT("LogX_AssetNaming"),
+		TEXT("LogX_AssetNamingDelegates"),
+		TEXT("LogSort"),
+		TEXT("LogRandomShuffles"),
+		TEXT("LogEnhancedCodeFlow"),
+		TEXT("LogPointSampling"),
+		TEXT("LogFormationSystem"),
+		TEXT("LogComponentTimeline"),
+		TEXT("LogBlueprintExtensions"),
+		TEXT("LogObjectPool"),
+	};
+
+	// 转换枚举值为 ELogVerbosity::Type
+	ELogVerbosity::Type VerbosityLevel = static_cast<ELogVerbosity::Type>(PluginLogVerbosity);
+
+	// 获取日志级别字符串
+	const TCHAR* VerbosityString = ToString(VerbosityLevel);
+
+	// 应用日志级别到所有分类
+	for (const FName& LogCategory : XToolsLogCategories)
+	{
+		FString Command = FString::Printf(TEXT("Log %s %s"), *LogCategory.ToString(), VerbosityString);
+
+		// 使用 GEngine 执行控制台命令
+		if (GEngine)
+		{
+			GEngine->Exec(nullptr, *Command);
+		}
+	}
+
+	UE_LOG(LogX_AssetEditor, Log, TEXT("已应用 XTools 插件日志级别: %s"), VerbosityString);
+}
+
 void UX_AssetEditorSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
@@ -269,6 +311,12 @@ void UX_AssetEditorSettings::PostEditChangeProperty(FPropertyChangedEvent& Prope
 	}
 
 	FName PropertyName = PropertyChangedEvent.Property->GetFName();
+
+	// 检查是否修改了日志级别设置
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UX_AssetEditorSettings, PluginLogVerbosity))
+	{
+		ApplyPluginLogVerbosity();
+	}
 
 	// 检查是否修改了自动重命名相关设置
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UX_AssetEditorSettings, bAutoRenameOnImport) ||

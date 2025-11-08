@@ -32,6 +32,14 @@
 
 ## 🐛 问题修复 (Fixed)
 
+- [X_AssetEditor] 修复资产自动重命名导致编辑器崩溃
+  - 问题：在 `/Game` 根目录创建新资产时崩溃（EXCEPTION_ACCESS_VIOLATION）
+  - 原因1：路径检查逻辑错误，`/Game` 根目录资产被错误排除
+  - 原因2：重命名操作触发递归 `OnAssetAdded` 回调，导致状态不一致
+  - 修复：修正路径检查逻辑 + 添加重入保护 + 使用 FTSTicker 延迟执行
+  - 影响：资产命名系统现在稳定可靠，支持所有路径下的自动重命名
+  - 相关：`X_AssetNamingDelegates.cpp`, `X_AssetNamingDelegates.h`
+
 - [BlueprintScreenshotTool] 修复内存泄漏：FWidgetRenderer智能指针管理
   - 使用 `TUniquePtr` 替代裸指针 `new`
   - 自动管理生命周期，消除潜在崩溃风险

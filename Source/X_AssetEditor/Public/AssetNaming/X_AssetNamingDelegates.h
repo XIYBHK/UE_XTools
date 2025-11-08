@@ -6,10 +6,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AssetRegistry/AssetData.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNamingDelegates, Log, All);
 
-struct FAssetData;
 class UFactory;
 class UObject;
 class IAssetRegistry;
@@ -66,17 +66,38 @@ private:
 	FOnAssetNeedsRename RenameCallback;
 
 	/** 委托句柄 */
-	FDelegateHandle OnInMemoryAssetCreatedHandle;
+	FDelegateHandle OnAssetAddedHandle;
 	FDelegateHandle OnAssetPostImportHandle;
+	FDelegateHandle OnAssetRenamedHandle;
+	FDelegateHandle OnFilesLoadedHandle;
 
 	/** 激活状态 */
 	bool bIsActive = false;
 
-	/**
-	 * 当内存中创建新资产时调用（编辑器中创建但未保存）
-	 * @param InObject - 新创建的资产对象
+	/** AssetRegistry 是否已加载完成 */
+	bool bIsAssetRegistryReady = false;
+
+	/** 待处理的资产队列（AssetRegistry 加载期间收集） */
+	TArray<FAssetData> PendingAssets;
+
+	/** 重入保护标志（防止递归重命名导致崩溃）
+	 * 因为所有操作都在 GameThread 上同步执行，使用简单的布尔标志即可
+	 * 当 OnAssetAdded 正在处理时，阻止嵌套调用
 	 */
-	void OnInMemoryAssetCreated(UObject* InObject);
+	bool bIsProcessingAsset = false;
+
+	/**
+	 * 当资产添加到 AssetRegistry 时调用（新建或导入资产）
+	 * @param AssetData - 新添加的资产数据
+	 */
+	void OnAssetAdded(const FAssetData& AssetData);
+
+	/**
+	 * 当资产重命名完成后调用（用于手动重命名的二次检查）
+	 * @param AssetData - 重命名后的资产数据
+	 * @param OldObjectPath - 原始对象路径
+	 */
+	void OnAssetRenamed(const FAssetData& AssetData, const FString& OldObjectPath);
 
 	/**
 	 * 资产导入或重新导入后调用
@@ -91,5 +112,17 @@ private:
 	 * @return true 如果应该处理，否则 false
 	 */
 	bool ShouldProcessAsset(const FAssetData& AssetData) const;
+
+	/**
+	 * 当 AssetRegistry 完成文件加载时调用
+	 * 处理队列中待重命名的资产
+	 */
+	void OnFilesLoaded();
+
+	/**
+	 * 处理队列中待重命名的资产
+	 * 在 AssetRegistry 加载完成后批量处理
+	 */
+	void ProcessPendingAssets();
 };
 

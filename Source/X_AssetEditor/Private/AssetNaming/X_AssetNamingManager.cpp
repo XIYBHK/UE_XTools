@@ -308,6 +308,17 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
         return Result;
     }
 
+    // ========== 【参考 UE 源码】检查 AssetRegistry 是否正在加载 ==========
+    FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+    IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+    if (AssetRegistry.IsLoadingAssets())
+    {
+        UE_LOG(LogX_AssetNaming, Error, TEXT("Cannot rename assets while AssetRegistry is still loading. Please wait."));
+        FMessageDialog::Open(EAppMsgType::Ok, 
+            NSLOCTEXT("X_AssetNaming", "AssetRegistryLoading", "Cannot rename assets while the editor is still discovering assets. Please wait and try again."));
+        return Result;
+    }
+
     // 获取AssetTools模块
     FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
     IAssetTools& AssetTools = AssetToolsModule.Get();
@@ -424,69 +435,97 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
         }
 
         FString NewName = CorrectPrefix + BaseName;
+
+        // ========== 【安全检查1】如果新名称与当前名称相同，跳过 ==========
+        if (NewName == CurrentName)
+        {
+            UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s' already has the correct name, skipped"),
+                *CurrentName);
+            Result.SkippedCount++;
+            continue;
+        }
+
         FString FinalNewName = NewName;
         int32 SuffixCounter = 1;
 
-        // 性能优化：缓存资产名称避免重复磁盘查询
-        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+        // ========== 【关键修复】在调用 GetAssetsByPath 前再次检查 AssetRegistry 状态 ==========
+        // 防止在检查后、调用前状态发生变化导致崩溃
+        if (AssetRegistry.IsLoadingAssets())
+        {
+            UE_LOG(LogX_AssetNaming, Warning, TEXT("AssetRegistry started loading during rename operation, skipping asset: %s"), *CurrentName);
+            Result.FailedCount++;
+            Result.FailedRenames.Add(CurrentName);
+            continue;
+        }
 
+        // 性能优化：缓存资产名称避免重复磁盘查询
         TArray<FAssetData> AllAssetsInFolder;
         AssetRegistry.GetAssetsByPath(FName(*PackagePath), AllAssetsInFolder, false);
 
         TSet<FString> ExistingNames;
         for (const FAssetData& Asset : AllAssetsInFolder)
         {
-            ExistingNames.Add(Asset.AssetName.ToString());
+            // 排除当前资产自己，避免自己与自己冲突
+            if (Asset.PackageName != AssetData.PackageName)
+            {
+                ExistingNames.Add(Asset.AssetName.ToString());
+            }
         }
 
-        // 检查是否存在同名资产
+        // 命名冲突解决：自动添加数字后缀
         while (ExistingNames.Contains(FinalNewName))
         {
             FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, SuffixCounter++);
         }
 
-        if (FinalNewName != CurrentName)
+        // ========== 【最终安全检查】防御性编程 ==========
+        if (FinalNewName == CurrentName)
         {
-            // 执行重命名操作 - 先检查资产是否可以加载
-            UObject* AssetObject = AssetData.GetAsset();
-            if (!AssetObject)
-            {
-                Result.FailedCount++;
-                Result.FailedRenames.Add(CurrentName);
-                UE_LOG(LogX_AssetNaming, Error, TEXT("Unable to load asset: %s (PackageName: %s)"),
-                    *CurrentName, *AssetData.PackageName.ToString());
-                continue;
-            }
+            UE_LOG(LogX_AssetNaming, Error, 
+                TEXT("CRITICAL: Final rename would be same-name operation (%s)! Skipping."),
+                *CurrentName);
+            Result.SkippedCount++;
+            continue;
+        }
 
-            TArray<FAssetRenameData> AssetsToRename;
-            AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, FinalNewName));
+        // ========== 【参考 UE 源码】检查资产对象有效性 ==========
+        UObject* AssetObject = AssetData.GetAsset();
+        if (!AssetObject)
+        {
+            Result.FailedCount++;
+            Result.FailedRenames.Add(CurrentName);
+            UE_LOG(LogX_AssetNaming, Error, TEXT("Asset object is null for '%s', cannot rename"),
+                *CurrentName);
+            continue;
+        }
 
-            if (AssetTools.RenameAssets(AssetsToRename))
-            {
-                Result.SuccessCount++;
-                Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
-                UE_LOG(LogX_AssetNaming, Log, TEXT("Rename succeeded: %s -> %s"), *CurrentName, *FinalNewName);
-            }
-            else
-            {
-                Result.FailedCount++;
-                Result.FailedRenames.Add(CurrentName);
-                UE_LOG(LogX_AssetNaming, Error, TEXT("Rename failed: %s"), *CurrentName);
-            }
+        // 执行重命名操作
+        TArray<FAssetRenameData> AssetsToRename;
+        AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, FinalNewName));
+
+        if (AssetTools.RenameAssets(AssetsToRename))
+        {
+            Result.SuccessCount++;
+            Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
+            UE_LOG(LogX_AssetNaming, Log, TEXT("Rename succeeded: %s -> %s"), *CurrentName, *FinalNewName);
         }
         else
         {
-            Result.SkippedCount++;
+            Result.FailedCount++;
+            Result.FailedRenames.Add(CurrentName);
+            UE_LOG(LogX_AssetNaming, Error, TEXT("Rename failed: %s"), *CurrentName);
         }
     }
 
-    // 自动清理 Redirectors（如果启用）
+    // ========== 【暂时禁用】自动清理 Redirectors ==========
+    // 原因：重命名后立即清理可能导致崩溃，UE 验证系统可能还在使用旧路径
+    /*
     const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
     if (Settings && Settings->bAutoFixupRedirectors && Result.SuccessfulRenames.Num() > 0)
     {
         FixupRedirectors(Result.SuccessfulRenames);
     }
+    */
 
     // 显示操作结果
     ShowRenameResult(Result);
@@ -579,19 +618,41 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
 
 bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FString& OutNewName)
 {
+    // ========== 【诊断】入口日志 ==========
+    UE_LOG(LogX_AssetNaming, Verbose, 
+        TEXT("RenameAssetInternal 开始 - 资产: %s, 类型: %s, 包路径: %s"),
+        *AssetData.AssetName.ToString(),
+        *AssetData.AssetClassPath.ToString(),
+        *AssetData.PackagePath.ToString());
+
     if (!AssetData.IsValid())
     {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("资产数据无效，跳过"));
+        return false;
+    }
+
+    // ========== 【重要】参考 UE 源码：AssetRenameManager.cpp:246 ==========
+    // 如果 AssetRegistry 仍在加载资产，重命名操作可能失败或导致数据不一致
+    FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+    IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+    if (AssetRegistry.IsLoadingAssets())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Cannot rename asset while AssetRegistry is still loading assets"));
         return false;
     }
 
     // 检查是否在排除列表中
     if (IsAssetExcluded(AssetData))
     {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("资产在排除列表中，跳过: %s"), *AssetData.AssetName.ToString());
         return false;
     }
 
+    // ========== 【关键】在重命名前缓存所有数据（参考 UE 源码） ==========
+    // 重命名后 FAssetData 引用会失效，必须提前提取所有需要的信息
     FString CurrentName = AssetData.AssetName.ToString();
-    FString PackagePath = FPackageName::GetLongPackagePath(AssetData.PackageName.ToString());
+    FString OldPackageName = AssetData.PackageName.ToString();
+    FString PackagePath = FPackageName::GetLongPackagePath(OldPackageName);
 
     if (PackagePath.IsEmpty())
     {
@@ -601,14 +662,20 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     FString SimpleClassName = GetSimpleClassName(AssetData);
     FString CorrectPrefix = GetCorrectPrefix(AssetData, SimpleClassName);
 
+    UE_LOG(LogX_AssetNaming, Verbose, 
+        TEXT("资产类型分析 - 当前名称: %s, 简单类名: %s, 正确前缀: %s"),
+        *CurrentName, *SimpleClassName, *CorrectPrefix);
+
     if (CorrectPrefix.IsEmpty())
     {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("无法确定正确前缀，跳过: %s"), *CurrentName);
         return false;
     }
 
     // 检查是否已符合规范
     if (CurrentName.StartsWith(CorrectPrefix))
     {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("资产已符合命名规范，跳过: %s"), *CurrentName);
         return false;
     }
 
@@ -634,9 +701,22 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     // 构建新名称
     FString NewName = CorrectPrefix + BaseName;
 
-    // 检查命名冲突
-    FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-    IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+    // ========== 【安全检查】防止同名重命名导致崩溃 ==========
+    // UE 的 IAssetTools::RenameAssets() 不支持同名重命名（新旧名称相同）
+    if (NewName == CurrentName)
+    {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s' already has the correct name, skipping"),
+            *CurrentName);
+        return false;
+    }
+
+    // ========== 【关键修复】在调用 GetAssetsByPath 前再次检查 AssetRegistry 状态 ==========
+    // 防止在检查后、调用前状态发生变化导致崩溃
+    if (AssetRegistry.IsLoadingAssets())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("AssetRegistry started loading during rename operation, aborting rename for: %s"), *CurrentName);
+        return false;
+    }
 
     TArray<FAssetData> AllAssetsInFolder;
     AssetRegistry.GetAssetsByPath(FName(*PackagePath), AllAssetsInFolder, false);
@@ -644,9 +724,14 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     TSet<FString> ExistingNames;
     for (const FAssetData& Asset : AllAssetsInFolder)
     {
-        ExistingNames.Add(Asset.AssetName.ToString());
+        // 排除当前资产自己，避免自己与自己冲突
+        if (Asset.PackageName != AssetData.PackageName)
+        {
+            ExistingNames.Add(Asset.AssetName.ToString());
+        }
     }
 
+    // 命名冲突解决：自动添加数字后缀
     FString FinalNewName = NewName;
     int32 Suffix = 1;
     while (ExistingNames.Contains(FinalNewName))
@@ -654,10 +739,21 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
         FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, Suffix++);
     }
 
-    // 执行重命名
+    // ========== 【最终安全检查】防御性编程 ==========
+    // 理论上不应该发生，但作为最后的安全防线
+    if (FinalNewName == CurrentName)
+    {
+        UE_LOG(LogX_AssetNaming, Error, 
+            TEXT("CRITICAL: Final rename would be same-name operation (%s)! This is a logic error."),
+            *CurrentName);
+        return false;  // 直接拒绝执行，而不是强制修改名称
+    }
+
+    // ========== 【参考 UE 源码：AssetRenameManager.cpp:1410】检查资产对象有效性 ==========
     UObject* AssetObject = AssetData.GetAsset();
     if (!AssetObject)
     {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset object is null for '%s', cannot rename"), *CurrentName);
         return false;
     }
 
@@ -671,14 +767,19 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     {
         OutNewName = FinalNewName;
 
-        // 自动清理 Redirector（如果启用）
+        // ========== 【暂时禁用】自动清理 Redirector ==========
+        // 原因：重命名后立即清理 Redirector 可能导致崩溃
+        // UE 内部的验证系统可能还在引用旧的资产路径
+        // TODO: 研究 UE 源码中的正确时机，或者提供手动清理功能
+        /*
         const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
         if (Settings && Settings->bAutoFixupRedirectors)
         {
             TArray<FString> OldPaths;
-            OldPaths.Add(AssetData.PackageName.ToString());
+            OldPaths.Add(OldPackageName);
             FixupRedirectors(OldPaths);
         }
+        */
 
         return true;
     }
@@ -700,10 +801,23 @@ void FX_AssetNamingManager::FixupRedirectors(const TArray<FString>& OldPackagePa
 
     for (const FString& OldPath : OldPackagePaths)
     {
+        if (OldPath.IsEmpty())
+        {
+            continue;
+        }
+
         FAssetData RedirectorData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(OldPath));
         if (RedirectorData.IsValid() && RedirectorData.AssetClassPath.GetAssetName() == TEXT("ObjectRedirector"))
         {
-            if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(RedirectorData.GetAsset()))
+            // ========== 【安全修复】检查 GetAsset() 返回的对象是否有效 ==========
+            UObject* RedirectorObject = RedirectorData.GetAsset();
+            if (!RedirectorObject)
+            {
+                UE_LOG(LogX_AssetNaming, Verbose, TEXT("Redirector object is null for path: %s"), *OldPath);
+                continue;
+            }
+
+            if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(RedirectorObject))
             {
                 Redirectors.Add(Redirector);
             }
@@ -738,11 +852,20 @@ bool FX_AssetNamingManager::OnAssetNeedsRename(const FAssetData& AssetData)
         return false;
     }
 
+    // ========== 【改进】基于事件，而非时间延迟 ==========
+    // 此函数现在通过 OnAssetRenamed 委托调用，而不是 OnInMemoryAssetCreated
+    // OnAssetRenamed 在 ContentBrowser 完成 DeferredItem 流程后触发，时序完全正确
+    // 不再需要 FTSTicker 延迟执行，直接同步处理即可
+    
+    // 缓存原始名称（在重命名前，因为重命名后 AssetData 引用可能失效）
+    FString OldName = AssetData.AssetName.ToString();
+    
     FString NewName;
     if (RenameAssetInternal(AssetData, NewName))
     {
+        // 使用缓存的旧名称，而不是访问可能已失效的 AssetData
         UE_LOG(LogX_AssetNaming, Log, TEXT("Auto-renamed asset: %s -> %s"),
-            *AssetData.AssetName.ToString(), *NewName);
+            *OldName, *NewName);
         return true;
     }
 
@@ -765,9 +888,11 @@ bool FX_AssetNamingManager::IsAssetExcluded(const FAssetData& AssetData) const
     // ========== 核心规则：只允许 /Game/ 路径（项目内容） ==========
     // 排除所有引擎内容、引擎插件、第三方插件
     FString PackagePath = AssetData.PackagePath.ToString();
-    if (!PackagePath.StartsWith(TEXT("/Game/")))
+    // 修复：/Game 根目录的资产，其 PackagePath 是 "/Game"（无末尾斜杠）
+    // 所以检查时不应包含末尾斜杠，否则根目录资产会被错误排除
+    if (!PackagePath.StartsWith(TEXT("/Game")))
     {
-        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset excluded (not in /Game/): %s (path: %s)"),
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset excluded (not in /Game): %s (path: %s)"),
             *AssetData.AssetName.ToString(), *PackagePath);
         return true;
     }

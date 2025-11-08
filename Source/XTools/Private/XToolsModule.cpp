@@ -1,5 +1,6 @@
 #include "XToolsModule.h"
 #include "XToolsDefines.h"
+#include "Popup/XToolsWelcomePopup.h"
 
 #define LOCTEXT_NAMESPACE "FXToolsModule"
 
@@ -7,8 +8,10 @@ DEFINE_LOG_CATEGORY(LogXTools);
 
 void FXToolsModule::StartupModule()
 {
-	// 所有XTools设置已统一迁移到X_AssetEditorSettings
-	// 在项目设置 -> 插件 -> X Asset Editor 中配置
+	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+	
+	// 注册欢迎弹窗（首次打开或更新时显示）
+	FXToolsWelcomePopup::Register();
 }
 
 void FXToolsModule::ShutdownModule()

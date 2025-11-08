@@ -120,7 +120,9 @@ public class XTools : ModuleRules
 				"AssetRegistry",
 				"KismetCompiler",
 				"EditorStyle",
-				"EditorWidgets"
+				"EditorWidgets",
+				"AppFramework",      // Required for SWindow and editor UI windows
+				"ToolWidgets"        // Required for editor tool widgets
 			});
 
 			PrivateDependencyModuleNames.AddRange(new string[] {

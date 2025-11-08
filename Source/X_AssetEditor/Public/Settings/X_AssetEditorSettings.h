@@ -7,7 +7,34 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "Logging/LogVerbosity.h"
 #include "X_AssetEditorSettings.generated.h"
+
+/**
+ * XTools 插件日志级别
+ */
+UENUM()
+enum class EXToolsLogVerbosity : uint8
+{
+	/** 关闭所有日志 */
+	NoLogging = ELogVerbosity::NoLogging,
+	/** 仅致命错误 */
+	Fatal = ELogVerbosity::Fatal,
+	/** 错误及以上 */
+	Error = ELogVerbosity::Error,
+	/** 警告及以上 */
+	Warning = ELogVerbosity::Warning,
+	/** 显示信息及以上 */
+	Display = ELogVerbosity::Display,
+	/** 常规日志及以上 */
+	Log = ELogVerbosity::Log,
+	/** 详细日志（调试用） */
+	Verbose = ELogVerbosity::Verbose,
+	/** 极详细日志（深度调试） */
+	VeryVerbose = ELogVerbosity::VeryVerbose,
+	/** 所有日志 */
+	All = ELogVerbosity::All
+};
 
 /**
  * 资产编辑器插件设置
@@ -36,8 +63,21 @@ private:
 	void InitializeParentClassPrefixMappings();
 
 public:
+	/** 应用日志级别设置到所有 XTools 日志分类 */
+	void ApplyPluginLogVerbosity();
+
+public:
 
 	// ========== 通用设置 ==========
+
+	/**
+	 * XTools 插件日志详细程度
+	 * 控制所有 LogX_ 开头的日志分类输出级别
+	 */
+	UPROPERTY(config, EditAnywhere, Category="通用", meta=(
+		DisplayName="日志级别",
+		ToolTip="设置 XTools 插件所有日志分类的输出级别"))
+	EXToolsLogVerbosity PluginLogVerbosity;
 
 	/**
 	 * 导入时自动重命名资产以遵循命名规范

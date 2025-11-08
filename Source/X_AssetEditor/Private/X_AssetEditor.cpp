@@ -93,10 +93,17 @@ void FX_AssetEditorModule::InitializeManagers()
         UE_LOG(LogX_AssetEditor, Error, TEXT("X_AssetEditor: AssetNamingManager初始化失败"));
     }
 
-    // 3. 注册菜单扩展
+    // 3. 应用日志级别设置
+    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+    if (Settings)
+    {
+        const_cast<UX_AssetEditorSettings*>(Settings)->ApplyPluginLogVerbosity();
+    }
+
+    // 4. 注册菜单扩展
     FX_MenuExtensionManager::Get().RegisterMenuExtensions();
 
-    // 4. 延迟注册菜单 - 简化逻辑
+    // 5. 延迟注册菜单 - 简化逻辑
     RegisterMenusWhenReady();
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("X_AssetEditor 管理器初始化完成"));
