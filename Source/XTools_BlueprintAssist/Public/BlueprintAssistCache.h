@@ -12,7 +12,7 @@
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBANodeData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 protected:
 	UPROPERTY()
@@ -71,7 +71,7 @@ public:
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBAGraphData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	UPROPERTY()
 	TMap<FGuid, FBANodeData> NodeData; // node guid -> node data
@@ -86,7 +86,7 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAGraphData
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBAPackageData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	UPROPERTY()
 	TMap<FGuid, FBAGraphData> GraphData; // graph guid -> graph data
@@ -95,7 +95,7 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAPackageData
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBACacheData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	UPROPERTY()
 	TMap<FName, FBAPackageData> PackageData; // package name -> package data

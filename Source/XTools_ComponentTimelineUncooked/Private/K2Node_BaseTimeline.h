@@ -18,7 +18,10 @@
 UCLASS(abstract, meta=(ToolTip="时间轴节点基类"))
 class XTOOLS_COMPONENTTIMELINEUNCOOKED_API UK2Node_BaseTimeline : public UK2Node_HackTimeline
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
+
+public:
+	UK2Node_BaseTimeline(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 public:
 	//~ Begin UEdGraphNode Interface.

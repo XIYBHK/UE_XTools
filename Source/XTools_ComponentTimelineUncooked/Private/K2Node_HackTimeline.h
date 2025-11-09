@@ -19,7 +19,10 @@ class UEdGraphPin;
 UCLASS(abstract)
 class XTOOLS_COMPONENTTIMELINEUNCOOKED_API UK2Node_HackTimeline : public UK2Node_Timeline
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
+
+public:
+	UK2Node_HackTimeline(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 public:
 	//~ UEdGraphNode 接口实现

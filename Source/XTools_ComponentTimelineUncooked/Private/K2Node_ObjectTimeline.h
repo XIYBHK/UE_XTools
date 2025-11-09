@@ -18,7 +18,10 @@
 UCLASS()
 class XTOOLS_COMPONENTTIMELINEUNCOOKED_API UK2Node_ObjectTimeline : public UK2Node_BaseTimeline
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
+
+public:
+	UK2Node_ObjectTimeline(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 public:
 	//~ Begin UEdGraphNode Interface.

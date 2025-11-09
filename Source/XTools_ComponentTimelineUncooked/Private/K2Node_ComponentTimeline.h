@@ -20,7 +20,10 @@ UCLASS(meta=(DisplayName = "组件时间轴 (Component Timeline)",
 	Keywords="Component Timeline"))
 class XTOOLS_COMPONENTTIMELINEUNCOOKED_API UK2Node_ComponentTimeline : public UK2Node_BaseTimeline
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
+
+public:
+	UK2Node_ComponentTimeline(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 public:
 	//~ Begin UEdGraphNode Interface.

@@ -14,8 +14,21 @@ public class XTools_AutoSizeComments : ModuleRules
 {
 	public XTools_AutoSizeComments(ReadOnlyTargetRules Target) : base(Target)
 	{
-		PCHUsage = ModuleRules.PCHUsageMode.NoPCHs;
+		// UE5.3+ 标准配置
+		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		
+		// C++20 标准与引擎保持一致
+		CppStandard = CppStandardVersion.Default;
+		
+		// 强制执行 IWYU 原则 (UE5.2+)
+		IWYUSupport = IWYUSupport.Full;
+		
+		// 开发时禁用 Unity Build，确保代码质量
 		bUseUnity = false;
+		
+		// UE 标准设置
+		bEnableExceptions = false;
+		bUseRTTI = false;
 
 		PublicIncludePaths.AddRange(
 			new string[] {

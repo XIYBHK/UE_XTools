@@ -12,7 +12,7 @@ class SAutoSizeCommentsGraphNode;
 USTRUCT()
 struct XTOOLS_AUTOSIZECOMMENTS_API FASCCommentData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	/* Containing nodes */
 	UPROPERTY()
@@ -39,7 +39,7 @@ private:
 USTRUCT()
 struct XTOOLS_AUTOSIZECOMMENTS_API FASCGraphData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	UPROPERTY()
 	TMap<FGuid, FASCCommentData> CommentData; // node guid -> comment data
@@ -59,7 +59,7 @@ struct XTOOLS_AUTOSIZECOMMENTS_API FASCGraphData
 USTRUCT()
 struct XTOOLS_AUTOSIZECOMMENTS_API FASCPackageData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	UPROPERTY()
 	TMap<FGuid, FASCGraphData> GraphData; // graph guid -> graph data
@@ -68,7 +68,7 @@ struct XTOOLS_AUTOSIZECOMMENTS_API FASCPackageData
 USTRUCT()
 struct XTOOLS_AUTOSIZECOMMENTS_API FASCCacheData
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	UPROPERTY()
 	TMap<FName, FASCPackageData> PackageData; // package -> graph data
