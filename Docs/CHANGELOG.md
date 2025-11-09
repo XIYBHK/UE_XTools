@@ -2,7 +2,7 @@
 
 ## 📌 版本 v1.9.1 (2025-11-08)
 
-**主要更新**：
+**主要更新**:
 - 🔧 完成 UE 5.6 完整兼容性修复（采用类型别名方案）
 - ✅ 验证所有版本（5.3-5.6）编译成功，0错误0警告
 - 🚀 CI/CD 改进：支持单独编译指定版本或编译所有版本
@@ -10,6 +10,9 @@
 - 🐛 修复内存泄漏和性能问题
 - 🐛 修复资产自动重命名功能导致编辑器崩溃的问题
 - 🔧 改进资产命名系统的稳定性和可靠性
+- 🔄 修复模块重命名后的API导出宏问题（XTools_前缀适配）
+- 🎯 修复EnhancedCodeFlow模块移动构造函数语法错误
+- 📝 优化BlueprintScreenshotTool工具栏文本显示
 
 ### 🔌 集成 BlueprintScreenshotTool 模块
 
@@ -143,6 +146,30 @@ OpenContextMenu(MenuLocation, ...);
 
 **影响模块**：
 - `X_AssetEditor/AssetNaming` - 资产命名委托和管理器
+
+### 🔄 模块重命名API导出宏修复
+
+**问题**：添加 `XTools_` 前缀后，API导出宏未更新导致编译错误
+
+**修复**：批量更新所有模块API导出宏
+- `XTools_EnhancedCodeFlow`：48个文件 `ENHANCEDCODEFLOW_API` → `XTOOLS_ENHANCEDCODEFLOW_API`
+- `XTools_ComponentTimelineRuntime`：2个文件 `COMPONENTTIMELINERUNTIME_API` → `XTOOLS_COMPONENTTIMELINERUNTIME_API`
+- `XTools_BlueprintScreenshotTool`：8个文件 `BLUEPRINTSCREENSHOTTOOL_API` → `XTOOLS_BLUEPRINTSCREENSHOTTOOL_API`
+- `XTools_ComponentTimelineUncooked`：4个文件 `COMPONENTTIMELINEUNCOOKED_API` → `XTOOLS_COMPONENTTIMELINEUNCOOKED_API`
+
+**结果**：修复重复前缀问题，所有模块编译通过
+
+### 🎯 EnhancedCodeFlow语法错误修复
+
+**问题**：`FECFHandleBP` 移动构造函数和移动赋值运算符实现错误
+
+**修复**：
+- 添加移动构造函数函数体，使用 `MoveTemp()` 和 `Invalidate()` 正确处理资源转移
+- 修复移动赋值运算符，遵循 UE C++ 移动语义规范
+
+### 📝 BlueprintScreenshotTool界面优化
+
+**改进**：工具栏文本"截取截图"简化为"截图"，保持详细工具提示不变
 
 ---
 

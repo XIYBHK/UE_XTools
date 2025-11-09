@@ -66,7 +66,7 @@
 			]
 		},
 		{
-			"Name": "ComponentTimelineRuntime",
+			"Name": "XTools_ComponentTimelineRuntime",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
@@ -76,7 +76,7 @@
 			]
 		},
 		{
-			"Name": "ComponentTimelineUncooked",
+			"Name": "XTools_ComponentTimelineUncooked",
 			"Type": "UncookedOnly",
 			"LoadingPhase": "PostDefault",
 			"PlatformAllowList": [
@@ -86,7 +86,7 @@
 			]
 		},
 		{
-			"Name": "EnhancedCodeFlow",
+			"Name": "XTools_EnhancedCodeFlow",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
@@ -198,7 +198,7 @@
 			]
 		},
 		{
-			"Name": "BlueprintScreenshotTool",
+			"Name": "XTools_BlueprintScreenshotTool",
 			"Type": "Editor",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [

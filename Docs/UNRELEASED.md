@@ -30,7 +30,25 @@
   - 15项设置 + 2个命令 + 3个错误提示
   - 使用LOCTEXT支持多语言
 
+- [BlueprintScreenshotTool] 工具栏文本优化
+  - 简化"截取截图"为"截图"，保持详细工具提示不变
+
 ## 🐛 问题修复 (Fixed)
+
+- [XTools_EnhancedCodeFlow] 修复模块重命名后的API导出宏问题
+  - 批量更新API宏：`ENHANCEDCODEFLOW_API` → `XTOOLS_ENHANCEDCODEFLOW_API`（48个文件）
+
+- [XTools_ComponentTimelineRuntime] 修复模块重命名后的API导出宏问题
+  - 更新API宏：`COMPONENTTIMELINERUNTIME_API` → `XTOOLS_COMPONENTTIMELINERUNTIME_API`（2个文件）
+
+- [XTools_BlueprintScreenshotTool] 修复模块重命名后的API导出宏问题
+  - 更新API宏：`BLUEPRINTSCREENSHOTTOOL_API` → `XTOOLS_BLUEPRINTSCREENSHOTTOOL_API`（8个文件）
+
+- [XTools_ComponentTimelineUncooked] 修复模块重命名后的API导出宏问题
+  - 更新API宏：`COMPONENTTIMELINEUNCOOKED_API` → `XTOOLS_COMPONENTTIMELINEUNCOOKED_API`（4个文件）
+
+- [XTools_EnhancedCodeFlow] 修复FECFHandleBP移动构造函数语法错误
+  - 添加函数体，使用 `MoveTemp` 和 `Invalidate()` 正确处理资源转移
 
 - [X_AssetEditor] 修复资产自动重命名导致编辑器崩溃
   - 问题：在 `/Game` 根目录创建新资产时崩溃（EXCEPTION_ACCESS_VIOLATION）

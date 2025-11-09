@@ -90,7 +90,7 @@ public class XTools : ModuleRules
 		"Slate",
 		"SlateCore",
 		"UMG",
-		"ComponentTimelineRuntime",
+		"XTools_ComponentTimelineRuntime",
 		"RandomShuffles",
 		"FormationSystem",
 		// UE Geometry modules for native surface sampling
@@ -116,7 +116,7 @@ public class XTools : ModuleRules
 				"UnrealEd",
 				"BlueprintGraph",
 				"GraphEditor",
-				"ComponentTimelineUncooked",
+				"XTools_ComponentTimelineUncooked",
 				"AssetRegistry",
 				"KismetCompiler",
 				"EditorStyle",
