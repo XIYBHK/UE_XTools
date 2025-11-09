@@ -5,7 +5,7 @@
 
 
 #include "XBlueprintLibraryCleanupTool.h"
-#include "XToolsDefines.h"
+#include "XToolsModule.h"
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"

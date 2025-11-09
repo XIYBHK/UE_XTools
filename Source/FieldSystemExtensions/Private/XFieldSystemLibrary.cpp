@@ -2,6 +2,7 @@
 
 #include "XFieldSystemLibrary.h"
 #include "XFieldSystemActor.h"
+#include "FieldSystemExtensions.h"
 
 UFieldSystemMetaDataFilter* UXFieldSystemLibrary::CreateBasicFilter(
 	TEnumAsByte<EFieldObjectType> ObjectType,
@@ -41,7 +42,7 @@ UFieldSystemMetaDataFilter* UXFieldSystemLibrary::GetOrCreateActorFilter(AXField
 {
 	if (!Actor)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XFieldSystemLibrary: Invalid Actor provided to GetOrCreateActorFilter"));
+		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemLibrary: Invalid Actor provided to GetOrCreateActorFilter"));
 		return nullptr;
 	}
 
@@ -49,7 +50,7 @@ UFieldSystemMetaDataFilter* UXFieldSystemLibrary::GetOrCreateActorFilter(AXField
 	UFieldSystemMetaDataFilter* CachedFilter = Actor->GetCachedFilter();
 	if (CachedFilter)
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("XFieldSystemLibrary: Using cached filter from %s"), *Actor->GetName());
+		UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemLibrary: Using cached filter from %s"), *Actor->GetName());
 		return CachedFilter;
 	}
 
@@ -58,7 +59,7 @@ UFieldSystemMetaDataFilter* UXFieldSystemLibrary::GetOrCreateActorFilter(AXField
 	if (NewFilter)
 	{
 		Actor->SetCachedFilter(NewFilter);
-		UE_LOG(LogTemp, Log, TEXT("XFieldSystemLibrary: Created and cached new filter for %s"), *Actor->GetName());
+		UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemLibrary: Created and cached new filter for %s"), *Actor->GetName());
 	}
 	
 	return NewFilter;

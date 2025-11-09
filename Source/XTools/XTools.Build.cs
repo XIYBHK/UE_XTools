@@ -90,6 +90,7 @@ public class XTools : ModuleRules
 		"Slate",
 		"SlateCore",
 		"UMG",
+		"XToolsCore",  // 核心工具和版本兼容性
 		"XTools_ComponentTimelineRuntime",
 		"RandomShuffles",
 		"FormationSystem",

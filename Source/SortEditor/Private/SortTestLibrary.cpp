@@ -6,9 +6,8 @@
 #include "GameFramework/Actor.h"
 #include "Internationalization/Text.h"
 #include "Components/SceneComponent.h"
+#include "SortEditorModule.h"
 //  移除STL包含，使用UE内置类型检查
-
-DEFINE_LOG_CATEGORY_STATIC(SortTestLog, Log, All);
 
 //~ 辅助函数 - 日志格式化 (命名空间内)
 // =================================================================================================
@@ -126,7 +125,7 @@ namespace SortTest_Private
 			*TestName, *SuccessString, DurationMs, *OriginalArrayStr, *SortedArrayStr
 		);
 
-		UE_LOG(SortTestLog, Log, TEXT("%s"), *LogMessage);
+		UE_LOG(LogSortEditor, Log, TEXT("%s"), *LogMessage);
 	}
 }
 
@@ -159,7 +158,7 @@ void USortTestLibrary::RunActorSortTest(const FString& TestName, const FString& 
 
     if (OriginalActors.IsEmpty())
     {
-        UE_LOG(SortTestLog, Error, TEXT("测试 [%s] 失败：无法生成用于测试的Actor。"), *TestName);
+        UE_LOG(LogSortEditor, Error, TEXT("测试 [%s] 失败：无法生成用于测试的Actor。"), *TestName);
         return;
     }
     
@@ -326,7 +325,7 @@ void USortTestLibrary::ExecuteSortTest(UObject* WorldContextObject, ESortTestTyp
 			break;
 
 		default:
-			UE_LOG(SortTestLog, Warning, TEXT("未知的排序测试类型: %s"), *TestName);
+			UE_LOG(LogSortEditor, Warning, TEXT("未知的排序测试类型: %s"), *TestName);
 			return;
 	}
 }

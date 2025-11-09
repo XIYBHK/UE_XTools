@@ -11,3 +11,6 @@
 #ifndef SORT_API
 #define SORT_API
 #endif
+
+// Sort 模块日志分类
+DECLARE_LOG_CATEGORY_EXTERN(LogSort, Log, All);

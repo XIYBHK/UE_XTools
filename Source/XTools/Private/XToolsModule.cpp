@@ -1,5 +1,4 @@
 #include "XToolsModule.h"
-#include "XToolsDefines.h"
 
 #define LOCTEXT_NAMESPACE "FXToolsModule"
 

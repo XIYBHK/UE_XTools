@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
+// FieldSystemExtensions 模块日志分类
+DECLARE_LOG_CATEGORY_EXTERN(LogFieldSystemExtensions, Log, All);
+
 /**
  * FieldSystemExtensions 模块
  * 提供增强的Field System功能

@@ -23,7 +23,7 @@ public class ObjectPool : ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "XTools"  // UE版本兼容性支持
+            "XToolsCore"  // UE版本兼容性支持
         });
         
         //  私有依赖 - 内部实现需要

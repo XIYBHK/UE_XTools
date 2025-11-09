@@ -10,8 +10,7 @@
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
 #include "Algo/Reverse.h"
-
-DEFINE_LOG_CATEGORY_STATIC(SortLibraryLog, Log, All);
+#include "SortAPI.h"
 
 /**
  * 自然排序比较器，用于处理字符串中的数字和中文
@@ -885,7 +884,7 @@ DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
     P_FINISH;
 
     P_NATIVE_BEGIN;
-    UE_LOG(SortLibraryLog, Warning, TEXT("execSortArrayByPropertyInPlace: ArrayAddr=%p, ArrayProperty=%p, PropertyName=%s"),
+    UE_LOG(LogSort, Warning, TEXT("execSortArrayByPropertyInPlace: ArrayAddr=%p, ArrayProperty=%p, PropertyName=%s"),
         ArrayAddr, ArrayProperty, *PropertyName.ToString());
 
     if (ArrayAddr && ArrayProperty)
@@ -894,7 +893,7 @@ DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
     }
     else
     {
-        UE_LOG(SortLibraryLog, Error, TEXT("execSortArrayByPropertyInPlace: 无效参数 - ArrayAddr=%p, ArrayProperty=%p"),
+        UE_LOG(LogSort, Error, TEXT("execSortArrayByPropertyInPlace: 无效参数 - ArrayAddr=%p, ArrayProperty=%p"),
             ArrayAddr, ArrayProperty);
         OriginalIndices.Empty();
     }
@@ -903,20 +902,20 @@ DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
 
 void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty* ArrayProp, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
 {
-    UE_LOG(SortLibraryLog, Warning, TEXT("GenericSortArrayByProperty: 开始执行 - TargetArray=%p, ArrayProp=%p, PropertyName=%s"),
+    UE_LOG(LogSort, Warning, TEXT("GenericSortArrayByProperty: 开始执行 - TargetArray=%p, ArrayProp=%p, PropertyName=%s"),
         TargetArray, ArrayProp, *PropertyName.ToString());
 
     if (!TargetArray || !ArrayProp)
     {
-        UE_LOG(SortLibraryLog, Error, TEXT("GenericSortArrayByProperty: 参数无效 - TargetArray=%p, ArrayProp=%p"),
+        UE_LOG(LogSort, Error, TEXT("GenericSortArrayByProperty: 参数无效 - TargetArray=%p, ArrayProp=%p"),
             TargetArray, ArrayProp);
         OriginalIndices.Empty();
         return;
     }
 
-    UE_LOG(SortLibraryLog, Warning, TEXT("GenericSortArrayByProperty: 创建ArrayHelper"));
+    UE_LOG(LogSort, Warning, TEXT("GenericSortArrayByProperty: 创建ArrayHelper"));
     FScriptArrayHelper ArrayHelper(ArrayProp, TargetArray);
-    UE_LOG(SortLibraryLog, Warning, TEXT("GenericSortArrayByProperty: ArrayHelper创建成功，数组大小=%d"), ArrayHelper.Num());
+    UE_LOG(LogSort, Warning, TEXT("GenericSortArrayByProperty: ArrayHelper创建成功，数组大小=%d"), ArrayHelper.Num());
     if (ArrayHelper.Num() < 2)
     {
         // 数组太小，不需要排序
@@ -949,7 +948,7 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
 
     if (!SortProp)
     {
-        UE_LOG(SortLibraryLog, Warning, TEXT("无法找到属性: %s"), *PropertyName.ToString());
+        UE_LOG(LogSort, Warning, TEXT("无法找到属性: %s"), *PropertyName.ToString());
         // 返回原始索引顺序
         OriginalIndices.SetNum(ArrayHelper.Num());
         for (int32 i = 0; i < ArrayHelper.Num(); ++i)
@@ -1221,7 +1220,7 @@ void USortLibrary::SortStructByPropertyImpl(void* TargetArray, FArrayProperty* A
     FStructProperty* StructProp = CastField<FStructProperty>(ArrayProp->Inner);
     if (!StructProp)
     {
-        UE_LOG(SortLibraryLog, Error, TEXT("SortStructByPropertyImpl: 不是结构体数组"));
+        UE_LOG(LogSort, Error, TEXT("SortStructByPropertyImpl: 不是结构体数组"));
         OriginalIndices.Empty();
         return;
     }
@@ -1240,7 +1239,7 @@ void USortLibrary::SortStructByPropertyImpl(void* TargetArray, FArrayProperty* A
 
     if (!SortProperty)
     {
-        UE_LOG(SortLibraryLog, Error, TEXT("SortStructByPropertyImpl: 未找到属性 %s"), *PropertyName.ToString());
+        UE_LOG(LogSort, Error, TEXT("SortStructByPropertyImpl: 未找到属性 %s"), *PropertyName.ToString());
         OriginalIndices.SetNum(ArrayHelper.Num());
         for (int32 i = 0; i < ArrayHelper.Num(); ++i)
         {
@@ -1269,7 +1268,7 @@ void USortLibrary::SortStructByPropertyImpl(void* TargetArray, FArrayProperty* A
 
     if (!bTypeMatches)
     {
-        UE_LOG(SortLibraryLog, Error, TEXT("SortStructByPropertyImpl: 属性类型不匹配"));
+        UE_LOG(LogSort, Error, TEXT("SortStructByPropertyImpl: 属性类型不匹配"));
         OriginalIndices.SetNum(ArrayHelper.Num());
         for (int32 i = 0; i < ArrayHelper.Num(); ++i)
         {

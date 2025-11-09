@@ -8,7 +8,7 @@
  * 
  * 支持所有 UE 日志分类类型，包括 Shipping 构建中的 FNoLoggingCategory。
  */
-struct XTOOLS_API FXToolsErrorReporter
+struct XTOOLSCORE_API FXToolsErrorReporter
 {
     // 模板方法 - 支持所有日志分类类型（包括 FNoLoggingCategory）
     template<typename LogCategoryType>
@@ -101,5 +101,3 @@ void FXToolsErrorReporter::Info(const LogCategoryType& Category,
 {
     Report(Category, ELogVerbosity::Log, Message, Context, bNotifyOnScreen, DisplayTime);
 }
-
-

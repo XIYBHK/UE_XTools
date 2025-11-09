@@ -4,14 +4,16 @@
 
 #define LOCTEXT_NAMESPACE "FFieldSystemExtensionsModule"
 
+DEFINE_LOG_CATEGORY(LogFieldSystemExtensions);
+
 void FFieldSystemExtensionsModule::StartupModule()
 {
-	// 模块启动逻辑
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("FieldSystemExtensions module started"));
 }
 
 void FFieldSystemExtensionsModule::ShutdownModule()
 {
-	// 模块关闭逻辑
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("FieldSystemExtensions module shutdown"));
 }
 
 #undef LOCTEXT_NAMESPACE

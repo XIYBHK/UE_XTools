@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "XFieldSystemActor.h"
+#include "FieldSystemExtensions.h"
 #include "XToolsVersionCompat.h"
 #include "Field/FieldSystemComponent.h"
 #include "GameFramework/Character.h"
@@ -96,7 +97,7 @@ void AXFieldSystemActor::ApplyFilter()
 		// 这里只是创建和缓存筛选器对象
 		// 用户需要在蓝图中调用FieldSystemComponent的方法时传入这个Filter
 		
-		UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Filter applied - ObjectType=%d, FilterType=%d, PositionType=%d"),
+		UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Filter applied - ObjectType=%d, FilterType=%d, PositionType=%d"),
 			ObjectType.GetValue(), FilterType.GetValue(), PositionType.GetValue());
 	}
 }
@@ -209,7 +210,7 @@ void AXFieldSystemActor::ExcludeCharacters()
 	// 同时设置只影响Destruction对象
 	ObjectType = EFieldObjectType::Field_Object_Destruction;
 	
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Configured to exclude Characters"));
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Configured to exclude Characters"));
 }
 
 void AXFieldSystemActor::OnlyAffectDestruction()
@@ -218,7 +219,7 @@ void AXFieldSystemActor::OnlyAffectDestruction()
 	ObjectType = EFieldObjectType::Field_Object_Destruction;
 	FilterType = EFieldFilterType::Field_Filter_Dynamic;
 	
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Configured to only affect Destruction objects"));
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Configured to only affect Destruction objects"));
 }
 
 void AXFieldSystemActor::OnlyAffectDynamic()
@@ -226,7 +227,7 @@ void AXFieldSystemActor::OnlyAffectDynamic()
 	bEnableFiltering = true;
 	FilterType = EFieldFilterType::Field_Filter_Dynamic;
 	
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Configured to only affect Dynamic objects"));
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Configured to only affect Dynamic objects"));
 }
 
 void AXFieldSystemActor::CollectGeometryCollections()
@@ -264,12 +265,12 @@ void AXFieldSystemActor::CollectGeometryCollections()
 		if (GC)
 		{
 			CachedGeometryCollections.Add(GC);
-			UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Cached GeometryCollection from '%s'"), 
+			UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Cached GeometryCollection from '%s'"), 
 				*Actor->GetName());
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Collected %d GeometryCollections"), 
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Collected %d GeometryCollections"), 
 		CachedGeometryCollections.Num());
 }
 
@@ -290,7 +291,7 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 
 	if (CachedGeometryCollections.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
+		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
 		return;
 	}
 
@@ -342,7 +343,7 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 		AppliedCount++;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Applied field to %d/%d GeometryCollections"), 
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Applied field to %d/%d GeometryCollections"), 
 		AppliedCount, CachedGeometryCollections.Num());
 }
 
@@ -350,7 +351,7 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 {
 	if (CachedGeometryCollections.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections to register!"));
+		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections to register!"));
 		return;
 	}
 
@@ -373,11 +374,11 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 		GC->InitializationFields.Add(this);
 		RegisteredCount++;
 
-		UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Registered to GeometryCollection '%s'"), 
+		UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Registered to GeometryCollection '%s'"), 
 			*GC->GetOwner()->GetName());
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Registered to %d/%d GeometryCollections"), 
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Registered to %d/%d GeometryCollections"), 
 		RegisteredCount, CachedGeometryCollections.Num());
 }
 
@@ -385,14 +386,14 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 {
 	if (CachedGeometryCollections.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
+		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
 		return;
 	}
 
 	UFieldSystemComponent* FieldComp = GetFieldSystemComponent();
 	if (!FieldComp)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XFieldSystemActor: No FieldSystemComponent found!"));
+		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No FieldSystemComponent found!"));
 		return;
 	}
 
@@ -401,7 +402,7 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 	
 	if (ConstructionFields.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XFieldSystemActor: FieldSystemComponent has no construction fields configured!"));
+		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: FieldSystemComponent has no construction fields configured!"));
 		return;
 	}
 
@@ -455,7 +456,7 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Applied %d construction fields to %d GeometryCollections"), 
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Applied %d construction fields to %d GeometryCollections"), 
 		ConstructionFields.Num(), CachedGeometryCollections.Num());
 }
 
@@ -492,12 +493,12 @@ void AXFieldSystemActor::ApplyRuntimeFiltering()
 			DisableFieldResponseForActor(Actor);
 			ExcludedCount++;
 			
-			UE_LOG(LogTemp, Verbose, TEXT("XFieldSystemActor: Excluded Actor '%s' from Field effects"), 
+			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Excluded Actor '%s' from Field effects"), 
 				*Actor->GetName());
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Runtime filtering applied - Processed %d actors, Excluded %d"), 
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Runtime filtering applied - Processed %d actors, Excluded %d"), 
 		ProcessedCount, ExcludedCount);
 }
 
@@ -513,7 +514,7 @@ void AXFieldSystemActor::RegisterSpawnListener()
 	SpawnListenerHandle = World->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(
 		this, &AXFieldSystemActor::OnActorSpawned));
 
-	UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Registered spawn listener"));
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Registered spawn listener"));
 }
 
 void AXFieldSystemActor::UnregisterSpawnListener()
@@ -530,7 +531,7 @@ void AXFieldSystemActor::UnregisterSpawnListener()
 		World->RemoveOnActorSpawnedHandler(SpawnListenerHandle);
 		SpawnListenerHandle.Reset();
 		
-		UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Unregistered spawn listener"));
+		UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Unregistered spawn listener"));
 	}
 }
 
@@ -546,7 +547,7 @@ void AXFieldSystemActor::OnActorSpawned(AActor* SpawnedActor)
 	{
 		DisableFieldResponseForActor(SpawnedActor);
 		
-		UE_LOG(LogTemp, Verbose, TEXT("XFieldSystemActor: Spawn listener excluded '%s'"), 
+		UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Spawn listener excluded '%s'"), 
 			*SpawnedActor->GetName());
 	}
 	else
@@ -556,7 +557,7 @@ void AXFieldSystemActor::OnActorSpawned(AActor* SpawnedActor)
 		if (GC)
 		{
 			CachedGeometryCollections.Add(GC);
-			UE_LOG(LogTemp, Log, TEXT("XFieldSystemActor: Added spawned GeometryCollection from '%s'"), 
+			UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Added spawned GeometryCollection from '%s'"), 
 				*SpawnedActor->GetName());
 		}
 	}
@@ -587,7 +588,7 @@ void AXFieldSystemActor::DisableFieldResponseForActor(AActor* Actor)
 			// 参数：bSimulate=false, bMaintainPhysicsBlending=false, bUpdatePhysicsProperties=true
 			BodyInstance->SetInstanceSimulatePhysics(false, false, true);
 			
-			UE_LOG(LogTemp, Log, TEXT("  ✓ Set kinematic for '%s' (Field response blocked, collision retained)"), 
+			UE_LOG(LogFieldSystemExtensions, Log, TEXT("  ✓ Set kinematic for '%s' (Field response blocked, collision retained)"), 
 				*Primitive->GetName());
 		}
 		else
@@ -596,7 +597,7 @@ void AXFieldSystemActor::DisableFieldResponseForActor(AActor* Actor)
 			Primitive->SetSimulatePhysics(false);
 			Primitive->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			
-			UE_LOG(LogTemp, Log, TEXT("  ✓ Disabled physics for '%s' (fallback method)"), 
+			UE_LOG(LogFieldSystemExtensions, Log, TEXT("  ✓ Disabled physics for '%s' (fallback method)"), 
 				*Primitive->GetName());
 		}
 	}

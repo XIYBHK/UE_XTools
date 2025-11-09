@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.9.1",
 	"FriendlyName": "XTools",
-	"Description": "蓝图函数库和实用工具",
+	"Description": "集成了部分第三方插件,仅供内部使用,请勿传播.",
 	"Category": "Tools",
 	"CreatedBy": "XIYBHK",
 	"CreatedByURL": "",
@@ -16,6 +16,16 @@
 	"IsExperimentalVersion": false,
 	"Installed": false,
 	"Modules": [
+		{
+			"Name": "XToolsCore",
+			"Type": "Runtime",
+			"LoadingPhase": "PreDefault",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			]
+		},
 		{
 			"Name": "XTools",
 			"Type": "Editor",

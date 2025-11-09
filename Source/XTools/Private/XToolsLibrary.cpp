@@ -8,8 +8,11 @@
 #include "XToolsLibrary.h"
 
 //  插件模块依赖
-#include "XToolsDefines.h"
+#include "XToolsModule.h"
 #include "XToolsErrorReporter.h"
+
+// Parent finder settings
+static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
 #include "RandomShuffleArrayLibrary.h"
 #include "FormationSystem.h"
 #include "FormationLibrary.h"

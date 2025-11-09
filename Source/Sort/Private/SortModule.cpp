@@ -4,16 +4,20 @@
 */
 
 #include "SortModule.h"
+#include "SortAPI.h"
 
 #define LOCTEXT_NAMESPACE "FSortModule"
 
+DEFINE_LOG_CATEGORY(LogSort);
+
 void FSortModule::StartupModule()
 {
-    // Runtime-only module, no editor-specific startup.
+    UE_LOG(LogSort, Log, TEXT("Sort module started"));
 }
 
 void FSortModule::ShutdownModule()
 {
+    UE_LOG(LogSort, Log, TEXT("Sort module shutdown"));
 }
 
 #undef LOCTEXT_NAMESPACE

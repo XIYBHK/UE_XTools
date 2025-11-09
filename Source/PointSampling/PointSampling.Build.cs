@@ -36,7 +36,8 @@ public class PointSampling : ModuleRules
 		{
 			"Core",
 			"CoreUObject",
-			"Engine"
+			"Engine",
+			"XToolsCore"  // XTools版本兼容层
 		});
 
 		//  私有依赖模块

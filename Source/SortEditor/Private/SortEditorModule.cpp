@@ -4,10 +4,13 @@
 
 #define LOCTEXT_NAMESPACE "FSortEditorModule"
 
+DEFINE_LOG_CATEGORY(LogSortEditor);
+
 void FSortEditorModule::StartupModule()
 {
     PinFactory = MakeShareable(new FSortGraphPinFactory());
     FEdGraphUtilities::RegisterVisualPinFactory(PinFactory);
+    UE_LOG(LogSortEditor, Log, TEXT("SortEditor module started"));
 }
 
 void FSortEditorModule::ShutdownModule()
@@ -17,8 +20,9 @@ void FSortEditorModule::ShutdownModule()
         FEdGraphUtilities::UnregisterVisualPinFactory(PinFactory);
         PinFactory.Reset();
     }
+    UE_LOG(LogSortEditor, Log, TEXT("SortEditor module shutdown"));
 }
 
 #undef LOCTEXT_NAMESPACE
 
-IMPLEMENT_MODULE(FSortEditorModule, SortEditor) 
+IMPLEMENT_MODULE(FSortEditorModule, SortEditor)

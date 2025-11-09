@@ -234,4 +234,3 @@ namespace XToolsVersionCompat
 #define XTOOLS_ATOMIC_SUB(AtomicVar, Value) XToolsVersionCompat::AtomicSub(AtomicVar, Value)
 #define XTOOLS_ATOMIC_EXCHANGE(AtomicVar, Value) XToolsVersionCompat::AtomicExchange(AtomicVar, Value)
 #define XTOOLS_ATOMIC_COMPARE_EXCHANGE(AtomicVar, Expected, Desired) XToolsVersionCompat::AtomicCompareExchange(AtomicVar, Expected, Desired)
-

@@ -42,7 +42,8 @@ public class BlueprintExtensionsRuntime : ModuleRules
 			{
 				"Core",
 				"CoreUObject",
-				"Engine"
+				"Engine",
+				"XToolsCore"  // 需要 XToolsVersionCompat.h
 			}
 		);
 

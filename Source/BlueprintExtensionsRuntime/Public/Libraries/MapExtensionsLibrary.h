@@ -6,11 +6,8 @@
 #include "UObject/UnrealType.h"
 #include "UObject/ScriptMacros.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "XToolsVersionCompat.h"
 #include "MapExtensionsLibrary.generated.h"
-
-// UE 5.5+ FProperty::ElementSize 已弃用，但该模块暂未迁移到新API
-// 抑制弃用警告，避免编译中断（遵循Epic官方做法，详见CoreUObject/Property.cpp）
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
 UCLASS()
 class BLUEPRINTEXTENSIONSRUNTIME_API UMapExtensionsLibrary : public UBlueprintFunctionLibrary
@@ -252,7 +249,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 获取Map的Key属性
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 KeyPropertySize = CurrKeyProp->GetElementSize() * CurrKeyProp->ArrayDim;
+#else
 		const int32 KeyPropertySize = CurrKeyProp->ElementSize * CurrKeyProp->ArrayDim;
+#endif
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		CurrKeyProp->InitializeValue(KeyStorageSpace);
 
@@ -287,7 +288,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 使用Array的元素类型作为Value属性
 		const FProperty* CurrValueProp = ArrayProp->Inner;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 ValuePropertySize = CurrValueProp->GetElementSize() * CurrValueProp->ArrayDim;
+#else
 		const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+#endif
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 		CurrValueProp->InitializeValue(ValueStorageSpace);
 
@@ -333,7 +338,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 获取Map的Key属性
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 KeyPropertySize = CurrKeyProp->GetElementSize() * CurrKeyProp->ArrayDim;
+#else
 		const int32 KeyPropertySize = CurrKeyProp->ElementSize * CurrKeyProp->ArrayDim;
+#endif
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		CurrKeyProp->InitializeValue(KeyStorageSpace);
 
@@ -368,7 +377,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 使用Array的元素类型作为Value属性
 		const FProperty* CurrValueProp = ArrayProp->Inner;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 ValuePropertySize = CurrValueProp->GetElementSize() * CurrValueProp->ArrayDim;
+#else
 		const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+#endif
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 		CurrValueProp->InitializeValue(ValueStorageSpace);
 
@@ -420,7 +433,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 获取Map的Key属性
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 KeyPropertySize = CurrKeyProp->GetElementSize() * CurrKeyProp->ArrayDim;
+#else
 		const int32 KeyPropertySize = CurrKeyProp->ElementSize * CurrKeyProp->ArrayDim;
+#endif
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		CurrKeyProp->InitializeValue(KeyStorageSpace);
 
@@ -455,7 +472,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 使用Set的元素类型作为Value属性
 		const FProperty* CurrValueProp = SetProp->ElementProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 ValuePropertySize = CurrValueProp->GetElementSize() * CurrValueProp->ArrayDim;
+#else
 		const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+#endif
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 		CurrValueProp->InitializeValue(ValueStorageSpace);
 
@@ -501,7 +522,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 获取Map的Key属性
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 KeyPropertySize = CurrKeyProp->GetElementSize() * CurrKeyProp->ArrayDim;
+#else
 		const int32 KeyPropertySize = CurrKeyProp->ElementSize * CurrKeyProp->ArrayDim;
+#endif
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		CurrKeyProp->InitializeValue(KeyStorageSpace);
 
@@ -536,7 +561,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 使用Set的元素类型作为Value属性
 		const FProperty* CurrValueProp = SetProp->ElementProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 ValuePropertySize = CurrValueProp->GetElementSize() * CurrValueProp->ArrayDim;
+#else
 		const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+#endif
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 		CurrValueProp->InitializeValue(ValueStorageSpace);
 
@@ -588,7 +617,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// Since Key and Value aren't really an int, step the stack manually
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 KeyPropertySize = CurrKeyProp->GetElementSize() * CurrKeyProp->ArrayDim;
+#else
 		const int32 KeyPropertySize = CurrKeyProp->ElementSize * CurrKeyProp->ArrayDim;
+#endif
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		CurrKeyProp->InitializeValue(KeyStorageSpace);
 
@@ -623,7 +656,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 获取内部Map的Key属性（SubKey）
 		const FProperty* CurrSubKeyProp = InnerMapProp->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 SubKeyPropertySize = CurrSubKeyProp->GetElementSize() * CurrSubKeyProp->ArrayDim;
+#else
 		const int32 SubKeyPropertySize = CurrSubKeyProp->ElementSize * CurrSubKeyProp->ArrayDim;
+#endif
 		void* SubKeyStorageSpace = FMemory_Alloca(SubKeyPropertySize);
 		CurrSubKeyProp->InitializeValue(SubKeyStorageSpace);
 
@@ -633,7 +670,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
     
 		// 获取内部Map的Value属性
 		const FProperty* CurrValueProp = InnerMapProp->ValueProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 ValuePropertySize = CurrValueProp->GetElementSize() * CurrValueProp->ArrayDim;
+#else
 		const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+#endif
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 		CurrValueProp->InitializeValue(ValueStorageSpace);
     
@@ -680,7 +721,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// Since Key and Value aren't really an int, step the stack manually
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 KeyPropertySize = CurrKeyProp->GetElementSize() * CurrKeyProp->ArrayDim;
+#else
 		const int32 KeyPropertySize = CurrKeyProp->ElementSize * CurrKeyProp->ArrayDim;
+#endif
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		CurrKeyProp->InitializeValue(KeyStorageSpace);
 
@@ -715,7 +760,11 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 
 		// 获取内部Map的Key属性（SubKey）
 		const FProperty* CurrSubKeyProp = InnerMapProp->KeyProp;
+#if XTOOLS_ENGINE_5_5_OR_LATER
+		const int32 SubKeyPropertySize = CurrSubKeyProp->GetElementSize() * CurrSubKeyProp->ArrayDim;
+#else
 		const int32 SubKeyPropertySize = CurrSubKeyProp->ElementSize * CurrSubKeyProp->ArrayDim;
+#endif
 		void* SubKeyStorageSpace = FMemory_Alloca(SubKeyPropertySize);
 		CurrSubKeyProp->InitializeValue(SubKeyStorageSpace);
 
@@ -728,7 +777,7 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		P_NATIVE_BEGIN;
 		GenericMap_RemoveMapItem(MapAddr, MapProperty, KeyStorageSpace, SubKeyStorageSpace);
 		P_NATIVE_END;
-		
+
 		CurrSubKeyProp->DestroyValue(SubKeyStorageSpace);
 		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
@@ -743,5 +792,3 @@ private:
 	static constexpr int32 MaxSupportedMapSize = TNumericLimits<int32>::Max();
 	
 };
-
-PRAGMA_ENABLE_DEPRECATION_WARNINGS

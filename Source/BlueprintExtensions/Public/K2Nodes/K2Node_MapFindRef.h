@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "BlueprintActionFilter.h"
 #include "BlueprintNodeSignature.h"
@@ -27,9 +27,10 @@ struct FLinearColor;
 UCLASS(MinimalAPI, Category = "XTools|K2Node", meta=(Keywords = "XTools, Map"))
 class UK2Node_MapFindRef : public UK2Node
 {
-    GENERATED_UCLASS_BODY()
+    GENERATED_BODY()
 
 public:
+    UK2Node_MapFindRef(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 //节点基本属性
 #pragma region NodeProperties

@@ -55,7 +55,7 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
 
 #if WITH_EDITOR
     {
-        FMessageLog EditorLog("XTools");
+        FMessageLog EditorLog("XToolsCore");
         switch (Verbosity)
         {
         case ELogVerbosity::Error:
@@ -71,5 +71,3 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
     }
 #endif
 }
-
-

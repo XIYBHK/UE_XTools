@@ -23,10 +23,9 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "ToolMenus.h"
 #include "Misc/MessageDialog.h"
+#include "X_AssetEditor.h"
 
 #define LOCTEXT_NAMESPACE "X_MenuExtensionManager"
-
-DEFINE_LOG_CATEGORY_STATIC(LogX_AssetEditor, Log, All);
 
 TUniquePtr<FX_MenuExtensionManager> FX_MenuExtensionManager::Instance = nullptr;
 

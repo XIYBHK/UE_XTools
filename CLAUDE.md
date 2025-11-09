@@ -53,8 +53,16 @@ XTools 是一个为 Unreal Engine 5.3-5.6 设计的模块化插件系统，提�
 
 插件采用运行时/编辑器分离的模块架构：
 
+### 基础模块
+- **XToolsCore** (Runtime, PreDefault): 核心工具和跨版本兼容性层
+  - 提供 `XToolsVersionCompat.h`: UE 5.3-5.6 版本兼容性宏
+  - 提供 `XToolsErrorReporter.h`: 统一错误/日志处理
+  - 提供 `XToolsDefines.h`: 插件版本和通用宏定义
+  - **所有 Runtime 模块都应依赖此模块**
+  - **Editor 模块可选依赖此模块**
+
 ### 核心模块
-- **XTools**: 主模块，包含基础工具和插件入口
+- **XTools**: 主模块（Editor），包含编辑器工具和插件入口
 - **Sort**: 排序算法库（整数、浮点、字符串、向量、Actor、通用结构体）
 - **RandomShuffles**: PRD（伪随机分布）算法和数组洗牌
 - **EnhancedCodeFlow**: 异步操作和流程控制（延迟、时间轴、循环、协程）
@@ -221,6 +229,61 @@ XTools|Blueprint Extensions|Loops/Array/Map/Variable/Math/Features
 ```
 
 ## 重要技术细节
+
+### XToolsCore 跨版本兼容性
+
+**模块定位**：XToolsCore 是所有 Runtime 模块的基础依赖，提供跨 UE 版本的兼容性抽象层。
+
+**核心文件**：
+1. **XToolsVersionCompat.h** - 版本兼容性宏和工具函数
+   ```cpp
+   // 版本判断宏
+   #if XTOOLS_ENGINE_5_5_OR_LATER
+       const int32 Size = Property->GetElementSize();  // UE 5.5+
+   #else
+       const int32 Size = Property->ElementSize;        // UE 5.3-5.4
+   #endif
+   
+   // 原子操作兼容
+   TAtomic<int32> Counter;
+   XToolsVersionCompat::AtomicStore(Counter, 10);      // 跨版本安全
+   int32 Value = XToolsVersionCompat::AtomicLoad(Counter);
+   ```
+
+2. **XToolsErrorReporter.h** - 统一日志和错误处理
+   ```cpp
+   // 支持所有日志分类类型（包括 FNoLoggingCategory）
+   FXToolsErrorReporter::Warning(
+       LogBlueprintExtensionsRuntime,
+       TEXT("参数验证失败"),
+       NAME_None,
+       true,   // 显示屏幕提示
+       5.0f    // 显示时长
+   );
+   ```
+
+3. **XToolsDefines.h** - 插件版本和通用宏
+   ```cpp
+   #define XTOOLS_VERSION_MAJOR 1
+   #define XTOOLS_VERSION_MINOR 9
+   #define XTOOLS_VERSION_PATCH 1
+   ```
+
+**使用方法**：
+```cs
+// 在模块的 .Build.cs 中添加依赖
+PublicDependencyModuleNames.AddRange(new string[] {
+    "Core",
+    "CoreUObject",
+    "Engine",
+    "XToolsCore"  // 添加此依赖
+});
+```
+
+**API 变更处理**：
+- UE 5.5+ 弃用 `FProperty::ElementSize` → 使用条件编译适配
+- UE 5.5+ 弃用 `BufferCommand` → 使用 `BufferFieldCommand_Internal`
+- TAtomic API 在 UE 5.3+ 支持直接赋值，5.0-5.2 需要 `load()/store()`
 
 ### EnhancedCodeFlow 异步系统
 - 基于 UE Ticker 的异步操作系统

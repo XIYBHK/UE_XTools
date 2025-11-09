@@ -3,6 +3,9 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
+// XTools 模块日志分类
+DECLARE_LOG_CATEGORY_EXTERN(LogXTools, Log, All);
+
 class FXToolsModule : public IModuleInterface
 {
 public:

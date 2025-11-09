@@ -41,7 +41,8 @@ public class Sort : ModuleRules
 			{
 				"Core",
 				"CoreUObject",
-				"Engine"
+				"Engine",
+				"XToolsCore"  // XTools版本兼容层
 			}
 		);
 

@@ -36,7 +36,7 @@ public class FieldSystemExtensions : ModuleRules
 			"Chaos",  // Chaos物理系统
 			"GeometryCollectionEngine",  // GeometryCollection组件
 			"ChaosSolverEngine",  // Chaos Solver模块
-			"XTools"  // XTools版本兼容层（XToolsVersionCompat.h）
+			"XToolsCore"  // XTools版本兼容层（XToolsVersionCompat.h）
 		}
 	);
 

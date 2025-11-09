@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "BlueprintActionFilter.h"
 #include "Containers/Array.h"
@@ -21,9 +21,10 @@ class UObject;
 UCLASS(MinimalAPI, Category = "XTools|K2Node", meta=(Keywords = "XTools, Assign"))
 class UK2Node_Assign : public UK2Node
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
+	UK2Node_Assign(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 //——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
