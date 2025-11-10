@@ -9,13 +9,24 @@
 struct FCommentHandler;
 struct FPinLink;
 
+struct FKnotPoolData
+{
+	UK2Node_Knot* KnotNode;
+
+	FVector2D RelativeOffset;
+
+	TSet<FGuid> LinkedTo;
+
+	FKnotPoolData(UK2Node_Knot* Knot, const FVector2D& InRelativeOffset);
+};
+
 class FKnotTrackCreator final
 {
 	TSharedPtr<FFormatterInterface> Formatter;
 	TSharedPtr<FBAGraphHandler> GraphHandler;
 	TSet<UEdGraphNode*> KnotNodesSet;
 	TArray<TSharedPtr<FKnotNodeTrack>> KnotTracks;
-	TArray<UK2Node_Knot*> KnotNodePool;
+	TArray<FKnotPoolData> KnotNodePool;
 	TMap<UK2Node_Knot*, UEdGraphNode*> KnotNodeOwners;
 	TSet<UK2Node_Knot*> PinAlignedKnots;
 	TSet<UK2Node_Knot*> KnotsInComments;
@@ -72,6 +83,8 @@ private:
 	bool NodeCollisionBetweenLocation(FVector2D Start, FVector2D End, TSet<UEdGraphNode*> IgnoredNodes);
 
 	UK2Node_Knot* CreateKnotNode(FKnotNodeCreation* Creation, const FVector2D& Position, UEdGraphPin* ParentPin);
+
+	UK2Node_Knot* GetKnotNodeFromPool(FKnotNodeCreation* Creation, const FVector2D& Position, UEdGraphPin* ParentPin);
 
 	void AddKnotNodesToComments();
 

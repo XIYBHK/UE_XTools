@@ -2,7 +2,9 @@
 
 #include "BlueprintAssistFormatters/KnotTrackCreator.h"
 
+#include "BlueprintAssistCache.h"
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistStats.h"
 #include "BlueprintAssistUtils.h"
 #include "EdGraphNode_Comment.h"
@@ -13,6 +15,19 @@
 #include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Stats/StatsMisc.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogBAKnotPool, NoLogging, All);
+
+FKnotPoolData::FKnotPoolData(UK2Node_Knot* Knot, const FVector2D& InRelativeOffset)
+{
+	KnotNode = Knot;
+	RelativeOffset = InRelativeOffset;
+
+	for (auto Pin : FBAUtils::GetLinkedToPinsIgnoringKnots(Knot))
+	{
+		LinkedTo.Add(Pin->PinId);
+	}
+}
 
 void FKnotTrackCreator::Init(TSharedPtr<FFormatterInterface> InFormatter, TSharedPtr<FBAGraphHandler> InGraphHandler)
 {
@@ -254,16 +269,6 @@ void FKnotTrackCreator::CreateKnotTracks()
 			KnotPos.Y = SavedPinHeight.Contains(KnotTrack) ? SavedPinHeight[KnotTrack] : GraphHandler->GetPinY(PinToAlignTo);
 			// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Created knot aligned to %s"), *FBAUtils::GetNodeName(PinToAlignTo->GetOwningNode()));
 		}
-		
-		// 为同一track的多个knot应用微小偏移，仅用于区分连线，不影响整体布局
-		// 使用非常小的偏移量（横向8px，竖向3px），保持视觉整洁
-		if (NumCreations > 1)
-		{
-			const float KnotVerticalSpacing = 3.0f;   // 竖向间距极小
-			const float KnotHorizontalSpacing = 8.0f; // 横向间距也很小
-			KnotPos.Y += (i * KnotVerticalSpacing);
-			KnotPos.X += (i * KnotHorizontalSpacing);
-		}
 
 		if (!LastCreation.IsValid()) // create a knot linked to the first pin (the fallback pin)
 			{
@@ -327,11 +332,11 @@ void FKnotTrackCreator::CreateKnotTracks()
 	FBlueprintEditorUtils::MarkBlueprintAsModified(GraphHandler->GetBlueprint());
 
 	// Cleanup knot node pool
-	for (auto KnotNode : KnotNodePool)
+	for (auto& KnotNodeData : KnotNodePool)
 	{
-		if (FBAUtils::GetLinkedNodes(KnotNode).Num() == 0)
+		if (FBAUtils::GetLinkedNodes(KnotNodeData.KnotNode).Num() == 0)
 		{
-			FBAUtils::DeleteNode(KnotNode);
+			FBAUtils::DeleteNode(KnotNodeData.KnotNode);
 		}
 	}
 	KnotNodePool.Empty();
@@ -986,28 +991,48 @@ void FKnotTrackCreator::RemoveUselessCreationNodes()
 
 void FKnotTrackCreator::RemoveKnotNodes(const TArray<UEdGraphNode*>& NodeTree)
 {
+	if (!Formatter.IsValid())
+	{
+		return;
+	}
+
 	TArray<UEdGraphNode_Comment*> CommentNodes = FBAUtils::GetCommentNodesFromGraph(GraphHandler->GetFocusedEdGraph());
 	for (UEdGraphNode* Node : NodeTree)
 	{
 		/** Delete all connections for each knot node */
 		if (UK2Node_Knot* KnotNode = Cast<UK2Node_Knot>(Node))
 		{
-			FBAUtils::DisconnectKnotNode(KnotNode);
+			const bool bUseKnotPool = UBASettings::Get().bUseKnotNodePool && UBASettings::Get().bCreateKnotNodes;
 
-			for (auto Comment : CommentNodes)
+			// if we are using the knot node pool, save the relative location
+			if (bUseKnotPool)
 			{
-				if (Comment->GetNodesUnderComment().Contains(KnotNode))
+				FVector2D RelativeRoot = FVector2D::Zero();
+				RelativeRoot.X = KnotNode->NodePosX - Formatter->GetRootNode()->NodePosX;
+				RelativeRoot.Y = KnotNode->NodePosY - Formatter->GetRootNode()->NodePosY;
+				KnotNodePool.Add(FKnotPoolData(KnotNode, RelativeRoot));
+			}
+
+			// disconnect and remove from comments
+			{
+				FBAUtils::DisconnectKnotNode(KnotNode);
+
+				if (FCommentHandler* CH = Formatter->GetCommentHandler())
 				{
-					FBAUtils::RemoveNodeFromComment(Comment, KnotNode);
+					CH->DeleteNode(KnotNode);
+				}
+
+				for (auto Comment : CommentNodes)
+				{
+					if (Comment->GetNodesUnderComment().Contains(KnotNode))
+					{
+						FBAUtils::RemoveNodeFromComment(Comment, KnotNode);
+					}
 				}
 			}
 
-			if (UBASettings::Get().bUseKnotNodePool &&
-				UBASettings::Get().bCreateKnotNodes) // if we don't create knot nodes, no point reusing them
-			{
-				KnotNodePool.Add(KnotNode);
-			}
-			else
+			// delete the knots if we don't use a knot node pool
+			if (!bUseKnotPool)
 			{
 				FBAUtils::DeleteNode(KnotNode);
 
@@ -1037,7 +1062,7 @@ UK2Node_Knot* FKnotTrackCreator::CreateKnotNode(FKnotNodeCreation* Creation, con
 	UK2Node_Knot* OptionalNodeToReuse = nullptr;
 	if (UBASettings::Get().bUseKnotNodePool && KnotNodePool.Num() > 0)
 	{
-		OptionalNodeToReuse = KnotNodePool.Pop();
+		OptionalNodeToReuse = GetKnotNodeFromPool(Creation, Position, ParentPin);
 	}
 	else
 	{
@@ -1068,6 +1093,93 @@ UK2Node_Knot* FKnotTrackCreator::CreateKnotNode(FKnotNodeCreation* Creation, con
 			__FUNCTION__, *Creation->ToString());
 		return nullptr;
 	}
+}
+
+UK2Node_Knot* FKnotTrackCreator::GetKnotNodeFromPool(FKnotNodeCreation* Creation, const FVector2D& Position, UEdGraphPin* ParentPin)
+{
+	if (UBASettings::Get().bUseKnotNodePool && KnotNodePool.Num() > 0)
+	{
+		float Dist = FLT_MAX;
+		int ClosestIndex = -1;
+
+		UEdGraphNode* RootNode = Formatter->GetRootNode();
+
+		TSet<int> Matches;
+
+		TSet<FGuid> NewLinkedTo = { Creation->OwningKnotTrack->ParentPin.PinId };
+		UE_LOG(LogBAKnotPool, Log, TEXT("Creation %s %s"), *Creation->OwningKnotTrack->ParentPin->PinId.ToString(), *FBAUtils::GetPinName(Creation->OwningKnotTrack->ParentPin.GetPin(), true));
+		for (auto& Handle : Creation->PinHandlesToConnectTo)
+		{
+			if (FBAUtils::IsKnotNode(Handle.GetPin()->GetOwningNode()))
+			{
+				continue;
+			}
+
+			NewLinkedTo.Add(Handle.PinId);
+			UE_LOG(LogBAKnotPool, Log, TEXT("Creation %s %s"), *Handle.GetPin()->PinId.ToString(), *FBAUtils::GetPinName(Handle.GetPin(), true));
+		}
+
+		for (int i = KnotNodePool.Num() - 1; i >= 0; --i)
+		{
+			const FKnotPoolData& Item = KnotNodePool[i];
+
+			UE_LOG(LogBAKnotPool, Log, TEXT("\tChecking knot pool %s"), *Item.KnotNode->NodeGuid.ToString())
+			for (auto Guid : Item.LinkedTo)
+			{
+				UE_LOG(LogBAKnotPool, Log, TEXT("\t\tExisting %s"), *Guid.ToString());
+			}
+
+			// find knots which have the same links
+			if (NewLinkedTo.Difference(Item.LinkedTo).Num() == 0)
+			{
+				Matches.Add(i);
+				UE_LOG(LogBAKnotPool, Log, TEXT("\t\tFound match"));
+			}
+		}
+
+		// find any knots which match the links
+		for (int i = KnotNodePool.Num() - 1; i >= 0; --i)
+		{
+			if (Matches.Num())
+			{
+				if (!Matches.Contains(i))
+				{
+					continue;
+				}
+			}
+
+			const FKnotPoolData& Item = KnotNodePool[i];
+
+			// sort the knot nodes by relative dist
+			const FVector2D Pos = Position - FBAUtils::GetKnotNodeSize() * 0.5f;
+			FVector2D RelativeDist(Pos.X - RootNode->NodePosX, Pos.Y - RootNode->NodePosY);
+
+			UE_LOG(LogBAKnotPool, Log, TEXT("Searching relative %s | %s"), *RelativeDist.ToString(), *Item.RelativeOffset.ToString());
+
+			const float NewDist = FVector2D::DistSquared(RelativeDist, Item.RelativeOffset);
+			if (NewDist < Dist)
+			{
+				Dist = NewDist;
+				ClosestIndex = i;
+			}
+		}
+
+		if (ClosestIndex >= 0)
+		{
+
+			UK2Node_Knot* Knot = KnotNodePool[ClosestIndex].KnotNode;
+			KnotNodePool.RemoveAt(ClosestIndex);
+
+			UE_LOG(LogBAKnotPool, Log, TEXT("Found closest dist %f %s"), Dist, *Knot->NodeGuid.ToString());
+			return Knot;
+		}
+		else
+		{
+			UE_LOG(LogBAKnotPool, Warning, TEXT("Failed to find knot to reuse"));
+		}
+	}
+
+	return nullptr;
 }
 
 bool FKnotTrackCreator::TryAlignTrackToEndPins(TSharedPtr<FKnotNodeTrack> Track, const TArray<UEdGraphNode*>& AllNodes)
