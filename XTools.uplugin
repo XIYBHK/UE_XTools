@@ -184,6 +184,16 @@
 			]
 		},
 		{
+			"Name": "XTools_SwitchLanguage",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			]
+		},
+		{
 			"Name": "XTools_AutoSizeComments",
 			"Type": "Editor",
 			"LoadingPhase": "Default",

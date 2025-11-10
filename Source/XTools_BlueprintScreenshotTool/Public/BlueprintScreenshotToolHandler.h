@@ -34,6 +34,8 @@ protected:
 	static void ShowDirectoryErrorNotification(const FString& InPath);
 	static void ShowSaveFailedNotification(const FString& InGraphName);
 	static UTextureRenderTarget2D* DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize);
+	static UTextureRenderTarget2D* DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, bool bIsWarmup);
+	static UTextureRenderTarget2D* DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, class FWidgetRenderer* InRenderer, bool bIsWarmup);
 	static FString GetExtension(EBSTImageFormat InFormat);
 	static FString GenerateScreenshotName(TSharedPtr<SGraphEditor> InGraphEditor);
 };

@@ -161,8 +161,6 @@ FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPt
 		NewViewLocation = CachedViewLocation;
 		NewZoomAmount = CachedZoomAmount;
 
-		// UE 最佳实践：在多显示器环境下使用实际窗口位置获取准确的 DPI 缩放
-		// 使用 (0,0) 坐标可能在多显示器配置下获得错误的 DPI 值
 		const FVector2D WindowPosition = InGraphEditor->GetTickSpaceGeometry().GetAbsolutePosition();
 		const auto DPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(WindowPosition.X, WindowPosition.Y);
 
@@ -180,7 +178,21 @@ FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPt
 
 	InGraphEditor->ClearSelectionSet();
 
+	// 触发资源加载
+	InGraphEditor->Invalidate(EInvalidateWidgetReason::Paint);
+	InGraphEditor->SlatePrepass(1.0f);
+	FlushRenderingCommands();
+	InGraphEditor->SlatePrepass(1.0f);
+	FlushRenderingCommands();
+
+	// 双重绘制:第一次触发资源加载,第二次使用已加载资源
+	// 注意:由于 Slate 资源加载机制,打开蓝图后的第一次截图可能仍有部分图标显示异常
+	// 建议:如果第一次截图有问题,请再截一次
+	TStrongObjectPtr<UTextureRenderTarget2D> WarmupTarget(DrawGraphEditor(InGraphEditor, WindowSize));
+	FPlatformProcess::Sleep(0.05f);
+	
 	const auto RenderTarget = TStrongObjectPtr<UTextureRenderTarget2D>(DrawGraphEditor(InGraphEditor, WindowSize));
+	FlushRenderingCommands();
 
 	FBSTScreenshotData ScreenshotData;
 	ScreenshotData.Size = FIntVector(WindowSize.X, WindowSize.Y, 0);
@@ -195,7 +207,6 @@ FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPt
 	}
 	
 	ScreenshotData.CustomName = GenerateScreenshotName(InGraphEditor);
-	
 	return ScreenshotData;
 }
 
@@ -240,8 +251,8 @@ void UBlueprintScreenshotToolHandler::ShowNotification(const TArray<FString>& In
 {
 	checkf(InPaths.Num() > 0, TEXT("InPaths must not be empty"));
 
-	FFormatOrderedArguments Arguments;
-	Arguments.Add(InPaths.Num());
+	FFormatNamedArguments Arguments;
+	Arguments.Add(TEXT("Count"), InPaths.Num());
 
 	const auto* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
 	const auto Message = FText::Format(Settings->NotificationMessageFormat, Arguments);
@@ -311,15 +322,110 @@ void UBlueprintScreenshotToolHandler::ShowSaveFailedNotification(const FString& 
 
 UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize)
 {
+	return DrawGraphEditorInternal(InGraphEditor, InWindowSize, false);
+}
+
+UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, FWidgetRenderer* InRenderer, bool bIsWarmup)
+{
+	if (bIsWarmup)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: [预热模式]"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: [正式模式]"));
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 开始, 尺寸=%s, 复用Renderer=%d"), *InWindowSize.ToString(), InRenderer != nullptr);
+	
 	constexpr auto bUseGamma = true;
-	// 绘制两次以确保所有延迟加载的资源都已正确渲染
-	// 第一次绘制可能会触发资源加载，第二次绘制确保所有内容都已就绪
 	constexpr auto DrawTimes = 2;
 	constexpr auto Filter = TF_Default;
 
-	// 使用 TUniquePtr 自动管理 FWidgetRenderer 生命周期，避免内存泄漏
-	// UE 最佳实践：对于需要手动管理的对象，使用智能指针而非裸指针
+	// 使用传入的 Renderer (首次截图时共享同一个实例)
+	FWidgetRenderer* WidgetRenderer = InRenderer;
+	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 使用传入的 FWidgetRenderer"));
+	
+	UTextureRenderTarget2D* RenderTarget = FWidgetRenderer::CreateTargetFor(
+		InWindowSize,
+		Filter,
+		bUseGamma
+	);
+
+	if (!ensureMsgf(IsValid(RenderTarget), TEXT("RenderTarget is not valid")))
+	{
+		return nullptr;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: RenderTarget 创建成功, 格式=%d"), RenderTarget->GetFormat());
+	
+	if (bUseGamma)
+	{
+		RenderTarget->bForceLinearGamma = true;
+		RenderTarget->UpdateResourceImmediate(true);
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 设置 Gamma 校正"));
+	}
+
+	// 预绘制:第一次绘制触发所有资源(包括图标)的加载
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 开始预绘制 ==="));
+		constexpr auto RenderingScale = 1.f;
+		constexpr auto DeltaTime = 0.f;
+		WidgetRenderer->DrawWidget(
+			RenderTarget,
+			InGraphEditor.ToSharedRef(),
+			RenderingScale,
+			InWindowSize,
+			DeltaTime
+		);
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 预绘制完成, 刷新渲染命令"));
+		FlushRenderingCommands();
+		
+		RenderTarget->UpdateResourceImmediate(false);
+		FlushRenderingCommands();
+		
+		// 预热模式:额外等待
+		if (bIsWarmup)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: [预热模式] 预绘制后等待 (200ms)"));
+			FPlatformProcess::Sleep(0.2f);  // 200ms 测试
+		}
+		
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 预绘制流程完成 ==="));
+	}
+
+	// 正式绘制
+	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 开始正式绘制 (共%d次) ==="), DrawTimes);
+	for (int32 Count = 0; Count < DrawTimes; Count++)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 正式绘制第 %d/%d 次"), Count + 1, DrawTimes);
+		constexpr auto RenderingScale = 1.f;
+		constexpr auto DeltaTime = 0.f;
+		
+		WidgetRenderer->DrawWidget(
+			RenderTarget,
+			InGraphEditor.ToSharedRef(),
+			RenderingScale,
+			InWindowSize,
+			DeltaTime
+		);
+
+		FlushRenderingCommands();
+		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 第 %d 次绘制完成"), Count + 1);
+	}
+	
+	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 所有绘制完成,返回 RenderTarget ==="));
+	return RenderTarget;
+}
+
+UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, bool bIsWarmup)
+{
+	constexpr auto bUseGamma = true;
+	constexpr auto DrawTimes = 2;
+	constexpr auto Filter = TF_Default;
+
 	TUniquePtr<FWidgetRenderer> WidgetRenderer = MakeUnique<FWidgetRenderer>(bUseGamma, true);
+	WidgetRenderer->SetIsPrepassNeeded(true);
+	
 	UTextureRenderTarget2D* RenderTarget = FWidgetRenderer::CreateTargetFor(
 		InWindowSize,
 		Filter,
@@ -337,7 +443,7 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TShared
 		RenderTarget->UpdateResourceImmediate(true);
 	}
 
-	for (int32 Count = 0; Count < DrawTimes; Count++)
+	// 预绘制
 	{
 		constexpr auto RenderingScale = 1.f;
 		constexpr auto DeltaTime = 0.f;
@@ -348,12 +454,27 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TShared
 			InWindowSize,
 			DeltaTime
 		);
-
+		FlushRenderingCommands();
+		RenderTarget->UpdateResourceImmediate(false);
 		FlushRenderingCommands();
 	}
 
-	// TUniquePtr 会在作用域结束时自动调用析构函数
-	// 无需手动调用 BeginCleanup
+	// 正式绘制
+	for (int32 Count = 0; Count < DrawTimes; Count++)
+	{
+		constexpr auto RenderingScale = 1.f;
+		constexpr auto DeltaTime = 0.f;
+		
+		WidgetRenderer->DrawWidget(
+			RenderTarget,
+			InGraphEditor.ToSharedRef(),
+			RenderingScale,
+			InWindowSize,
+			DeltaTime
+		);
+
+		FlushRenderingCommands();
+	}
 
 	return RenderTarget;
 }
