@@ -2,6 +2,8 @@
 
 
 #include "BlueprintScreenshotToolHandler.h"
+
+DEFINE_LOG_CATEGORY(LogBlueprintScreenshotTool);
 #include "BlueprintEditor.h"
 #include "BlueprintScreenshotToolSettings.h"
 #include "BlueprintScreenshotToolTypes.h"
@@ -22,12 +24,52 @@
 
 struct FWidgetSnapshotTextureData;
 
-TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithPaths()
+bool UBlueprintScreenshotToolHandler::bTakingScreenshot = false;
+static TArray<TSharedPtr<SGraphEditor>> CachedGraphEditorsForWarmup;
+
+void UBlueprintScreenshotToolHandler::PrepareForScreenshot()
 {
 	auto GraphEditors = UBlueprintScreenshotToolWindowManager::FindActiveGraphEditors();
 	if (GraphEditors.Num() <= 0)
 	{
-		return {};
+		return;
+	}
+
+	CachedGraphEditorsForWarmup.Reset();
+	CachedGraphEditorsForWarmup = GraphEditors.Array();
+
+	const auto bHasSelectedNodes = HasAnySelectedNodes(GraphEditors);
+	for (const auto& GraphEditor : GraphEditors)
+	{
+		if (bHasSelectedNodes && GraphEditor->GetSelectedNodes().Num() <= 0)
+		{
+			continue;
+		}
+
+		CaptureGraphEditor(GraphEditor);
+	}
+	
+	bTakingScreenshot = true;
+}
+
+void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
+{
+	bTakingScreenshot = false;
+	
+	TSet<TSharedPtr<SGraphEditor>> GraphEditors;
+	if (CachedGraphEditorsForWarmup.Num() > 0)
+	{
+		GraphEditors = TSet<TSharedPtr<SGraphEditor>>(CachedGraphEditorsForWarmup);
+		CachedGraphEditorsForWarmup.Reset();
+	}
+	else
+	{
+		GraphEditors = UBlueprintScreenshotToolWindowManager::FindActiveGraphEditors();
+	}
+
+	if (GraphEditors.Num() <= 0)
+	{
+		return;
 	}
 
 	TArray<FString> Paths;
@@ -43,43 +85,60 @@ TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithPaths()
 
 		const auto ScreenshotData = CaptureGraphEditor(GraphEditor);
 		const auto Path = SaveScreenshot(ScreenshotData);
+		
 		if (!Path.IsEmpty())
 		{
 			Paths.Add(Path);
 		}
 		else
 		{
-			// UE 最佳实践：提供明确的失败反馈给用户
 			FailedCount++;
-
-			// 获取图表名称用于错误提示
-			FString GraphName = TEXT("Unknown");
-			if (GraphEditor.IsValid() && GraphEditor->GetCurrentGraph())
-			{
-				GraphName = GraphEditor->GetCurrentGraph()->GetName();
-			}
 		}
 	}
-
-	// 如果所有截图都失败，显示错误通知
-	if (FailedCount > 0 && Paths.Num() == 0)
-	{
-		ShowSaveFailedNotification(FString::Printf(TEXT("%d"), FailedCount));
-	}
-
-	return Paths;
-}
-
-TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithNotification()
-{
-	const auto Paths = TakeScreenshotWithPaths();
 
 	if (Paths.Num() > 0)
 	{
 		ShowNotification(Paths);
 	}
+	
+	if (FailedCount > 0 && Paths.Num() == 0)
+	{
+		ShowSaveFailedNotification(FString::Printf(TEXT("%d"), FailedCount));
+	}
 
-	return Paths;
+	UpdateScreenshotState(false);
+}
+
+void UBlueprintScreenshotToolHandler::OnPostTick(float DeltaTime)
+{
+	if (bTakingScreenshot)
+	{
+		ExecuteAsyncScreenshot();
+	}
+}
+
+FVector2D UBlueprintScreenshotToolHandler::CalculateOptimalWindowSize(FBSTScreenshotData& ScreenshotData, const FString& Path)
+{
+	FVector2D OptimalSize = FVector2D(1920, 1080);
+	
+	if (ScreenshotData.Size.X > 0 && ScreenshotData.Size.Y > 0)
+	{
+		OptimalSize = FVector2D(ScreenshotData.Size.X, ScreenshotData.Size.Y);
+	}
+	
+	return OptimalSize;
+}
+
+void UBlueprintScreenshotToolHandler::UpdateScreenshotState(bool bIsProcessing)
+{
+}
+
+
+
+TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithNotification()
+{
+	TakeScreenshotWithPaths();
+	return {};
 }
 
 void UBlueprintScreenshotToolHandler::TakeScreenshot()
@@ -121,6 +180,77 @@ FString UBlueprintScreenshotToolHandler::SaveScreenshot(const FBSTScreenshotData
 
 	return bSuccess ? Filename : FString();
 	
+}
+
+FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureWithTempWindow(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize)
+{
+	if (!InGraphEditor)
+	{
+		return FBSTScreenshotData();
+	}
+
+	FVector2D CachedViewLocation;
+	float CachedZoomAmount = 1.f;
+	InGraphEditor->GetViewLocation(CachedViewLocation, CachedZoomAmount);
+	
+	const FGraphPanelSelectionSet SelectedNodes = InGraphEditor->GetSelectedNodes();
+	const auto* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
+
+	FVector2D WindowSize = InWindowSize;
+	FVector2D NewViewLocation = CachedViewLocation;
+	float NewZoomAmount = CachedZoomAmount;
+
+	if (SelectedNodes.Num() > 0)
+	{
+		FSlateRect BoundsForSelectedNodes;
+		InGraphEditor->GetBoundsForSelectedNodes(BoundsForSelectedNodes, Settings->ScreenshotPadding);
+		
+		NewViewLocation = BoundsForSelectedNodes.GetTopLeft();
+		NewZoomAmount = Settings->ZoomAmount;
+		WindowSize = BoundsForSelectedNodes.GetSize() * Settings->ZoomAmount;
+	}
+
+	WindowSize = WindowSize.ClampAxes(Settings->MinScreenshotSize, Settings->MaxScreenshotSize);
+	InGraphEditor->SetViewLocation(NewViewLocation, NewZoomAmount);
+	
+	InGraphEditor->ClearSelectionSet();
+	
+	TSharedRef<SWindow> NewWindowRef = SNew(SWindow)
+		.CreateTitleBar(false)
+		.ClientSize(WindowSize)
+		.ScreenPosition(FVector2D(0.0f, 0.0f))
+		.AdjustInitialSizeAndPositionForDPIScale(false)
+		.SaneWindowPlacement(false)
+		.SupportsTransparency(EWindowTransparency::PerWindow)
+		.InitialOpacity(0.0f);
+
+	NewWindowRef->SetContent(InGraphEditor.ToSharedRef());
+	FSlateApplication::Get().AddWindow(NewWindowRef, false);
+
+	InGraphEditor->Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+	NewWindowRef->ShowWindow();
+	InGraphEditor->Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+	FlushRenderingCommands();
+
+	FBSTScreenshotData ScreenshotData;
+	ScreenshotData.Size = FIntVector(WindowSize.X, WindowSize.Y, 0);
+	
+	TArray<FColor> ColorData;
+	FSlateApplication::Get().TakeScreenshot(NewWindowRef, ColorData, ScreenshotData.Size);
+	ScreenshotData.ColorData = MoveTemp(ColorData);
+
+	InGraphEditor->SetViewLocation(CachedViewLocation, CachedZoomAmount);
+	RestoreNodeSelection(InGraphEditor, SelectedNodes);
+	
+	NewWindowRef->HideWindow();
+	NewWindowRef->RequestDestroyWindow();
+
+	if (!Settings->bOverrideScreenshotNaming)
+	{
+		ScreenshotData.CustomName = GenerateScreenshotName(InGraphEditor);
+	}
+
+	return ScreenshotData;
 }
 
 FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor)
@@ -255,7 +385,9 @@ void UBlueprintScreenshotToolHandler::ShowNotification(const TArray<FString>& In
 	Arguments.Add(TEXT("Count"), InPaths.Num());
 
 	const auto* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
-	const auto Message = FText::Format(Settings->NotificationMessageFormat, Arguments);
+	
+	// 使用两阶段截图机制后，不再需要首次截图警告
+	FText Message = FText::Format(Settings->NotificationMessageFormat, Arguments);
 
 	FNotificationInfo NotificationInfo(Message);
 	NotificationInfo.ExpireDuration = Settings->ExpireDuration;
@@ -327,15 +459,7 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TShared
 
 UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, FWidgetRenderer* InRenderer, bool bIsWarmup)
 {
-	if (bIsWarmup)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: [预热模式]"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: [正式模式]"));
-	}
-	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 开始, 尺寸=%s, 复用Renderer=%d"), *InWindowSize.ToString(), InRenderer != nullptr);
+	UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Start rendering: Size=%s, Warmup=%d"), *InWindowSize.ToString(), bIsWarmup);
 	
 	constexpr auto bUseGamma = true;
 	constexpr auto DrawTimes = 2;
@@ -343,7 +467,6 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRend
 
 	// 使用传入的 Renderer (首次截图时共享同一个实例)
 	FWidgetRenderer* WidgetRenderer = InRenderer;
-	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 使用传入的 FWidgetRenderer"));
 	
 	UTextureRenderTarget2D* RenderTarget = FWidgetRenderer::CreateTargetFor(
 		InWindowSize,
@@ -353,21 +476,18 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRend
 
 	if (!ensureMsgf(IsValid(RenderTarget), TEXT("RenderTarget is not valid")))
 	{
+		UE_LOG(LogBlueprintScreenshotTool, Error, TEXT("Failed to create render target"));
 		return nullptr;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: RenderTarget 创建成功, 格式=%d"), RenderTarget->GetFormat());
-	
 	if (bUseGamma)
 	{
 		RenderTarget->bForceLinearGamma = true;
 		RenderTarget->UpdateResourceImmediate(true);
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 设置 Gamma 校正"));
 	}
 
 	// 预绘制:第一次绘制触发所有资源(包括图标)的加载
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 开始预绘制 ==="));
 		constexpr auto RenderingScale = 1.f;
 		constexpr auto DeltaTime = 0.f;
 		WidgetRenderer->DrawWidget(
@@ -377,7 +497,6 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRend
 			InWindowSize,
 			DeltaTime
 		);
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 预绘制完成, 刷新渲染命令"));
 		FlushRenderingCommands();
 		
 		RenderTarget->UpdateResourceImmediate(false);
@@ -386,18 +505,14 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRend
 		// 预热模式:额外等待
 		if (bIsWarmup)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: [预热模式] 预绘制后等待 (200ms)"));
-			FPlatformProcess::Sleep(0.2f);  // 200ms 测试
+			UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Warmup phase: waiting for resources to load"));
+			FPlatformProcess::Sleep(0.2f);  // 200ms for resource loading
 		}
-		
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 预绘制流程完成 ==="));
 	}
 
 	// 正式绘制
-	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 开始正式绘制 (共%d次) ==="), DrawTimes);
 	for (int32 Count = 0; Count < DrawTimes; Count++)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 正式绘制第 %d/%d 次"), Count + 1, DrawTimes);
 		constexpr auto RenderingScale = 1.f;
 		constexpr auto DeltaTime = 0.f;
 		
@@ -410,10 +525,9 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRend
 		);
 
 		FlushRenderingCommands();
-		UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: 第 %d 次绘制完成"), Count + 1);
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("[Screenshot Debug] DrawGraphEditorWithRenderer: === 所有绘制完成,返回 RenderTarget ==="));
+	UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Rendering complete"));
 	return RenderTarget;
 }
 
@@ -518,4 +632,10 @@ FString UBlueprintScreenshotToolHandler::GenerateScreenshotName(TSharedPtr<SGrap
 	const auto ScreenshotName = FString::Printf(TEXT("%s_%s_"), *OwnerName, *GraphName);
 
 	return ScreenshotName;
+}
+
+TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithPaths()
+{
+	PrepareForScreenshot();
+	return {};
 }

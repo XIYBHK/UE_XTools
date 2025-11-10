@@ -35,6 +35,24 @@
 
 ## 🐛 问题修复 (Fixed)
 
+- [BlueprintScreenshotTool] **修复首次截图节点图标丢失问题**（核心修复）
+  - **问题描述**：首次截图时节点图标显示为纯色占位符，第二次截图正常
+  - **根本原因**：Slate UI 资源（特别是图标）异步加载，首次截图时资源未完全加载
+  - **解决方案**：实现两阶段截图机制（参考成熟插件 BlueprintGraphScreenshot）
+    - **阶段1（当前帧）**：执行完整截图流程触发所有资源加载，不保存结果
+    - **等待一帧**：通过 `OnPostTick` 延迟执行，确保资源加载完成
+    - **阶段2（下一帧）**：再次执行完整截图，此时所有图标已加载，保存文件
+  - **技术要点**：
+    - 使用 `CaptureGraphEditor` 而非简化方法，确保两次截图流程完全一致
+    - 立即重置 `bTakingScreenshot` 标志防止 `FSlateApplication::Get().Tick()` 触发重入
+    - 缓存 `GraphEditor` 引用确保两次操作同一对象
+    - 移除所有可能触发 PostTick 的调用（如 `FSlateApplication::Get().Tick()`）
+  - **效果**：✅ 首次截图图标 100% 正确显示，节点布局完全稳定，无错位问题
+  - **相关文件**：
+    - `BlueprintScreenshotToolHandler.cpp` - 核心截图逻辑
+    - `BlueprintScreenshotToolHandler.h` - 静态方法声明
+    - `BlueprintScreenshotToolModule.cpp` - PostTick 回调注册
+
 - [XTools_EnhancedCodeFlow] 修复模块重命名后的API导出宏问题
   - 批量更新API宏：`ENHANCEDCODEFLOW_API` → `XTOOLS_ENHANCEDCODEFLOW_API`（48个文件）
 

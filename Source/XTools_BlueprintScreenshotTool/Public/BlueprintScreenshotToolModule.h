@@ -7,6 +7,7 @@
 #include "Modules/ModuleManager.h"
 
 class FBlueprintScreenshotToolCommandManager;
+class UBlueprintScreenshotToolHandler;
 
 class FBlueprintScreenshotToolModule : public IModuleInterface
 {
@@ -26,4 +27,11 @@ protected:
 	void UnregisterStyle();
 	void UnregisterCommands();
 	void UnregisterSettings();
+
+	// 添加异步截图支持
+	void InitializeAsyncScreenshot();
+	void ShutdownAsyncScreenshot();
+	
+	// PostTick 回调处理异步截图
+	void OnPostTick(float DeltaTime);
 };
