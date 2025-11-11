@@ -42,6 +42,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	CacheSaveLocation = EBACacheSaveLocation::Plugin;
 	bSaveBlueprintAssistCacheToFile = true;
 
+	bEnablePlugin = true;
 	bAddToolbarWidget = true;
 
 	bEnableShakeNodeOffWire = true;

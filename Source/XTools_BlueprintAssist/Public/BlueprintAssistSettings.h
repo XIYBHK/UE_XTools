@@ -179,6 +179,10 @@ public:
 	// General
 	////////////////////////////////////////////////////////////
 
+	/** Enable or disable the BlueprintAssist plugin */
+	UPROPERTY(EditAnywhere, config, Category = General, meta = (ConfigRestartRequired = true, DisplayName = "启用插件", Tooltip = "启用或禁用 Blueprint Assist 插件（需要重启编辑器生效）"))
+	bool bEnablePlugin = true;
+
 	/* Add the BlueprintAssist widget to the toolbar */
 	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "添加工具栏控件", Tooltip = "将 Blueprint Assist 控件添加到工具栏"))
 	bool bAddToolbarWidget;

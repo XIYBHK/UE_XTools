@@ -14,6 +14,11 @@ class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API UBlueprintScreenshotToolSettings : publ
 	GENERATED_BODY()
 
 public:
+	/** Enable or disable the BlueprintScreenshotTool plugin */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "BlueprintScreenshotTool|General",
+		meta = (ConfigRestartRequired = true, DisplayName = "启用插件", Tooltip = "启用或禁用 Blueprint Screenshot Tool 插件（需要重启编辑器生效）"))
+	bool bEnablePlugin = true;
+
 	// If enabled the screenshot will be saved with the custom name
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "BlueprintScreenshotTool|General",
 		meta = (InlineEditConditionToggle, DisplayName = "覆盖截图命名", Tooltip = "启用后将使用自定义名称保存截图"))

@@ -18,6 +18,8 @@
 #include "SGraphPanel.h"
 #include "TutorialMetaData.h"
 #include "Framework/Application/SlateApplication.h"
+
+#define LOCTEXT_NAMESPACE "AutoSizeCommentsGraphNode"
 #include "MaterialGraph/MaterialGraphNode_Comment.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Runtime/Engine/Classes/EdGraph/EdGraph.h"
@@ -250,7 +252,11 @@ FReply SAutoSizeCommentsGraphNode::OnMouseButtonDown(const FGeometry& MyGeometry
 		return FReply::Unhandled();
 	}
 
-	if (MouseEvent.GetEffectingButton() == GetResizeKey() && AreResizeModifiersDown())
+	const bool bResizeModifiersDown = AreResizeModifiersDown();
+	const FKey ResizeKey = GetResizeKey();
+	const bool bIsResizeButton = MouseEvent.GetEffectingButton() == ResizeKey;
+
+	if (bIsResizeButton && bResizeModifiersDown)
 	{
 		CachedAnchorPoint = GetAnchorPoint(MyGeometry, MouseEvent);
 		if (CachedAnchorPoint != EASCAnchorPoint::None)
@@ -614,7 +620,7 @@ void SAutoSizeCommentsGraphNode::UpdateGraphNode()
 		.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleHeaderButtonClicked)
 		.ContentPadding(FMargin(2, 2))
 		.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-		.ToolTipText(FText::FromString("Toggle between a header node and a resizing node"))
+		.ToolTipText(LOCTEXT("ToggleHeaderTooltip", "切换标题节点和调整大小节点"))
 		[
 			SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 			[
@@ -1739,7 +1745,7 @@ void SAutoSizeCommentsGraphNode::CreateCommentControls()
 		.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleRefreshButtonClicked)
 		.ContentPadding(FMargin(2, 2))
 		.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-		.ToolTipText(FText::FromString("Replace with selected nodes"))
+		.ToolTipText(LOCTEXT("ReplaceNodesTooltip", "替换为选中的节点"))
 		[
 			SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 			[
@@ -1757,7 +1763,7 @@ void SAutoSizeCommentsGraphNode::CreateCommentControls()
 		.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleAddButtonClicked)
 		.ContentPadding(FMargin(2, 2))
 		.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-		.ToolTipText(FText::FromString("Add selected nodes"))
+		.ToolTipText(LOCTEXT("AddNodesTooltip", "添加选中的节点"))
 		[
 			SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 			[
@@ -1776,7 +1782,7 @@ void SAutoSizeCommentsGraphNode::CreateCommentControls()
 		.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleSubtractButtonClicked)
 		.ContentPadding(FMargin(2, 2))
 		.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-		.ToolTipText(FText::FromString("Remove selected nodes"))
+		.ToolTipText(LOCTEXT("RemoveNodesTooltip", "移除选中的节点"))
 		[
 			SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 			[
@@ -1795,7 +1801,7 @@ void SAutoSizeCommentsGraphNode::CreateCommentControls()
 		.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleClearButtonClicked)
 		.ContentPadding(FMargin(2, 2))
 		.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-		.ToolTipText(FText::FromString("Clear all nodes"))
+		.ToolTipText(LOCTEXT("ClearNodesTooltip", "清除所有节点"))
 		[
 			SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 			[
@@ -1835,7 +1841,7 @@ void SAutoSizeCommentsGraphNode::CreateColorControls()
 				.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleResizeButtonClicked)
 				.ContentPadding(FMargin(2, 2))
 				.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-				.ToolTipText(FText::FromString("Resize to containing nodes"))
+				.ToolTipText(LOCTEXT("ResizeToFitTooltip", "调整大小以适应包含的节点"))
 				[
 					SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(12).HeightOverride(12)
 					[
@@ -1866,7 +1872,7 @@ void SAutoSizeCommentsGraphNode::CreateColorControls()
 					.OnClicked(this, &SAutoSizeCommentsGraphNode::HandlePresetButtonClicked, Preset)
 					.ContentPadding(FMargin(2, 2))
 					.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-					.ToolTipText(FText::FromString("Set preset color"))
+					.ToolTipText(LOCTEXT("SetPresetColorTooltip", "设置预设颜色"))
 					[
 						SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 					];
@@ -1884,7 +1890,7 @@ void SAutoSizeCommentsGraphNode::CreateColorControls()
 				.OnClicked(this, &SAutoSizeCommentsGraphNode::HandleRandomizeColorButtonClicked)
 				.ContentPadding(FMargin(2, 2))
 				.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-				.ToolTipText(FText::FromString("Randomize the color of the comment box"))
+				.ToolTipText(LOCTEXT("RandomizeColorTooltip", "随机化注释框颜色"))
 				[
 					SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 					[
@@ -2534,3 +2540,5 @@ bool SAutoSizeCommentsGraphNode::IsMajorNode(UObject* Object)
 
 	return false;
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -47,9 +47,9 @@ void FBlueprintAssistModule::StartupModule()
 
 	RegisterSettings();
 
-	if (UBASettings::Get().bDisableBlueprintAssistPlugin)
+	if (!UBASettings::Get().bEnablePlugin)
 	{
-		UE_LOG(LogBlueprintAssist, Log, TEXT("FBlueprintAssistModule: Blueprint Assist plugin disabled (setting DisableBlueprintAssistPlugin), not initializing"));
+		UE_LOG(LogBlueprintAssist, Log, TEXT("FBlueprintAssistModule: Blueprint Assist plugin disabled (setting bEnablePlugin), not initializing"));
 		return;
 	}
 

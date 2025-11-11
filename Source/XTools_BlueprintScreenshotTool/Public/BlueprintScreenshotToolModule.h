@@ -13,6 +13,7 @@ class FBlueprintScreenshotToolModule : public IModuleInterface
 {
 private:
 	TSharedPtr<FBlueprintScreenshotToolCommandManager> CommandManager;
+	bool bIsPluginInitialized = false;
 
 public:
 	/** IModuleInterface implementation */
