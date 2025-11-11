@@ -199,6 +199,14 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "自动添加父节点", Tooltip = "自动为事件节点添加父节点"))
 	bool bAutoAddParentNode;
 
+	/* Enable shake node to break all connections feature */
+	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "启用晃动断开连接", Tooltip = "按住节点晃动几下使其断开所有连接"))
+	bool bEnableShakeNodeOffWire;
+
+	/* Time window to detect shake movements (in seconds) */
+	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "晃动检测时间窗口", Tooltip = "检测晃动移动的时间窗口（秒），在指定时间内晃动达到次数时触发断开连接"))
+	float ShakeNodeOffWireTimeWindow;
+
 	/* Automatically rename Function getters and setters when the Function is renamed */
 	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "自动重命名访问器", Tooltip = "当函数重命名时自动重命名 Getter 和 Setter 函数"))
 	bool bAutoRenameGettersAndSetters;

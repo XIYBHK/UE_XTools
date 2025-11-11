@@ -67,6 +67,12 @@ FBAInputProcessor::FBAInputProcessor()
 		PinActions.PinEditCommands,
 		BlueprintActions.BlueprintCommands
 	};
+
+	// Initialize shake tracking array with 3 slots
+	ShakeOffNodeTracker.SetNum(3);
+
+	// Initialize shake flag
+	bRecentlyShookNode = false;
 }
 
 FBAInputProcessor::~FBAInputProcessor() {}
@@ -367,6 +373,204 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 	return false;
 }
 
+bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
+	const FPointerEvent& MouseEvent,
+	UEdGraphNode* Node,
+	const FVector2D& Delta)
+{
+	if (!Node || !UBASettings::Get().bEnableShakeNodeOffWire)
+	{
+		return false;
+	}
+
+	// Check minimum shake distance
+	const float MinShakeDistance = 5.0f; // Minimum distance to count as a shake
+	if (Delta.Size() < MinShakeDistance)
+	{
+		return false;
+	}
+
+	// Find or create tracking info for this node
+	FShakeOffNodeTrackingInfo* TrackingInfo = nullptr;
+	int32 FreeSlotIndex = -1;
+	
+	for (int32 i = 0; i < ShakeOffNodeTracker.Num(); ++i)
+	{
+		if (!ShakeOffNodeTracker[i].Node.IsValid())
+		{
+			if (FreeSlotIndex == -1)
+			{
+				FreeSlotIndex = i;
+			}
+		}
+		else if (ShakeOffNodeTracker[i].Node.Get() == Node)
+		{
+			TrackingInfo = &ShakeOffNodeTracker[i];
+			break;
+		}
+	}
+
+	// If no tracking info found and we have free slots, create new one
+	if (!TrackingInfo && FreeSlotIndex != -1)
+	{
+		ShakeOffNodeTracker[FreeSlotIndex].Node = Node;
+		ShakeOffNodeTracker[FreeSlotIndex].ShakeCount = 0;
+		ShakeOffNodeTracker[FreeSlotIndex].LastShakeTime = 0.0;
+		ShakeOffNodeTracker[FreeSlotIndex].LastShakeDirection = FVector2D::ZeroVector;
+		TrackingInfo = &ShakeOffNodeTracker[FreeSlotIndex];
+	}
+
+	if (!TrackingInfo)
+	{
+		return false; // No available tracking slots
+	}
+
+	const double CurrentTime = FSlateApplication::Get().GetCurrentTime();
+	const float TimeWindow = UBASettings::Get().ShakeNodeOffWireTimeWindow;
+	
+	// Reset if too much time has passed
+	if (CurrentTime - TrackingInfo->LastShakeTime > TimeWindow)
+	{
+		TrackingInfo->ShakeCount = 0;
+		TrackingInfo->LastShakeDirection = FVector2D::ZeroVector;
+	}
+
+	// Calculate movement direction from delta
+	const FVector2D MovementDirection = Delta.GetSafeNormal();
+	
+	// Check if this is a valid shake (opposite direction from last shake)
+	if (TrackingInfo->ShakeCount > 0 && TrackingInfo->LastShakeDirection != FVector2D::ZeroVector)
+	{
+		// Check if movement is in opposite direction (using dot product)
+		const float DotProduct = FVector2D::DotProduct(MovementDirection, TrackingInfo->LastShakeDirection);
+		
+		// If dot product is negative, directions are opposite (good shake)
+		if (DotProduct < 0.0f)
+		{
+			TrackingInfo->ShakeCount++;
+			TrackingInfo->LastShakeTime = CurrentTime;
+			TrackingInfo->LastShakeDirection = MovementDirection;
+			
+			// Check if we've reached the shake threshold (3 shakes in time window)
+			if (TrackingInfo->ShakeCount >= 3)
+			{
+				// Trigger node disconnection using the graph schema
+				if (UEdGraph* Graph = Node->GetGraph())
+				{
+					if (const UEdGraphSchema* Schema = Graph->GetSchema())
+					{
+						const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "ShakeNodeOffWire", "Shake Node Off Wire"));
+						Node->Modify();
+
+						// Collect all connections to break first (optimization)
+						TArray<TPair<UEdGraphPin*, UEdGraphPin*>> ConnectionsToBreak;
+						int32 TotalConnections = 0;
+						const int32 MaxConnectionsPerOperation = 50; // Limit to prevent UI freeze
+
+						// Get all pins of the node
+						TArray<UEdGraphPin*> AllPins = Node->GetAllPins();
+
+						// Collect all connections first to avoid modifying arrays while iterating
+						for (UEdGraphPin* Pin : AllPins)
+						{
+							if (Pin && Pin->LinkedTo.Num() > 0)
+							{
+								// Store connections to break
+								for (UEdGraphPin* ConnectedPin : Pin->LinkedTo)
+								{
+									if (ConnectedPin && TotalConnections < MaxConnectionsPerOperation)
+									{
+										ConnectionsToBreak.Add(TPair<UEdGraphPin*, UEdGraphPin*>(Pin, ConnectedPin));
+										TotalConnections++;
+									}
+								}
+							}
+						}
+
+						// Break all collected connections in a batch
+						for (const TPair<UEdGraphPin*, UEdGraphPin*>& Connection : ConnectionsToBreak)
+						{
+							Schema->BreakSinglePinLink(Connection.Key, Connection.Value);
+						}
+
+						// If we hit the limit, show a subtle warning (optional)
+						if (TotalConnections >= MaxConnectionsPerOperation)
+						{
+							UE_LOG(LogBlueprintAssist, Warning, TEXT("Shake node off wire: Hit connection limit of %d, some connections may remain"), MaxConnectionsPerOperation);
+						}
+					}
+				}
+				
+				// Reset tracking for this node
+				TrackingInfo->ShakeCount = 0;
+				TrackingInfo->LastShakeDirection = FVector2D::ZeroVector;
+				
+				return true;
+			}
+		}
+		else
+		{
+			// Same direction, update tracking but don't increase count
+			TrackingInfo->LastShakeTime = CurrentTime;
+			TrackingInfo->LastShakeDirection = MovementDirection;
+		}
+	}
+	else
+	{
+		// First shake or no previous direction
+		TrackingInfo->ShakeCount = 1;
+		TrackingInfo->LastShakeTime = CurrentTime;
+		TrackingInfo->LastShakeDirection = MovementDirection;
+	}
+
+	return false;
+}
+
+void FBAInputProcessor::ResetDragState()
+{
+	// Reset all drag-related state
+	AnchorNode = nullptr;
+
+	// End any active drag transaction
+	if (DragNodeTransaction.IsValid())
+	{
+		DragNodeTransaction.End(DragNodeTransaction.DragMethod);
+	}
+
+	// Clear shake tracking and reset flag
+	ResetShakeTracking();
+	bRecentlyShookNode = false;
+}
+
+void FBAInputProcessor::ResetShakeTracking(UEdGraphNode* Node)
+{
+	if (Node)
+	{
+		// Reset tracking for specific node
+		for (FShakeOffNodeTrackingInfo& TrackingInfo : ShakeOffNodeTracker)
+		{
+			if (TrackingInfo.Node.IsValid() && TrackingInfo.Node.Get() == Node)
+			{
+				TrackingInfo.ShakeCount = 0;
+				TrackingInfo.LastShakeDirection = FVector2D::ZeroVector;
+				TrackingInfo.LastShakeTime = 0.0;
+				break;
+			}
+		}
+	}
+	else
+	{
+		// Reset all tracking
+		for (FShakeOffNodeTrackingInfo& TrackingInfo : ShakeOffNodeTracker)
+		{
+			TrackingInfo.ShakeCount = 0;
+			TrackingInfo.LastShakeDirection = FVector2D::ZeroVector;
+			TrackingInfo.LastShakeTime = 0.0;
+			TrackingInfo.Node = nullptr;
+		}
+	}
+}
+
 bool FBAInputProcessor::HandleKeyUpEvent(FSlateApplication& SlateApp, const FKeyEvent& InKeyEvent)
 {
 	if (OnKeyOrMouseUp(SlateApp, InKeyEvent.GetKey()))
@@ -451,6 +655,34 @@ bool FBAInputProcessor::HandleMouseMoveEvent(FSlateApplication& SlateApp, const 
 	{
 		const FVector2D NewMousePos = FBAUtils::SnapToGrid(FBAUtils::ScreenSpaceToPanelCoord(GraphPanel, MouseEvent.GetScreenSpacePosition()));
 		const FVector2D Delta = NewMousePos - LastMousePos;
+
+		// Add shake detection before OnMouseDrag
+		if (UBASettings::Get().bEnableShakeNodeOffWire && AnchorNode.IsValid())
+		{
+			// Calculate screen space delta for shake detection
+			const FVector2D ScreenDelta = MouseEvent.GetScreenSpacePosition() - MouseEvent.GetLastScreenSpacePosition();
+
+			// Try to process as shake event
+			if (TryProcessAsShakeNodeOffWireEvent(MouseEvent, AnchorNode.Get(), ScreenDelta))
+			{
+				// Reset drag state to prevent box selection, but keep the flag
+				AnchorNode = nullptr;
+				if (DragNodeTransaction.DragMethod == EBADragMethod::LMB)
+				{
+					DragNodeTransaction.End(EBADragMethod::LMB);
+				}
+				ResetShakeTracking();
+				bRecentlyShookNode = true;  // Set flag to prevent box selection
+
+				// Force clear selection state to prevent box selection
+				if (GraphHandler.IsValid() && GraphHandler->GetGraphPanel().IsValid())
+				{
+					GraphHandler->GetGraphPanel()->SelectionManager.ClearSelectionSet();
+				}
+
+				return true; // Block further processing
+			}
+		}
 
 		bBlocking = OnMouseDrag(SlateApp, NewMousePos, Delta);
 
@@ -599,6 +831,13 @@ bool FBAInputProcessor::OnMouseDrag(FSlateApplication& SlateApp, const FVector2D
 
 	bool bBlocking = false;
 
+	// Prevent box selection after shake node off wire
+	if (bRecentlyShookNode && !AnchorNode.IsValid())
+	{
+		// If we recently shook a node and are not dragging anything, block to prevent box selection
+		return true;
+	}
+
 	// process extra drag nodes
 	if (AnchorNode.IsValid())
 	{
@@ -656,6 +895,9 @@ bool FBAInputProcessor::OnKeyOrMouseUp(FSlateApplication& SlateApp, const FKey& 
 	// process extra drag nodes
 	if (Key == EKeys::LeftMouseButton)
 	{
+		// Reset shake flag on mouse release
+		bRecentlyShookNode = false;
+
 		if (DragNodeTransaction.DragMethod == EBADragMethod::LMB)
 		{
 			GEditor->GetTimerManager()->SetTimerForNextTick([&]()

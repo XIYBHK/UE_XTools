@@ -44,6 +44,9 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 
 	bAddToolbarWidget = true;
 
+	bEnableShakeNodeOffWire = true;
+	ShakeNodeOffWireTimeWindow = 0.3f;
+
 	SelectedPinHighlightColor = FLinearColor(0.6f, 0.6f, 0.6f, 0.33);
 
 	SupportedAssetEditors = {
