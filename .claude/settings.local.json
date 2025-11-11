@@ -6,7 +6,10 @@
       "Bash(\"F:/Epic Games/UE_5.3/Engine/Build/BatchFiles/Build.bat\" XToolsDevEditor Win64 Development -Project=\"F:/Unreal Projects/XTools/XToolsDev.uproject\" -FromMsBuild)",
       "Bash(\"F:/Epic Games/UE_5.3/Engine/Build/BatchFiles/Build.bat\" XToolsDevEditor Win64 Development \"-Project=F:/Unreal Projects/XTools/XToolsDev.uproject\" -FromMsBuild)",
       "Bash(cmd.exe /c \"\"\"F:\\Epic Games\\UE_5.3\\Engine\\Build\\BatchFiles\\Build.bat\"\" XToolsDevEditor Win64 Development \"\"-Project=F:\\Unreal Projects\\XTools\\XToolsDev.uproject\"\" -FromMsBuild\")",
-      "Bash(powershell -ExecutionPolicy Bypass -File \".\\Scripts\\Clean-UEPlugin.ps1\")"
+      "Bash(powershell -ExecutionPolicy Bypass -File \".\\Scripts\\Clean-UEPlugin.ps1\")",
+      "Bash(git stash push:*)",
+      "Bash(git stash:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

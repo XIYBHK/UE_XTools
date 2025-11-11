@@ -36,8 +36,7 @@ public class XTools_SwitchLanguage : ModuleRules
 		{
 			"Core",
 			"CoreUObject",
-			"Engine",
-			"XToolsCore"  // XTools版本兼容层
+			"Engine"
 		});
 
 		//  私有依赖模块 - 编辑器工具栏功能
