@@ -107,6 +107,9 @@ UAutoSizeCommentsSettings::UAutoSizeCommentsSettings(const FObjectInitializer& O
 	bDebugGraph_ASC = false;
 	bDisablePackageCleanup = false;
 	bDisableASCGraphNode = false;
+	
+	// New settings
+	bEnablePlugin = true;
 }
 
 void UAutoSizeCommentsSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)

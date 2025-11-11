@@ -35,6 +35,19 @@
 
 ## 🐛 问题修复 (Fixed)
 
+- [XTools_BlueprintAssist] **修复晃动节点断开连接后节点不跟随鼠标的问题**
+  - **问题描述**：晃动节点断开连接后，节点失去拖拽状态，无法继续跟随鼠标移动，并有明显卡顿感
+  - **根本原因**：晃动成功后立即重置 `AnchorNode` 并结束拖拽事务，导致节点失去拖拽状态
+  - **解决方案**：参考 NodeGraphAssistant 的实现，晃动成功后不重置 `AnchorNode` 或结束事务，让节点继续保持拖拽状态
+  - **技术要点**：
+    - 移除晃动成功后立即重置 `AnchorNode` 的逻辑
+    - 移除晃动成功后立即结束 `DragNodeTransaction` 的逻辑
+    - 移除晃动成功后清除选择状态和阻止后续处理的逻辑
+    - 保留 `ResetShakeTracking()` 和 `bRecentlyShookNode` 标志
+    - 让代码继续执行到 `OnMouseDrag()`，使节点继续跟随鼠标
+  - **效果**：✅ 晃动断开连接后节点平滑地继续跟随鼠标移动，无卡顿感
+  - **相关文件**：`BlueprintAssistInputProcessor.cpp` - `HandleMouseMoveEvent()` 方法
+
 - [BlueprintScreenshotTool] **修复首次截图节点图标丢失问题**（核心修复）
   - **问题描述**：首次截图时节点图标显示为纯色占位符，第二次截图正常
   - **根本原因**：Slate UI 资源（特别是图标）异步加载，首次截图时资源未完全加载

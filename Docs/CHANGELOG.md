@@ -13,6 +13,7 @@
 - 🔄 修复模块重命名后的API导出宏问题（XTools_前缀适配）
 - 🎯 修复EnhancedCodeFlow模块移动构造函数语法错误
 - 📝 优化BlueprintScreenshotTool工具栏文本显示
+- 🐛 修复晃动节点断开连接后节点不跟随鼠标的问题
 
 ### 🔌 集成 BlueprintScreenshotTool 模块
 
@@ -35,6 +36,23 @@
 - **设置项**（15项）：覆盖截图命名、图片格式、保存目录、截图边距、最小/最大尺寸、缩放倍数、快捷键、通知选项、开发者模式
 - **命令**（2项）："Take Screenshot" → "截取截图"、"Open Directory" → "打开目录"
 - **错误提示**（3项）：使用LOCTEXT实现目录不存在、截图保存失败提示
+
+### 🐛 BlueprintAssist 晃动节点功能修复
+
+#### **修复晃动节点断开连接后节点不跟随鼠标的问题**
+- **问题描述**：晃动节点断开连接后，节点失去拖拽状态，无法继续跟随鼠标移动，并有明显卡顿感
+- **根本原因**：晃动成功后立即重置 `AnchorNode` 并结束拖拽事务，导致节点失去拖拽状态
+- **解决方案**：参考 NodeGraphAssistant 的实现，晃动成功后不重置 `AnchorNode` 或结束事务，让节点继续保持拖拽状态
+- **技术要点**：
+  - 移除晃动成功后立即重置 `AnchorNode` 的逻辑
+  - 移除晃动成功后立即结束 `DragNodeTransaction` 的逻辑
+  - 移除晃动成功后清除选择状态和阻止后续处理的逻辑
+  - 保留 `ResetShakeTracking()` 和 `bRecentlyShookNode` 标志
+  - 让代码继续执行到 `OnMouseDrag()`，使节点继续跟随鼠标
+- **效果**：✅ 晃动断开连接后节点平滑地继续跟随鼠标移动，无卡顿感
+- **相关文件**：
+  - `BlueprintAssistInputProcessor.cpp` - `HandleMouseMoveEvent()` 方法
+  - `BlueprintAssistInputProcessor.h` - 成员变量定义
 
 ### 🐛 BlueprintScreenshotTool 核心问题修复（基于UE最佳实践）
 

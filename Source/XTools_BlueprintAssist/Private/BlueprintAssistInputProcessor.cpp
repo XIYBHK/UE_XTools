@@ -383,8 +383,8 @@ bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
 		return false;
 	}
 
-	// Check minimum shake distance
-	const float MinShakeDistance = 5.0f; // Minimum distance to count as a shake
+	// Check minimum shake distance (increased to prevent accidental triggers)
+	const float MinShakeDistance = 30.0f; // Minimum distance to count as a shake
 	if (Delta.Size() < MinShakeDistance)
 	{
 		return false;
@@ -444,8 +444,9 @@ bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
 		// Check if movement is in opposite direction (using dot product)
 		const float DotProduct = FVector2D::DotProduct(MovementDirection, TrackingInfo->LastShakeDirection);
 		
-		// If dot product is negative, directions are opposite (good shake)
-		if (DotProduct < 0.0f)
+		// If dot product is strongly negative, directions are opposite (good shake)
+		// Changed from < 0.0f to < -0.5f to require more opposite movement
+		if (DotProduct < -0.5f)
 		{
 			TrackingInfo->ShakeCount++;
 			TrackingInfo->LastShakeTime = CurrentTime;

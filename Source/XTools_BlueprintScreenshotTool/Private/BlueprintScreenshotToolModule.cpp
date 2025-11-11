@@ -13,17 +13,32 @@
 
 void FBlueprintScreenshotToolModule::StartupModule()
 {
+	RegisterSettings();
+
+	// Check if plugin is enabled
+	const UBlueprintScreenshotToolSettings* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
+	if (!Settings || !Settings->bEnablePlugin)
+	{
+		UE_LOG(LogTemp, Log, TEXT("BlueprintScreenshotTool: Plugin disabled (setting bEnablePlugin), not initializing"));
+		return;
+	}
+
 	RegisterStyle();
 	RegisterCommands();
-	RegisterSettings();
 	InitializeAsyncScreenshot();
+	bIsPluginInitialized = true;
 }
 
 void FBlueprintScreenshotToolModule::ShutdownModule()
 {
-	ShutdownAsyncScreenshot();
-	UnregisterStyle();
-	UnregisterCommands();
+	// Only shutdown if plugin was initialized
+	if (bIsPluginInitialized)
+	{
+		ShutdownAsyncScreenshot();
+		UnregisterStyle();
+		UnregisterCommands();
+		bIsPluginInitialized = false;
+	}
 	UnregisterSettings();
 }
 

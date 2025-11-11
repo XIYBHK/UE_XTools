@@ -114,6 +114,10 @@ class XTOOLS_AUTOSIZECOMMENTS_API UAutoSizeCommentsSettings final : public UObje
 public:
 	UAutoSizeCommentsSettings(const FObjectInitializer& ObjectInitializer);
 
+	/** Enable or disable the AutoSizeComments plugin */
+	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "启用插件", Tooltip = "启用或禁用 AutoSizeComments 插件（禁用后将使用默认的 Unreal 注释节点）"))
+	bool bEnablePlugin = true;
+
 	/** The default font size for comment boxes */
 	UPROPERTY(EditAnywhere, config, Category = UI, meta = (DisplayName = "默认字体大小", Tooltip = "注释框的默认字体大小"))
 	int DefaultFontSize;
@@ -381,9 +385,9 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = Debug, meta = (DisplayName = "禁用包清理", Tooltip = "禁用包清理"))
 	bool bDisablePackageCleanup;
 
-	/** Use the default Unreal comment node */
-	UPROPERTY(EditAnywhere, config, Category = Debug, meta = (DisplayName = "禁用ASC图表节点", Tooltip = "使用默认的Unreal注释节点"))
-	bool bDisableASCGraphNode;
+	/** [Deprecated] Use bEnablePlugin instead */
+	UPROPERTY(config)
+	bool bDisableASCGraphNode = false;
 
 	static FORCEINLINE const UAutoSizeCommentsSettings& Get()
 	{
