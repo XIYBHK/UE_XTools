@@ -1,0 +1,11 @@
+{
+    // --- Unreal Engine Project Settings (通用模板) ---
+    // 这是你未来唯一需要为每个项目和每台电脑配置的地方。
+
+    // 1. 修改为你的项目名称
+    "unreal.project.name": "cpp0623",
+
+    // 2. 修改为你电脑上UE引擎的安装路径
+    // !!! 重要提示：请务必使用正斜杠 "/" 作为路径分隔符 !!!
+    "unreal.engine.path": "D:/Program Files/Epic Games/UE_5.3"
+}
