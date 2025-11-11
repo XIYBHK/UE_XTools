@@ -665,22 +665,14 @@ bool FBAInputProcessor::HandleMouseMoveEvent(FSlateApplication& SlateApp, const 
 			// Try to process as shake event
 			if (TryProcessAsShakeNodeOffWireEvent(MouseEvent, AnchorNode.Get(), ScreenDelta))
 			{
-				// Reset drag state to prevent box selection, but keep the flag
-				AnchorNode = nullptr;
-				if (DragNodeTransaction.DragMethod == EBADragMethod::LMB)
-				{
-					DragNodeTransaction.End(EBADragMethod::LMB);
-				}
+				// IMPORTANT: Do NOT reset AnchorNode or end transaction here!
+				// The node should continue to follow the mouse after shake-off.
+				// Only reset the shake tracking data.
 				ResetShakeTracking();
 				bRecentlyShookNode = true;  // Set flag to prevent box selection
-
-				// Force clear selection state to prevent box selection
-				if (GraphHandler.IsValid() && GraphHandler->GetGraphPanel().IsValid())
-				{
-					GraphHandler->GetGraphPanel()->SelectionManager.ClearSelectionSet();
-				}
-
-				return true; // Block further processing
+				
+				// Continue to normal drag processing - do NOT return here
+				// This allows the node to continue following the mouse
 			}
 		}
 
