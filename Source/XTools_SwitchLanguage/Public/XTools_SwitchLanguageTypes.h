@@ -34,19 +34,19 @@ struct XTOOLS_SWITCHLANGUAGE_API FLanguageSwitchResult
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	bool bSuccess = false;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	FText ErrorMessage = FText::GetEmpty();
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	ESupportedLanguage PreviousLanguage = ESupportedLanguage::Auto;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	ESupportedLanguage CurrentLanguage = ESupportedLanguage::Auto;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	FString CultureName = TEXT("");
 
 	FLanguageSwitchResult()
@@ -67,16 +67,16 @@ struct XTOOLS_SWITCHLANGUAGE_API FLanguageInfo
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	ESupportedLanguage Language = ESupportedLanguage::English;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	FText DisplayName = FText::GetEmpty();
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	FString CultureCode = TEXT("");
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category="SwitchLanguage")
 	bool bIsAvailable = false;
 
 	FLanguageInfo()
