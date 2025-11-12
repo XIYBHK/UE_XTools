@@ -83,8 +83,12 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	AssetPrefixMappings.Add(TEXT("MaterialInstanceConstant"), TEXT("MI_"));
 	AssetPrefixMappings.Add(TEXT("MaterialInstanceDynamic"), TEXT("MID_"));
 	AssetPrefixMappings.Add(TEXT("MaterialFunction"), TEXT("MF_"));
+	AssetPrefixMappings.Add(TEXT("MaterialFunctionInstance"), TEXT("MFI_"));
+	AssetPrefixMappings.Add(TEXT("MaterialFunctionMaterialLayer"), TEXT("ML_"));
 	AssetPrefixMappings.Add(TEXT("MaterialParameterCollection"), TEXT("MPC_"));
 	AssetPrefixMappings.Add(TEXT("SubsurfaceProfile"), TEXT("SSP_"));
+	AssetPrefixMappings.Add(TEXT("SpecularProfile"), TEXT("SP_"));
+	AssetPrefixMappings.Add(TEXT("MaterialLayer"), TEXT("ML_"));
 	AssetPrefixMappings.Add(TEXT("Texture2D"), TEXT("T_"));
 	AssetPrefixMappings.Add(TEXT("TextureCube"), TEXT("TC_"));
 	AssetPrefixMappings.Add(TEXT("TextureRenderTarget2D"), TEXT("RT_"));
@@ -95,11 +99,17 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	// ========== UI ==========
 	AssetPrefixMappings.Add(TEXT("WidgetBlueprint"), TEXT("WBP_"));
 	AssetPrefixMappings.Add(TEXT("Font"), TEXT("Font_"));
+	AssetPrefixMappings.Add(TEXT("FontFace"), TEXT("FontFace_"));
 	AssetPrefixMappings.Add(TEXT("SlateWidgetStyle"), TEXT("Style_"));
+	AssetPrefixMappings.Add(TEXT("SlateBrushAsset"), TEXT("Brush_"));
+	AssetPrefixMappings.Add(TEXT("ButtonStyleAsset"), TEXT("ButtonStyle_"));
+	AssetPrefixMappings.Add(TEXT("CheckboxStyleAsset"), TEXT("CheckboxStyle_"));
 
 	// ========== 数据与配置 ==========
 	AssetPrefixMappings.Add(TEXT("DataTable"), TEXT("DT_"));
 	AssetPrefixMappings.Add(TEXT("CurveTable"), TEXT("CT_"));
+	AssetPrefixMappings.Add(TEXT("CompositeDataTable"), TEXT("CDT_"));
+	AssetPrefixMappings.Add(TEXT("CompositeCurveTable"), TEXT("CCT_"));
 	AssetPrefixMappings.Add(TEXT("CurveFloat"), TEXT("Curve_"));
 	AssetPrefixMappings.Add(TEXT("CurveVector"), TEXT("CurveVec_"));
 	AssetPrefixMappings.Add(TEXT("CurveLinearColor"), TEXT("CurveColor_"));
@@ -107,6 +117,7 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	AssetPrefixMappings.Add(TEXT("UserDefinedEnum"), TEXT("E_"));
 	AssetPrefixMappings.Add(TEXT("DataAsset"), TEXT("DA_"));
 	AssetPrefixMappings.Add(TEXT("PrimaryDataAsset"), TEXT("PDA_"));
+	AssetPrefixMappings.Add(TEXT("PrimaryAssetLabel"), TEXT("PAL_"));
 
 	// ========== 音频 ==========
 	AssetPrefixMappings.Add(TEXT("SoundCue"), TEXT("SC_"));
@@ -117,6 +128,12 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	AssetPrefixMappings.Add(TEXT("ReverbEffect"), TEXT("Reverb_"));
 	AssetPrefixMappings.Add(TEXT("DialogueWave"), TEXT("DW_"));
 	AssetPrefixMappings.Add(TEXT("DialogueVoice"), TEXT("DV_"));
+	AssetPrefixMappings.Add(TEXT("SoundSubmix"), TEXT("SS_"));
+	AssetPrefixMappings.Add(TEXT("SoundEffectSourcePreset"), TEXT("SESP_"));
+	AssetPrefixMappings.Add(TEXT("SoundEffectSourcePresetChain"), TEXT("SESPC_"));
+	AssetPrefixMappings.Add(TEXT("SoundEffectSubmixPreset"), TEXT("SESMP_"));
+	AssetPrefixMappings.Add(TEXT("AudioBus"), TEXT("AB_"));
+	AssetPrefixMappings.Add(TEXT("SoundConcurrency"), TEXT("SCon_"));
 
 	// ========== 粒子与特效 (Cascade) ==========
 	AssetPrefixMappings.Add(TEXT("ParticleSystem"), TEXT("PS_"));
@@ -130,7 +147,8 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	// ========== AI ==========
 	AssetPrefixMappings.Add(TEXT("BehaviorTree"), TEXT("BT_"));
 	AssetPrefixMappings.Add(TEXT("BlackboardData"), TEXT("BB_"));
-	AssetPrefixMappings.Add(TEXT("EnvironmentQuery"), TEXT("EQ_"));
+	AssetPrefixMappings.Add(TEXT("EnvironmentQuery"), TEXT("EQS_"));
+	AssetPrefixMappings.Add(TEXT("EnvQuery"), TEXT("EQS_"));
 
 	// ========== 动画 ==========
 	AssetPrefixMappings.Add(TEXT("AnimBlueprint"), TEXT("ABP_"));
@@ -140,8 +158,17 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	AssetPrefixMappings.Add(TEXT("BlendSpace"), TEXT("BS_"));
 	AssetPrefixMappings.Add(TEXT("BlendSpace1D"), TEXT("BS1D_"));
 	AssetPrefixMappings.Add(TEXT("AimOffsetBlendSpace"), TEXT("AO_"));
+	AssetPrefixMappings.Add(TEXT("AimOffsetBlendSpace1D"), TEXT("AO1D_"));
 	AssetPrefixMappings.Add(TEXT("PoseAsset"), TEXT("Pose_"));
 	AssetPrefixMappings.Add(TEXT("ControlRig"), TEXT("CR_"));
+	AssetPrefixMappings.Add(TEXT("MirrorDataTable"), TEXT("MDT_"));
+	AssetPrefixMappings.Add(TEXT("AnimDataModel"), TEXT("ADM_"));
+	AssetPrefixMappings.Add(TEXT("BoneMaskFilter"), TEXT("BMF_"));
+	AssetPrefixMappings.Add(TEXT("VariableFrameStrippingSettings"), TEXT("VFSS_"));
+	
+	// ========== 蒙太奇通知资产 ==========
+	AssetPrefixMappings.Add(TEXT("AnimNotify"), TEXT("AN_"));
+	AssetPrefixMappings.Add(TEXT("AnimNotifyState"), TEXT("ANS_"));
 
 	// ========== MetaHuman ==========
 	AssetPrefixMappings.Add(TEXT("MetaHumanIdentity"), TEXT("MHI_"));
@@ -163,6 +190,7 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	// ========== Sequencer ==========
 	AssetPrefixMappings.Add(TEXT("LevelSequence"), TEXT("LS_"));
 	AssetPrefixMappings.Add(TEXT("TemplateSequence"), TEXT("TS_"));
+	AssetPrefixMappings.Add(TEXT("CameraAnimationSequence"), TEXT("CAS_"));
 
 	// ========== Paper2D ==========
 	AssetPrefixMappings.Add(TEXT("PaperSprite"), TEXT("SPR_"));
@@ -179,12 +207,34 @@ void UX_AssetEditorSettings::InitializeAssetPrefixMappings()
 	AssetPrefixMappings.Add(TEXT("BlueprintMacroLibrary"), TEXT("BPML_"));
 	AssetPrefixMappings.Add(TEXT("EditorUtilityBlueprint"), TEXT("EUBP_"));
 	AssetPrefixMappings.Add(TEXT("EditorUtilityWidget"), TEXT("EUW_"));
+	AssetPrefixMappings.Add(TEXT("EditorUtilityWidgetBlueprint"), TEXT("EUW_"));
 
+	// ========== 输入系统 ==========
+	AssetPrefixMappings.Add(TEXT("InputAction"), TEXT("IA_"));
+	AssetPrefixMappings.Add(TEXT("InputMappingContext"), TEXT("IMC_"));
+	AssetPrefixMappings.Add(TEXT("PlayerMappableInputConfig"), TEXT("PMIC_"));
+	
+	// ========== 渲染与后处理 ==========
+	AssetPrefixMappings.Add(TEXT("PostProcessVolume"), TEXT("PPV_"));
+	AssetPrefixMappings.Add(TEXT("LensFlare"), TEXT("LF_"));
+	AssetPrefixMappings.Add(TEXT("ColorGradingLUT"), TEXT("LUT_"));
+	
+	// ========== 虚拟纹理 ==========
+	AssetPrefixMappings.Add(TEXT("VirtualTexture"), TEXT("VT_"));
+	AssetPrefixMappings.Add(TEXT("RuntimeVirtualTexture"), TEXT("RVT_"));
+	AssetPrefixMappings.Add(TEXT("VirtualTextureBuilder"), TEXT("VTB_"));
+	
+	// ========== 稀疏体积纹理 ==========
+	AssetPrefixMappings.Add(TEXT("SparseVolumeTexture"), TEXT("SVT_"));
+	
 	// ========== 其他常用类型 ==========
 	AssetPrefixMappings.Add(TEXT("FoliageType"), TEXT("FT_"));
+	AssetPrefixMappings.Add(TEXT("FoliageType_Actor"), TEXT("FT_"));
 	AssetPrefixMappings.Add(TEXT("LandscapeGrassType"), TEXT("LGT_"));
 	AssetPrefixMappings.Add(TEXT("SubUVAnimation"), TEXT("SubUV_"));
 	AssetPrefixMappings.Add(TEXT("VectorField"), TEXT("VF_"));
+	AssetPrefixMappings.Add(TEXT("TouchInterface"), TEXT("TI_"));
+	AssetPrefixMappings.Add(TEXT("HapticFeedbackEffect"), TEXT("HFE_"));
 }
 
 FName UX_AssetEditorSettings::GetContainerName() const
@@ -245,7 +295,13 @@ void UX_AssetEditorSettings::InitializeParentClassPrefixMappings()
 	ParentClassPrefixMappings.Add(TEXT("BTService"), TEXT("BP_BTServ_"));
 
 	// ========== Animation & UI Classes (动画与UI类) ==========
+	ParentClassPrefixMappings.Add(TEXT("AnimLayerInterface"), TEXT("ABPI_"));  // 更具体的接口，优先匹配
+	ParentClassPrefixMappings.Add(TEXT("/Script/Engine.AnimLayerInterface"), TEXT("ABPI_"));  // 完整路径匹配
 	ParentClassPrefixMappings.Add(TEXT("AnimInstance"), TEXT("ABP_"));
+	ParentClassPrefixMappings.Add(TEXT("AnimNotify"), TEXT("AN_"));
+	ParentClassPrefixMappings.Add(TEXT("AnimNotify_PlayMontageNotify"), TEXT("AMN_"));  // 蒙太奇通知专用前缀
+	ParentClassPrefixMappings.Add(TEXT("AnimGraphRuntime.AnimNotify_PlayMontageNotify"), TEXT("AMN_"));
+	ParentClassPrefixMappings.Add(TEXT("AnimNotifyState"), TEXT("ANS_"));
 	ParentClassPrefixMappings.Add(TEXT("UserWidget"), TEXT("WBP_"));
 
 	// ========== Save Game (存档类) ==========

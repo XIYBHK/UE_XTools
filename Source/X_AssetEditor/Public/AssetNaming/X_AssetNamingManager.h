@@ -87,12 +87,25 @@ public:
      */
     bool IsAssetExcluded(const FAssetData& AssetData) const;
 
+    /**
+     * 输出未知资产类型的诊断信息
+     * @param AssetData 资产数据
+     * @param SimpleClassName 简单类名
+     */
+    void OutputUnknownAssetDiagnostics(const FAssetData& AssetData, const FString& SimpleClassName) const;
+
 private:
     /** 单例实例 */
     static TUniquePtr<FX_AssetNamingManager> Instance;
 
     /** 私有构造函数 */
     FX_AssetNamingManager() = default;
+
+    /** 正在进行自动重命名的资产集合（用于防止递归重命名） */
+    TSet<FString> AssetsBeingRenamed;
+
+    /** 用户明确表示不需要自动重命名的资产集合 */
+    TSet<FString> UserExcludedAssets;
 
     /**
      * 显示重命名操作结果

@@ -16,8 +16,6 @@ public:
     virtual void ShutdownModule() override;
 
 #if WITH_EDITOR
-private:
-    /** 自定义引脚工厂 */
-    TSharedPtr<class FGraphPanelPinFactory> SortGraphPinFactory;
+// 运行时模块不持有编辑器工厂，移除此成员以保持分层清晰
 #endif
 };

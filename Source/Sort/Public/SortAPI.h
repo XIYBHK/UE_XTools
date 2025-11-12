@@ -7,10 +7,7 @@
 
 #include "CoreMinimal.h"
 
-// 简化的API导出定义，使用UE标准宏
-#ifndef SORT_API
-#define SORT_API
-#endif
+// 使用由UBT自动生成的模块API宏SORT_API
 
 // Sort 模块日志分类
 DECLARE_LOG_CATEGORY_EXTERN(LogSort, Log, All);

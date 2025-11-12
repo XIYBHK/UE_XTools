@@ -4,6 +4,7 @@
 */
 
 #include "AssetNaming/X_AssetNamingDelegates.h"
+#include "AssetNaming/X_AssetNamingManager.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/AssetData.h"
 #include "Editor.h"
@@ -278,8 +279,43 @@ void FX_AssetNamingDelegates::OnAssetRenamed(const FAssetData& AssetData, const 
 	// 例如：用户重命名 BP_Test -> Test，我们可以再次检查是否符合规范
 	
 	UE_LOG(LogX_AssetNamingDelegates, Verbose,
-		TEXT("检测到资产重命名: %s（原路径: %s）"),
+		TEXT("OnAssetRenamed triggered: %s（原路径: %s）"),
 		*AssetData.AssetName.ToString(), *OldObjectPath);
+	
+	// 检查是否是用户手动重命名（从规范名称改为非规范名称）
+	FString CurrentName = AssetData.AssetName.ToString();
+	
+	// 从旧路径提取旧名称
+	FString OldName;
+	int32 LastSlashIndex;
+	if (OldObjectPath.FindLastChar('/', LastSlashIndex))
+	{
+		FString ObjectName = OldObjectPath.RightChop(LastSlashIndex + 1);
+		int32 DotIndex;
+		if (ObjectName.FindChar('.', DotIndex))
+		{
+			OldName = ObjectName.Left(DotIndex);
+		}
+	}
+	
+	UE_LOG(LogX_AssetNamingDelegates, Verbose,
+		TEXT("Rename detected: '%s' -> '%s'"), *OldName, *CurrentName);
+	
+	// 检测用户手动重命名（暂时简化处理）
+	if (!OldName.IsEmpty() && !CurrentName.IsEmpty())
+	{
+		// 检查旧名称是否有前缀，新名称是否没有前缀
+		bool bOldHadPrefix = OldName.Contains(TEXT("_"));
+		bool bNewHasPrefix = CurrentName.Contains(TEXT("_"));
+		
+		// 如果用户从有前缀改为无前缀，可能是手动重命名，暂时跳过自动重命名
+		if (bOldHadPrefix && !bNewHasPrefix)
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Log,
+				TEXT("Detected user manual rename (removed prefix), skipping auto-rename"));
+			return;
+		}
+	}
 	
 	// 触发重命名回调
 	RenameCallback.Execute(AssetData);
