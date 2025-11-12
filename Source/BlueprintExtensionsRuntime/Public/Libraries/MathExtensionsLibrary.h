@@ -42,7 +42,7 @@ public:
 
 #pragma region Sort
 	
-	UFUNCTION(BlueprintCallable, Category = "XTools|Blueprint Extensions|Math|Sort", meta = (DisplayName = "排序插入浮点数", CompactNodeTitle = "SortInsert"))
+	UFUNCTION(BlueprintCallable, Category = "XTools|Blueprint Extensions|Math|Sort", meta = (DisplayName = "排序插入浮点数", CompactNodeTitle = "SortInsert", ToolTip = "将浮点数插入到已排序数组的正确位置，保持数组排序状态。使用二分查找定位，适合维护实时排行榜等有序列表。"))
 	static void SortInsertFloat(UPARAM(ref) TArray<double>& InOutArray, double InsertElement, bool SortAsendant);
 
 #pragma endregion

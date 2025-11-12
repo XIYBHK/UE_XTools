@@ -11,6 +11,7 @@
 #include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistTabHandler.h"
 #include "BlueprintAssistToolbar.h"
+#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
 #include "ContentBrowserModule.h"
 #include "EdGraphNode_Comment.h"
 #include "IContentBrowserSingleton.h"
@@ -455,52 +456,11 @@ bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
 			// Check if we've reached the shake threshold (3 shakes in time window)
 			if (TrackingInfo->ShakeCount >= 3)
 			{
-				// Trigger node disconnection using the graph schema
-				if (UEdGraph* Graph = Node->GetGraph())
-				{
-					if (const UEdGraphSchema* Schema = Graph->GetSchema())
-					{
-						const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "ShakeNodeOffWire", "Shake Node Off Wire"));
-						Node->Modify();
-
-						// Collect all connections to break first (optimization)
-						TArray<TPair<UEdGraphPin*, UEdGraphPin*>> ConnectionsToBreak;
-						int32 TotalConnections = 0;
-						const int32 MaxConnectionsPerOperation = 50; // Limit to prevent UI freeze
-
-						// Get all pins of the node
-						TArray<UEdGraphPin*> AllPins = Node->GetAllPins();
-
-						// Collect all connections first to avoid modifying arrays while iterating
-						for (UEdGraphPin* Pin : AllPins)
-						{
-							if (Pin && Pin->LinkedTo.Num() > 0)
-							{
-								// Store connections to break
-								for (UEdGraphPin* ConnectedPin : Pin->LinkedTo)
-								{
-									if (ConnectedPin && TotalConnections < MaxConnectionsPerOperation)
-									{
-										ConnectionsToBreak.Add(TPair<UEdGraphPin*, UEdGraphPin*>(Pin, ConnectedPin));
-										TotalConnections++;
-									}
-								}
-							}
-						}
-
-						// Break all collected connections in a batch
-						for (const TPair<UEdGraphPin*, UEdGraphPin*>& Connection : ConnectionsToBreak)
-						{
-							Schema->BreakSinglePinLink(Connection.Key, Connection.Value);
-						}
-
-						// If we hit the limit, show a subtle warning (optional)
-						if (TotalConnections >= MaxConnectionsPerOperation)
-						{
-							UE_LOG(LogBlueprintAssist, Warning, TEXT("Shake node off wire: Hit connection limit of %d, some connections may remain"), MaxConnectionsPerOperation);
-						}
-					}
-				}
+				// Use the existing DisconnectExecutionOfNodes function to properly bypass the node
+				// This maintains connections between other nodes while removing the shaken node from the chain
+				TArray<UEdGraphNode*> NodesToDisconnect;
+				NodesToDisconnect.Add(Node);
+				FBANodeActions::DisconnectExecutionOfNodes(NodesToDisconnect);
 				
 				// Reset tracking for this node
 				TrackingInfo->ShakeCount = 0;

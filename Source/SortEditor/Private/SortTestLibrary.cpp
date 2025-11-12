@@ -8,6 +8,7 @@
 #include "Components/SceneComponent.h"
 #include "SortEditorModule.h"
 //  移除STL包含，使用UE内置类型检查
+#include <type_traits>
 
 //~ 辅助函数 - 日志格式化 (命名空间内)
 // =================================================================================================
@@ -222,14 +223,14 @@ void USortTestLibrary::ExecuteSortTest(UObject* WorldContextObject, ESortTestTyp
 		case ESortTestType::Integer:
 			RunBasicTypeTest<int32>(TestName,
 				[&](){ return GenerateRandomIntArray(ArraySize, -100, 100); },
-				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortIntegerArray(In, bSortAscending, Out, Idx); }
+				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortIntegerArray(In, Out, Idx, bSortAscending); }
 			);
 			break;
 
 		case ESortTestType::Float:
 			RunBasicTypeTest<float>(TestName,
 				[&](){ return GenerateRandomFloatArray(ArraySize, -100.0f, 100.0f); },
-				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortFloatArray(In, bSortAscending, Out, Idx); }
+				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortFloatArray(In, Out, Idx, bSortAscending); }
 			);
 			break;
 
@@ -244,7 +245,7 @@ void USortTestLibrary::ExecuteSortTest(UObject* WorldContextObject, ESortTestTyp
 					}
 					return Array;
 				},
-				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortStringArray(In, bSortAscending, Out, Idx); }
+				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortStringArray(In, Out, Idx, bSortAscending); }
 			);
 			break;
         
@@ -257,13 +258,13 @@ void USortTestLibrary::ExecuteSortTest(UObject* WorldContextObject, ESortTestTyp
 						FName(TEXT("张三")), FName(TEXT("李四")), FName(TEXT("王五")), FName(TEXT("赵六")), FName(TEXT("孙悟空"))
 					};
 				},
-				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortNameArray(In, bSortAscending, Out, Idx); }
+				[&](const auto& In, auto& Out, auto& Idx){ USortLibrary::SortNameArray(In, Out, Idx, bSortAscending); }
 			);
 			break;
         
 		case ESortTestType::Actor_ByDistance:
 			RunActorSortTest(TestName, TEXT("距离"), WorldContextObject, ArraySize, SpawnCenter, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByDistance(In, SpawnCenter, bSortAscending, false, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByDistance(In, SpawnCenter, Out, Idx, Vals, bSortAscending, false); }
 			);
 			break;
 
@@ -272,7 +273,7 @@ void USortTestLibrary::ExecuteSortTest(UObject* WorldContextObject, ESortTestTyp
 				// 创建一个包装器Lambda来适配SortActorsByHeight的签名
 				auto SortWrapper = [&](const TArray<AActor*>& In, TArray<AActor*>& Out, TArray<int32>& Idx, TArray<float>& Vals)
 				{
-					USortLibrary::SortActorsByHeight(In, bSortAscending, Out, Idx);
+					USortLibrary::SortActorsByHeight(In, Out, Idx, bSortAscending);
 					// 手动填充用于验证和日志记录的高度值
 					Vals.Reset(Out.Num());
 					for (const AActor* Actor : Out)
@@ -290,37 +291,37 @@ void USortTestLibrary::ExecuteSortTest(UObject* WorldContextObject, ESortTestTyp
 
 		case ESortTestType::Actor_ByAxisX:
 			RunActorSortTest(TestName, TEXT("X坐标"), WorldContextObject, ArraySize, SpawnCenter, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByAxis(In, ECoordinateAxis::X, bSortAscending, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByAxis(In, ECoordinateAxis::X, Out, Idx, Vals, bSortAscending); }
 			);
 			break;
 		
 		case ESortTestType::Actor_ByAngle:
 			RunActorSortTest(TestName, TEXT("夹角"), WorldContextObject, ArraySize, SpawnCenter, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByAngle(In, SpawnCenter, FVector::ForwardVector, bSortAscending, true, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByAngle(In, SpawnCenter, FVector::ForwardVector, Out, Idx, Vals, bSortAscending, true); }
 			);
 			break;
 
 		case ESortTestType::Actor_ByAzimuth:
 			RunActorSortTest(TestName, TEXT("方位角"), WorldContextObject, ArraySize, SpawnCenter, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByAzimuth(In, SpawnCenter, bSortAscending, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortActorsByAzimuth(In, SpawnCenter, Out, Idx, Vals, bSortAscending); }
 			);
 			break;
 
 		case ESortTestType::Vector_ByLength:
 			RunVectorSortTest(TestName, TEXT("长度"), ArraySize, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortVectorsByLength(In, bSortAscending, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortVectorsByLength(In, Out, Idx, Vals, bSortAscending); }
 			);
 			break;
 		
 		case ESortTestType::Vector_ByProjection:
 			RunVectorSortTest(TestName, TEXT("投影"), ArraySize, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortVectorsByProjection(In, FVector(1, 1, 0).GetSafeNormal(), bSortAscending, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortVectorsByProjection(In, FVector(1, 1, 0).GetSafeNormal(), Out, Idx, Vals, bSortAscending); }
 			);
 			break;
 
 		case ESortTestType::Vector_ByAxisY:
 			RunVectorSortTest(TestName, TEXT("Y坐标"), ArraySize, SpawnRadius,
-				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortVectorsByAxis(In, ECoordinateAxis::Y, bSortAscending, Out, Idx, Vals); }
+				[&](const auto& In, auto& Out, auto& Idx, auto& Vals){ USortLibrary::SortVectorsByAxis(In, ECoordinateAxis::Y, Out, Idx, Vals, bSortAscending); }
 			);
 			break;
 

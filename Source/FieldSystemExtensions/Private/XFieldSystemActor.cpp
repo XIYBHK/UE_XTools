@@ -17,7 +17,7 @@ AXFieldSystemActor::AXFieldSystemActor(const FObjectInitializer& ObjectInitializ
 {
 	// 设置默认值
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = false;  // 默认不Tick，只在需要时启用
+	PrimaryActorTick.bStartWithTickEnabled = true;  // 默认启用Tick
 }
 
 void AXFieldSystemActor::BeginPlay()

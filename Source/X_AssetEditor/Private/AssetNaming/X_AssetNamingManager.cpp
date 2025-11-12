@@ -293,6 +293,9 @@ FString FX_AssetNamingManager::GetCorrectPrefix(const FAssetData& AssetData, con
     UE_LOG(LogX_AssetNaming, Warning, TEXT("Unable to determine prefix for asset '%s' (type: %s, path: %s)"),
         *AssetData.AssetName.ToString(), *SimpleClassName, *FullClassPath);
 
+    // 使用统一的诊断函数
+    OutputUnknownAssetDiagnostics(AssetData, SimpleClassName);
+
     return TEXT("");
 }
 
@@ -668,7 +671,8 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
 
     if (CorrectPrefix.IsEmpty())
     {
-        UE_LOG(LogX_AssetNaming, Verbose, TEXT("无法确定正确前缀，跳过: %s"), *CurrentName);
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("无法确定正确前缀，输出诊断信息: %s"), *CurrentName);
+        OutputUnknownAssetDiagnostics(AssetData, SimpleClassName);
         return false;
     }
 
@@ -918,6 +922,92 @@ bool FX_AssetNamingManager::IsAssetExcluded(const FAssetData& AssetData) const
     }
 
     return false;
+}
+
+void FX_AssetNamingManager::OutputUnknownAssetDiagnostics(const FAssetData& AssetData, const FString& SimpleClassName) const
+{
+    // ========== 【诊断信息】输出详细的资产信息以便添加新的命名规则 ==========
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("========== 未知资产类型需要添加命名规则 =========="));
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("资产名称: %s"), *AssetData.AssetName.ToString());
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("资产类路径: %s"), *AssetData.AssetClassPath.ToString());
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("简单类名: %s"), *SimpleClassName);
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("包路径: %s"), *AssetData.PackagePath.ToString());
+    
+    // 输出重要的标签信息
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("重要标签信息:"));
+    
+    // 检查常见的重要标签
+    TArray<FName> ImportantTags = {
+        TEXT("BlueprintType"),
+        TEXT("ParentClass"), 
+        TEXT("GeneratedClass"),
+        TEXT("NativeParentClass"),
+        TEXT("BlueprintGeneratedClass"),
+        TEXT("ClassFlags"),
+        TEXT("ModuleRelativePath"),
+        TEXT("IncludePath")
+    };
+    
+    for (const FName& TagName : ImportantTags)
+    {
+        FAssetDataTagMapSharedView::FFindTagResult TagResult = AssetData.TagsAndValues.FindTag(TagName);
+        if (TagResult.IsSet())
+        {
+            UE_LOG(LogX_AssetNaming, Warning, TEXT("  - %s: %s"), 
+                *TagName.ToString(), *TagResult.GetValue());
+        }
+    }
+    
+    // 检查是否有父类信息
+    FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = AssetData.TagsAndValues.FindTag(TEXT("ParentClass"));
+    if (ParentClassTag.IsSet())
+    {
+        FString ParentClassPath = ParentClassTag.GetValue();
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("父类路径: %s"), *ParentClassPath);
+        
+        // 提取父类简单名称
+        FString ParentSimpleClassName;
+        int32 LastDotIndex;
+        if (ParentClassPath.FindLastChar('.', LastDotIndex))
+        {
+            ParentSimpleClassName = ParentClassPath.RightChop(LastDotIndex + 1);
+        }
+        else
+        {
+            ParentSimpleClassName = ParentClassPath;
+        }
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("父类简单名称: %s"), *ParentSimpleClassName);
+    }
+    
+    // 检查蓝图类型标签
+    FAssetDataTagMapSharedView::FFindTagResult BlueprintTypeTag = AssetData.TagsAndValues.FindTag(TEXT("BlueprintType"));
+    if (BlueprintTypeTag.IsSet())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("蓝图类型: %s"), *BlueprintTypeTag.GetValue());
+    }
+    
+    // 提供添加建议
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("建议添加到 AssetPrefixMappings:"));
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("  AssetPrefixMappings.Add(TEXT(\"%s\"), TEXT(\"[前缀]_\"));"), *SimpleClassName);
+    
+    if (ParentClassTag.IsSet())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("或者添加到 ParentClassPrefixMappings (如果是通用蓝图类型):"));
+        FString ParentClassPath = ParentClassTag.GetValue();
+        FString ParentSimpleClassName;
+        int32 LastDotIndex;
+        if (ParentClassPath.FindLastChar('.', LastDotIndex))
+        {
+            ParentSimpleClassName = ParentClassPath.RightChop(LastDotIndex + 1);
+        }
+        else
+        {
+            ParentSimpleClassName = ParentClassPath;
+        }
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("  ParentClassPrefixMappings.Add(TEXT(\"%s\"), TEXT(\"[前缀]_\"));"), *ParentSimpleClassName);
+    }
+    
+    UE_LOG(LogX_AssetNaming, Warning, TEXT("================================================"));
 }
 
 #undef LOCTEXT_NAMESPACE

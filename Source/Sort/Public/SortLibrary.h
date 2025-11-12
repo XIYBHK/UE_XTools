@@ -40,16 +40,15 @@ public:
             DisplayName = "根据距离排序Actor数组",
             Keywords = "排序,距离,Actor,索引",
             AutoCreateRefTerm = "Location",
-            bAscending = "true",
             ToolTip = "将Actor数组按照与指定位置的距离进行排序，并返回排序后元素对应的原始索引。\n参数:\nActors - 要排序的Actor数组\nLocation - 参考位置\nbAscending - true为升序（从近到远），false为降序（从远到近）\nb2DDistance - true则忽略Z轴计算距离\n返回值:\nSortedActors - 排序后的Actor数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedDistances - 排序后每个Actor到参考位置的距离"
         ))
     static void SortActorsByDistance(UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors, 
         UPARAM(DisplayName="参考位置") const FVector& Location, 
-        UPARAM(DisplayName="升序排序") bool bAscending,
-        UPARAM(DisplayName="2D距离") bool b2DDistance,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors, 
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序距离") TArray<float>& SortedDistances);
+        UPARAM(DisplayName="已排序距离") TArray<float>& SortedDistances,
+        UPARAM(DisplayName="升序排序") bool bAscending = true,
+        UPARAM(DisplayName="2D距离") bool b2DDistance = false);
 
     /** 根据Actor的Z坐标（高度）进行排序，并返回原始索引 */
     UFUNCTION(BlueprintPure,
@@ -57,13 +56,12 @@ public:
         meta = (
             DisplayName = "根据高度排序Actor数组",
             Keywords = "排序,高度,Z轴,Actor,索引",
-            bAscending = "true",
             ToolTip = "将Actor数组按照Z轴坐标（高度）进行排序，并返回排序后元素对应的原始索引。\n参数:\nActors - 要排序的Actor数组\nbAscending - true为升序（从低到高），false为降序（从高到低）\n返回值:\nSortedActors - 排序后的Actor数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
         ))
     static void SortActorsByHeight(UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors, 
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors, 
-        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 根据Actor在指定坐标轴上的值进行排序 */
     UFUNCTION(BlueprintPure,
@@ -71,16 +69,15 @@ public:
         meta = (
             DisplayName = "根据坐标排序Actor数组",
             Keywords = "排序,坐标,轴,Actor,索引,XYZ",
-            bAscending = "true",
             ToolTip = "将Actor数组按照指定坐标轴上的值进行排序。\n参数:\nActors - 要排序的Actor数组\nAxis - 要排序的坐标轴\nbAscending - true为升序（从小到大），false为降序（从大到小）\n返回值:\nSortedActors - 排序后的Actor数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedAxisValues - 排序后每个Actor在指定轴上的坐标值"
         ))
     static void SortActorsByAxis(
         UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors,
         UPARAM(DisplayName="坐标轴") ECoordinateAxis Axis,
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序坐标") TArray<float>& SortedAxisValues);
+        UPARAM(DisplayName="已排序坐标") TArray<float>& SortedAxisValues,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 根据Actor相对于指定方向的夹角进行排序 */
     UFUNCTION(BlueprintPure,
@@ -89,18 +86,17 @@ public:
             DisplayName = "根据夹角排序Actor数组",
             Keywords = "排序,夹角,方向,Actor,索引,角度",
             AutoCreateRefTerm = "Center,Direction",
-            bAscending = "true",
             ToolTip = "将Actor数组按照与指定方向的夹角进行排序。\n参数:\nActors - 要排序的Actor数组\nCenter - 中心点位置\nDirection - 参考方向\nbAscending - true为升序（从小到大），false为降序（从大到小）\nb2DAngle - true则在XY平面上计算夹角\n返回值:\nSortedActors - 排序后的Actor数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedAngles - 排序后每个Actor与参考方向的夹角（度数）"
         ))
     static void SortActorsByAngle(
         UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors,
         UPARAM(DisplayName="中心点") const FVector& Center,
         UPARAM(DisplayName="参考方向") const FVector& Direction,
-        UPARAM(DisplayName="升序排序") bool bAscending,
-        UPARAM(DisplayName="2D夹角") bool b2DAngle,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序夹角") TArray<float>& SortedAngles);
+        UPARAM(DisplayName="已排序夹角") TArray<float>& SortedAngles,
+        UPARAM(DisplayName="升序排序") bool bAscending = true,
+        UPARAM(DisplayName="2D夹角") bool b2DAngle = false);
 
     /** 根据Actor相对于中心点的方位角进行排序 */
     UFUNCTION(BlueprintPure,
@@ -109,16 +105,15 @@ public:
             DisplayName = "根据方位角排序Actor数组",
             Keywords = "排序,方位角,方向,Actor,索引,角度,指南针",
             AutoCreateRefTerm = "Center",
-            bAscending = "true",
             ToolTip = "将Actor数组按照相对于中心点的方位角进行排序（以正北为0度，顺时针计算）。\n参数:\nActors - 要排序的Actor数组\nCenter - 中心点位置\nbAscending - true为升序（从小到大），false为降序（从大到小）\n返回值:\nSortedActors - 排序后的Actor数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedAzimuths - 排序后每个Actor的方位角（0-360度，0为正北，90为正东）"
         ))
     static void SortActorsByAzimuth(
         UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors,
         UPARAM(DisplayName="中心点") const FVector& Center,
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序方位角") TArray<float>& SortedAzimuths);
+        UPARAM(DisplayName="已排序方位角") TArray<float>& SortedAzimuths,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 根据Actor相对于中心点的夹角和距离进行加权排序 */
     UFUNCTION(BlueprintPure,
@@ -127,7 +122,6 @@ public:
             DisplayName = "根据夹角和距离排序Actor数组",
             Keywords = "排序,夹角,距离,权重,方向,Actor,索引,角度",
             AutoCreateRefTerm = "Center,Direction",
-            bAscending = "true",
             ToolTip = "将Actor数组按照与参考方向的夹角和到中心点的距离进行加权排序。\n最大夹角和最大距离用于过滤，设为0表示不限制。\n当权重都为0时默认只按夹角排序，否则按权重计算综合评分进行排序。\n2D夹角选项开启时会忽略Z轴，在XY平面上计算。"
         ))
     static void SortActorsByAngleAndDistance(
@@ -138,72 +132,68 @@ public:
         UPARAM(DisplayName="最大距离") float MaxDistance,
         UPARAM(DisplayName="夹角权重") float AngleWeight,
         UPARAM(DisplayName="距离权重") float DistanceWeight,
-        UPARAM(DisplayName="升序排序") bool bAscending,
-        UPARAM(DisplayName="2D夹角") bool b2DAngle,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
         UPARAM(DisplayName="已排序夹角") TArray<float>& SortedAngles,
-        UPARAM(DisplayName="已排序距离") TArray<float>& SortedDistances);
+        UPARAM(DisplayName="已排序距离") TArray<float>& SortedDistances,
+        UPARAM(DisplayName="升序排序") bool bAscending = true,
+        UPARAM(DisplayName="2D夹角") bool b2DAngle = false);
     
     //~ 基础类型排序函数
     // =================================================================================================
 
     /** 对整数数组进行排序 */
-    UFUNCTION(BlueprintCallable,
+    UFUNCTION(BlueprintPure,
         Category = "XTools|排序|基础类型", 
         meta = (
             DisplayName = "排序整数数组",
             Keywords = "排序,整数,数字,索引",
-            bAscending = "true",
             ToolTip = "对整数数组进行排序，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的整数数组\nbAscending - true为升序（从小到大），false为降序（从大到小）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
         ))
     static void SortIntegerArray(UPARAM(DisplayName="输入数组") const TArray<int32>& InArray, 
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<int32>& SortedArray, 
-        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 对浮点数数组进行排序 */
-    UFUNCTION(BlueprintCallable,
+    UFUNCTION(BlueprintPure,
         Category = "XTools|排序|基础类型", 
         meta = (
             DisplayName = "排序浮点数数组",
             Keywords = "排序,浮点数,小数,索引",
-            bAscending = "true",
             ToolTip = "对浮点数数组进行排序，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的浮点数数组\nbAscending - true为升序（从小到大），false为降序（从大到小）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
         ))
     static void SortFloatArray(UPARAM(DisplayName="输入数组") const TArray<float>& InArray, 
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<float>& SortedArray, 
-        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 对字符串数组进行排序 */
-    UFUNCTION(BlueprintCallable,
+    UFUNCTION(BlueprintPure,
         Category = "XTools|排序|基础类型", 
         meta = (
             DisplayName = "排序字符串数组",
             Keywords = "排序,字符串,文本,索引",
-            bAscending = "true",
             ToolTip = "对字符串数组进行排序，按照字典序（lexicographical order）进行比较，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的字符串数组\nbAscending - true为升序（字典序），false为降序（字典序）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
         ))
     static void SortStringArray(UPARAM(DisplayName="输入数组") const TArray<FString>& InArray, 
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<FString>& SortedArray, 
-        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 根据字典序对命名数组进行排序 */
-    UFUNCTION(BlueprintCallable,
+    UFUNCTION(BlueprintPure,
         Category = "XTools|排序|基础类型", 
         meta = (
             DisplayName = "排序命名数组",
             Keywords = "排序,命名,名称,FName,索引",
-            bAscending = "true",
             ToolTip = "将命名数组按照本地化规则进行排序，支持中文拼音排序。\n当输入为中文时，将按照拼音顺序排序。"
         ))
     static void SortNameArray(
         UPARAM(DisplayName="命名数组") const TArray<FName>& InArray,
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<FName>& SortedArray,
-        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices);
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
     
     //~ 向量排序函数
     // =================================================================================================
@@ -215,16 +205,15 @@ public:
             DisplayName = "根据投影排序向量数组",
             Keywords = "排序,向量,轴向,投影,索引",
             AutoCreateRefTerm = "Direction",
-            bAscending = "true",
             ToolTip = "将向量数组按照在指定方向上的投影值进行排序。\n参数:\nVectors - 要排序的向量数组\nDirection - 投影方向\nbAscending - true为升序（从小到大），false为降序（从大到小）\n返回值:\nSortedVectors - 排序后的向量数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedProjections - 排序后每个向量在指定方向上的投影值"
         ))
     static void SortVectorsByProjection(
         UPARAM(DisplayName="向量数组") const TArray<FVector>& Vectors,
         UPARAM(DisplayName="投影方向") const FVector& Direction,
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<FVector>& SortedVectors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序投影") TArray<float>& SortedProjections);
+        UPARAM(DisplayName="已排序投影") TArray<float>& SortedProjections,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 根据向量的长度进行排序 */
     UFUNCTION(BlueprintPure,
@@ -232,15 +221,14 @@ public:
         meta = (
             DisplayName = "根据长度排序向量数组",
             Keywords = "排序,向量,长度,大小,索引",
-            bAscending = "true",
             ToolTip = "将向量数组按照长度进行排序。\n参数:\nVectors - 要排序的向量数组\nbAscending - true为升序（从短到长），false为降序（从长到短）\n返回值:\nSortedVectors - 排序后的向量数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedLengths - 排序后每个向量的长度"
         ))
     static void SortVectorsByLength(
         UPARAM(DisplayName="向量数组") const TArray<FVector>& Vectors,
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<FVector>& SortedVectors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序长度") TArray<float>& SortedLengths);
+        UPARAM(DisplayName="已排序长度") TArray<float>& SortedLengths,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     /** 根据向量在指定坐标轴上的值进行排序 */
     UFUNCTION(BlueprintPure,
@@ -248,16 +236,15 @@ public:
         meta = (
             DisplayName = "根据坐标排序向量数组",
             Keywords = "排序,向量,坐标,XYZ,索引",
-            bAscending = "true",
             ToolTip = "将向量数组按照指定坐标轴上的值进行排序。\n参数:\nVectors - 要排序的向量数组\nAxis - 要排序的坐标轴\nbAscending - true为升序（从小到大），false为降序（从大到小）\n返回值:\nSortedVectors - 排序后的向量数组\nOriginalIndices - 排序后每个元素在原数组中的索引\nSortedAxisValues - 排序后每个向量在指定轴上的值"
         ))
     static void SortVectorsByAxis(
         UPARAM(DisplayName="向量数组") const TArray<FVector>& Vectors,
         UPARAM(DisplayName="坐标轴") ECoordinateAxis Axis,
-        UPARAM(DisplayName="升序排序") bool bAscending,
         UPARAM(DisplayName="排序后数组") TArray<FVector>& SortedVectors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
-        UPARAM(DisplayName="已排序坐标") TArray<float>& SortedAxisValues);
+        UPARAM(DisplayName="已排序坐标") TArray<float>& SortedAxisValues,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     //~ 数组截取函数
     // =================================================================================================
@@ -469,8 +456,8 @@ public:
         ))
     static void RemoveDuplicateFloats(
         UPARAM(DisplayName="输入数组") const TArray<float>& InArray,
-        UPARAM(DisplayName="容差值") float Tolerance,
-        UPARAM(DisplayName="输出数组") TArray<float>& OutArray);
+        UPARAM(DisplayName="输出数组") TArray<float>& OutArray,
+        UPARAM(DisplayName="容差值") float Tolerance = 0.0001f);
 
     /** 清除整数数组中的重复项 */
     UFUNCTION(BlueprintPure,
@@ -494,8 +481,8 @@ public:
         ))
     static void RemoveDuplicateStrings(
         UPARAM(DisplayName="输入数组") const TArray<FString>& InArray,
-        UPARAM(DisplayName="区分大小写") bool bCaseSensitive,
-        UPARAM(DisplayName="输出数组") TArray<FString>& OutArray);
+        UPARAM(DisplayName="输出数组") TArray<FString>& OutArray,
+        UPARAM(DisplayName="区分大小写") bool bCaseSensitive = true);
 
     /** 清除向量数组中的重复项 */
     UFUNCTION(BlueprintPure,
@@ -507,8 +494,8 @@ public:
         ))
     static void RemoveDuplicateVectors(
         UPARAM(DisplayName="输入数组") const TArray<FVector>& InArray,
-        UPARAM(DisplayName="容差值") float Tolerance,
-        UPARAM(DisplayName="输出数组") TArray<FVector>& OutArray);
+        UPARAM(DisplayName="输出数组") TArray<FVector>& OutArray,
+        UPARAM(DisplayName="容差值") float Tolerance = 0.0001f);
 
     /** 查找向量数组中的重复向量 */
     UFUNCTION(BlueprintPure,
@@ -520,9 +507,9 @@ public:
         ))
     static void FindDuplicateVectors(
         UPARAM(DisplayName="输入数组") const TArray<FVector>& InArray,
-        UPARAM(DisplayName="容差值") float Tolerance,
         UPARAM(DisplayName="重复项索引") TArray<int32>& DuplicateIndices,
-        UPARAM(DisplayName="重复项值") TArray<FVector>& DuplicateValues);
+        UPARAM(DisplayName="重复项值") TArray<FVector>& DuplicateValues,
+        UPARAM(DisplayName="容差值") float Tolerance = 0.0001f);
 
     //~ 通用属性排序函数 (基于GitHub项目的改进)
     // =================================================================================================
@@ -571,21 +558,5 @@ private:
 
 private:
     // 属性类型枚举
-    enum class EPropertyType : uint8
-    {
-        Float,
-        Integer,
-        String,
-        Boolean
-    };
-
-    // 结构体排序核心实现
-    static void SortStructByPropertyImpl(void* TargetArray, FArrayProperty* ArrayProp, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices, EPropertyType PropertyType);
-
-    // 结构体属性值比较
-    static bool CompareStructPropertyValues(const FProperty* Property, const void* LeftValuePtr, const void* RightValuePtr, bool bAscending, EPropertyType PropertyType);
-
-    // 结构体快速排序
-    static void QuickSortStructByProperty(FScriptArrayHelper& ArrayHelper, FProperty* StructProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, EPropertyType PropertyType);
-    static int32 PartitionStructByProperty(FScriptArrayHelper& ArrayHelper, FProperty* StructProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, EPropertyType PropertyType);
+    
 };
