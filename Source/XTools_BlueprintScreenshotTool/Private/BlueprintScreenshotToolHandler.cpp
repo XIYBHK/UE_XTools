@@ -6,11 +6,11 @@
 
 DEFINE_LOG_CATEGORY(LogBlueprintScreenshotTool);
 
-// UE 5.7+ Slate API 兼容性 - 与头文件保持一致
+// UE 5.7+ Slate API 兼容性
 #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
-using FBSTVector2D = FVector2f;
+#define FBST_SLATE_VECTOR FVector2f
 #else
-using FBSTVector2D = FBSTVector2D;
+#define FBST_SLATE_VECTOR FVector2D
 #endif
 
 #include "BlueprintEditor.h"
@@ -327,10 +327,12 @@ FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPt
 	// 双重绘制:第一次触发资源加载,第二次使用已加载资源
 	// 注意:由于 Slate 资源加载机制,打开蓝图后的第一次截图可能仍有部分图标显示异常
 	// 建议:如果第一次截图有问题,请再截一次
-	TStrongObjectPtr<UTextureRenderTarget2D> WarmupTarget(DrawGraphEditor(InGraphEditor, WindowSize));
+	// 转换 FBSTVector2D 到 FVector2D
+	const FVector2D WindowSizeVector2D(WindowSize.X, WindowSize.Y);
+	TStrongObjectPtr<UTextureRenderTarget2D> WarmupTarget(DrawGraphEditor(InGraphEditor, WindowSizeVector2D));
 	FPlatformProcess::Sleep(0.05f);
-	
-	const auto RenderTarget = TStrongObjectPtr<UTextureRenderTarget2D>(DrawGraphEditor(InGraphEditor, WindowSize));
+
+	const auto RenderTarget = TStrongObjectPtr<UTextureRenderTarget2D>(DrawGraphEditor(InGraphEditor, WindowSizeVector2D));
 	FlushRenderingCommands();
 
 	FBSTScreenshotData ScreenshotData;
@@ -466,17 +468,17 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TShared
 	return DrawGraphEditorInternal(InGraphEditor, InWindowSize, false);
 }
 
-UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize, FWidgetRenderer* InRenderer, bool bIsWarmup)
+UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, FWidgetRenderer* InRenderer, bool bIsWarmup)
 {
 	UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Start rendering: Size=%s, Warmup=%d"), *InWindowSize.ToString(), bIsWarmup);
-	
+
 	constexpr auto bUseGamma = true;
 	constexpr auto DrawTimes = 2;
 	constexpr auto Filter = TF_Default;
 
 	// 使用传入的 Renderer (首次截图时共享同一个实例)
 	FWidgetRenderer* WidgetRenderer = InRenderer;
-	
+
 	UTextureRenderTarget2D* RenderTarget = FWidgetRenderer::CreateTargetFor(
 		InWindowSize,
 		Filter,
@@ -540,7 +542,7 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRend
 	return RenderTarget;
 }
 
-UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize, bool bIsWarmup)
+UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, bool bIsWarmup)
 {
 	constexpr auto bUseGamma = true;
 	constexpr auto DrawTimes = 2;
