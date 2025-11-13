@@ -1,5 +1,7 @@
 #include "BlueprintAssistActions/BlueprintAssistGlobalActions.h"
 
+#include "Runtime/Launch/Resources/Version.h"
+
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings.h"
 #include "IAssetFamily.h"
@@ -448,7 +450,13 @@ void FBAGlobalActions::ToggleNodePurity() const
 			const FScopedTransaction Transaction(INVTEXT("Toggle Node Purity"));
 			SelectedGetNode->Modify();
 			const bool bIsPureNode = FBAUtils::IsNodePure(SelectedGetNode);
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+			// UE 5.7+: SetPurity 存在但无法外部链接 (LNK2019)
+			// 临时跳过，等待官方修复
+			UE_LOG(LogBlueprintAssist, Warning, TEXT("SetPurity not available in UE 5.7+ for UK2Node_VariableGet"));
+#else
 			SelectedGetNode->SetPurity(!bIsPureNode);
+#endif
 			return;
 		}
 	}
@@ -459,7 +467,13 @@ void FBAGlobalActions::ToggleNodePurity() const
 			const FScopedTransaction Transaction(INVTEXT("Toggle Node Purity"));
 			DynamicCast->Modify();
 			const bool bIsPureNode = FBAUtils::IsNodePure(DynamicCast);
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+			// UE 5.7+: SetPurity 存在但无法外部链接 (LNK2019)
+			// 临时跳过，等待官方修复
+			UE_LOG(LogBlueprintAssist, Warning, TEXT("SetPurity not available in UE 5.7+ for UK2Node_DynamicCast"));
+#else
 			DynamicCast->SetPurity(!bIsPureNode);
+#endif
 			return;
 		}
 	}

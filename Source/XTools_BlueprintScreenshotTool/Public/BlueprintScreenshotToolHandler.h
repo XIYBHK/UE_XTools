@@ -4,6 +4,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Runtime/Launch/Resources/Version.h"
+
+// UE 5.7+ Slate API 兼容性
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+using FBSTVector2D = FVector2f;
+#else
+using FBSTVector2D = FVector2D;
+#endif
 #include "UObject/Object.h"
 #include "Logging/LogMacros.h"
 #include "BlueprintScreenshotToolTypes.h"
@@ -45,19 +53,19 @@ private:
 
 	static void PrepareForScreenshot();
 	static void ExecuteAsyncScreenshot();
-	static FBSTScreenshotData CaptureWithTempWindow(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& WindowSize);
+	static FBSTScreenshotData CaptureWithTempWindow(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& WindowSize);
 	static void UpdateScreenshotState(bool bIsProcessing);
-	static FVector2D CalculateOptimalWindowSize(FBSTScreenshotData& ScreenshotData, const FString& Path);
-	
+	static FBSTVector2D CalculateOptimalWindowSize(FBSTScreenshotData& ScreenshotData, const FString& Path);
+
 protected:
 	static void RestoreNodeSelection(TSharedPtr<SGraphEditor> InGraphEditor, const TSet<UObject*>& InSelectedNodes);
 	static bool HasAnySelectedNodes(const TSet<TSharedPtr<SGraphEditor>>& InGraphEditors);
 	static void ShowNotification(const TArray<FString>& InPaths);
 	static void ShowDirectoryErrorNotification(const FString& InPath);
 	static void ShowSaveFailedNotification(const FString& InFailedCount);
-	static UTextureRenderTarget2D* DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize);
-	static UTextureRenderTarget2D* DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, bool bIsWarmup);
-	static UTextureRenderTarget2D* DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, class FWidgetRenderer* InRenderer, bool bIsWarmup);
+	static UTextureRenderTarget2D* DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize);
+	static UTextureRenderTarget2D* DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize, bool bIsWarmup);
+	static UTextureRenderTarget2D* DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize, class FWidgetRenderer* InRenderer, bool bIsWarmup);
 
 	static FString GenerateScreenshotName(TSharedPtr<SGraphEditor> InGraphEditor);
 };

@@ -1,6 +1,7 @@
 #include "Libraries/MapExtensionsLibrary.h"
 #include "Kismet/KismetArrayLibrary.h"
 #include "XToolsErrorReporter.h"
+#include "XToolsVersionCompat.h"
 #include "BlueprintExtensionsRuntime.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(MapExtensionsLibrary)
@@ -26,18 +27,18 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_GetKey)
 	
 	// Get key out value
 	FProperty* KeyProp = MapProperty->KeyProp;
-	const int32 KeyPropertySize = KeyProp->ElementSize * KeyProp->ArrayDim;
+	const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProp) * KeyProp->ArrayDim;
 	void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 	KeyProp->InitializeValue(KeyStorageSpace);
-	
+
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
-	
+
 	const FFieldClass* KeyPropClass = KeyProp->GetClass();
 	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* ItemPtr;
 	if (Stack.MostRecentPropertyAddress != nullptr &&
-		KeyPropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim &&
+		KeyPropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
 		(MostRecentPropClass->IsChildOf(KeyPropClass) || KeyPropClass->IsChildOf(MostRecentPropClass)))
 	{
 		ItemPtr = Stack.MostRecentPropertyAddress;
@@ -92,19 +93,19 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_GetValue)
 	
 	// Get value out value
 	FProperty* ValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = ValueProp->ElementSize * ValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(ValueProp) * ValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	ValueProp->InitializeValue(ValueStorageSpace);
-	
+
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
-	
+
 	const FFieldClass* ValuePropClass = ValueProp->GetClass();
 	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	
+
 	void* ItemPtr;
 	if (Stack.MostRecentPropertyAddress != nullptr &&
-		ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim &&
+		ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
 		(MostRecentPropClass->IsChildOf(ValuePropClass) || ValuePropClass->IsChildOf(MostRecentPropClass)))
 	{
 		ItemPtr = Stack.MostRecentPropertyAddress;
@@ -263,18 +264,18 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_ContainsValue)
 	}
 
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	CurrValueProp->InitializeValue(ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
-	
+
 	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
 	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* ValuePtr;
 	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim) &&
+	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
 		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
 	{
 		ValuePtr = Stack.MostRecentPropertyAddress;
@@ -325,18 +326,18 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_KeysFromValue)
 	}
 
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	CurrValueProp->InitializeValue(ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
-	
+
 	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
 	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* ValuePtr;
 	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim) &&
+	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
 		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
 	{
 		ValuePtr = Stack.MostRecentPropertyAddress;
@@ -458,18 +459,18 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RemoveEntriesWithValue)
 	}
 
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	CurrValueProp->InitializeValue(ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
-	
+
 	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
 	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* ValuePtr;
 	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim) &&
+	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
 		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
 	{
 		ValuePtr = Stack.MostRecentPropertyAddress;
@@ -537,18 +538,18 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_SetValueAt)
 	P_GET_PROPERTY(FIntProperty, Index);
 	
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = CurrValueProp->ElementSize * CurrValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	CurrValueProp->InitializeValue(ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
-	
+
 	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
 	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* ValuePtr;
 	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim) &&
+	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
 		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
 	{
 		ValuePtr = Stack.MostRecentPropertyAddress;
@@ -575,7 +576,7 @@ bool UMapExtensionsLibrary::GenericMap_SetValueAt(const void* MapAddr, const FMa
 		if(Index < 0 || Index > MapHelper.Num()-1) return false;
 		
 		const FProperty* KeyProperty = MapProperty->KeyProp;
-		const int32 KeyPropertySize = KeyProperty->ElementSize * KeyProperty->ArrayDim;
+		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProperty) * KeyProperty->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 		KeyProperty->InitializeValue(KeyStorageSpace);
 		
@@ -606,7 +607,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItem)
 	
 	// Get key out value
 	FProperty* KeyProp = MapProperty->KeyProp;
-	const int32 KeyPropertySize = KeyProp->ElementSize * KeyProp->ArrayDim;
+	const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProp) * KeyProp->ArrayDim;
 	void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 	KeyProp->InitializeValue(KeyStorageSpace);
 	
@@ -617,7 +618,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItem)
 	const FFieldClass* KeyMostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* KeyPtr;
 	if (Stack.MostRecentPropertyAddress != nullptr &&
-		KeyPropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim &&
+		KeyPropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
 		(KeyMostRecentPropClass->IsChildOf(KeyPropClass) || KeyPropClass->IsChildOf(KeyMostRecentPropClass)))
 	{
 		KeyPtr = Stack.MostRecentPropertyAddress;
@@ -629,7 +630,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItem)
 	
 	// Get value out value
 	FProperty* ValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = ValueProp->ElementSize * ValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(ValueProp) * ValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	ValueProp->InitializeValue(ValueStorageSpace);
 	
@@ -641,7 +642,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItem)
 	
 	void* ValuePtr;
 	if (Stack.MostRecentPropertyAddress != nullptr &&
-		ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim &&
+		ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
 		(ValueMostRecentPropClass->IsChildOf(ValuePropClass) || ValuePropClass->IsChildOf(ValueMostRecentPropClass)))
 	{
 		ValuePtr = Stack.MostRecentPropertyAddress;
@@ -694,7 +695,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItemFromStream)
 	
 	// Get key out value
 	FProperty* KeyProp = MapProperty->KeyProp;
-	const int32 KeyPropertySize = KeyProp->ElementSize * KeyProp->ArrayDim;
+	const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProp) * KeyProp->ArrayDim;
 	void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
 	KeyProp->InitializeValue(KeyStorageSpace);
 	
@@ -705,7 +706,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItemFromStream)
 	const FFieldClass* KeyMostRecentPropClass = Stack.MostRecentProperty->GetClass();
 	void* KeyPtr;
 	if (Stack.MostRecentPropertyAddress != nullptr &&
-		KeyPropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim &&
+		KeyPropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
 		(KeyMostRecentPropClass->IsChildOf(KeyPropClass) || KeyPropClass->IsChildOf(KeyMostRecentPropClass)))
 	{
 		KeyPtr = Stack.MostRecentPropertyAddress;
@@ -717,7 +718,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItemFromStream)
 	
 	// Get value out value
 	FProperty* ValueProp = MapProperty->ValueProp;
-	const int32 ValuePropertySize = ValueProp->ElementSize * ValueProp->ArrayDim;
+	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(ValueProp) * ValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
 	ValueProp->InitializeValue(ValueStorageSpace);
 	
@@ -729,7 +730,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItemFromStream)
 	
 	void* ValuePtr;
 	if (Stack.MostRecentPropertyAddress != nullptr &&
-		ValuePropertySize == Stack.MostRecentProperty->ElementSize*Stack.MostRecentProperty->ArrayDim &&
+		ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
 		(ValueMostRecentPropClass->IsChildOf(ValuePropClass) || ValuePropClass->IsChildOf(ValueMostRecentPropClass)))
 	{
 		ValuePtr = Stack.MostRecentPropertyAddress;
