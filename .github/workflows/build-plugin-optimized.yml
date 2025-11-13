@@ -82,6 +82,13 @@ jobs:
 
         $ueVersion = "${{ matrix.ue_version }}"
 
+        # Skip version-specific requirements check in verify-toolchain job (no matrix)
+        if ([string]::IsNullOrWhiteSpace($ueVersion)) {
+          Write-Host "[INFO] No UE version specified (verify-toolchain job), skipping version-specific requirements check" -ForegroundColor DarkGray
+          Write-Host "[OK] MSVC toolchain verification completed successfully!" -ForegroundColor Green
+          exit 0
+        }
+
         $versions = Get-ChildItem -Path $msvcPath -Directory -ErrorAction SilentlyContinue |
           Select-Object -ExpandProperty Name |
           Sort-Object -Descending  # Newest first (14.44 before 14.36)
@@ -101,6 +108,11 @@ jobs:
         }
 
         $requirements = $msvcMinRequirements[$ueVersion]
+        if (-not $requirements) {
+          Write-Error "No MSVC requirements found for UE version: $ueVersion"
+          Write-Host "Available versions: $($msvcMinRequirements.Keys -join ', ')" -ForegroundColor Yellow
+          exit 1
+        }
         Write-Host "UE $ueVersion analysis: $($requirements.Reason)" -ForegroundColor Cyan
         Write-Host "Minimum required MSVC: $($requirements.Version)+" -ForegroundColor Cyan
         Write-Host ""
