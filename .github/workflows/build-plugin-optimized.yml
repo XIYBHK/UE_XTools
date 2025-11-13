@@ -29,22 +29,40 @@ jobs:
       run: |
         Write-Host "==> Verify MSVC Toolchain for UE 5.3-5.7" -ForegroundColor Cyan
 
-        $msvcPath = "F:\VisualStudio\2022\VC\Tools\MSVC"
+        # Define possible MSVC paths in order of preference
+        $possiblePaths = @(
+          "F:\VisualStudio\2022\VC\Tools\MSVC",
+          "C:\Program Files (x86)\Microsoft Visual Studio\2022\VC\Tools\MSVC",
+          "C:\Program Files\Microsoft Visual Studio\2022\VC\Tools\MSVC"
+        )
+
+        $msvcPath = $null
+        foreach ($path in $possiblePaths) {
+          if (Test-Path $path) {
+            $msvcPath = $path
+            Write-Host "Found MSVC at: $msvcPath" -ForegroundColor Green
+            break
+          }
+        }
+
+        if (-not $msvcPath) {
+          Write-Error "MSVC tools not found in standard locations"
+          Write-Host ""
+          Write-Host "Searched locations:" -ForegroundColor Yellow
+          $possiblePaths | ForEach-Object { Write-Host "  - $_" }
+          Write-Host ""
+          Write-Host "Please install Visual Studio 2022 with the following components:" -ForegroundColor Yellow
+          Write-Host "  - Desktop development with C++ workload" -ForegroundColor Cyan
+          Write-Host "  - MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
+          exit 1
+        }
+
         $ueRequirements = @{
           "5.3" = "14.38.33130"
           "5.4" = "14.38.33130"
           "5.5" = "14.38.33130"
           "5.6" = "14.38.33130"
           "5.7" = "14.38.33130"  # 可能需要更高版本
-        }
-
-        if (-not (Test-Path $msvcPath)) {
-          Write-Error "MSVC tools not found at $msvcPath"
-          Write-Host ""
-          Write-Host "Please install Visual Studio 2022 with the following components:" -ForegroundColor Yellow
-          Write-Host "  - Desktop development with C++ workload"
-          Write-Host "  - MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
-          exit 1
         }
 
         $versions = Get-ChildItem -Path $msvcPath -Directory -ErrorAction SilentlyContinue |
