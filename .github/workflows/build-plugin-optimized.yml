@@ -41,8 +41,8 @@ jobs:
         if (-not (Test-Path $msvcPath)) {
           Write-Error "MSVC tools not found at $msvcPath"
           Write-Host ""
-          Write-Host "请安装 Visual Studio 2022 和以下必要组件：" -ForegroundColor Yellow
-          Write-Host "  - Desktop development with C++ 工作负载"
+          Write-Host "Please install Visual Studio 2022 with the following components:" -ForegroundColor Yellow
+          Write-Host "  - Desktop development with C++ workload"
           Write-Host "  - MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
           exit 1
         }
@@ -51,37 +51,37 @@ jobs:
           Select-Object -ExpandProperty Name |
           Sort-Object
 
-        Write-Host "已安装的 MSVC 版本："
+        Write-Host "Installed MSVC versions:"
         $versions | ForEach-Object { Write-Host "  - $_" }
         Write-Host ""
 
-        # 检查必需的 14.38.33130 版本
+        # Check required 14.38.33130 version
         $requiredVersion = "14.38.33130"
         if ($versions -contains $requiredVersion) {
-          Write-Host "[OK] 找到 MSVC $requiredVersion (UE 5.3-5.6 必需)" -ForegroundColor Green
+          Write-Host "[OK] Found MSVC $requiredVersion (required for UE 5.3-5.6)" -ForegroundColor Green
         } else {
-          Write-Error "未找到必需的 MSVC 版本: $requiredVersion"
+          Write-Error "Required MSVC version not found: $requiredVersion"
           Write-Host ""
-          Write-Host "安装步骤：" -ForegroundColor Yellow
-          Write-Host "1. 打开 Visual Studio Installer" -ForegroundColor Cyan
-          Write-Host "2. 点击 '修改' Visual Studio 2022" -ForegroundColor Cyan
-          Write-Host "3. 选择 '单个组件' 选项卡" -ForegroundColor Cyan
-          Write-Host "4. 搜索并勾选: MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
-          Write-Host "5. 点击 '修改' 开始安装" -ForegroundColor Cyan
+          Write-Host "Installation steps:" -ForegroundColor Yellow
+          Write-Host "1. Open Visual Studio Installer" -ForegroundColor Cyan
+          Write-Host "2. Click 'Modify' Visual Studio 2022" -ForegroundColor Cyan
+          Write-Host "3. Select 'Individual components' tab" -ForegroundColor Cyan
+          Write-Host "4. Search and check: MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
+          Write-Host "5. Click 'Modify' to start installation" -ForegroundColor Cyan
           Write-Host ""
-          Write-Host "安装完成后请重新运行此工作流。" -ForegroundColor Yellow
+          Write-Host "Please rerun this workflow after installation completes." -ForegroundColor Yellow
           exit 1
         }
 
-        # 检查 UE 5.7 可能需要的版本
-        Write-Host "检查 UE 5.7 兼容性..." -ForegroundColor Cyan
+        # Check for UE 5.7 compatible versions
+        Write-Host "Checking UE 5.7 compatibility..." -ForegroundColor Cyan
         $ue5_7Versions = @("14.40.", "14.41.", "14.42.")
         $hasUE5_7Compatible = $false
         foreach ($version in $versions) {
           foreach ($ue5_7Ver in $ue5_7Versions) {
             if ($version -like "$ue5_7Ver*") {
               $hasUE5_7Compatible = $true
-              Write-Host "[INFO] 找到 UE 5.7 可能兼容的版本: $version" -ForegroundColor Green
+              Write-Host "[INFO] Found UE 5.7 compatible version: $version" -ForegroundColor Green
               break
             }
           }
@@ -89,13 +89,13 @@ jobs:
         }
 
         if (-not $hasUE5_7Compatible) {
-          Write-Host "[WARNING] 未找到 UE 5.7 推荐的高版本 MSVC (14.40+)" -ForegroundColor Yellow
-          Write-Host "如果 UE 5.7 编译失败，请安装最新版本的 MSVC v143 工具链" -ForegroundColor Yellow
-          Write-Host "当前将尝试使用 14.38.33130 编译 UE 5.7..." -ForegroundColor Cyan
+          Write-Host "[WARNING] UE 5.7 recommended MSVC version (14.40+) not found" -ForegroundColor Yellow
+          Write-Host "If UE 5.7 build fails, install latest MSVC v143 toolchain" -ForegroundColor Yellow
+          Write-Host "Will attempt to build UE 5.7 with 14.38.33130..." -ForegroundColor Cyan
         }
 
         Write-Host ""
-        Write-Host "[OK] 工具链检查通过，可以开始构建" -ForegroundColor Green
+        Write-Host "[OK] Toolchain verification passed, ready to build" -ForegroundColor Green
 
   # 设置编译版本矩阵
   setup-matrix:
