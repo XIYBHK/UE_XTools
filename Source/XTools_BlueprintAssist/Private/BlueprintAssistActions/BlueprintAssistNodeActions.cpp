@@ -791,8 +791,20 @@ void FBANodeActions::OnGetContextMenuActions(const bool bUsePin)
 	TSharedPtr<SGraphEditor> GraphEditor = GraphHandler->GetGraphEditor();
 	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
 	const FBAVector2 MenuLocation(CursorPos.X, CursorPos.Y);
+	
+#if BA_UE_VERSION_OR_LATER(5, 7)
+	// UE 5.7+: 引擎返回 FVector2D，但 FBAVector2 是 FVector2f，需要显式转换
+	const FVector2D EnginePasteLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation(EnginePasteLocation.X, EnginePasteLocation.Y);
+#elif BA_UE_VERSION_OR_LATER(5, 6)
+	// UE 5.6: 引擎返回 FVector2f，FBAVector2 也是 FVector2f，直接赋值
+	const FBAVector2 PasteLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
+#else
+	// UE 5.5-: 引擎返回 FVector2D，FBAVector2 也是 FVector2D，直接赋值
 	const FVector2D PasteLocation = GraphEditor->GetPasteLocation();
 	const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
+#endif
 
 	UEdGraphNode* Node = GraphHandler->GetSelectedNode();
 

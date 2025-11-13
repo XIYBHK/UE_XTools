@@ -6,8 +6,8 @@
 #include "CoreMinimal.h"
 #include "Runtime/Launch/Resources/Version.h"
 
-// UE 5.7+ Slate API 兼容性
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+// UE 版本兼容性：处理 Slate API 变化
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
 using FBSTVector2D = FVector2f;
 #else
 using FBSTVector2D = FVector2D;
