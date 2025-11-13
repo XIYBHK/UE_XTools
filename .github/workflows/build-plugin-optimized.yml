@@ -13,6 +13,7 @@ on:
           - '5.4'
           - '5.5'
           - '5.6'
+          - '5.7'
         default: 'all'
   push:
     tags:
@@ -30,7 +31,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.ue_version }}" != "all" ]]; then
             echo "matrix=[\"${{ github.event.inputs.ue_version }}\"]" >> $GITHUB_OUTPUT
           else
-            echo "matrix=[\"5.3\",\"5.4\",\"5.5\",\"5.6\"]" >> $GITHUB_OUTPUT
+            echo "matrix=[\"5.3\",\"5.4\",\"5.5\",\"5.6\",\"5.7\"]" >> $GITHUB_OUTPUT
           fi
 
   build-windows-optimized:
