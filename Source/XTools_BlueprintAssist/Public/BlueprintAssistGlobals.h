@@ -28,8 +28,11 @@ XTOOLS_BLUEPRINTASSIST_API DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintAssist, Log, 
 #define BA_GET_FONT_STYLE FEditorStyle::GetFontStyle
 #endif
 
-// UE 5.6+ 类型别名：处理 API 变化
-#if BA_UE_VERSION_OR_LATER(5, 6)
+// UE 5.7+ 类型别名：处理 API 变化
+#if BA_UE_VERSION_OR_LATER(5, 7)
+using FBAMetaData = class FMetaData;
+using FBAVector2 = FVector2f;
+#elif BA_UE_VERSION_OR_LATER(5, 6)
 using FBAMetaData = class FMetaData;
 using FBAVector2 = FVector2f;
 #else

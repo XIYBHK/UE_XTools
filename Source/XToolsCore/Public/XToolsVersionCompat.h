@@ -232,5 +232,47 @@ namespace XToolsVersionCompat
 #define XTOOLS_ATOMIC_DECREMENT(AtomicVar) XToolsVersionCompat::AtomicDecrement(AtomicVar)
 #define XTOOLS_ATOMIC_ADD(AtomicVar, Value) XToolsVersionCompat::AtomicAdd(AtomicVar, Value)
 #define XTOOLS_ATOMIC_SUB(AtomicVar, Value) XToolsVersionCompat::AtomicSub(AtomicVar, Value)
+
+/**
+ * FProperty ElementSize 访问宏（兼容 UE 5.3-5.7）
+ *
+ * UE 5.5+ ElementSize 被弃用，需要使用 GetElementSize/SetElementSize
+ * UE 5.3-5.4: 直接访问 ElementSize 成员变量
+ *
+ * 用法：
+ *   const int32 Size = XTOOLS_GET_ELEMENT_SIZE(Property);
+ *
+ * @param Prop FProperty指针
+ * @return int32 元素大小
+ */
+#if XTOOLS_ENGINE_5_5_OR_LATER
+#define XTOOLS_GET_ELEMENT_SIZE(Prop) ((Prop)->GetElementSize())
+#else
+#define XTOOLS_GET_ELEMENT_SIZE(Prop) ((Prop)->ElementSize)
+#endif
+
+/**
+ * FProperty ElementSize 设置宏（兼容 UE 5.3-5.7）
+ *
+ * 注意：在 UE 5.5+ 中，SetElementSize 是保护成员，只能在特定上下文使用
+ * 通常只在 UHT 生成的代码或特定引擎模块中使用
+ *
+ * 用法：
+ *   XTOOLS_SET_ELEMENT_SIZE(Property, NewSize);
+ *
+ * @param Prop FProperty指针
+ * @param Size 新的元素大小
+ */
+#define XTOOLS_SET_ELEMENT_SIZE(Prop, Size) \
+    do { \
+        if (XTOOLS_ENGINE_5_5_OR_LATER) \
+        { \
+            (Prop)->SetElementSize(Size); \
+        } \
+        else \
+        { \
+            (Prop)->ElementSize = Size; \
+        } \
+    } while (0)
 #define XTOOLS_ATOMIC_EXCHANGE(AtomicVar, Value) XToolsVersionCompat::AtomicExchange(AtomicVar, Value)
 #define XTOOLS_ATOMIC_COMPARE_EXCHANGE(AtomicVar, Expected, Desired) XToolsVersionCompat::AtomicCompareExchange(AtomicVar, Expected, Desired)

@@ -2,13 +2,19 @@
 
 
 #include "BlueprintScreenshotToolStyle.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyleRegistry.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleMacros.h"
 
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+static const FVector2f Icon20x20(20.0f, 20.0f);
+static const FVector2f Icon40x40(40.0f, 40.0f);
+#else
 static const FVector2D Icon20x20(20.0f, 20.0f);
 static const FVector2D Icon40x40(40.0f, 40.0f);
+#endif
 
 const FString FBlueprintScreenshotToolStyle::IconFileName(TEXT("BlueprintScreenshotTool"));
 const FName FBlueprintScreenshotToolStyle::IconName(TEXT("BlueprintScreenshotTool.TakeScreenshot"));
