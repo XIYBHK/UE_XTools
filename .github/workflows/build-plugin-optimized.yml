@@ -29,41 +29,114 @@ jobs:
       run: |
         Write-Host "==> Verify MSVC Toolchain for UE 5.3-5.7" -ForegroundColor Cyan
 
-        # Define possible MSVC paths in order of preference
-        $possiblePaths = @(
-          "E:\VisualStudio\2022\VC\Tools\MSVC",
-          "F:\VisualStudio\2022\VC\Tools\MSVC",
-          "C:\Program Files (x86)\Microsoft Visual Studio\2022\VC\Tools\MSVC",
-          "C:\Program Files\Microsoft Visual Studio\2022\VC\Tools\MSVC"
-        )
-
+        # Try to find VS using vswhere first (most reliable method)
+        $vswherePath = "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
         $msvcPath = $null
-        foreach ($path in $possiblePaths) {
-          if (Test-Path $path) {
-            $msvcPath = $path
-            Write-Host "Found MSVC at: $msvcPath" -ForegroundColor Green
-            break
+
+        if (Test-Path $vswherePath) {
+          try {
+            $installationPath = & $vswherePath -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($installationPath) {
+              $candidatePath = Join-Path $installationPath "VC\Tools\MSVC"
+              if (Test-Path $candidatePath) {
+                $msvcPath = $candidatePath
+                Write-Host "Found MSVC via vswhere at: $msvcPath" -ForegroundColor Green
+              }
+            }
+          } catch {
+            Write-Host "vswhere failed, falling back to manual path detection" -ForegroundColor Yellow
+          }
+        }
+
+        # Fallback to manual path detection if vswhere failed
+        if (-not $msvcPath) {
+          # Define possible MSVC paths in order of preference
+          $possiblePaths = @(
+            "E:\VisualStudio\2022\VC\Tools\MSVC",
+            "F:\VisualStudio\2022\VC\Tools\MSVC",
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\VC\Tools\MSVC",
+            "C:\Program Files\Microsoft Visual Studio\2022\VC\Tools\MSVC"
+          )
+
+          foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+              $msvcPath = $path
+              Write-Host "Found MSVC at: $msvcPath" -ForegroundColor Green
+              break
+            }
           }
         }
 
         if (-not $msvcPath) {
-          Write-Error "MSVC tools not found in standard locations"
+          Write-Error "MSVC tools not found"
           Write-Host ""
-          Write-Host "Searched locations:" -ForegroundColor Yellow
+          Write-Host "Tried vswhere at: $vswherePath" -ForegroundColor Yellow
+          Write-Host "Also searched standard locations:" -ForegroundColor Yellow
           $possiblePaths | ForEach-Object { Write-Host "  - $_" }
           Write-Host ""
-          Write-Host "Please install Visual Studio 2022 with the following components:" -ForegroundColor Yellow
+          Write-Host "Please ensure Visual Studio 2022 is installed with:" -ForegroundColor Yellow
           Write-Host "  - Desktop development with C++ workload" -ForegroundColor Cyan
-          Write-Host "  - MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
+          Write-Host "  - MSVC v143 - VS 2022 C++ x64/x86 build tools" -ForegroundColor Red
           exit 1
         }
 
-        $ueRequirements = @{
-          "5.3" = "14.38.33130"
-          "5.4" = "14.38.33130"
-          "5.5" = "14.38.33130"
-          "5.6" = "14.38.33130"
-          "5.7" = "14.38.33130"  # 可能需要更高版本
+        $ueVersion = "${{ matrix.ue_version }}"
+
+        # Define MSVC minimum requirements by UE version
+        # Based on actual self-hosted runner compatibility testing
+        $msvcMinRequirements = @{
+          "5.3" = @{ Version = "14.36"; Reason = "UE 5.3 已在 14.36.32532 上验证可用 (ZeKai's server)" }
+          "5.4" = @{ Version = "14.36"; Reason = "UE 5.4 已在 14.36.32532 上验证可用" }
+          "5.5" = @{ Version = "14.36"; Reason = "UE 5.5 可在 14.36+ 上编译 (有 ElementSize 警告)" }
+          "5.6" = @{ Version = "14.36"; Reason = "UE 5.6 可在 14.36+ 上编译 (有 ElementSize 警告)" }
+          "5.7" = @{ Version = "14.38"; Reason = "UE 5.7 必需 14.38+ (Slate API FVector2D->FVector2f 变更)" }
+        }
+
+        $requirements = $msvcMinRequirements[$ueVersion]
+        Write-Host "UE $ueVersion requirements: $($requirements.Reason)" -ForegroundColor Cyan
+        Write-Host "Minimum MSVC version: $($requirements.Version)" -ForegroundColor Cyan
+        Write-Host ""
+
+        $minMajor = [int]$requirements.Version.Split('.')[0]
+        $minMinor = [int]$requirements.Version.Split('.')[1]
+
+        # Find compatible version
+        $compatibleVersion = $null
+        foreach ($version in $versions) {
+          $parts = $version.Split('.')
+          $major = [int]$parts[0]
+          $minor = [int]$parts[1]
+
+          if ($major -gt $minMajor -or ($major -eq $minMajor -and $minor -ge $minMinor)) {
+            $compatibleVersion = $version
+            break
+          }
+        }
+
+        if ($compatibleVersion) {
+          Write-Host "[OK] Found compatible MSVC $compatibleVersion" -ForegroundColor Green
+
+          # Show warnings for older versions
+          if ($ueVersion -in @("5.5", "5.6") -and $compatibleVersion -like "14.36.*") {
+            Write-Host "[WARNING] Using MSVC 14.36 for UE $ueVersion (recommended: 14.38+)" -ForegroundColor Yellow
+            Write-Host "      You may see ElementSize deprecation warnings during compilation" -ForegroundColor DarkYellow
+            Write-Host "      but the build should complete successfully" -ForegroundColor DarkYellow
+          }
+        } else {
+          Write-Error "No compatible MSVC version found!"
+          Write-Host ""
+          Write-Host "UE $ueVersion requires MSVC $($requirements.Version)+" -ForegroundColor Red
+          Write-Host "Reason: $($requirements.Reason)" -ForegroundColor Yellow
+          Write-Host ""
+          Write-Host "Installed versions: $($versions -join ', ')" -ForegroundColor Yellow
+          Write-Host ""
+          Write-Host "To fix this issue:" -ForegroundColor Yellow
+          if ($ueVersion -eq "5.7") {
+            Write-Host "  - Install MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38+)" -ForegroundColor Cyan
+          } else {
+            Write-Host "  - Install MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.36+)" -ForegroundColor Cyan
+          }
+          exit 1
         }
 
         $versions = Get-ChildItem -Path $msvcPath -Directory -ErrorAction SilentlyContinue |
@@ -74,18 +147,34 @@ jobs:
         $versions | ForEach-Object { Write-Host "  - $_" }
         Write-Host ""
 
-        # Check required 14.38.33130 version
-        $requiredVersion = "14.38.33130"
-        if ($versions -contains $requiredVersion) {
-          Write-Host "[OK] Found MSVC $requiredVersion (required for UE 5.3-5.6)" -ForegroundColor Green
+        # Check for compatible MSVC versions (14.38+ for UE 5.3-5.6)
+        $requiredMinimum = "14.38"
+        $compatibleVersion = $null
+
+        foreach ($version in $versions) {
+          # Check if version starts with required minimum or higher
+          if ($version -match "^14\.(3[8-9]|[4-9][0-9])\.") {
+            $compatibleVersion = $version
+            break
+          }
+        }
+
+        if ($compatibleVersion) {
+          Write-Host "[OK] Found compatible MSVC $compatibleVersion (required: 14.38+)" -ForegroundColor Green
+          if ($compatibleVersion -ne "14.38.33130") {
+            Write-Host "[INFO] Using $compatibleVersion instead of recommended 14.38.33130" -ForegroundColor Yellow
+            Write-Host "      This version should work for UE 5.3-5.7" -ForegroundColor Cyan
+          }
         } else {
-          Write-Error "Required MSVC version not found: $requiredVersion"
+          Write-Error "No compatible MSVC version found (required: 14.38+)"
+          Write-Host ""
+          Write-Host "Installed versions: $($versions -join ', ')" -ForegroundColor Yellow
           Write-Host ""
           Write-Host "Installation steps:" -ForegroundColor Yellow
           Write-Host "1. Open Visual Studio Installer" -ForegroundColor Cyan
           Write-Host "2. Click 'Modify' Visual Studio 2022" -ForegroundColor Cyan
           Write-Host "3. Select 'Individual components' tab" -ForegroundColor Cyan
-          Write-Host "4. Search and check: MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
+          Write-Host "4. Search and check: MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38 or later)" -ForegroundColor Red
           Write-Host "5. Click 'Modify' to start installation" -ForegroundColor Cyan
           Write-Host ""
           Write-Host "Please rerun this workflow after installation completes." -ForegroundColor Yellow
