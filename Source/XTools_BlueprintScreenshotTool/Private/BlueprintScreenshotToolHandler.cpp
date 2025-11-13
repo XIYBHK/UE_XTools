@@ -463,7 +463,7 @@ void UBlueprintScreenshotToolHandler::ShowSaveFailedNotification(const FString& 
 	Notification->SetCompletionState(SNotificationItem::CS_Fail);
 }
 
-UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize)
+UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize)
 {
 	return DrawGraphEditorInternal(InGraphEditor, InWindowSize, false);
 }
