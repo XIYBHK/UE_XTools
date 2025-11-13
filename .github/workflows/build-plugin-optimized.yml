@@ -20,6 +20,83 @@ on:
       - 'v*'
 
 jobs:
+  # 验证 MSVC 工具链
+  verify-toolchain:
+    runs-on: self-hosted
+    steps:
+    - name: Verify MSVC Toolchain Installation
+      shell: powershell -ExecutionPolicy Bypass -File {0}
+      run: |
+        Write-Host "==> Verify MSVC Toolchain for UE 5.3-5.7" -ForegroundColor Cyan
+
+        $msvcPath = "F:\VisualStudio\2022\VC\Tools\MSVC"
+        $ueRequirements = @{
+          "5.3" = "14.38.33130"
+          "5.4" = "14.38.33130"
+          "5.5" = "14.38.33130"
+          "5.6" = "14.38.33130"
+          "5.7" = "14.38.33130"  # 可能需要更高版本
+        }
+
+        if (-not (Test-Path $msvcPath)) {
+          Write-Error "MSVC tools not found at $msvcPath"
+          Write-Host ""
+          Write-Host "请安装 Visual Studio 2022 和以下必要组件：" -ForegroundColor Yellow
+          Write-Host "  - Desktop development with C++ 工作负载"
+          Write-Host "  - MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
+          exit 1
+        }
+
+        $versions = Get-ChildItem -Path $msvcPath -Directory -ErrorAction SilentlyContinue |
+          Select-Object -ExpandProperty Name |
+          Sort-Object
+
+        Write-Host "已安装的 MSVC 版本："
+        $versions | ForEach-Object { Write-Host "  - $_" }
+        Write-Host ""
+
+        # 检查必需的 14.38.33130 版本
+        $requiredVersion = "14.38.33130"
+        if ($versions -contains $requiredVersion) {
+          Write-Host "[OK] 找到 MSVC $requiredVersion (UE 5.3-5.6 必需)" -ForegroundColor Green
+        } else {
+          Write-Error "未找到必需的 MSVC 版本: $requiredVersion"
+          Write-Host ""
+          Write-Host "安装步骤：" -ForegroundColor Yellow
+          Write-Host "1. 打开 Visual Studio Installer" -ForegroundColor Cyan
+          Write-Host "2. 点击 '修改' Visual Studio 2022" -ForegroundColor Cyan
+          Write-Host "3. 选择 '单个组件' 选项卡" -ForegroundColor Cyan
+          Write-Host "4. 搜索并勾选: MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38-17.8)" -ForegroundColor Red
+          Write-Host "5. 点击 '修改' 开始安装" -ForegroundColor Cyan
+          Write-Host ""
+          Write-Host "安装完成后请重新运行此工作流。" -ForegroundColor Yellow
+          exit 1
+        }
+
+        # 检查 UE 5.7 可能需要的版本
+        Write-Host "检查 UE 5.7 兼容性..." -ForegroundColor Cyan
+        $ue5_7Versions = @("14.40.", "14.41.", "14.42.")
+        $hasUE5_7Compatible = $false
+        foreach ($version in $versions) {
+          foreach ($ue5_7Ver in $ue5_7Versions) {
+            if ($version -like "$ue5_7Ver*") {
+              $hasUE5_7Compatible = $true
+              Write-Host "[INFO] 找到 UE 5.7 可能兼容的版本: $version" -ForegroundColor Green
+              break
+            }
+          }
+          if ($hasUE5_7Compatible) { break }
+        }
+
+        if (-not $hasUE5_7Compatible) {
+          Write-Host "[WARNING] 未找到 UE 5.7 推荐的高版本 MSVC (14.40+)" -ForegroundColor Yellow
+          Write-Host "如果 UE 5.7 编译失败，请安装最新版本的 MSVC v143 工具链" -ForegroundColor Yellow
+          Write-Host "当前将尝试使用 14.38.33130 编译 UE 5.7..." -ForegroundColor Cyan
+        }
+
+        Write-Host ""
+        Write-Host "[OK] 工具链检查通过，可以开始构建" -ForegroundColor Green
+
   # 设置编译版本矩阵
   setup-matrix:
     runs-on: ubuntu-latest
@@ -35,7 +112,7 @@ jobs:
           fi
 
   build-windows-optimized:
-    needs: setup-matrix
+    needs: [verify-toolchain, setup-matrix]
     runs-on: self-hosted
     timeout-minutes: 60
     concurrency:
