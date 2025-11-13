@@ -313,7 +313,14 @@ void SBABlueprintActionMenu::SelectItem(TSharedPtr<FBAActionMenuItem> Item)
 		return;
 	}
 
+#if BA_UE_VERSION_OR_LATER(5, 7)
+	// UE 5.7+: 引擎返回 FVector2D，但 FBAVector2 是 FVector2f
+	const FVector2D EnginePasteLocation = GraphEditor->GetPasteLocation();
+	const FBAVector2 PasteLocation(EnginePasteLocation.X, EnginePasteLocation.Y);
+#else
+	// UE 5.6-: 引擎返回 FVector2D，FBAVector2 也是 FVector2D
 	const FBAVector2 PasteLocation = GraphEditor->GetPasteLocation();
+#endif
 	const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
 	UEdGraphPin* Pin = bUseSelectedPin ? GraphHandler->GetSelectedPin() : nullptr;
 	Item->Action->PerformAction(GraphHandler->GetFocusedEdGraph(), Pin, SpawnLocation);
