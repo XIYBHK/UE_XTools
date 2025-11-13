@@ -12,6 +12,10 @@
 #include "Misc/CoreDelegates.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "Containers/Ticker.h"
+#include "Framework/Application/SlateApplication.h"
+#include "HAL/PlatformFilemanager.h"
+#include "HAL/ThreadSafeCounter64.h"
+#include "Internationalization/Regex.h"
 
 DEFINE_LOG_CATEGORY(LogX_AssetNamingDelegates);
 
@@ -150,9 +154,10 @@ void FX_AssetNamingDelegates::Shutdown()
 		OnFilesLoadedHandle.Reset();
 	}
 
-	// 清空重入标志
+	// 清空重入标志和缓存
 	bIsProcessingAsset = false;
 	bIsAssetRegistryReady = false;
+	RecentManualRenames.Empty();
 
 	RenameCallback.Unbind();
 	bIsActive = false;
@@ -205,6 +210,102 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		UE_LOG(LogX_AssetNamingDelegates, Verbose, 
 			TEXT("资产未通过 ShouldProcessAsset 检查: %s"), *AssetData.AssetName.ToString());
 		return;
+	}
+
+	// ========== 【关键修复】检查是否是最近手动重命名的资产 ==========
+	FString PackagePath = AssetData.PackageName.ToString();
+	double CurrentTime = FPlatformTime::Seconds();
+	
+	// 清理过期的缓存条目（超过5秒）
+	const double CacheTimeout = 5.0;
+	TArray<FString> ExpiredKeys;
+	for (const auto& Pair : RecentManualRenames)
+	{
+		if (CurrentTime - Pair.Value > CacheTimeout)
+		{
+			ExpiredKeys.Add(Pair.Key);
+		}
+	}
+	for (const FString& Key : ExpiredKeys)
+	{
+		RecentManualRenames.Remove(Key);
+	}
+	
+	// 检查当前资产是否在手动重命名缓存中
+	if (RecentManualRenames.Contains(PackagePath))
+	{
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("跳过最近手动重命名的资产: %s"), *AssetData.AssetName.ToString());
+		
+		// 从缓存中移除，避免影响后续的正常重命名
+		RecentManualRenames.Remove(PackagePath);
+		return;
+	}
+
+	// ========== 【新增】检查是否是相似名称的新资产（扩展保护范围） ==========
+	FString CurrentAssetName = AssetData.AssetName.ToString();
+	FString CurrentFolderPath = FPackageName::GetLongPackagePath(PackagePath);
+	
+	// 检查同一文件夹中是否有最近手动重命名的相似资产
+	for (const auto& CachedPair : RecentManualRenames)
+	{
+		FString CachedPackagePath = CachedPair.Key;
+		FString CachedFolderPath = FPackageName::GetLongPackagePath(CachedPackagePath);
+		
+		// 如果在同一文件夹
+		if (CurrentFolderPath == CachedFolderPath)
+		{
+			FString CachedAssetName = FPackageName::GetShortName(CachedPackagePath);
+			
+			// 检查是否是相似的变体名称（如 AnimLayerInterface vs ABP_AnimLayerInterface_1）
+			// 移除前缀和数字后缀进行比较
+			FString CurrentBaseName = CurrentAssetName;
+			FString CachedBaseName = CachedAssetName;
+			
+			// 移除常见前缀
+			const UX_AssetEditorSettings* PrefixSettings = GetDefault<UX_AssetEditorSettings>();
+			if (PrefixSettings)
+			{
+				for (const auto& PrefixPair : PrefixSettings->AssetPrefixMappings)
+				{
+					const FString& Prefix = PrefixPair.Value;
+					if (!Prefix.IsEmpty())
+					{
+						if (CurrentBaseName.StartsWith(Prefix))
+						{
+							CurrentBaseName = CurrentBaseName.RightChop(Prefix.Len());
+						}
+						if (CachedBaseName.StartsWith(Prefix))
+						{
+							CachedBaseName = CachedBaseName.RightChop(Prefix.Len());
+						}
+					}
+				}
+			}
+			
+			// 移除数字后缀（如 _1, _01, _001）
+			FRegexPattern NumericSuffixPattern(TEXT("_[0-9]+$"));
+			FRegexMatcher CurrentMatcher(NumericSuffixPattern, CurrentBaseName);
+			if (CurrentMatcher.FindNext())
+			{
+				CurrentBaseName = CurrentBaseName.Left(CurrentMatcher.GetMatchBeginning());
+			}
+			
+			FRegexMatcher CachedMatcher(NumericSuffixPattern, CachedBaseName);
+			if (CachedMatcher.FindNext())
+			{
+				CachedBaseName = CachedBaseName.Left(CachedMatcher.GetMatchBeginning());
+			}
+			
+			// 如果基础名称相同，说明是相关的变体资产
+			if (CurrentBaseName.Equals(CachedBaseName, ESearchCase::IgnoreCase))
+			{
+				UE_LOG(LogX_AssetNamingDelegates, Log,
+					TEXT("跳过相似名称的新资产（可能是手动重命名的变体）: %s (基础名称: %s, 相关缓存: %s)"), 
+					*CurrentAssetName, *CurrentBaseName, *CachedAssetName);
+				return;
+			}
+		}
 	}
 
 	// ========== 【优化】启动时跳过已存在的资产 ==========
@@ -298,23 +399,42 @@ void FX_AssetNamingDelegates::OnAssetRenamed(const FAssetData& AssetData, const 
 		}
 	}
 	
+	// ========== 【最简方案】基于调用堆栈的手动重命名检测 ==========
+	// 参考网络上的成熟方案：如果重命名不是由我们的系统触发的，就认为是手动重命名
+	
 	UE_LOG(LogX_AssetNamingDelegates, Verbose,
 		TEXT("Rename detected: '%s' -> '%s'"), *OldName, *CurrentName);
 	
-	// 检测用户手动重命名（暂时简化处理）
-	if (!OldName.IsEmpty() && !CurrentName.IsEmpty())
+	// 检查调用堆栈，看是否是我们的系统触发的重命名
+	bool bIsOurSystemRename = false;
+	
+	// 简单的检测：如果当前正在处理资产，说明是我们触发的
+	if (bIsProcessingAsset)
 	{
-		// 检查旧名称是否有前缀，新名称是否没有前缀
-		bool bOldHadPrefix = OldName.Contains(TEXT("_"));
-		bool bNewHasPrefix = CurrentName.Contains(TEXT("_"));
+		bIsOurSystemRename = true;
+	}
+	
+	UE_LOG(LogX_AssetNamingDelegates, Log,
+		TEXT("Rename analysis: '%s' -> '%s' | IsOurSystemRename=%s"),
+		*OldName, *CurrentName, 
+		bIsOurSystemRename ? TEXT("Yes") : TEXT("No"));
+	
+	// 如果不是我们的系统触发的，认为是手动重命名
+	if (!bIsOurSystemRename)
+	{
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("Detected manual rename (not triggered by our system): '%s' -> '%s'"),
+			*OldName, *CurrentName);
 		
-		// 如果用户从有前缀改为无前缀，可能是手动重命名，暂时跳过自动重命名
-		if (bOldHadPrefix && !bNewHasPrefix)
-		{
-			UE_LOG(LogX_AssetNamingDelegates, Log,
-				TEXT("Detected user manual rename (removed prefix), skipping auto-rename"));
-			return;
-		}
+		// 记录到手动重命名缓存中，并设置较长的保护时间
+		FString PackagePath = AssetData.PackageName.ToString();
+		double CurrentTime = FPlatformTime::Seconds();
+		RecentManualRenames.Add(PackagePath, CurrentTime);
+		
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("Added to manual rename cache: %s"), *PackagePath);
+		
+		return;
 	}
 	
 	// 触发重命名回调
@@ -443,7 +563,180 @@ bool FX_AssetNamingDelegates::ShouldProcessAsset(const FAssetData& AssetData) co
 
 void FX_AssetNamingDelegates::OnFilesLoaded()
 {
-	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，之后创建的资产将被自动重命名"));
+	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，开始处理新创建的资产"));
 	bIsAssetRegistryReady = true;
 }
 
+bool FX_AssetNamingDelegates::DetectUserOperationContext() const
+{
+	// ========== 【用户操作上下文检测】遵循UE最佳实践 ==========
+	
+	// 1. 基础检查：确保在编辑器环境中
+	if (!GIsEditor || IsRunningCommandlet())
+	{
+		return false;
+	}
+
+	// 2. 检查编辑器状态（遵循UE最佳实践）
+	bool bInValidEditorMode = true;
+	if (GEditor)
+	{
+		// 检查是否在PIE模式、烘焙或其他非编辑状态
+		bInValidEditorMode = !GEditor->IsPlayingSessionInEditor() && 
+							 !GEditor->GetPIEWorldContext() &&
+							 !GEditor->IsSimulatingInEditor();
+	}
+
+	if (!bInValidEditorMode)
+	{
+		return false;
+	}
+
+	// 3. 检查ContentBrowser模块可用性
+	if (!FModuleManager::Get().IsModuleLoaded("ContentBrowser"))
+	{
+		return false;
+	}
+
+	// 4. 简化的用户交互检测（避免复杂的Slate API调用）
+	bool bHasUserInteraction = false;
+	
+	// 检查是否在游戏线程（用户操作必须在游戏线程）
+	if (IsInGameThread())
+	{
+		// 使用更安全的Slate检测方式
+		if (FSlateApplication::IsInitialized())
+		{
+			// 只检查基本的用户交互状态，避免版本兼容性问题
+			const FSlateApplication& SlateApp = FSlateApplication::Get();
+			
+			// 检查是否有鼠标捕获（表示用户正在交互）
+			bHasUserInteraction = SlateApp.HasAnyMouseCaptor();
+			
+			// UE 5.3+版本兼容性检查
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 3
+			// 在较新版本中，可以安全地检查焦点状态
+			if (!bHasUserInteraction)
+			{
+				bHasUserInteraction = SlateApp.GetUserFocusedWidget(0).IsValid();
+			}
+#endif
+		}
+	}
+
+	// 5. 时间窗口检测（使用线程安全的方式）
+	static FThreadSafeCounter64 LastInteractionFrame;
+	const uint64 CurrentFrame = GFrameCounter;
+	const uint64 LastFrame = LastInteractionFrame.GetValue();
+	
+	// 如果在最近几帧内有用户交互，认为可能是用户操作
+	const bool bRecentUserInteraction = (CurrentFrame - LastFrame) < 120; // 2秒@60fps
+	
+	// 更新交互帧计数（线程安全）
+	if (bHasUserInteraction)
+	{
+		LastInteractionFrame.Set(CurrentFrame);
+	}
+
+	// 6. 综合判断（保守策略）
+	const bool bIsUserContext = bHasUserInteraction && bInValidEditorMode && bRecentUserInteraction;
+
+	// 7. 详细日志（仅在详细模式下输出）
+	UE_LOG(LogX_AssetNamingDelegates, VeryVerbose,
+		TEXT("User context detection: Editor=%s, ValidMode=%s, ContentBrowser=%s, UserInteraction=%s, RecentInteraction=%s -> Result=%s"),
+		GIsEditor ? TEXT("Yes") : TEXT("No"),
+		bInValidEditorMode ? TEXT("Yes") : TEXT("No"),
+		FModuleManager::Get().IsModuleLoaded("ContentBrowser") ? TEXT("Yes") : TEXT("No"),
+		bHasUserInteraction ? TEXT("Yes") : TEXT("No"),
+		bRecentUserInteraction ? TEXT("Yes") : TEXT("No"),
+		bIsUserContext ? TEXT("Yes") : TEXT("No"));
+
+	return bIsUserContext;
+}
+
+bool FX_AssetNamingDelegates::IsRecentlyManuallyRenamed(const FString& PackagePath) const
+{
+	double CurrentTime = FPlatformTime::Seconds();
+	const double CacheTimeout = 5.0;
+	
+	if (const double* RenameTime = RecentManualRenames.Find(PackagePath))
+	{
+		return (CurrentTime - *RenameTime) <= CacheTimeout;
+	}
+	
+	return false;
+}
+
+bool FX_AssetNamingDelegates::IsSimilarToRecentlyRenamed(const FAssetData& AssetData) const
+{
+	FString CurrentAssetName = AssetData.AssetName.ToString();
+	FString CurrentFolderPath = FPackageName::GetLongPackagePath(AssetData.PackageName.ToString());
+	double CurrentTime = FPlatformTime::Seconds();
+	const double CacheTimeout = 5.0;
+	
+	// 检查同一文件夹中是否有最近手动重命名的相似资产
+	for (const auto& CachedPair : RecentManualRenames)
+	{
+		// 检查缓存是否过期
+		if ((CurrentTime - CachedPair.Value) > CacheTimeout)
+		{
+			continue;
+		}
+		
+		FString CachedPackagePath = CachedPair.Key;
+		FString CachedFolderPath = FPackageName::GetLongPackagePath(CachedPackagePath);
+		
+		// 如果在同一文件夹
+		if (CurrentFolderPath == CachedFolderPath)
+		{
+			FString CachedAssetName = FPackageName::GetShortName(CachedPackagePath);
+			
+			// 检查是否是相似的变体名称
+			FString CurrentBaseName = CurrentAssetName;
+			FString CachedBaseName = CachedAssetName;
+			
+			// 移除常见前缀
+			const UX_AssetEditorSettings* PrefixSettings = GetDefault<UX_AssetEditorSettings>();
+			if (PrefixSettings)
+			{
+				for (const auto& PrefixPair : PrefixSettings->AssetPrefixMappings)
+				{
+					const FString& Prefix = PrefixPair.Value;
+					if (!Prefix.IsEmpty())
+					{
+						if (CurrentBaseName.StartsWith(Prefix))
+						{
+							CurrentBaseName = CurrentBaseName.RightChop(Prefix.Len());
+						}
+						if (CachedBaseName.StartsWith(Prefix))
+						{
+							CachedBaseName = CachedBaseName.RightChop(Prefix.Len());
+						}
+					}
+				}
+			}
+			
+			// 移除数字后缀（如 _1, _01, _001）
+			FRegexPattern NumericSuffixPattern(TEXT("_[0-9]+$"));
+			FRegexMatcher CurrentMatcher(NumericSuffixPattern, CurrentBaseName);
+			if (CurrentMatcher.FindNext())
+			{
+				CurrentBaseName = CurrentBaseName.Left(CurrentMatcher.GetMatchBeginning());
+			}
+			
+			FRegexMatcher CachedMatcher(NumericSuffixPattern, CachedBaseName);
+			if (CachedMatcher.FindNext())
+			{
+				CachedBaseName = CachedBaseName.Left(CachedMatcher.GetMatchBeginning());
+			}
+			
+			// 如果基础名称相同，说明是相关的变体资产
+			if (CurrentBaseName.Equals(CachedBaseName, ESearchCase::IgnoreCase))
+			{
+				return true;
+			}
+		}
+	}
+	
+	return false;
+}

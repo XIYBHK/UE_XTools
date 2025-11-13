@@ -55,6 +55,21 @@ public:
 	 */
 	bool IsActive() const { return bIsActive; }
 
+	/**
+	 * 检查指定包路径是否是最近手动重命名的资产
+	 */
+	bool IsRecentlyManuallyRenamed(const FString& PackagePath) const;
+
+	/**
+	 * 检查指定资产是否与最近手动重命名的资产相似
+	 */
+	bool IsSimilarToRecentlyRenamed(const FAssetData& AssetData) const;
+
+	/**
+	 * 设置是否正在处理资产（用于区分系统触发的重命名）
+	 */
+	void SetProcessingAsset(bool bProcessing) { bIsProcessingAsset = bProcessing; }
+
 private:
 	/** 单例实例 */
 	static TUniquePtr<FX_AssetNamingDelegates> Instance;
@@ -83,6 +98,12 @@ private:
 	 */
 	bool bIsProcessingAsset = false;
 
+	/** 最近手动重命名的资产缓存（包路径 -> 时间戳）
+	 * 用于防止手动重命名后的保存操作触发自动重命名
+	 * 缓存时间为5秒，足够覆盖保存操作的时间窗口
+	 */
+	TMap<FString, double> RecentManualRenames;
+
 	/**
 	 * 当资产添加到 AssetRegistry 时调用（新建或导入资产）
 	 * @param AssetData - 新添加的资产数据
@@ -109,6 +130,12 @@ private:
 	 * @return true 如果应该处理，否则 false
 	 */
 	bool ShouldProcessAsset(const FAssetData& AssetData) const;
+
+	/**
+	 * 检测用户操作上下文，判断是否为用户主动发起的重命名操作
+	 * @return true 如果检测到用户操作上下文，否则 false
+	 */
+	bool DetectUserOperationContext() const;
 
 	/**
 	 * 当 AssetRegistry 完成文件加载时调用
