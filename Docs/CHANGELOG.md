@@ -1,6 +1,6 @@
 # XTools 更新日志 (CHANGELOG)
 
-## 📌 版本 v1.9.1 (2025-11-08)
+## 📌 版本 v1.9.1 (2025-11-13)
 
 **主要更新**:
 - 🔧 完成 UE 5.6 完整兼容性修复（采用类型别名方案）
@@ -14,6 +14,31 @@
 - 🎯 修复EnhancedCodeFlow模块移动构造函数语法错误
 - 📝 优化BlueprintScreenshotTool工具栏文本显示
 - 🐛 修复晃动节点断开连接后节点不跟随鼠标的问题
+
+### X_AssetEditor
+
+- 增加 包含蒙太奇通知在内的部分资产前缀映射规则
+- 修复 手动重命名被自动规范化接管问题
+- 优化 资产规范化失败后抛出资产详细信息
+
+### FieldSystemExtensions
+
+- 优化 默认开启tick
+
+### Sort
+
+- 优化 冗余结构处理，移除无用元数据参数
+
+### BlueprintAssist
+
+- 修复 晃动断连后仅移除晃动节点，逻辑链保持连接
+- 增加 插件启用开关
+- 调整 晃动断开连接灵敏度（MinShakeDistance 5→30，DotProduct <0→<-0.5）
+
+### BlueprintScreenshotTool
+
+- 增加 插件启用开关
+- 修复 插件禁用时的崩溃问题
 
 ### 🔌 集成 BlueprintScreenshotTool 模块
 
