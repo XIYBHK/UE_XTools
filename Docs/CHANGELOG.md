@@ -1,24 +1,33 @@
 # XTools 更新日志 (CHANGELOG)
 
-## 📌 版本 v1.9.1 (2025-11-13)
+## 版本 v1.9.1 (2025-11-13)
 
 **主要更新**:
-- 🔧 修复 UE 5.6 版本 CI 编译错误（GetPasteLocation API 变化）
-- ✅ 完善 5.3-5.7 版本兼容性处理，支持全版本编译
-- 🎯 修复 BlueprintAssist 模块中 FVector2D/FVector2f 类型转换问题
-- 🔄 优化 BlueprintScreenshotTool 模块版本兼容性
-- 📝 改进条件编译策略，确保跨版本稳定性
-- 🚀 CI/CD 改进：支持单独编译指定版本或编译所有版本
-- 🎨 集成并优化 BlueprintScreenshotTool 模块
-- 🐛 修复内存泄漏和性能问题
-- 🐛 修复资产自动重命名功能导致编辑器崩溃的问题
-- 🔧 改进资产命名系统的稳定性和可靠性
-- 🔄 修复模块重命名后的API导出宏问题（XTools_前缀适配）
-- 🎯 修复EnhancedCodeFlow模块移动构造函数语法错误
-- 📝 优化BlueprintScreenshotTool工具栏文本显示
-- 🐛 修复晃动节点断开连接后节点不跟随鼠标的问题
-- 修复 手动重命名被自动规范化接管问题
+- 修复 UE 5.6 版本 CI 编译错误（GetPasteLocation API 变化）
+- 完善 5.3-5.7 版本兼容性处理，支持全版本编译
+- 修复 BlueprintAssist 模块中 FVector2D/FVector2f 类型转换问题
+- 优化 BlueprintScreenshotTool 模块版本兼容性
+- 改进条件编译策略，确保跨版本稳定性
+- CI/CD 改进：支持单独编译指定版本或编译所有版本
+- 集成并优化 BlueprintScreenshotTool 模块
+- 修复内存泄漏和性能问题
+- 修复资产自动重命名功能导致编辑器崩溃的问题
+- 改进资产命名系统的稳定性和可靠性
+- 修复模块重命名后的API导出宏问题（XTools_前缀适配）
+- 修复EnhancedCodeFlow模块移动构造函数语法错误
+- 优化BlueprintScreenshotTool工具栏文本显示
+- 修复晃动节点断开连接后节点不跟随鼠标的问题
+- 修复 手动重命名保护机制，基于调用堆栈检测彻底解决自动规范化覆盖问题
+- 修复 数字后缀规范化逻辑，移至重命名流程最终步骤，确保_1正确转换为_01格式
+- 增强 批量重命名功能，即使前缀正确的资产也会检查数字后缀规范化需求
+- 增加 包含蒙太奇通知在内的部分资产前缀映射规则
+- 增加 命名冲突检测系统，自动避免重命名失败
+- 增加 变体命名支持，兼容Allar Style Guide规范
+- 增加 数字后缀规范化，自动转换为两位数格式
+- 增加 纹理打包后缀支持，包含_ERO、_ARM等组合
 - 优化 资产规范化失败后抛出资产详细信息
+- 优化 用户操作上下文检测，支持UE 5.3-5.7版本
+- 优化 重命名逻辑，集成智能冲突解决方案
 
 ### FieldSystemExtensions
 
@@ -39,7 +48,7 @@
 - 增加 插件启用开关
 - 修复 插件禁用时的崩溃问题
 
-### 🔌 集成 BlueprintScreenshotTool 模块
+###  集成 BlueprintScreenshotTool 模块
 
 **来源**：Gradess Games 开源项目（个人使用集成）
 
@@ -61,7 +70,7 @@
 - **命令**（2项）："Take Screenshot" → "截取截图"、"Open Directory" → "打开目录"
 - **错误提示**（3项）：使用LOCTEXT实现目录不存在、截图保存失败提示
 
-### 🐛 BlueprintAssist 晃动节点功能修复
+###  BlueprintAssist 晃动节点功能修复
 
 #### **修复晃动节点断开连接后节点不跟随鼠标的问题**
 - **问题描述**：晃动节点断开连接后，节点失去拖拽状态，无法继续跟随鼠标移动，并有明显卡顿感
@@ -73,14 +82,14 @@
   - 移除晃动成功后清除选择状态和阻止后续处理的逻辑
   - 保留 `ResetShakeTracking()` 和 `bRecentlyShookNode` 标志
   - 让代码继续执行到 `OnMouseDrag()`，使节点继续跟随鼠标
-- **效果**：✅ 晃动断开连接后节点平滑地继续跟随鼠标移动，无卡顿感
+- **效果**： 晃动断开连接后节点平滑地继续跟随鼠标移动，无卡顿感
 - **相关文件**：
   - `BlueprintAssistInputProcessor.cpp` - `HandleMouseMoveEvent()` 方法
   - `BlueprintAssistInputProcessor.h` - 成员变量定义
 
-### 🐛 BlueprintScreenshotTool 核心问题修复（基于UE最佳实践）
+###  BlueprintScreenshotTool 核心问题修复（基于UE最佳实践）
 
-#### 1. **首次截图节点图标丢失问题修复**（核心修复）⭐
+#### 1. **首次截图节点图标丢失问题修复**（核心修复）
 - **问题描述**：首次截图时节点图标显示为纯色占位符，第二次截图正常
 - **根本原因**：Slate UI 资源（特别是图标）异步加载，首次截图时资源未完全加载
 - **解决方案**：实现两阶段截图机制（参考成熟插件 BlueprintGraphScreenshot）
@@ -92,7 +101,7 @@
   - 立即重置 `bTakingScreenshot` 标志防止 `FSlateApplication::Get().Tick()` 触发重入
   - 缓存 `GraphEditor` 引用确保两次操作同一对象
   - 移除所有可能触发 PostTick 的调用（如 `FSlateApplication::Get().Tick()`）
-- **效果**：✅ 首次截图图标 100% 正确显示，节点布局完全稳定，无错位问题
+- **效果**： 首次截图图标 100% 正确显示，节点布局完全稳定，无错位问题
 - **相关文件**：
   - `BlueprintScreenshotToolHandler.cpp` - 核心截图逻辑
   - `BlueprintScreenshotToolHandler.h` - 静态方法声明
@@ -126,7 +135,7 @@
 #### 8. **代码注释改进** - DrawTimes 说明
 - **修复**：添加注释说明绘制两次的原因
 
-### 🔧 UE 5.6 兼容性核心修复
+###  UE 5.6 兼容性核心修复
 
 #### 1. UMetaData → FMetaData 类型重构
 - **变化**：`UPackage::GetMetaData()` 返回类型从 `UMetaData*` 改为 `FMetaData&`
@@ -163,10 +172,10 @@ OpenContextMenu(MenuLocation, ...);
 - `BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistNodeActions.cpp`
 - `ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp`
 
-### ✅ 验证结果
+###  验证结果
 - UE 5.3/5.4/5.5/5.6 编译成功，0错误0警告
 
-### 🚀 CI/CD 工作流改进
+###  CI/CD 工作流改进
 
 **新增功能**：支持手动选择编译版本
 - 可选择单独编译某个版本（5.3/5.4/5.5/5.6）或编译所有版本（all）
@@ -184,7 +193,7 @@ OpenContextMenu(MenuLocation, ...);
 - 条件编译必须使用 defined() 检查：`#if defined(ENGINE_MAJOR_VERSION) && ...`
 - 避免UE 5.5+将未定义宏警告视为错误
 
-### 🐛 修复资产自动重命名崩溃问题
+###  修复资产自动重命名崩溃问题
 
 **问题描述**：
 在 `/Game` 根目录创建新资产（如 Material）时，自动重命名功能导致编辑器崩溃（EXCEPTION_ACCESS_VIOLATION）
@@ -219,7 +228,7 @@ OpenContextMenu(MenuLocation, ...);
 
 **结果**：修复重复前缀问题，所有模块编译通过
 
-### 🎯 EnhancedCodeFlow语法错误修复
+###  EnhancedCodeFlow语法错误修复
 
 **问题**：`FECFHandleBP` 移动构造函数和移动赋值运算符实现错误
 
@@ -227,20 +236,20 @@ OpenContextMenu(MenuLocation, ...);
 - 添加移动构造函数函数体，使用 `MoveTemp()` 和 `Invalidate()` 正确处理资源转移
 - 修复移动赋值运算符，遵循 UE C++ 移动语义规范
 
-### 📝 BlueprintScreenshotTool界面优化
+###  BlueprintScreenshotTool界面优化
 
 **改进**：工具栏文本"截取截图"简化为"截图"，保持详细工具提示不变
 
 ---
 
-## 📌 版本 v1.9.0 (2025-11-06)
+##  版本 v1.9.0 (2025-11-06)
 
 **主要更新**：
-- 🎨 集成三大编辑器增强插件（AutoSizeComments、BlueprintAssist、ElectronicNodes）
-- 🌏 完整汉化所有集成插件（150+ 配置项）
-- 🐛 修复 K2Node 通配符引脚类型丢失问题
-- 🔧 实现 UE 5.3-5.6 完美跨版本兼容（零警告）
-- 📝 完善文档和开发工具
+-  集成三大编辑器增强插件（AutoSizeComments、BlueprintAssist、ElectronicNodes）
+-  完整汉化所有集成插件（150+ 配置项）
+-  修复 K2Node 通配符引脚类型丢失问题
+-  实现 UE 5.3-5.6 完美跨版本兼容（零警告）
+-  完善文档和开发工具
 
 ### UE 5.6 深度兼容性修复
 
@@ -254,7 +263,7 @@ OpenContextMenu(MenuLocation, ...);
   - `BlueprintAssistUtils.h/.cpp` - 辅助函数 `GetPackageMetaData()`/`GetNodeMetaData()`
   - `BlueprintAssistCache.cpp` - 3 处统一使用 `FBAMetaData*`
 - **解决方案**: 
-  - ✨ **类型别名方案**（BlueprintAssist 官方方案）
+  -  **类型别名方案**（BlueprintAssist 官方方案）
   - 在全局头文件定义 `using FBAMetaData = FMetaData/UMetaData`
   - 辅助函数封装返回值差异（引用地址 vs 指针）
   - 所有调用点统一使用 `FBAMetaData*`，无需条件编译
@@ -268,7 +277,7 @@ OpenContextMenu(MenuLocation, ...);
   - `BlueprintAssistGraphHandler.cpp` - 使用 `FBAVector2` (自动适配)
   - `SimpleFormatter.cpp` - 使用 `FBAVector2` (自动适配)
 - **解决方案**: 
-  - ✨ **类型别名方案**（与 FBAMetaData 一致）
+  -  **类型别名方案**（与 FBAMetaData 一致）
   - 在全局头文件定义 `using FBAVector2 = FVector2f/FVector2D`
   - 所有调用点使用 `FBAVector2`，编译器自动选择正确类型
   - **ElectronicNodes**: 使用显式转换 `FVector2f(...)` 处理模板推导失败
@@ -293,7 +302,7 @@ FMetaData& MetaData = Package->GetMetaData();
 FVector2f NodePos(...);
 #include "MaterialGraphConnectionDrawingPolicy.h"
 
-// ✨ 最终方案：类型别名统一处理
+//  最终方案：类型别名统一处理
 // 定义（BlueprintAssistGlobals.h）：
 #if BA_UE_VERSION_OR_LATER(5, 6)
 using FBAMetaData = class FMetaData;
@@ -310,24 +319,24 @@ GraphNode->MoveTo(FBAVector2(X, Y), NodeSet, false);
 ```
 
 **验证结果**：
-- ✅ UE 5.3 - 编译成功
-- ✅ UE 5.4 - 编译成功
-- ✅ UE 5.5 - 编译成功
-- ✅ UE 5.6 - 编译成功（类型别名方案，0警告）
+-  UE 5.3 - 编译成功
+-  UE 5.4 - 编译成功
+-  UE 5.5 - 编译成功
+-  UE 5.6 - 编译成功（类型别名方案，0警告）
 
 **方案演进总结**：
 1. 第一轮：宏定义检查保护（解决 C4668）
 2. 第二轮：MaterialGraphConnectionDrawingPolicy 包含路径（解决 C1083）
 3. 第三轮：FMetaData 前向声明类型修正（解决 C4099）
 4. 第四轮：直接包含头文件 + Material Graph 优雅降级（解决 C2556）
-5. 第五轮：**类型别名方案**（最终优雅方案，替代 `reinterpret_cast`）✨
+5. 第五轮：**类型别名方案**（最终优雅方案，替代 `reinterpret_cast`）
    - 参考 BlueprintAssist 官方 UE 5.6 实现
    - 类型安全、代码复用、易读易维护
    - 符合 C++ 最佳实践
 
 ---
 
-## 🎨 集成 ElectronicNodes 插件并完成全面汉化
+##  集成 ElectronicNodes 插件并完成全面汉化
 
 ### 插件信息
 - **名称**: Electronic Nodes
@@ -452,7 +461,7 @@ GraphNode->MoveTo(FBAVector2(X, Y), NodeSet, false);
 
 ---
 
-## 🐛 修复K2Node通配符引脚类型丢失问题
+##  修复K2Node通配符引脚类型丢失问题
 
 ### 问题描述
 在UE重启编辑器后，带有通配符引脚的自定义K2Node（如ForEachArray、ForEachArrayReverse等）会丢失已推断的引脚类型，导致编译错误：
@@ -601,8 +610,8 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ### 最佳实践总结
 1. **`PostReconstructNode` 条件调用**：
-   - ✅ 有连接时：调用 `PropagatePinType()` 更新类型
-   - ✅ 无连接时：什么都不做，保留已序列化的类型
+   -  有连接时：调用 `PropagatePinType()` 更新类型
+   -  无连接时：什么都不做，保留已序列化的类型
    
 2. **`NotifyPinConnectionListChanged` 主动清除**：
    - 用户断开连接时：重置为 `PC_Wildcard` 并断开所有连接
@@ -615,7 +624,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ---
 
-## 🔌 集成第三方编辑器插件
+##  集成第三方编辑器插件
 
 ### BlueprintAssist 集成
 
@@ -624,13 +633,13 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 **功能**：全功能蓝图编辑器增强工具
 
 **核心功能**：
-1. 🎯 **自动格式化** - 智能排列节点布局（核心价值）
+1.  **自动格式化** - 智能排列节点布局（核心价值）
    - 多种格式化风格：Expanded（展开）/ Compact（紧凑）
    - 参数节点布局：Helixing（螺旋）/ LeftSide（左侧）
    - Format All：Simple / Smart / NodeType 列风格
    - 自动创建和管理 Knot 节点（连接点）
    - 处理注释包含关系
-2. 🔧 **节点操作** - 丰富的节点操作命令
+2.  **节点操作** - 丰富的节点操作命令
    - SmartWire（智能连线）、LinkBetweenWires（在连线间插入节点）
    - SwapNode（交换节点）、DeleteAndLink（删除并重新连接）
    - MergeNodes（合并节点）、GroupNodes（分组节点）
@@ -638,8 +647,8 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 3. 🧭 **快速导航** - 强大的搜索和导航系统
    - GoToSymbol（跳转到符号）、VariableSelector（变量选择器）
    - OpenFileMenu（打开文件菜单）、TabSwitcher（标签页切换）
-4. 📌 **引脚操作** - 引脚连接和管理
-5. 🎨 **蓝图辅助** - 编辑器增强功能
+4.  **引脚操作** - 引脚连接和管理
+5.  **蓝图辅助** - 编辑器增强功能
    - AutoAddParentNode、AutoRenameGettersAndSetters
    - WorkflowMode切换、CreateAsset菜单
 
@@ -737,7 +746,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
     - 设置页显示的是**全局默认值**
     - 这是原插件的设计特性，允许为 Blueprint、BehaviorTree 等不同图表类型使用不同配置
 
-**⚠️ 已知问题和风险警告**：
+** 已知问题和风险警告**：
 - **"检测未使用的节点"功能存在严重 Bug**（仅 UE 5.3+）
   - **问题现象**：使用该功能删除节点后执行撤销（Undo），再编译蓝图会导致 UE 崩溃
   - **崩溃位置**：`EdGraphNode.h:563` - Assertion failed: Result
@@ -746,11 +755,11 @@ void UK2Node_GetArrayItem::PostReconstructNode()
     1. 使用 BP Assist 菜单 > 工具 > 检测未使用的节点
     2. 删除检测到的未使用节点
     3. 执行撤销操作（Ctrl+Z）
-    4. 编译蓝图 → 💥 崩溃
+    4. 编译蓝图 →  崩溃
   - **规避方法**：
-    - ✅ **推荐**：不使用"检测未使用的节点"功能，手动删除无用节点
-    - ✅ 如必须使用，删除后**不要执行撤销操作**
-    - ✅ 删除节点后**立即保存蓝图**，避免撤销栈中包含该操作
+    -  **推荐**：不使用"检测未使用的节点"功能，手动删除无用节点
+    -  如必须使用，删除后**不要执行撤销操作**
+    -  删除节点后**立即保存蓝图**，避免撤销栈中包含该操作
   - **长期解决方案**：等待 BlueprintAssist 官方修复 UE 5.3+ 兼容性问题
   - **临时禁用方法**（如需要）：
     ```cpp
@@ -869,7 +878,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ---
 
-## 🔧 版本宏系统重构
+##  版本宏系统重构
 
 ### 问题背景
 项目中版本判断分散在多处，条件编译逻辑不一致，维护困难：
@@ -880,10 +889,10 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 ### 解决方案：统一版本宏系统
 
 **设计原则**：
-- ✅ 统一版本判断宏，避免重复逻辑
-- ✅ 保持API原样调用，不强制封装（避免过度设计）
-- ✅ 遵循UE官方实践（参考CoreUObject/Property.cpp）
-- ✅ 最小改动原则
+-  统一版本判断宏，避免重复逻辑
+-  保持API原样调用，不强制封装（避免过度设计）
+-  遵循UE官方实践（参考CoreUObject/Property.cpp）
+-  最小改动原则
 
 **实施内容**：
 
@@ -920,10 +929,10 @@ void UK2Node_GetArrayItem::PostReconstructNode()
    - 遵循Epic做法（详见CoreUObject/Property.cpp:859）
 
 **效果**：
-- ✅ UE 5.6 编译0警告
-- ✅ 版本判断统一规范
-- ✅ 代码可读性提升
-- ✅ 未来版本适配只需修改一处
+-  UE 5.6 编译0警告
+-  版本判断统一规范
+-  代码可读性提升
+-  未来版本适配只需修改一处
 
 **文件变更**：
 - `Source/XTools/Public/XToolsVersionCompat.h` - 扩展版本宏
@@ -933,22 +942,22 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 - `Source/BlueprintExtensionsRuntime/Private/Libraries/MapExtensionsLibrary.cpp` - 抑制警告
 
 **CI修复记录**：
-- ❌ **CI #1失败**：`XToolsVersionCompat.h` 跨模块访问失败
-  - ✅ 解决：`FieldSystemExtensions.Build.cs` 添加 `"XTools"` 依赖
-  - ✅ 解决：`.cpp` 文件也需要抑制 `ElementSize` 警告
-- ❌ **CI #2失败**（5.4/5.5）：`TraceExtensionsLibrary.cpp` - FHitResult未定义
-  - ✅ 解决：添加 `#include "Engine/HitResult.h"`（IWYU原则）
-- ✅ **CI #3成功**：🎉 **全版本编译通过 + 0警告**
-  - ✅ UE 5.3：BUILD SUCCESSFUL（无警告）
-  - ✅ UE 5.4：BUILD SUCCESSFUL（无警告）
-  - ✅ UE 5.5：BUILD SUCCESSFUL（无警告）
-  - ✅ UE 5.6：BUILD SUCCESSFUL（无警告）
+-  **CI #1失败**：`XToolsVersionCompat.h` 跨模块访问失败
+  -  解决：`FieldSystemExtensions.Build.cs` 添加 `"XTools"` 依赖
+  -  解决：`.cpp` 文件也需要抑制 `ElementSize` 警告
+-  **CI #2失败**（5.4/5.5）：`TraceExtensionsLibrary.cpp` - FHitResult未定义
+  -  解决：添加 `#include "Engine/HitResult.h"`（IWYU原则）
+-  **CI #3成功**： **全版本编译通过 + 0警告**
+  -  UE 5.3：BUILD SUCCESSFUL（无警告）
+  -  UE 5.4：BUILD SUCCESSFUL（无警告）
+  -  UE 5.5：BUILD SUCCESSFUL（无警告）
+  -  UE 5.6：BUILD SUCCESSFUL（无警告）
 
 ---
 
 # 2025-11-05
 
-## 🔧 跨版本兼容性修复（UE 5.4-5.6）
+##  跨版本兼容性修复（UE 5.4-5.6）
 
 ### XTools采样功能（UE 5.4/5.5）
 **问题**：`FOverlapResult` 类型未定义导致编译失败 `error C2027: 使用了未定义类型FOverlapResult`
@@ -967,17 +976,17 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 ```
 
 **关键点**：
-- ✅ **显式包含 `Engine/OverlapResult.h`** - 提供TArray<FOverlapResult>所需的完整定义
-- ✅ 显式包含 `Engine/HitResult.h` - 用于FHitResult结构
-- ✅ 包含顺序：定义文件在前（OverlapResult.h/HitResult.h），使用文件在后（WorldCollision.h）
-- ✅ 验证通过：UE 5.3、5.4、5.5
+-  **显式包含 `Engine/OverlapResult.h`** - 提供TArray<FOverlapResult>所需的完整定义
+-  显式包含 `Engine/HitResult.h` - 用于FHitResult结构
+-  包含顺序：定义文件在前（OverlapResult.h/HitResult.h），使用文件在后（WorldCollision.h）
+-  验证通过：UE 5.3、5.4、5.5
 
 ### FieldSystemExtensions（UE 5.6）
 **问题**：`FGeometryCollectionPhysicsProxy::BufferCommand` API已废弃
 **修复**：
-- ✅ UE 5.6+：使用新API `BufferFieldCommand_Internal`（物理线程专用）
-- ✅ UE 5.5及以下：保持使用 `BufferCommand` 以维护兼容性
-- ✅ 使用更可靠的版本检测（增加括号确保优先级）：
+-  UE 5.6+：使用新API `BufferFieldCommand_Internal`（物理线程专用）
+-  UE 5.5及以下：保持使用 `BufferCommand` 以维护兼容性
+-  使用更可靠的版本检测（增加括号确保优先级）：
   ```cpp
   #if (ENGINE_MAJOR_VERSION > 5) || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
       PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
@@ -985,7 +994,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
       PhysicsProxy->BufferCommand(Solver, NewCommand);
   #endif
   ```
-- ✅ 修复位置：
+-  修复位置：
   - `RegisterToCachedGCsIfNeeded()` - GC初始化字段注册逻辑
   - `ApplyCurrentFieldToFilteredGCs()` - 手动字段应用逻辑
 
@@ -996,20 +1005,20 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ---
 
-## 🔧 MaterialTools API优化与智能连接系统增强
+##  MaterialTools API优化与智能连接系统增强
 
 ### 代码优化
 基于UE5.3源码深度分析，全面优化材质工具模块：
 
 **核心优化**：
-- ✅ **简化GetBaseMaterial实现**：直接使用UE官方API `MaterialInterface->GetMaterial()`，移除冗余的手动递归逻辑
-- ✅ **优化MaterialAttributes检测**：使用官方`IsResultMaterialAttributes()` API替代手动检查，更准确可靠
-- ✅ **代码质量提升**：减少代码行数，提高可读性，与UE官方最佳实践保持一致
+-  **简化GetBaseMaterial实现**：直接使用UE官方API `MaterialInterface->GetMaterial()`，移除冗余的手动递归逻辑
+-  **优化MaterialAttributes检测**：使用官方`IsResultMaterialAttributes()` API替代手动检查，更准确可靠
+-  **代码质量提升**：减少代码行数，提高可读性，与UE官方最佳实践保持一致
 
 **智能连接系统增强**：
-- ✅ **更准确的类型检测**：采用UE官方虚方法判断MaterialAttributes类型
-- ✅ **备用检测机制**：保留函数名称推断作为备用方案，确保兼容性
-- ✅ **Substrate材质支持准备**：为UE 5.1+ Substrate/Strata材质系统预留扩展点
+-  **更准确的类型检测**：采用UE官方虚方法判断MaterialAttributes类型
+-  **备用检测机制**：保留函数名称推断作为备用方案，确保兼容性
+-  **Substrate材质支持准备**：为UE 5.1+ Substrate/Strata材质系统预留扩展点
 
 **分析报告**：
 - API对比分析：`Docs/MaterialTools_API分析报告.md`
@@ -1018,11 +1027,11 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 - 架构评分：5/5 - 模块化设计清晰，职责划分合理
 
 **保持的核心优势**：
-- ✅ 批量处理多种资产类型（静态网格体、骨骼网格体、蓝图等）
-- ✅ 智能MaterialAttributes连接系统
-- ✅ 并行处理优化，提升大规模资产处理性能
-- ✅ 自动创建Add/Multiply节点
-- ✅ 完善的参数配置和UI界面
+-  批量处理多种资产类型（静态网格体、骨骼网格体、蓝图等）
+-  智能MaterialAttributes连接系统
+-  并行处理优化，提升大规模资产处理性能
+-  自动创建Add/Multiply节点
+-  完善的参数配置和UI界面
 
 **未来扩展**：
 - 📋 Substrate/Strata材质系统支持（UE 5.1+）
@@ -1031,17 +1040,17 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ---
 
-## ⭐ XTools采样功能新增UE原生表面采样模式
+##  XTools采样功能新增UE原生表面采样模式
 
 ### 新功能：原生表面采样（NativeSurface）
 使用UE GeometryCore模块的`FMeshSurfacePointSampling`直接在网格表面生成泊松分布的采样点。
 
 **核心优势**：
-- ✅ **性能极高**：直接在三角形网格上操作，无碰撞检测开销
-- ✅ **真正泊松分布**：点分布均匀，无聚集，比网格采样更自然
-- ✅ **Epic官方实现**：经过充分测试和优化，符合UE最佳实践
-- ✅ **自带表面法线**：每个点自动包含表面方向信息
-- ✅ **无需Box包围**：直接基于网格几何，自动覆盖整个表面
+-  **性能极高**：直接在三角形网格上操作，无碰撞检测开销
+-  **真正泊松分布**：点分布均匀，无聚集，比网格采样更自然
+-  **Epic官方实现**：经过充分测试和优化，符合UE最佳实践
+-  **自带表面法线**：每个点自动包含表面方向信息
+-  **无需Box包围**：直接基于网格几何，自动覆盖整个表面
 
 **技术实现**：
 - 自动将StaticMesh转换为DynamicMesh（使用MeshConversion模块）
@@ -1049,38 +1058,38 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 - 自动转换回世界坐标系
 
 **性能优化**（相比初始实现提升50-70%）：
-- ✅ **转换器优化**：禁用不需要的索引映射和材质组（提升30%转换速度）
-- ✅ **自适应密度**：根据SampleRadius动态调整SubSampleDensity（平衡速度与质量）
-- ✅ **批量转换**：预分配数组+矩阵展开，减少函数调用开销（提升20%）
+-  **转换器优化**：禁用不需要的索引映射和材质组（提升30%转换速度）
+-  **自适应密度**：根据SampleRadius动态调整SubSampleDensity（平衡速度与质量）
+-  **批量转换**：预分配数组+矩阵展开，减少函数调用开销（提升20%）
 
 **智能参数计算**（核心算法改进）：
-- ✅ **网格复杂度感知**：基于三角形数量和对角线长度估算平均三角形尺寸
-- ✅ **自适应SampleRadius**：取 `GridSpacing/2` 和 `平均三角形边长*0.8` 的较小值
-- ✅ **边界保护**：SampleRadius限制在 `[1.0, 网格最大尺寸/10]` 范围内
-- ✅ **动态SubSampleDensity**：根据SampleRadius大小自动调整（1.0-5.0用15，5-10用12，10-30用10，>30用8）
-- ✅ **智能MaxSamples**：基于估算表面积和期望点密度自动限制最大采样点数（防止过度采样）
-- ✅ **详细诊断日志**：输出平均三角形边长、计算出的参数和估算点数，便于调试
+-  **网格复杂度感知**：基于三角形数量和对角线长度估算平均三角形尺寸
+-  **自适应SampleRadius**：取 `GridSpacing/2` 和 `平均三角形边长*0.8` 的较小值
+-  **边界保护**：SampleRadius限制在 `[1.0, 网格最大尺寸/10]` 范围内
+-  **动态SubSampleDensity**：根据SampleRadius大小自动调整（1.0-5.0用15，5-10用12，10-30用10，>30用8）
+-  **智能MaxSamples**：基于估算表面积和期望点密度自动限制最大采样点数（防止过度采样）
+-  **详细诊断日志**：输出平均三角形边长、计算出的参数和估算点数，便于调试
 
 **可视化调试**（原生表面采样）：
-- ✅ **采样点绘制**：蓝色球体标记每个采样点（半径5单位）
-- ✅ **法线方向**：绿色线段显示每个点的表面法线（长度20单位）
-- ✅ **与UE标准一致**：使用`DrawDebugSphere`和`DrawDebugLine`，效果与表面邻近度采样一致
-- ✅ **性能友好**：仅在启用调试时绘制，不影响正常采样性能
+-  **采样点绘制**：蓝色球体标记每个采样点（半径5单位）
+-  **法线方向**：绿色线段显示每个点的表面法线（长度20单位）
+-  **与UE标准一致**：使用`DrawDebugSphere`和`DrawDebugLine`，效果与表面邻近度采样一致
+-  **性能友好**：仅在启用调试时绘制，不影响正常采样性能
 
 **头文件修复**（UE 5.3兼容性）：
-- ✅ `SupportSystemLibrary.h`：添加 `Engine/EngineTypes.h` 以解析 `ETraceTypeQuery`
-- ✅ `XToolsLibrary.cpp`：添加 `Engine/StaticMesh.h` 以支持原生表面采样功能
+-  `SupportSystemLibrary.h`：添加 `Engine/EngineTypes.h` 以解析 `ETraceTypeQuery`
+-  `XToolsLibrary.cpp`：添加 `Engine/StaticMesh.h` 以支持原生表面采样功能
 
 **打包兼容性修复**（运行时环境）：
-- ✅ **GeometryCore头文件条件编译**：将 `DynamicMesh3.h`、`MeshSurfacePointSampling.h` 等头文件包裹在 `#if WITH_EDITORONLY_DATA` 中
-- ✅ **前向声明保护**：`PerformNativeSurfaceSampling` 函数声明也添加条件编译保护
-- ✅ **完全隔离**：确保所有编辑器专用代码在打包时完全不被编译，避免链接错误
+-  **GeometryCore头文件条件编译**：将 `DynamicMesh3.h`、`MeshSurfacePointSampling.h` 等头文件包裹在 `#if WITH_EDITORONLY_DATA` 中
+-  **前向声明保护**：`PerformNativeSurfaceSampling` 函数声明也添加条件编译保护
+-  **完全隔离**：确保所有编辑器专用代码在打包时完全不被编译，避免链接错误
 - 💡 **原理**：打包后没有 MeshDescription 相关符号，必须完全隔离避免未定义引用
 
 **重要限制**（运行时兼容性）：
-- ⚠️ **原生表面采样仅在编辑器中可用**：依赖 `MeshDescription` API（`WITH_EDITORONLY_DATA`）
-- ✅ 打包后自动回退到错误提示，不会导致崩溃
-- ✅ 表面邻近度采样仍然在运行时完全可用
+-  **原生表面采样仅在编辑器中可用**：依赖 `MeshDescription` API（`WITH_EDITORONLY_DATA`）
+-  打包后自动回退到错误提示，不会导致崩溃
+-  表面邻近度采样仍然在运行时完全可用
 - 💡 **建议**：在编辑器中使用原生表面采样预生成点，打包后使用保存的点数据
 
 **适用场景**：
@@ -1105,7 +1114,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ---
 
-## 🚀 PointSampling模块性能优化
+##  PointSampling模块性能优化
 
 ### 性能关键优化
 - **TrimToOptimalDistribution算法**: 批量裁剪算法，从`O(K × N²)`降至`O(N² + N log N)`
@@ -1131,7 +1140,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 - 注释清晰（包含复杂度分析）
 - 分阶段实现（1.2.3.4.）便于维护
 
-## 🛡️ XTools采样功能崩溃风险修复
+##  XTools采样功能崩溃风险修复
 
 ### 关键Bug修复
 1. **采样目标检测错误（严重逻辑错误）**
@@ -1202,7 +1211,7 @@ void UK2Node_GetArrayItem::PostReconstructNode()
   - Actor Tag筛选（包含/排除特定Tag）
   - SetKinematic禁用方法：完全阻止Field影响，保留碰撞检测
 - **GeometryCollection专项支持**（三种使用模式）:
-  - **✨ 推荐模式**：`ApplyCurrentFieldToFilteredGCs()` - 触发器调用，应用已配置的Field（适合触发器场景）
+  - ** 推荐模式**：`ApplyCurrentFieldToFilteredGCs()` - 触发器调用，应用已配置的Field（适合触发器场景）
   - **持久模式**：`RegisterToFilteredGCs()` + `bAutoRegisterToGCs=true` - GC自动处理（适合重力场等持久场景）
   - **手动模式**：`ApplyFieldToFilteredGeometryCollections()` - 蓝图中创建Field节点，完全控制
   - `RefreshGeometryCollectionCache()` - 刷新GC缓存
@@ -1295,13 +1304,13 @@ void UK2Node_GetArrayItem::PostReconstructNode()
 
 ## 📋 最佳实践检查
 
-### ✅ 关键修复
+###  关键修复
 1. **模块架构重构**: 创建BlueprintExtensionsRuntime(Runtime)，K2Node保留在UncookedOnly
 2. **K2Node错误处理**: 8个节点，50+处修复 - LOCTEXT本地化、BreakAllNodeLinks()、空指针检查
 3. **节点分类统一**: `XTools|Blueprint Extensions|...` - Loops/Map/Variables层级清晰
 4. **编译兼容性**: K2Node_MapFindRef使用标准ExpandNode，不依赖自定义枚举
 
-### ✅ 已检查符合标准
+###  已检查符合标准
 - API导出宏正确、Build.cs依赖正确、节点图标完整(15/15)、模块类型正确
 
 ---

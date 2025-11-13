@@ -133,4 +133,103 @@ private:
      * @return true 如果尝试了重命名
      */
     bool OnAssetNeedsRename(const FAssetData& AssetData);
+
+    // ========== 【新增】命名冲突检测和变体命名支持 ==========
+
+    /**
+     * 命名冲突信息结构体
+     */
+    struct FNamingConflictInfo
+    {
+        /** 冲突的名称 */
+        FString ConflictingName;
+        
+        /** 现有的冲突资产 */
+        TArray<FAssetData> ExistingAssets;
+        
+        /** 建议的新名称 */
+        FString SuggestedName;
+        
+        /** 冲突类型 */
+        enum class EConflictType
+        {
+            SameName,           // 完全相同的名称
+            SimilarName,        // 相似的名称
+            InvalidCharacters   // 包含无效字符
+        } ConflictType;
+
+        FNamingConflictInfo()
+            : ConflictType(EConflictType::SameName)
+        {}
+    };
+
+    /**
+     * 资产命名模式结构体（支持变体命名）
+     */
+    struct FAssetNamingPattern
+    {
+        /** 前缀 */
+        FString Prefix;
+        
+        /** 基础资产名称 */
+        FString BaseAssetName;
+        
+        /** 变体名称（可选） */
+        FString Variant;
+        
+        /** 后缀 */
+        FString Suffix;
+        
+        /** 数字后缀（自动格式化为两位数） */
+        int32 NumericSuffix;
+
+        FAssetNamingPattern()
+            : NumericSuffix(0)
+        {}
+
+        /** 生成完整的资产名称 */
+        FString GenerateFullName() const;
+        
+        /** 从现有名称解析命名模式 */
+        static FAssetNamingPattern ParseFromName(const FString& AssetName);
+    };
+
+    /**
+     * 检测命名冲突
+     * @param ProposedName 建议的新名称
+     * @param AssetPath 资产路径
+     * @param OutConflictInfo 输出冲突信息
+     * @return true 如果存在冲突
+     */
+    bool DetectNamingConflict(const FString& ProposedName, const FString& AssetPath, FNamingConflictInfo& OutConflictInfo);
+
+    /**
+     * 解决命名冲突
+     * @param ConflictInfo 冲突信息
+     * @return 解决冲突后的名称
+     */
+    FString ResolveNamingConflict(const FNamingConflictInfo& ConflictInfo);
+
+    /**
+     * 生成符合变体命名规范的名称
+     * @param AssetData 资产数据
+     * @param Pattern 命名模式
+     * @return 规范化的名称
+     */
+    FString GenerateVariantCompliantName(const FAssetData& AssetData, const FAssetNamingPattern& Pattern);
+
+    /**
+     * 规范化数字后缀（转换为两位数格式）
+     * @param AssetName 资产名称
+     * @return 规范化后的名称
+     */
+    FString NormalizeNumericSuffix(const FString& AssetName);
+
+    /**
+     * 生成唯一的资产名称（避免冲突）
+     * @param BaseName 基础名称
+     * @param PackagePath 包路径
+     * @return 唯一的资产名称
+     */
+    FString GenerateUniqueAssetName(const FString& BaseName, const FString& PackagePath);
 };

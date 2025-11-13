@@ -18,6 +18,7 @@
 #include "Misc/DateTime.h"
 #include "HAL/PlatformFilemanager.h"
 #include "ScopedTransaction.h"
+#include "Internationalization/Regex.h"
 
 DEFINE_LOG_CATEGORY(LogX_AssetNaming);
 
@@ -407,9 +408,46 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
         UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s': Current name='%s', Determined prefix='%s'"),
             *CurrentName, *CurrentName, *CorrectPrefix);
 
-        // 检查当前名称是否已经符合规范
-        if (CurrentName.StartsWith(CorrectPrefix))
+        // 检查当前名称是否已经符合前缀规范
+        bool bHasCorrectPrefix = CurrentName.StartsWith(CorrectPrefix);
+        if (bHasCorrectPrefix)
         {
+            // 即使前缀正确，也要检查数字后缀是否需要规范化
+            FString NormalizedForSuffix = NormalizeNumericSuffix(CurrentName);
+            if (NormalizedForSuffix != CurrentName)
+            {
+                UE_LOG(LogX_AssetNaming, Log, 
+                    TEXT("数字后缀规范化（前缀已正确）: %s -> %s"), *CurrentName, *NormalizedForSuffix);
+                
+                // 执行数字后缀规范化重命名
+                UObject* AssetObject = AssetData.GetAsset();
+                if (!AssetObject)
+                {
+                    UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset object is null for '%s', cannot rename"), *CurrentName);
+                    Result.FailedCount++;
+                    Result.FailedRenames.Add(CurrentName);
+                    continue;
+                }
+                
+                TArray<FAssetRenameData> AssetsToRename;
+                AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, NormalizedForSuffix));
+                
+                if (AssetTools.RenameAssets(AssetsToRename))
+                {
+                    Result.SuccessCount++;
+                    Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
+                    UE_LOG(LogX_AssetNaming, Log, TEXT("Numeric suffix normalization succeeded: %s -> %s"), *CurrentName, *NormalizedForSuffix);
+                }
+                else
+                {
+                    Result.FailedCount++;
+                    Result.FailedRenames.Add(CurrentName);
+                    UE_LOG(LogX_AssetNaming, Error, TEXT("Numeric suffix normalization failed: %s"), *CurrentName);
+                }
+                continue;
+            }
+            
+            // 前缀正确且数字后缀也正确，跳过
             Result.SkippedCount++;
             continue;
         }
@@ -479,6 +517,16 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
         while (ExistingNames.Contains(FinalNewName))
         {
             FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, SuffixCounter++);
+        }
+
+        // ========== 【UE最佳实践】最终数字后缀规范化 ==========
+        // 在所有名称处理完成后，对最终名称进行一次性数字后缀规范化
+        FString NormalizedFinalName = NormalizeNumericSuffix(FinalNewName);
+        if (NormalizedFinalName != FinalNewName)
+        {
+            UE_LOG(LogX_AssetNaming, Log, 
+                TEXT("数字后缀规范化（最终名称）: %s -> %s"), *FinalNewName, *NormalizedFinalName);
+            FinalNewName = NormalizedFinalName;
         }
 
         // ========== 【最终安全检查】防御性编程 ==========
@@ -741,6 +789,16 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     while (ExistingNames.Contains(FinalNewName))
     {
         FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, Suffix++);
+    }
+
+    // ========== 【UE最佳实践】最终数字后缀规范化 ==========
+    // 在所有名称处理完成后，对最终名称进行一次性数字后缀规范化
+    FString NormalizedFinalName = NormalizeNumericSuffix(FinalNewName);
+    if (NormalizedFinalName != FinalNewName)
+    {
+        UE_LOG(LogX_AssetNaming, Log, 
+            TEXT("数字后缀规范化（最终名称）: %s -> %s"), *FinalNewName, *NormalizedFinalName);
+        FinalNewName = NormalizedFinalName;
     }
 
     // ========== 【最终安全检查】防御性编程 ==========
@@ -1008,6 +1066,30 @@ void FX_AssetNamingManager::OutputUnknownAssetDiagnostics(const FAssetData& Asse
     }
     
     UE_LOG(LogX_AssetNaming, Warning, TEXT("================================================"));
+}
+
+FString FX_AssetNamingManager::NormalizeNumericSuffix(const FString& AssetName)
+{
+    // 使用正则表达式匹配末尾的数字后缀（如 _1, _5, _12）
+    FRegexPattern Pattern(TEXT("_([0-9]+)$"));
+    FRegexMatcher Matcher(Pattern, AssetName);
+    
+    if (Matcher.FindNext())
+    {
+        // 提取数字部分
+        FString NumericStr = Matcher.GetCaptureGroup(1);
+        int32 Number = FCString::Atoi(*NumericStr);
+        
+        // 格式化为两位数（如 01, 05, 12）
+        FString NormalizedSuffix = FString::Printf(TEXT("_%02d"), Number);
+        
+        // 替换原来的后缀
+        int32 MatchStart = Matcher.GetMatchBeginning();
+        return AssetName.Left(MatchStart) + NormalizedSuffix;
+    }
+    
+    // 如果没有匹配到数字后缀，返回原名称
+    return AssetName;
 }
 
 #undef LOCTEXT_NAMESPACE
