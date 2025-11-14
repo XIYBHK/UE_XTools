@@ -6,6 +6,7 @@
 
 #include "XBlueprintLibraryCleanupTool.h"
 #include "XToolsModule.h"
+#include "XToolsErrorReporter.h"
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -105,11 +106,12 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
     
     if (AssetDataArray.Num() == 0)
     {
-        UE_LOG(LogXTools, Error, TEXT("没有找到任何蓝图资产！可能的原因："));
-        UE_LOG(LogXTools, Error, TEXT("   1. 路径过滤太严格 - 蓝图可能不在 /Game 或 /Plugins 路径"));
-        UE_LOG(LogXTools, Error, TEXT("   2. 资产注册表未更新 - 尝试重新扫描项目"));
-        UE_LOG(LogXTools, Error, TEXT("   3. 使用了错误的搜索参数"));
-        UE_LOG(LogXTools, Warning, TEXT("建议：检查蓝图函数库是否确实位于 Content 文件夹中"));
+        FXToolsErrorReporter::Error(LogXTools,
+            TEXT("没有找到任何蓝图资产！可能的原因：\n   1. 路径过滤太严格 - 蓝图可能不在 /Game 或 /Plugins 路径\n   2. 资产注册表未更新 - 尝试重新扫描项目\n   3. 使用了错误的搜索参数"),
+            TEXT("GetAllBlueprintFunctionLibraries"));
+        FXToolsErrorReporter::Warning(LogXTools,
+            TEXT("建议：检查蓝图函数库是否确实位于 Content 文件夹中"),
+            TEXT("GetAllBlueprintFunctionLibraries"));
     }
     
     // 使用元数据检查，避免不必要的蓝图加载
@@ -481,8 +483,9 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             {
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogXTools, Error, TEXT("   移除用户定义引脚时发生异常: %s::%s"), 
-                                           *Result.FunctionName, *Result.PinName);
+                                    FXToolsErrorReporter::Error(LogXTools,
+                                        FString::Printf(TEXT("移除用户定义引脚时发生异常: %s::%s"), *Result.FunctionName, *Result.PinName),
+                                        TEXT("ExecuteCleanupWorldContextParams"));
                                 }
                             }
                         }
@@ -504,8 +507,9 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             {
                                 if (bLogToConsole)
                                 {
-                                    UE_LOG(LogXTools, Error, TEXT("   移除引脚时发生异常: %s::%s"), 
-                                           *Result.FunctionName, *Result.PinName);
+                                    FXToolsErrorReporter::Error(LogXTools,
+                                        FString::Printf(TEXT("移除引脚时发生异常: %s::%s"), *Result.FunctionName, *Result.PinName),
+                                        TEXT("ExecuteCleanupWorldContextParams"));
                                 }
                             }
                         }
@@ -537,8 +541,9 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                         FailureCount++;
                         if (bLogToConsole)
                         {
-                            UE_LOG(LogXTools, Error, TEXT("   未找到参数: %s::%s"), 
-                                   *Result.FunctionName, *Result.PinName);
+                            FXToolsErrorReporter::Warning(LogXTools,
+                                FString::Printf(TEXT("未找到参数: %s::%s"), *Result.FunctionName, *Result.PinName),
+                                TEXT("ExecuteCleanupWorldContextParams"));
                         }
                     }
                 }
@@ -566,7 +571,9 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                 {
                     if (bLogToConsole)
                     {
-                        UE_LOG(LogXTools, Error, TEXT("   蓝图编译失败: %s"), *Blueprint->GetName());
+                        FXToolsErrorReporter::Error(LogXTools,
+                            FString::Printf(TEXT("蓝图编译失败: %s"), *Blueprint->GetName()),
+                            TEXT("ExecuteCleanupWorldContextParams"));
                     }
                 }
                 else
@@ -584,7 +591,9 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
             {
                 if (bLogToConsole)
                 {
-                    UE_LOG(LogXTools, Error, TEXT("   蓝图编译过程中发生异常: %s"), *Blueprint->GetName());
+                    FXToolsErrorReporter::Error(LogXTools,
+                        FString::Printf(TEXT("蓝图编译过程中发生异常: %s"), *Blueprint->GetName()),
+                        TEXT("ExecuteCleanupWorldContextParams"));
                 }
             }
         }
@@ -610,13 +619,17 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
 
 int32 UXBlueprintLibraryCleanupTool::PreviewCleanupWorldContextParams(bool bLogToConsole)
 {
-    UE_LOG(LogXTools, Warning, TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"));
+    FXToolsErrorReporter::Warning(LogXTools,
+        TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"),
+        TEXT("PreviewCleanupWorldContextParams"));
     return 0;
 }
 
 int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogToConsole)
 {
-    UE_LOG(LogXTools, Warning, TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"));
+    FXToolsErrorReporter::Warning(LogXTools,
+        TEXT("[XTools] 蓝图清理工具仅在编辑器模式下可用"),
+        TEXT("ExecuteCleanupWorldContextParams"));
     return 0;
 }
 

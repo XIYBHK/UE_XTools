@@ -82,7 +82,8 @@ public class X_AssetEditor : ModuleRules
 			"Projects",
 			"InputCore",
 			"ApplicationCore",
-			"DeveloperSettings"
+			"DeveloperSettings",
+			"XToolsCore"   // 统一错误上报：依赖 FXToolsErrorReporter
 		});
 		
 		DynamicallyLoadedModuleNames.AddRange(

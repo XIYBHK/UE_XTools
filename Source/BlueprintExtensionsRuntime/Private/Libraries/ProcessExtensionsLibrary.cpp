@@ -1,5 +1,6 @@
 #include "Libraries/ProcessExtensionsLibrary.h"
 #include "BlueprintExtensionsRuntime.h"
+#include "XToolsErrorReporter.h"
 
 #include "UObject/UnrealType.h"
 
@@ -23,7 +24,10 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallFunctionByName) {
 		if (IsValid(Function)) {
 			// 验证参数类型是否匹配
 			if (Function->ParmsSize != Stack.MostRecentProperty->GetSize()) {
-				UE_LOG(LogBlueprintExtensionsRuntime, Error, TEXT("Parameter size mismatch for function %s!"), *FunctionName);
+				FXToolsErrorReporter::Error(
+					LogBlueprintExtensionsRuntime,
+					FString::Printf(TEXT("Parameter size mismatch for function %s!"), *FunctionName),
+					TEXT("CallFunctionByName"));
 				return;
 			}
 

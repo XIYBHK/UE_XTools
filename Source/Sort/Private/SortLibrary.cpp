@@ -11,6 +11,7 @@
 #include "UObject/TextProperty.h"
 #include "Algo/Reverse.h"
 #include "SortAPI.h"
+#include "XToolsErrorReporter.h"
 
 /**
  * 自然排序比较器，用于处理字符串中的数字和中文
@@ -915,8 +916,11 @@ DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
     }
     else
     {
-        UE_LOG(LogSort, Error, TEXT("execSortArrayByPropertyInPlace: 无效参数 - ArrayAddr=%p, ArrayProperty=%p"),
-            ArrayAddr, ArrayProperty);
+        FXToolsErrorReporter::Error(
+            LogSort,
+            FString::Printf(TEXT("execSortArrayByPropertyInPlace: 无效参数 - ArrayAddr=%p, ArrayProperty=%p"),
+                ArrayAddr, ArrayProperty),
+            TEXT("execSortArrayByPropertyInPlace"));
         OriginalIndices.Empty();
     }
     P_NATIVE_END;

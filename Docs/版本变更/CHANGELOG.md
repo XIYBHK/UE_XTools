@@ -10,6 +10,8 @@
 - 完善 UE 5.3–5.7 版本兼容性处理，统一 BlueprintAssist、BlueprintScreenshotTool 等模块的条件编译策略
 - 优化资产重命名流程与用户操作上下文检测，提升稳定性和启动性能
 - 优化 FieldSystemExtensions 默认行为、Sort 模块冗余结构与 BlueprintScreenshotTool 工具栏显示
+- 统一 XTools 核心工具及部分编辑器模块的错误/关键告警日志到 FXToolsErrorReporter
+- 调整 BlueprintExtensionsRuntime、Sort/SortEditor、X_AssetEditor 等模块的错误处理路径
 
 ### 修复
 - 修复 UE 5.6 GetPasteLocation API 变化导致的 CI 编译错误
@@ -19,6 +21,7 @@
 - 修复 EnhancedCodeFlow 模块移动构造函数实现错误
 - 修复 BlueprintAssist 晃动节点断开连接后节点不跟随鼠标的问题
 - 修复 BlueprintScreenshotTool 在插件禁用、首次截图、内存管理、DPI、多显示器和失败提示等场景下的异常
+- 修正部分运行时与编辑器工具在参数校验失败时的错误信息不一致问题，避免关键错误被普通日志淹没
 
 ---
 
