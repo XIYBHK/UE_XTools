@@ -7,6 +7,7 @@
 #include "Internationalization/Text.h"
 #include "Components/SceneComponent.h"
 #include "SortEditorModule.h"
+#include "XToolsErrorReporter.h"
 //  移除STL包含，使用UE内置类型检查
 #include <type_traits>
 
@@ -159,7 +160,10 @@ void USortTestLibrary::RunActorSortTest(const FString& TestName, const FString& 
 
     if (OriginalActors.IsEmpty())
     {
-        UE_LOG(LogSortEditor, Error, TEXT("测试 [%s] 失败：无法生成用于测试的Actor。"), *TestName);
+        FXToolsErrorReporter::Error(
+            LogSortEditor,
+            FString::Printf(TEXT("测试 [%s] 失败：无法生成用于测试的Actor。"), *TestName),
+            TEXT("RunActorSortTest"));
         return;
     }
     

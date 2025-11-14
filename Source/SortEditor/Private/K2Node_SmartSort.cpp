@@ -15,6 +15,7 @@
 #include "Engine/Engine.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "SortLibrary.h"
+#include "XToolsErrorReporter.h"
 
 #define LOCTEXT_NAMESPACE "K2Node_SmartSort"
 
@@ -404,7 +405,10 @@ void UK2Node_SmartSort::PropagateTypeToFunctionNode(UK2Node_CallFunction* Functi
 {
 	if (!FunctionNode)
 	{
-		UE_LOG(LogBlueprint, Error, TEXT("[智能排序调试] PropagateTypeToFunctionNode: FunctionNode为空"));
+		FXToolsErrorReporter::Error(
+			LogBlueprint,
+			TEXT("[智能排序调试] PropagateTypeToFunctionNode: FunctionNode为空"),
+			TEXT("K2Node_SmartSort::PropagateTypeToFunctionNode"));
 		return;
 	}
 
@@ -557,7 +561,10 @@ bool UK2Node_SmartSort::DetermineSortFunction(const FEdGraphPinType& ConnectedTy
 	}
 
 	// 如果所有条件都不满足，返回false
-	UE_LOG(LogBlueprint, Error, TEXT("[智能排序] 无法确定排序函数，连接类型: %s"), *ConnectedType.PinCategory.ToString());
+	FXToolsErrorReporter::Error(
+		LogBlueprint,
+		FString::Printf(TEXT("[智能排序] 无法确定排序函数，连接类型: %s"), *ConnectedType.PinCategory.ToString()),
+		TEXT("K2Node_SmartSort::DetermineSortFunction"));
 	return false;
 }
 
@@ -631,7 +638,10 @@ bool UK2Node_SmartSort::DetermineVectorSortFunction(FName& OutFunctionName)
 			return true;
 	}
 
-	UE_LOG(LogBlueprint, Error, TEXT("[智能排序] 未找到匹配的向量排序函数，枚举值: %d"), (int32)EnumValue);
+	FXToolsErrorReporter::Error(
+		LogBlueprint,
+		FString::Printf(TEXT("[智能排序] 未找到匹配的向量排序函数，枚举值: %d"), (int32)EnumValue),
+		TEXT("K2Node_SmartSort::DetermineVectorSortFunction"));
 	return false;
 }
 
@@ -664,7 +674,10 @@ bool UK2Node_SmartSort::DetermineBasicTypeSortFunction(const FEdGraphPinType& Co
 		return true;
 	}
 
-	UE_LOG(LogBlueprint, Error, TEXT("[智能排序] 未找到匹配的基础类型排序函数，类型: %s"), *ConnectedType.PinCategory.ToString());
+	FXToolsErrorReporter::Error(
+		LogBlueprint,
+		FString::Printf(TEXT("[智能排序] 未找到匹配的基础类型排序函数，类型: %s"), *ConnectedType.PinCategory.ToString()),
+		TEXT("K2Node_SmartSort::DetermineBasicTypeSortFunction"));
 	return false;
 }
 

@@ -13,6 +13,7 @@
 #include "CollisionTools/X_CollisionManager.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "Settings/X_AssetEditorSettingsCustomization.h"
+#include "XToolsErrorReporter.h"
 
 // UE核心头文件
 #include "ToolMenus.h"
@@ -90,7 +91,10 @@ void FX_AssetEditorModule::InitializeManagers()
     // 2. 初始化资产管理功能（带错误检查）
     if (!ensureMsgf(FX_AssetNamingManager::Get().Initialize(), TEXT("Failed to initialize AssetNamingManager")))
     {
-        UE_LOG(LogX_AssetEditor, Error, TEXT("X_AssetEditor: AssetNamingManager初始化失败"));
+        FXToolsErrorReporter::Error(
+            LogX_AssetEditor,
+            TEXT("X_AssetEditor: AssetNamingManager初始化失败"),
+            TEXT("FX_AssetEditorModule::InitializeManagers"));
     }
 
     // 3. 应用日志级别设置
@@ -137,7 +141,10 @@ void FX_AssetEditorModule::CleanupManagers()
     // 0. 清理资产命名管理器（包括委托）
     if (!ensureMsgf(FX_AssetNamingManager::Get().Shutdown(), TEXT("Failed to shutdown AssetNamingManager")))
     {
-        UE_LOG(LogX_AssetEditor, Error, TEXT("AssetNamingManager清理失败"));
+        FXToolsErrorReporter::Error(
+            LogX_AssetEditor,
+            TEXT("AssetNamingManager清理失败"),
+            TEXT("FX_AssetEditorModule::CleanupManagers"));
     }
 
     // 1. 清理菜单扩展
@@ -186,7 +193,10 @@ bool FX_AssetEditorModule::ValidateModuleState() const
     }
     else
     {
-        UE_LOG(LogX_AssetEditor, Error, TEXT("X_AssetEditor 模块状态验证失败"));
+        FXToolsErrorReporter::Error(
+            LogX_AssetEditor,
+            TEXT("X_AssetEditor 模块状态验证失败"),
+            TEXT("FX_AssetEditorModule::ValidateModuleState"));
     }
 
 	return bManagersValid;

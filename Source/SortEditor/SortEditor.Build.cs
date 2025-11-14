@@ -57,7 +57,8 @@ public class SortEditor : ModuleRules
                 "GraphEditor",
                 "KismetCompiler",
                 "InputCore",
-                "EditorStyle"
+                "EditorStyle",
+                "XToolsCore"       // 统一错误上报：依赖 FXToolsErrorReporter
             }
         );
     }

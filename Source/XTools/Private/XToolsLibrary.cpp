@@ -1336,7 +1336,10 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
             GridSpacing, Sampler.SampleRadius, MeshMaxDim, DynamicMesh.TriangleCount()
         );
         
-        UE_LOG(LogXTools, Error, TEXT("[NativeSurfaceSampling] %s"), *DiagnosticInfo);
+        FXToolsErrorReporter::Error(
+            LogXTools,
+            FString::Printf(TEXT("[NativeSurfaceSampling] %s"), *DiagnosticInfo),
+            TEXT("NativeSurfaceSampling"));
         return FXToolsSamplingResult::MakeError(DiagnosticInfo);
     }
 
