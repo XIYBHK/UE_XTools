@@ -6,6 +6,7 @@
 #include "Settings/X_AssetEditorSettings.h"
 #include "AssetNaming/X_AssetNamingManager.h"
 #include "X_AssetEditor.h"
+#include "XToolsCore.h"
 #include "Engine/Engine.h"
 
 #define LOCTEXT_NAMESPACE "X_AssetEditorSettings"
@@ -320,30 +321,14 @@ void UX_AssetEditorSettings::InitializeParentClassPrefixMappings()
 
 void UX_AssetEditorSettings::ApplyPluginLogVerbosity()
 {
-	// XTools 插件所有日志分类列表
-	TArray<FName> XToolsLogCategories = {
-		TEXT("LogXTools"),
-		TEXT("LogX_AssetEditor"),
-		TEXT("LogX_AssetNaming"),
-		TEXT("LogX_AssetNamingDelegates"),
-		TEXT("LogSort"),
-		TEXT("LogRandomShuffles"),
-		TEXT("LogEnhancedCodeFlow"),
-		TEXT("LogPointSampling"),
-		TEXT("LogFormationSystem"),
-		TEXT("LogComponentTimeline"),
-		TEXT("LogBlueprintExtensions"),
-		TEXT("LogObjectPool"),
-	};
-
 	// 转换枚举值为 ELogVerbosity::Type
 	ELogVerbosity::Type VerbosityLevel = static_cast<ELogVerbosity::Type>(PluginLogVerbosity);
 
 	// 获取日志级别字符串
 	const TCHAR* VerbosityString = ToString(VerbosityLevel);
 
-	// 应用日志级别到所有分类
-	for (const FName& LogCategory : XToolsLogCategories)
+	// 应用日志级别到所有分类（从核心模块集中获取列表）
+	for (const FName& LogCategory : FXToolsLogCategories::Get())
 	{
 		FString Command = FString::Printf(TEXT("Log %s %s"), *LogCategory.ToString(), VerbosityString);
 

@@ -7,6 +7,7 @@
 #include "AssetNaming/X_AssetNamingDelegates.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "X_AssetEditor.h"
+#include "XToolsErrorReporter.h"
 #include "EditorUtilityLibrary.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
@@ -23,6 +24,22 @@
 DEFINE_LOG_CATEGORY(LogX_AssetNaming);
 
 #define LOCTEXT_NAMESPACE "X_AssetNaming"
+
+// Internal helper to remove a fixed-length suffix without duplicating engine-version conditionals
+static void ChopSuffixNoShrink(FString& InOutString, int32 NumCharsToChop)
+{
+    if (NumCharsToChop <= 0 || InOutString.Len() < NumCharsToChop)
+    {
+        return;
+    }
+
+    // UE 5.5+ API 变更：LeftChopInline 参数从 bool 改为 EAllowShrinking 枚举
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
+    InOutString.LeftChopInline(NumCharsToChop, EAllowShrinking::No);
+#else
+    InOutString.LeftChopInline(NumCharsToChop, false);
+#endif
+}
 
 TUniquePtr<FX_AssetNamingManager> FX_AssetNamingManager::Instance = nullptr;
 
@@ -51,6 +68,17 @@ bool FX_AssetNamingManager::Initialize()
             FX_AssetNamingDelegates::FOnAssetNeedsRename::CreateRaw(this, &FX_AssetNamingManager::OnAssetNeedsRename)
         );
     }
+
+    // 预先构建按 Key 长度倒序排序的父类前缀映射缓存，避免在 GetCorrectPrefix 中重复排序
+    SortedParentClassPrefixes.Reset();
+    for (const auto& Pair : Settings->ParentClassPrefixMappings)
+    {
+        SortedParentClassPrefixes.Add(Pair);
+    }
+    SortedParentClassPrefixes.Sort([](const TPair<FString, FString>& A, const TPair<FString, FString>& B)
+    {
+        return A.Key.Len() > B.Key.Len();
+    });
 
     UE_LOG(LogX_AssetNaming, Log, TEXT("Asset Naming Manager initialized with %d prefix rules"),
         Settings->AssetPrefixMappings.Num());
@@ -102,11 +130,7 @@ FString FX_AssetNamingManager::GetSimpleClassName(const FAssetData& AssetData) c
     if (ClassName.EndsWith(TEXT("_C")))
     {
         // UE 5.5+ API 变更：LeftChopInline 参数从 bool 改为 EAllowShrinking 枚举
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
-        ClassName.LeftChopInline(2, EAllowShrinking::No);
-#else
-        ClassName.LeftChopInline(2, false);
-#endif
+        ChopSuffixNoShrink(ClassName, 2);
     }
 
     // 如果类名为空，使用资产名称作为备选
@@ -203,22 +227,29 @@ FString FX_AssetNamingManager::GetCorrectPrefix(const FAssetData& AssetData, con
                 *AssetData.AssetName.ToString(), *SimpleClassName, *ParentClassPath);
 
             // 按照优先级顺序检查父类映射（更具体的类型优先）
-            // 我们需要按照字符串长度倒序排列，确保更具体的匹配优先
-            // 例如: "SceneComponent" 应该在 "ActorComponent" 之前检查
-            TArray<TPair<FString, FString>> SortedParentClassPrefixes;
-            for (const auto& Pair : ParentClassPrefixes)
+            // 使用在 Initialize() 中预先构建并按 Key 长度倒序排序的缓存
+            const TArray<TPair<FString, FString>>* PrefixArray = &SortedParentClassPrefixes;
+
+            // 保护性回退：如果缓存为空（例如在某些极端情况下未初始化），
+            // 则在本地按旧逻辑构建一次排序数组，确保行为正确
+            TArray<TPair<FString, FString>> LocalSortedParentClassPrefixes;
+            if (PrefixArray->Num() == 0)
             {
-                SortedParentClassPrefixes.Add(Pair);
+                for (const auto& Pair : ParentClassPrefixes)
+                {
+                    LocalSortedParentClassPrefixes.Add(Pair);
+                }
+
+                LocalSortedParentClassPrefixes.Sort([](const TPair<FString, FString>& A, const TPair<FString, FString>& B)
+                {
+                    return A.Key.Len() > B.Key.Len();
+                });
+
+                PrefixArray = &LocalSortedParentClassPrefixes;
             }
 
-            // 按照 Key 的长度倒序排序（更长的类名更具体）
-            SortedParentClassPrefixes.Sort([](const TPair<FString, FString>& A, const TPair<FString, FString>& B)
-            {
-                return A.Key.Len() > B.Key.Len();
-            });
-
             // 使用部分匹配检查父类
-            for (const auto& Pair : SortedParentClassPrefixes)
+            for (const auto& Pair : *PrefixArray)
             {
                 const FString& ParentClassName = Pair.Key;
                 const FString& Prefix = Pair.Value;
@@ -244,11 +275,7 @@ FString FX_AssetNamingManager::GetCorrectPrefix(const FAssetData& AssetData, con
                 if (ParentSimpleClassName.EndsWith(TEXT("_C")))
                 {
                     // UE 5.5+ API 变更：LeftChopInline 参数从 bool 改为 EAllowShrinking 枚举
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
-                    ParentSimpleClassName.LeftChopInline(2, EAllowShrinking::No);
-#else
-                    ParentSimpleClassName.LeftChopInline(2, false);
-#endif
+                    ChopSuffixNoShrink(ParentSimpleClassName, 2);
                 }
 
                 // 尝试在 AssetPrefixMappings 中查找
@@ -350,238 +377,238 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
             break;
         }
 
-        if (!AssetData.IsValid())
-        {
-            UE_LOG(LogX_AssetNaming, Warning, TEXT("Invalid asset data found; skipped"));
-            Result.FailedCount++;
-            Result.FailedRenames.Add(LOCTEXT("InvalidAsset", "Invalid Asset").ToString());
-            continue;
-        }
-
-        // 检查资产包是否仍然存在（避免处理已被删除或重命名的资产）
-        FString PackageName = AssetData.PackageName.ToString();
-        if (!FPackageName::DoesPackageExist(PackageName))
-        {
-            UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset package no longer exists: %s (may have been renamed or deleted)"),
-                *AssetData.AssetName.ToString());
-            Result.SkippedCount++;
-            continue;
-        }
-
-        // 检查是否在排除列表中
-        if (IsAssetExcluded(AssetData))
-        {
-            Result.SkippedCount++;
-            UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s' is excluded; skipped"),
-                *AssetData.AssetName.ToString());
-            continue;
-        }
-
-        FString CurrentName = AssetData.AssetName.ToString();
-        FString PackagePath = FPackageName::GetLongPackagePath(AssetData.PackageName.ToString());
-
-        if (PackagePath.IsEmpty())
-        {
-            UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset '%s' has invalid package path"), *CurrentName);
-            Result.FailedCount++;
-            Result.FailedRenames.Add(CurrentName);
-            continue;
-        }
-
-        FString SimpleClassName = GetSimpleClassName(AssetData);
-
-        // 输出调试信息
-        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Processing asset: %s, Class: %s, ClassPath: %s"),
-            *CurrentName, *SimpleClassName, *AssetData.AssetClassPath.ToString());
-
-        FString CorrectPrefix = GetCorrectPrefix(AssetData, SimpleClassName);
-
-        if (CorrectPrefix.IsEmpty())
-        {
-            UE_LOG(LogX_AssetNaming, Warning, TEXT("Cannot determine prefix for asset '%s' (class: %s)"),
-                *CurrentName, *SimpleClassName);
-            Result.FailedCount++;
-            Result.FailedRenames.Add(CurrentName);
-            continue;
-        }
-
-        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s': Current name='%s', Determined prefix='%s'"),
-            *CurrentName, *CurrentName, *CorrectPrefix);
-
-        // 检查当前名称是否已经符合前缀规范
-        bool bHasCorrectPrefix = CurrentName.StartsWith(CorrectPrefix);
-        if (bHasCorrectPrefix)
-        {
-            // 即使前缀正确，也要检查数字后缀是否需要规范化
-            FString NormalizedForSuffix = NormalizeNumericSuffix(CurrentName);
-            if (NormalizedForSuffix != CurrentName)
-            {
-                UE_LOG(LogX_AssetNaming, Log, 
-                    TEXT("数字后缀规范化（前缀已正确）: %s -> %s"), *CurrentName, *NormalizedForSuffix);
-                
-                // 执行数字后缀规范化重命名
-                UObject* AssetObject = AssetData.GetAsset();
-                if (!AssetObject)
-                {
-                    UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset object is null for '%s', cannot rename"), *CurrentName);
-                    Result.FailedCount++;
-                    Result.FailedRenames.Add(CurrentName);
-                    continue;
-                }
-                
-                TArray<FAssetRenameData> AssetsToRename;
-                AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, NormalizedForSuffix));
-                
-                if (AssetTools.RenameAssets(AssetsToRename))
-                {
-                    Result.SuccessCount++;
-                    Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
-                    UE_LOG(LogX_AssetNaming, Log, TEXT("Numeric suffix normalization succeeded: %s -> %s"), *CurrentName, *NormalizedForSuffix);
-                }
-                else
-                {
-                    Result.FailedCount++;
-                    Result.FailedRenames.Add(CurrentName);
-                    UE_LOG(LogX_AssetNaming, Error, TEXT("Numeric suffix normalization failed: %s"), *CurrentName);
-                }
-                continue;
-            }
-            
-            // 前缀正确且数字后缀也正确，跳过
-            Result.SkippedCount++;
-            continue;
-        }
-
-        // 构建新名称
-        FString BaseName = CurrentName;
-
-        // 只移除错误的前缀（优化后的逻辑）
-        const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
-        if (Settings)
-        {
-            const TMap<FString, FString>& AssetPrefixes = Settings->AssetPrefixMappings;
-            for (const auto& Pair : AssetPrefixes)
-            {
-                const FString& ExistingPrefix = Pair.Value;
-                if (!ExistingPrefix.IsEmpty() &&
-                    ExistingPrefix != CorrectPrefix &&
-                    CurrentName.StartsWith(ExistingPrefix))
-                {
-                    BaseName = CurrentName.RightChop(ExistingPrefix.Len());
-                    UE_LOG(LogX_AssetNaming, Verbose, TEXT("Removing incorrect prefix '%s' from '%s'"),
-                        *ExistingPrefix, *CurrentName);
-                    break;
-                }
-            }
-        }
-
-        FString NewName = CorrectPrefix + BaseName;
-
-        // ========== 【安全检查1】如果新名称与当前名称相同，跳过 ==========
-        if (NewName == CurrentName)
-        {
-            UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s' already has the correct name, skipped"),
-                *CurrentName);
-            Result.SkippedCount++;
-            continue;
-        }
-
-        FString FinalNewName = NewName;
-        int32 SuffixCounter = 1;
-
-        // ========== 【关键修复】在调用 GetAssetsByPath 前再次检查 AssetRegistry 状态 ==========
-        // 防止在检查后、调用前状态发生变化导致崩溃
-        if (AssetRegistry.IsLoadingAssets())
-        {
-            UE_LOG(LogX_AssetNaming, Warning, TEXT("AssetRegistry started loading during rename operation, skipping asset: %s"), *CurrentName);
-            Result.FailedCount++;
-            Result.FailedRenames.Add(CurrentName);
-            continue;
-        }
-
-        // 性能优化：缓存资产名称避免重复磁盘查询
-        TArray<FAssetData> AllAssetsInFolder;
-        AssetRegistry.GetAssetsByPath(FName(*PackagePath), AllAssetsInFolder, false);
-
-        TSet<FString> ExistingNames;
-        for (const FAssetData& Asset : AllAssetsInFolder)
-        {
-            // 排除当前资产自己，避免自己与自己冲突
-            if (Asset.PackageName != AssetData.PackageName)
-            {
-                ExistingNames.Add(Asset.AssetName.ToString());
-            }
-        }
-
-        // 命名冲突解决：自动添加数字后缀
-        while (ExistingNames.Contains(FinalNewName))
-        {
-            FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, SuffixCounter++);
-        }
-
-        // ========== 【UE最佳实践】最终数字后缀规范化 ==========
-        // 在所有名称处理完成后，对最终名称进行一次性数字后缀规范化
-        FString NormalizedFinalName = NormalizeNumericSuffix(FinalNewName);
-        if (NormalizedFinalName != FinalNewName)
-        {
-            UE_LOG(LogX_AssetNaming, Log, 
-                TEXT("数字后缀规范化（最终名称）: %s -> %s"), *FinalNewName, *NormalizedFinalName);
-            FinalNewName = NormalizedFinalName;
-        }
-
-        // ========== 【最终安全检查】防御性编程 ==========
-        if (FinalNewName == CurrentName)
-        {
-            UE_LOG(LogX_AssetNaming, Error, 
-                TEXT("CRITICAL: Final rename would be same-name operation (%s)! Skipping."),
-                *CurrentName);
-            Result.SkippedCount++;
-            continue;
-        }
-
-        // ========== 【参考 UE 源码】检查资产对象有效性 ==========
-        UObject* AssetObject = AssetData.GetAsset();
-        if (!AssetObject)
-        {
-            Result.FailedCount++;
-            Result.FailedRenames.Add(CurrentName);
-            UE_LOG(LogX_AssetNaming, Error, TEXT("Asset object is null for '%s', cannot rename"),
-                *CurrentName);
-            continue;
-        }
-
-        // 执行重命名操作
-        TArray<FAssetRenameData> AssetsToRename;
-        AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, FinalNewName));
-
-        if (AssetTools.RenameAssets(AssetsToRename))
-        {
-            Result.SuccessCount++;
-            Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
-            UE_LOG(LogX_AssetNaming, Log, TEXT("Rename succeeded: %s -> %s"), *CurrentName, *FinalNewName);
-        }
-        else
-        {
-            Result.FailedCount++;
-            Result.FailedRenames.Add(CurrentName);
-            UE_LOG(LogX_AssetNaming, Error, TEXT("Rename failed: %s"), *CurrentName);
-        }
+        ProcessSingleAssetRename(AssetData, Result, AssetRegistry, AssetTools);
     }
-
-    // ========== 【暂时禁用】自动清理 Redirectors ==========
-    // 原因：重命名后立即清理可能导致崩溃，UE 验证系统可能还在使用旧路径
-    /*
-    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
-    if (Settings && Settings->bAutoFixupRedirectors && Result.SuccessfulRenames.Num() > 0)
-    {
-        FixupRedirectors(Result.SuccessfulRenames);
-    }
-    */
 
     // 显示操作结果
     ShowRenameResult(Result);
 
     return Result;
+}
+
+void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData,
+    FX_RenameOperationResult& Result,
+    IAssetRegistry& AssetRegistry,
+    IAssetTools& AssetTools)
+{
+    if (!AssetData.IsValid())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Invalid asset data found; skipped"));
+        Result.FailedCount++;
+        Result.FailedRenames.Add(LOCTEXT("InvalidAsset", "Invalid Asset").ToString());
+        return;
+    }
+
+    // 检查资产包是否仍然存在（避免处理已被删除或重命名的资产）
+    FString PackageName = AssetData.PackageName.ToString();
+    if (!FPackageName::DoesPackageExist(PackageName))
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset package no longer exists: %s (may have been renamed or deleted)"),
+            *AssetData.AssetName.ToString());
+        Result.SkippedCount++;
+        return;
+    }
+
+    // 检查是否在排除列表中
+    if (IsAssetExcluded(AssetData))
+    {
+        Result.SkippedCount++;
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s' is excluded; skipped"),
+            *AssetData.AssetName.ToString());
+        return;
+    }
+
+    FString CurrentName = AssetData.AssetName.ToString();
+    FString PackagePath = FPackageName::GetLongPackagePath(AssetData.PackageName.ToString());
+
+    if (PackagePath.IsEmpty())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset '%s' has invalid package path"), *CurrentName);
+        Result.FailedCount++;
+        Result.FailedRenames.Add(CurrentName);
+        return;
+    }
+
+    FString SimpleClassName = GetSimpleClassName(AssetData);
+
+    // 输出调试信息
+    UE_LOG(LogX_AssetNaming, Verbose, TEXT("Processing asset: %s, Class: %s, ClassPath: %s"),
+        *CurrentName, *SimpleClassName, *AssetData.AssetClassPath.ToString());
+
+    FString CorrectPrefix = GetCorrectPrefix(AssetData, SimpleClassName);
+
+    if (CorrectPrefix.IsEmpty())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Cannot determine prefix for asset '%s' (class: %s)"),
+            *CurrentName, *SimpleClassName);
+        Result.FailedCount++;
+        Result.FailedRenames.Add(CurrentName);
+        return;
+    }
+
+    UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s': Current name='%s', Determined prefix='%s"),
+        *CurrentName, *CurrentName, *CorrectPrefix);
+
+    // 检查当前名称是否已经符合前缀规范
+    bool bHasCorrectPrefix = CurrentName.StartsWith(CorrectPrefix);
+    if (bHasCorrectPrefix)
+    {
+        // 即使前缀正确，也要检查数字后缀是否需要规范化
+        FString NormalizedForSuffix = NormalizeNumericSuffix(CurrentName);
+        if (NormalizedForSuffix != CurrentName)
+        {
+            UE_LOG(LogX_AssetNaming, Log,
+                TEXT("数字后缀规范化（前缀已正确）: %s -> %s"), *CurrentName, *NormalizedForSuffix);
+
+            // 执行数字后缀规范化重命名
+            UObject* AssetObject = AssetData.GetAsset();
+            if (!AssetObject)
+            {
+                UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset object is null for '%s', cannot rename"), *CurrentName);
+                Result.FailedCount++;
+                Result.FailedRenames.Add(CurrentName);
+                return;
+            }
+
+            TArray<FAssetRenameData> AssetsToRename;
+            AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, NormalizedForSuffix));
+
+            if (AssetTools.RenameAssets(AssetsToRename))
+            {
+                Result.SuccessCount++;
+                Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
+                UE_LOG(LogX_AssetNaming, Log, TEXT("Numeric suffix normalization succeeded: %s -> %s"), *CurrentName, *NormalizedForSuffix);
+            }
+            else
+            {
+                Result.FailedCount++;
+                Result.FailedRenames.Add(CurrentName);
+                UE_LOG(LogX_AssetNaming, Error, TEXT("Numeric suffix normalization failed: %s"), *CurrentName);
+            }
+        }
+        else
+        {
+            // 前缀正确且数字后缀也正确，跳过
+            Result.SkippedCount++;
+        }
+
+        return;
+    }
+
+    // 构建新名称
+    FString BaseName = CurrentName;
+
+    // 只移除错误的前缀（优化后的逻辑）
+    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+    if (Settings)
+    {
+        const TMap<FString, FString>& AssetPrefixes = Settings->AssetPrefixMappings;
+        for (const auto& Pair : AssetPrefixes)
+        {
+            const FString& ExistingPrefix = Pair.Value;
+            if (!ExistingPrefix.IsEmpty() &&
+                ExistingPrefix != CorrectPrefix &&
+                CurrentName.StartsWith(ExistingPrefix))
+            {
+                BaseName = CurrentName.RightChop(ExistingPrefix.Len());
+                UE_LOG(LogX_AssetNaming, Verbose, TEXT("Removing incorrect prefix '%s' from '%s'"),
+                    *ExistingPrefix, *CurrentName);
+                break;
+            }
+        }
+    }
+
+    FString NewName = CorrectPrefix + BaseName;
+
+    // ========== 【安全检查1】如果新名称与当前名称相同，跳过 ==========
+    if (NewName == CurrentName)
+    {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Asset '%s' already has the correct name, skipped"),
+            *CurrentName);
+        Result.SkippedCount++;
+        return;
+    }
+
+    FString FinalNewName = NewName;
+    int32 SuffixCounter = 1;
+
+    // ========== 【关键修复】在调用 GetAssetsByPath 前再次检查 AssetRegistry 状态 ==========
+    // 防止在检查后、调用前状态发生变化导致崩溃
+    if (AssetRegistry.IsLoadingAssets())
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("AssetRegistry started loading during rename operation, skipping asset: %s"), *CurrentName);
+        Result.FailedCount++;
+        Result.FailedRenames.Add(CurrentName);
+        return;
+    }
+
+    // 性能优化：缓存资产名称避免重复磁盘查询
+    TArray<FAssetData> AllAssetsInFolder;
+    AssetRegistry.GetAssetsByPath(FName(*PackagePath), AllAssetsInFolder, false);
+
+    TSet<FString> ExistingNames;
+    for (const FAssetData& Asset : AllAssetsInFolder)
+    {
+        // 排除当前资产自己，避免自己与自己冲突
+        if (Asset.PackageName != AssetData.PackageName)
+        {
+            ExistingNames.Add(Asset.AssetName.ToString());
+        }
+    }
+
+    // 命名冲突解决：自动添加数字后缀
+    while (ExistingNames.Contains(FinalNewName))
+    {
+        FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, SuffixCounter++);
+    }
+
+    // ========== 【UE最佳实践】最终数字后缀规范化 ==========
+    // 在所有名称处理完成后，对最终名称进行一次性数字后缀规范化
+    FString NormalizedFinalName = NormalizeNumericSuffix(FinalNewName);
+    if (NormalizedFinalName != FinalNewName)
+    {
+        UE_LOG(LogX_AssetNaming, Log,
+            TEXT("数字后缀规范化（最终名称）: %s -> %s"), *FinalNewName, *NormalizedFinalName);
+        FinalNewName = NormalizedFinalName;
+    }
+
+    // ========== 【最终安全检查】防御性编程 ==========
+    if (FinalNewName == CurrentName)
+    {
+        UE_LOG(LogX_AssetNaming, Error,
+            TEXT("CRITICAL: Final rename would be same-name operation (%s)! Skipping."),
+            *CurrentName);
+        Result.SkippedCount++;
+        return;
+    }
+
+    // ========== 【参考 UE 源码】检查资产对象有效性 ==========
+    UObject* AssetObject = AssetData.GetAsset();
+    if (!AssetObject)
+    {
+        Result.FailedCount++;
+        Result.FailedRenames.Add(CurrentName);
+        UE_LOG(LogX_AssetNaming, Error, TEXT("Asset object is null for '%s', cannot rename"),
+            *CurrentName);
+        return;
+    }
+
+    // 执行重命名操作
+    TArray<FAssetRenameData> AssetsToRename;
+    AssetsToRename.Add(FAssetRenameData(AssetObject, PackagePath, FinalNewName));
+
+    if (AssetTools.RenameAssets(AssetsToRename))
+    {
+        Result.SuccessCount++;
+        Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
+        UE_LOG(LogX_AssetNaming, Log, TEXT("Rename succeeded: %s -> %s"), *CurrentName, *FinalNewName);
+    }
+    else
+    {
+        Result.FailedCount++;
+        Result.FailedRenames.Add(CurrentName);
+        UE_LOG(LogX_AssetNaming, Error, TEXT("Numeric suffix normalization failed: %s"), *CurrentName);
+    }
 }
 
 void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Result) const
@@ -676,11 +703,9 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
         *AssetData.AssetClassPath.ToString(),
         *AssetData.PackagePath.ToString());
 
-    if (!AssetData.IsValid())
-    {
-        UE_LOG(LogX_AssetNaming, Verbose, TEXT("资产数据无效，跳过"));
-        return false;
-    }
+    // 基本参数校验：AssetData 理论上应当有效，否则属于调用方式错误
+    XTOOLS_ENSURE_OR_ERROR_RETURN(AssetData.IsValid(), LogX_AssetNaming,
+        "RenameAssetInternal: AssetData is invalid");
 
     // ========== 【重要】参考 UE 源码：AssetRenameManager.cpp:246 ==========
     // 如果 AssetRegistry 仍在加载资产，重命名操作可能失败或导致数据不一致
@@ -705,10 +730,8 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     FString OldPackageName = AssetData.PackageName.ToString();
     FString PackagePath = FPackageName::GetLongPackagePath(OldPackageName);
 
-    if (PackagePath.IsEmpty())
-    {
-        return false;
-    }
+    XTOOLS_ENSURE_OR_ERROR_RETURN(!PackagePath.IsEmpty(), LogX_AssetNaming,
+        "RenameAssetInternal: PackagePath is empty for asset '%s'", *CurrentName);
 
     FString SimpleClassName = GetSimpleClassName(AssetData);
     FString CorrectPrefix = GetCorrectPrefix(AssetData, SimpleClassName);
@@ -828,27 +851,13 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     if (AssetTools.RenameAssets(AssetsToRename))
     {
         OutNewName = FinalNewName;
-
-        // ========== 【暂时禁用】自动清理 Redirector ==========
-        // 原因：重命名后立即清理 Redirector 可能导致崩溃
-        // UE 内部的验证系统可能还在引用旧的资产路径
-        // TODO: 研究 UE 源码中的正确时机，或者提供手动清理功能
-        /*
-        const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
-        if (Settings && Settings->bAutoFixupRedirectors)
-        {
-            TArray<FString> OldPaths;
-            OldPaths.Add(OldPackageName);
-            FixupRedirectors(OldPaths);
-        }
-        */
-
         return true;
     }
 
     return false;
 }
 
+// Utility: manual redirector cleanup, not invoked automatically from the rename pipeline
 void FX_AssetNamingManager::FixupRedirectors(const TArray<FString>& OldPackagePaths)
 {
     if (OldPackagePaths.Num() == 0)
