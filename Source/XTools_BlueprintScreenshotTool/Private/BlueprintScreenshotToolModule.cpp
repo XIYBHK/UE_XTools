@@ -8,6 +8,7 @@
 #include "BlueprintScreenshotToolStyle.h"
 #include "ISettingsModule.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Interfaces/IPluginManager.h"
 
 #define LOCTEXT_NAMESPACE "FBlueprintScreenshotToolModule"
 
@@ -15,7 +16,17 @@ void FBlueprintScreenshotToolModule::StartupModule()
 {
 	RegisterSettings();
 
-	// Check if plugin is enabled
+	// 如果项目中已启用 Marketplace 版本的 BlueprintScreenshotTool 插件，则集成版保持空载，避免重复初始化和工具栏冲突
+	if (const TSharedPtr<IPlugin> ExternalBSTPlugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintScreenshotTool")))
+	{
+		if (ExternalBSTPlugin->IsEnabled())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("XTools_BlueprintScreenshotTool: Detected external BlueprintScreenshotTool plugin enabled, integrated version will stay idle."));
+			return;
+		}
+	}
+
+	// Check if plugin is enabled via settings
 	const UBlueprintScreenshotToolSettings* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
 	if (!Settings || !Settings->bEnablePlugin)
 	{

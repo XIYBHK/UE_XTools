@@ -18,6 +18,7 @@
 - 优化 资产规范化失败后抛出资产详细信息
 - 优化 用户操作上下文检测，支持UE 5.3-5.7版本
 - 优化 重命名逻辑，集成智能冲突解决方案
+ - 优化 MaterialTools 材质函数智能连接，失败时回溯 MaterialAttributes 链路并自动接入 BaseColor/自发光 节点
 
 ## FieldSystemExtensions
 
@@ -68,6 +69,18 @@
 - 优化 内存管理，使用TUniquePtr替代裸指针
 - 优化 DPI获取，支持多显示器环境
 - 优化 保存失败提示的用户体验
+- 优化 错误处理路径，接入 FXToolsErrorReporter 统一上报
+
+## XTools / 错误处理
+
+- 优化 统一 XTools 核心工具及部分编辑器模块的错误/关键告警日志到 FXToolsErrorReporter
+- 优化 BlueprintExtensionsRuntime、Sort/SortEditor、X_AssetEditor 等模块的错误处理路径，保留调试用 UE_LOG 日志
+
+## 集成第三方插件
+
+- 优化 XTools_BlueprintAssist 启动流程，检测到外部 BlueprintAssist 插件启用时集成版保持空载
+- 优化 XTools_AutoSizeComments、XTools_ElectronicNodes、XTools_BlueprintScreenshotTool、XTools_SwitchLanguage 在检测到外部插件启用时保持空载
+- 优化 XTools_EnhancedCodeFlow 子系统创建逻辑，检测到外部 EnhancedCodeFlow 插件启用时不创建集成版子系统
 
 
 ---

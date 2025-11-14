@@ -164,6 +164,58 @@ public:
 
 private:
     /**
+     * 保底逻辑：从材质的MaterialAttributes链路向前回溯，
+     * 查找第一个同时拥有BaseColor和Emissive输入的表达式节点，
+     * 并尝试将指定函数的输出连接到该节点。
+     * @param Material - 目标材质
+     * @param FunctionCall - 要连接的材质函数调用（例如MF_SM_Fresnel）
+     * @param OutputIndex - 函数输出索引
+     */
+    static bool FallbackConnectToFirstBaseEmissiveNode(
+        UMaterial* Material,
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        int32 OutputIndex);
+
+    /**
+     * 从指定表达式开始，沿着上游链路回溯，查找第一个同时拥有
+     * BaseColor和Emissive相关输入引脚的表达式节点。
+     * @param StartExpression - 起始表达式（通常为最终MaterialAttributes来源）
+     * @return 找到的表达式节点，如果失败则返回nullptr
+     */
+    static UMaterialExpression* FindFirstNodeWithBaseAndEmissiveInputs(
+        UMaterialExpression* StartExpression);
+
+    /**
+     * 判断指定表达式是否拥有BaseColor和Emissive相关输入。
+     * 当前支持MakeMaterialAttributes和MaterialFunctionCall两类节点。
+     * @param Expression - 要检测的表达式
+     * @return 是否同时拥有BaseColor和Emissive输入
+     */
+    static bool HasBaseAndEmissiveInputs(UMaterialExpression* Expression);
+
+    /**
+     * 收集指定表达式的所有上游输入表达式，用于回溯搜索。
+     * @param Expression - 当前表达式
+     * @param OutUpstreamExpressions - 输出上游表达式数组
+     */
+    static void CollectUpstreamExpressions(
+        UMaterialExpression* Expression,
+        TArray<UMaterialExpression*>& OutUpstreamExpressions);
+
+    /**
+     * 将给定函数调用连接到“Base+Emissive”节点上。
+     * 对MakeMaterialAttributes节点复用现有的ConnectToMakeMaterialAttributesNode，
+     * 对MaterialFunctionCall使用UMaterialEditingLibrary按输入名进行连接。
+     * @param TargetExpression - 目标Base+Emissive节点
+     * @param FunctionCall - 要连接的函数调用
+     * @param OutputIndex - 函数输出索引
+     */
+    static bool ConnectFunctionToBaseEmissiveNode(
+        UMaterialExpression* TargetExpression,
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        int32 OutputIndex);
+
+    /**
      * 获取材质属性的显示名称
      * @param MaterialProperty - 材质属性枚举
      * @return 显示名称

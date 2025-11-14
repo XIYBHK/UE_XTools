@@ -1455,7 +1455,24 @@ bool FX_MaterialFunctionConnector::ConnectToMaterialAttributesExpression(UMateri
     if (UMaterialExpressionMaterialFunctionCall* ExistingFunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(MaterialAttributesExpression))
     {
         UE_LOG(LogX_AssetEditor, Log, TEXT("检测到现有MaterialAttributes函数，尝试连接到其输入"));
-        return ConnectToMaterialAttributesFunctionInputs(ExistingFunctionCall, FunctionCall, OutputIndex);
+
+        const bool bConnected = ConnectToMaterialAttributesFunctionInputs(ExistingFunctionCall, FunctionCall, OutputIndex);
+        if (bConnected)
+        {
+            return true;
+        }
+
+        //  智能连接失败时的保底策略：从材质的MaterialAttributes链路向前回溯，
+        //  查找第一个同时拥有BaseColor和Emissive输入的节点并连接。
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("连接到MaterialAttributes函数输入失败，尝试回溯到BaseColor+Emissive节点作为保底方案"));
+
+        if (UMaterial* OwningMaterial = MaterialAttributesExpression->GetTypedOuter<UMaterial>())
+        {
+            return FallbackConnectToFirstBaseEmissiveNode(OwningMaterial, FunctionCall, OutputIndex);
+        }
+
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("无法从MaterialAttributes表达式获取所属材质对象，保底回溯逻辑中止"));
+        return false;
     }
     
     //  其他MaterialAttributes表达式类型
@@ -1780,7 +1797,257 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
     return false;
 }
 
-//  错误恢复机制：使用UE内置事务系统实现
+bool FX_MaterialFunctionConnector::FallbackConnectToFirstBaseEmissiveNode(
+    UMaterial* Material,
+    UMaterialExpressionMaterialFunctionCall* FunctionCall,
+    int32 OutputIndex)
+{
+    if (!Material || !FunctionCall)
+    {
+        return false;
+    }
+    
+    UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
+    if (!EditorOnlyData)
+    {
+        return false;
+    }
+    
+    FExpressionInput& MaterialAttributesInput = EditorOnlyData->MaterialAttributes;
+    if (!MaterialAttributesInput.IsConnected())
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("保底回溯：材质的MaterialAttributes引脚未连接，跳过保底逻辑"));
+        return false;
+    }
+    
+    UMaterialExpression* RootExpression = MaterialAttributesInput.Expression;
+    if (!RootExpression)
+    {
+        return false;
+    }
+    
+    UE_LOG(LogX_AssetEditor, Log, TEXT("保底回溯：从表达式 %s 开始搜索BaseColor+Emissive节点"),
+        *RootExpression->GetClass()->GetName());
+    
+    UMaterialExpression* TargetExpression = FindFirstNodeWithBaseAndEmissiveInputs(RootExpression);
+    if (!TargetExpression)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("保底回溯：未找到同时拥有BaseColor和Emissive输入的节点"));
+        return false;
+    }
+    
+    return ConnectFunctionToBaseEmissiveNode(TargetExpression, FunctionCall, OutputIndex);
+}
+
+UMaterialExpression* FX_MaterialFunctionConnector::FindFirstNodeWithBaseAndEmissiveInputs(
+    UMaterialExpression* StartExpression)
+{
+    if (!StartExpression)
+    {
+        return nullptr;
+    }
+    
+    TSet<UMaterialExpression*> Visited;
+    TQueue<UMaterialExpression*> Queue;
+    Queue.Enqueue(StartExpression);
+    
+    while (!Queue.IsEmpty())
+    {
+        UMaterialExpression* Current = nullptr;
+        Queue.Dequeue(Current);
+        if (!Current || Visited.Contains(Current))
+        {
+            continue;
+        }
+        
+        Visited.Add(Current);
+        
+        if (HasBaseAndEmissiveInputs(Current))
+        {
+            UE_LOG(LogX_AssetEditor, Log, TEXT("保底回溯：找到BaseColor+Emissive节点: %s"),
+                *Current->GetClass()->GetName());
+            return Current;
+        }
+        
+        TArray<UMaterialExpression*> UpstreamExpressions;
+        CollectUpstreamExpressions(Current, UpstreamExpressions);
+        
+        for (UMaterialExpression* Upstream : UpstreamExpressions)
+        {
+            if (Upstream && !Visited.Contains(Upstream))
+            {
+                Queue.Enqueue(Upstream);
+            }
+        }
+    }
+    
+    return nullptr;
+}
+
+bool FX_MaterialFunctionConnector::HasBaseAndEmissiveInputs(UMaterialExpression* Expression)
+{
+    if (!Expression)
+    {
+        return false;
+    }
+    
+    //  MakeMaterialAttributes节点天然拥有BaseColor/Emissive输入
+    if (UMaterialExpressionMakeMaterialAttributes* MakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(Expression))
+    {
+        UE_LOG(LogX_AssetEditor, Log, TEXT("保底回溯：检测到MakeMaterialAttributes节点"));
+        return true;
+    }
+    
+    //  对MaterialFunctionCall，检查其FunctionInputs名称中是否同时包含BaseColor和Emissive
+    if (UMaterialExpressionMaterialFunctionCall* FunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+    {
+        bool bHasBase = false;
+        bool bHasEmissive = false;
+        
+        for (const FFunctionExpressionInput& Input : FunctionCall->FunctionInputs)
+        {
+            const FString InputName = Input.Input.InputName.ToString();
+            if (InputName.Contains(TEXT("BaseColor")))
+            {
+                bHasBase = true;
+            }
+            if (InputName.Contains(TEXT("Emissive")) || InputName.Contains(TEXT("自发光")))
+            {
+                bHasEmissive = true;
+            }
+        }
+        
+        if (bHasBase && bHasEmissive)
+        {
+            UE_LOG(LogX_AssetEditor, Log, TEXT("保底回溯：节点 %s 拥有BaseColor+Emissive输入"),
+                *Expression->GetClass()->GetName());
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+void FX_MaterialFunctionConnector::CollectUpstreamExpressions(
+    UMaterialExpression* Expression,
+    TArray<UMaterialExpression*>& OutUpstreamExpressions)
+{
+    OutUpstreamExpressions.Reset();
+    
+    if (!Expression)
+    {
+        return;
+    }
+    
+    //  对MakeMaterialAttributes，收集所有已连接的输入表达式
+    if (UMaterialExpressionMakeMaterialAttributes* MakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(Expression))
+    {
+        auto CollectIfConnected = [&OutUpstreamExpressions](FExpressionInput& Input)
+        {
+            if (Input.IsConnected() && Input.Expression)
+            {
+                OutUpstreamExpressions.Add(Input.Expression);
+            }
+        };
+        
+        CollectIfConnected(MakeMANode->BaseColor);
+        CollectIfConnected(MakeMANode->EmissiveColor);
+        CollectIfConnected(MakeMANode->Metallic);
+        CollectIfConnected(MakeMANode->Roughness);
+        CollectIfConnected(MakeMANode->Normal);
+        CollectIfConnected(MakeMANode->Specular);
+        CollectIfConnected(MakeMANode->AmbientOcclusion);
+        
+        return;
+    }
+    
+    //  对MaterialFunctionCall，收集所有输入的来源表达式
+    if (UMaterialExpressionMaterialFunctionCall* FunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+    {
+        for (const FFunctionExpressionInput& FuncInput : FunctionCall->FunctionInputs)
+        {
+            const FExpressionInput& Input = FuncInput.Input;
+            if (Input.IsConnected() && Input.Expression)
+            {
+                OutUpstreamExpressions.Add(Input.Expression);
+            }
+        }
+        
+        return;
+    }
+}
+
+bool FX_MaterialFunctionConnector::ConnectFunctionToBaseEmissiveNode(
+    UMaterialExpression* TargetExpression,
+    UMaterialExpressionMaterialFunctionCall* FunctionCall,
+    int32 OutputIndex)
+{
+    if (!TargetExpression || !FunctionCall)
+    {
+        return false;
+    }
+    
+    //  如果是MakeMaterialAttributes节点，直接复用已有的智能连接逻辑
+    if (TargetExpression->GetClass()->GetName().Contains(TEXT("MakeMaterialAttributes")))
+    {
+        UE_LOG(LogX_AssetEditor, Log, TEXT("保底回溯：将函数连接到MakeMaterialAttributes节点"));
+        return ConnectToMakeMaterialAttributesNode(TargetExpression, FunctionCall, OutputIndex);
+    }
+    
+    //  对MaterialFunctionCall，优先查找Emissive相关输入
+    if (UMaterialExpressionMaterialFunctionCall* TargetFunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(TargetExpression))
+    {
+        FString TargetInputName;
+        
+        for (const FFunctionExpressionInput& Input : TargetFunctionCall->FunctionInputs)
+        {
+            const FString InputName = Input.Input.InputName.ToString();
+            if (InputName.Contains(TEXT("Emissive")) || InputName.Contains(TEXT("自发光")))
+            {
+                TargetInputName = InputName;
+                break;
+            }
+        }
+        if (TargetInputName.IsEmpty() && TargetFunctionCall->FunctionInputs.Num() > 0)
+        {
+            //  找不到Emissive专用输入时，退而求其次使用第一个输入
+            TargetInputName = TargetFunctionCall->FunctionInputs[0].Input.InputName.ToString();
+        }
+        
+        if (TargetInputName.IsEmpty())
+        {
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("保底回溯：Base+Emissive节点上未找到可用输入引脚"));
+            return false;
+        }
+        
+        const FString OutputPinName = (OutputIndex == 0)
+            ? FString()
+            : FString::Printf(TEXT("%d"), OutputIndex);
+        
+        const bool bSuccess = UMaterialEditingLibrary::ConnectMaterialExpressions(
+            FunctionCall,
+            OutputPinName,
+            TargetFunctionCall,
+            TargetInputName);
+        
+        if (bSuccess)
+        {
+            UE_LOG(LogX_AssetEditor, Log, TEXT("保底回溯：成功将函数输出连接到节点输入 %s"), *TargetInputName);
+        }
+        else
+        {
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("保底回溯：连接到节点输入 %s 失败"), *TargetInputName);
+        }
+        
+        return bSuccess;
+    }
+    
+    UE_LOG(LogX_AssetEditor, Warning,
+        TEXT("保底回溯：不支持的Base+Emissive节点类型: %s"),
+        *TargetExpression->GetClass()->GetName());
+    
+    return false;
+}
 
 bool FX_MaterialFunctionConnector::PrepareForModification(UMaterial* Material)
 {

@@ -10,11 +10,22 @@
 #include "Kismet/KismetInternationalizationLibrary.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Interfaces/IPluginManager.h"
 
 #define LOCTEXT_NAMESPACE "FXTools_SwitchLanguageModule"
 
 void FXTools_SwitchLanguageModule::StartupModule()
 {
+	// 如果项目中已启用 Marketplace 版本的 SwitchLanguage 插件，则集成版保持空载，避免重复添加工具栏按钮
+	if (const TSharedPtr<IPlugin> ExternalSLPlugin = IPluginManager::Get().FindPlugin(TEXT("SwitchLanguage")))
+	{
+		if (ExternalSLPlugin->IsEnabled())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("XTools_SwitchLanguage: Detected external SwitchLanguage plugin enabled, integrated version will stay idle."));
+			return;
+		}
+	}
+
 	// 模块启动
 	FXTools_SwitchLanguageStyle::Initialize();
 	FXTools_SwitchLanguageStyle::ReloadTextures();

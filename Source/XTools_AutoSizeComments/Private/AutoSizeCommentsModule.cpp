@@ -13,6 +13,7 @@
 #include "ISettingsModule.h"
 #include "PropertyEditorModule.h"
 #include "Misc/CoreDelegates.h"
+#include "Interfaces/IPluginManager.h"
 
 #define LOCTEXT_NAMESPACE "FAutoSizeCommentsModule"
 #define ASC_ENABLED (!IS_MONOLITHIC && !UE_BUILD_SHIPPING && !UE_BUILD_TEST && !UE_GAME && !UE_SERVER)
@@ -22,6 +23,16 @@ DEFINE_LOG_CATEGORY(LogAutoSizeComments)
 void FAutoSizeCommentsModule::StartupModule()
 {
 #if ASC_ENABLED
+	// 如果项目中已启用 Marketplace 版本的 AutoSizeComments 插件，则集成版保持空载，避免重复初始化和节点工厂冲突
+	if (const TSharedPtr<IPlugin> ExternalASCPlugin = IPluginManager::Get().FindPlugin(TEXT("AutoSizeComments")))
+	{
+		if (ExternalASCPlugin->IsEnabled())
+		{
+			UE_LOG(LogAutoSizeComments, Warning, TEXT("XTools_AutoSizeComments: Detected external AutoSizeComments plugin enabled, integrated version will stay idle."));
+			return;
+		}
+	}
+
 	FCoreDelegates::OnPostEngineInit.AddRaw(this, &FAutoSizeCommentsModule::OnPostEngineInit);
 #endif
 }

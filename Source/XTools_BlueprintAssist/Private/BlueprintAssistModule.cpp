@@ -22,6 +22,7 @@
 #include "Developer/Settings/Public/ISettingsModule.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Modules/ModuleManager.h"
+#include "Interfaces/IPluginManager.h"
 
 #if WITH_EDITOR
 #include "MessageLogInitializationOptions.h"
@@ -39,6 +40,16 @@
 void FBlueprintAssistModule::StartupModule()
 {
 #if BA_ENABLED
+	// 如果项目中已启用 Marketplace 版本的 BlueprintAssist 插件，则集成版保持空载，避免重复初始化和样式冲突
+	if (const TSharedPtr<IPlugin> ExternalBAPlugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAssist")))
+	{
+		if (ExternalBAPlugin->IsEnabled())
+		{
+			UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools_BlueprintAssist: Detected external BlueprintAssist plugin enabled, integrated version will stay idle."));
+			return;
+		}
+	}
+
 	if (!FSlateApplication::IsInitialized())
 	{
 		UE_LOG(LogBlueprintAssist, Log, TEXT("FBlueprintAssistModule: Slate App is not initialized, not loading the plugin"));

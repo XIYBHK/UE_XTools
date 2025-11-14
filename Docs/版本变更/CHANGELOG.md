@@ -12,6 +12,7 @@
 - 优化 FieldSystemExtensions 默认行为、Sort 模块冗余结构与 BlueprintScreenshotTool 工具栏显示
 - 统一 XTools 核心工具及部分编辑器模块的错误/关键告警日志到 FXToolsErrorReporter
 - 调整 BlueprintExtensionsRuntime、Sort/SortEditor、X_AssetEditor 等模块的错误处理路径
+- 优化 MaterialTools 材质函数智能连接，失败时回溯 MaterialAttributes 链路并自动接入 BaseColor/自发光 节点
 
 ### 修复
 - 修复 UE 5.6 GetPasteLocation API 变化导致的 CI 编译错误
