@@ -31,6 +31,9 @@
 // 屏幕消息显示
 #include "Engine/Engine.h"
 
+// 撤销支持
+#include "ScopedTransaction.h"
+
 /**
  * 检查材质是否为引擎自带材质
  * @param Material 要检查的材质
@@ -232,6 +235,16 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
     {
         UE_LOG(LogX_AssetEditor, Warning, TEXT("材质或函数为空"));
         return nullptr;
+    }
+
+    // 创建撤销事务，包装整个材质函数添加操作
+    FScopedTransaction Transaction(NSLOCTEXT("XTools", "AddMaterialFunction", "添加材质函数"));
+    
+    // 准备材质修改（支持撤销）
+    if (!Material->Modify())
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("无法准备材质修改，撤销功能可能不可用: %s"), *Material->GetName());
+        // 继续执行，但撤销可能不工作
     }
 
     //  检查是否为引擎自带材质

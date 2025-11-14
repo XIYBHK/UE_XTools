@@ -94,6 +94,13 @@ public:
      */
     void OutputUnknownAssetDiagnostics(const FAssetData& AssetData, const FString& SimpleClassName) const;
 
+    /**
+     * 规范化数字后缀（转换为两位数格式）
+     * @param AssetName 资产名称
+     * @return 规范化后的名称
+     */
+    FString NormalizeNumericSuffix(const FString& AssetName);
+
 private:
     /** 单例实例 */
     static TUniquePtr<FX_AssetNamingManager> Instance;
@@ -108,6 +115,12 @@ private:
     TSet<FString> UserExcludedAssets;
 
     /**
+     * 已按 Key 长度倒序排序的父类前缀映射缓存
+     * 来自 UX_AssetEditorSettings::ParentClassPrefixMappings，只在 Initialize() 时构建
+     */
+    TArray<TPair<FString, FString>> SortedParentClassPrefixes;
+
+    /**
      * 显示重命名操作结果
      * @param Result 操作结果
      */
@@ -120,6 +133,15 @@ private:
      * @return true 如果尝试了重命名（成功或失败），false 如果跳过
      */
     bool RenameAssetInternal(const FAssetData& AssetData, FString& OutNewName);
+
+    /**
+     * 处理单个资产的命名规范化（供 RenameSelectedAssets 使用）
+     * 封装原本在 RenameSelectedAssets 中的 per-asset 逻辑，便于维护
+     */
+    void ProcessSingleAssetRename(const FAssetData& AssetData,
+        FX_RenameOperationResult& Result,
+        class IAssetRegistry& AssetRegistry,
+        class IAssetTools& AssetTools);
 
     /**
      * 重命名后修复重定向器
@@ -217,13 +239,6 @@ private:
      * @return 规范化的名称
      */
     FString GenerateVariantCompliantName(const FAssetData& AssetData, const FAssetNamingPattern& Pattern);
-
-    /**
-     * 规范化数字后缀（转换为两位数格式）
-     * @param AssetName 资产名称
-     * @return 规范化后的名称
-     */
-    FString NormalizeNumericSuffix(const FString& AssetName);
 
     /**
      * 生成唯一的资产名称（避免冲突）
