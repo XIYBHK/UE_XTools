@@ -17,6 +17,16 @@
 
 void FElectronicNodesModule::StartupModule()
 {
+	// 如果项目中已启用 Marketplace 版本的 ElectronicNodes 插件，则集成版保持空载，避免重复初始化和连接工厂冲突
+	if (const TSharedPtr<IPlugin> ExternalENPlugin = IPluginManager::Get().FindPlugin(TEXT("ElectronicNodes")))
+	{
+		if (ExternalENPlugin->IsEnabled())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("XTools_ElectronicNodes: Detected external ElectronicNodes plugin enabled, integrated version will stay idle."));
+			return;
+		}
+	}
+
 	const TSharedPtr<FENConnectionDrawingPolicyFactory> ENConnectionFactory = MakeShareable(
 		new FENConnectionDrawingPolicyFactory);
 	FEdGraphUtilities::RegisterVisualPinConnectionFactory(ENConnectionFactory);

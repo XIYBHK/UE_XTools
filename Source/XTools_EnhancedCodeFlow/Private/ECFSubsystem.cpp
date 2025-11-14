@@ -4,6 +4,7 @@
 #include "ECFActionBase.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Interfaces/IPluginManager.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
@@ -38,6 +39,16 @@ void UECFSubsystem::Deinitialize()
 
 bool UECFSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
+	// 如果项目中已启用 Marketplace 版本的 EnhancedCodeFlow 插件，则不创建 XTools 集成版子系统，避免重复调度和状态冲突
+	if (const TSharedPtr<IPlugin> ExternalECFPlugin = IPluginManager::Get().FindPlugin(TEXT("EnhancedCodeFlow")))
+	{
+		if (ExternalECFPlugin->IsEnabled())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("XTools_EnhancedCodeFlow: Detected external EnhancedCodeFlow plugin enabled, XTools subsystem will not be created."));
+			return false;
+		}
+	}
+
 	//  检查插件设置，如果未启用则不创建子系统
 	if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
 	{

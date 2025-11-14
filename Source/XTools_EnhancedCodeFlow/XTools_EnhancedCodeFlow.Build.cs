@@ -40,7 +40,8 @@ public class XTools_EnhancedCodeFlow : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
-				"XToolsCore"  // UE版本兼容性支持
+				"Projects",   // IPluginManager 所在模块，用于检测外部 EnhancedCodeFlow 插件
+				"XToolsCore"  // UE 版本兼容性支持
 			}
 		);
 
