@@ -12,66 +12,72 @@
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBANodeData
 {
-	GENERATED_BODY()
+    GENERATED_USTRUCT_BODY()
 
 protected:
-	UPROPERTY()
-	FIntPoint Size = FIntPoint(0, 0); // node size
+    UPROPERTY()
+    FIntPoint Size = FIntPoint(0, 0); // node size
 
-	UPROPERTY()
-	FIntPoint BSize = FIntPoint(0, 0); // comment bubble size
+    UPROPERTY()
+    FIntPoint BSize = FIntPoint(0, 0); // comment bubble size
+
 public:
 
-	UPROPERTY()
-	TMap<FGuid, float> CachedPins; // pin guid -> pin offset
+    UPROPERTY()
+    TMap<FGuid, float> CachedPins; // pin guid -> pin offset
 
-	UPROPERTY()
-	bool bLocked = false;
+    UPROPERTY()
+    bool bLocked = false;
 
-	UPROPERTY()
-	FGuid NodeGroup;
+    UPROPERTY()
+    FGuid NodeGroup;
 
-	UPROPERTY()
-	TArray<FGuid> NodeGroups;
+    UPROPERTY()
+    FIntPoint Last = FIntPoint(0, 0); // last formatted position
 
-	void ResetSize()
-	{
-		Size = FIntPoint(0, 0);
-		BSize = FIntPoint(0, 0);
-		CachedPins.Reset();
-	}
+    UPROPERTY()
+    FGuid LastRoot; // last formatted root node 
 
-	bool HasSize() const
-	{
-		return Size.X != 0 && Size.Y != 0;
-	}
+    void ResetSize()
+    {
+        Size = FIntPoint(0, 0);
+        BSize = FIntPoint(0, 0);
+        CachedPins.Reset();
+    }
 
-	void SetSize(const FVector2D& InSize)
-	{
-		Size.X = FMath::RoundToInt(InSize.X);
-		Size.Y = FMath::RoundToInt(InSize.Y);
-	}
+    bool HasSize() const
+    {
+        return Size.X != 0 && Size.Y != 0;
+    }
 
-	const FIntPoint& GetNodeSize() const { return Size; }
+    void SetSize(const FVector2D& InSize)
+    {
+        Size.X = FMath::RoundToInt(InSize.X);
+        Size.Y = FMath::RoundToInt(InSize.Y);
+    }
 
-	bool HasCommentBubbleSize() const
-	{
-		return BSize.X != 0 && BSize.Y != 0;
-	}
+    const FIntPoint& GetNodeSize() const { return Size; }
 
-	void SetCommentBubbleSize(const FVector2D& InSize)
-	{
-		BSize.X = FMath::RoundToInt(InSize.X);
-		BSize.Y = FMath::RoundToInt(InSize.Y);
-	}
+    bool HasCommentBubbleSize() const
+    {
+        return BSize.X != 0 && BSize.Y != 0;
+    }
 
-	const FIntPoint& GetCommentBubbleSize() const { return BSize; }
+    void SetCommentBubbleSize(const FVector2D& InSize)
+    {
+        BSize.X = FMath::RoundToInt(InSize.X);
+        BSize.Y = FMath::RoundToInt(InSize.Y);
+    }
+
+    const FIntPoint& GetCommentBubbleSize() const { return BSize; }
+
+    void SetLastFormatted(UEdGraphNode* Node);
 };
 
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBAGraphData
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 
 	UPROPERTY()
 	TMap<FGuid, FBANodeData> NodeData; // node guid -> node data
@@ -80,13 +86,15 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAGraphData
 
 	FBANodeData& GetNodeData(UEdGraphNode* Node);
 
+	FBANodeData* GetNodeDataPtr(UEdGraphNode* Node);
+
 	bool bTriedLoadingMetaData = false;
 };
 
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBAPackageData
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 
 	UPROPERTY()
 	TMap<FGuid, FBAGraphData> GraphData; // graph guid -> graph data
@@ -95,7 +103,7 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAPackageData
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBACacheData
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 
 	UPROPERTY()
 	TMap<FName, FBAPackageData> PackageData; // package name -> package data
@@ -124,6 +132,8 @@ public:
 	void DeleteCache();
 
 	void CleanupFiles();
+
+	void ClearLastFormatted();
 
 	FBAGraphData& GetGraphData(UEdGraph* Graph);
 

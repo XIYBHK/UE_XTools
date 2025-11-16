@@ -17,10 +17,16 @@
 #include "BlueprintAssistToolbar.h"
 #include "BlueprintEditorModule.h"
 #include "PropertyEditorModule.h"
+#include "WorkspaceMenuStructure.h"
+#include "WorkspaceMenuStructureModule.h"
 #include "BlueprintAssistObjects/BARootObject.h"
 #include "BlueprintAssistWidgets/BADebugMenu.h"
+#include "BlueprintAssistWidgets/BASettingsChangeWindow.h"
+#include "BlueprintAssistWidgets/BAWelcomeScreen.h"
+#include "BlueprintAssistMisc/BACrashReporter.h"
 #include "Developer/Settings/Public/ISettingsModule.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Interfaces/IMainFrameModule.h"
 #include "Modules/ModuleManager.h"
 #include "Interfaces/IPluginManager.h"
 
@@ -108,6 +114,19 @@ void FBlueprintAssistModule::OnPostEngineInit()
 
 	SBADebugMenu::RegisterNomadTab();
 
+	// Register new widget tabs
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBAWelcomeScreen::GetTabId(), FOnSpawnTab::CreateStatic(&SBAWelcomeScreen::CreateTab))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
+		.SetDisplayName(INVTEXT("BA Welcome Screen"))
+		.SetIcon(FSlateIcon("EditorStyle", "Icons.Help"))
+		.SetTooltipText(INVTEXT("Opens the Blueprint Assist Welcome Screen"));
+
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBASettingsChangeWindow::GetTabId(), FOnSpawnTab::CreateStatic(&SBASettingsChangeWindow::CreateTab))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
+		.SetDisplayName(INVTEXT("BA Settings Changes"))
+		.SetIcon(FSlateIcon("EditorStyle", "Icons.Help"))
+		.SetTooltipText(INVTEXT("View Blueprint Assist settings changes"));
+
 	RootObject = NewObject<UBARootObject>();
 	RootObject->AddToRoot();
 	RootObject->Init();
@@ -160,6 +179,10 @@ void FBlueprintAssistModule::ShutdownModule()
 		SettingsModule->UnregisterSettings("Editor", "Plugins", "BlueprintAssist_EditorFeatures");
 		SettingsModule->UnregisterSettings("Editor", "Plugins", "BlueprintAssist_Advanced");
 	}
+
+	// Unregister widget tabs
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SBAWelcomeScreen::GetTabId());
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SBASettingsChangeWindow::GetTabId());
 
 	FBACommands::Unregister();
 	FBAToolbarCommands::Unregister();

@@ -326,7 +326,7 @@ FSlateRect FBAUtils::GetNodeBounds(TSharedPtr<SGraphNode> GraphNode)
 {
 	if (GraphNode)
 	{
-		return FSlateRect::FromPointAndExtent(GraphNode->GetPosition(), GraphNode->GetDesiredSize());
+		return FSlateRect::FromPointAndExtent(FBAUtils::GetGraphNodePos(GraphNode), GraphNode->GetDesiredSize());
 	}
 
 	return FSlateRect();
@@ -1638,19 +1638,22 @@ FString FBAUtils::GetNodeName(const UEdGraphNode* Node)
 
 FString FBAUtils::GetGraphName(const UEdGraph* Graph)
 {
-	if (!Graph)
+	if (!IsValid(Graph))
 	{
-		return FString("Null");
+		return "NULL";
 	}
 
-	if (const UEdGraphSchema* GraphSchema = Graph->GetSchema())
+	return Graph->GetFName().ToString();
+}
+
+FString FBAUtils::GetGraphDisplayName(UEdGraph* Graph)
+{
+	if (!IsValid(Graph))
 	{
-		FGraphDisplayInfo DisplayInfo;
-		GraphSchema->GetGraphDisplayInformation(*Graph, DisplayInfo);
-		return DisplayInfo.DisplayName.ToString();
+		return "NULL";
 	}
 
-	return Graph->GetName();
+	return Graph->GetFName().ToString();
 }
 
 FSlateRect FBAUtils::FSlateRectFromVectors(const FVector2D& A, const FVector2D& B)
@@ -1888,6 +1891,16 @@ bool FBAUtils::IsWidgetOfAnyType(TSharedPtr<SWidget> Widget, const TArray<FName>
 	}
 
 	return false;
+}
+
+bool FBAUtils::IsWidgetOfAnyType(TSharedPtr<SWidget> Widget, const TSet<FName>& Types)
+{
+	if (!Widget.IsValid())
+	{
+		return false;
+	}
+
+	return Types.Contains(Widget->GetType());
 }
 
 TSharedPtr<SWidget> FBAUtils::GetChildWidget(
@@ -3812,3 +3825,25 @@ FText FBAUtils::GetNodeTitle(UEdGraphNode* Node)
 	return Node->GetNodeTitle(ENodeTitleType::FullTitle);
 }
 
+FBAVector2 FBAUtils::GetGraphEditorPasteLocation(TSharedPtr<SGraphEditor> Editor)
+{
+#if BA_UE_VERSION_OR_LATER(5, 6)
+	return Editor->GetPasteLocation2f();
+#else
+	return Editor->GetPasteLocation();
+#endif
+}
+
+FVector2D FBAUtils::GetGraphNodeMarqueeSize(TSharedPtr<SGraphNode> GraphNode)
+{
+#if BA_UE_VERSION_OR_LATER(5, 6)
+	return GraphNode->GetDesiredSizeForMarquee2f();
+#else
+	return GraphNode->GetDesiredSizeForMarquee();
+#endif
+}
+
+FVector2D FBAUtils::GetGraphNodePos(TSharedPtr<SGraphNode> GraphNode)
+{
+	return GraphNode->GetPosition();
+}

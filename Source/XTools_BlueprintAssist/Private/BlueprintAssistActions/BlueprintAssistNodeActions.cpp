@@ -4,7 +4,8 @@
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
-#include "BlueprintAssistSettings_Advanced.h"
+#include "BlueprintAssistSettings.h"
+#include "BlueprintAssistUtils.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "EdGraphUtilities.h"
 #include "K2Node_CallFunction.h"
@@ -789,22 +790,8 @@ void FBANodeActions::OnGetContextMenuActions(const bool bUsePin)
 	}
 
 	TSharedPtr<SGraphEditor> GraphEditor = GraphHandler->GetGraphEditor();
-	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
-	const FBAVector2 MenuLocation(CursorPos.X, CursorPos.Y);
-	
-#if BA_UE_VERSION_OR_LATER(5, 7)
-	// UE 5.7+: 引擎返回 FVector2D，但 FBAVector2 是 FVector2f，需要显式转换
-	const FVector2D EnginePasteLocation = GraphEditor->GetPasteLocation();
-	const FBAVector2 SpawnLocation(EnginePasteLocation.X, EnginePasteLocation.Y);
-#elif BA_UE_VERSION_OR_LATER(5, 6)
-	// UE 5.6: 引擎返回 FVector2D，但 FBAVector2 是 FVector2f，需要显式转换
-	const FVector2D EnginePasteLocation = GraphEditor->GetPasteLocation();
-	const FBAVector2 SpawnLocation(EnginePasteLocation.X, EnginePasteLocation.Y);
-#else
-	// UE 5.5-: 引擎返回 FVector2D，FBAVector2 也是 FVector2D，直接赋值
-	const FVector2D PasteLocation = GraphEditor->GetPasteLocation();
-	const FBAVector2 SpawnLocation(PasteLocation.X, PasteLocation.Y);
-#endif
+	const FVector2D MenuLocation = FSlateApplication::Get().GetCursorPos();
+	const FVector2D SpawnLocation = FVector2D(FBAUtils::GetGraphEditorPasteLocation(GraphEditor));
 
 	UEdGraphNode* Node = GraphHandler->GetSelectedNode();
 
@@ -1308,7 +1295,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 	}
 
 	// keep track of these pins
-	TMap<FBANodePinHandle, bool> InitialLoopingState;
+	TMap<FBAGraphPinHandle, bool> InitialLoopingState;
 	for (UEdGraphNode* SelectedNode : SelectedNodes)
 	{
 		TArray<UEdGraphPin*> ExecLinks = FBAUtils::GetLinkedPins(SelectedNode, Direction).FilterByPredicate(FBAUtils::IsExecPin);
@@ -1317,11 +1304,11 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 			// should this be checking execution in the graph direction? (can you even have looping nodes on a non-bp graph?)
 			UEdGraphPin* LinkedTo = Pin->LinkedTo[0];
 			bool bNewLoopingState = FBAUtils::DoesNodeHaveExecutionTo(LinkedTo->GetOwningNode(), Pin->GetOwningNode(), EGPD_Output);
-			InitialLoopingState.Add(FBANodePinHandle(Pin), bNewLoopingState);
+			InitialLoopingState.Add(FBAGraphPinHandle(Pin), bNewLoopingState);
 		}
 	}
 
-	FBANodePinHandle PinInDirection(LinkedPins[0]);
+	FBAGraphPinHandle PinInDirection(LinkedPins[0]);
 	if (PinInDirection.GetPin()->LinkedTo.Num() == 0)
 	{
 		return;
@@ -1335,7 +1322,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		return;
 	}
 
-	FBANodePinHandle PinOpposite = PinsOpposite[0];
+	FBAGraphPinHandle PinOpposite = PinsOpposite[0];
 
 	FDebugLocal::DrawPin(GraphHandler, PinInDirection.GetPin(), "PinInDir");
 	FDebugLocal::DrawPin(GraphHandler, PinOpposite.GetPin(), "PinOpposite");
@@ -1355,12 +1342,12 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 	// {
 	// 	UE_LOG(LogBlueprintAssist, Warning, TEXT("\tPinInD LinkedTo %s"), *FBAUtils::GetPinName(InDLinkedTo, true));
 	// }
-	FBANodePinHandle PinA(PinInDLinkedTo[0]);
+	FBAGraphPinHandle PinA(PinInDLinkedTo[0]);
 
 	FDebugLocal::DrawPin(GraphHandler, PinA.GetPin(), "PinA");
 	// UE_LOG(LogBlueprintAssist, Warning, TEXT("PinA %s"), *FBAUtils::GetPinName(PinA.GetPin(), true));
 
-	UEdGraphNode* NodeA = PinA.GetNode();
+	UEdGraphNode* NodeA = PinA.GetPin()->GetOwningNode();
 
 	if (!FBAUtils::HasExecInOut(NodeA))
 	{
@@ -1369,14 +1356,14 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 
 	// For the linked pins on NodeA, do not create any looping pins
 	{
-		TArray<UEdGraphPin*> NodeA_LinkedPins = FBAUtils::GetLinkedPins(NodeA, PinA->Direction).FilterByPredicate(FBAUtils::IsExecPin);
+		TArray<UEdGraphPin*> NodeA_LinkedPins = FBAUtils::GetLinkedPins(NodeA, PinA.GetPin()->Direction).FilterByPredicate(FBAUtils::IsExecPin);
 		for (UEdGraphPin* Pin : NodeA_LinkedPins)
 		{
 			UEdGraphPin* LinkedPin = Pin->LinkedTo[0];
 
 			// should this be checking execution in the graph direction? (can you even have looping nodes on a non-bp graph?)
 			bool bNewLoopingState = FBAUtils::DoesNodeHaveExecutionTo(LinkedPin->GetOwningNode(), Pin->GetOwningNode(), EGPD_Output);
-			InitialLoopingState.Add(FBANodePinHandle(Pin), bNewLoopingState);
+			InitialLoopingState.Add(FBAGraphPinHandle(Pin), bNewLoopingState);
 		}
 	}
 
@@ -1386,7 +1373,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 	const FText TransactionDesc = Direction == EGPD_Output ? INVTEXT("Swap Node(s) Right") : INVTEXT("Swap Node(s) Left"); 
 	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(TransactionDesc));
 
-	FBANodePinHandle PinAInDirection;
+	FBAGraphPinHandle PinAInDirection;
 	{
 		TArray<UEdGraphPin*> PinsAInDirection = FBAUtils::GetPinsByDirection(NodeA, Direction).FilterByPredicate(FBAUtils::IsExecPin);
 		if (PinsAInDirection.Num() > 0)
@@ -1398,13 +1385,13 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 			PendingConnections.Add(FPinLink(PinAInDirection.GetPin(), PinOpposite.GetPin()));
 
 			// Optional PinB
-			if (PinAInDirection->LinkedTo.Num() > 0)
+			if (PinAInDirection.GetPin()->LinkedTo.Num() > 0)
 			{
-				PinAInDirection->LinkedTo.StableSort(TopMostPinSort);
-				for (int i = 0; i < PinAInDirection->LinkedTo.Num(); ++i)
+				PinAInDirection.GetPin()->LinkedTo.StableSort(TopMostPinSort);
+				for (int i = 0; i < PinAInDirection.GetPin()->LinkedTo.Num(); ++i)
 				{
-					UEdGraphPin* PinB = PinAInDirection->LinkedTo[i];
-					if (PinB->GetOwningNode() != PinInDirection->GetOwningNode())
+					UEdGraphPin* PinB = PinAInDirection.GetPin()->LinkedTo[i];
+					if (PinB->GetOwningNode() != PinInDirection.GetPin()->GetOwningNode())
 					{
 						FDebugLocal::DrawPin(GraphHandler, PinB, FString::Printf(TEXT("PinB_%d"), i));
 						// UE_LOG(LogBlueprintAssist, Warning, TEXT("PinB %s"), *FBAUtils::GetPinName(PinB, true));
@@ -1426,7 +1413,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 			for (int i = 0; i < LinkedToPinOpposite.Num(); ++i)
 			{
 				UEdGraphPin* PinC = PinOpposite.GetPin()->LinkedTo[i];
-				if (PinC->GetOwningNode() != PinA->GetOwningNode())
+				if (PinC->GetOwningNode() != PinA.GetPin()->GetOwningNode())
 				{
 					FDebugLocal::DrawPin(GraphHandler, PinC, FString::Printf(TEXT("PinC_%d"), i));
 					// UE_LOG(LogBlueprintAssist, Warning, TEXT("PinC %s"), *FBAUtils::GetPinName(PinC, true));
@@ -1439,7 +1426,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 	}
 
 	// Get PinInDirection links and link them to PinAInDirection
-	for (UEdGraphPin* Pin : PinInDirection->LinkedTo)
+	for (UEdGraphPin* Pin : PinInDirection.GetPin()->LinkedTo)
 	{
 		if (Pin->GetOwningNode() != NodeA)
 		{
@@ -1453,7 +1440,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 	}
 
 	// Get PinA links and link them to PinOpposite
-	for (UEdGraphPin* Pin : PinA->LinkedTo)
+	for (UEdGraphPin* Pin : PinA.GetPin()->LinkedTo)
 	{
 		if (!SelectedNodes.Contains(Pin->GetOwningNode()))
 		{
@@ -1506,7 +1493,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		if (AutoFormatting == EBAAutoFormatting::FormatSingleConnected)
 		{
 			FormatterParams.NodesToFormat.GetNodesWeak().Append(SelectedNodes);
-			FormatterParams.NodesToFormat.GetNodesWeak().Add(PinInDirection.GetNode());
+			FormatterParams.NodesToFormat.GetNodesWeak().Add(PinInDirection.GetPin()->GetOwningNode());
 		}
 
 		GraphHandler->AddPendingFormatNodes(NodeInDirection, Transaction, FormatterParams);
@@ -1543,13 +1530,13 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		Node->NodePosY += DeltaY_A;
 	}
 
-	if (UBASettings_Advanced::Get().bRemoveLoopingCausedBySwapping)
+	if (UBASettings::Get().bRemoveLoopingCausedBySwapping)
 	{
 		// TODO the additional transaction does not work if auto-formatting is enabled since the previous transaction still exists in the graph handler
 		Transaction.Reset();
 		Transaction = MakeShareable(new FScopedTransaction(INVTEXT("Disconnect Looping Swap Nodes")));
 
-		for (TTuple<FBANodePinHandle, bool>& LoopingState : InitialLoopingState)
+		for (TTuple<FBAGraphPinHandle, bool>& LoopingState : InitialLoopingState)
 		{
 			bool bOldLoopingState = LoopingState.Value;
 			UEdGraphPin* Pin = LoopingState.Key.GetPin();

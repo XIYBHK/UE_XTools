@@ -2,8 +2,11 @@
 
 #include "BlueprintAssistSettings.h"
 
-#include "BlueprintAssistCache.h"
 #include "BlueprintAssistGlobals.h"
+#include "BlueprintAssistUtils.h"
+#include "JsonObjectConverter.h"
+#include "BlueprintAssistMisc/BASettingsBase.h"
+#include "BlueprintAssistCache.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistModule.h"
 #include "BlueprintAssistTabHandler.h"
@@ -24,8 +27,7 @@ EBAAutoFormatting FBAFormatterSettings::GetAutoFormatting() const
 	return UBASettings::Get().bGloballyDisableAutoFormatting ? EBAAutoFormatting::Never : AutoFormatting; 
 }
 
-UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+UBASettings::UBASettings()
 {
 	UseBlueprintFormattingForTheseGraphs =
 	{
@@ -128,6 +130,8 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	);
 
 	BehaviorTreeSettings.FormatterType = EBAFormatterType::BehaviorTree;
+
+	BehaviorTreeBranchExtraPadding = 100.0f;
 
 	NonBlueprintFormatterSettings.Add("BehaviorTreeGraph", BehaviorTreeSettings);
 
@@ -491,4 +495,84 @@ FBAFormatterSettings* UBASettings::FindFormatterSettings(UEdGraph* Graph)
 	}
 
 	return nullptr; 
+}
+
+// UBASettingsBase functionality implementation
+void UBASettings::SaveSettingsDefaults()
+{
+	DefaultsAsJson = MakeShareable(new FJsonObject);
+	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, DefaultsAsJson.ToSharedRef());
+}
+
+TArray<FBASettingsChange> UBASettings::GetChanges() const
+{
+	TArray<FBASettingsChange> Changes;
+
+	if (!DefaultsAsJson.IsValid())
+	{
+		return Changes;
+	}
+
+	// load our current state into json to compare with the saved json
+	TSharedRef<FJsonObject> Curr = MakeShareable(new FJsonObject);
+	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, Curr);
+
+	// iter our current properties
+	for (auto& Elem : Curr->Values)
+	{
+		// find the saved property from our json
+		if (TSharedPtr<FJsonValue> DefaultValue = DefaultsAsJson->Values.FindRef(Elem.Key))
+		{
+			const FJsonValue& Default = DefaultValue.ToSharedRef().Get();
+			const FJsonValue& New = Elem.Value.ToSharedRef().Get();
+			if (Default != New)
+			{
+				Changes.Add(FBASettingsChange(Elem.Key, DefaultValue, Elem.Value));
+			}
+		}
+	}
+
+	return Changes;
+}
+
+FString UBASettings::GetAllChangesAsString() const
+{
+	FString Changes;
+
+	if (!DefaultsAsJson.IsValid())
+	{
+		return Changes;
+	}
+
+	// load our current state into json to compare with the saved json
+	TSharedRef<FJsonObject> Curr = MakeShareable(new FJsonObject);
+	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, Curr);
+
+	// iter our current properties
+	for (auto& Elem : Curr->Values)
+	{
+		// find the saved property from our json
+		if (TSharedPtr<FJsonValue> DefaultValue = DefaultsAsJson->Values.FindRef(Elem.Key))
+		{
+			const FJsonValue& Default = DefaultValue.ToSharedRef().Get();
+			const FJsonValue& New = Elem.Value.ToSharedRef().Get();
+			if (Default != New)
+			{
+				FString Value = FBASettingsChange::GetJsonValueAsString(Elem.Key, Elem.Value);
+				FString Line = FString::Printf(TEXT("%s: \"%s\""), *Elem.Key, *Value);
+				Changes.Append(Line).Append(LINE_TERMINATOR);
+			}
+		}
+	}
+
+	return Changes;
+}
+
+void UBASettings::ResetToDefault()
+{
+	TArray<FBASettingsChange> Changes = GetChanges();
+	for (FBASettingsChange& Change : Changes)
+	{
+		Change.ResetToDefault(this);
+	}
 }

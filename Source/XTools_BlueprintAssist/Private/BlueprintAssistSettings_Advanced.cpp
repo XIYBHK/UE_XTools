@@ -18,4 +18,8 @@ UBASettings_Advanced::UBASettings_Advanced(const FObjectInitializer& ObjectIniti
 	//~~~ Misc
 	bUseCustomBlueprintActionMenu = false;
 	bForceRefreshGraphAfterFormatting = false;
+
+	//~~~ Crash Reporting
+	bIncludeNodesInCrashReport = true;
+	bIncludeSettingsInCrashReport = true;
 }

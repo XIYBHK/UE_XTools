@@ -4,6 +4,13 @@
 #include "UObject/Object.h"
 #include "BlueprintAssistSettings_Advanced.generated.h"
 
+UENUM()
+enum class EBACrashReportingMethod : uint8
+{
+	Ask UMETA(DisplayName = "Ask", Tooltip = "Always ask when finding unsent crash reports"),
+	Never UMETA(DisplayName = "Never send", Tooltip = "Don't check for crash reports"),
+};
+
 UCLASS(config = EditorPerProjectUserSettings)
 class XTOOLS_BLUEPRINTASSIST_API UBASettings_Advanced final : public UObject
 {
@@ -42,6 +49,18 @@ public:
 	/* Hacky workaround to ensure that default comment nodes will be correctly resized after formatting */
 	UPROPERTY(EditAnywhere, config, Category = "Misc|Experimental", meta = (DisplayName = "格式化后强制刷新图表", Tooltip = "确保默认注释节点在格式化后正确调整大小的临时解决方案"))
 	bool bForceRefreshGraphAfterFormatting;
+
+	/** Include a copy of the node graph used when you crashed while formatting */
+	UPROPERTY(config)
+	bool bIncludeNodesInCrashReport;
+
+	/** Include your Blueprint Assist formatting settings */
+	UPROPERTY(config)
+	bool bIncludeSettingsInCrashReport;
+
+	/** Determines what to do with Blueprint Assist crash reports when launching the editor */
+	UPROPERTY(EditAnywhere, config, Category = "Crash Reporter")
+	EBACrashReportingMethod CrashReportingMethod = EBACrashReportingMethod::Ask;
 
 	FORCEINLINE static const UBASettings_Advanced& Get() { return *GetDefault<UBASettings_Advanced>(); }
 	FORCEINLINE static UBASettings_Advanced& GetMutable() { return *GetMutableDefault<UBASettings_Advanced>(); }

@@ -3,9 +3,8 @@
 #include "BlueprintAssistCache.h"
 
 #include "BlueprintAssistGlobals.h"
-#include "BlueprintAssistModule.h"
-#include "BlueprintAssistSettings.h"
 #include "BlueprintAssistSettings_Advanced.h"
+#include "BlueprintAssistSettings.h"
 #include "BlueprintAssistUtils.h"
 #include "Editor.h"
 #include "GeneralProjectSettings.h"
@@ -187,6 +186,21 @@ void FBACache::CleanupFiles()
 	}
 }
 
+void FBACache::ClearLastFormatted()
+{
+	for (TPair<FName, FBAPackageData>& PackageData : CacheData.PackageData)
+	{
+		for (TPair<FGuid, FBAGraphData>& GraphData : PackageData.Value.GraphData)
+		{
+			for (TPair<FGuid, FBANodeData>& NodeData : GraphData.Value.NodeData)
+			{
+				NodeData.Value.Last.X = 0;
+				NodeData.Value.Last.Y = 0;
+			}
+		}
+	}
+}
+
 FBAGraphData& FBACache::GetGraphData(UEdGraph* Graph)
 {
 	check(Graph);
@@ -210,7 +224,7 @@ FString FBACache::GetProjectSavedCachePath(bool bFullPath)
 
 FString FBACache::GetPluginCachePath(bool bFullPath)
 {
-	FString PluginDir = IPluginManager::Get().FindPlugin("XTools")->GetBaseDir();
+	FString PluginDir = IPluginManager::Get().FindPlugin("BlueprintAssist")->GetBaseDir();
 
 	if (bFullPath)
 	{
@@ -319,6 +333,12 @@ void FBACache::ClearPackageMetaData(UEdGraph* Graph)
 	}
 }
 
+void FBANodeData::SetLastFormatted(UEdGraphNode* Node)
+{
+	Last.X = Node->NodePosX;
+	Last.Y = Node->NodePosY;
+}
+
 void FBAGraphData::CleanupGraph(UEdGraph* Graph)
 {
 	if (Graph == nullptr)
@@ -373,6 +393,11 @@ void FBAGraphData::CleanupGraph(UEdGraph* Graph)
 FBANodeData& FBAGraphData::GetNodeData(UEdGraphNode* Node)
 {
 	return NodeData.FindOrAdd(FBAUtils::GetNodeGuid(Node));
+}
+
+FBANodeData* FBAGraphData::GetNodeDataPtr(UEdGraphNode* Node)
+{
+	return NodeData.Find(FBAUtils::GetNodeGuid(Node));
 }
 
 #if BA_UE_VERSION_OR_LATER(5, 0)

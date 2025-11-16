@@ -7,6 +7,8 @@
 #include "InputCoreTypes.h"
 #include "EdGraph/EdGraphNode.h"
 #include "Framework/Commands/InputChord.h"
+#include "Engine/DeveloperSettings.h"
+#include "BlueprintAssistMisc/BASettingsBase.h"
 #include "BlueprintAssistSettings.generated.h"
 
 #define BA_DEBUG_EARLY_EXIT(string) do { if (UBASettings::HasDebugSetting(string)) return; } while(0)
@@ -158,13 +160,13 @@ struct FBAFormatterSettings
 	EBAAutoFormatting GetAutoFormatting() const;
 };
 
-UCLASS(config = EditorPerProjectUserSettings)
-class XTOOLS_BLUEPRINTASSIST_API UBASettings final : public UObject
+UCLASS(config = EditorPerProjectUserSettings, meta = (DisplayName = "Blueprint Assist"))
+class XTOOLS_BLUEPRINTASSIST_API UBASettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
 public:
-	UBASettings(const FObjectInitializer& ObjectInitializer);
+	UBASettings();
 	
 	static FORCEINLINE const UBASettings& Get()
 	{
@@ -423,6 +425,10 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = OtherGraphs, meta = (DisplayName = "非蓝图图表格式化器设置", Tooltip = "为其他图表类型（如行为树、材质图表等）配置格式化设置"))
 	TMap<FName, FBAFormatterSettings> NonBlueprintFormatterSettings;
 
+	/* Extra padding to add between branches */
+	UPROPERTY(EditAnywhere, config, Category = BehaviorTree)
+	float BehaviorTreeBranchExtraPadding;
+
 	////////////////////////////////////////////////////////////
 	// Comment Settings
 	////////////////////////////////////////////////////////////
@@ -518,11 +524,6 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = NewFunctionDefaults, meta = (EditCondition = "bEnableFunctionDefaults", DisplayName = "默认分类", Tooltip = "新函数的默认分类"))
 	FText DefaultFunctionCategory;
 
-	////////////////////////////////////////////////////////////
-	// Misc
-	////////////////////////////////////////////////////////////
-
-	/* Disable the plugin (requires restarting engine) */
 	UPROPERTY(EditAnywhere, config, Category = Misc, meta=(ConfigRestartRequired = "true", DisplayName = "禁用插件", Tooltip = "禁用 Blueprint Assist 插件（需要重启引擎）"))
 	bool bDisableBlueprintAssistPlugin;
 
@@ -589,6 +590,14 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = Experimental, meta = (DisplayName = "对齐到 8x8 网格", Tooltip = "格式化时将执行节点对齐到 8x8 网格"))
 	bool bAlignExecNodesTo8x8Grid;
 
+	/* Remove looping connections caused by swapping nodes */
+	UPROPERTY(EditAnywhere, config, Category = Advanced, meta = (DisplayName = "移除交换节点导致的循环", Tooltip = "移除由于交换节点而导致的循环连接"))
+	bool bRemoveLoopingCausedBySwapping = true;
+
+	/* Show welcome screen on startup */
+	UPROPERTY(EditAnywhere, config, Category = General, meta = (DisplayName = "显示欢迎界面", Tooltip = "启动时显示欢迎界面"))
+	bool bShowWelcomeScreen = true;
+
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 
 	static FBAFormatterSettings GetFormatterSettings(UEdGraph* Graph);
@@ -598,6 +607,14 @@ public:
 	{
 		return Get().BlueprintAssistDebug.Contains(Setting);
 	}
+
+	// UBASettingsBase functionality
+	TSharedPtr<FJsonObject> DefaultsAsJson;
+
+	void SaveSettingsDefaults();
+	TArray<FBASettingsChange> GetChanges() const;
+	FString GetAllChangesAsString() const;
+	void ResetToDefault();
 };
 
 class FBASettingsDetails final : public IDetailCustomization

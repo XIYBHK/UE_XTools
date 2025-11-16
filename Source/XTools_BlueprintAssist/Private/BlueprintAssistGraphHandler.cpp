@@ -3378,7 +3378,7 @@ bool FBAGraphHandler::CacheNodeSize(UEdGraphNode* Node)
 	// for comment nodes we only want to cache the title bar height
 	if (FBAUtils::IsCommentNode(Node))
 	{
-		Size.Y = GraphNode->GetDesiredSizeForMarquee().Y;
+		Size.Y = FBAUtils::GetGraphNodeMarqueeSize(GraphNode).Y;
 	}
 
 	// cache pin offset

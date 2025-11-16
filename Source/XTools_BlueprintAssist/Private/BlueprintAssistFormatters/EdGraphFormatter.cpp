@@ -2,6 +2,7 @@
 
 #include "BlueprintAssistFormatters/EdGraphFormatter.h"
 
+#include "BlueprintAssistCache.h"
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings.h"

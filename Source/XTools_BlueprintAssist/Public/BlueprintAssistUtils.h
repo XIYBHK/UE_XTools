@@ -27,10 +27,6 @@ class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
 
-#define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
-#define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)
-#define FIND_CHILD_WIDGET(Widget, WidgetClass) FBAUtils::GetChildWidgetCasted<WidgetClass>(Widget, #WidgetClass)
-
 UENUM()
 enum class EBARoundingMethod : uint8
 {
@@ -197,8 +193,14 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static FString GetGraphName(const UEdGraph* Graph);
 
+	static FString GetGraphDisplayName(UEdGraph* Graph);
+
+	static FString GetPinName(UEdGraphPin* Pin, bool bIncludeOwningNode = false);
+
 	static void PrintNodeInfo(UEdGraphNode* Node);
 	static void PrintNodeArray(const TArray<UEdGraphNode*>& Nodes, const FString& InitialMessage = FString());
+
+	static void PrintChildWidgets(TSharedPtr<SWidget> Widget);
 
 	static bool IsPinLinked(const UEdGraphPin* Pin);
 
@@ -333,13 +335,11 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static bool ArePinsStraightened(TSharedPtr<FBAGraphHandler> GraphHandler, FPinLink& PinLink);
 
-	static FSlateRect GetGraphPanelBounds(TSharedPtr<SGraphPanel> GraphPanel);
-
-	static bool IsNodeVisible(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphNode* Node);
-
-	static FString GetPinName(UEdGraphPin* Pin, bool bIncludeOwningNode = false);
-
-	static void PrintChildWidgets(TSharedPtr<SWidget> Widget);
+	static FSlateRect GetCachedNodeBounds(
+		TSharedPtr<FBAGraphHandler> GraphHandler,
+		TSharedPtr<SWidget> Widget,
+		const FString& WidgetTypeName,
+		bool bCheckContains = false);
 
 	static bool IsWidgetOfType(
 		TSharedPtr<SWidget> Widget,
@@ -348,15 +348,13 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static bool IsWidgetOfTypeFast(TSharedPtr<SWidget> Widget, const FName& WidgetTypeName);
 	static bool IsWidgetOfAnyType(TSharedPtr<SWidget> Widget, const TArray<FName>& Types);
+	static bool IsWidgetOfAnyType(TSharedPtr<SWidget> Widget, const TSet<FName>& Types);
 
 	template <class WidgetClass>
 	static TSharedPtr<WidgetClass> CastWidgetByTypeName(
 		TSharedPtr<SWidget> Widget,
 		const FString& WidgetTypeName,
-		bool bCheckContains = false)
-	{
-		return IsWidgetOfType(Widget, WidgetTypeName, bCheckContains) ? StaticCastSharedPtr<WidgetClass>(Widget) : nullptr;
-	}
+		bool bCheckContains = false);
 
 	static TSharedPtr<SWidget> GetChildWidget(
 		TSharedPtr<SWidget> Widget,
@@ -385,15 +383,7 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	static TSharedPtr<WidgetClass> GetChildWidgetCasted(
 		TSharedPtr<SWidget> Widget,
 		const FString& WidgetClassName,
-		bool bCheckContains = false)
-	{
-		if (TSharedPtr<SWidget> ChildWidget = GetChildWidget(Widget, WidgetClassName, bCheckContains))
-		{
-			return StaticCastSharedPtr<WidgetClass>(ChildWidget);
-		}
-
-		return nullptr;
-	}
+		bool bCheckContains = false);
 
 	static void GetChildWidgets(
 		TSharedPtr<SWidget> Widget,
@@ -443,6 +433,8 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	static TSharedPtr<SGraphPin> GetGraphPin(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphPin* Pin);
 
 	static TSharedPtr<SGraphPanel> GetHoveredGraphPanel();
+
+	static FSlateRect GetGraphPanelBounds(TSharedPtr<SGraphPanel> GraphPanel);
 
 	static TSharedPtr<SGraphPin> GetHoveredGraphPin(TSharedPtr<SGraphPanel> GraphPanel);
 
@@ -618,9 +610,44 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static UEdGraphPin* GetFirstValuePinOnNode(TSharedPtr<FBAGraphHandler> GraphHandler, UEdGraphNode* Node);
 
+	static bool IsNodeVisible(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphNode* Node);
+
 	static bool GetPinOffset(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphPin* Pin, FVector2D& OutPinOffset);
 	static TFunction<bool(UEdGraphPin&, UEdGraphPin&)> GetHighestPinPredicate(TSharedPtr<SGraphPanel> GraphPanel);
 
 	static bool IsPinVisible(UEdGraphPin* Pin);
 	static FText GetNodeTitle(UEdGraphNode* Node);
+
+	// Version compatibility utility functions
+	static FBAVector2 GetGraphEditorPasteLocation(TSharedPtr<SGraphEditor> Editor);
+	static FVector2D GetGraphNodeMarqueeSize(TSharedPtr<SGraphNode> GraphNode);
+	static FVector2D GetGraphNodePos(TSharedPtr<SGraphNode> GraphNode);
 };
+
+// Template function definitions
+template <class WidgetClass>
+inline TSharedPtr<WidgetClass> FBAUtils::CastWidgetByTypeName(
+	TSharedPtr<SWidget> Widget,
+	const FString& WidgetTypeName,
+	bool bCheckContains)
+{
+	return IsWidgetOfType(Widget, WidgetTypeName, bCheckContains) ? StaticCastSharedPtr<WidgetClass>(Widget) : nullptr;
+}
+
+template <class WidgetClass>
+inline TSharedPtr<WidgetClass> FBAUtils::GetChildWidgetCasted(
+	TSharedPtr<SWidget> Widget,
+	const FString& WidgetClassName,
+	bool bCheckContains)
+{
+	if (TSharedPtr<SWidget> ChildWidget = GetChildWidget(Widget, WidgetClassName, bCheckContains))
+	{
+		return StaticCastSharedPtr<WidgetClass>(ChildWidget);
+	}
+
+	return nullptr;
+}
+
+#define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
+#define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)
+#define FIND_CHILD_WIDGET(Widget, WidgetClass) FBAUtils::GetChildWidgetCasted<WidgetClass>(Widget, #WidgetClass)

@@ -10,6 +10,7 @@
 #include "BlueprintAssistUtils.h"
 #include "BlueprintEditor.h"
 #include "BlueprintEditorTabs.h"
+#include "EditorUtilityBlueprint.h"
 #include "EditorUtilitySubsystem.h"
 #include "EditorUtilityWidgetBlueprint.h"
 #include "ISettingsCategory.h"
@@ -29,9 +30,18 @@
 #include "Widgets/Views/STableRow.h"
 #include "Widgets/Views/STableViewBase.h"
 #include "WorkspaceMenuStructureModule.h"
+#include "BlueprintAssistMisc/BAPrivate.h"
+#include "Interfaces/IMainFrameModule.h"
 
 #if !(BA_UE_VERSION_OR_LATER(5, 1))
 #include "AssetRegistry/AssetRegistryState.h"
+#endif
+
+typedef TMap<FName, TSharedRef<FTabSpawnerEntry>> FTabSpawner;
+
+#if BA_UE_VERSION_OR_LATER(5, 0)
+BA_DEFINE_PRIVATE_MEMBER_PTR(TSharedRef<FTabSpawner>, GNomadTabSpawner, FTabManager, NomadTabSpawner);
+BA_DEFINE_PRIVATE_MEMBER_PTR(FTabSpawner, GTabSpawner, FTabManager, TabSpawner);
 #endif
 
 const FSlateBrush* FOpenWindowItem_Base::GetIcon()

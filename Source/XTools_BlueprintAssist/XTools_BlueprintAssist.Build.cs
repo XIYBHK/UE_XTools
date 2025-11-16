@@ -83,7 +83,10 @@ public class XTools_BlueprintAssist : ModuleRules
 				"RenderCore",
 				"DeveloperSettings",
 				"Blutility", 
-				"UMGEditor"
+				"UMGEditor",
+				"PropertyEditor",
+				"HTTP",
+				"XmlParser"
 			}
 		);
 
