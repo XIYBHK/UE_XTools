@@ -193,7 +193,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const releaseId = '${{ steps.download.outputs.releaseId }}';
+            const releaseIdStr = '${{ steps.download.outputs.releaseId }}';
+            const releaseId = parseInt(releaseIdStr, 10);
             const filesJson = '${{ steps.download.outputs.files }}';
             const newFiles = filesJson ? JSON.parse(filesJson) : [];
 
