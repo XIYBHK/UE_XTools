@@ -18,7 +18,7 @@
 - 优化 资产规范化失败后抛出资产详细信息
 - 优化 用户操作上下文检测，支持UE 5.3-5.7版本
 - 优化 重命名逻辑，集成智能冲突解决方案
- - 优化 MaterialTools 材质函数智能连接，失败时回溯 MaterialAttributes 链路并自动接入 BaseColor/自发光 节点
+- 优化 MaterialTools 材质函数智能连接，失败时回溯 MaterialAttributes 链路并自动接入 BaseColor/自发光 节点
 
 ## FieldSystemExtensions
 
@@ -33,6 +33,22 @@
 - 修复 晃动节点断开连接后节点不跟随鼠标，保持逻辑链连接
 - 增加 插件启用开关
 - 调整 晃动断开连接灵敏度（MinShakeDistance 5→30，DotProduct <0→<-0.5）
+- 优化 启动流程，检测到外部BlueprintAssist插件时集成版保持空载
+- 本地化 所有用户可见文本（100+设置项 + 30+菜单项）
+
+### 已完成更新(对齐UE5.7版本-部分)
+- 修复 BlueprintAssistTypes.h与BlueprintAssistUtils.h循环依赖
+- 修复 API宏不一致问题，统一使用XTOOLS_BLUEPRINTASSIST_API
+- 修复 宏重定义警告，移除BlueprintAssistSettings.h中的重复宏定义
+- 修复 TryCreateConnection调用，使用TryCreateConnectionUnsafe
+- 增加 bSkipAutoFormattingAfterBreakingPins设置，断开引脚时跳过自动格式化
+- 增加 ExpandNodesMaxDist设置，限制节点展开的最大水平距离
+- 增加 BlueprintAssistDebug调试设置支持
+
+## AutoSizeComments
+
+### Bug修复
+- 修复 取消标题样式时无条件应用默认字体大小的问题
 
 ## BlueprintScreenshotTool
 

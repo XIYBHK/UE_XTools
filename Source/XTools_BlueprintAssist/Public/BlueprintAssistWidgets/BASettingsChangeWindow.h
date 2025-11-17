@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -53,7 +53,7 @@ public:
 	virtual ~SBASettingsListView() override;
 
 
-	void Refresh(UObject* NewSettings);
+	void Refresh(UBASettingsBase* NewSettings);
 
 	FOnSelectionChanged& MyOnSelectionChanged() { return OnSelectionChanged; }
 
@@ -61,12 +61,10 @@ protected:
 	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FBASettingChangeData> InDisplayNode, const TSharedRef<STableViewBase>& OwnerTable);
 
 private:
-	FOnSelectionChanged OnSelectionChanged;
-
 	TSharedPtr<SHeaderRow> HeaderRowWidget;
 	TArray<TSharedPtr<FBASettingChangeData>> Rows;
 
-	UObject* SettingsObj = nullptr;
+	UBASettingsBase* SettingsObj = nullptr;
 	FDelegateHandle Handle;
 
 	void CheckSettingsObjectChanged(UObject* Obj, struct FPropertyChangedEvent& Event);
@@ -86,13 +84,13 @@ class XTOOLS_BLUEPRINTASSIST_API SBASettingsChangeWindow : public SCompoundWidge
 
 	static TSharedRef<SDockTab> CreateTab(const FSpawnTabArgs& Args);
 
-	TSharedRef<SWidget> MakeSettingMenuButton(UObject* SettingsObj);
+	TSharedRef<SWidget> MakeSettingMenuButton(UBASettingsBase* SettingsObj);
 
 	TSharedPtr<SWidgetSwitcher> WidgetSwitcher;
 	TSharedPtr<SBASettingsListView> SettingsList;
 
-	TArray<UObject*> SettingsObjects;
-	UObject* ActiveSetting;
+	TArray<UBASettingsBase*> SettingsObjects;
+	UBASettingsBase* ActiveSetting;
 
-	void SetActiveSettings(UObject* Settings);
+	void SetActiveSettings(UBASettingsBase* Settings);
 };

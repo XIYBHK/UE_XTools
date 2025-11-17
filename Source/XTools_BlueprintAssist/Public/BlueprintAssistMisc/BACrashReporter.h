@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "BACrashUpload.h"
+#include "XmlFile.h"
 
 class SNotificationItem;
 class UEdGraphNode;
@@ -35,6 +36,7 @@ struct FBACrashReport
 class XTOOLS_BLUEPRINTASSIST_API FBACrashReporter
 {
 public:
+	FBACrashUpload CrashUpload;
 
 	static FBACrashReporter& Get();
 	static void TearDown();
@@ -69,6 +71,4 @@ private:
 
 	TArray<FBACrashReport> PendingReports;
 	TArray<FString> SuccessfullyParsed;
-	
-	FBACrashUpload CrashUpload;
 };

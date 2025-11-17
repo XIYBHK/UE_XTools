@@ -292,3 +292,46 @@ bool SBAVariableSelectorMenu::ShouldSkipProperty(BA_PROPERTY* Property)
 /***************************/
 /* FVariableSelectorStruct */
 /***************************/
+
+FVariableSelectorStruct::FVariableSelectorStruct(BA_PROPERTY* InProperty)
+{
+	bSCSNode = false;
+	Property = InProperty;
+	DisplayName = Property->GetName();
+}
+
+FVariableSelectorStruct::FVariableSelectorStruct(TSharedPtr<BA_SUBOBJECT_EDITOR_TREE_NODE> InNode)
+{
+	SCSNode = InNode;
+	bSCSNode = true;
+
+	FBlueprintEditor* BPEditor = static_cast<FBlueprintEditor*>(FBAUtils::GetEditorFromActiveTab());
+	check(BPEditor);
+	UBlueprint* BlueprintObj = BPEditor->GetBlueprintObj();
+	check(BlueprintObj);
+	if (FBAMiscUtils::IsSCSActorNode(SCSNode))
+	{
+		if (AActor* DefaultActor = FBAMiscUtils::GetSCSNodeDefaultActor(SCSNode, BlueprintObj))
+		{
+			DisplayName = DefaultActor->GetName();
+		}
+	}
+	else
+	{
+#if BA_UE_VERSION_OR_LATER(5, 0)
+		FSubobjectData* Data = SCSNode->GetDataSource();
+		UActorComponent* EditableComponent = Data ? const_cast<UActorComponent*>(Data->GetObjectForBlueprint<UActorComponent>(BlueprintObj)) : nullptr;
+#else
+		UActorComponent* EditableComponent = SCSNode->GetOrCreateEditableComponentTemplate(BlueprintObj);
+#endif
+		if (EditableComponent)
+		{
+			DisplayName = SCSNode->GetDisplayString();
+		}
+	}
+}
+
+FString FVariableSelectorStruct::ToString() const
+{
+	return DisplayName;
+}

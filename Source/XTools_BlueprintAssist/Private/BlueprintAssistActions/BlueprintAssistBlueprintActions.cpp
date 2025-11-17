@@ -1,12 +1,12 @@
-#include "BlueprintAssistActions/BlueprintAssistBlueprintActions.h"
+﻿#include "BlueprintAssistActions/BlueprintAssistBlueprintActions.h"
 
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistUtils.h"
 #include "BlueprintEditor.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
-#include "BlueprintAssistWidgets/AddSymbolMenu.h"
-#include "BlueprintAssistWidgets/GoToSymbolMenu.h"
-#include "BlueprintAssistWidgets/VariableSelectorMenu.h"
+#include "BlueprintAssistWidgets/BAAddSymbolMenu.h"
+#include "BlueprintAssistWidgets/BAGoToSymbolMenu.h"
+#include "BlueprintAssistWidgets/BAVariableSelectorMenu.h"
 #include "Framework/Commands/UICommandList.h"
 
 bool FBABlueprintActionsBase::HasOpenBlueprintEditor() const
@@ -52,19 +52,19 @@ void FBABlueprintActions::Init()
 
 void FBABlueprintActions::OpenVariableSelectorMenu()
 {
-	TSharedRef<SVariableSelectorMenu> Widget = SNew(SVariableSelectorMenu);
+	TSharedRef<SBAVariableSelectorMenu> Widget = SNew(SBAVariableSelectorMenu);
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 
 void FBABlueprintActions::OpenCreateSymbolMenu()
 {
-	TSharedRef<SAddSymbolMenu> Widget = SNew(SAddSymbolMenu);
+	TSharedRef<SBAAddSymbolMenu> Widget = SNew(SBAAddSymbolMenu);
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 
 void FBABlueprintActions::OpenGoToSymbolMenu()
 {
-	TSharedRef<SGoToSymbolMenu> Widget = SNew(SGoToSymbolMenu);
+	TSharedRef<SBAGoToSymbolMenu> Widget = SNew(SBAGoToSymbolMenu);
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 

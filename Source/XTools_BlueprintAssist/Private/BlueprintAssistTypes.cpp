@@ -1,5 +1,8 @@
-#include "BlueprintAssistTypes.h"
+﻿#include "BlueprintAssistTypes.h"
 
+#include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
+#include "BlueprintAssistUtils.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 #include "EdGraph/EdGraph.h"
 
@@ -85,7 +88,8 @@ void FBANodePinHandle::SetPin(UEdGraphPin* Pin)
 
 UEdGraphPin* FBANodePinHandle::GetPin()
 {
-	if (!IsValid())
+	// find the pin from the node using the stored guid
+	if (!PinId.IsValid() || !Node.IsValid())
 	{
 		return nullptr;
 	}
@@ -171,4 +175,30 @@ void FBANodeArray::Empty()
 void FBANodeArray::CacheNodes()
 {
 	CachedNodes = GetNodes();
+}
+
+void FBASettingsPropertyHook::NotifyPreChange(FProperty* PropertyAboutToChange)
+{
+	FNotifyHook::NotifyPreChange(PropertyAboutToChange);
+	if (UClass* OwnerClass = PropertyAboutToChange->GetOwner<UClass>())
+	{
+		if (UObject* CDO = OwnerClass->GetDefaultObject())
+		{
+			FEditPropertyChain PropertyChain;
+			PropertyChain.AddHead(PropertyAboutToChange);
+			CDO->PreEditChange(PropertyChain);
+		}
+	}
+}
+
+void FBASettingsPropertyHook::NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent, FProperty* PropertyThatChanged)
+{
+	if (UClass* OwnerClass = PropertyThatChanged->GetOwner<UClass>())
+	{
+		if (UObject* CDO = OwnerClass->GetDefaultObject())
+		{
+			CDO->PostEditChange();
+			CDO->SaveConfig();
+		}
+	}
 }

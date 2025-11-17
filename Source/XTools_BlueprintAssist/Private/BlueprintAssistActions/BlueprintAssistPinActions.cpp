@@ -1,12 +1,13 @@
-#include "BlueprintAssistActions/BlueprintAssistPinActions.h"
+﻿#include "BlueprintAssistActions/BlueprintAssistPinActions.h"
 
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistUtils.h"
 #include "EdGraphUtilities.h"
 #include "K2Node_Knot.h"
 #include "ScopedTransaction.h"
 #include "SGraphPanel.h"
-#include "BlueprintAssistWidgets/LinkPinMenu.h"
+#include "BlueprintAssistWidgets/BALinkPinMenu.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -31,7 +32,7 @@ bool FBAPinActionsBase::HasEditablePin() const
 
 	return
 		FBAUtils::IsUserInputWidget(KeyboardFocusedWidget) &&
-		FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "SGraphPin").IsValid();
+		FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "SGraphPin", true).IsValid();
 }
 
 bool FBAPinActionsBase::HasHoveredPin() const
@@ -42,6 +43,32 @@ bool FBAPinActionsBase::HasHoveredPin() const
 bool FBAPinActionsBase::HasHoveredOrSelectedPin() const
 {
 	return HasHoveredPin() || HasSelectedPin();
+}
+
+bool FBAPinActionsBase::HasHoveredPinLink() const
+{
+	if (HasGraphNonReadOnly())
+	{
+		FPinLink HoveredPinLink = FBAUtils::GetHoveredPinLink(GetGraphHandler()->GetGraphPanel());
+		return HoveredPinLink.HasBothPins();
+	}
+
+	return false;
+}
+
+UEdGraphPin* FBAPinActionsBase::GetHoveredOrSelectedPin(TSharedPtr<FBAGraphHandler> GraphHandler)
+{
+	if (UEdGraphPin* Hov = FBAUtils::GetHoveredPin(GraphHandler->GetGraphPanel()))
+	{
+		return Hov;
+	}
+
+	if (UEdGraphPin* Sel = GraphHandler->GetSelectedPin())
+	{
+		return Sel;
+	}
+
+	return nullptr; 
 }
 
 void FBAPinActions::Init()
@@ -78,6 +105,12 @@ void FBAPinActions::Init()
 	);
 
 	PinCommands->MapAction(
+		FBACommands::Get().StraightenHoveredPin,
+		FExecuteAction::CreateRaw(this, &FBAPinActions::StraightenHoveredPin),
+		FCanExecuteAction::CreateRaw(this, &FBAPinActions::HasHoveredOrSelectedPin)
+	);
+
+	PinCommands->MapAction(
 		FBACommands::Get().LinkPinMenu,
 		FExecuteAction::CreateRaw(this, &FBAPinActions::OpenPinLinkMenu),
 		FCanExecuteAction::CreateRaw(this, &FBAPinActions::HasSelectedPin)
@@ -99,7 +132,10 @@ void FBAPinActions::Init()
 	PinCommands->MapAction(
 		FBACommands::Get().DisconnectPinLink,
 		FExecuteAction::CreateRaw(this, &FBAPinActions::DisconnectPinOrWire),
-		FCanExecuteAction::CreateRaw(this, &FBAPinActions::HasHoveredOrSelectedPin)
+		FCanExecuteAction::CreateLambda([this]()
+		{
+			return HasHoveredPinLink() || HasHoveredOrSelectedPin();
+		})
 	);
 
 	PinCommands->MapAction(
@@ -150,9 +186,26 @@ void FBAPinActions::LinkToHoveredPin()
 
 			if (FBAUtils::CanConnectPins(SelectedPin, HoveredPin->GetPinObj(), true, false))
 			{
-				FBAUtils::TryLinkPins(SelectedPin, HoveredPin->GetPinObj());
+				FBAUtils::TryCreateConnectionUnsafe(SelectedPin, HoveredPin->GetPinObj(), EBABreakMethod::Default);
 			}
 		}
+	}
+}
+
+void FBAPinActions::StraightenHoveredPin()
+{
+	FScopedTransaction Transaction(INVTEXT("Straighten Hovered Pin"));
+	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandlerChecked();
+	UEdGraphPin* Pin = GetHoveredOrSelectedPin(GraphHandler);
+	if (!Pin)
+	{
+		return;
+	}
+
+	for (UEdGraphPin* LinkedTo : Pin->LinkedTo)
+	{
+		LinkedTo->Modify();
+		FBAUtils::StraightenPin(GraphHandler, Pin, LinkedTo);
 	}
 }
 
@@ -173,8 +226,8 @@ void FBAPinActions::OpenPinLinkMenu()
 	UEdGraphPin* Pin = GraphHandler->GetSelectedPin();
 	check(Pin != nullptr)
 
-	TSharedRef<SLinkPinMenu> Widget =
-		SNew(SLinkPinMenu)
+	TSharedRef<SBALinkPinMenu> Widget =
+		SNew(SBALinkPinMenu)
 		.SourcePin(Pin)
 		.GraphHandler(GraphHandler);
 
@@ -260,12 +313,12 @@ void FBAPinActions::DuplicateNodeForEachLink()
 	struct FLocal
 	{
 		static void DeleteKnotsAndGetLinkedPins(
-			UEdGraphPin* InPin,
-			TArray<UEdGraphPin*>& LinkedPins)
+			FBANodePinHandle InPin,
+			TArray<FBANodePinHandle>& LinkedPins)
 		{
 			/** Iterate across all linked pins */
-			TArray<UEdGraphPin*> LinkedCopy = InPin->LinkedTo;
-			for (UEdGraphPin* LinkedPin : LinkedCopy)
+			TArray<FBANodePinHandle> LinkedCopy = FBANodePinHandle::ConvertArray(InPin->LinkedTo);
+			for (auto& LinkedPin : LinkedCopy)
 			{
 				UEdGraphNode* LinkedNode = LinkedPin->GetOwningNode();
 
@@ -291,9 +344,8 @@ void FBAPinActions::DuplicateNodeForEachLink()
 		}
 	};
 
-	TArray<UEdGraphPin*> LinkedPins;
-	FLocal::DeleteKnotsAndGetLinkedPins(SelectedPin.GetPin(), LinkedPins);
-	TArray<FBANodePinHandle> LinkedPinHandles = FBANodePinHandle::ConvertArray(LinkedPins);
+	TArray<FBANodePinHandle> LinkedPinHandles;
+	FLocal::DeleteKnotsAndGetLinkedPins(FBANodePinHandle(SelectedPin.GetPin()), LinkedPinHandles);
 	if (LinkedPinHandles.Num() <= 1)
 	{
 		return;
@@ -438,9 +490,6 @@ void FBAPinActions::SwapPinConnection(const bool bUp)
 	TArray<FBANodePinHandle> LinkedTo_PinB = FBANodePinHandle::ConvertArray(PinB->LinkedTo);
 	TArray<FBANodePinHandle> LinkedTo_PinA = FBANodePinHandle::ConvertArray(PinA->LinkedTo);
 
-	PinA->Modify();
-	PinB->Modify();
-
 	FString DefaultValue_A = PinA->DefaultValue;
 	FText DefaultTextValue_A = PinA->DefaultTextValue;
 	UObject* DefaultObject_A = PinA->DefaultObject;
@@ -453,15 +502,15 @@ void FBAPinActions::SwapPinConnection(const bool bUp)
 	const bool DefaultTextDifferent = !DefaultTextValue_A.IdenticalTo(DefaultTextValue_B);
 	const bool DefaultObjectDifferent = DefaultObject_A != DefaultObject_B;
 
-	PinA->BreakAllPinLinks();
-	PinB->BreakAllPinLinks();
+	FBAUtils::SchemaBreakPinLinks(PinA);
+	FBAUtils::SchemaBreakPinLinks(PinB);
 
 	if (LinkedTo_PinA.Num())
 	{
 		// connect LinkedTo_PinA -> PinB
 		for (FBANodePinHandle& Pin : LinkedTo_PinA)
 		{
-			FBAUtils::TryCreateConnection(Pin.GetPin(), PinB.GetPin(), EBABreakMethod::Default);
+			FBAUtils::TryCreateConnection(Pin, PinB, EBABreakMethod::Default);
 		}
 	}
 	else
@@ -480,7 +529,7 @@ void FBAPinActions::SwapPinConnection(const bool bUp)
 	{
 		for (FBANodePinHandle& Pin : LinkedTo_PinB)
 		{
-			FBAUtils::TryCreateConnection(Pin.GetPin(), PinA.GetPin(), true);
+			FBAUtils::TryCreateConnection(Pin, PinA, EBABreakMethod::Default);
 		}
 	}
 	else
@@ -591,23 +640,32 @@ void FBAPinActions::DisconnectPinOrWire()
 
 	if (GraphPanel.IsValid())
 	{
+		FPinLink Link = FBAUtils::GetHoveredPinLink(GraphPanel);
+		if (Link.HasBothPins())
+		{
+			const FScopedTransaction Transaction(INVTEXT("Disconnect Pin Link"));
+			FBAUtils::SchemaBreakSinglePinLink(Link);
+			return;
+		}
+
 		TSharedPtr<SGraphPin> HoveredPin = FBAUtils::GetHoveredGraphPin(GraphPanel);
 		if (HoveredPin.IsValid())
 		{
-			if (UEdGraphPin* Pin = HoveredPin->GetPinObj())
+			FBANodePinHandle Pin(HoveredPin->GetPinObj());
+			if (Pin.IsValid())
 			{
-				const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "DisconnectPinLink", "Disconnect Pin Link"));
-				GraphPanel->GetGraphObj()->GetSchema()->BreakPinLinks(*Pin, true);
+				const FScopedTransaction Transaction(INVTEXT("Disconnect Pin"));
+				FBAUtils::SchemaBreakPinLinks(Pin);
 				return;
 			}
 		}
 	}
 
-	UEdGraphPin* SelectedPin = GraphHandler->GetSelectedPin();
-	if (SelectedPin != nullptr)
+	FBANodePinHandle SelectedPin(GraphHandler->GetSelectedPin());
+	if (SelectedPin.IsValid())
 	{
-		const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "DisconnectPinLink", "DisconectPinLink"));
-		GraphPanel->GetGraphObj()->GetSchema()->BreakPinLinks(*SelectedPin, true);
+		const FScopedTransaction Transaction(INVTEXT("Disconnect Pin"));
+		FBAUtils::SchemaBreakPinLinks(SelectedPin);
 	}
 }
 

@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -29,6 +29,8 @@ public:
 
 	void SetLastFunctionGraphs(UBlueprint* Blueprint);
 
+	void SetLastNodes(UBlueprint* Blueprint);
+
 	void OnBlueprintChanged(UBlueprint* Blueprint);
 
 	void ResetProcessedChangesThisFrame();
@@ -45,6 +47,8 @@ public:
 
 	void OnFunctionAdded(UBlueprint* Blueprint, UEdGraph* FunctionGraph);
 
+	void OnNodeAdded(UBlueprint* Blueprint, UEdGraphNode* Node);
+
 	UFunction* FindFunctionFromEntryNode(UK2Node_EditablePinBase* FunctionEntry, UEdGraph* Graph);
 
 	FKismetUserDeclaredFunctionMetadata* GetMetadataBlock(UK2Node_EditablePinBase* FunctionEntryNode) const;
@@ -54,14 +58,14 @@ public:
 	void DetectGraphIssues(UEdGraph* Graph);
 
 private:
-	UPROPERTY()
 	TWeakObjectPtr<UBlueprint> BlueprintPtr;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TArray<FBPVariableDescription> LastVariables;
 
-	UPROPERTY()
 	TArray<TWeakObjectPtr<UEdGraph>> LastFunctionGraphs;
+
+	TSet<TWeakObjectPtr<UEdGraphNode>> LastNodes;
 
 	bool bProcessedChangesThisFrame = false;
 

@@ -1,10 +1,11 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistWidgets/SBASizeProgress.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistStyle.h"
 #include "RenderingThread.h"
+#include "SlateOptMacros.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Slate/WidgetRenderer.h"
 #include "Widgets/Images/SImage.h"
@@ -12,6 +13,7 @@
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Notifications/SProgressBar.h"
 
+BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 void SBASizeProgress::Construct(const FArguments& InArgs, TSharedPtr<FBAGraphHandler> InOwnerGraphHandler)
 {
 	OwnerGraphHandler = InOwnerGraphHandler;
@@ -69,6 +71,12 @@ void SBASizeProgress::Construct(const FArguments& InArgs, TSharedPtr<FBAGraphHan
 
 	SetVisibility(EVisibility::Collapsed);
 }
+END_SLATE_FUNCTION_BUILD_OPTIMIZATION
+
+SBASizeProgress::~SBASizeProgress()
+{
+	DestroyRenderTarget();
+}
 
 void SBASizeProgress::RenderGraphToBrush()
 {
@@ -79,7 +87,17 @@ void SBASizeProgress::RenderGraphToBrush()
 bool SBASizeProgress::IsSnapshotValid() const
 {
 	UObject* ResourceObject = GraphSnapshotBrush.GetResourceObject();
-	if (ResourceObject != nullptr && (!IsValid(ResourceObject) || ResourceObject->IsUnreachable() || ResourceObject->HasAnyFlags(RF_BeginDestroyed)))
+	if (!IsValid(ResourceObject))
+	{
+		return false;
+	}
+
+	if (ResourceObject->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
+	{
+		return false;
+	}
+
+	if (ResourceObject->IsUnreachable())
 	{
 		return false;
 	}
@@ -123,6 +141,8 @@ void SBASizeProgress::HideOverlay()
 
 		// clear the graph snapshot brush
 		GraphSnapshotBrush = FSlateBrush();
+
+		DestroyRenderTarget();
 	}
 }
 
@@ -145,11 +165,13 @@ void SBASizeProgress::DrawWidgetToRenderTarget(TSharedPtr<SWidget> Widget)
 		return;
 	}
 
-	UTextureRenderTarget2D* RenderTarget = WidgetRenderer->DrawWidget(Widget.ToSharedRef(), RenderSize);
+	RenderTarget = WidgetRenderer->DrawWidget(Widget.ToSharedRef(), RenderSize);
 	if (!RenderTarget)
 	{
 		return;
 	}
+
+	RenderTarget->AddToRoot();
 
 	FlushRenderingCommands();
 
@@ -157,6 +179,18 @@ void SBASizeProgress::DrawWidgetToRenderTarget(TSharedPtr<SWidget> Widget)
 
 	GraphSnapshotBrush.SetResourceObject(RenderTarget);
 	GraphSnapshotBrush.SetImageSize(FVector2D(RenderTarget->SizeX, RenderTarget->SizeY));
+}
+
+void SBASizeProgress::DestroyRenderTarget()
+{
+	if (IsValid(RenderTarget) && !RenderTarget->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
+	{
+		RenderTarget->RemoveFromRoot();
+#if BA_UE_VERSION_OR_LATER(5, 0)
+		RenderTarget->MarkAsGarbage();
+#endif
+		RenderTarget = nullptr;
+	}
 }
 
 FText SBASizeProgress::GetCacheProgressText() const
@@ -168,3 +202,4 @@ TOptional<float> SBASizeProgress::GetCachingPercent() const
 {
 	return OwnerGraphHandler->GetPendingNodeSizeProgress();
 }
+

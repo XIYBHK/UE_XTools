@@ -1,11 +1,11 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
 #include "BlueprintAssistGlobals.h"
-#include "BlueprintAssistUtils.h"
 #include "ScopedTransaction.h"
 #include "SGraphPin.h"
+#include "Misc/NotifyHook.h"
 #include "BlueprintAssistTypes.generated.h"
 
 #if ENGINE_MINOR_VERSION >= 25 || ENGINE_MAJOR_VERSION >= 5
@@ -107,7 +107,7 @@ struct FBANodePinHandle
 
 	bool IsValid()
 	{
-		return Node != nullptr && PinId.IsValid();
+		return GetPin() != nullptr;
 	}
 
 	static TArray<FBANodePinHandle> ConvertArray(const TArray<UEdGraphPin*>& Pins)
@@ -161,13 +161,6 @@ struct FBANodeMovementTransaction
 	void End(const EBADragMethod& InDragMethod);
 };
 
-struct FBAPinDefaultValue
-{
-	FString PinValue;
-	FText PinTextValue;
-	TWeakObjectPtr<UObject> PinObject;
-};
-
 struct FBANodeArray
 {
 	void SetArray(const TArray<UEdGraphNode*>& Nodes);
@@ -181,4 +174,14 @@ struct FBANodeArray
 private:
 	TArray<TWeakObjectPtr<UEdGraphNode>> NodeArrayWeak;
 	TArray<UEdGraphNode*> CachedNodes;
+};
+
+class FBASettingsPropertyHook final : public FNotifyHook
+{
+public:
+	FBASettingsPropertyHook() {};
+	virtual ~FBASettingsPropertyHook() {};
+
+	virtual void NotifyPreChange(FProperty* PropertyAboutToChange) override;
+	virtual void NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent, FProperty* PropertyThatChanged) override;
 };

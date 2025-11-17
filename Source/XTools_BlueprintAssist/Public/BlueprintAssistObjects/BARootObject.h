@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -23,9 +23,9 @@ public:
 	UBAAssetEditorHandlerObject* GetAssetHandler() const { return AssetHandler; }
 
 private:
-	UPROPERTY()
-	UBAAssetEditorHandlerObject* AssetHandler = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<UBAAssetEditorHandlerObject> AssetHandler = nullptr;
 
-	UPROPERTY()
-	UBAEditorFeatures* EditorFeatures = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<UBAEditorFeatures> EditorFeatures = nullptr;
 };

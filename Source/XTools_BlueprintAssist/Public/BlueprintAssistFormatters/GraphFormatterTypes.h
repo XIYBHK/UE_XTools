@@ -58,12 +58,17 @@ struct XTOOLS_BLUEPRINTASSIST_API FPinLink
 	FBAGraphPinHandle FromHandle;
 	FBAGraphPinHandle ToHandle;
 
+	FBANodePinHandle FromNodePinHandle;
+	FBANodePinHandle ToNodePinHandle;
+
 	FPinLink()
 		: From(nullptr)
 		, To(nullptr)
 		, FallbackNode(nullptr)
 		, FromHandle(nullptr)
 		, ToHandle(nullptr)
+		, FromNodePinHandle(nullptr)
+		, ToNodePinHandle(nullptr)
 	{
 	}
 
@@ -73,6 +78,8 @@ struct XTOOLS_BLUEPRINTASSIST_API FPinLink
 		, FallbackNode(InFallbackNode)
 		, FromHandle(InFrom)
 		, ToHandle(InTo)
+		, FromNodePinHandle(InFrom)
+		, ToNodePinHandle(InTo)
 	{
 	}
 
@@ -103,6 +110,8 @@ struct XTOOLS_BLUEPRINTASSIST_API FPinLink
 	UEdGraphPin* GetToPinUnsafe() const { return To; }
 	UEdGraphNode* GetFromNodeUnsafe() const { return (From == nullptr) ? nullptr : From->GetOwningNodeUnchecked(); }
 	UEdGraphNode* GetToNodeUnsafe() const { return (To == nullptr) ? nullptr : To->GetOwningNodeUnchecked(); }
+
+	void Invalidate();
 
 	bool HasBothPins();
 
@@ -228,10 +237,10 @@ struct XTOOLS_BLUEPRINTASSIST_API FNodeRelativeMapping
 // Check if the graph formatter has broken connections
 struct XTOOLS_BLUEPRINTASSIST_API FFormatterConnectionValidator
 {
-	TMap<UEdGraphNode*, TSet<FPinLink>> Connections;
+	TMap<FGuid, TSet<FPinLink>> Connections;
 
 	void Reset() { Connections.Reset(); }
 	void CreateSnapshot(const TArray<UEdGraphNode*>& Nodes) { Connections = BuildConnections(Nodes); }
-	TMap<UEdGraphNode*, TSet<FPinLink>> BuildConnections(const TArray<UEdGraphNode*>& Nodes);
-	bool CheckChanged(const TArray<UEdGraphNode*>& Nodes);
+	TMap<FGuid, TSet<FPinLink>> BuildConnections(const TArray<UEdGraphNode*>& Nodes);
+	bool CheckChanged(UEdGraph* Graph);
 };

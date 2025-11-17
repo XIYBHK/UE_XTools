@@ -72,8 +72,23 @@ public:
 
 	FBANodeMovementTransaction DragNodeTransaction;
 
-	// Flag to prevent box selection after shake node off wire
-	bool bRecentlyShookNode = false;
+	// Shake node off wire tracking
+	struct FShakeOffNodeTrackingInfo
+	{
+		TWeakObjectPtr<UEdGraphNode> Node;
+		TArray<FVector2D> RecentMovements;
+		TArray<double> MovementTimes;
+		int32 ShakeCount;
+		double LastShakeTime;
+
+		FShakeOffNodeTrackingInfo()
+			: ShakeCount(0)
+			, LastShakeTime(0.0)
+		{
+		}
+	};
+	TArray<FShakeOffNodeTrackingInfo> ShakeOffNodeTracker;
+	bool TryProcessAsShakeNodeOffWireEvent(const FPointerEvent& MouseEvent, UEdGraphNode* Node, const FVector2D& Delta);
 
 	bool IsInputChordDown(const FInputChord& Chord);
 	bool IsAnyInputChordDown(const TArray<FInputChord>& Chords);
@@ -82,33 +97,6 @@ public:
 	bool IsKeyDown(const FKey Key);
 	double GetKeyDownDuration(const FKey Key);
 
-private:
-	// Shake detection structures and methods
-	struct FShakeOffNodeTrackingInfo
-	{
-		FShakeOffNodeTrackingInfo()
-			: Node(nullptr)
-			, ShakeCount(0)
-			, LastShakeTime(0.0)
-			, LastShakeDirection(FVector2D::ZeroVector)
-		{}
-
-		TWeakObjectPtr<UEdGraphNode> Node;
-		int32 ShakeCount;
-		double LastShakeTime;
-		FVector2D LastShakeDirection;
-	};
-
-	bool TryProcessAsShakeNodeOffWireEvent(
-		const FPointerEvent& MouseEvent,
-		UEdGraphNode* Node,
-		const FVector2D& Delta);
-
-	void ResetShakeTracking(UEdGraphNode* Node = nullptr);
-	void ResetDragState();
-	
-	TArray<FShakeOffNodeTrackingInfo> ShakeOffNodeTracker;
-
 	FBAGlobalActions GlobalActions;
 	FBATabActions TabActions;
 	FBAToolkitActions ToolkitActions;
@@ -116,9 +104,9 @@ private:
 	FBANodeActions NodeActions;
 	FBAPinActions PinActions;
 	FBABlueprintActions BlueprintActions;
-	TArray<TSharedPtr<FUICommandList>> CommandLists;
 
-	TArray<FAssetData> CutAssets;
+private:
+	TArray<TSharedPtr<FUICommandList>> CommandLists;
 
 	TSet<FKey> KeysDown;
 	TMap<FKey, double> KeysDownStartTime;
@@ -132,8 +120,6 @@ private:
 #endif
 
 	bool ProcessFolderBookmarkInput();
-
-	bool ProcessContentBrowserInput();
 
 	void OnWindowFocusChanged(bool bIsFocused);
 

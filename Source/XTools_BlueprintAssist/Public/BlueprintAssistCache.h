@@ -12,66 +12,65 @@
 USTRUCT()
 struct XTOOLS_BLUEPRINTASSIST_API FBANodeData
 {
-    GENERATED_USTRUCT_BODY()
+	GENERATED_USTRUCT_BODY()
 
 protected:
-    UPROPERTY()
-    FIntPoint Size = FIntPoint(0, 0); // node size
+	UPROPERTY()
+	FIntPoint Size = FIntPoint(0, 0); // node size
 
-    UPROPERTY()
-    FIntPoint BSize = FIntPoint(0, 0); // comment bubble size
-
+	UPROPERTY()
+	FIntPoint BSize = FIntPoint(0, 0); // comment bubble size
 public:
 
-    UPROPERTY()
-    TMap<FGuid, float> CachedPins; // pin guid -> pin offset
+	UPROPERTY()
+	TMap<FGuid, float> CachedPins; // pin guid -> pin offset
 
-    UPROPERTY()
-    bool bLocked = false;
+	UPROPERTY()
+	bool bLocked = false;
 
-    UPROPERTY()
-    FGuid NodeGroup;
+	UPROPERTY()
+	FGuid NodeGroup;
 
-    UPROPERTY()
-    FIntPoint Last = FIntPoint(0, 0); // last formatted position
+	UPROPERTY()
+	FIntPoint Last = FIntPoint(0, 0); // last formatted position
 
-    UPROPERTY()
-    FGuid LastRoot; // last formatted root node 
+	UPROPERTY()
+	FGuid LastRoot; // last formatted root node 
 
-    void ResetSize()
-    {
-        Size = FIntPoint(0, 0);
-        BSize = FIntPoint(0, 0);
-        CachedPins.Reset();
-    }
+	void ResetSize()
+	{
+		Size = FIntPoint(0, 0);
+		BSize = FIntPoint(0, 0);
+		CachedPins.Reset();
+	}
 
-    bool HasSize() const
-    {
-        return Size.X != 0 && Size.Y != 0;
-    }
+	bool HasSize() const
+	{
+		return Size.X != 0 && Size.Y != 0;
+	}
 
-    void SetSize(const FVector2D& InSize)
-    {
-        Size.X = FMath::RoundToInt(InSize.X);
-        Size.Y = FMath::RoundToInt(InSize.Y);
-    }
+	void SetSize(const FVector2D& InSize)
+	{
+		Size.X = FMath::RoundToInt(InSize.X);
+		Size.Y = FMath::RoundToInt(InSize.Y);
+	}
 
-    const FIntPoint& GetNodeSize() const { return Size; }
+	const FIntPoint& GetNodeSize() const { return Size; }
 
-    bool HasCommentBubbleSize() const
-    {
-        return BSize.X != 0 && BSize.Y != 0;
-    }
+	bool HasCommentBubbleSize() const
+	{
+		return BSize.X != 0 && BSize.Y != 0;
+	}
 
-    void SetCommentBubbleSize(const FVector2D& InSize)
-    {
-        BSize.X = FMath::RoundToInt(InSize.X);
-        BSize.Y = FMath::RoundToInt(InSize.Y);
-    }
+	void SetCommentBubbleSize(const FVector2D& InSize)
+	{
+		BSize.X = FMath::RoundToInt(InSize.X);
+		BSize.Y = FMath::RoundToInt(InSize.Y);
+	}
 
-    const FIntPoint& GetCommentBubbleSize() const { return BSize; }
+	void SetLastFormatted(UEdGraphNode* Node);
 
-    void SetLastFormatted(UEdGraphNode* Node);
+	const FIntPoint& GetCommentBubbleSize() const { return BSize; }
 };
 
 USTRUCT()

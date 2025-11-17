@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -79,8 +79,8 @@ protected:
 private:
 	TArray<TWeakObjectPtr<UObject>> OpenAssets;
 
-	UPROPERTY()
-	TMap<FGuid, UBABlueprintHandlerObject*> BlueprintHandlers;
+	UPROPERTY(Transient)
+	TMap<FGuid, TObjectPtr<UBABlueprintHandlerObject>> BlueprintHandlers;
 
 	TMap<TWeakPtr<SDockTab>, TWeakObjectPtr<UObject>> AssetsByTab;
 };

@@ -1,12 +1,13 @@
 // Copyright fpwong. All Rights Reserved.
 
-#include "BlueprintAssistWidgets/OpenWindowMenu.h"
+#include "BlueprintAssistWidgets/BAOpenWindowMenu.h"
 
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistInputProcessor.h"
 #include "BlueprintAssistModule.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistUtils.h"
 #include "BlueprintEditor.h"
 #include "BlueprintEditorTabs.h"
@@ -117,6 +118,7 @@ void FOpenTabItem::SelectItem()
 /* FOpenTabSpawnerItem */
 /***********************/
 
+#if BA_UE_VERSION_OR_LATER(5, 0)
 FString FOpenTabSpawnerItem::ToString() const
 {
 	return TabSpawnerEntry->GetDisplayName().ToString();
@@ -124,17 +126,33 @@ FString FOpenTabSpawnerItem::ToString() const
 
 void FOpenTabSpawnerItem::SelectItem()
 {
-#if BA_UE_VERSION_OR_LATER(5, 0)
-	FGlobalTabmanager::Get()->TryInvokeTab(TabSpawnerEntry->GetTabType());
-#else
-	UE_LOG(LogBlueprintAssist, Warning, TEXT("OpenTabSpawnerItem is not supported in UE4"));
-#endif
+	TSharedPtr<FTabManager> TabManager = AlternateTabManager.IsValid() ? AlternateTabManager : FGlobalTabmanager::Get();
+	if (TabManager.IsValid())
+	{
+		TabManager->TryInvokeTab(GetTabName());
+	}
 }
 
 const FSlateBrush* FOpenTabSpawnerItem::GetIcon()
 {
 	return TabSpawnerEntry->GetIcon().GetIcon();
 }
+
+FName FOpenTabSpawnerItem::GetTabName() const
+{
+	return TabSpawnerEntry->GetTabType();
+}
+
+const FString* FOpenTabSpawnerItem::GetDetailsString()
+{
+	if (TabSpawnerEntry->GetTooltipText().IsEmptyOrWhitespace())
+	{
+		return nullptr;
+	}
+
+	return &TabSpawnerEntry->GetTooltipText().ToString();
+}
+#endif
 
 /********************/
 /* FOpenSettingItem */
@@ -205,12 +223,7 @@ void FToolsMenuItem::SelectItem()
 	TSharedPtr<const FUICommandList> CommandListForAction;
 	if (const FUIAction* Action = Entry->GetActionForCommand(Context, CommandListForAction))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Executed action!"));
 		Action->Execute();
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Action is null"));
 	}
 }
 
@@ -291,29 +304,39 @@ FString FEditorUtilityItem::ToString() const
 
 void FEditorUtilityItem::SelectItem()
 {
-	if (UEditorUtilityWidgetBlueprint* Utility = Cast<UEditorUtilityWidgetBlueprint>(AssetData.GetAsset()))
+	if (UEditorUtilityWidgetBlueprint* UtilityWidget = Cast<UEditorUtilityWidgetBlueprint>(AssetData.GetAsset()))
 	{
 		if (UEditorUtilitySubsystem* EditorUtilitySubsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>())
 		{
-			EditorUtilitySubsystem->SpawnAndRegisterTab(Utility);
+			EditorUtilitySubsystem->SpawnAndRegisterTab(UtilityWidget);
+		}
+	}
+	else
+	{
+		if (auto Asset = AssetData.GetAsset())
+		{
+			if (UEditorUtilitySubsystem* EditorUtilitySubsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>())
+			{
+				EditorUtilitySubsystem->TryRun(Asset);
+			}
 		}
 	}
 }
 
-void SOpenWindowMenu::Construct(const FArguments& InArgs)
+void SBAOpenWindowMenu::Construct(const FArguments& InArgs)
 {
 	ChildSlot
 	[
 		SNew(SBAFilteredList<TSharedPtr<FOpenWindowItem_Base>>)
-		.InitListItems(this, &SOpenWindowMenu::InitListItems)
-		.OnGenerateRow(this, &SOpenWindowMenu::CreateItemWidget)
-		.OnSelectItem(this, &SOpenWindowMenu::SelectItem)
+		.InitListItems(this, &SBAOpenWindowMenu::InitListItems)
+		.OnGenerateRow(this, &SBAOpenWindowMenu::CreateItemWidget)
+		.OnSelectItem(this, &SBAOpenWindowMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("打开窗口"))
+		.MenuTitle(FString("Open Window"))
 	];
 }
 
-void SOpenWindowMenu::InitListItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::InitListItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	AddOpenTabItems(Items);
 	AddOpenSettingsItems(Items);
@@ -324,13 +347,60 @@ void SOpenWindowMenu::InitListItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& It
 	// TODO: this nearly works need to figure out how to actually run the action though...
 	// AddToolItems(Items);
 
-	// TODO: this doesn't read nomad tabs, so we are still using the hard-coded open tab function
-	// AddWorkspaceMenuStructure(Items);
-
 	// AddMenuEntryBlocks(Items);
 }
 
-void SOpenWindowMenu::AddOpenTabItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddOpenTabItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+{
+	TSet<FName> ExistingTabNames;
+
+#if BA_UE_VERSION_OR_LATER(5, 0)
+	// read tabs dynamically
+	{
+		UE_LOG(LogBlueprintAssist, Verbose, TEXT("Adding tabs for global tab manager"));
+		AddTabManagerItems(FGlobalTabmanager::Get(), ExistingTabNames, Items);
+
+		if (IAssetEditorInstance* Editor = FBAUtils::GetEditorFromActiveTab())
+		{
+			UE_LOG(LogBlueprintAssist, Verbose, TEXT("Adding tabs for editor %s"), *Editor->GetEditorName().ToString());
+			TSharedPtr<FTabManager> EditorTabManagerPtr = Editor->GetAssociatedTabManager();
+			AddTabManagerItems(EditorTabManagerPtr, ExistingTabNames, Items);
+		}
+
+		UE_LOG(LogBlueprintAssist, Verbose, TEXT("Adding tabs for level editor"));
+		FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
+		TSharedPtr<FTabManager> LevelEditorTabManager = LevelEditorModule.GetLevelEditorTabManager();
+		AddTabManagerItems(LevelEditorTabManager, ExistingTabNames, Items);
+
+		// also try adding via workspace menu structure (this probably won't do anything since the previous 3 tab managers should cover for these)
+		// AddWorkspaceMenuStructure(Items, ExistingTabNames);
+	}
+#endif
+
+	{
+		// legacy method to manually add tabs, most tabs should be dynamically loaded in the previous logic but
+		// some tabs are not registered with the tab manager until requested, so this is still needed
+		// currently only known case is - Undo History
+		TArray<TSharedPtr<FOpenWindowItem_Base>> TempTabItems;
+		AddHardCodedTabItems(TempTabItems);
+
+		for (TSharedPtr<FOpenWindowItem_Base> Item : TempTabItems)
+		{
+			if (TSharedPtr<FOpenTabItem> TabItem = StaticCastSharedPtr<FOpenTabItem>(Item))
+			{
+				if (ExistingTabNames.Contains(TabItem->TabName))
+				{
+					continue;
+				}
+
+				UE_LOG(LogBlueprintAssist, Verbose, TEXT("ADD HARDCODED TAB %s"), *TabItem->TabName.ToString());
+				Items.Add(TabItem);
+			}
+		}
+	}
+}
+
+void SBAOpenWindowMenu::AddHardCodedTabItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	TArray<FOpenTabItem> TabInfos;
 
@@ -562,7 +632,7 @@ void SOpenWindowMenu::AddOpenTabItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& 
 		{
 			if (!Item.AlternateTabManager->HasTabSpawner(Item.TabName))
 			{
-				if (UBASettings::HasDebugSetting("OpenWindowMenu"))
+				if (UBASettings_Advanced::HasDebugSetting("OpenWindowMenu"))
 				{
 					UE_LOG(LogBlueprintAssist, Warning, TEXT("Missing open tab alternate %s"), *Item.TabName.ToString());
 				}
@@ -574,7 +644,7 @@ void SOpenWindowMenu::AddOpenTabItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& 
 		{
 			if (!FGlobalTabmanager::Get()->HasTabSpawner(Item.TabName))
 			{
-				if (UBASettings::HasDebugSetting("OpenWindowMenu"))
+				if (UBASettings_Advanced::HasDebugSetting("OpenWindowMenu"))
 				{
 					UE_LOG(LogBlueprintAssist, Warning, TEXT("Missing open tab %s"), *Item.TabName.ToString());
 				}
@@ -591,12 +661,11 @@ void SOpenWindowMenu::AddOpenTabItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& 
 		// 	UE_LOG(LogBlueprintAssist, Warning, TEXT("Invalid icon for tab %s"), *TabInfo.TabName.ToString());
 		// }
 
-		// Items.Add(MakeShareable(new FOpenWindowItem(Item)));
 		Items.Add(MakeShareable(new FOpenTabItem(Item)));
 	}
 }
 
-void SOpenWindowMenu::AddOpenSettingsItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddOpenSettingsItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	TSet<TSharedPtr<FOpenSettingItem>> OpenSettingsItems;
 
@@ -678,7 +747,7 @@ void SOpenWindowMenu::AddOpenSettingsItems(TArray<TSharedPtr<FOpenWindowItem_Bas
 	}
 }
 
-void SOpenWindowMenu::AddCommandItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddCommandItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	const FBACommandsImpl& BACommands = FBACommands::Get();
 	TArray<TSharedPtr<FUICommandInfo>> Commands = {
@@ -701,17 +770,21 @@ void SOpenWindowMenu::AddCommandItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& 
 		}
 	}
 
-	// AddEditorCommandItems(Items);
+	AddEditorCommandItems(Items);
 }
 
-void SOpenWindowMenu::AddEditorCommandItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddEditorCommandItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
-	FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
 	TArray<TSharedPtr<FUICommandList>> AvailableLists;
-	AvailableLists.Add(LevelEditorModule.GetGlobalLevelEditorActions());
 
-	FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>("Kismet");
-	AvailableLists.Add(BlueprintEditorModule.GetsSharedBlueprintEditorCommands());
+	// FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
+	// AvailableLists.Add(LevelEditorModule.GetGlobalLevelEditorActions());
+
+	// FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>("Kismet");
+	// AvailableLists.Add(BlueprintEditorModule.GetsSharedBlueprintEditorCommands());
+
+	IMainFrameModule& MainFrame = FModuleManager::Get().LoadModuleChecked<IMainFrameModule>("MainFrame");
+	AvailableLists.Add(MainFrame.GetMainFrameCommandBindings());
 
 	// Get all command infos
 	const FInputBindingManager& InputBindingManager = FInputBindingManager::Get();
@@ -731,6 +804,7 @@ void SOpenWindowMenu::AddEditorCommandItems(TArray<TSharedPtr<FOpenWindowItem_Ba
 
 				if (CommandList->GetActionForCommand(CommandInfo))
 				{
+					UE_LOG(LogBlueprintAssist, Verbose, TEXT("Added command %s"), *CommandItem->ToString());
 					CommandItem->AvailableLists = AvailableLists;
 					Items.Add(CommandItem);
 					break;
@@ -740,7 +814,7 @@ void SOpenWindowMenu::AddEditorCommandItems(TArray<TSharedPtr<FOpenWindowItem_Ba
 	}
 }
 
-void SOpenWindowMenu::AddToolItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddToolItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	UToolMenus* ToolMenus = UToolMenus::Get();
 	TArray<UToolMenu*> AllMenus;
@@ -778,7 +852,8 @@ void SOpenWindowMenu::AddToolItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Ite
 	}
 }
 
-void SOpenWindowMenu::AddWorkspaceMenuStructure(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+#if BA_UE_VERSION_OR_LATER(5, 0)
+void SBAOpenWindowMenu::AddWorkspaceMenuStructure(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items, TSet<FName>& ExistingTabNames)
 {
 	const IWorkspaceMenuStructure& MenuStructure = WorkspaceMenu::GetMenuStructure();
 
@@ -797,13 +872,11 @@ void SOpenWindowMenu::AddWorkspaceMenuStructure(TArray<TSharedPtr<FOpenWindowIte
 	PendingItems.Add(MenuStructure.GetAutomationToolsCategory());
 	PendingItems.Add(MenuStructure.GetEditOptions());
 
-#if BA_UE_VERSION_OR_LATER(5, 0)
 	PendingItems.Add(MenuStructure.GetToolsStructureRoot());
 	PendingItems.Add(MenuStructure.GetLevelEditorVirtualProductionCategory());
 	PendingItems.Add(MenuStructure.GetLevelEditorWorldPartitionCategory());
 	PendingItems.Add(MenuStructure.GetDeveloperToolsAuditCategory());
 	PendingItems.Add(MenuStructure.GetDeveloperToolsPlatformsCategory());
-#endif
 
 	TSet<TSharedPtr<FWorkspaceItem>> VisitedItems;
 	while (PendingItems.Num() > 0)
@@ -812,7 +885,14 @@ void SOpenWindowMenu::AddWorkspaceMenuStructure(TArray<TSharedPtr<FOpenWindowIte
 
 		if (TSharedPtr<FTabSpawnerEntry> TabSpawnerEntry = CurrentItem->AsSpawnerEntry())
 		{
-			Items.Add(MakeShareable(new FOpenTabSpawnerItem(TabSpawnerEntry)));
+			if (!TabSpawnerEntry->GetDisplayName().IsEmptyOrWhitespace() && !ExistingTabNames.Contains(TabSpawnerEntry->GetTabType()))
+			{
+				ExistingTabNames.Add(TabSpawnerEntry->GetTabType());
+
+				TSharedPtr<FOpenTabSpawnerItem> NewItem = MakeShareable(new FOpenTabSpawnerItem(TabSpawnerEntry));
+				Items.Add(NewItem);
+				UE_LOG(LogBlueprintAssist, Verbose, TEXT("WORKSPACE ITEM %s %s"), *NewItem->GetTabName().ToString(), *TabSpawnerEntry->GetDisplayName().ToString());
+			}
 		}
 
 		if (VisitedItems.Contains(CurrentItem))
@@ -826,7 +906,72 @@ void SOpenWindowMenu::AddWorkspaceMenuStructure(TArray<TSharedPtr<FOpenWindowIte
 	}
 }
 
-void SOpenWindowMenu::AddActionItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddTabManagerItems(TSharedPtr<FTabManager> TabManager, TSet<FName>& AddedTabs, TArray<TSharedPtr<FOpenWindowItem_Base>>& OutItems)
+{
+	if (!TabManager.IsValid())
+	{
+		return;
+	}
+
+	FTabManager& TabManagerRef = *TabManager.Get();
+	TSharedRef<FTabSpawner> NomadTabSpawner = TabManagerRef.*GNomadTabSpawner;
+
+	UEditorUtilitySubsystem* EditorUtilitySubsystem = GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>();
+
+	for (auto& Elem : NomadTabSpawner.Get())
+	{
+		if (AddedTabs.Contains(Elem.Value->GetTabType()))
+		{
+			continue;
+		}
+
+		if (EditorUtilitySubsystem)
+		{
+			if (EditorUtilitySubsystem->RegisteredTabs.Contains(Elem.Value->GetTabType()))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Skipping %s"), *Elem.Value->GetTabType().ToString())
+				continue;
+			}
+		}
+
+		AddedTabs.Add(Elem.Value->GetTabType());
+
+		OutItems.Add(MakeShareable(new FOpenTabSpawnerItem(Elem.Value, TabManager)));
+
+		// UE_LOG(LogBlueprintAssist, Log, TEXT("\tADD NOMAD TAB %s %s"), *Elem.Key.ToString(), *Elem.Value->GetDisplayName().ToString());
+	}
+
+	FTabSpawner& TabSpawner = TabManagerRef.*GTabSpawner;
+	for (auto& Elem : TabSpawner)
+	{
+		if (Elem.Value->GetDisplayName().IsEmptyOrWhitespace())
+		{
+			UE_LOG(LogBlueprintAssist, Verbose, TEXT("Tab %s has null tab type?"), *Elem.Key.ToString());
+			continue;
+		}
+
+		if (AddedTabs.Contains(Elem.Value->GetTabType()))
+		{
+			continue;
+		}
+
+		if (EditorUtilitySubsystem)
+		{
+			if (EditorUtilitySubsystem->RegisteredTabs.Contains(Elem.Value->GetTabType()))
+			{
+				continue;
+			}
+		}
+
+		AddedTabs.Add(Elem.Value->GetTabType());
+
+		OutItems.Add(MakeShareable(new FOpenTabSpawnerItem(Elem.Value, TabManager)));
+		// UE_LOG(LogBlueprintAssist, Log, TEXT("\tADD TAB %s %s"), *Elem.Key.ToString(), *Elem.Value->GetDisplayName().ToString());
+	}
+}
+#endif
+
+void SBAOpenWindowMenu::AddActionItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	const auto ShowEditorPreferences = FExecuteAction::CreateLambda([]()
 	{
@@ -843,7 +988,7 @@ void SOpenWindowMenu::AddActionItems(TArray<TSharedPtr<FOpenWindowItem_Base>>& I
 	Items.Add(MakeShared<FOpenWindowItem_Action>("Project Settings", ShowProjectSettings));
 }
 
-void SOpenWindowMenu::AddMenuEntryBlocks(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddMenuEntryBlocks(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	TSharedPtr<SWindow> Window = FSlateApplication::Get().GetActiveTopLevelWindow();
 
@@ -859,7 +1004,7 @@ void SOpenWindowMenu::AddMenuEntryBlocks(TArray<TSharedPtr<FOpenWindowItem_Base>
 	}
 }
 
-void SOpenWindowMenu::AddEditorUtilityWidgets(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
+void SBAOpenWindowMenu::AddEditorUtilityWidgets(TArray<TSharedPtr<FOpenWindowItem_Base>>& Items)
 {
 	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 
@@ -867,6 +1012,9 @@ void SOpenWindowMenu::AddEditorUtilityWidgets(TArray<TSharedPtr<FOpenWindowItem_
 
 #if BA_UE_VERSION_OR_LATER(5, 1)
 	FARFilter ClassFilter;
+	ClassFilter.bRecursiveClasses = true;
+	ClassFilter.bRecursivePaths = true;
+	ClassFilter.ClassPaths.Add(UEditorUtilityBlueprint::StaticClass()->GetClassPathName());
 	ClassFilter.ClassPaths.Add(UEditorUtilityWidgetBlueprint::StaticClass()->GetClassPathName());
 	AssetRegistry.GetAssets(ClassFilter, EditorUtilsAssets);
 #elif BA_UE_VERSION_OR_LATER(5, 0)
@@ -888,7 +1036,7 @@ void SOpenWindowMenu::AddEditorUtilityWidgets(TArray<TSharedPtr<FOpenWindowItem_
 	}
 }
 
-TSharedRef<ITableRow> SOpenWindowMenu::CreateItemWidget(TSharedPtr<FOpenWindowItem_Base> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+TSharedRef<ITableRow> SBAOpenWindowMenu::CreateItemWidget(TSharedPtr<FOpenWindowItem_Base> Item, const TSharedRef<STableViewBase>& OwnerTable) const
 {
 	float VerticalPadding = 4.0f;
 
@@ -913,13 +1061,18 @@ TSharedRef<ITableRow> SOpenWindowMenu::CreateItemWidget(TSharedPtr<FOpenWindowIt
 			TextHBox
 		];
 
+	FText RowTooltip;
+
 	if (const FString* DetailsString = Item->GetDetailsString())
 	{
-		VerticalPadding = 2.0f;
 		TextVBox->AddSlot().AttachWidget(SNew(STextBlock)
 			.Font(BA_STYLE_CLASS::Get().GetFontStyle("ContentBrowser.AssetListViewClassFont"))
 			.Text(FText::FromString(*DetailsString))
 		);
+
+		VerticalPadding = 2.0f;
+
+		RowTooltip = FText::FromString(*DetailsString);
 	}
 
 	TSharedRef<SHorizontalBox> RowContents = SNew(SHorizontalBox);
@@ -944,14 +1097,13 @@ TSharedRef<ITableRow> SOpenWindowMenu::CreateItemWidget(TSharedPtr<FOpenWindowIt
 		TextVBox
 	];
 
-	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable).Padding(FMargin(2.0f, VerticalPadding))
+	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable).Padding(FMargin(2.0f, VerticalPadding)).ToolTipText(RowTooltip)
 	[
 		RowContents
 	];
 }
 
-void SOpenWindowMenu::SelectItem(TSharedPtr<FOpenWindowItem_Base> Item)
+void SBAOpenWindowMenu::SelectItem(TSharedPtr<FOpenWindowItem_Base> Item)
 {
 	Item->SelectItem();
 }
-

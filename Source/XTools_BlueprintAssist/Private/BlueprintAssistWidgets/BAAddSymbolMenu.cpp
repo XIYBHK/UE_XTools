@@ -18,6 +18,44 @@
 #endif
 
 
+FString FAddSymbolStruct::ToString() const
+{
+	if (DocumentType.IsSet())
+	{
+		switch (DocumentType.GetValue())
+		{
+			case FBlueprintEditor::CGT_NewFunctionGraph:
+				return FString("Add Function");
+			case FBlueprintEditor::CGT_NewMacroGraph:
+				return FString("Add Macro");
+			case FBlueprintEditor::CGT_NewEventGraph:
+				return FString("Add Event Graph");
+			default:
+				break;
+		}
+	}
+	else if (OtherDocumentType.IsSet())
+	{
+		switch (OtherDocumentType.GetValue())
+		{
+			case EBAOtherDocumentType::Variable:
+				return FString("Add Variable");
+			case EBAOtherDocumentType::LocalVariable:
+				return FString("Add Local Variable");
+			case EBAOtherDocumentType::Delegate:
+				return FString("Add Event Dispatcher");
+			default:
+				break;
+		}
+	}
+	else if (Widget.IsValid())
+	{
+		return "Add Component";
+	}
+
+	return "Error";
+}
+
 void SBAAddSymbolMenu::Construct(const FArguments& InArgs)
 {
 	ChildSlot

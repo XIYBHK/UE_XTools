@@ -62,7 +62,7 @@ public:
 /**
  * Implements the undo history panel.
  */
-class XTOOLS_BLUEPRINTASSIST_API SBASearchMenu final : public SCompoundWidget
+class SBASearchMenu : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SBASearchMenu)

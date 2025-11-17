@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistObjects/BAAssetEditorHandlerObject.h"
 
@@ -38,9 +38,6 @@ void UBAAssetEditorHandlerObject::Init()
 void UBAAssetEditorHandlerObject::Cleanup()
 {
 	UnbindDelegates();
-	
-	// Clean up all blueprint handlers
-	BlueprintHandlers.Empty();
 }
 
 void UBAAssetEditorHandlerObject::Tick()

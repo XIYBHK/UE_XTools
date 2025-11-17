@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -37,10 +37,13 @@ class XTOOLS_BLUEPRINTASSIST_API SBADebugMenu final : public SCompoundWidget
 	FText HoveredWidget;
 	FText FocusedWidget;
 	FText CurrentTab;
+	FText LastMajorTab;
 	FText FocusedAssetEditor;
 	FText CurrentAsset;
 	FText KeyboardFocusWidget;
 	FText UserFocusWidget;
+	FText ActiveWindow;
+	FText GraphHandlerObj;
 
 	static void RegisterNomadTab();
 };

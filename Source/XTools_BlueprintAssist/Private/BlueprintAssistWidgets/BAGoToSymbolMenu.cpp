@@ -152,3 +152,34 @@ void SBAGoToSymbolMenu::SelectItem(TSharedPtr<FGoToSymbolStruct> Item)
 	// open the graph
 	FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(Item->Graph, false);
 }
+
+/*****************/
+/* FSymbolStruct */
+/*****************/
+FString FGoToSymbolStruct::ToString() const
+{
+	if (EventNode)
+	{
+		return FBAUtils::GetNodeName(EventNode);
+	}
+
+	return FBAUtils::GetGraphDisplayName(Graph);
+}
+
+FString FGoToSymbolStruct::GetSearchText() const
+{
+	FString SearchText = FBAUtils::GetGraphDisplayName(Graph) + GetTypeDescription();
+	if (EventNode)
+	{
+		SearchText += FBAUtils::GetNodeName(EventNode);
+	}
+
+	return SearchText;
+}
+
+FString FGoToSymbolStruct::GetTypeDescription() const
+{
+	return EventNode != nullptr
+		? FString("Event")
+		: FBAUtils::GraphTypeToString(FBAUtils::GetGraphType(Graph));
+}

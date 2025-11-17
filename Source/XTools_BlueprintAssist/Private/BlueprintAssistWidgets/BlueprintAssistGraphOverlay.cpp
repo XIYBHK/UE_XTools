@@ -1,7 +1,8 @@
-#include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
+﻿#include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
 
 #include "BlueprintAssistCache.h"
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistWidgets/SBASizeProgress.h"
 #include "BlueprintAssistStyle.h"

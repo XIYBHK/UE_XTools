@@ -1,10 +1,12 @@
-#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
+﻿#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
 
 #include "BlueprintAssistCommands.h"
-#include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings_Advanced.h"
+#include "BlueprintAssistTabHandler.h"
+#include "BlueprintAssistUtils.h"
 #include "EdGraphSchema_K2_Actions.h"
+#include "FileHelpers.h"
 #include "K2Node_Knot.h"
 #include "ScopedTransaction.h"
 #include "SGraphPanel.h"
@@ -39,6 +41,13 @@ bool FBAGraphActionsBase::HasGraphNonReadOnly() const
 	return false;
 }
 
+TSharedPtr<FBAGraphHandler> FBAGraphActionsBase::GetGraphHandlerChecked()
+{
+	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
+	check(GraphHandler.IsValid());
+	return GraphHandler;
+}
+
 void FBAGraphActions::Init()
 {
 	GraphCommands = MakeShareable(new FUICommandList());
@@ -66,6 +75,12 @@ void FBAGraphActions::Init()
 		FCanExecuteAction::CreateRaw(this, &FBAGraphActions::HasGraphNonReadOnly)
 	);
 
+	GraphCommands->MapAction(
+		FBACommands::Get().SaveAndFormat,
+		FExecuteAction::CreateRaw(this, &FBAGraphActions::SaveAndFormat),
+		FCanExecuteAction::CreateRaw(this, &FBAGraphActions::HasGraphNonReadOnly)
+	);
+
 	////////////////////////////////////////////////////////////
 	// Graph Read Only Commands
 	////////////////////////////////////////////////////////////
@@ -85,7 +100,7 @@ void FBAGraphActions::OnFormatAllEvents() const
 	}
 }
 
-void FBAGraphActions::OpenContextMenu(const FBAVector2& MenuLocation, const FBAVector2& NodeSpawnPosition)
+void FBAGraphActions::OpenContextMenu(const FVector2D& MenuLocation, const FVector2D& NodeSpawnPosition)
 {
 	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
 	if (!GraphHandler)
@@ -140,7 +155,7 @@ void FBAGraphActions::OpenContextMenu(const FBAVector2& MenuLocation, const FBAV
 	}
 }
 
-void FBAGraphActions::OpenContextMenuFromPin(UEdGraphPin* Pin, const FBAVector2& MenuLocation, const FBAVector2& NodeLocation)
+void FBAGraphActions::OpenContextMenuFromPin(UEdGraphPin* Pin, const FVector2D& MenuLocation, const FVector2D& NodeLocation)
 {
 	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
 	if (!GraphHandler)
@@ -227,7 +242,7 @@ void FBAGraphActions::CreateRerouteNode()
 	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
 	const FVector2D GraphPosition = GraphPanel->PanelCoordToGraphCoord(GraphPanel->GetTickSpaceGeometry().AbsoluteToLocal(CursorPos));
 
-	UEdGraphPin* PinToCreateFrom = nullptr;
+	FBANodePinHandle PinToCreateFrom;
 
 	// get pin from knot node
 	UEdGraphNode* SelectedNode = GraphHandler->GetSelectedNode();
@@ -253,7 +268,7 @@ void FBAGraphActions::CreateRerouteNode()
 	}
 
 	// get hovered pin
-	if (!PinToCreateFrom)
+	if (!PinToCreateFrom.IsValid())
 	{
 		if (TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetHoveredGraphPin(GraphHandler->GetGraphPanel()))
 		{
@@ -262,12 +277,12 @@ void FBAGraphActions::CreateRerouteNode()
 	}
 
 	// get selected pin
-	if (!PinToCreateFrom)
+	if (!PinToCreateFrom.IsValid())
 	{
 		PinToCreateFrom = GraphHandler->GetSelectedPin();
 	}
 
-	if (!PinToCreateFrom)
+	if (!PinToCreateFrom.IsValid())
 	{
 		return;
 	}
@@ -276,9 +291,9 @@ void FBAGraphActions::CreateRerouteNode()
 	auto HoveredGraphPin = FBAUtils::GetHoveredGraphPin(GraphHandler->GetGraphPanel());
 	if (HoveredGraphPin.IsValid())
 	{
-		UEdGraphPin* HoveredPin = HoveredGraphPin->GetPinObj();
+		FBANodePinHandle HoveredPin(HoveredGraphPin->GetPinObj());
 
-		if (FBAUtils::CanConnectPins(PinToCreateFrom, HoveredPin, true))
+		if (FBAUtils::CanConnectPins(PinToCreateFrom.GetPin(), HoveredPin.GetPin(), true))
 		{
 			if (FBAUtils::TryCreateConnection(PinToCreateFrom, HoveredPin, EBABreakMethod::Default))
 			{
@@ -287,7 +302,7 @@ void FBAGraphActions::CreateRerouteNode()
 		}
 	}
 
-	UEdGraphPin* LinkedPin = PinToCreateFrom->LinkedTo.Num() > 0 ? PinToCreateFrom->LinkedTo[0] : nullptr;
+	FBANodePinHandle LinkedPin = PinToCreateFrom->LinkedTo.Num() > 0 ? PinToCreateFrom->LinkedTo[0] : nullptr;
 
 	//@TODO: This constant is duplicated from inside of SGraphNodeKnot
 	const FVector2D NodeSpacerSize(42.0f, 14.0f);
@@ -305,18 +320,18 @@ void FBAGraphActions::CreateRerouteNode()
 		// Move the connections across (only notifying the knot, as the other two didn't really change)
 		UEdGraphPin* NewKnotPin = (PinToCreateFrom->Direction == EGPD_Output) ? NewKnot->GetInputPin() : NewKnot->GetOutputPin();
 
-		PinToCreateFrom->MakeLinkTo(NewKnotPin);
+		FBAUtils::TryCreateConnectionUnsafe(PinToCreateFrom.GetPin(), NewKnotPin, EBABreakMethod::Default);
 
-		if (LinkedPin != nullptr)
+		if (LinkedPin.IsValid())
 		{
-			PinToCreateFrom->BreakLinkTo(LinkedPin);
+			FBAUtils::SchemaBreakSinglePinLink(PinToCreateFrom, LinkedPin);
 			UEdGraphPin* NewKnotPinForLinkedPin = (LinkedPin->Direction == EGPD_Output) ? NewKnot->GetInputPin() : NewKnot->GetOutputPin();
-			LinkedPin->MakeLinkTo(NewKnotPinForLinkedPin);
+			FBAUtils::TryCreateConnectionUnsafe(LinkedPin.GetPin(), NewKnotPinForLinkedPin, EBABreakMethod::Default);
 		}
 
 		NewKnot->PostReconstructNode();
 
-		TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetGraphPin(GraphPanel, PinToCreateFrom);
+		TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetGraphPin(GraphPanel, PinToCreateFrom.GetPin());
 		const float PinY = PinToCreateFrom->GetOwningNode()->NodePosY + GraphPin->GetNodeOffset().Y;
 		const float HeightDiff = FMath::Abs(PinY - KnotTopLeft.Y);
 		if (HeightDiff < 25)
@@ -330,6 +345,42 @@ void FBAGraphActions::CreateRerouteNode()
 			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 		}
 	}
+}
+
+void FBAGraphActions::SaveAndFormat()
+{
+	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
+	if (!GraphHandler)
+	{
+		return;
+	}
+
+	if (SaveAndFormatHandle.IsValid())
+	{
+		return;
+	}
+
+	GraphHandler->FormatAllEvents();
+
+	SaveAndFormatHandle = GraphHandler->OnPostFormatting.AddLambda([&]()
+	{
+		if (SaveAndFormatHandle.IsValid())
+		{
+			if (TSharedPtr<FBAGraphHandler> GH = GetGraphHandler())
+			{
+				GH->OnPostFormatting.Remove(SaveAndFormatHandle);
+				SaveAndFormatHandle.Reset();
+
+				if (UEdGraph* Graph = GH->GetFocusedEdGraph())
+				{
+					if (UPackage* Package = FBAUtils::GetPackage(Graph))
+					{
+						FEditorFileUtils::PromptForCheckoutAndSave({Package}, false, false);
+					}
+				}
+			}
+		}
+	});
 }
 
 void FBAGraphActions::FocusGraphPanel()

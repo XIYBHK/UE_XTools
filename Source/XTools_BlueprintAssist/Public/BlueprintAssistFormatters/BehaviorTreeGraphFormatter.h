@@ -69,6 +69,7 @@ private:
 	TArray<FBALayer> Layers;
 };
 
+
 class XTOOLS_BLUEPRINTASSIST_API FBehaviorTreeGraphFormatter final
 	: public FFormatterInterface
 {

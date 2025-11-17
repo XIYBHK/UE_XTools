@@ -94,8 +94,8 @@ public:
 	void MakeFormattingStyleSubMenu(FMenuBuilder& InMenuBuilder);
 	void MakeFormatAllStyleSubMenu(FMenuBuilder& InMenuBuilder);
 	void MakeToolsSubMenu(FMenuBuilder& InMenuBuilder);
+	void MakeWindowsSubMenu(FMenuBuilder& InMenuBuilder);
 
-	void ExtendToolbarAndProcessTab(FToolBarBuilder& ToolbarBuilder, TWeakPtr<SDockTab> Tab);
 	void ExtendToolbar(FToolBarBuilder& ToolbarBuilder);
 
 	static FBAFormatterSettings* GetCurrentFormatterSettings();

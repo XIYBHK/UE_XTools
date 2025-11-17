@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistFormatters/BlueprintAssistCommentHandler.h"
 

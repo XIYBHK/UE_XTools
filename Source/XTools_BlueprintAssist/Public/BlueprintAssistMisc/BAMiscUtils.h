@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -6,6 +6,7 @@
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistTabHandler.h"
 #include "BlueprintAssistObjects/BAAssetEditorHandlerObject.h"
+#include "Widgets/Notifications/SNotificationList.h"
 
 class IAssetFamily;
 class BA_SUBOBJECT_EDITOR_TREE_NODE;
@@ -118,4 +119,16 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAMiscUtils
 
 	static bool IsBlueprintImplementableEvent(UFunction* Function);
 	static bool IsBlueprintNativeEvent(UFunction* Function);
+
+	static FString GetInputChordName(const FInputChord& Chord);
+
+	static FString CompressString(const FString& InString, FName FormatName = NAME_Gzip);
+
+	static bool DecompressString(const FString& InCompressedString, FString& OutDecompressedString, FName FormatName = NAME_Gzip);
+
+	static void WriteTextToFile(TCHAR* FullPath, TCHAR* Content);
+
+	static void ClipboardCopy(const FString& String);
+
+	static TSharedPtr<SNotificationItem> ShowSimpleSlateNotification(const FText& Msg, SNotificationItem::ECompletionState State, float ExpireDuration = 3.0f);
 };

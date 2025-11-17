@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -23,10 +23,20 @@ class XTOOLS_BLUEPRINTASSIST_API SBAWelcomeScreen : public SCompoundWidget
 
 	void Construct(const FArguments& InArgs);
 
-	static TSharedRef<SDockTab> CreateTab(const FSpawnTabArgs& Args);
+	static TSharedRef<SDockTab> CreateWelcomeScreenTab(const FSpawnTabArgs& Args);
 
-	TSharedRef<SWidget> CreateIntroductionWidget();
-	TSharedRef<SWidget> CreateSettingsWidget();
+	TSharedRef<SWidget> MakeCommandWidget(TSharedPtr<FUICommandInfo> Command);
 
+	FText GetCommandText(TSharedPtr<FUICommandInfo> Command);
+
+	TSharedRef<SWidget> MakeIntroPage();
+
+	TSharedRef<SWidget> MakeCustomizePage();
+
+	TSharedRef<SWidget> MakePropertiesList(const TMap<UObject*, TArray<FName>>& Properties);
+
+	FBASettingsPropertyHook SettingsPropertyHook;
+
+	TArray<TSharedPtr<SCheckBox>> MenuEntries;
 	TSharedPtr<SWidgetSwitcher> WidgetSwitcher;
 };

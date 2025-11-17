@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 
+class UTextureRenderTarget2D;
 class FBAGraphHandler;
 class SOverlay;
 
@@ -16,6 +17,7 @@ class XTOOLS_BLUEPRINTASSIST_API SBASizeProgress final : public SCompoundWidget
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs, TSharedPtr<FBAGraphHandler> InOwnerGraphHandler);
+	virtual ~SBASizeProgress() override;
 
 public:
 	void RenderGraphToBrush();
@@ -31,6 +33,8 @@ public:
 protected:
 	void DrawWidgetToRenderTarget(TSharedPtr<SWidget> Widget);
 
+	void DestroyRenderTarget();
+
 	FText GetCacheProgressText() const;
 
 	TOptional<float> GetCachingPercent() const;
@@ -44,4 +48,6 @@ protected:
 	const FSlateBrush* CachedBorderBrush = nullptr;
 
 	bool bIsCachingOverlayVisible = false;
+
+	UTextureRenderTarget2D* RenderTarget = nullptr;
 };

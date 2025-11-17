@@ -4,14 +4,19 @@
 
 #include "BlueprintAssistCache.h"
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistInputProcessor.h"
 #include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistStyle.h"
 #include "BlueprintAssistTabHandler.h"
 #include "BlueprintAssistUtils.h"
 #include "BlueprintEditorModule.h"
 #include "ISettingsModule.h"
 #include "LevelEditorActions.h"
+#include "BlueprintAssistActions/BlueprintAssistGlobalActions.h"
 #include "BlueprintAssistMisc/BlueprintAssistToolbar_BlueprintImpl.h"
+#include "BlueprintAssistWidgets/BASettingsChangeWindow.h"
+#include "BlueprintAssistWidgets/BAWelcomeScreen.h"
 #include "EdGraph/EdGraph.h"
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -23,7 +28,7 @@
 
 FBAToolbarCommandsImpl::FBAToolbarCommandsImpl() : TCommands<FBAToolbarCommandsImpl>(
 	TEXT("BlueprintAssistToolbarCommands"),
-	NSLOCTEXT("Contexts", "BlueprintAssistToolbarCommands", "Blueprint Assist Toolbar Commands"),
+	NSLOCTEXT("Contexts", "BlueprintAssistToolbarCommands", "Blueprint Assist 工具栏命令"),
 	NAME_None,
 	BA_GET_STYLE_SET_NAME()) { }
 
@@ -38,8 +43,8 @@ void FBAToolbarCommandsImpl::RegisterCommands()
 
 	UI_COMMAND(
 		AutoFormatting_FormatAll,
-		"始终格式化所有连接的节点",
-		"创建新节点时始终格式化所有连接的节点",
+		"总是格式化所有连接的节点",
+		"创建新节点时总是格式化所有连接的节点",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
@@ -52,64 +57,64 @@ void FBAToolbarCommandsImpl::RegisterCommands()
 
 	UI_COMMAND(
 		FormattingStyle_Compact,
-		"紧凑式格式化",
-		"将格式化样式设置为紧凑式",
+		"紧凑样式",
+		"将格式化样式设置为紧凑",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		FormattingStyle_Expanded,
-		"展开式格式化",
-		"将格式化样式设置为展开式",
+		"展开样式",
+		"将格式化样式设置为展开",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		ParameterStyle_LeftHandSide,
-		"左侧参数样式",
-		"格式化时参数节点将定位在左侧",
+		"左侧样式",
+		"格式化时参数将被定位在左侧",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		ParameterStyle_Helixing,
-		"螺旋参数样式",
-		"格式化时参数节点将定位在下方",
+		"螺旋样式",
+		"格式化时参数节点将被定位在下方",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		FormatAllStyle_Simple,
-		"全部格式化样式：简单",
-		"将根节点定位到单列",
+		"简单样式",
+		"将根节点定位为单列",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		FormatAllStyle_Smart,
-		"全部格式化样式：智能",
-		"根据节点位置将根节点定位到多列",
+		"智能样式",
+		"根据节点位置将根节点定位为多列",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		FormatAllStyle_NodeType,
-		"全部格式化样式：节点类型",
-		"根据根节点类型将节点定位到列",
+		"节点类型样式",
+		"根据根节点类型将节点定位为列",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
 	UI_COMMAND(
 		BlueprintAssistSettings,
-		"Blueprint Assist 设置",
-		"打开 Blueprint Assist 设置",
+		"BlueprintAssist设置",
+		"打开BlueprintAssist设置",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 
 	UI_COMMAND(
 		DetectUnusedNodes,
-		"检测未使用的节点",
-		"检测当前图表上未使用的节点并在消息日志中显示",
+		"检测未使用节点",
+		"检测当前图表上的未使用节点并在消息日志中显示它们",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 }
@@ -152,7 +157,7 @@ void FBAToolbar::Cleanup()
 
 void FBAToolbar::OnAssetOpenedInEditor(UObject* Asset, IAssetEditorInstance* AssetEditor)
 {
-	if (!UBASettings::Get().bAddToolbarWidget || !Asset || !AssetEditor)
+	if (!UBASettings_EditorFeatures::Get().bAddToolbarWidget || !Asset || !AssetEditor)
 	{
 		return;
 	}
@@ -176,26 +181,11 @@ void FBAToolbar::OnAssetOpenedInEditor(UObject* Asset, IAssetEditorInstance* Ass
 
 		TSharedRef<FExtender> ToolbarExtender = MakeShareable(new FExtender);
 
-		if (AssetEditor)
-		{
-			TSharedPtr<FTabManager> TabManager = AssetEditor->GetAssociatedTabManager();
-			if (TabManager.IsValid())
-			{
-				ToolbarExtender->AddToolBarExtension(
-					"Asset",
-					EExtensionHook::After,
-					ToolkitCommands,
-					FToolBarExtensionDelegate::CreateRaw(this, &FBAToolbar::ExtendToolbarAndProcessTab, TWeakPtr<SDockTab>(TabManager->GetOwnerTab())));
-			}
-		}
-		else
-		{
-			TSharedRef<const FExtensionBase> Extension = ToolbarExtender->AddToolBarExtension(
-				"Asset",
-				EExtensionHook::After,
-				ToolkitCommands,
-				FToolBarExtensionDelegate::CreateRaw(this, &FBAToolbar::ExtendToolbar));
-		}
+		TSharedRef<const FExtensionBase> Extension = ToolbarExtender->AddToolBarExtension(
+			"Asset",
+			EExtensionHook::After,
+			ToolkitCommands,
+			FToolBarExtensionDelegate::CreateRaw(this, &FBAToolbar::ExtendToolbar));
 
 		ToolbarExtenderMap.Add(WeakToolkit, ToolbarExtender);
 		AssetEditorToolkit->AddToolbarExtender(ToolbarExtender);
@@ -281,7 +271,7 @@ void FBAToolbar::SetGraphReadOnly(ECheckBoxState NewCheckedState)
 
 void FBAToolbar::OpenBlueprintAssistSettings()
 {
-	FModuleManager::LoadModuleChecked<ISettingsModule>("Settings").ShowViewer("Editor", "Plugins", "BlueprintAssist");
+	FModuleManager::LoadModuleChecked<ISettingsModule>("Settings").ShowViewer("Editor", "Plugins", "XTools_BlueprintAssist");
 }
 
 void FBAToolbar::BindToolbarCommands()
@@ -377,34 +367,34 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 
 	FMenuBuilder MenuBuilder(bShouldCloseWindowAfterMenuSelection, BlueprintAssistToolbarActions);
 
-	FText GlobalSettingsDescription = LOCTEXT("OtherSettings", "其他");
+	FText GlobalSettingsDescription = FText::FromString(FString::Printf(TEXT("Other")));
 
 	TSharedPtr<FBAGraphHandler> GraphHandler = FBAUtils::GetCurrentGraphHandler();
 	if (GraphHandler.IsValid())
 	{
 		UEdGraph* Graph = GraphHandler->GetFocusedEdGraph();
 		FString GraphClassName = Graph ? Graph->GetClass()->GetName() : FString("Null");
-		const FText SectionName = FText::Format(LOCTEXT("GraphSettingsFormat", "{0} 设置"), FText::FromString(GraphClassName));
+		const FText SectionName = FText::FromString(FString::Printf(TEXT("%s settings"), *GraphClassName));
 		MenuBuilder.BeginSection("FormattingSettings", SectionName);
 		{
 			MenuBuilder.AddSubMenu(
-			LOCTEXT("AutoFormattingSubMenu", "自动格式化行为"),
-			LOCTEXT("AutoFormattingSubMenu_Tooltip", "设置向图表添加新节点时的自动格式化行为"),
+				LOCTEXT("AutoFormattingSubMenu", "自动格式化行为"),
+				LOCTEXT("AutoFormattingSubMenu_Tooltip", "允许你设置向图表添加新节点时的自动格式化行为"),
 				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeAutoFormattingSubMenu));
 
 			MenuBuilder.AddSubMenu(
-			LOCTEXT("FormattingStyleSubMenu", "格式化样式"),
-			LOCTEXT("FormattingStyleSubMenu_Tooltip", "设置格式化样式"),
+				LOCTEXT("FormattingStyleSubMenu", "格式化样式"),
+				LOCTEXT("FormattingStyleSubMenu_Tooltip", "设置格式化样式"),
 				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeFormattingStyleSubMenu));
 
 			MenuBuilder.AddSubMenu(
-			LOCTEXT("ParameterStyleSubMenu", "参数样式"),
-			LOCTEXT("ParameterStyleSubMenu_Tooltip", "设置格式化时的参数样式"),
+				LOCTEXT("ParameterStyleSubMenu", "参数样式"),
+				LOCTEXT("ParameterStyleSubMenu_Tooltip", "设置格式化时参数的样式"),
 				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeParameterStyleSubMenu));
 
 			MenuBuilder.AddSubMenu(
-			LOCTEXT("FormatAllInsertStyleSubMenu", "全部格式化样式"),
-			LOCTEXT("FormatAllInsertStyle_Tooltip", "设置全部格式化样式"),
+				LOCTEXT("FormatAllInsertStyleSubMenu", "全部格式化样式"),
+				LOCTEXT("FormatAllInsertStyle_Tooltip", "设置全部格式化样式"),
 				FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeFormatAllStyleSubMenu));
 
 			TSharedRef<SWidget> ApplyCommentPaddingCheckbox = SNew(SBox)
@@ -413,7 +403,7 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 				.IsChecked(UBASettings::Get().bApplyCommentPadding ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
 				.OnCheckStateChanged(FOnCheckStateChanged::CreateRaw(this, &FBAToolbar::SetUseCommentBoxPadding))
 				.Style(BA_STYLE_CLASS::Get(), "Menu.CheckBox")
-				.ToolTipText(LOCTEXT("ApplyCommentPaddingToolTip", "切换格式化时是否应用注释内边距"))
+				.ToolTipText(LOCTEXT("ApplyCommentPaddingToolTip", "切换是否在格式化时应用注释内边距"))
 				.Content()
 				[
 					SNew(SHorizontalBox)
@@ -438,7 +428,7 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 				.IsChecked(GraphHandler->IsGraphReadOnly() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
 				.OnCheckStateChanged(FOnCheckStateChanged::CreateRaw(this, &FBAToolbar::SetGraphReadOnly))
 				.Style(BA_STYLE_CLASS::Get(), "Menu.CheckBox")
-				.ToolTipText(LOCTEXT("GraphReadOnlyToolTip", "设置图表只读状态（没有 BA 插件无法撤销！）"))
+				.ToolTipText(LOCTEXT("GraphReadOnlyToolTip", "设置图表只读状态(没有BA插件无法撤销!)"))
 				.Content()
 				[
 					SNew(SHorizontalBox)
@@ -457,30 +447,24 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 	}
 	else
 	{
-		GlobalSettingsDescription = LOCTEXT("SettingsHiddenGraphNotFocused", "设置已隐藏：图表未聚焦");
+		GlobalSettingsDescription = FText::FromString(FString::Printf(TEXT("Settings hidden: Graph is not focused")));
 	}
 
 	// global settings
 	MenuBuilder.BeginSection("GlobalSettings", GlobalSettingsDescription);
 	{
 		MenuBuilder.AddSubMenu(
-			LOCTEXT("ToolsSubMenu", "工具"),
-			LOCTEXT("ToolsSubMenu_Tooltip", "Blueprint Assist 工具集合"),
+			INVTEXT("工具"),
+			INVTEXT("Blueprint Assist工具集合"),
 			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeToolsSubMenu));
 
-		const FText OpenDebugMenuLabel = LOCTEXT("OpenDebugMenu", "打开调试菜单");
-		const FText OpenDebugMenuTooltip = LOCTEXT("OpenDebugMenu_Tooltip", "打开调试菜单");
-		FUIAction OpenDebugMenuAction(FExecuteAction::CreateLambda([]()
-		{
-			FGlobalTabmanager::Get()->TryInvokeTab(FName("BADebugMenu"));
-		}));
-
-		MenuBuilder.AddMenuEntry(OpenDebugMenuLabel, OpenDebugMenuTooltip, FSlateIcon(), OpenDebugMenuAction);
+		MenuBuilder.AddSubMenu(
+			INVTEXT("窗口"),
+			INVTEXT("Blueprint Assist窗口集合"),
+			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeWindowsSubMenu));
 
 		// open blueprint settings
-		{
-			MenuBuilder.AddMenuEntry(FBAToolbarCommands::Get().BlueprintAssistSettings);
-		}
+		MenuBuilder.AddMenuEntry(FBAToolbarCommands::Get().BlueprintAssistSettings);
 	}
 	MenuBuilder.EndSection();
 
@@ -533,7 +517,7 @@ void FBAToolbar::MakeFormatAllStyleSubMenu(FMenuBuilder& InMenuBuilder)
 
 void FBAToolbar::MakeToolsSubMenu(FMenuBuilder& InMenuBuilder)
 {
-	InMenuBuilder.BeginSection("BlueprintAssistTools", LOCTEXT("ToolsSection", "工具"));
+	InMenuBuilder.BeginSection("BlueprintAssistTools", INVTEXT("工具"));
 	{
 		if (auto GH = FBAUtils::GetCurrentGraphHandler())
 		{
@@ -542,19 +526,39 @@ void FBAToolbar::MakeToolsSubMenu(FMenuBuilder& InMenuBuilder)
 				InMenuBuilder.AddMenuEntry(FBAToolbarCommands::Get().DetectUnusedNodes);
 			}
 		}
+
+		// debug menu
+		InMenuBuilder.AddMenuEntry(INVTEXT("打开调试菜单"), INVTEXT("打开调试菜单以查看当前图表的信息"), FSlateIcon(), FExecuteAction::CreateLambda([]()
+		{
+			FGlobalTabmanager::Get()->TryInvokeTab(FName("BADebugMenu"));
+		}));
 	}
 	InMenuBuilder.EndSection();
 }
 
-void FBAToolbar::ExtendToolbarAndProcessTab(FToolBarBuilder& ToolbarBuilder, TWeakPtr<SDockTab> Tab)
+void FBAToolbar::MakeWindowsSubMenu(FMenuBuilder& InMenuBuilder)
 {
-	if (!Tab.IsValid())
+	InMenuBuilder.BeginSection("BlueprintAssistWindows", INVTEXT("窗口"));
 	{
-		return;
+		// welcome screen
+		InMenuBuilder.AddMenuEntry(INVTEXT("打开欢迎屏幕"), INVTEXT("打开Blueprint Assist欢迎屏幕"), FSlateIcon(), FExecuteAction::CreateLambda([]()
+		{
+			FGlobalTabmanager::Get()->TryInvokeTab(SBAWelcomeScreen::GetTabId());
+		}));
+
+		// hotkey list
+		InMenuBuilder.PushCommandList(FBAInputProcessor::Get().GlobalActions.GlobalCommands.ToSharedRef());
+		InMenuBuilder.AddMenuEntry(FBACommands::Get().OpenBlueprintAssistHotkeySheet);
+		InMenuBuilder.PopCommandList();
+
+		// setting changes window
+		InMenuBuilder.AddMenuEntry(INVTEXT("设置更改"), INVTEXT("打开一个窗口显示Blueprint Assist设置的本地更改"), FSlateIcon(), FExecuteAction::CreateLambda([]()
+		{
+			FGlobalTabmanager::Get()->TryInvokeTab(SBASettingsChangeWindow::GetTabId());
+		}));
 	}
 
-	FBATabHandler::Get().ProcessTab(Tab.Pin());
-	ExtendToolbar(ToolbarBuilder);
+	InMenuBuilder.EndSection();
 }
 
 void FBAToolbar::ExtendToolbar(FToolBarBuilder& ToolbarBuilder)
@@ -562,8 +566,8 @@ void FBAToolbar::ExtendToolbar(FToolBarBuilder& ToolbarBuilder)
 	ToolbarBuilder.AddComboButton(
 		FUIAction(),
 		FOnGetContent::CreateRaw(this, &FBAToolbar::CreateToolbarWidget),
-		LOCTEXT("BlueprintAssist", "BP Assist"),
-		LOCTEXT("BlueprintAssist_Tooltip", "Blueprint Assist 设置"),
+		LOCTEXT("BlueprintAssist", "BlueprintAssist"),
+		FText::FromString("Blueprint Assist Settings"),
 		FSlateIcon(BA_GET_STYLE_SET_NAME(), "LevelEditor.GameSettings")
 	);
 }

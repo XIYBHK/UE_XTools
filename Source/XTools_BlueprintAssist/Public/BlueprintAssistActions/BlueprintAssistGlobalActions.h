@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistActionsBase.h"
@@ -23,12 +23,14 @@ public:
 	void OpenFocusSearchBoxMenu();
 	void OpenEditDetailsMenu();
 	void OpenWindowMenu();
-	void OpenBlueprintAssistHotkeyMenu();
+	static void OpenBlueprintAssistHotkeyMenu();
 	void OpenTabSwitcherMenu();
 	void ToggleFullscreen();
 	void SwitchWorkflowMode();
 	void OpenAssetCreationMenu();
 	void FocusSearchBox();
+	void OpenFindInFilesMenu();
+	void OpenFileMenu();
 
 	bool CanFocusSearchBox() const;
 

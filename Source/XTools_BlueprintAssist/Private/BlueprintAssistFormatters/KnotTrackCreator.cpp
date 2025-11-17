@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistFormatters/KnotTrackCreator.h"
 
@@ -61,7 +61,7 @@ void FKnotTrackCreator::FormatKnotNodes()
 
 	ExpandKnotTracks();
 
-	if (!UBASettings::HasDebugSetting("post-align"))
+	if (!UBASettings_Advanced::HasDebugSetting("post-align"))
 	{
 		// after expanding it is possible that some tracks might be able to be have a new pin-aligned solution, check this again
 		// only do this for single tracks which are not looping
@@ -82,12 +82,22 @@ void FKnotTrackCreator::FormatKnotNodes()
 		}
 	}
 
-	if (!UBASettings::HasDebugSetting("Useless"))
+	if (!UBASettings_Advanced::HasDebugSetting("Useless"))
 	{
 		RemoveUselessCreationNodes();
 	}
 
 	CreateKnotTracks();
+
+	// Cleanup knot node pool
+	for (auto& KnotNodeData : KnotNodePool)
+	{
+		if (FBAUtils::GetLinkedNodes(KnotNodeData.KnotNode).Num() == 0)
+		{
+			FBAUtils::DeleteNode(KnotNodeData.KnotNode);
+		}
+	}
+	KnotNodePool.Empty();
 
 	if (UBASettings::Get().bAddKnotNodesToComments)
 	{
@@ -97,7 +107,7 @@ void FKnotTrackCreator::FormatKnotNodes()
 	for (auto TrackGroup : TrackGroups)
 	{
 		// UE_LOG(LogKnotTrackCreator, Warning, TEXT("LIST TRACK GROUPS"));
-		if (UBASettings::HasDebugSetting("DebugTracks"))
+		if (UBASettings_Advanced::HasDebugSetting("DebugTracks"))
 		{
 			GraphHandler->GetGraphOverlay()->DrawBounds(TrackGroup->GetBounds().ExtendBy(FMargin(4.0f)), FLinearColor::Red);
 		}
@@ -114,7 +124,7 @@ void FKnotTrackCreator::FormatKnotNodes()
 			}
 
 			// UE_LOG(LogKnotTrackCreator, Warning, TEXT("\t%s"), *Track->ToString());
-			if (UBASettings::HasDebugSetting("DebugTracks"))
+			if (UBASettings_Advanced::HasDebugSetting("DebugTracks"))
 			{
 				GraphHandler->GetGraphOverlay()->DrawBounds(Track->GetTrackBounds(), Track->HasPinToAlignTo() ? FLinearColor::Yellow : FLinearColor::White);
 			}
@@ -161,6 +171,16 @@ void FKnotTrackCreator::FormatKnotNodes()
 void FKnotTrackCreator::CreateKnotTracks()
 {
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("FKnotTrackCreator::CreateKnotTracks"), STAT_KnotTrackCreator_CreateKnotTracks, STATGROUP_BA_EdGraphFormatter);
+
+	if (KnotTracks.Num() == 0)
+	{
+		return;
+	}
+
+	if (auto BP = GraphHandler->GetBlueprint())
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+	}
 
 	// we sort tracks by
 	// 1. exec pin track over parameter track 
@@ -251,30 +271,30 @@ void FKnotTrackCreator::CreateKnotTracks()
 
 		TSharedPtr<FKnotNodeCreation> LastCreation = nullptr;
 		const int NumCreations = KnotTrack->KnotCreations.Num();
-	for (int i = 0; i < NumCreations; i++)
-	{
-		TSharedPtr<FKnotNodeCreation> Creation = KnotTrack->KnotCreations[i];
-
-		FVector2D KnotPos = Creation->KnotPos;
-		KnotPos.Y = KnotTrack->GetTrackHeight();
-
-		// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Making knot creation at %s %d"), *KnotPos.ToString(), i);
-		// for (FBAGraphPinHandle Pin : Creation->PinHandlesToConnectTo)
-		// {
-		// 	UE_LOG(LogKnotTrackCreator, Warning, TEXT("\tPin %s"), *FBAUtils::GetPinName(Pin.GetPin()));
-		// }
-
-		if (PinToAlignTo != nullptr)
+		for (int i = 0; i < NumCreations; i++)
 		{
-			KnotPos.Y = SavedPinHeight.Contains(KnotTrack) ? SavedPinHeight[KnotTrack] : GraphHandler->GetPinY(PinToAlignTo);
-			// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Created knot aligned to %s"), *FBAUtils::GetNodeName(PinToAlignTo->GetOwningNode()));
-		}
+			TSharedPtr<FKnotNodeCreation> Creation = KnotTrack->KnotCreations[i];
 
-		if (!LastCreation.IsValid()) // create a knot linked to the first pin (the fallback pin)
+			FVector2D KnotPos = Creation->KnotPos;
+			KnotPos.Y = KnotTrack->GetTrackHeight();
+
+			// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Making knot creation at %s %d"), *KnotPos.ToString(), i);
+			// for (FBAGraphPinHandle Pin : Creation->PinHandlesToConnectTo)
+			// {
+			// 	UE_LOG(LogKnotTrackCreator, Warning, TEXT("\tPin %s"), *FBAUtils::GetPinName(Pin.GetPin()));
+			// }
+
+			if (PinToAlignTo != nullptr)
 			{
-				UEdGraphPin* ParentPin = KnotTrack->GetParentPin();
+				KnotPos.Y = SavedPinHeight.Contains(KnotTrack) ? SavedPinHeight[KnotTrack] : GraphHandler->GetPinY(PinToAlignTo);
+				// UE_LOG(LogKnotTrackCreator, Warning, TEXT("Created knot aligned to %s"), *FBAUtils::GetNodeName(PinToAlignTo->GetOwningNode()));
+			}
 
-				if (UK2Node_Knot* KnotNode = CreateKnotNode(Creation.Get(), KnotPos, ParentPin))
+			if (!LastCreation.IsValid()) // create a knot linked to the first pin (the fallback pin)
+			{
+				FBANodePinHandle ParentPin = FBANodePinHandle(KnotTrack->GetParentPin());
+
+				if (UK2Node_Knot* KnotNode = CreateKnotNode(Creation.Get(), KnotPos, ParentPin.GetPin()))
 				{
 					KnotNodesSet.Add(KnotNode);
 					RelativeMapping.FindOrAdd(ParentPin->GetOwningNode()).Add(KnotNode);
@@ -303,7 +323,7 @@ void FKnotTrackCreator::CreateKnotTracks()
 						UEdGraphPin* ParentPin = Pin->Direction == EGPD_Input
 							? ParentKnot->GetOutputPin()
 							: ParentKnot->GetInputPin();
-						FBAUtils::TryCreateConnection(ParentPin, Pin, true);
+						ParentPin->MakeLinkTo(Pin);
 					}
 				}
 				else
@@ -328,23 +348,11 @@ void FKnotTrackCreator::CreateKnotTracks()
 			}
 		}
 	}
-
-	FBlueprintEditorUtils::MarkBlueprintAsModified(GraphHandler->GetBlueprint());
-
-	// Cleanup knot node pool
-	for (auto& KnotNodeData : KnotNodePool)
-	{
-		if (FBAUtils::GetLinkedNodes(KnotNodeData.KnotNode).Num() == 0)
-		{
-			FBAUtils::DeleteNode(KnotNodeData.KnotNode);
-		}
-	}
-	KnotNodePool.Empty();
 }
 
 void FKnotTrackCreator::ExpandKnotTracks()
 {
-	if (UBASettings::Get().BlueprintAssistDebug.Contains("Expand"))
+	if (BA_DEBUG("Expand"))
 	{
 		return;
 	}
@@ -786,7 +794,7 @@ void FKnotTrackCreator::ExpandKnotTracks()
 		// find the top of the tallest node the track block is colliding with
 		TOptional<float> CollisionTop;
 
-		if (!UBASettings::HasDebugSetting("PushAligned"))
+		if (!UBASettings_Advanced::HasDebugSetting("PushAligned"))
 		{
 			// collide against other aligned pending tracks
 			for (TSharedPtr<FKnotNodeTrack> AlignedTrack : PendingTracks)
@@ -991,10 +999,7 @@ void FKnotTrackCreator::RemoveUselessCreationNodes()
 
 void FKnotTrackCreator::RemoveKnotNodes(const TArray<UEdGraphNode*>& NodeTree)
 {
-	if (!Formatter.IsValid())
-	{
-		return;
-	}
+	FBANodeData* RootData = GraphHandler->GetGraphData().GetNodeDataPtr(Formatter->GetRootNode());
 
 	TArray<UEdGraphNode_Comment*> CommentNodes = FBAUtils::GetCommentNodesFromGraph(GraphHandler->GetFocusedEdGraph());
 	for (UEdGraphNode* Node : NodeTree)
@@ -1008,8 +1013,17 @@ void FKnotTrackCreator::RemoveKnotNodes(const TArray<UEdGraphNode*>& NodeTree)
 			if (bUseKnotPool)
 			{
 				FVector2D RelativeRoot = FVector2D::Zero();
-				RelativeRoot.X = KnotNode->NodePosX - Formatter->GetRootNode()->NodePosX;
-				RelativeRoot.Y = KnotNode->NodePosY - Formatter->GetRootNode()->NodePosY;
+				const FBANodeData* KnotData = GraphHandler->GetGraphData().GetNodeDataPtr(KnotNode);
+				if (KnotData && RootData)
+				{
+					RelativeRoot.X = KnotData->Last.X - RootData->Last.X;
+					RelativeRoot.Y = KnotData->Last.Y - RootData->Last.Y;
+				}
+				else
+				{
+					RelativeRoot.X = KnotNode->NodePosX - Formatter->GetRootNode()->NodePosX;
+					RelativeRoot.Y = KnotNode->NodePosY - Formatter->GetRootNode()->NodePosY;
+				}
 				KnotNodePool.Add(FKnotPoolData(KnotNode, RelativeRoot));
 			}
 
@@ -1035,11 +1049,6 @@ void FKnotTrackCreator::RemoveKnotNodes(const TArray<UEdGraphNode*>& NodeTree)
 			if (!bUseKnotPool)
 			{
 				FBAUtils::DeleteNode(KnotNode);
-
-				if (FCommentHandler* CH = Formatter->GetCommentHandler())
-				{
-					CH->DeleteNode(KnotNode);
-				}
 			}
 		}
 	}
@@ -1353,7 +1362,7 @@ void FKnotTrackCreator::AddNomadKnotsIntoComments()
 		return;
 	}
 
-	if (UBASettings::HasDebugSetting("AddNomadKnots"))
+	if (UBASettings_Advanced::HasDebugSetting("AddNomadKnots"))
 	{
 		return;
 	}
@@ -1363,34 +1372,30 @@ void FKnotTrackCreator::AddNomadKnotsIntoComments()
 		const FMargin Padding = CommentHandler->GetCommentPadding(Comment);
 		FSlateRect CommentBounds = CommentHandler->GetCommentBounds(Comment).InsetBy(Padding);
 
-		if (UBASettings::HasDebugSetting("DebugNomadKnots"))
+		if (UBASettings_Advanced::HasDebugSetting("DebugNomadKnots"))
 		{
 			GraphHandler->GetGraphOverlay()->DrawBounds(CommentBounds);
 		}
 
 		for (TSharedPtr<FKnotNodeTrack> Track : KnotTracks)
 		{
-			// 修复：处理所有 knot，不再限制只处理单个 knot
-			// 使用位置判断而不是节点包含关系判断
-			for (TSharedPtr<FKnotNodeCreation> Creation : Track->KnotCreations)
+			if (Track->KnotCreations.Num() != 1)
+			{
+				continue;
+			}
+
+			if (TSharedPtr<FKnotNodeCreation> Creation = Track->KnotCreations[0])
 			{
 				if (UK2Node_Knot* CreatedKnotNode = Creation->CreatedKnot)
 				{
-					// 跳过已经在注释中的 knot
-					if (KnotsInComments.Contains(CreatedKnotNode))
-					{
-						continue;
-					}
-
-					// Add knots if they are located in the comment bounds
+					// Add nomad knots if they are located in a comment
 					const FVector2D KnotPos(CreatedKnotNode->NodePosX, CreatedKnotNode->NodePosY);
 					if (CommentBounds.ContainsPoint(KnotPos))
 					{
 						// UE_LOG(LogTemp, Warning, TEXT("Added knot %s into %s"), *FBAUtils::GetNodeName(CreatedKnotNode), *FBAUtils::GetNodeName(Comment));
 						CommentHandler->AddNodeIntoComment(Comment, CreatedKnotNode);
-						KnotsInComments.Add(CreatedKnotNode);
 
-						if (UBASettings::HasDebugSetting("DebugNomadKnots"))
+						if (UBASettings_Advanced::HasDebugSetting("DebugNomadKnots"))
 						{
 							GraphHandler->GetGraphOverlay()->DrawBounds(FSlateRect(KnotPos.X - 10.0f, KnotPos.Y - 10.0f, KnotPos.X + 10.0f, KnotPos.Y + 10.0f));
 						}

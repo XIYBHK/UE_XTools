@@ -1,9 +1,10 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistFormatters/KnotTrack.h"
 
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistUtils.h"
 #include "K2Node_Knot.h"
 #include "BlueprintAssistFormatters/FormatterInterface.h"
@@ -178,9 +179,9 @@ void FKnotNodeTrack::SetTrackHeight(TSharedPtr<FFormatterInterface> Formatter)
 
 	// set starting point
 	float TestSolution = GraphHandler->GetPinY(ParentPin.GetPin());
-	
+
 	// TODO test new method for baseline location
-	if (UBASettings::HasDebugSetting("NewBaseline"))
+	if (UBASettings_Advanced::HasDebugSetting("NewBaseline"))
 	{
 		TestSolution = FMath::Max(GraphHandler->GetPinY(ParentPin.GetPin()), GraphHandler->GetPinY(LastPin));
 	}

@@ -11,7 +11,7 @@
 #include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistTabHandler.h"
 #include "BlueprintAssistToolbar.h"
-#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
+#include "BlueprintAssistUtils.h"
 #include "ContentBrowserModule.h"
 #include "EdGraphNode_Comment.h"
 #include "IContentBrowserSingleton.h"
@@ -68,12 +68,6 @@ FBAInputProcessor::FBAInputProcessor()
 		PinActions.PinEditCommands,
 		BlueprintActions.BlueprintCommands
 	};
-
-	// Initialize shake tracking array with 3 slots
-	ShakeOffNodeTracker.SetNum(3);
-
-	// Initialize shake flag
-	bRecentlyShookNode = false;
 }
 
 FBAInputProcessor::~FBAInputProcessor() {}
@@ -138,11 +132,6 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		return true;
 	}
 
-	if (ProcessContentBrowserInput())
-	{
-		return true;
-	}
-
 	if (SlateApp.IsInitialized())
 	{
 		TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
@@ -179,7 +168,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		}
 
 		// clear keyboard focus for single line editable text on Enter when editing a pin
-		if (InKeyEvent.GetKey() == EKeys::Enter)
+		if (InKeyEvent.GetKey() == EKeys::Enter && !InKeyEvent.GetModifierKeys().AnyModifiersDown())
 		{
 			if (TSharedPtr<SWidget> FocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget())
 			{
@@ -245,7 +234,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		// process commands for when you are editing a user input widget
 		if (FBAUtils::IsUserInputWidget(KeyboardFocusedWidget))
 		{
-			if (FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "SGraphPin").IsValid())
+			if (FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "SGraphPin", true).IsValid())
 			{
 				if (ProcessCommandBindings(PinActions.PinEditCommands, InKeyEvent))
 				{
@@ -258,6 +247,12 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 				SlateApp.SetKeyboardFocus(GraphHandler->GetGraphPanel());
 			}
 
+			return false;
+		}
+
+		// if keyboard focus is inside a node, don't try to run any commands when pressing tab
+		if (InKeyEvent.GetKey() == EKeys::Tab && FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "SGraphNode", true).IsValid())
+		{
 			return false;
 		}
 
@@ -311,7 +306,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		}
 
 		// process commands for which require a node to be selected
-		if (GraphHandler->GetSelectedPin() != nullptr || FBAUtils::GetHoveredGraphPin(GraphHandler->GetGraphPanel()).IsValid())
+		if (GraphHandler->GetSelectedPin() != nullptr || FBAUtils::GetHoveredGraphPin(GraphHandler->GetGraphPanel()).IsValid() || FBAUtils::GetHoveredPinLink(GraphHandler->GetGraphPanel()).HasBothPins())
 		{
 			if (ProcessCommandBindings(PinActions.PinCommands, InKeyEvent))
 			{
@@ -374,164 +369,6 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 	return false;
 }
 
-bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
-	const FPointerEvent& MouseEvent,
-	UEdGraphNode* Node,
-	const FVector2D& Delta)
-{
-	if (!Node || !UBASettings::Get().bEnableShakeNodeOffWire)
-	{
-		return false;
-	}
-
-	// Check minimum shake distance (increased to prevent accidental triggers)
-	const float MinShakeDistance = 30.0f; // Minimum distance to count as a shake
-	if (Delta.Size() < MinShakeDistance)
-	{
-		return false;
-	}
-
-	// Find or create tracking info for this node
-	FShakeOffNodeTrackingInfo* TrackingInfo = nullptr;
-	int32 FreeSlotIndex = -1;
-	
-	for (int32 i = 0; i < ShakeOffNodeTracker.Num(); ++i)
-	{
-		if (!ShakeOffNodeTracker[i].Node.IsValid())
-		{
-			if (FreeSlotIndex == -1)
-			{
-				FreeSlotIndex = i;
-			}
-		}
-		else if (ShakeOffNodeTracker[i].Node.Get() == Node)
-		{
-			TrackingInfo = &ShakeOffNodeTracker[i];
-			break;
-		}
-	}
-
-	// If no tracking info found and we have free slots, create new one
-	if (!TrackingInfo && FreeSlotIndex != -1)
-	{
-		ShakeOffNodeTracker[FreeSlotIndex].Node = Node;
-		ShakeOffNodeTracker[FreeSlotIndex].ShakeCount = 0;
-		ShakeOffNodeTracker[FreeSlotIndex].LastShakeTime = 0.0;
-		ShakeOffNodeTracker[FreeSlotIndex].LastShakeDirection = FVector2D::ZeroVector;
-		TrackingInfo = &ShakeOffNodeTracker[FreeSlotIndex];
-	}
-
-	if (!TrackingInfo)
-	{
-		return false; // No available tracking slots
-	}
-
-	const double CurrentTime = FSlateApplication::Get().GetCurrentTime();
-	const float TimeWindow = UBASettings::Get().ShakeNodeOffWireTimeWindow;
-	
-	// Reset if too much time has passed
-	if (CurrentTime - TrackingInfo->LastShakeTime > TimeWindow)
-	{
-		TrackingInfo->ShakeCount = 0;
-		TrackingInfo->LastShakeDirection = FVector2D::ZeroVector;
-	}
-
-	// Calculate movement direction from delta
-	const FVector2D MovementDirection = Delta.GetSafeNormal();
-	
-	// Check if this is a valid shake (opposite direction from last shake)
-	if (TrackingInfo->ShakeCount > 0 && TrackingInfo->LastShakeDirection != FVector2D::ZeroVector)
-	{
-		// Check if movement is in opposite direction (using dot product)
-		const float DotProduct = FVector2D::DotProduct(MovementDirection, TrackingInfo->LastShakeDirection);
-		
-		// If dot product is strongly negative, directions are opposite (good shake)
-		// Changed from < 0.0f to < -0.5f to require more opposite movement
-		if (DotProduct < -0.5f)
-		{
-			TrackingInfo->ShakeCount++;
-			TrackingInfo->LastShakeTime = CurrentTime;
-			TrackingInfo->LastShakeDirection = MovementDirection;
-			
-			// Check if we've reached the shake threshold (3 shakes in time window)
-			if (TrackingInfo->ShakeCount >= 3)
-			{
-				// Use the existing DisconnectExecutionOfNodes function to properly bypass the node
-				// This maintains connections between other nodes while removing the shaken node from the chain
-				TArray<UEdGraphNode*> NodesToDisconnect;
-				NodesToDisconnect.Add(Node);
-				FBANodeActions::DisconnectExecutionOfNodes(NodesToDisconnect);
-				
-				// Reset tracking for this node
-				TrackingInfo->ShakeCount = 0;
-				TrackingInfo->LastShakeDirection = FVector2D::ZeroVector;
-				
-				return true;
-			}
-		}
-		else
-		{
-			// Same direction, update tracking but don't increase count
-			TrackingInfo->LastShakeTime = CurrentTime;
-			TrackingInfo->LastShakeDirection = MovementDirection;
-		}
-	}
-	else
-	{
-		// First shake or no previous direction
-		TrackingInfo->ShakeCount = 1;
-		TrackingInfo->LastShakeTime = CurrentTime;
-		TrackingInfo->LastShakeDirection = MovementDirection;
-	}
-
-	return false;
-}
-
-void FBAInputProcessor::ResetDragState()
-{
-	// Reset all drag-related state
-	AnchorNode = nullptr;
-
-	// End any active drag transaction
-	if (DragNodeTransaction.IsValid())
-	{
-		DragNodeTransaction.End(DragNodeTransaction.DragMethod);
-	}
-
-	// Clear shake tracking and reset flag
-	ResetShakeTracking();
-	bRecentlyShookNode = false;
-}
-
-void FBAInputProcessor::ResetShakeTracking(UEdGraphNode* Node)
-{
-	if (Node)
-	{
-		// Reset tracking for specific node
-		for (FShakeOffNodeTrackingInfo& TrackingInfo : ShakeOffNodeTracker)
-		{
-			if (TrackingInfo.Node.IsValid() && TrackingInfo.Node.Get() == Node)
-			{
-				TrackingInfo.ShakeCount = 0;
-				TrackingInfo.LastShakeDirection = FVector2D::ZeroVector;
-				TrackingInfo.LastShakeTime = 0.0;
-				break;
-			}
-		}
-	}
-	else
-	{
-		// Reset all tracking
-		for (FShakeOffNodeTrackingInfo& TrackingInfo : ShakeOffNodeTracker)
-		{
-			TrackingInfo.ShakeCount = 0;
-			TrackingInfo.LastShakeDirection = FVector2D::ZeroVector;
-			TrackingInfo.LastShakeTime = 0.0;
-			TrackingInfo.Node = nullptr;
-		}
-	}
-}
-
 bool FBAInputProcessor::HandleKeyUpEvent(FSlateApplication& SlateApp, const FKeyEvent& InKeyEvent)
 {
 	if (OnKeyOrMouseUp(SlateApp, InKeyEvent.GetKey()))
@@ -557,6 +394,16 @@ bool FBAInputProcessor::HandleMouseButtonDownEvent(FSlateApplication& SlateApp, 
 	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
 	if (!GraphHandler)
 	{
+		// backup in case the tab handler bugs out and fails to recognize the graph
+		// the user can click on the graph and try to process the tab again
+		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+		{
+			if (TSharedPtr<SDockTab> HoveredTab = FBAUtils::FindParentTabForWidget(FBAUtils::GetLastHoveredWidget()))
+			{
+				FBATabHandler::Get().ProcessTab(HoveredTab);
+			}
+		}
+
 		return false;
 	}
 
@@ -571,7 +418,10 @@ bool FBAInputProcessor::HandleMouseButtonDownEvent(FSlateApplication& SlateApp, 
 			{
 				UEdGraphPin* Pin = HoveredPin->GetPinObj();
 
-				GraphHandler->SetSelectedPin(Pin);
+				if (GraphPanel->SelectionManager.SelectedNodes.Num() <= 1)
+				{
+					GraphHandler->SetSelectedPin(Pin);
+				}
 			}
 		}
 
@@ -617,26 +467,6 @@ bool FBAInputProcessor::HandleMouseMoveEvent(FSlateApplication& SlateApp, const 
 		const FVector2D NewMousePos = FBAUtils::SnapToGrid(FBAUtils::ScreenSpaceToPanelCoord(GraphPanel, MouseEvent.GetScreenSpacePosition()));
 		const FVector2D Delta = NewMousePos - LastMousePos;
 
-		// Add shake detection before OnMouseDrag
-		if (UBASettings::Get().bEnableShakeNodeOffWire && AnchorNode.IsValid())
-		{
-			// Calculate screen space delta for shake detection
-			const FVector2D ScreenDelta = MouseEvent.GetScreenSpacePosition() - MouseEvent.GetLastScreenSpacePosition();
-
-			// Try to process as shake event
-			if (TryProcessAsShakeNodeOffWireEvent(MouseEvent, AnchorNode.Get(), ScreenDelta))
-			{
-				// IMPORTANT: Do NOT reset AnchorNode or end transaction here!
-				// The node should continue to follow the mouse after shake-off.
-				// Only reset the shake tracking data.
-				ResetShakeTracking();
-				bRecentlyShookNode = true;  // Set flag to prevent box selection
-				
-				// Continue to normal drag processing - do NOT return here
-				// This allows the node to continue following the mouse
-			}
-		}
-
 		bBlocking = OnMouseDrag(SlateApp, NewMousePos, Delta);
 
 		LastMousePos = NewMousePos;
@@ -649,7 +479,7 @@ void FBAInputProcessor::HandleSlateInputEvent(const FSlateDebuggingInputEventArg
 {
 	if (EventArgs.InputEventType == ESlateDebuggingInputEvent::MouseButtonDoubleClick)
 	{
-		if (UBASettings::Get().bEnableDoubleClickGoToDefinition)
+		if (UBASettings_EditorFeatures::Get().bEnableDoubleClickGoToDefinition)
 		{
 			if (TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler())
 			{
@@ -720,25 +550,29 @@ bool FBAInputProcessor::BeginGroupMovement(const FKey& Key)
 			return false;
 		}
 
-		TSharedPtr<SGraphPin> HoveredPin = FBAUtils::GetHoveredGraphPin(GraphPanel);
-		if (!HoveredPin && !FBAUtils::ContainsWidgetInFront(HoveredNode, BlockingWidgets))
+		const FBAVector2 MousePositionInNode = HoveredNode->GetCachedGeometry().AbsoluteToLocal(FSlateApplication::Get().GetCursorPos());
+		if (HoveredNode->CanBeSelected(MousePositionInNode))
 		{
-			UEdGraphNode* HoveredNodeObj = HoveredNode->GetNodeObj();
-
-			// our lmb hook goes before the editor's selection, so the hovered node will be selected this tick
-			if (SelectedNodes.Num() == 0)
+			TSharedPtr<SGraphPin> HoveredPin = FBAUtils::GetHoveredGraphPin(GraphPanel);
+			if (!HoveredPin && !FBAUtils::ContainsWidgetInFront(HoveredNode, BlockingWidgets))
 			{
-				SelectedNodes.Add(HoveredNodeObj);
+				UEdGraphNode* HoveredNodeObj = HoveredNode->GetNodeObj();
+
+				// our lmb hook goes before the editor's selection, so the hovered node will be selected this tick
+				if (SelectedNodes.Num() == 0)
+				{
+					SelectedNodes.Add(HoveredNodeObj);
+				}
+
+				TSet<UEdGraphNode*> NodesToMove;
+				NodesToMove.Append(SelectedNodes);
+				NodesToMove.Append(GraphHandler->GetGroupedNodes(SelectedNodes));
+
+				// set the anchor node for group movement
+				AnchorNode = HoveredNodeObj;
+				LastAnchorPos = FVector2D(FBAUtils::GetGraphNodePos(HoveredNode));
+				DragNodeTransaction.Begin(NodesToMove, INVTEXT("Move Node(s)"), EBADragMethod::LMB);
 			}
-
-			TSet<UEdGraphNode*> NodesToMove;
-			NodesToMove.Append(SelectedNodes);
-			NodesToMove.Append(GraphHandler->GetGroupedNodes(SelectedNodes));
-
-			// set the anchor node for group movement
-			AnchorNode = HoveredNodeObj;
-			LastAnchorPos = HoveredNode->GetPosition();
-			DragNodeTransaction.Begin(NodesToMove, INVTEXT("Move Node(s)"), EBADragMethod::LMB);
 		}
 	}
 	// Select the node when pressing additional node drag chord
@@ -752,26 +586,30 @@ bool FBAInputProcessor::BeginGroupMovement(const FKey& Key)
 			return false;
 		}
 
-		if (!FBAUtils::ContainsWidgetInFront(HoveredNode, BlockingWidgets))
+		const FBAVector2 MousePositionInNode = HoveredNode->GetCachedGeometry().AbsoluteToLocal(FSlateApplication::Get().GetCursorPos());
+		if (HoveredNode->CanBeSelected(MousePositionInNode))
 		{
-			UEdGraphNode* HoveredNodeObj = HoveredNode->GetNodeObj();
-
-			// also set the anchor node for group movement
-			AnchorNode = HoveredNodeObj;
-			LastAnchorPos = HoveredNode->GetPosition();
-
-			if (!SelectedNodes.Contains(HoveredNodeObj))
+			if (!FBAUtils::ContainsWidgetInFront(HoveredNode, BlockingWidgets))
 			{
-				GraphHandler->SelectNode(HoveredNodeObj);
-				bBlocking = true;
+				UEdGraphNode* HoveredNodeObj = HoveredNode->GetNodeObj();
+
+				// also set the anchor node for group movement
+				AnchorNode = HoveredNodeObj;
+				LastAnchorPos = FVector2D(FBAUtils::GetGraphNodePos(HoveredNode));
+
+				if (!SelectedNodes.Contains(HoveredNodeObj))
+				{
+					GraphHandler->SelectNode(HoveredNodeObj);
+					bBlocking = true;
+				}
+
+				TSet<UEdGraphNode*> NodeSet;
+				NodeSet.Append(GraphHandler->GetSelectedNodes(true));
+				NodeSet.Append(GraphHandler->GetGroupedNodes(GraphHandler->GetSelectedNodes()));
+
+				// begin transaction
+				DragNodeTransaction.Begin(NodeSet, INVTEXT("Move Node(s)"), EBADragMethod::AdditionalDragChord);
 			}
-
-			TSet<UEdGraphNode*> NodeSet;
-			NodeSet.Append(GraphHandler->GetSelectedNodes(true));
-			NodeSet.Append(GraphHandler->GetGroupedNodes(GraphHandler->GetSelectedNodes()));
-
-			// begin transaction
-			DragNodeTransaction.Begin(NodeSet, INVTEXT("Move Node(s)"), EBADragMethod::AdditionalDragChord);
 		}
 	}
 
@@ -784,11 +622,23 @@ bool FBAInputProcessor::OnMouseDrag(FSlateApplication& SlateApp, const FVector2D
 
 	bool bBlocking = false;
 
-	// Prevent box selection after shake node off wire
-	if (bRecentlyShookNode && !AnchorNode.IsValid())
+	// Try process shake node off wire event
+	if (AnchorNode.IsValid() && KeysDown.Contains(EKeys::LeftMouseButton))
 	{
-		// If we recently shook a node and are not dragging anything, block to prevent box selection
-		return true;
+		// Create a dummy pointer event (the event parameter is not actually used in the function)
+		FPointerEvent DummyEvent(
+			0, // PointerIndex
+			MousePos,
+			MousePos - Delta,
+			TSet<FKey>(),
+			EKeys::LeftMouseButton,
+			0, // WheelDelta
+			FModifierKeysState()
+		);
+		if (TryProcessAsShakeNodeOffWireEvent(DummyEvent, AnchorNode.Get(), Delta))
+		{
+			return true;
+		}
 	}
 
 	// process extra drag nodes
@@ -842,21 +692,22 @@ bool FBAInputProcessor::OnKeyOrMouseUp(FSlateApplication& SlateApp, const FKey& 
 
 	if (ProcessorState.OnKeyOrMouseUp(Key))
 	{
-		return true;
+		bBlocking = true;
 	}
 
 	// process extra drag nodes
 	if (Key == EKeys::LeftMouseButton)
 	{
-		// Reset shake flag on mouse release
-		bRecentlyShookNode = false;
-
 		if (DragNodeTransaction.DragMethod == EBADragMethod::LMB)
 		{
-			GEditor->GetTimerManager()->SetTimerForNextTick([&]()
+			TWeakPtr<FBAInputProcessor> ThisWeak = SharedThis(this);
+			GEditor->GetTimerManager()->SetTimerForNextTick([ThisWeak]()
 			{
-				DragNodeTransaction.End(EBADragMethod::LMB);
-				AnchorNode = nullptr;
+				if (TSharedPtr<FBAInputProcessor> This = ThisWeak.Pin())
+				{
+					This->DragNodeTransaction.End(EBADragMethod::LMB);
+					This->AnchorNode = nullptr;
+				}
 			});
 		}
 	}
@@ -867,10 +718,14 @@ bool FBAInputProcessor::OnKeyOrMouseUp(FSlateApplication& SlateApp, const FKey& 
 		{
 			bBlocking = true;
 			AnchorNode = nullptr;
-	
-			GEditor->GetTimerManager()->SetTimerForNextTick([&]()
+
+			TWeakPtr<FBAInputProcessor> ThisWeak = SharedThis(this);
+			GEditor->GetTimerManager()->SetTimerForNextTick([ThisWeak]()
 			{
-				DragNodeTransaction.End(EBADragMethod::AdditionalDragChord);
+				if (TSharedPtr<FBAInputProcessor> This = ThisWeak.Pin())
+				{
+					This->DragNodeTransaction.End(EBADragMethod::AdditionalDragChord);
+				}
 			});
 		}
 	}
@@ -981,7 +836,7 @@ void FBAInputProcessor::UpdateGroupMovement()
 		{
 			auto RelevantTree = FBAUtils::GetNodeTreeWithFilter(SelectedNode, [](UEdGraphPin* Pin)
 			{
-				return !FBAUtils::IsDelegatePin(Pin);
+				return !FBAUtils::IsDelegatePinLinkedToCustomEvent(Pin);
 			}, Direction);
 			NodesToMove.Append(RelevantTree);
 		}
@@ -1013,7 +868,7 @@ void FBAInputProcessor::UpdateGroupMovement()
 	{
 		NodesToMove = GraphHandler->GetGroupedNodes(SelectedNodes);
 	}
-	
+
 	// Move nodes
 	GroupMoveNodes(Delta, NodesToMove);
 }
@@ -1139,18 +994,17 @@ double FBAInputProcessor::GetKeyDownDuration(const FKey Key)
 
 bool FBAInputProcessor::ProcessFolderBookmarkInput()
 {
-	const UBASettings& BASettings = UBASettings::Get();
+	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
 
-	for (int i = 0; i < BASettings.FolderBookmarks.Num(); ++i)
+	for (int i = 0; i < FeaturesSettings.FolderBookmarks.Num(); ++i)
 	{
-		const FKey& BookmarkKey = BASettings.FolderBookmarks[i];
+		const FKey& BookmarkKey = FeaturesSettings.FolderBookmarks[i];
 
 		if (IsInputChordDown(FInputChord(EModifierKey::Control | EModifierKey::Shift, BookmarkKey)))
 		{
 			if (FIND_PARENT_WIDGET(FSlateApplication::Get().GetUserFocusedWidget(0), SContentBrowser))
 			{
-				FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
-				IContentBrowserSingleton& ContentBrowser = ContentBrowserModule.Get();
+				IContentBrowserSingleton& ContentBrowser = IContentBrowserSingleton::Get();
 
 #if BA_UE_VERSION_OR_LATER(5, 0)
 				const FString FolderPath = ContentBrowser.GetCurrentPath().GetInternalPathString();
@@ -1162,7 +1016,7 @@ bool FBAInputProcessor::ProcessFolderBookmarkInput()
 				FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Saved bookmark %s to %s"), *BookmarkKey.ToString().ToUpper(), *FolderPath)));
 				Notification.ExpireDuration = 3.0f;
 				FSlateNotificationManager::Get().AddNotification(Notification);
-				break;
+				return true;
 			}
 		}
 
@@ -1170,8 +1024,7 @@ bool FBAInputProcessor::ProcessFolderBookmarkInput()
 		{
 			if (FIND_PARENT_WIDGET(FSlateApplication::Get().GetUserFocusedWidget(0), SContentBrowser))
 			{
-				FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
-				IContentBrowserSingleton& ContentBrowser = ContentBrowserModule.Get();
+				IContentBrowserSingleton& ContentBrowser = IContentBrowserSingleton::Get();
 
 				if (TOptional<FString> FolderPath = FBACache::Get().FindBookmarkedFolder(i))
 				{
@@ -1180,85 +1033,6 @@ bool FBAInputProcessor::ProcessFolderBookmarkInput()
 						ContentBrowser.SetSelectedPaths({ FolderPath.GetValue() });
 					}
 				}
-				break;
-			}
-		}
-	}
-
-	return false;
-}
-
-
-// TODO move these into FBACommands
-bool FBAInputProcessor::ProcessContentBrowserInput()
-{
-	if (TSharedPtr<SContentBrowser> ContentBrowserWidget = FIND_PARENT_WIDGET(FSlateApplication::Get().GetUserFocusedWidget(0), SContentBrowser))
-	{
-		FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
-		IContentBrowserSingleton& ContentBrowser = ContentBrowserModule.Get();
-
-		// copy
-		if (IsInputChordDown(FInputChord(EModifierKey::Control, EKeys::C)))
-		{
-			CutAssets.Reset();
-			return false;
-		}
-
-		// cut
-		if (IsInputChordDown(FInputChord(EModifierKey::Control, EKeys::X)))
-		{
-			TArray<FAssetData> SelectedAssets;
-			ContentBrowser.GetSelectedAssets(SelectedAssets);
-
-			CutAssets.Reset();
-			for (FAssetData& SelectedAsset : SelectedAssets)
-			{
-				CutAssets.Add(SelectedAsset);
-			}
-
-			return CutAssets.Num() > 0;
-		}
-
-		// paste
-		if (IsInputChordDown(FInputChord(EModifierKey::Control, EKeys::V)))
-		{
-			if (CutAssets.Num())
-			{
-#if BA_UE_VERSION_OR_LATER(5, 0)
-				const FContentBrowserItemPath BrowserPath = ContentBrowser.GetCurrentPath();
-				const FString Path = BrowserPath.HasInternalPath() ? ContentBrowser.GetCurrentPath().GetInternalPathString() : FString();
-#else
-				const FString Path = ContentBrowser.GetCurrentPath();
-#endif
-
-				TArray<UObject*> AssetsToMove;
-				for (const FAssetData& AssetData : CutAssets)
-				{
-					const bool bSameFolder = Path.Equals(AssetData.PackagePath.ToString());
-					if (!bSameFolder)
-					{
-						if (UObject* Asset = AssetData.GetAsset())
-						{
-							AssetsToMove.Add(Asset);
-						}
-					}
-				}
-
-				if (!AssetsToMove.Num())
-				{
-					return false;
-				}
-
-				// TODO why do transactions not work when moving assets? (there's no undo when moving with drag / drop)
-				// const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "CutPaste_BlueprintAssist", "Cut And Paste"));
-				// for (UObject* ToMove : AssetsToMove)
-				// {
-				// 	ToMove->Modify();
-				// }
-
-				AssetViewUtils::MoveAssets(AssetsToMove, Path);
-
-				CutAssets.Reset();
 				return true;
 			}
 		}
@@ -1332,6 +1106,135 @@ bool FBAInputProcessor::ProcessCommandBindings(TSharedPtr<FUICommandList> Comman
 					}
 				}
 			}
+		}
+	}
+
+	return false;
+}
+
+bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
+	const FPointerEvent& MouseEvent,
+	UEdGraphNode* Node,
+	const FVector2D& Delta)
+{
+	if (!Node || !UBASettings::Get().bEnableShakeNodeOffWire)
+	{
+		return false;
+	}
+
+	// Check minimum shake distance (increased to prevent accidental triggers)
+	const float MinShakeDistance = 30.0f; // Minimum distance to count as a shake
+	if (Delta.Size() < MinShakeDistance)
+	{
+		return false;
+	}
+
+	// Find or create tracking info for this node
+	FShakeOffNodeTrackingInfo* TrackingInfo = nullptr;
+	int32 FreeSlotIndex = -1;
+	
+	for (int32 i = 0; i < ShakeOffNodeTracker.Num(); ++i)
+	{
+		if (!ShakeOffNodeTracker[i].Node.IsValid())
+		{
+			if (FreeSlotIndex == -1)
+			{
+				FreeSlotIndex = i;
+			}
+		}
+		else if (ShakeOffNodeTracker[i].Node == Node)
+		{
+			TrackingInfo = &ShakeOffNodeTracker[i];
+			break;
+		}
+	}
+
+	// Create new tracking info if needed
+	if (!TrackingInfo)
+	{
+		if (FreeSlotIndex != -1)
+		{
+			TrackingInfo = &ShakeOffNodeTracker[FreeSlotIndex];
+		}
+		else
+		{
+			ShakeOffNodeTracker.AddDefaulted();
+			TrackingInfo = &ShakeOffNodeTracker.Last();
+		}
+		
+		TrackingInfo->Node = Node;
+		TrackingInfo->RecentMovements.Empty();
+		TrackingInfo->MovementTimes.Empty();
+		TrackingInfo->ShakeCount = 0;
+		TrackingInfo->LastShakeTime = 0.0;
+	}
+
+	const double CurrentTime = FSlateApplication::Get().GetCurrentTime();
+	const float TimeWindow = UBASettings::Get().ShakeNodeOffWireTimeWindow;
+
+	// Clean up old movements outside time window
+	while (TrackingInfo->MovementTimes.Num() > 0 && 
+		   (CurrentTime - TrackingInfo->MovementTimes[0]) > TimeWindow)
+	{
+		TrackingInfo->RecentMovements.RemoveAt(0);
+		TrackingInfo->MovementTimes.RemoveAt(0);
+	}
+
+	// Add current movement
+	TrackingInfo->RecentMovements.Add(Delta);
+	TrackingInfo->MovementTimes.Add(CurrentTime);
+
+	// Need at least 2 movements to detect direction change
+	if (TrackingInfo->RecentMovements.Num() < 2)
+	{
+		return false;
+	}
+
+	// Check for direction reversal (shake detection)
+	const FVector2D& LastMovement = TrackingInfo->RecentMovements[TrackingInfo->RecentMovements.Num() - 2];
+	const FVector2D& CurrentMovement = Delta;
+
+	// Normalize vectors for dot product
+	FVector2D LastDir = LastMovement;
+	FVector2D CurrentDir = CurrentMovement;
+	LastDir.Normalize();
+	CurrentDir.Normalize();
+
+	// Calculate dot product to detect opposite direction
+	const float DotProduct = FVector2D::DotProduct(LastDir, CurrentDir);
+
+	// If movement is in significantly opposite direction (more strict threshold)
+	if (DotProduct < -0.5f) // Changed from < 0.0f to < -0.5f for more obvious reversal
+	{
+		TrackingInfo->ShakeCount++;
+		TrackingInfo->LastShakeTime = CurrentTime;
+
+		// If we've detected enough shakes in the time window, break all connections
+		if (TrackingInfo->ShakeCount >= 3)
+		{
+			// Break all connections
+			TArray<UEdGraphPin*> AllPins = Node->Pins;
+			for (UEdGraphPin* Pin : AllPins)
+			{
+				if (Pin && Pin->LinkedTo.Num() > 0)
+				{
+					Pin->BreakAllPinLinks();
+				}
+			}
+
+			// Reset tracking
+			TrackingInfo->RecentMovements.Empty();
+			TrackingInfo->MovementTimes.Empty();
+			TrackingInfo->ShakeCount = 0;
+
+			// Show notification
+			FNotificationInfo Info(FText::FromString(FString::Printf(
+				TEXT("Disconnected all pins on node: %s"), 
+				*FBAUtils::GetNodeName(Node))));
+			Info.ExpireDuration = 2.0f;
+			FSlateNotificationManager::Get().AddNotification(Info);
+
+			return true;
 		}
 	}
 

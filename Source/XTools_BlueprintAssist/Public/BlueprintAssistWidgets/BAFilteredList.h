@@ -1,18 +1,13 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistStyle.h"
-#include "SlateOptMacros.h"
-
-// UE 5.0+ EditorStyleSet.h 已废弃
-#if BA_UE_VERSION_OR_LATER(5, 0)
-#include "Styling/AppStyle.h"
-#else
+#include "BlueprintAssistStyle.h"
 #include "EditorStyleSet.h"
-#endif
+#include "SlateOptMacros.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Views/ITypedTableView.h"
 #include "Framework/Views/TableViewTypeTraits.h"
@@ -390,8 +385,12 @@ public:
 		{
 			FWidgetPath WidgetToFocusPath;
 			FSlateApplication::Get().GeneratePathToWidgetUnchecked(FilterTextBox.ToSharedRef(), WidgetToFocusPath);
-			FSlateApplication::Get().SetKeyboardFocus(WidgetToFocusPath, EFocusCause::SetDirectly);
-			WidgetToFocusPath.GetWindow()->SetWidgetToFocusOnActivate(FilterTextBox);
+
+			if (WidgetToFocusPath.IsValid())
+			{
+				FSlateApplication::Get().SetKeyboardFocus(WidgetToFocusPath, EFocusCause::SetDirectly);
+				WidgetToFocusPath.GetWindow()->SetWidgetToFocusOnActivate(FilterTextBox);
+			}
 
 			return EActiveTimerReturnType::Stop;
 		}

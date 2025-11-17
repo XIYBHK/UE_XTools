@@ -29,7 +29,7 @@ struct FGoToSymbolStruct final : IBAFilteredListItem
 	FString GetTypeDescription() const;
 };
 
-class XTOOLS_BLUEPRINTASSIST_API SBAGoToSymbolMenu final : public SCompoundWidget
+class XTOOLS_BLUEPRINTASSIST_API SBAGoToSymbolMenu final : public SBorder
 {
 	// @formatter:off
 	SLATE_BEGIN_ARGS(SBAGoToSymbolMenu) { }

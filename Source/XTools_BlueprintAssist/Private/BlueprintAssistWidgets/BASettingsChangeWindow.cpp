@@ -1,10 +1,11 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistWidgets/BASettingsChangeWindow.h"
 
-#include "BlueprintAssistGlobals.h"
-#include "BlueprintAssistMisc/BASettingsBase.h"
+#include "BlueprintAssistCommands.h"
 #include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_Advanced.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistStyle.h"
 #include "BlueprintAssistTypes.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
@@ -51,8 +52,8 @@ TSharedRef<SWidget> SBASettingTableRow::GenerateWidgetForColumn(const FName& Col
 			.OnDoubleClicked(FPointerEventHandler::CreateLambda([&](const FGeometry&, const FPointerEvent&)
 			{
 				FBASettingsChange& Change = Data->Change;
-				FPlatformApplicationMisc::ClipboardCopy(*FBASettingsChange::GetJsonValueAsString(Change.PropertyName, Change.OldValue, true));
-				FNotificationInfo Notification(INVTEXT("Copied to clipboard"));
+				FPlatformApplicationMisc::ClipboardCopy(*Change.GetJsonValueAsString(Change.PropertyName, Change.OldValue, true));
+				FNotificationInfo Notification(INVTEXT("已复制到剪贴板"));
 				Notification.ExpireDuration = 1.0f;
 				FSlateNotificationManager::Get().AddNotification(Notification);
 				return FReply::Handled();
@@ -69,8 +70,8 @@ TSharedRef<SWidget> SBASettingTableRow::GenerateWidgetForColumn(const FName& Col
 			.OnDoubleClicked(FPointerEventHandler::CreateLambda([&](const FGeometry&, const FPointerEvent&)
 			{
 				FBASettingsChange& Change = Data->Change;
-				FPlatformApplicationMisc::ClipboardCopy(*FBASettingsChange::GetJsonValueAsString(Change.PropertyName, Change.NewValue, true));
-				FNotificationInfo Notification(INVTEXT("Copied to clipboard"));
+				FPlatformApplicationMisc::ClipboardCopy(*Change.GetJsonValueAsString(Change.PropertyName, Change.NewValue, true));
+				FNotificationInfo Notification(INVTEXT("已复制到剪贴板"));
 				Notification.ExpireDuration = 1.0f;
 				FSlateNotificationManager::Get().AddNotification(Notification);
 				return FReply::Handled();
@@ -84,7 +85,7 @@ TSharedRef<SWidget> SBASettingTableRow::GenerateWidgetForColumn(const FName& Col
 		InnerContent = SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
-				SNew(SButton).Text(INVTEXT("Log")).OnClicked_Lambda([&]()
+				SNew(SButton).Text(INVTEXT("记录")).OnClicked_Lambda([&]()
 				{
 					Data->Change.LogChange();
 					return FReply::Handled();
@@ -92,7 +93,7 @@ TSharedRef<SWidget> SBASettingTableRow::GenerateWidgetForColumn(const FName& Col
 			]
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
-				SNew(SButton).Text(INVTEXT("Reset")).OnClicked_Lambda([&]()
+				SNew(SButton).Text(INVTEXT("重置")).OnClicked_Lambda([&]()
 				{
 					Data->Change.ResetToDefault(Data->SettingsObj);
 					return FReply::Handled();
@@ -102,7 +103,7 @@ TSharedRef<SWidget> SBASettingTableRow::GenerateWidgetForColumn(const FName& Col
 
 	if (!InnerContent)
 	{
-		InnerContent = SNew(STextBlock).Text(INVTEXT("ERROR SBASettingsTableRow"));
+		InnerContent = SNew(STextBlock).Text(INVTEXT("错误 SBASettingsTableRow"));
 	}
 
 	return SNew(SBox).Padding(FMargin(4, 2)).ToolTipText(TooltipText)
@@ -136,25 +137,25 @@ void SBASettingsListView::Construct(const FArguments& InArgs)
 	);
 }
 
-void SBASettingsListView::Refresh(UObject* NewSettings)
+void SBASettingsListView::Refresh(UBASettingsBase* NewSettings)
 {
 	SettingsObj = NewSettings;
 
 	HeaderRowWidget->ClearColumns();
 	HeaderRowWidget->AddColumn(SHeaderRow::Column(PropertyHeaderName)
-	.DefaultLabel(INVTEXT("Property"))
+	.DefaultLabel(INVTEXT("属性"))
 	.FillWidth(100.f));
 
 	HeaderRowWidget->AddColumn(SHeaderRow::Column(DefaultHeaderName)
-	.DefaultLabel(INVTEXT("Default"))
+	.DefaultLabel(INVTEXT("默认值"))
 	.FillWidth(100.f));
 
 	HeaderRowWidget->AddColumn(SHeaderRow::Column(CurrentHeaderName)
-	.DefaultLabel(INVTEXT("Current"))
+	.DefaultLabel(INVTEXT("当前值"))
 	.FillWidth(100.f));
 
 	HeaderRowWidget->AddColumn(SHeaderRow::Column(ButtonHeaderName)
-	.DefaultLabel(INVTEXT("ResetToDefault"))
+	.DefaultLabel(INVTEXT("重置为默认值"))
 	.FillWidth(100.f));
 
 	Rows.Empty();
@@ -164,11 +165,7 @@ void SBASettingsListView::Refresh(UObject* NewSettings)
 		Handle = FCoreUObjectDelegates::OnObjectPropertyChanged.AddRaw(this, &SBASettingsListView::CheckSettingsObjectChanged);
 	}
 
-	TArray<FBASettingsChange> Changes;
-	if (UBASettings* BASettings = Cast<UBASettings>(SettingsObj))
-	{
-		Changes = BASettings->GetChanges();
-	}
+	TArray<FBASettingsChange> Changes = SettingsObj->GetChanges();
 	for (FBASettingsChange& Change : Changes)
 	{
 		TSharedPtr<FBASettingChangeData> Data = MakeShared<FBASettingChangeData>();
@@ -201,8 +198,12 @@ void SBASettingsChangeWindow::Construct(const FArguments& InArgs)
 	FName ButtonStyle("Menu.ToggleButton");
 #endif
 
-	// XTools 适配：只使用统一的 UBASettings
-	SettingsObjects.Add(&UBASettings::GetMutable());
+	SettingsObjects =
+	{
+		&UBASettings::GetMutable(),
+		&UBASettings_EditorFeatures::GetMutable(),
+		&UBASettings_Advanced::GetMutable(),
+	};
 
 	auto SidePanelBox = SNew(SVerticalBox);
 
@@ -243,7 +244,7 @@ TSharedRef<SDockTab> SBASettingsChangeWindow::CreateTab(const FSpawnTabArgs& Arg
 	return MajorTab;
 }
 
-TSharedRef<SWidget> SBASettingsChangeWindow::MakeSettingMenuButton(UObject* SettingsObj)
+TSharedRef<SWidget> SBASettingsChangeWindow::MakeSettingMenuButton(UBASettingsBase* SettingsObj)
 {
 #if BA_UE_VERSION_OR_LATER(5, 0)
 	FName ButtonStyle("FVerticalToolBar.ToggleButton");
@@ -269,7 +270,7 @@ TSharedRef<SWidget> SBASettingsChangeWindow::MakeSettingMenuButton(UObject* Sett
 				];
 }
 
-void SBASettingsChangeWindow::SetActiveSettings(UObject* Settings)
+void SBASettingsChangeWindow::SetActiveSettings(UBASettingsBase* Settings)
 {
 	ActiveSetting = Settings;
 	SettingsList->Refresh(ActiveSetting);

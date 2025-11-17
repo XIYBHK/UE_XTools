@@ -1,6 +1,8 @@
-#include "BlueprintAssistActions/BlueprintAssistTabActions.h"
+﻿#include "BlueprintAssistActions/BlueprintAssistTabActions.h"
 
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
+#include "BlueprintAssistUtils.h"
 #include "SGraphPanel.h"
 #include "EdGraph/EdGraph.h"
 #include "Framework/Application/SlateApplication.h"
@@ -215,10 +217,10 @@ void FBATabActions::ShiftCameraInDirection(int X, int Y) const
 		/** get the current view location */
 		float Zoom;
 		FVector2D CurrentViewLocation;
-		GraphHandler->GetGraphEditor()->GetViewLocation(CurrentViewLocation, Zoom);
+		GraphHandler->GetViewLocation(CurrentViewLocation, Zoom);
 
 		/** Shift the current view location */
-		const FVector2D Offset = FVector2D(X, Y) * UBASettings::Get().ShiftCameraDistance / Zoom;
+		const FVector2D Offset = FVector2D(X, Y) * UBASettings_EditorFeatures::Get().ShiftCameraDistance / Zoom;
 
 		const FVector2D CurrentLocation = GraphHandler->IsLerpingViewport() ? GraphHandler->GetTargetLerpLocation() : CurrentViewLocation;
 

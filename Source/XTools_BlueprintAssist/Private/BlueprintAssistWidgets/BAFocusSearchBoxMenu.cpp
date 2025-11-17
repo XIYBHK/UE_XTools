@@ -1,6 +1,6 @@
 // Copyright fpwong. All Rights Reserved.
 
-#include "BlueprintAssistWidgets/FocusSearchBoxMenu.h"
+#include "BlueprintAssistWidgets/BAFocusSearchBoxMenu.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistUtils.h"
@@ -12,21 +12,21 @@
 #include "Widgets/Views/STableRow.h"
 #include "Widgets/Views/STableViewBase.h"
 
-void SFocusSearchBoxMenu::Construct(
+void SBAFocusSearchBoxMenu::Construct(
 	const FArguments& InArgs)
 {
 	ChildSlot
 	[
 		SNew(SBAFilteredList<TSharedPtr<FSearchBoxStruct>>)
-		.InitListItems(this, &SFocusSearchBoxMenu::InitListItems)
-		.OnGenerateRow(this, &SFocusSearchBoxMenu::CreateItemWidget)
-		.OnSelectItem(this, &SFocusSearchBoxMenu::SelectItem)
+		.InitListItems(this, &SBAFocusSearchBoxMenu::InitListItems)
+		.OnGenerateRow(this, &SBAFocusSearchBoxMenu::CreateItemWidget)
+		.OnSelectItem(this, &SBAFocusSearchBoxMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("聚焦搜索框"))
+		.MenuTitle(FString("Focus Search Box"))
 	];
 }
 
-void SFocusSearchBoxMenu::InitListItems(TArray<TSharedPtr<FSearchBoxStruct>>& Items)
+void SBAFocusSearchBoxMenu::InitListItems(TArray<TSharedPtr<FSearchBoxStruct>>& Items)
 {
 	TSharedPtr<SWindow> Window = FSlateApplication::Get().GetActiveTopLevelWindow();
 
@@ -66,7 +66,7 @@ void SFocusSearchBoxMenu::InitListItems(TArray<TSharedPtr<FSearchBoxStruct>>& It
 	}
 }
 
-TSharedRef<ITableRow> SFocusSearchBoxMenu::CreateItemWidget(TSharedPtr<FSearchBoxStruct> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+TSharedRef<ITableRow> SBAFocusSearchBoxMenu::CreateItemWidget(TSharedPtr<FSearchBoxStruct> Item, const TSharedRef<STableViewBase>& OwnerTable) const
 {
 	static const FSlateBrush* SearchIcon = BA_STYLE_CLASS::Get().GetBrush("Symbols.SearchGlass");
 
@@ -91,7 +91,7 @@ TSharedRef<ITableRow> SFocusSearchBoxMenu::CreateItemWidget(TSharedPtr<FSearchBo
 		];
 }
 
-void SFocusSearchBoxMenu::SelectItem(TSharedPtr<FSearchBoxStruct> Item)
+void SBAFocusSearchBoxMenu::SelectItem(TSharedPtr<FSearchBoxStruct> Item)
 {
 	if (Item->Widget.IsValid())
 	{
@@ -130,4 +130,3 @@ FString FSearchBoxStruct::GetTabLabel() const
 {
 	return DockTab->GetTabLabel().ToString();
 }
-

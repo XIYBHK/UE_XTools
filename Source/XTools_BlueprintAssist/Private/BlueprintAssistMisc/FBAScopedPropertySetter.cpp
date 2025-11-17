@@ -1,8 +1,8 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistMisc/FBAScopedPropertySetter.h"
 
-#include "BlueprintAssistWidgets/EditDetailsMenu.h"
+#include "BlueprintAssistWidgets/BAEditDetailsMenu.h"
 
 FBAScopedPropertySetter::FBAScopedPropertySetter(
 	UObject* InObject,

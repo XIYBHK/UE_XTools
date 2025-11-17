@@ -1,14 +1,8 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistGraphCommands.h"
 #include "BlueprintAssistGlobals.h"
-
-// UE 5.0+ EditorStyleSet.h 已废弃
-#if BA_UE_VERSION_OR_LATER(5, 0)
-#include "Styling/AppStyle.h"
-#else
 #include "EditorStyleSet.h"
-#endif
 
 #define LOCTEXT_NAMESPACE "BlueprintAssist"
 

@@ -1,16 +1,10 @@
-#include "BlueprintAssistActions/BlueprintAssistGlobalActions.h"
+﻿#include "BlueprintAssistActions/BlueprintAssistGlobalActions.h"
 
-#include "Runtime/Launch/Resources/Version.h"
-
-#include "BlueprintAssistSettings.h"
-#include "BlueprintAssistUtils.h"
+#include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
-#include "BlueprintAssistMisc/BAPrivate.h"
+#include "BlueprintAssistUtils.h"
 #include "IAssetFamily.h"
-
-#if BA_UE_VERSION_OR_LATER(5, 6)
-BA_DEFINE_PRIVATE_MEMBER_PTR(void(EGetNodeVariation), GTogglePurity, UK2Node_VariableGet, TogglePurity);
-#endif
+#include "IAssetSearchModule.h"
 #include "K2Node_DynamicCast.h"
 #include "K2Node_VariableGet.h"
 #include "SGraphPanel.h"
@@ -18,23 +12,33 @@ BA_DEFINE_PRIVATE_MEMBER_PTR(void(EGetNodeVariation), GTogglePurity, UK2Node_Var
 #include "WidgetBlueprintEditor.h"
 #include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
+#include "BlueprintAssistWidgets/BAEditDetailsMenu.h"
+#include "BlueprintAssistWidgets/BAFocusSearchBoxMenu.h"
+#include "BlueprintAssistWidgets/BAOpenWindowMenu.h"
+#include "BlueprintAssistWidgets/BASearchMenu.h"
 #include "BlueprintAssistWidgets/BlueprintAssistCreateAssetMenu.h"
 #include "BlueprintAssistWidgets/BlueprintAssistHotkeyMenu.h"
 #include "BlueprintAssistWidgets/BlueprintAssistTabSwitcher.h"
 #include "BlueprintAssistWidgets/BlueprintAssistWorkflowModeMenu.h"
-#include "BlueprintAssistWidgets/EditDetailsMenu.h"
-#include "BlueprintAssistWidgets/FocusSearchBoxMenu.h"
-#include "BlueprintAssistWidgets/OpenWindowMenu.h"
 #include "Components/Widget.h"
 #include "EdGraph/EdGraph.h"
+#include "Editor/ContentBrowser/Private/SContentBrowser.h"
 #include "Framework/Commands/UICommandList.h"
+#include "Framework/Notifications/NotificationManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "WorkflowOrientedApp/WorkflowCentricApplication.h"
+
+#include "BlueprintAssistMisc/BAPrivate.h"
+
+#if BA_UE_VERSION_OR_LATER(5, 6)
+BA_DEFINE_PRIVATE_MEMBER_PTR(void(EGetNodeVariation), GTogglePurity, UK2Node_VariableGet, TogglePurity);
+#endif
 
 bool FBAGlobalActionsBase::CanOpenEditDetailsMenu() const
 {
-	return CanExecuteActions() && SEditDetailsMenu::CanOpenMenu();
+	return CanExecuteActions() && SBAEditDetailsMenu::CanOpenMenu();
 }
 
 bool FBAGlobalActionsBase::HasWorkflowModes() const
@@ -83,7 +87,7 @@ void FBAGlobalActions::Init()
 
 	GlobalCommands->MapAction(
 		FBACommands::Get().OpenBlueprintAssistHotkeySheet,
-		FExecuteAction::CreateRaw(this, &FBAGlobalActions::OpenBlueprintAssistHotkeyMenu),
+		FExecuteAction::CreateStatic(&FBAGlobalActions::OpenBlueprintAssistHotkeyMenu),
 		FCanExecuteAction::CreateRaw(this, &FBAGlobalActions::CanExecuteActions)
 	);
 
@@ -98,6 +102,20 @@ void FBAGlobalActions::Init()
 		FExecuteAction::CreateRaw(this, &FBAGlobalActions::ToggleFullscreen),
 		FCanExecuteAction::CreateRaw(this, &FBAGlobalActions::CanExecuteActions)
 	);
+
+#if BA_UE_VERSION_OR_LATER(5, 4)
+	GlobalCommands->MapAction(
+		FBACommands::Get().FindInFilesMenu,
+		FExecuteAction::CreateRaw(this, &FBAGlobalActions::OpenFindInFilesMenu),
+		FCanExecuteAction::CreateRaw(this, &FBAGlobalActions::CanExecuteActions)
+	);
+
+	GlobalCommands->MapAction(
+		FBACommands::Get().OpenFileMenu,
+		FExecuteAction::CreateRaw(this, &FBAGlobalActions::OpenFileMenu),
+		FCanExecuteAction::CreateRaw(this, &FBAGlobalActions::CanExecuteActions)
+	);
+#endif
 
 	GlobalCommands->MapAction(
 		FBACommands::Get().SwitchWorkflowMode,
@@ -137,14 +155,14 @@ void FBAGlobalActions::OpenFocusSearchBoxMenu()
 		return;
 	}
 
-	TSharedRef<SFocusSearchBoxMenu> Widget = SNew(SFocusSearchBoxMenu);
+	TSharedRef<SBAFocusSearchBoxMenu> Widget = SNew(SBAFocusSearchBoxMenu);
 
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 
 void FBAGlobalActions::OpenEditDetailsMenu()
 {
-	TSharedRef<SEditDetailsMenu> Widget = SNew(SEditDetailsMenu);
+	TSharedRef<SBAEditDetailsMenu> Widget = SNew(SBAEditDetailsMenu);
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 
@@ -152,14 +170,14 @@ void FBAGlobalActions::OpenWindowMenu()
 {
 	TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().GetActiveTopLevelWindow();
 
-	TSharedRef<SOpenWindowMenu> Widget = SNew(SOpenWindowMenu);
+	TSharedRef<SBAOpenWindowMenu> Widget = SNew(SBAOpenWindowMenu);
 
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 
 void FBAGlobalActions::OpenBlueprintAssistHotkeyMenu()
 {
-	TSharedRef<SBAHotkeyMenu> Widget = SNew(SBAHotkeyMenu).BindingContextName("BlueprintAssistCommands");
+	TSharedRef<SBAHotkeyMenu> Widget = SNew(SBAHotkeyMenu);
 	FBAUtils::OpenPopupMenu(Widget, Widget->GetWidgetSize());
 }
 
@@ -243,6 +261,44 @@ void FBAGlobalActions::FocusSearchBox()
 	{
 		FSlateApplication::Get().SetKeyboardFocus(SearchBox, EFocusCause::SetDirectly);
 	}
+}
+
+void FBAGlobalActions::OpenFindInFilesMenu()
+{
+#if BA_UE_VERSION_OR_LATER(5, 4)
+	if (IAssetSearchModule::IsAvailable())
+	{
+		FVector2D MenuSize = FVector2D(1440, 810);
+		TSharedRef<SBASearchMenu> Widget = SNew(SBASearchMenu, MenuSize, EBASearchMenuType::Property).AllowAssets(false).AllowObjects(false);
+		FBAUtils::OpenPopupMenu(Widget, MenuSize);
+		return;
+	}
+	else
+	{
+		FNotificationInfo Notification(INVTEXT("FindInFiles requires the 'AssetSearch' plugin to be enabled"));
+		Notification.ExpireDuration = 5.0f;
+		FSlateNotificationManager::Get().AddNotification(Notification);
+	}
+#endif
+}
+
+void FBAGlobalActions::OpenFileMenu()
+{
+#if BA_UE_VERSION_OR_LATER(5, 4)
+	if (IAssetSearchModule::IsAvailable())
+	{
+		FVector2D MenuSize = FVector2D(1440, 810);
+		TSharedRef<SBASearchMenu> Widget = SNew(SBASearchMenu, MenuSize, EBASearchMenuType::File).SearchSpecifier("name");
+		FBAUtils::OpenPopupMenu(Widget, MenuSize);
+		return;
+	}
+	else
+	{
+		FNotificationInfo Notification(INVTEXT("OpenFileMenu requires the 'AssetSearch' plugin to be enabled!"));
+		Notification.ExpireDuration = 5.0f;
+		FSlateNotificationManager::Get().AddNotification(Notification);
+	}
+#endif
 }
 
 bool FBAGlobalActions::CanFocusSearchBox() const

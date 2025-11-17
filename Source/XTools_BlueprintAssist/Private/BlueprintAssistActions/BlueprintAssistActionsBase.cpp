@@ -1,8 +1,9 @@
-#include "BlueprintAssistActions/BlueprintAssistActionsBase.h"
+﻿#include "BlueprintAssistActions/BlueprintAssistActionsBase.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistTabHandler.h"
+#include "BlueprintAssistUtils.h"
 #include "Framework/Application/SlateApplication.h"
 
 TSharedPtr<FBAGraphHandler> FBAActionsBase::GetGraphHandler()

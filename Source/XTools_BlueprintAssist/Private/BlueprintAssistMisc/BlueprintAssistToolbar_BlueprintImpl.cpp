@@ -1,4 +1,4 @@
-#include "BlueprintAssistMisc/BlueprintAssistToolbar_BlueprintImpl.h"
+﻿#include "BlueprintAssistMisc/BlueprintAssistToolbar_BlueprintImpl.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistUtils.h"
@@ -35,15 +35,7 @@ void FBAToolbar_BlueprintImpl::DetectUnusedNodes()
 			{
 				if (UEdGraphNode* Node = Cast<UEdGraphNode>(UObjectToken->GetObject().Get()))
 				{
-					TSharedPtr<FBAGraphHandler> GraphHandler = FBAUtils::GetCurrentGraphHandler();
-					if (GraphHandler)
-					{
-						TSharedPtr<SGraphEditor> GraphEditor = GraphHandler->GetGraphEditor();
-						if (GraphEditor.IsValid())
-						{
-							GraphEditor->JumpToNode(Node);
-						}
-					}
+					FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(Node, false);
 				}
 			}
 		}
@@ -58,7 +50,7 @@ void FBAToolbar_BlueprintImpl::DetectUnusedNodes()
 			return;
 		}
 
-		TArray<UEdGraphNode*> UnusedNodes = Graph->Nodes;
+		TSet<UEdGraphNode*> UnusedNodes(Graph->Nodes);
 
 		TArray<UEdGraphNode*> EventNodes = Graph->Nodes.FilterByPredicate([](UEdGraphNode* Node) { return FBAUtils::IsEventNode(Node, EGPD_Output); });
 
@@ -85,10 +77,11 @@ void FBAToolbar_BlueprintImpl::DetectUnusedNodes()
 		{
 			if (UK2Node_Knot* KnotNode = Cast<UK2Node_Knot>(Node))
 			{
-				// is used if the knot is linked in the input and output direction (to an actual pin, not another knot node)
-				if (FBAUtils::GetPinLinkedToIgnoringKnots(KnotNode->GetOutputPin()).Num() > 0 && FBAUtils::GetPinLinkedToIgnoringKnots(KnotNode->GetInputPin()).Num())
+				// is used if the knot is missing links in the input or output direction, then add it back to the unused nodes
+				if (FBAUtils::GetPinLinkedToIgnoringKnots(KnotNode->GetOutputPin()).Num() == 0 ||
+					FBAUtils::GetPinLinkedToIgnoringKnots(KnotNode->GetInputPin()).Num() == 0)
 				{
-					UnusedNodes.Remove(KnotNode);
+					UnusedNodes.Add(KnotNode);
 				}
 			}
 		}

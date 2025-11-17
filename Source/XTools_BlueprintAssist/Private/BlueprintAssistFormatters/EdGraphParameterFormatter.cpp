@@ -5,6 +5,7 @@
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistStats.h"
 #include "BlueprintAssistUtils.h"
 #include "EdGraphNode_Comment.h"
@@ -89,7 +90,7 @@ void FEdGraphParameterFormatter::FormatNode(UEdGraphNode* InNode)
 		return;
 	}
 
-	if (UBASettings::HasDebugSetting("Param_FormatX"))
+	if (UBASettings_Advanced::HasDebugSetting("Param_FormatX"))
 	{
 		return;
 	}
@@ -112,7 +113,7 @@ void FEdGraphParameterFormatter::FormatNode(UEdGraphNode* InNode)
 		}
 	}
 
-	if (UBASettings::Get().bApplyCommentPadding && !UBASettings::HasDebugSetting("ParamPadding_X"))
+	if (UBASettings::Get().bApplyCommentPadding && !UBASettings_Advanced::HasDebugSetting("ParamPadding_X"))
 	{
 		ApplyCommentPaddingX();
 	}
@@ -121,7 +122,7 @@ void FEdGraphParameterFormatter::FormatNode(UEdGraphNode* InNode)
 	TSet<UEdGraphNode*> TempChildren;
 	FormatY(FPinLink(nullptr, nullptr, RootNode), TempVisited, false, TempChildren);
 
-	if (UBASettings::HasDebugSetting("Param_FormatY"))
+	if (UBASettings_Advanced::HasDebugSetting("Param_FormatY"))
 	{
 		return;
 	}
@@ -135,14 +136,13 @@ void FEdGraphParameterFormatter::FormatNode(UEdGraphNode* InNode)
 	// 	}
 	// }
 
-	if (UBASettings::Get().bApplyCommentPadding && !UBASettings::HasDebugSetting("ParamPadding_Y"))
+	if (UBASettings::Get().bApplyCommentPadding && !UBASettings_Advanced::HasDebugSetting("ParamPadding_Y"))
 	{
 		ApplyCommentPaddingY();
 	}
 
-	if (UBASettings::Get().bExpandParametersByHeight)
+	if (UBASettings::Get().bExpandParametersByHeight && FBAUtils::IsNodePure(RootNode))
 	{
-		// 移除纯节点限制，允许不纯节点也能按高度展开
 		ExpandByHeight();
 	}
 
@@ -908,8 +908,10 @@ void FEdGraphParameterFormatter::FormatY(
 
 		if (bCenterBranches && Direction == EGPD_Input && ChildBranches.Num() >= NumRequiredBranches && !bChildrenTooBig)
 		{
-			// 移除纯节点限制，允许不纯节点（如 Spawn Actor）也能居中对齐
-			CenterBranches(CurrentNode, ChildBranches, VisitedNodes);
+			if (FBAUtils::IsNodePure(CurrentNode))
+			{
+				CenterBranches(CurrentNode, ChildBranches, VisitedNodes);
+			}
 		}
 	}
 
@@ -1002,7 +1004,7 @@ FSlateRect FEdGraphParameterFormatter::GetParameterBounds()
 
 void FEdGraphParameterFormatter::MoveBelowBaseline(TSet<UEdGraphNode*> Nodes, int Baseline)
 {
-	if (UBASettings::HasDebugSetting("Baseline"))
+	if (UBASettings_Advanced::HasDebugSetting("Baseline"))
 	{
 		return;
 	}
@@ -1126,7 +1128,10 @@ void FEdGraphParameterFormatter::ExpandByHeight()
 			}
 
 			const int32 ExpandDirection = Direction == EGPD_Input ? -1 : 1;
-			const float ExpandX = ExpandDirection * LargestPinDelta * 0.2f;
+			float ExpandX = ExpandDirection * LargestPinDelta * 0.2f;
+
+			// limit expand x
+			ExpandX = FMath::Min(ExpandX, UBASettings::Get().ExpandParametersMaxDist); 
 
 			const auto NodeTree = FBAUtils::GetNodeTreeWithFilter(FormattedNode, IsFormatted, Direction, true);
 			for (UEdGraphNode* Node : NodeTree)

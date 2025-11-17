@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistObjects/BARootObject.h"
 
@@ -21,16 +21,5 @@ void UBARootObject::Tick()
 
 void UBARootObject::Cleanup()
 {
-	if (AssetHandler)
-	{
 	AssetHandler->Cleanup();
-		AssetHandler = nullptr;
-	}
-
-	if (EditorFeatures)
-	{
-		// EditorFeatures will clean up delegates in destructor
-		// Mark it for garbage collection by clearing reference
-		EditorFeatures = nullptr;
-	}
 }

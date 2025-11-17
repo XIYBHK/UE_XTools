@@ -1,12 +1,11 @@
 ﻿// Copyright fpwong. All Rights Reserved.
 
-#include "BlueprintAssistWidgets/BASearchMenu.h"
-
-#if BA_UE_VERSION_OR_LATER(5, 4)
 #include "BlueprintAssistGlobals.h"
 #include "IContentBrowserDataModule.h"
+#if BA_UE_VERSION_OR_LATER(5, 4)
+#include "BlueprintAssistWidgets/BASearchMenu.h"
 
-#include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_Search.h"
 #include "BlueprintAssistStyle.h"
 #include "ContentBrowserDataDragDropOp.h"
 #include "ContentBrowserDelegates.h"

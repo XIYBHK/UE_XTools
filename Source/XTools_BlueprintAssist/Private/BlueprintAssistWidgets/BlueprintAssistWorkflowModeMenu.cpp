@@ -34,7 +34,7 @@ void SBAWorkflowModeMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SBAWorkflowModeMenu::CreateItemWidget)
 		.OnSelectItem(this, &SBAWorkflowModeMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("切换工作流"))
+		.MenuTitle(FString("Switch workflow"))
 	];
 }
 
@@ -152,4 +152,3 @@ void SBAWorkflowModeMenu::SelectItem(TSharedPtr<FBAWorkflowModeItem> Item)
 		default: ;
 	}
 }
-

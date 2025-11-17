@@ -1,6 +1,6 @@
 // Copyright fpwong. All Rights Reserved.
 
-#include "BlueprintAssistWidgets/LinkPinMenu.h"
+#include "BlueprintAssistWidgets/BALinkPinMenu.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings.h"
@@ -33,14 +33,13 @@ FString FPinLinkerStruct::ToString() const
 	return PinFullString;
 }
 
-void SLinkPinMenu::Construct(const FArguments& InArgs)
+void SBALinkPinMenu::Construct(const FArguments& InArgs)
 {
 	// read slate args
 	GraphHandler = InArgs._GraphHandler;
 	SourcePin = InArgs._SourcePin;
 
-	float OutZoom;
-	GraphHandler->GetGraphEditor()->GetViewLocation(SavedLocation, OutZoom);
+	GraphHandler->GetViewLocation(SavedLocation);
 
 	const FString MenuTitle = FString::Printf(
 		TEXT("Link Pin to %s"),
@@ -49,16 +48,16 @@ void SLinkPinMenu::Construct(const FArguments& InArgs)
 	ChildSlot
 	[
 		SAssignNew(FilteredList, SBAFilteredList<TSharedPtr<FPinLinkerStruct>>)
-		.InitListItems(this, &SLinkPinMenu::InitListItems)
-		.OnGenerateRow(this, &SLinkPinMenu::CreateItemWidget)
-		.OnSelectItem(this, &SLinkPinMenu::SelectItem)
-		.OnMarkActiveSuggestion(this, &SLinkPinMenu::MarkActiveSuggestion)
+		.InitListItems(this, &SBALinkPinMenu::InitListItems)
+		.OnGenerateRow(this, &SBALinkPinMenu::CreateItemWidget)
+		.OnSelectItem(this, &SBALinkPinMenu::SelectItem)
+		.OnMarkActiveSuggestion(this, &SBALinkPinMenu::MarkActiveSuggestion)
 		.WidgetSize(GetWidgetSize())
 		.MenuTitle(MenuTitle)
 	];
 }
 
-SLinkPinMenu::~SLinkPinMenu()
+SBALinkPinMenu::~SBALinkPinMenu()
 {
 	if (auto GraphOverlay = GraphHandler->GetGraphOverlay())
 	{
@@ -77,7 +76,7 @@ SLinkPinMenu::~SLinkPinMenu()
 	GraphHandler->BeginLerpViewport(SavedLocation, false);
 }
 
-void SLinkPinMenu::InitListItems(TArray<TSharedPtr<FPinLinkerStruct>>& Items)
+void SBALinkPinMenu::InitListItems(TArray<TSharedPtr<FPinLinkerStruct>>& Items)
 {
 	// sort pins by output then input
 	UEdGraph* Graph = GraphHandler->GetFocusedEdGraph();
@@ -145,7 +144,7 @@ void SLinkPinMenu::InitListItems(TArray<TSharedPtr<FPinLinkerStruct>>& Items)
 	}
 }
 
-TSharedRef<ITableRow> SLinkPinMenu::CreateItemWidget(TSharedPtr<FPinLinkerStruct> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+TSharedRef<ITableRow> SBALinkPinMenu::CreateItemWidget(TSharedPtr<FPinLinkerStruct> Item, const TSharedRef<STableViewBase>& OwnerTable) const
 {
 	UEdGraphPin* Pin = Item->Pin;
 
@@ -180,7 +179,7 @@ TSharedRef<ITableRow> SLinkPinMenu::CreateItemWidget(TSharedPtr<FPinLinkerStruct
 		];
 }
 
-void SLinkPinMenu::SelectItem(TSharedPtr<FPinLinkerStruct> Item)
+void SBALinkPinMenu::SelectItem(TSharedPtr<FPinLinkerStruct> Item)
 {
 	if (!Item->Pin)
 	{
@@ -189,12 +188,12 @@ void SLinkPinMenu::SelectItem(TSharedPtr<FPinLinkerStruct> Item)
 
 	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "LinkPinMenu", "Link Pin (Menu)"));
 
-	FBAUtils::TryLinkPins(SourcePin, Item->Pin);
+	FBAUtils::TryCreateConnectionUnsafe(SourcePin, Item->Pin, EBABreakMethod::Default);
 
 	GraphHandler->BeginLerpViewport(SavedLocation, false);
 }
 
-void SLinkPinMenu::MarkActiveSuggestion(TSharedPtr<FPinLinkerStruct> Item)
+void SBALinkPinMenu::MarkActiveSuggestion(TSharedPtr<FPinLinkerStruct> Item)
 {
 	if (auto GraphOverlay = GraphHandler->GetGraphOverlay())
 	{
@@ -211,14 +210,14 @@ void SLinkPinMenu::MarkActiveSuggestion(TSharedPtr<FPinLinkerStruct> Item)
 	LastSelectedItem = Item;
 }
 
-bool SLinkPinMenu::CanConnectSourceToPin(UEdGraphPin* Pin)
+bool SBALinkPinMenu::CanConnectSourceToPin(UEdGraphPin* Pin)
 {
 	const UEdGraphSchema* Schema = Pin->GetSchema();
 	const FPinConnectionResponse Response = Schema->CanCreateConnection(SourcePin, Pin);
 	return Response.Response != CONNECT_RESPONSE_DISALLOW;
 }
 
-void SLinkPinMenu::Tick(
+void SBALinkPinMenu::Tick(
 	const FGeometry& AllottedGeometry,
 	const double InCurrentTime,
 	const float InDeltaTime)

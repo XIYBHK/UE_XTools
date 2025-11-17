@@ -1,9 +1,10 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistTypes.h"
+#include "BlueprintAssistFormatters/GraphFormatterTypes.h"
 
 class SBASizeProgress;
 class FBAGraphHandler;

@@ -2,6 +2,7 @@
 
 #include "BlueprintAssistFormatters/SimpleFormatter.h"
 
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistFormatters/BAFormatterUtils.h"
 #include "BlueprintAssistUtils.h"
 #include "EdGraphNode_Comment.h"
@@ -215,7 +216,7 @@ void FSimpleFormatter::FormatNode(UEdGraphNode* Node)
 	CommentHandler.BuildTree();
 
 	if (UBASettings::Get().bApplyCommentPadding && CommentHandler.IsValid() &&
-		!UBASettings::HasDebugSetting("SimplePaddingX"))
+		!UBASettings_Advanced::HasDebugSetting("SimplePaddingX"))
 	{
 		ApplyCommentPaddingX();
 	}
@@ -239,7 +240,7 @@ void FSimpleFormatter::FormatNode(UEdGraphNode* Node)
 	// }
 
 	if (UBASettings::Get().bApplyCommentPadding && CommentHandler.IsValid() &&
-		!UBASettings::HasDebugSetting("SimplePaddingY"))
+		!UBASettings_Advanced::HasDebugSetting("SimplePaddingY"))
 	{
 		ApplyCommentPaddingY();
 	}
@@ -253,12 +254,7 @@ void FSimpleFormatter::FormatNode(UEdGraphNode* Node)
 		FormattedNode->NodePosX += DeltaX;
 		FormattedNode->NodePosY += DeltaY;
 
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-		// UE 5.6: MoveTo 接受 FVector2f 而不是 FVector2D
-		FVector2f NewPos(FormattedNode->NodePosX, FormattedNode->NodePosY);
-#else
-		FVector2D NewPos(FormattedNode->NodePosX, FormattedNode->NodePosY);
-#endif
+		FBAVector2 NewPos(FormattedNode->NodePosX, FormattedNode->NodePosY);
 
 		if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetGraphNode(GraphHandler->GetGraphPanel(), FormattedNode))
 		{

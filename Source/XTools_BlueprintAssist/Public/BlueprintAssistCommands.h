@@ -4,14 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistGlobals.h"
-#include "Framework/Commands/Commands.h"
-
-// UE 5.0+ EditorStyleSet.h 已废弃，使用 BlueprintAssistGlobals.h 中的宏适配
-#if BA_UE_VERSION_OR_LATER(5, 0)
-#include "Styling/AppStyle.h"
-#else
 #include "EditorStyleSet.h"
-#endif
+#include "Framework/Commands/Commands.h"
 
 /**
  * 
@@ -112,6 +106,9 @@ public:
 	/** Link the selected pin to the hovered pin */
 	TSharedPtr<FUICommandInfo> LinkToHoveredPin;
 
+	/** Straighten the hovered or selected pin */
+	TSharedPtr<FUICommandInfo> StraightenHoveredPin;
+
 	/** Split the selected or hovered pin */
 	TSharedPtr<FUICommandInfo> SplitPin;
 
@@ -150,6 +147,11 @@ public:
 	TSharedPtr<FUICommandInfo> LinkPinMenu;
 	TSharedPtr<FUICommandInfo> TabSwitcherMenu;
 
+#if BA_UE_VERSION_OR_LATER(5, 4)
+	TSharedPtr<FUICommandInfo> OpenFileMenu;
+	TSharedPtr<FUICommandInfo> FindInFilesMenu;
+#endif
+
 	TSharedPtr<FUICommandInfo> ToggleNode;
 
 	TSharedPtr<FUICommandInfo> CreateRerouteNode;
@@ -178,6 +180,8 @@ public:
 
 	TSharedPtr<FUICommandInfo> GoForwardInTabHistory;
 	TSharedPtr<FUICommandInfo> GoBackInTabHistory;
+
+	TSharedPtr<FUICommandInfo> SaveAndFormat;
 };
 
 class XTOOLS_BLUEPRINTASSIST_API FBACommands

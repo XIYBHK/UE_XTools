@@ -2,20 +2,15 @@
 
 #include "BlueprintAssistSettings.h"
 
-#include "BlueprintAssistGlobals.h"
-#include "BlueprintAssistUtils.h"
-#include "JsonObjectConverter.h"
-#include "BlueprintAssistMisc/BASettingsBase.h"
 #include "BlueprintAssistCache.h"
+#include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistModule.h"
 #include "BlueprintAssistTabHandler.h"
+#include "BlueprintAssistUtils.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
-#include "DetailWidgetRow.h"
 #include "EdGraphSchema_K2.h"
-#include "Misc/MessageDialog.h"
-#include "Widgets/Input/SButton.h"
 
 FBAFormatterSettings::FBAFormatterSettings()
 {
@@ -27,7 +22,8 @@ EBAAutoFormatting FBAFormatterSettings::GetAutoFormatting() const
 	return UBASettings::Get().bGloballyDisableAutoFormatting ? EBAAutoFormatting::Never : AutoFormatting; 
 }
 
-UBASettings::UBASettings()
+UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	UseBlueprintFormattingForTheseGraphs =
 	{
@@ -38,19 +34,6 @@ UBASettings::UBASettings()
 		"SMTransitionGraph",
 		"SMPropertyGraph"
 	};
-
-	ShiftCameraDistance = 400;
-
-	CacheSaveLocation = EBACacheSaveLocation::Plugin;
-	bSaveBlueprintAssistCacheToFile = true;
-
-	bEnablePlugin = true;
-	bAddToolbarWidget = true;
-
-	bEnableShakeNodeOffWire = true;
-	ShakeNodeOffWireTimeWindow = 0.3f;
-
-	SelectedPinHighlightColor = FLinearColor(0.6f, 0.6f, 0.6f, 0.33);
 
 	SupportedAssetEditors = {
 		"SoundCueEditor",
@@ -67,10 +50,16 @@ UBASettings::UBASettings()
 		"WidgetBlueprintEditor",
 		"PCGEditor",
 		"FlowEditor",
-		"DialogueEditor"
+		"DialogueEditor",
+		"CustomizableObjectEditor",
+		"CameraRigAssetEditor",
+		"CameraAssetEditor",
 	};
 
 	SupportedGraphEditors = { "SGraphEditor", "SFlowGraphEditor" };
+
+	bEnableShakeNodeOffWire = true;
+	ShakeNodeOffWireTimeWindow = 0.3f;
 
 	// ------------------- //
 	// Format all settings //
@@ -88,15 +77,16 @@ UBASettings::UBASettings()
 	ExecutionWiringStyle = EBAWiringStyle::AlwaysMerge;
 	ParameterWiringStyle = EBAWiringStyle::AlwaysMerge;
 
-	// 禁用全局自动格式化（基于用户习惯）
 	bGloballyDisableAutoFormatting = true;
-	FormattingStyle = EBANodeFormattingStyle::Expanded;
-	ParameterStyle = EBAParameterFormattingStyle::LeftSide;
+	bSkipAutoFormattingAfterBreakingPins = true;
 
-	BlueprintParameterPadding = FIntPoint(40, 18);
+	FormattingStyle = EBANodeFormattingStyle::Expanded;
+	ParameterStyle = EBAParameterFormattingStyle::Helixing;
+
+	BlueprintParameterPadding = FIntPoint(40, 25);
 	BlueprintKnotTrackSpacing = 26;
 	VerticalPinSpacing = 26;
-	ParameterVerticalPinSpacing = 18;
+	ParameterVerticalPinSpacing = 26;
 
 	bDisableHelixingWithMultiplePins = true;
 	DisableHelixingPinCount = 2;
@@ -124,7 +114,7 @@ UBASettings::UBASettings()
 
 	FBAFormatterSettings BehaviorTreeSettings(
 		DefaultFormatterPaddingSize,
-		EBAAutoFormatting::FormatAllConnected,
+		EBAAutoFormatting::Never,
 		EGPD_Output,
 		{ "BehaviorTreeGraphNode_Root" }
 	);
@@ -173,7 +163,6 @@ UBASettings::UBASettings()
 	NonBlueprintFormatterSettings.Add("NiagaraGraphEditor", NiagaraSettings);
 #endif
 
-	// TODO: Reenable support for control rig after fixing issues
 	FBAFormatterSettings ControlRigSettings;
 
 #if BA_UE_VERSION_OR_LATER(5, 3)
@@ -181,12 +170,7 @@ UBASettings::UBASettings()
 #else
 	ControlRigSettings.ExecPinName = "ControlRigExecuteContext";
 #endif
-
-#if BA_UE_VERSION_OR_LATER(5, 0)
-	ControlRigSettings.bEnabled = true;
-#else
 	ControlRigSettings.bEnabled = false;
-#endif
 	ControlRigSettings.Padding = DefaultFormatterPaddingSize;
 	ControlRigSettings.AutoFormatting = EBAAutoFormatting::Never;
 	ControlRigSettings.FormatterDirection = EGPD_Output;
@@ -197,6 +181,7 @@ UBASettings::UBASettings()
 	MetaSoundSettings.AutoFormatting = EBAAutoFormatting::Never;
 	MetaSoundSettings.FormatterDirection = EGPD_Output;
 	MetaSoundSettings.RootNodes = { "MetasoundEditorGraphInputNode" };
+	MetaSoundSettings.ExecPinName = "Trigger";
 	NonBlueprintFormatterSettings.Add("MetasoundEditorGraph", MetaSoundSettings);
 
 	FBAFormatterSettings EnvironmentQuerySettings;
@@ -239,97 +224,61 @@ UBASettings::UBASettings()
 	NotYetDialogueSettings.RootNodes = { "DialogueGraphNode_Root" };
 	NonBlueprintFormatterSettings.Add("DialogueGraph", NotYetDialogueSettings);
 
+	FBAFormatterSettings MutableSettings;
+	MutableSettings.FormatterType = EBAFormatterType::Simple;
+	MutableSettings.Padding = DefaultFormatterPaddingSize;
+	MutableSettings.RootNodes = { "CustomizableObjectNodeObject" };
+	MutableSettings.AutoFormatting = EBAAutoFormatting::Never;
+	MutableSettings.FormatterDirection = EGPD_Input;
+	NonBlueprintFormatterSettings.Add("CustomizableObjectGraph", MutableSettings);
+
+	FBAFormatterSettings ObjectTreeGraphSettings;
+	ObjectTreeGraphSettings.FormatterType = EBAFormatterType::Simple;
+	ObjectTreeGraphSettings.Padding = DefaultFormatterPaddingSize;
+	ObjectTreeGraphSettings.RootNodes = { "ObjectTreeGraphNode" };
+	ObjectTreeGraphSettings.AutoFormatting = EBAAutoFormatting::Never;
+	ObjectTreeGraphSettings.FormatterDirection = EGPD_Output;
+	NonBlueprintFormatterSettings.Add("ObjectTreeGraph", ObjectTreeGraphSettings);
+
+	FBAFormatterSettings ReferenceViewerGraphSettings;
+	ReferenceViewerGraphSettings.bEnabled = false;
+	ReferenceViewerGraphSettings.FormatterType = EBAFormatterType::Simple;
+	ReferenceViewerGraphSettings.Padding = DefaultFormatterPaddingSize;
+	ReferenceViewerGraphSettings.AutoFormatting = EBAAutoFormatting::Never;
+	ReferenceViewerGraphSettings.FormatterDirection = EGPD_Output;
+	NonBlueprintFormatterSettings.Add("EdGraph_ReferenceViewer", ReferenceViewerGraphSettings);
+
 	bCreateKnotNodes = true;
 
-	bAutoAddParentNode = true;
-
-	bAutoRenameGettersAndSetters = true;
-	bMergeGenerateGetterAndSetterButton = false;
-
-	bEnableGlobalCommentBubblePinned = false;
-	bGlobalCommentBubblePinnedValue = true;
-
 	bDetectNewNodesAndCacheNodeSizes = false;
-	bRefreshNodeSizeBeforeFormatting = true;
 
 	bTreatDelegatesAsExecutionPins = true;
 
 	bCenterBranches = false;
 	NumRequiredBranches = 3;
 
-	bCenterBranchesForParameters = true;
+	bCenterBranchesForParameters = false;
 	NumRequiredBranchesForParameters = 2;
 
+	bApplyCommentPadding = true;
 	bAddKnotNodesToComments = true;
 	CommentNodePadding = FIntPoint(30, 30);
+	bRefreshCommentTitleBarSize = true;
 
 	bEnableFasterFormatting = false;
 
 	bUseKnotNodePool = false;
 
-	bSlowButAccurateSizeCaching = false;
-
-	bApplyCommentPadding = true;
-
 	KnotNodeDistanceThreshold = 800;
 
 	bExpandNodesAheadOfParameters = true;
 	bExpandNodesByHeight = true;
+	ExpandNodesMaxDist = 400;
 	bExpandParametersByHeight = true;
+	ExpandParametersMaxDist = 160;
 
 	bSnapToGrid = false;
 	bAlignExecNodesTo8x8Grid = false;
-
-	// ------------------------ //
-	// Create variable defaults //
-	// ------------------------ //
-
-	bEnableVariableDefaults = false;
-	bApplyVariableDefaultsToEventDispatchers = false;
-	bDefaultVariableInstanceEditable = false;
-	bDefaultVariableBlueprintReadOnly = false;
-	bDefaultVariableExposeOnSpawn = false;
-	bDefaultVariablePrivate = false;
-	bDefaultVariableExposeToCinematics = false;
-	DefaultVariableName = TEXT("VarName");
-	DefaultVariableTooltip = FText::FromString(TEXT(""));
-	DefaultVariableCategory = FText::FromString(TEXT(""));
-
-	// ----------------- //
-	// Function defaults //
-	// ----------------- //
-
-	bEnableFunctionDefaults = false;
-	DefaultFunctionAccessSpecifier = EBAFunctionAccessSpecifier::Public;
-	bDefaultFunctionPure = false;
-	bDefaultFunctionConst = false;
-	bDefaultFunctionExec = false;
-	DefaultFunctionTooltip = FText::FromString(TEXT(""));
-	DefaultFunctionKeywords = FText::FromString(TEXT(""));
-	DefaultFunctionCategory = FText::FromString(TEXT(""));
-
-	// ------------------------ //
-	// Misc                     //
-	// ------------------------ //
-
-	bDisableBlueprintAssistPlugin = false;
-	DefaultGeneratedGettersCategory = INVTEXT("Generated|Getters");
-	DefaultGeneratedSettersCategory = INVTEXT("Generated|Setters");
-	bEnableDoubleClickGoToDefinition = true;
-	bPlayLiveCompileSound = false;
-	bEnableInvisibleKnotNodes = false;
-	bHighlightBadComments = false;
-	FolderBookmarks.Add(EKeys::One);
-	FolderBookmarks.Add(EKeys::Two);
-	FolderBookmarks.Add(EKeys::Three);
-	FolderBookmarks.Add(EKeys::Four);
-	FolderBookmarks.Add(EKeys::Five);
-	FolderBookmarks.Add(EKeys::Six);
-	FolderBookmarks.Add(EKeys::Seven);
-	FolderBookmarks.Add(EKeys::Eight);
-	FolderBookmarks.Add(EKeys::Nine);
-	FolderBookmarks.Add(EKeys::Zero);
-	ClickTime = 0.35f;
 
 	// ------------------------ //
 	// Accessibility            //
@@ -337,6 +286,11 @@ UBASettings::UBASettings()
 
 	bShowOverlayWhenCachingNodes = true;
 	RequiredNodesToShowOverlayProgressBar = 15;
+
+	bSaveAllBeforeFormatting = false;
+	bFormatAllAfterSaving = false;
+
+	SaveSettingsDefaults();
 }
 
 void UBASettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
@@ -345,39 +299,16 @@ void UBASettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 
 	const FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
 
-	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
-	if (GraphHandler.IsValid())
+	// when we change any formatting related setting, clear the formatting data
+	for (auto GH : FBATabHandler::Get().GetAllGraphHandlers())
 	{
-		if (PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bEnableGlobalCommentBubblePinned) ||
-			PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bGlobalCommentBubblePinnedValue))
+		if (GH)
 		{
-			GraphHandler->ApplyGlobalCommentBubblePinned();
-		}
-		else if (PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, ParameterStyle)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, FormattingStyle)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, ParameterWiringStyle)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, ExecutionWiringStyle)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bLimitHelixingHeight)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, HelixingHeightMax)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, SingleNodeMaxHeight)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, BlueprintKnotTrackSpacing)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, BlueprintParameterPadding)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, FormatAllPadding)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bTreatDelegatesAsExecutionPins)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bExpandNodesByHeight)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bExpandParametersByHeight)
-			|| PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, bCreateKnotNodes)
-			|| PropertyName == NAME_None) // if the name is none, this probably means we changed a property through the toolbar
-			// TODO: maybe there's a way to change property externally while passing in correct info name
-		{
-			GraphHandler->ClearFormatters();
+			GH->ClearFormatters();
 		}
 	}
 
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings, CacheSaveLocation))
-	{
-		FBACache::Get().SaveCache();
-	}
+	FBACache::Get().ClearLastFormatted();
 
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
@@ -393,13 +324,11 @@ void FBASettingsDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 		"General",
 		"FormattingOptions",
 		"FormatAll",
+		"Comments",
 		"BlueprintFormatting",
 		"OtherGraphs",
-		"CommentSettings",
 		"Misc",
 		"Accessibility",
-		"NewFunctionDefaults",
-		"NewVariableDefaults",
 		"Experimental"
 	};
 
@@ -408,58 +337,11 @@ void FBASettingsDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 		DetailBuilder.EditCategory(CategoryOrder[i]).SetSortOrder(i);
 	}
 
-
-	static TArray<FName> DefaultCollapsedCategories = { "OtherGraphs", "NewVariableDefaults", "NewFunctionDefaults" };
+	static TArray<FName> DefaultCollapsedCategories = { "OtherGraphs" };
 	for (FName& CategoryName : DefaultCollapsedCategories)
 	{
 		DetailBuilder.EditCategory(CategoryName).InitiallyCollapsed(true);
 	}
-
-	//--------------------
-	// General
-	// -------------------
-
-	IDetailCategoryBuilder& MiscCategory = DetailBuilder.EditCategory("Misc");
-	auto& BACache = FBACache::Get();
-
-	const FString CachePath = BACache.GetCachePath(true);
-
-	const auto DeleteSizeCache = [&BACache]()
-	{
-		static FText Title = FText::FromString("Delete cache file");
-		static FText Message = FText::FromString("Are you sure you want to delete the cache file?");
-
-#if BA_UE_VERSION_OR_LATER(5, 3)
-		const EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
-#else
-		const EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, Message, &Title);
-#endif
-		if (Result == EAppReturnType::Yes)
-		{
-			BACache.DeleteCache();
-		}
-
-		return FReply::Handled();
-	};
-
-	MiscCategory.AddCustomRow(FText::FromString("Delete cache file"))
-		.NameContent()
-		[
-			SNew(STextBlock)
-			.Text(FText::FromString("Delete cache file"))
-			.Font(BA_GET_FONT_STYLE(TEXT("PropertyWindow.NormalFont")))
-		]
-		.ValueContent()
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().Padding(5).AutoWidth()
-			[
-				SNew(SButton)
-				.Text(FText::FromString("Delete cache file"))
-				.ToolTipText(FText::FromString(FString::Printf(TEXT("Delete cache file located at: %s"), *CachePath)))
-				.OnClicked_Lambda(DeleteSizeCache)
-			]
-		];
 }
 
 FBAFormatterSettings UBASettings::GetFormatterSettings(UEdGraph* Graph)
@@ -481,7 +363,7 @@ FBAFormatterSettings* UBASettings::FindFormatterSettings(UEdGraph* Graph)
 
 	UBASettings& BASettings = GetMutable();
 
-	if (FBAFormatterSettings* FoundSettings = BASettings.NonBlueprintFormatterSettings.Find(Graph->GetClass()->GetFName()))
+	if (FBAFormatterSettings* FoundSettings = BASettings.NonBlueprintFormatterSettings.Find(FBAUtils::GetObjectClassName(Graph)))
 	{
 		if (FoundSettings->bEnabled)
 		{
@@ -495,84 +377,4 @@ FBAFormatterSettings* UBASettings::FindFormatterSettings(UEdGraph* Graph)
 	}
 
 	return nullptr; 
-}
-
-// UBASettingsBase functionality implementation
-void UBASettings::SaveSettingsDefaults()
-{
-	DefaultsAsJson = MakeShareable(new FJsonObject);
-	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, DefaultsAsJson.ToSharedRef());
-}
-
-TArray<FBASettingsChange> UBASettings::GetChanges() const
-{
-	TArray<FBASettingsChange> Changes;
-
-	if (!DefaultsAsJson.IsValid())
-	{
-		return Changes;
-	}
-
-	// load our current state into json to compare with the saved json
-	TSharedRef<FJsonObject> Curr = MakeShareable(new FJsonObject);
-	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, Curr);
-
-	// iter our current properties
-	for (auto& Elem : Curr->Values)
-	{
-		// find the saved property from our json
-		if (TSharedPtr<FJsonValue> DefaultValue = DefaultsAsJson->Values.FindRef(Elem.Key))
-		{
-			const FJsonValue& Default = DefaultValue.ToSharedRef().Get();
-			const FJsonValue& New = Elem.Value.ToSharedRef().Get();
-			if (Default != New)
-			{
-				Changes.Add(FBASettingsChange(Elem.Key, DefaultValue, Elem.Value));
-			}
-		}
-	}
-
-	return Changes;
-}
-
-FString UBASettings::GetAllChangesAsString() const
-{
-	FString Changes;
-
-	if (!DefaultsAsJson.IsValid())
-	{
-		return Changes;
-	}
-
-	// load our current state into json to compare with the saved json
-	TSharedRef<FJsonObject> Curr = MakeShareable(new FJsonObject);
-	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, Curr);
-
-	// iter our current properties
-	for (auto& Elem : Curr->Values)
-	{
-		// find the saved property from our json
-		if (TSharedPtr<FJsonValue> DefaultValue = DefaultsAsJson->Values.FindRef(Elem.Key))
-		{
-			const FJsonValue& Default = DefaultValue.ToSharedRef().Get();
-			const FJsonValue& New = Elem.Value.ToSharedRef().Get();
-			if (Default != New)
-			{
-				FString Value = FBASettingsChange::GetJsonValueAsString(Elem.Key, Elem.Value);
-				FString Line = FString::Printf(TEXT("%s: \"%s\""), *Elem.Key, *Value);
-				Changes.Append(Line).Append(LINE_TERMINATOR);
-			}
-		}
-	}
-
-	return Changes;
-}
-
-void UBASettings::ResetToDefault()
-{
-	TArray<FBASettingsChange> Changes = GetChanges();
-	for (FBASettingsChange& Change : Changes)
-	{
-		Change.ResetToDefault(this);
-	}
 }

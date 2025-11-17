@@ -71,13 +71,7 @@ void FBATabHandler::OnTabForegrounded(TSharedPtr<SDockTab> NewTab, TSharedPtr<SD
 
 	// UE_LOG(LogBlueprintAssist, Warning, TEXT("Tab foregrounded: %s %d"), *NewTab->GetTabLabel().ToString(), NewTab->GetTabRole());
 
-	TWeakPtr<SDockTab> NewTabObserver(NewTab);
-	TabsToProcess.Emplace(NewTabObserver);
-
-	if (!ProcessTabsTimerHandle.IsValid())
-	{
-		ProcessTabsTimerHandle = GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateRaw(this, &FBATabHandler::ProcessTabs));
-	}
+	ProcessTab(NewTab);
 }
 
 void FBATabHandler::OnActiveTabChanged(TSharedPtr<SDockTab> PreviousTab, TSharedPtr<SDockTab> NewTab)
@@ -88,14 +82,7 @@ void FBATabHandler::OnActiveTabChanged(TSharedPtr<SDockTab> PreviousTab, TShared
 	}
 
 	// UE_LOG(LogBlueprintAssist, Warning, TEXT("Active tab changed: %s %d"), *NewTab->GetTabLabel().ToString(), NewTab->GetTabRole());
-
-	TWeakPtr<SDockTab> NewTabObserver(NewTab);
-	TabsToProcess.Emplace(NewTabObserver);
-
-	if (!ProcessTabsTimerHandle.IsValid())
-	{
-		ProcessTabsTimerHandle = GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateRaw(this, &FBATabHandler::ProcessTabs));
-	}
+	ProcessTab(NewTab);
 }
 
 void FBATabHandler::CheckActiveTabContentChanged()
@@ -125,6 +112,20 @@ TSharedPtr<FBAGraphHandler> FBATabHandler::GetActiveGraphHandler()
 	return ActiveGraphHandler.Pin();
 }
 
+TArray<TSharedPtr<FBAGraphHandler>> FBATabHandler::GetAllGraphHandlers()
+{
+	TArray<TSharedPtr<FBAGraphHandler>> Out;
+	for (auto& Elem : GraphHandlerMap)
+	{
+#if BA_UE_VERSION_OR_LATER(5, 6)
+		Out.Add(Elem.Value.ToSharedPtr());
+#else
+		Out.Add(Elem.Value->AsShared());
+#endif
+	}
+	return Out;
+}
+
 TSharedPtr<SDockTab> FBATabHandler::GetLastMajorTab()
 {
 	return LastMajorTab.Pin();
@@ -139,6 +140,37 @@ void FBATabHandler::CheckWindowFocusChanged()
 	{
 		LastActiveWindow = ActiveWindow;
 
+		if (ActiveGraphHandler.IsValid())
+		{
+			TSharedPtr<SWindow> GraphHandlerWindow = ActiveGraphHandler.Pin()->GetWindow();
+
+			bool bDifferentWindow = ActiveWindow != GraphHandlerWindow;
+
+			// run some secondary checks
+			if (bDifferentWindow && ActiveWindow.IsValid())
+			{
+				// don't count as a window change if the window doesn't appear in the taskbar
+				if (!ActiveWindow->AppearsInTaskbar())
+				{
+					bDifferentWindow = false;
+				}
+				else if (ActiveWindow->GetType() == EWindowType::Menu || ActiveWindow->GetType() == EWindowType::Notification || ActiveWindow->GetType() == EWindowType::CursorDecorator || ActiveWindow->GetType() == EWindowType::ToolTip)
+				{
+					// check the parent window matches the graph handler window for weird window types
+					TSharedPtr<SWindow> ParentWindow = FBAUtils::GetTopMostWindow(ActiveWindow);
+					if (ParentWindow == GraphHandlerWindow)
+					{
+						bDifferentWindow = false;
+					}
+				}
+			}
+
+			if (bDifferentWindow)
+			{
+				ClearActiveGraphHandler();
+			}
+		}
+
 		if (TSharedPtr<SDockTab> ActiveTab = FGlobalTabmanager::Get()->GetActiveTab())
 		{
 			TSharedPtr<SWindow> ParentWindow = FBAUtils::GetParentWindow(ActiveTab);
@@ -152,9 +184,6 @@ void FBATabHandler::CheckWindowFocusChanged()
 
 void FBATabHandler::SetGraphHandler(TSharedPtr<SDockTab> Tab, TSharedPtr<SGraphEditor> GraphEditor)
 {
-	TWeakPtr<SGraphEditor> GraphEditorObserver(GraphEditor);
-	TWeakPtr<SDockTab> TabObserver(Tab);
-
 	if (ActiveGraphHandler.IsValid())
 	{
 		TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin();
@@ -163,8 +192,7 @@ void FBATabHandler::SetGraphHandler(TSharedPtr<SDockTab> Tab, TSharedPtr<SGraphE
 			return;
 		}
 
-		ActiveGH->ResetTransactions();
-		ActiveGH->OnLoseFocus();
+		ClearActiveGraphHandler();
 	}
 
 	if (GraphHandlerMap.Contains(Tab))
@@ -175,6 +203,9 @@ void FBATabHandler::SetGraphHandler(TSharedPtr<SDockTab> Tab, TSharedPtr<SGraphE
 	}
 	else
 	{
+		TWeakPtr<SGraphEditor> GraphEditorObserver(GraphEditor);
+		TWeakPtr<SDockTab> TabObserver(Tab);
+
 		TSharedRef<FBAGraphHandler> NewGraphHandler(MakeShared<FBAGraphHandler>(TabObserver, GraphEditorObserver));
 		NewGraphHandler->InitGraphHandler();
 		GraphHandlerMap.Add(Tab, NewGraphHandler);
@@ -194,7 +225,7 @@ void FBATabHandler::Cleanup()
 	}
 
 	GraphHandlerMap.Reset();
-	ActiveGraphHandler.Reset();
+	ClearActiveGraphHandler();
 	TabsToProcess.Reset();
 	LastMajorTab.Reset();
 	ProcessTabsTimerHandle.Invalidate();
@@ -216,7 +247,6 @@ void FBATabHandler::RemoveInvalidTabs()
 			if (ActiveGraphHandler == GraphHandler)
 			{
 				ActiveGraphHandler.Reset();
-				ActiveGraphHandler = nullptr;
 			}
 		}
 	}
@@ -248,7 +278,7 @@ TSharedPtr<SDockTab> FBATabHandler::GetChildTabWithGraphEditor(TSharedPtr<SWidge
 		if (ChildDockTab->IsForeground())
 		{
 			TSharedPtr<SWidget> TabContent = ChildDockTab->GetContent();
-			if (FBAUtils::IsWidgetOfType(TabContent, "SGraphEditor"))
+			if (FBAUtils::IsWidgetOfTypeFast(TabContent, "SGraphEditor"))
 			{
 				return ChildDockTab;
 			}
@@ -285,7 +315,7 @@ void FBATabHandler::ProcessTabs()
 	{
 		if (Tab.Pin())
 		{
-			if (ProcessTab(Tab.Pin()))
+			if (ProcessTabInternal(Tab.Pin()))
 			{
 				break;
 			}
@@ -295,7 +325,31 @@ void FBATabHandler::ProcessTabs()
 	TabsToProcess.Empty();
 }
 
-bool FBATabHandler::ProcessTab(TSharedPtr<SDockTab> Tab)
+void FBATabHandler::ClearActiveGraphHandler()
+{
+	if (ActiveGraphHandler.IsValid())
+	{
+		ActiveGraphHandler.Pin()->OnLoseFocus();
+	}
+
+	ActiveGraphHandler.Reset();
+}
+
+void FBATabHandler::ProcessTab(TSharedPtr<SDockTab> Tab)
+{
+	if (!Tab.IsValid())
+	{
+		return;
+	}
+	TabsToProcess.Emplace(TWeakPtr<SDockTab>(Tab));
+
+	if (!ProcessTabsTimerHandle.IsValid())
+	{
+		ProcessTabsTimerHandle = GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateRaw(this, &FBATabHandler::ProcessTabs));
+	}
+}
+
+bool FBATabHandler::ProcessTabInternal(TSharedPtr<SDockTab> Tab)
 {
 	if (!Tab.IsValid() || !Tab->IsForeground())
 	{
@@ -365,9 +419,7 @@ bool FBATabHandler::ProcessTab(TSharedPtr<SDockTab> Tab)
 
 		if (bDifferentWindow || Tab->GetTabRole() != PanelTab)
 		{
-			ActiveGraphHandler.Pin()->ResetTransactions();
-			ActiveGraphHandler.Pin()->OnLoseFocus();
-			ActiveGraphHandler = nullptr;
+			ClearActiveGraphHandler();
 		}
 	}
 

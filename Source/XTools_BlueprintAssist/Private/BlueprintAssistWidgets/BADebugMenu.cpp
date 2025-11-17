@@ -1,7 +1,11 @@
-#include "BlueprintAssistWidgets/BADebugMenu.h"
+﻿#include "BlueprintAssistWidgets/BADebugMenu.h"
 
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistUtils.h"
+#include "PropertyEditorClipboard.h"
 #include "SGraphPanel.h"
+#include "SlateOptMacros.h"
+#include "BlueprintAssistMisc/BACrashReporter.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 #include "Components/VerticalBox.h"
 #include "EdGraph/EdGraph.h"
@@ -11,6 +15,7 @@
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableText.h"
+#include "Widgets/Text/SInlineEditableTextBlock.h"
 
 void SBADebugMenuRow::Construct(const FArguments& InArgs)
 {
@@ -25,6 +30,7 @@ void SBADebugMenuRow::Construct(const FArguments& InArgs)
 	];
 }
 
+BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 void SBADebugMenu::Construct(const FArguments& InArgs)
 {
 	FocusedAssetEditor = FText::FromString("None");
@@ -36,6 +42,8 @@ void SBADebugMenu::Construct(const FArguments& InArgs)
 	HoveredWidget = FText::FromString("None");
 	FocusedWidget = FText::FromString("None");
 	CurrentTab = FText::FromString("None");
+	LastMajorTab = FText::FromString("None");
+	ActiveWindow = FText::FromString("None");
 
 	ChildSlot.VAlign(VAlign_Top).HAlign(HAlign_Fill)
 	[
@@ -97,6 +105,12 @@ void SBADebugMenu::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot()
 		[
 			SNew(SBADebugMenuRow)
+			.Label(FText::FromString("Last Major Tab: "))
+			.Value_Lambda([&] { return LastMajorTab; })
+		]
+		+ SVerticalBox::Slot()
+		[
+			SNew(SBADebugMenuRow)
 			.Label(FText::FromString("Keyboard Focus: "))
 			.Value_Lambda([&] { return KeyboardFocusWidget; })
 		]
@@ -105,6 +119,18 @@ void SBADebugMenu::Construct(const FArguments& InArgs)
 			SNew(SBADebugMenuRow)
 			.Label(FText::FromString("User Focus: "))
 			.Value_Lambda([&] { return UserFocusWidget; })
+		]
+		+ SVerticalBox::Slot()
+		[
+			SNew(SBADebugMenuRow)
+			.Label(FText::FromString("Active Window: "))
+			.Value_Lambda([&] { return ActiveWindow; })
+		]
+		+ SVerticalBox::Slot()
+		[
+			SNew(SBADebugMenuRow)
+			.Label(FText::FromString("Graph Handler: "))
+			.Value_Lambda([&] { return GraphHandlerObj; })
 		]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
@@ -148,8 +174,34 @@ void SBADebugMenu::Construct(const FArguments& InArgs)
 				return FReply::Handled();
 			})
 		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SInlineEditableTextBlock)
+			.Text(INVTEXT("Enter node text"))
+			.OnTextCommitted_Lambda([](const FText& NewText, ETextCommit::Type InTextCommit)
+			{
+				if (InTextCommit == ETextCommit::Type::OnEnter)
+				{
+					FString NodeText;
+					if (FBAMiscUtils::DecompressString(NewText.ToString(), NodeText))
+					{
+						UE_LOG(LogTemp, Warning, TEXT("%s"), *NodeText);
+						FBAMiscUtils::ClipboardCopy(NodeText);
+					}
+				}
+			})
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SButton).Text(INVTEXT("Crash Reporter")).OnClicked_Lambda([]()
+			{
+				FBACrashReporter::Get().ShowNotification();
+				return FReply::Handled();
+			})
+		]
 	];
 }
+END_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
 void SBADebugMenu::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
@@ -202,7 +254,7 @@ void SBADebugMenu::Tick(const FGeometry& AllottedGeometry, const double InCurren
 					FText::FromString(FBAUtils::GetNodeGuid(Node).ToString()));
 
 				NodeUnderCursorSize = FText::Format(INVTEXT("P:{0} S:{1})"),
-					FText::FromString(GraphNode->GetPosition().ToString()),
+					FText::FromString(FBAUtils::GetGraphNodePos(GraphNode).ToString()),
 					FText::FromString(GraphNode->GetDesiredSize().ToString()));
 			}
 		}
@@ -223,6 +275,16 @@ void SBADebugMenu::Tick(const FGeometry& AllottedGeometry, const double InCurren
 		}
 	}
 
+	if (auto GH = FBAUtils::GetCurrentGraphHandler())
+	{
+		FString Tab = GH->GetTab().IsValid() ? GH->GetTab()->GetTabLabel().ToString() : "invalid"; 
+		GraphHandlerObj = FText::FromString(FString::Printf(TEXT("Tab %s, Graph %s"), *Tab, *GetNameSafe(GH->GetFocusedEdGraph())));
+	}
+	else
+	{
+		GraphHandlerObj = INVTEXT("None");
+	}
+
 	{
 		auto Widget = FSlateApplicationBase::Get().GetKeyboardFocusedWidget();
 		KeyboardFocusWidget = Widget.IsValid() ? FText::FromString(Widget->ToString()) : INVTEXT("null");
@@ -231,6 +293,16 @@ void SBADebugMenu::Tick(const FGeometry& AllottedGeometry, const double InCurren
 	{
 		auto Widget = FSlateApplicationBase::Get().GetUserFocusedWidget(0);
 		UserFocusWidget = Widget.IsValid() ? FText::FromString(Widget->ToString()) : INVTEXT("null");
+	}
+
+	if (auto LastTab = FBATabHandler::Get().GetLastMajorTab())
+	{
+		LastMajorTab = FText::FromString(LastTab->GetTabLabel().ToString());
+	}
+
+	if (TSharedPtr<SWindow> Window = FSlateApplication::Get().GetActiveTopLevelWindow())
+	{
+		ActiveWindow = FText::FromString(Window->ToString());
 	}
 }
 

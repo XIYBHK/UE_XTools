@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistGraphExtender.h"
 
@@ -7,6 +7,7 @@
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistInputProcessor.h"
 #include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistUtils.h"
 #include "BlueprintEditor.h"
 #include "EdGraphSchema_K2_Actions.h"
@@ -19,6 +20,9 @@
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "ScopedTransaction.h"
+#include "BlueprintAssistMisc/BAMiscUtils.h"
+#include "BlueprintAssistMisc/BAScopedRollbackTransaction.h"
+#include "Editor/Transactor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -53,7 +57,7 @@ TSharedRef<FExtender> FBAGraphExtender::ExtendSelectedNode(const TSharedRef<FUIC
 
 		static void AddGenerateGetterSetter(FMenuBuilder& MenuBuilder)
 		{
-			if (UBASettings::Get().bMergeGenerateGetterAndSetterButton)
+			if (UBASettings_EditorFeatures::Get().bMergeGenerateGetterAndSetterButton)
 			{
 				MenuBuilder.AddMenuEntry(FBAGraphCommands::Get().GenerateGetterAndSetter);
 			}
@@ -294,18 +298,20 @@ bool FBAGraphExtender::GenerateGetter(const UEdGraph* Graph, const UEdGraphNode*
 	if (FindObject<UEdGraph>(BlueprintObj, *FunctionName))
 	{
 		const FText Message = FText::FromString(FString::Printf(TEXT("Getter '%s' already exists"), *FunctionName));
-		FNotificationInfo Info(Message);
-		Info.ExpireDuration = 2.0f;
-		Info.bUseSuccessFailIcons = true;
-		Info.Image = BA_STYLE_CLASS::Get().GetBrush(TEXT("Icons.Warning"));
-		FSlateNotificationManager::Get().AddNotification(Info);
+		FBAMiscUtils::ShowSimpleSlateNotification(Message, SNotificationItem::CS_Fail);
 		return false;
 	}
 
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "GenerateGetter_BlueprintAssist", "Generate Getter"));
+	FBAScopedRollbackTransaction Transaction(INVTEXT("Generate Getter"));
 	BlueprintObj->Modify();
 
 	UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(BlueprintObj, FName(*FunctionName), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+	if (!NewGraph)
+	{
+		Transaction.Rollback(INVTEXT("Failed to Generate Getter: Spawning new function graph"));
+		return false;
+	}
+
 	FBlueprintEditorUtils::AddFunctionGraph<UClass>(BlueprintObj, NewGraph, true, nullptr);
 
 	UK2Node_EditablePinBase* FunctionEntryNodePtr = FBlueprintEditorUtils::GetEntryNode(NewGraph);
@@ -316,22 +322,26 @@ bool FBAGraphExtender::GenerateGetter(const UEdGraph* Graph, const UEdGraphNode*
 	UEdGraphPin* Pin = NewResultNode->CreateUserDefinedPin("ReturnValue", SourceVariableGet->GetPinAt(0)->PinType, EGPD_Input);
 
 	const UEdGraphSchema_K2* Schema = Cast<UEdGraphSchema_K2>(NewGraph->GetSchema());
-	check(Schema != nullptr);
 
 	// Create variable get
 	FVector2D SpawnPos(NewResultNode->NodePosX, 128);
 
 	UK2Node_VariableGet* NewVarGet = CreateVariableGetFromVariable(SpawnPos, NewGraph, SourceVariableGet);
+	if (!NewVarGet)
+	{
+		Transaction.Rollback(INVTEXT("Failed to Generate Getter: Spawning function get node"));
+		return false;
+	}
 
 	// Link to output
-	FBAUtils::TryCreateConnection(Pin, NewVarGet->GetPinAt(0), true);
+	FBAUtils::TryCreateConnectionUnsafe(Pin, NewVarGet->GetPinAt(0), EBABreakMethod::Always);
 
 	// Set pure
 	UFunction* Function = BlueprintObj->SkeletonGeneratedClass->FindFunctionByName(NewGraph->GetFName());
 	Function->FunctionFlags ^= FUNC_BlueprintPure;
 
 	UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(FunctionEntryNodePtr);
-	EntryNode->MetaData.Category = UBASettings::Get().DefaultGeneratedGettersCategory;
+	EntryNode->MetaData.Category = UBASettings_EditorFeatures::Get().DefaultGeneratedGettersCategory;
 	EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_BlueprintPure);
 
 	{
@@ -341,8 +351,7 @@ bool FBAGraphExtender::GenerateGetter(const UEdGraph* Graph, const UEdGraphNode*
 		NewResultNode->bDisableOrphanPinSaving = bCurDisableOrphanSaving;
 	}
 
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	K2Schema->HandleParameterDefaultValueChanged(NewResultNode);
+	Schema->HandleParameterDefaultValueChanged(NewResultNode);
 
 	FBlueprintEditorUtils::MarkBlueprintAsModified(BlueprintObj);
 
@@ -371,39 +380,51 @@ bool FBAGraphExtender::GenerateSetter(const UEdGraph* Graph, const UEdGraphNode*
 	if (FindObject<UEdGraph>(BlueprintObj, *FunctionName))
 	{
 		const FText Message = FText::FromString(FString::Printf(TEXT("Setter '%s' already exists"), *FunctionName));
-		FNotificationInfo Info(Message);
-		Info.ExpireDuration = 2.0f;
-		Info.bUseSuccessFailIcons = true;
-		Info.Image = BA_STYLE_CLASS::Get().GetBrush(TEXT("Icons.Warning"));
-		FSlateNotificationManager::Get().AddNotification(Info);
+		FBAMiscUtils::ShowSimpleSlateNotification(Message, SNotificationItem::CS_Fail);
 		return false;
 	}
 
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "GenerateSetter_BlueprintAssist", "Generate Setter"));
+	FBAScopedRollbackTransaction Transaction(INVTEXT("Generate Setter"));
 	BlueprintObj->Modify();
 
 	UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(BlueprintObj, FName(*FunctionName), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+	if (!NewGraph)
+	{
+		Transaction.Rollback(INVTEXT("Failed to Generate Setter: Spawning new function graph"));
+		return false;
+	}
+
+	const UEdGraphSchema_K2* Schema = Cast<UEdGraphSchema_K2>(NewGraph->GetSchema());
+
+	// add the graph to the blueprint
 	FBlueprintEditorUtils::AddFunctionGraph<UClass>(BlueprintObj, NewGraph, true, nullptr);
 
 	UK2Node_EditablePinBase* FunctionEntryNodePtr = FBlueprintEditorUtils::GetEntryNode(NewGraph);
 
 	UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(FunctionEntryNodePtr);
-	EntryNode->MetaData.Category = UBASettings::Get().DefaultGeneratedSettersCategory;
-
-	const UEdGraphSchema_K2* Schema = Cast<UEdGraphSchema_K2>(NewGraph->GetSchema());
-	check(Schema != nullptr);
+	EntryNode->MetaData.Category = UBASettings_EditorFeatures::Get().DefaultGeneratedSettersCategory;
 
 	// Create set variable node
 	const FVector2D SpawnPos(256, 16);
 
 	UK2Node_VariableSet* SetNode = CreateVariableSetFromVariable(SpawnPos, NewGraph, SourceVariableGet);
+	if (!SetNode)
+	{
+		Transaction.Rollback(INVTEXT("Failed to Generate Setter: Spawning function set node"));
+		return false;
+	}
 
 	// Create input pin getter
 	UEdGraphPin* NewInputPin = FunctionEntryNodePtr->CreateUserDefinedPin("NewValue", SourceVariableGet->GetPinAt(0)->PinType, EGPD_Output);
+	if (!NewInputPin)
+	{
+		Transaction.Rollback(INVTEXT("Failed to Generate Setter: Spawning input pin"));
+		return false;
+	}
 
 	// Link nodes
-	FBAUtils::TryCreateConnection(FunctionEntryNodePtr->Pins[0], FBAUtils::GetExecPins(SetNode, EGPD_Input)[0], true);
-	FBAUtils::TryCreateConnection(FBAUtils::GetParameterPins(SetNode, EGPD_Input)[0], NewInputPin, true);
+	FBAUtils::TryCreateConnectionUnsafe(FunctionEntryNodePtr->Pins[0], FBAUtils::GetExecPins(SetNode, EGPD_Input)[0], EBABreakMethod::Always);
+	FBAUtils::TryCreateConnectionUnsafe(FBAUtils::GetParameterPins(SetNode, EGPD_Input)[0], NewInputPin, EBABreakMethod::Always);
 
 	{
 		const bool bCurDisableOrphanSaving = FunctionEntryNodePtr->bDisableOrphanPinSaving;
@@ -412,8 +433,7 @@ bool FBAGraphExtender::GenerateSetter(const UEdGraph* Graph, const UEdGraphNode*
 		FunctionEntryNodePtr->bDisableOrphanPinSaving = bCurDisableOrphanSaving;
 	}
 
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	K2Schema->HandleParameterDefaultValueChanged(FunctionEntryNodePtr);
+	Schema->HandleParameterDefaultValueChanged(FunctionEntryNodePtr);
 
 	FBlueprintEditorUtils::MarkBlueprintAsModified(BlueprintObj);
 
@@ -422,21 +442,13 @@ bool FBAGraphExtender::GenerateSetter(const UEdGraph* Graph, const UEdGraphNode*
 
 void FBAGraphExtender::GenerateGetterAndSetter(const UEdGraph* Graph, const UEdGraphNode* Node)
 {
-	FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "GenerateGetterAndSetter_BlueprintAssist", "Generate Getter And Setter"));
-
-	bool bSuccess = false;
-	bSuccess |= GenerateGetter(Graph, Node);
-	bSuccess |= GenerateSetter(Graph, Node);
-
-	if (!bSuccess)
-	{
-		Transaction.Cancel();
-	}
+	GenerateGetter(Graph, Node);
+	GenerateSetter(Graph, Node);
 }
 
 void FBAGraphExtender::ConvertGetToSet(const UEdGraph* Graph, UK2Node_VariableGet* VariableGetNode)
 {
-	FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "ConvertGetToSet_BlueprintAssist", "Convert Get To Set"));
+	FScopedTransaction Transaction(INVTEXT("Convert Get To Set"));
 
 	const FBlueprintEditor* BPEditor = FBAUtils::GetBlueprintEditorForGraph(Graph);
 	if (!BPEditor)
@@ -456,6 +468,11 @@ void FBAGraphExtender::ConvertGetToSet(const UEdGraph* Graph, UK2Node_VariableGe
 	auto NodePos = FVector2D(VariableGetNode->NodePosX, VariableGetNode->NodePosY);
 
 	UK2Node_VariableSet* SetNode = CreateVariableSetFromVariable(NodePos, MutGraph, VariableGetNode);
+	if (!SetNode)
+	{
+		FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("Failed to convert variable Getter to Setter"), SNotificationItem::CS_Fail);
+		return;
+	}
 
 	UEdGraphPin* OutPin = SetNode->FindPin(TEXT("Output_Get"));
 
@@ -489,7 +506,7 @@ void FBAGraphExtender::ConvertGetToSet(const UEdGraph* Graph, UK2Node_VariableGe
 
 void FBAGraphExtender::ConvertSetToGet(const UEdGraph* Graph, UK2Node_VariableSet* VariableSetNode)
 {
-	FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "ConvertSetToGet_BlueprintAssist", "Convert Set To Get"));
+	FScopedTransaction Transaction(INVTEXT("Convert Set To Get"));
 
 	const FBlueprintEditor* BPEditor = FBAUtils::GetBlueprintEditorForGraph(Graph);
 	if (!BPEditor)
@@ -509,6 +526,11 @@ void FBAGraphExtender::ConvertSetToGet(const UEdGraph* Graph, UK2Node_VariableSe
 	const FVector2D NodePos = FVector2D(VariableSetNode->NodePosX, VariableSetNode->NodePosY);
 
 	UK2Node_VariableGet* GetNode = CreateVariableGetFromVariable(NodePos, MutGraph, VariableSetNode);
+	if (!GetNode)
+	{
+		FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("Failed to convert variable Setter to Getter"), SNotificationItem::CS_Fail);
+		return;
+	}
 
 	UEdGraphPin* OutPin = GetNode->GetValuePin();
 
@@ -601,7 +623,7 @@ void FBAGraphExtender::GenerateCreateEventNode(const UEdGraphPin* Pin)
 			}
 		}
 
-		FBAUtils::TryCreateConnection(MutablePin, CreateEventNode->GetDelegateOutPin(), EBABreakMethod::Default);
+		FBAUtils::TryCreateConnectionUnsafe(MutablePin, CreateEventNode->GetDelegateOutPin(), EBABreakMethod::Default);
 
 		if (!FunctionName.IsNone())
 		{
@@ -612,12 +634,14 @@ void FBAGraphExtender::GenerateCreateEventNode(const UEdGraphPin* Pin)
 
 UK2Node_VariableSet* FBAGraphExtender::CreateVariableSetFromVariable(FVector2D NodePos, UEdGraph* Graph, const UK2Node_Variable* Variable)
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	if (FProperty* VariableProperty = Variable->GetPropertyForVariable())
+	if (const UEdGraphSchema_K2* K2Schema = Cast<UEdGraphSchema_K2>(Graph->GetSchema()))
 	{
-		if (UStruct* Outer = VariableProperty->GetOwnerChecked<UStruct>())
+		if (FProperty* VariableProperty = Variable->GetPropertyForVariable())
 		{
-			return K2Schema->SpawnVariableSetNode(NodePos, Graph, Variable->VariableReference.GetMemberName(), Outer);
+			if (UStruct* Outer = VariableProperty->GetOwnerChecked<UStruct>())
+			{
+				return K2Schema->SpawnVariableSetNode(NodePos, Graph, Variable->VariableReference.GetMemberName(), Outer);
+			}
 		}
 	}
 
@@ -626,12 +650,14 @@ UK2Node_VariableSet* FBAGraphExtender::CreateVariableSetFromVariable(FVector2D N
 
 UK2Node_VariableGet* FBAGraphExtender::CreateVariableGetFromVariable(FVector2D NodePos, UEdGraph* Graph, const UK2Node_Variable* Variable)
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	if (FProperty* VariableProperty = Variable->GetPropertyForVariable())
+	if (const UEdGraphSchema_K2* K2Schema = Cast<UEdGraphSchema_K2>(Graph->GetSchema()))
 	{
-		if (UStruct* Outer = VariableProperty->GetOwnerChecked<UStruct>())
+		if (FProperty* VariableProperty = Variable->GetPropertyForVariable())
 		{
-			return K2Schema->SpawnVariableGetNode(NodePos, Graph, Variable->VariableReference.GetMemberName(), Outer);
+			if (UStruct* Outer = VariableProperty->GetOwnerChecked<UStruct>())
+			{
+				return K2Schema->SpawnVariableGetNode(NodePos, Graph, Variable->VariableReference.GetMemberName(), Outer);
+			}
 		}
 	}
 

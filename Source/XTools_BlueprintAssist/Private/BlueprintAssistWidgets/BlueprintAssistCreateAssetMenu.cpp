@@ -34,7 +34,7 @@ void SBACreateAssetMenu::Construct(const FArguments& InArgs)
 		.OnGenerateRow(this, &SBACreateAssetMenu::CreateItemWidget)
 		.OnSelectItem(this, &SBACreateAssetMenu::SelectItem)
 		.WidgetSize(GetWidgetSize())
-		.MenuTitle(FString("创建资产"))
+		.MenuTitle(FString("Create Asset"))
 	];
 }
 
@@ -167,4 +167,3 @@ void SBACreateAssetMenu::SelectItem(TSharedPtr<FBACreateAssetItem> Item)
 		// }
 	}
 }
-

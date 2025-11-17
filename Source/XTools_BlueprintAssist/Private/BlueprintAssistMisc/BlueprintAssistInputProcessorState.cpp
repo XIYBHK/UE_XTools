@@ -1,4 +1,4 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistMisc/BlueprintAssistInputProcessorState.h"
 
@@ -6,8 +6,26 @@
 #include "BlueprintAssistInputProcessor.h"
 #include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistTabHandler.h"
+#include "BlueprintAssistUtils.h"
+#include "ContentBrowserDataSource.h"
+#include "IContentBrowserDataModule.h"
+#include "K2Node_CallFunction.h"
+#include "K2Node_MacroInstance.h"
+#include "K2Node_Variable.h"
+#include "SGraphActionMenu.h"
+#include "BlueprintAssistMisc/BAMiscUtils.h"
+#include "Editor/ContentBrowser/Private/SContentBrowser.h"
+#include "Framework/Application/SlateApplication.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+
+#if BA_UE_VERSION_OR_LATER(5, 3)
+#include "PropertyEditorClipboard.h"
+#endif
+
+class UK2Node_CallFunction;
+class UK2Node_MacroInstance;
 
 bool FBAInputProcessorState::OnKeyOrMouseDown(const FKey& Key)
 {
@@ -16,6 +34,13 @@ bool FBAInputProcessorState::OnKeyOrMouseDown(const FKey& Key)
 		bConsumeMouseUp = true;
 		return true;
 	}
+
+	if (ProcessContentBrowserInput())
+	{
+		return true;
+	}
+
+	TryFocusInDetailPanel();
 
 	return false;
 }
@@ -33,6 +58,13 @@ bool FBAInputProcessorState::OnKeyOrMouseUp(const FKey& Key)
 
 bool FBAInputProcessorState::TryCopyPastePinValue()
 {
+	const bool bCopy = FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().CopyPinValueChord);
+	const bool bPaste = FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().PastePinValueChord);
+	if (!bCopy && !bPaste)
+	{
+		return false;
+	}
+
 	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
 	if (!GraphHandler)
 	{
@@ -45,47 +77,45 @@ bool FBAInputProcessorState::TryCopyPastePinValue()
 		return false;
 	}
 
-	UEdGraphPin* PinObj = nullptr;
-	TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetHoveredGraphPin(GraphPanel);
-	if (GraphPin)
-	{
-		PinObj = GraphPin->GetPinObj();
-	}
-	// else // try get the hovered pin from the selected pin
-	// {
-	// 	PinObj = GraphHandler->GetSelectedPin();
-	// 	GraphPin = FBAUtils::GetGraphPin(GraphPanel, PinObj);
-	// }
-
-	if (!GraphPin || !PinObj)
+	UEdGraphPin* PinObj  = FBAUtils::GetHoveredPin(GraphPanel);
+	if (!PinObj)
 	{
 		return false;
 	}
 
-	if (FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().PastePinValueChord))
+	// only unlinked input pins are viable for copy paste default value 
+	if (PinObj->LinkedTo.Num() > 0 || PinObj->Direction != EGPD_Input)
 	{
-		if (CopiedDefaultValue.IsSet())
+		return false;
+	}
+
+	if (bPaste)
+	{
+		FString ClipboardValue;
+#if BA_UE_VERSION_OR_LATER(5, 3)
+		FPropertyEditorClipboard::ClipboardPaste(ClipboardValue);
+#else
+		FPlatformApplicationMisc::ClipboardPaste(ClipboardValue);
+#endif
+
+		if (!ClipboardValue.IsEmpty())
 		{
 			FScopedTransaction Transaction(INVTEXT("Paste pin value"));
 			PinObj->Modify();
 
-			const bool bSuccess = FBAUtils::TrySetDefaultPinValues(PinObj, CopiedDefaultValue->PinValue, CopiedDefaultValue->PinObject.Get(), CopiedDefaultValue->PinTextValue);
-
-			const FText Message = bSuccess ? INVTEXT("Pasted pin value") : INVTEXT("Pin not supported for pasting");
-			FNotificationInfo Notification(Message);
-			Notification.ExpireDuration = 1.0f;
-			FSlateNotificationManager::Get().AddNotification(Notification);
-
-			if (bSuccess)
+			if (FBAUtils::TrySetDefaultPinValuesFromString(PinObj, ClipboardValue))
 			{
+				const FText Message = INVTEXT("Pasted pin value");
+				FNotificationInfo Notification(Message);
+				Notification.ExpireDuration = 1.0f;
+				FSlateNotificationManager::Get().AddNotification(Notification);
+
 				if (TSharedPtr<SGraphNode> HoveredNode = FBAUtils::GetHoveredGraphNode(GraphPanel))
 				{
-					HoveredNode->GetNodeObj()->ReconstructNode();
-					HoveredNode->UpdateGraphNode();
-
 					// select the pin
-					UEdGraphPin* Pin = GraphPin->GetPinObj();
-					GraphHandler->SetSelectedPin(Pin);
+					GraphHandler->SetSelectedPin(PinObj);
+
+					HoveredNode->UpdateGraphNode();
 				}
 			}
 		}
@@ -93,31 +123,212 @@ bool FBAInputProcessorState::TryCopyPastePinValue()
 		return true;
 	}
 
-	if (FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().CopyPinValueChord))
+	if (bCopy)
 	{
-		// copy
-		FBAPinDefaultValue NewDefaultValue;
+		const FString PinDefault = FBAUtils::GetDefaultPinValue(PinObj);
+#if BA_UE_VERSION_OR_LATER(5, 3)
+		FPropertyEditorClipboard::ClipboardCopy(*PinDefault);
+#else
+		FPlatformApplicationMisc::ClipboardCopy(*PinDefault);
+#endif
 
-		// Check the default value and make it an error if it's bogus
-		NewDefaultValue.PinValue = PinObj->DefaultValue;
-		NewDefaultValue.PinTextValue = PinObj->DefaultTextValue;
-		NewDefaultValue.PinObject = PinObj->DefaultObject;
-		CopiedDefaultValue = NewDefaultValue;
+		if (!PinDefault.IsEmpty())
+		{
+			FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Copied pin value: %s"), *PinDefault)));
+			Notification.ExpireDuration = 1.0f;
+			FSlateNotificationManager::Get().AddNotification(Notification);
 
-		FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Copied pin value %s %s"), *PinObj->GetDisplayName().ToString(), *PinObj->PinType.PinCategory.ToString())));
-		Notification.ExpireDuration = 1.0f;
-		FSlateNotificationManager::Get().AddNotification(Notification);
-
-		// select the pin
-		UEdGraphPin* Pin = GraphPin->GetPinObj();
-		GraphHandler->SetSelectedPin(Pin);
-
-		// CopiedPinType = PinObj->PinType;
-
-		return true;
+			// select the pin
+			GraphHandler->SetSelectedPin(PinObj);
+			return true;
+		}
 	}
 
 	return false;
+}
+
+bool FBAInputProcessorState::TryFocusInDetailPanel()
+{
+	if (!FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().FocusInDetailsPanelChord))
+	{
+		return false;
+	}
+
+	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
+	if (!GraphHandler)
+	{
+		return false;
+	}
+
+	TSharedPtr<SGraphPanel> GraphPanel = GraphHandler->GetGraphPanel();
+	if (!GraphPanel)
+	{
+		return false;
+	}
+
+	TSharedPtr<SGraphNode> HoveredNode = FBAUtils::GetHoveredGraphNode(GraphPanel);
+	if (!HoveredNode)
+	{
+		return false;
+	}
+
+	// get the hovered graph node
+	if (UEdGraphNode* NodeObj = HoveredNode->GetNodeObj())
+	{
+		FName ItemName;
+
+		if (UK2Node_Variable* VariableNode = Cast<UK2Node_Variable>(NodeObj))
+		{
+			ItemName = VariableNode->GetVarName();
+		}
+		else if (UK2Node_CallFunction* FunctionCall = Cast<UK2Node_CallFunction>(NodeObj))
+		{
+			ItemName = FunctionCall->FunctionReference.GetMemberName();
+		}
+		else if (UK2Node_MacroInstance* Macro = Cast<UK2Node_MacroInstance>(NodeObj))
+		{
+			ItemName = Macro->GetMacroGraph()->GetFName();
+		}
+
+		if (!ItemName.IsNone())
+		{
+			if (TSharedPtr<SGraphActionMenu> ActionMenu = FBAUtils::GetGraphActionMenu())
+			{
+				ActionMenu->SelectItemByName(ItemName, ESelectInfo::OnKeyPress);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool FBAInputProcessorState::ProcessContentBrowserInput()
+{
+	TSharedPtr<SContentBrowser> ContentBrowserWidget = FIND_PARENT_WIDGET(FSlateApplication::Get().GetUserFocusedWidget(0), SContentBrowser);
+	if (!ContentBrowserWidget.IsValid())
+	{
+		return false;
+	}
+
+	FBAInputProcessor& InputProcessor = FBAInputProcessor::Get();
+
+	// copy: clear the cut state
+	if (InputProcessor.IsInputChordDown(FInputChord(EModifierKey::Control, EKeys::C)))
+	{
+		CutItems.Empty();
+		return false;
+	}
+
+	// cut
+	if (InputProcessor.IsInputChordDown(FInputChord(EModifierKey::Control, EKeys::X)))
+	{
+		if (CutSelectedAssets())
+		{
+			// clear whatever is under our clipboard copy
+			FPlatformApplicationMisc::ClipboardCopy(TEXT(""));
+			return true;
+		}
+	}
+
+	// paste
+	if (InputProcessor.IsInputChordDown(FInputChord(EModifierKey::Control, EKeys::V)))
+	{
+		if (CutItems.Num())
+		{
+			FText ErrorMsg(INVTEXT("Unable to paste here"));
+
+			const FContentBrowserItemPath ContentBrowserPath = IContentBrowserSingleton::Get().GetCurrentPath();
+			if (ContentBrowserPath.HasInternalPath())
+			{
+				if (BulkMoveItems(CutItems, ContentBrowserPath.GetVirtualPathName(), &ErrorMsg))
+				{
+					return true;
+				}
+			}
+
+			FBAMiscUtils::ShowSimpleSlateNotification(ErrorMsg, SNotificationItem::CS_Fail);
+		}
+	}
+
+	return false;
+}
+
+bool FBAInputProcessorState::CutSelectedAssets()
+{
+	IContentBrowserSingleton& ContentBrowser = IContentBrowserSingleton::Get();
+	UContentBrowserDataSubsystem* ContentBrowserData = IContentBrowserDataModule::Get().GetSubsystem();
+
+	CutItems.Reset();
+
+	// cut folders
+	TArray<FString> Folders;
+
+	// if the cursor is on the path view, then cut folders from there instead
+	if (TSharedPtr<SWidget> PathView = FBAUtils::GetParentWidgetOfType(FSlateApplication::Get().GetUserFocusedWidget(0), "SPathView"))
+	{
+		ContentBrowser.GetSelectedPathViewFolders(Folders);
+	}
+	else
+	{
+		ContentBrowser.GetSelectedFolders(Folders);
+	}
+
+	for (const FString& Folder : Folders)
+	{
+		FContentBrowserItem BrowserItem = ContentBrowserData->GetItemAtPath(FName(Folder), EContentBrowserItemTypeFilter::IncludeFolders);
+		if (BrowserItem.IsValid())
+		{
+			CutItems.Add(MoveTemp(BrowserItem));
+		}
+	}
+
+	// cut assets
+	TArray<FAssetData> SelectedAssets;
+	ContentBrowser.GetSelectedAssets(SelectedAssets);
+	for (FAssetData& SelectedAsset : SelectedAssets)
+	{
+		FName VirtualPath;
+		ContentBrowserData->ConvertInternalPathToVirtual(SelectedAsset.GetSoftObjectPath().ToString(), VirtualPath);
+
+		FContentBrowserItem BrowserItem = ContentBrowserData->GetItemAtPath(VirtualPath, EContentBrowserItemTypeFilter::IncludeFiles);
+		if (BrowserItem.IsValid())
+		{
+			CutItems.Add(MoveTemp(BrowserItem));
+		}
+	}
+
+	return CutItems.Num() > 0;
+}
+
+/* Based off DragDropHandler::HandleDragDropMoveOrCopy */
+bool FBAInputProcessorState::BulkMoveItems(const TArray<FContentBrowserItem>& InDraggedItems, FName DestPath, FText* OutError)
+{
+	// Batch these by their data sources
+	TMap<UContentBrowserDataSource*, TArray<FContentBrowserItemData>> SourcesAndItems;
+	for (const FContentBrowserItem& DraggedItem : InDraggedItems)
+	{
+		if (DraggedItem.CanMove(DestPath, OutError))
+		{
+			FContentBrowserItem::FItemDataArrayView ItemDataArray = DraggedItem.GetInternalItems();
+			for (const FContentBrowserItemData& ItemData : ItemDataArray)
+			{
+				if (UContentBrowserDataSource* ItemDataSource = ItemData.GetOwnerDataSource())
+				{
+					TArray<FContentBrowserItemData>& ItemsForSource = SourcesAndItems.FindOrAdd(ItemDataSource);
+					ItemsForSource.Add(ItemData);
+				}
+			}
+		}
+	}
+
+	bool bSuccess = false;
+	for (const auto& [Source, Items] : SourcesAndItems)
+	{
+		bSuccess |= Source->BulkMoveItems(Items, DestPath);
+	}
+
+	return bSuccess;
 }
 
 // TODO context hovered copy paste node, if pasted on a node it will replace, if pasted on a wire it will insert

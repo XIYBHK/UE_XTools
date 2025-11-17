@@ -1,4 +1,4 @@
-#include "BlueprintAssistStyle.h"
+﻿#include "BlueprintAssistStyle.h"
 
 #include "BlueprintAssistGlobals.h"
 #include "Interfaces/IPluginManager.h"
@@ -45,9 +45,11 @@ void FBAStyle::InitSlateStyleSet()
 #if ENGINE_MAJOR_VERSION >= 5
 	SlateStyleSet->Set("BlueprintAssist.WhiteBorder", new FSlateRoundedBoxBrush(FStyleColors::White, 4.0f));
 	SlateStyleSet->Set("BlueprintAssist.PanelBorder", new FSlateRoundedBoxBrush(FStyleColors::Panel, 4.0f));
+	SlateStyleSet->Set("BlueprintAssist.LightBorder", new FSlateRoundedBoxBrush(FStyleColors::Header, 4.0f));
 #else
 	SlateStyleSet->Set("BlueprintAssist.WhiteBorder", new BA_BOX_BRUSH(SlateStyleSet, "Common/RoundedSelection_16x", FMargin(4.0f/16.0f)));
 	SlateStyleSet->Set("BlueprintAssist.PanelBorder", new BA_BOX_BRUSH(SlateStyleSet, "Common/DarkGroupBorder", FMargin(4.0f/16.0f)));
+	SlateStyleSet->Set("BlueprintAssist.LightBorder", new BA_BOX_BRUSH(SlateStyleSet, "Common/GroupBorder", FMargin(4.0f/16.0f)));
 #endif
 
 	FSlateStyleRegistry::RegisterSlateStyle(*SlateStyleSet.Get());
@@ -63,7 +65,7 @@ void FBAStyle::InitBlueprintAssistStyleSet()
 
 	BlueprintAssistStyleSet = MakeShareable(new FSlateStyleSet("BlueprintAssistStyle"));
 
-	BlueprintAssistStyleSet->SetContentRoot(IPluginManager::Get().FindPlugin(TEXT("XTools"))->GetBaseDir() / TEXT("Resources"));
+	BlueprintAssistStyleSet->SetContentRoot(IPluginManager::Get().FindPlugin("XTools")->GetBaseDir() / TEXT("Resources"));
 
 	BlueprintAssistStyleSet->Set("BlueprintAssist.Lock", new BA_IMAGE_BRUSH(BlueprintAssistStyleSet, "Lock", FVector2D(64.0f/64.0f)));
 

@@ -1,9 +1,10 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistObjects/BABlueprintHandlerObject.h"
 
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistUtils.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
@@ -48,6 +49,7 @@ void UBABlueprintHandlerObject::BindBlueprintChanged(UBlueprint* Blueprint)
 	BlueprintPtr = TWeakObjectPtr<UBlueprint>(Blueprint);
 	SetLastVariables(Blueprint);
 	SetLastFunctionGraphs(Blueprint);
+	SetLastNodes(Blueprint);
 	bProcessedChangesThisFrame = false;
 	bActive = true;
 
@@ -111,6 +113,22 @@ void UBABlueprintHandlerObject::SetLastFunctionGraphs(UBlueprint* Blueprint)
 		else
 		{
 			UE_LOG(LogBlueprintAssist, Warning, TEXT("BAObject: Found invalid graph from Blueprint function graphs"));
+		}
+	}
+}
+
+void UBABlueprintHandlerObject::SetLastNodes(UBlueprint* Blueprint)
+{
+	LastNodes.Empty();
+
+	TArray<UEdGraph*> Graphs;
+	Blueprint->GetAllGraphs(Graphs);
+
+	for (UEdGraph* EventGraph : Graphs)
+	{
+		for (auto Node : EventGraph->Nodes)
+		{
+			LastNodes.Add(TWeakObjectPtr<UEdGraphNode>(Node));
 		}
 	}
 }
@@ -205,6 +223,23 @@ void UBABlueprintHandlerObject::OnBlueprintChanged(UBlueprint* Blueprint)
 	}
 
 	SetLastFunctionGraphs(Blueprint);
+
+	// detect node added
+	TArray<UEdGraph*> Graphs;
+	Blueprint->GetAllGraphs(Graphs);
+
+	for (UEdGraph* EventGraph : Graphs)
+	{
+		for (auto Node : EventGraph->Nodes)
+		{
+			if (!LastNodes.Contains(Node))
+			{
+				OnNodeAdded(Blueprint, Node);
+			}
+		}
+	}
+
+	SetLastNodes(Blueprint);
 }
 
 void UBABlueprintHandlerObject::ResetProcessedChangesThisFrame()
@@ -235,50 +270,50 @@ void UBABlueprintHandlerObject::OnObjectsReplaced(const TMap<UObject*, UObject*>
 
 void UBABlueprintHandlerObject::OnVariableAdded(UBlueprint* Blueprint, FBPVariableDescription& Variable)
 {
-	const UBASettings& BASettings = UBASettings::Get();
+	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
 
 	// ignore event dispatchers when setting is false
-	if (!BASettings.bApplyVariableDefaultsToEventDispatchers && Variable.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
+	if (!FeaturesSettings.bApplyVariableDefaultsToEventDispatchers && Variable.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
 	{
 		return;
 	}
 
-	if (BASettings.bEnableVariableDefaults)
+	if (FeaturesSettings.bEnableVariableDefaults)
 	{
-		if (BASettings.bDefaultVariableInstanceEditable)
+		if (FeaturesSettings.bDefaultVariableInstanceEditable)
 		{
 			FBlueprintEditorUtils::SetBlueprintOnlyEditableFlag(Blueprint, Variable.VarName, false);
 		}
 
-		if (BASettings.bDefaultVariableBlueprintReadOnly)
+		if (FeaturesSettings.bDefaultVariableBlueprintReadOnly)
 		{
 			FBlueprintEditorUtils::SetBlueprintPropertyReadOnlyFlag(Blueprint, Variable.VarName, true);
 		}
 
-		if (BASettings.bDefaultVariableExposeOnSpawn)
+		if (FeaturesSettings.bDefaultVariableExposeOnSpawn)
 		{
 			FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_ExposeOnSpawn, TEXT("true"));
 		}
 
-		if (BASettings.bDefaultVariablePrivate)
+		if (FeaturesSettings.bDefaultVariablePrivate)
 		{
 			FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Private, TEXT("true"));
 		}
 
-		if (BASettings.bDefaultVariableExposeToCinematics)
+		if (FeaturesSettings.bDefaultVariableExposeToCinematics)
 		{
 			FBlueprintEditorUtils::SetInterpFlag(Blueprint, Variable.VarName, true);
 		}
 
-		FBlueprintEditorUtils::SetBlueprintVariableCategory(Blueprint, Variable.VarName, nullptr, BASettings.DefaultVariableCategory);
+		FBlueprintEditorUtils::SetBlueprintVariableCategory(Blueprint, Variable.VarName, nullptr, FeaturesSettings.DefaultVariableCategory);
 
-		FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Tooltip, BASettings.DefaultVariableTooltip.ToString());
+		FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Tooltip, FeaturesSettings.DefaultVariableTooltip.ToString());
 	}
 }
 
 void UBABlueprintHandlerObject::OnVariableRenamed(UBlueprint* Blueprint, const FBPVariableDescription& OldVariable, FBPVariableDescription& NewVariable)
 {
-	if (UBASettings::Get().bAutoRenameGettersAndSetters)
+	if (UBASettings_EditorFeatures::Get().bAutoRenameGettersAndSetters)
 	{
 		RenameGettersAndSetters(Blueprint, OldVariable, NewVariable);
 	}
@@ -287,7 +322,7 @@ void UBABlueprintHandlerObject::OnVariableRenamed(UBlueprint* Blueprint, const F
 void UBABlueprintHandlerObject::OnVariableTypeChanged(UBlueprint* Blueprint, const FBPVariableDescription& OldVariable, FBPVariableDescription& NewVariable)
 {
 	// Boolean variables may need to be renamed as well!
-	if (UBASettings::Get().bAutoRenameGettersAndSetters)
+	if (UBASettings_EditorFeatures::Get().bAutoRenameGettersAndSetters)
 	{
 		RenameGettersAndSetters(Blueprint, OldVariable, NewVariable);
 	}
@@ -325,8 +360,8 @@ void UBABlueprintHandlerObject::RenameGettersAndSetters(UBlueprint* Blueprint, c
 
 void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph* FunctionGraph)
 {
-	const UBASettings& BASettings = UBASettings::Get();
-	if (!BASettings.bEnableFunctionDefaults)
+	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
+	if (!FeaturesSettings.bEnableFunctionDefaults)
 	{
 		return;
 	}
@@ -358,7 +393,7 @@ void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph*
 	EFunctionFlags AccessSpecifier = FUNC_Public;
 	if (!bInsideInterface)
 	{
-		switch (BASettings.DefaultFunctionAccessSpecifier)
+		switch (FeaturesSettings.DefaultFunctionAccessSpecifier)
 		{
 			case EBAFunctionAccessSpecifier::Public:
 				AccessSpecifier = FUNC_Public;
@@ -376,19 +411,19 @@ void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph*
 	if (UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(FunctionEntryNode))
 	{
 		// Set const
-		if (BASettings.bDefaultFunctionConst)
+		if (FeaturesSettings.bDefaultFunctionConst)
 		{
 			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_Const);
 		}
 
 		// Set exec
-		if (BASettings.bDefaultFunctionExec)
+		if (FeaturesSettings.bDefaultFunctionExec)
 		{
 			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_Exec);
 		}
 
 		// Set pure
-		if (!bInsideInterface && BASettings.bDefaultFunctionPure)
+		if (!bInsideInterface && FeaturesSettings.bDefaultFunctionPure)
 		{
 			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_BlueprintPure);
 		}
@@ -410,7 +445,7 @@ void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph*
 	if (FKismetUserDeclaredFunctionMetadata* Metadata = GetMetadataBlock(FunctionEntryNode))
 	{
 		// Set default keywords
-		const FText& DefaultKeywords = BASettings.DefaultFunctionKeywords;
+		const FText& DefaultKeywords = FeaturesSettings.DefaultFunctionKeywords;
 		// Remove excess whitespace and prevent keywords with just spaces
 		const FText& Keywords = FText::TrimPrecedingAndTrailing(DefaultKeywords);
 		if (!Keywords.EqualTo(Metadata->Keywords))
@@ -420,12 +455,12 @@ void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph*
 		}
 
 		// Set default tooltip
-		const FText& DefaultDescription = BASettings.DefaultFunctionTooltip;
+		const FText& DefaultDescription = FeaturesSettings.DefaultFunctionTooltip;
 		Metadata->ToolTip = DefaultDescription;
 		Function->SetMetaData(FBlueprintMetadata::MD_Tooltip, *DefaultDescription.ToString());
 
 		// Set default category
-		const FText& DefaultFunctionCategory = BASettings.DefaultFunctionCategory;
+		const FText& DefaultFunctionCategory = FeaturesSettings.DefaultFunctionCategory;
 		Metadata->Category = DefaultFunctionCategory;
 		if (Function)
 		{
@@ -455,6 +490,46 @@ void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph*
 	K2Schema->HandleParameterDefaultValueChanged(FunctionEntryNode);
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+}
+
+void UBABlueprintHandlerObject::OnNodeAdded(UBlueprint* Blueprint, UEdGraphNode* Node)
+{
+	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
+
+	if (FeaturesSettings.bEnableEventDefaults)
+	{
+		if (UK2Node_CustomEvent* CustomEventNode = Cast<UK2Node_CustomEvent>(Node))
+		{
+			const FScopedTransaction Transaction(INVTEXT("Edit Custom Event Defaults"));
+			CustomEventNode->Modify();
+
+			if (FeaturesSettings.bDefaultEventNetReliable)
+			{
+				CustomEventNode->FunctionFlags |= FUNC_NetReliable;
+			}
+
+			// set custom event node access specifier (see FBlueprintGraphActionDetails::OnAccessSpecifierSelected)
+			EFunctionFlags AccessSpecifier = FUNC_Public;
+			switch (FeaturesSettings.DefaultEventAccessSpecifier)
+			{
+			case EBAFunctionAccessSpecifier::Public:
+				AccessSpecifier = FUNC_Public;
+				break;
+			case EBAFunctionAccessSpecifier::Protected:
+				AccessSpecifier = FUNC_Protected;
+				break;
+			case EBAFunctionAccessSpecifier::Private:
+				AccessSpecifier = FUNC_Private;
+				break;
+			}
+
+			constexpr EFunctionFlags ClearAccessSpecifierMask = ~FUNC_AccessSpecifiers;
+			CustomEventNode->FunctionFlags &= ClearAccessSpecifierMask;
+			CustomEventNode->FunctionFlags |= AccessSpecifier;
+
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
+	}
 }
 
 UFunction* UBABlueprintHandlerObject::FindFunctionFromEntryNode(UK2Node_EditablePinBase* FunctionEntry, UEdGraph* Graph)

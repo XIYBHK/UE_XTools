@@ -4,9 +4,7 @@
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistUtils.h"
-#include "BlueprintAssistSettings.h"
 #include "Containers/Map.h"
-#include "Algo/Transform.h"
 
 FBehaviorTreeGraphFormatter::FBehaviorTreeGraphFormatter(
 	TSharedPtr<FBAGraphHandler> InGraphHandler,

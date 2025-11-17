@@ -1,9 +1,10 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistFormatters/BlueprintAssistCommentContainsGraph.h"
 
 #include "BlueprintAssistFormatters/BlueprintAssistCommentHandler.h"
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistStats.h"
 #include "BlueprintAssistUtils.h"
 #include "EdGraphNode_Comment.h"
@@ -107,7 +108,9 @@ void FBACommentContainsGraph::BuildCommentTree()
 		TSharedPtr<FBACommentContainsNode> ContainsNode = ContainsGraph[Comment];
 
 		TArray<UEdGraphNode*> NodesUnderComment = FBAUtils::GetNodesUnderComment(Comment);
-		if (!UBASettings::HasDebugSetting("MissingNodes"))
+
+		// TODO useful feature at times but it's currently buggy and can be misleading to know what is actually in the comment
+		if (UBASettings_Advanced::HasDebugSetting("MissingNodes"))
 		{
 			const TArray<UEdGraphNode*> MissingNodes = FCommentHandler::GetMissingNodes(NodesUnderComment).Array();
 			NodesUnderComment.Append(MissingNodes);

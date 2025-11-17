@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 // duplicate of DefinePrivateMemberPtr.h in UE5.5 for backwards compatibility
 
 #pragma once

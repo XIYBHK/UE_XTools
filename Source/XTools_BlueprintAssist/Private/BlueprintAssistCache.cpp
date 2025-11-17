@@ -4,7 +4,6 @@
 
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistSettings_Advanced.h"
-#include "BlueprintAssistSettings.h"
 #include "BlueprintAssistUtils.h"
 #include "Editor.h"
 #include "GeneralProjectSettings.h"
@@ -55,7 +54,7 @@ void FBACache::Init()
 
 void FBACache::LoadCache()
 {
-	if (!UBASettings::Get().bSaveBlueprintAssistCacheToFile)
+	if (!UBASettings_Advanced::Get().bSaveBlueprintAssistCacheToFile)
 	{
 		return;
 	}
@@ -114,7 +113,7 @@ void FBACache::LoadCache()
 
 void FBACache::SaveCache()
 {
-	if (!UBASettings::Get().bSaveBlueprintAssistCacheToFile)
+	if (!UBASettings_Advanced::Get().bSaveBlueprintAssistCacheToFile)
 	{
 		return;
 	}
@@ -188,11 +187,11 @@ void FBACache::CleanupFiles()
 
 void FBACache::ClearLastFormatted()
 {
-	for (TPair<FName, FBAPackageData>& PackageData : CacheData.PackageData)
+	for (auto& PackageData : CacheData.PackageData)
 	{
-		for (TPair<FGuid, FBAGraphData>& GraphData : PackageData.Value.GraphData)
+		for (auto& GraphData : PackageData.Value.GraphData)
 		{
-			for (TPair<FGuid, FBANodeData>& NodeData : GraphData.Value.NodeData)
+			for (auto& NodeData : GraphData.Value.NodeData)
 			{
 				NodeData.Value.Last.X = 0;
 				NodeData.Value.Last.Y = 0;
@@ -224,7 +223,7 @@ FString FBACache::GetProjectSavedCachePath(bool bFullPath)
 
 FString FBACache::GetPluginCachePath(bool bFullPath)
 {
-	FString PluginDir = IPluginManager::Get().FindPlugin("BlueprintAssist")->GetBaseDir();
+	FString PluginDir = IPluginManager::Get().FindPlugin("XTools")->GetBaseDir();
 
 	if (bFullPath)
 	{
@@ -239,7 +238,7 @@ FString FBACache::GetPluginCachePath(bool bFullPath)
 
 FString FBACache::GetCachePath(bool bFullPath)
 {
-	switch (UBASettings::Get().CacheSaveLocation)
+	switch (UBASettings_Advanced::Get().CacheSaveLocation)
 	{
 		case EBACacheSaveLocation::Project:
 			return GetProjectSavedCachePath(bFullPath);
@@ -252,7 +251,7 @@ FString FBACache::GetCachePath(bool bFullPath)
 
 FString FBACache::GetAlternateCachePath(bool bFullPath)
 {
-	switch (UBASettings::Get().CacheSaveLocation)
+	switch (UBASettings_Advanced::Get().CacheSaveLocation)
 	{
 		case EBACacheSaveLocation::Project:
 			return GetPluginCachePath(bFullPath);

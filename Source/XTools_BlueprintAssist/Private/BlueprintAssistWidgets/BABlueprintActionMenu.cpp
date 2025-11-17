@@ -1,10 +1,11 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistWidgets/BABlueprintActionMenu.h"
 
+#include "BlueprintAssistUtils.h"
+
 #if BA_UE_VERSION_OR_LATER(5, 1)
 
-#include "BlueprintAssistGlobals.h"
 #include "BlueprintActionMenuBuilder.h"
 #include "BlueprintActionMenuItem.h"
 #include "BlueprintActionMenuUtils.h"
@@ -186,7 +187,7 @@ void SBABlueprintActionMenu::Construct(const FArguments& InArgs)
 				.OnGenerateRow(this, &SBABlueprintActionMenu::CreateItemWidget)
 				.OnSelectItem(this, &SBABlueprintActionMenu::SelectItem)
 				.WidgetSize(GetWidgetSize())
-				.MenuTitle(FString("蓝图操作菜单"))
+				.MenuTitle(FString("Blueprint Action Menu"))
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[
@@ -313,7 +314,11 @@ void SBABlueprintActionMenu::SelectItem(TSharedPtr<FBAActionMenuItem> Item)
 		return;
 	}
 
-	const FBAVector2 SpawnLocation = FBAUtils::GetGraphEditorPasteLocation(GraphEditor);
+#if BA_UE_VERSION_OR_LATER(5, 6)
+	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation2f();
+#else
+	const FBAVector2 SpawnLocation = GraphEditor->GetPasteLocation();
+#endif
 	UEdGraphPin* Pin = bUseSelectedPin ? GraphHandler->GetSelectedPin() : nullptr;
 	Item->Action->PerformAction(GraphHandler->GetFocusedEdGraph(), Pin, SpawnLocation);
 }

@@ -1,11 +1,16 @@
-// Copyright fpwong. All Rights Reserved.
+﻿// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 
 #include "PersonaModule.h"
+#include "PropertyEditorClipboard.h"
 #include "Editor/Kismet/Public/SSCSEditor.h"
 #include "Logging/MessageLog.h"
 #include "Misc/AsciiSet.h"
+#include "Misc/Base64.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
 
 #if BA_UE_VERSION_OR_LATER(5, 0)
 #include "SSubobjectEditor.h"
@@ -176,4 +181,160 @@ bool FBAMiscUtils::IsBlueprintImplementableEvent(UFunction* Function)
 bool FBAMiscUtils::IsBlueprintNativeEvent(UFunction* Function)
 {
 	return Function && Function->HasAnyFunctionFlags(FUNC_Event) && Function->HasAnyFunctionFlags(FUNC_Native);
+}
+
+FString FBAMiscUtils::GetInputChordName(const FInputChord& Chord)
+{
+	if (Chord.IsValidChord())
+	{
+		return Chord.GetInputText().ToString();
+	}
+
+	return "Unbound";
+}
+
+FString FBAMiscUtils::CompressString(const FString& InString, FName FormatName)
+{
+	FString Result;
+	if (InString.IsEmpty())
+	{
+		return Result;
+	}
+
+	// Convert FString to a TArray<uint8> of UTF-8 data
+	TArray<uint8> UncompressedData;
+	const FTCHARToUTF8 Converter(*InString);
+	UncompressedData.Append(reinterpret_cast<const uint8*>(Converter.Get()), Converter.Length());
+
+	if (UncompressedData.Num() == 0)
+	{
+		return Result;
+	}
+
+	const int32 UncompressedSize = UncompressedData.Num();
+
+	int64 MaxCompressedSize = -1;
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4
+	if (!FCompression::GetMaximumCompressedSize(FormatName, MaxCompressedSize, UncompressedSize))
+#else
+	// UE5.3 signature: GetMaximumCompressedSize(FName, int32, ECompressionFlags, int32)
+	int32 MaxCompressedSize32 = 0;
+	if (!FCompression::GetMaximumCompressedSize(FormatName, UncompressedSize, ECompressionFlags::COMPRESS_None, MaxCompressedSize32))
+	{
+		return Result;
+	}
+	MaxCompressedSize = MaxCompressedSize32;
+	if (false) // Skip the common error handling below
+#endif
+	{
+		return Result;
+	}
+
+	// Compress the data
+	TArray<uint8> CompressedData;
+	CompressedData.SetNumUninitialized(MaxCompressedSize);
+
+	int32 CompressedSize = CompressedData.Num();
+	if (!FCompression::CompressMemory(FormatName, CompressedData.GetData(), CompressedSize, UncompressedData.GetData(), UncompressedSize))
+	{
+		return Result;
+	}
+
+	// Trim the array to the actual compressed size
+	CompressedData.SetNum(CompressedSize);
+
+	TArray<uint8> FinalPayload;
+
+	// Reserve header + data
+	FinalPayload.Reserve(sizeof(int32) + CompressedSize);
+
+	// Add the size header then data
+	FinalPayload.Append(reinterpret_cast<const uint8*>(&UncompressedSize), sizeof(int32));
+	FinalPayload.Append(CompressedData);
+
+	Result = FBase64::Encode(FinalPayload);
+	return Result;
+}
+
+
+bool FBAMiscUtils::DecompressString(const FString& InCompressedString, FString& OutDecompressedString, FName FormatName)
+{
+	if (InCompressedString.IsEmpty())
+	{
+		OutDecompressedString = TEXT("");
+		return true;
+	}
+
+	TArray<uint8> CompressedPayload;
+	if (!FBase64::Decode(InCompressedString, CompressedPayload))
+	{
+		return false;
+	}
+
+	if (CompressedPayload.Num() < sizeof(int32))
+	{
+		return false;
+	}
+
+	// Extract the size from the header
+	int32 UncompressedSize;
+	FMemory::Memcpy(&UncompressedSize, CompressedPayload.GetData(), sizeof(int32));
+
+	// Prepare pointers to the data (after the size header)
+	const uint8* CompressedDataPtr = CompressedPayload.GetData() + sizeof(int32);
+	const int32 CompressedSize = CompressedPayload.Num() - sizeof(int32);
+
+	// Decompress the data
+	TArray<uint8> UncompressedData;
+	UncompressedData.SetNumUninitialized(UncompressedSize);
+
+	if (!FCompression::UncompressMemory(FormatName, UncompressedData.GetData(), UncompressedSize, CompressedDataPtr, CompressedSize))
+	{
+		return false;
+	}
+
+	// Convert the uncompressed TArray<uint8> (UTF-8) back to an FString
+	FUTF8ToTCHAR Converter(reinterpret_cast<const char*>(UncompressedData.GetData()), UncompressedSize);
+	OutDecompressedString = FString(Converter.Length(), Converter.Get());
+	return true;
+}
+
+void FBAMiscUtils::WriteTextToFile(TCHAR* FullPath, TCHAR* Content)
+{
+	// from FCrashContextExtendedWriterImpl::OutputBuffer
+	if (FullPath == nullptr || Content == nullptr)
+	{
+		return;
+	}
+
+	TUniquePtr<IFileHandle> File(IPlatformFile::GetPlatformPhysical().OpenWrite(FullPath));
+	if (File)
+	{
+		FTCHARToUTF8 Converter(Content);
+		File->Write((uint8*)Converter.Get(), Converter.Length());
+		File->Flush();
+	}
+}
+
+void FBAMiscUtils::ClipboardCopy(const FString& String)
+{
+#if BA_UE_VERSION_OR_LATER(5, 3)
+	FPropertyEditorClipboard::ClipboardCopy(*String);
+#else
+	FPlatformApplicationMisc::ClipboardCopy(*String);
+#endif
+}
+
+TSharedPtr<SNotificationItem> FBAMiscUtils::ShowSimpleSlateNotification(const FText& Msg, SNotificationItem::ECompletionState State = SNotificationItem::CS_Success, float ExpireDuration)
+{
+	FNotificationInfo Info(Msg);
+	Info.bUseSuccessFailIcons = true;
+	Info.ExpireDuration = ExpireDuration;
+	TSharedPtr<SNotificationItem> Notif = FSlateNotificationManager::Get().AddNotification(Info);
+	if (Notif)
+	{
+		Notif->SetCompletionState(State);
+	}
+
+	return Notif;
 }

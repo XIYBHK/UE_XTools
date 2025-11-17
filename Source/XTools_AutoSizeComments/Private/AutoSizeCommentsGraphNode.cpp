@@ -2099,7 +2099,11 @@ void SAutoSizeCommentsGraphNode::SetIsHeader(bool bNewValue, bool bUpdateStyle)
 				}
 			}
 
-			CommentNode->FontSize = UAutoSizeCommentsSettings::Get().DefaultFontSize;
+			// only apply default font size if the setting is enabled
+			if (UAutoSizeCommentsSettings::Get().bUseDefaultFontSize)
+			{
+				CommentNode->FontSize = UAutoSizeCommentsSettings::Get().DefaultFontSize;
+			}
 			AdjustMinSize(UserSize);
 			CommentNode->ResizeNode(UserSize);
 		}

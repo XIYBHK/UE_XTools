@@ -22,6 +22,7 @@ void FBAScopedRollbackTransaction::Rollback(const FText& OptionalFailureMsg)
 
 	if (!OptionalFailureMsg.IsEmpty())
 	{
+		FBAMiscUtils::ShowSimpleSlateNotification(OptionalFailureMsg, SNotificationItem::CS_Fail, 5.0f);
 		UE_LOG(LogBlueprintAssist, Warning, TEXT("%s"), *OptionalFailureMsg.ToString());
 	}
 }

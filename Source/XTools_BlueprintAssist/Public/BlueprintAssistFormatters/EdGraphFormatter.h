@@ -20,27 +20,6 @@ class FSlateRect;
 class UEdGraphNode_Comment;
 struct FBACommentContainsNode;
 
-struct FNodeChangeInfo
-{
-	TWeakObjectPtr<UEdGraphNode> Node;
-	TSet<FPinLink> Links;
-	int32 NodeX;
-	int32 NodeY;
-
-	int32 NodeOffsetX;
-	int32 NodeOffsetY;
-
-	FBANodeSizeChangeData NodeSizeChangeData;
-
-	TSet<FGuid> ContainingComments;
-
-	FNodeChangeInfo(UEdGraphNode* Node, UEdGraphNode* NodeToKeepStill, FCommentHandler* CommentHandler);
-
-	void UpdateValues(UEdGraphNode* NodeToKeepStill, FCommentHandler* CommentHandler);
-
-	bool HasChanged(UEdGraphNode* NodeToKeepStill, FCommentHandler* CommentHandler);
-};
-
 struct ChildBranch
 {
 	UEdGraphPin* Pin;
@@ -138,13 +117,8 @@ private:
 	TMap<UEdGraphNode*, TSharedPtr<FEdGraphParameterFormatter>> ParameterFormatterMap;
 
 	UEdGraphNode* NodeToKeepStill = nullptr;
-	FVector2D PreviousNodeToKeepStillPosition;
-	int32 LastFormattedX;
-	int32 LastFormattedY;
 
 	TMap<UEdGraphNode*, FVector2D> LastNodePositions;
-
-	TMap<UEdGraphNode*, FNodeChangeInfo> NodeChangeInfos;
 
 	TMap<UEdGraphNode*, TSharedPtr<FFormatXInfo>> FormatXInfoMap;
 
@@ -169,8 +143,6 @@ private:
 
 	bool IsFormattingRequired(const TArray<UEdGraphNode*>& NewNodeTree);
 
-	void SaveFormattingEndInfo();
-
 	TArray<UEdGraphNode*> GetNodeTree(UEdGraphNode* InitialNode) const;
 
 	bool IsInitialNodeValid(UEdGraphNode* Node) const;
@@ -190,7 +162,7 @@ private:
 		TArray<FFPNodeExpandStruct>& WaitingToExpand,
 		bool bUseParameter);
 
-	UEdGraphNode* GetTopMostNodeToAvoid(FPinLink& Link, const TArray<FFPNodeExpandStruct>& WaitingToExpand);
+	UEdGraphNode* GetTopMostNodeToAvoid(FPinLink& Link, const TArray<FFPNodeExpandStruct>& WaitingToExpand, TSet<TSharedPtr<FFormatXInfo>>& Visited);
 
 	TArray<FPinLink> ExpandX(const FPinLink& Link, UEdGraphNode* NodeToAvoid, bool bUseParameter);
 

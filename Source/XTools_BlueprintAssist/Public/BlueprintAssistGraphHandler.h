@@ -15,12 +15,13 @@ struct FBAGraphData;
 struct FBANodeData;
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnNodeFormatted, UEdGraphNode*, const FFormatterInterface&);
+DECLARE_MULTICAST_DELEGATE(FOnPostFormatting);
 
 class XTOOLS_BLUEPRINTASSIST_API FBAGraphHandler
 	: public TSharedFromThis<FBAGraphHandler>
 {
 public:
-	FOnNodeFormatted OnNodeFormatted;
+	FOnPostFormatting OnPostFormatting;
 
 	FBAGraphHandler(TWeakPtr<SDockTab> InTab, TWeakPtr<SGraphEditor> InGraphEditor);
 
@@ -178,6 +179,12 @@ public:
 	void GroupNodes(const TSet<UEdGraphNode*>& NodeSet);
 	void UngroupNodes(const TSet<UEdGraphNode*>& NodeSet);
 
+	const TMap<FGuid, FBAFormattingChangeData>& GetFormattingChangeData() const { return FormattingChangeDataMap; }
+
+	void SetViewLocation(const FVector2D& NewLocation, float NewZoom);
+	void GetViewLocation(FVector2D& OutLocation, float& OutZoom);
+	void GetViewLocation(FVector2D& OutLocation);
+
 private:
 	TSharedPtr<SBlueprintAssistGraphOverlay> GraphOverlay;
 	TWeakObjectPtr<UEdGraphNode> NodeToReplace = nullptr;
@@ -191,6 +198,7 @@ private:
 	FEdGraphFormatterParameters FormatterParameters;
 
 	FBAGraphPinHandle SelectedPinHandle;
+	FPinLink PrevSelectedLink;
 
 	FBADelayedDelegate DelayedGraphInitialized;
 	FBADelayedDelegate DelayedViewportZoomIn;
@@ -225,7 +233,6 @@ private:
 	TArray<TWeakObjectPtr<UEdGraphNode>> PendingSize;
 
 	TArray<TArray<TWeakObjectPtr<UEdGraphNode>>> FormatAllColumns;
-	TMap<TWeakObjectPtr<UEdGraphNode>, TSharedPtr<FFormatterInterface>> FormatterMap;
 
 	TSharedPtr<FScopedTransaction> PendingTransaction;
 	TSharedPtr<FScopedTransaction> ReplaceNewNodeTransaction;
@@ -237,23 +244,26 @@ private:
 
 	TWeakPtr<SNotificationItem> SizeTimeoutNotification;
 
+	bool bSaveAfterFormatting = false;
+
 	void OnGraphInitializedDelayed();
 
 	TMap<FGuid, FBANodeSizeChangeData> NodeSizeChangeDataMap;
+	TMap<FGuid, FBAFormattingChangeData> FormattingChangeDataMap;
 
 	TWeakObjectPtr<UEdGraphNode> ZoomToTargetPostFormatting;
 
 	void OnSelectionChanged(UEdGraphNode* PreviousNode, UEdGraphNode* NewNode);
 
-	void TryInsertNewNode(UEdGraphNode* NewNode);
+	bool TryInsertNewNode(UEdGraphNode* NewNode);
 
 	bool LinkExecWhenCreatedFromParameter(UEdGraphNode* NodeCreated, bool bInsert);
 
-	void AutoInsertExecNode(UEdGraphNode* NodeCreated);
+	bool AutoInsertExecNode(UEdGraphNode* NodeCreated);
 
-	void AutoInsertParameterNode(UEdGraphNode* NodeCreated);
+	bool AutoInsertParameterNode(UEdGraphNode* NodeCreated);
 
-	void ResetGraphEditor(TWeakPtr<SGraphEditor> NewGraphEditor);
+	void SetGraphEditor(TWeakPtr<SGraphEditor> NewGraphEditor);
 
 	void ReplaceSavedSelectedNode(UEdGraphNode* NewNode);
 
@@ -261,13 +271,17 @@ private:
 
 	void OnGraphChanged(const FEdGraphEditAction& Action);
 
+#if BA_UE_VERSION_OR_LATER(5, 0)
+	void HandleObjectSaved(UObject* Obj, FObjectPreSaveContext PreSaveContext);
+#endif
+
 	void DetectGraphChanges();
 
 	void OnNodesAdded(const TArray<UEdGraphNode*>& NewNodes);
 
 	void CacheNodeSizes(const TArray<UEdGraphNode*>& Nodes);
 
-	void FormatNewNodes(const TArray<UEdGraphNode*>& NewNodes);
+	void FormatNewNodes(const TArray<UEdGraphNode*>& NewNodes, TSharedPtr<FScopedTransaction> Transaction);
 
 	void AutoAddParentNode(UEdGraphNode* NewNode);
 
@@ -292,4 +306,8 @@ private:
 	void OnEndNodeCaching();
 
 	void OnDelayedCacheSizeFinished();
+
+	void RunSavePostFormatting();
+
+	TSharedPtr<SGraphEditor> AssignNewGraphEditorFromTab();
 };

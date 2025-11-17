@@ -8,6 +8,7 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/WeakObjectPtr.h"
 
+class SWindow;
 class UBARootObject;
 class FBlueprintAssistGraphPanelNodeFactory;
 
@@ -19,6 +20,7 @@ public:
 	virtual void ShutdownModule() override;
 
 	void BindLiveCodingSound();
+	void UnbindLiveCodingSound();
 
 	void RegisterSettings();
 
@@ -42,10 +44,10 @@ private:
 
 	TSharedPtr<FBlueprintAssistGraphPanelNodeFactory> BANodeFactory;
 
-	UPROPERTY()
 	TWeakObjectPtr<UBARootObject> RootObject;
 
-	FName BASettingsClassName;
+	FDelegateHandle LiveCodingDelegate;
 
 	void OnPostEngineInit();
+	void OnMainFrameCreationFinished(TSharedPtr<SWindow> InRootWindow, bool bIsRunningStartupDialog);
 };

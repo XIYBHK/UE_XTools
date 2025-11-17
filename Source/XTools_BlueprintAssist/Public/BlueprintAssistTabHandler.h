@@ -31,11 +31,13 @@ public:
 
 	TSharedPtr<FBAGraphHandler> GetActiveGraphHandler();
 
+	TArray<TSharedPtr<FBAGraphHandler>> GetAllGraphHandlers(); 
+
 	TSharedPtr<SDockTab> GetLastMajorTab();
 
 	TWeakPtr<SGraphEditor> GetUnsupportedGraphEditor() const { return UnsupportedGraphEditor; }
 
-	bool ProcessTab(TSharedPtr<SDockTab> Tab);
+	void ProcessTab(TSharedPtr<SDockTab> Tab);
 
 private:
 	TWeakPtr<FBAGraphHandler> ActiveGraphHandler;
@@ -68,6 +70,9 @@ private:
 	TSharedPtr<SDockTab> GetChildTabWithGraphEditor(TSharedPtr<SWidget> Widget) const;
 
 	void ProcessTabs();
+	bool ProcessTabInternal(TSharedPtr<SDockTab> Tab);
+
+	void ClearActiveGraphHandler();
 
 	TWeakPtr<SWidget> LastTabContent; 
 };
