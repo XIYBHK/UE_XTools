@@ -1,30 +1,17 @@
-name: Manual Create Release
+name: 手动创建发行版
 
 on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name for release (e.g., v1.9.2)'
+        description: '版本号（如 v1.9.3）'
         required: true
         type: string
-      release_name:
-        description: 'Release name (optional, defaults to tag name)'
-        required: false
-        type: string
       prerelease:
-        description: 'Is this a pre-release?'
+        description: '预发布版本'
         required: false
         type: boolean
         default: false
-      use_latest_artifacts:
-        description: 'Use artifacts from the latest build workflow?'
-        required: false
-        type: boolean
-        default: true
-      workflow_run_id:
-        description: 'Specific workflow run ID to get artifacts from (optional)'
-        required: false
-        type: string
 
 jobs:
   create-release:
@@ -44,12 +31,7 @@ jobs:
         id: validate
         run: |
           TAG_NAME="${{ inputs.tag_name }}"
-          RELEASE_NAME="${{ inputs.release_name }}"
-
-          # 如果没有提供 release name，使用 tag name
-          if [ -z "$RELEASE_NAME" ]; then
-            RELEASE_NAME="$TAG_NAME"
-          fi
+          RELEASE_NAME="$TAG_NAME"
 
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
@@ -100,27 +82,23 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Get artifacts from latest build
-        if: inputs.use_latest_artifacts
         id: get_artifacts
         uses: actions/github-script@v7
         with:
           script: |
-            let runId = '${{ inputs.workflow_run_id }}';
+            // 始终获取最新的成功构建
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-plugin-optimized.yml',
+              status: 'success',
+              per_page: 1
+            });
 
-            if (!runId) {
-              // 获取最新的成功构建
-              const runs = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'build-plugin-optimized.yml',
-                status: 'success',
-                per_page: 1
-              });
-
-              if (runs.data.workflow_runs.length > 0) {
-                runId = runs.data.workflow_runs[0].id;
-                console.log(`Using artifacts from run #${runs.data.workflow_runs[0].run_number} (ID: ${runId})`);
-              }
+            let runId = null;
+            if (runs.data.workflow_runs.length > 0) {
+              runId = runs.data.workflow_runs[0].id;
+              console.log(`Using artifacts from run #${runs.data.workflow_runs[0].run_number} (ID: ${runId})`);
             }
 
             if (runId) {

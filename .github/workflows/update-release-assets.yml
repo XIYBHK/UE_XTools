@@ -1,4 +1,4 @@
-name: Update Release Assets
+name: 更新发行版资产
 
 on:
   workflow_run:
@@ -8,24 +8,27 @@ on:
 
   workflow_dispatch:
     inputs:
-      tag_name:
-        description: 'Release tag to update (e.g., v1.9.2)'
-        required: true
-        type: string
-      workflow_run_id:
-        description: 'Workflow run ID to get artifacts from'
+      update_mode:
+        description: '更新模式'
+        required: false
+        type: choice
+        default: 'latest'
+        options:
+          - latest
+          - custom
+      custom_tag:
+        description: '自定义版本号（仅在选择custom时需要，如：v1.9.2）'
         required: false
         type: string
-      replace_existing:
-        description: 'Replace existing assets with same name?'
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   update-assets:
-    # 只在构建成功时运行，或手动触发时运行
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # 只在非tag构建成功时运行，或手动触发时运行
+    # Tag构建会使用内置的create-release job
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       !startsWith(github.event.workflow_run.head_branch, 'refs/tags/v'))
     runs-on: ubuntu-latest
 
     permissions:
@@ -41,12 +44,26 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            let tagName = '${{ inputs.tag_name }}';
-            let runId = '${{ inputs.workflow_run_id }}';
+            let tagName = '';
+            let runId = '';
 
-            // 如果是自动触发
-            if (context.eventName === 'workflow_run') {
-              runId = context.payload.workflow_run.id;
+            // 处理手动触发
+            if (context.eventName === 'workflow_dispatch') {
+              const updateMode = '${{ inputs.update_mode }}';
+              if (updateMode === 'custom') {
+                tagName = '${{ inputs.custom_tag }}';
+                if (!tagName) {
+                  console.log('Custom mode requires tag name');
+                  return { skip: true };
+                }
+              }
+            }
+
+            // 如果是自动触发或手动latest模式，获取最新release
+            if (!tagName) {
+              if (context.eventName === 'workflow_run') {
+                runId = context.payload.workflow_run.id;
+              }
 
               // 获取最新的 release
               try {
@@ -178,7 +195,6 @@ jobs:
           script: |
             const releaseId = ${{ steps.download.outputs.releaseId }};
             const newFiles = ${{ steps.download.outputs.files }};
-            const replaceExisting = ${{ inputs.replace_existing != 'false' }};
 
             console.log(`Updating release ${releaseId} with ${newFiles.length} files`);
 
@@ -200,18 +216,13 @@ jobs:
               const existingAsset = existingAssets.data.find(a => a.name === file.name);
 
               if (existingAsset) {
-                if (replaceExisting) {
-                  console.log(`Deleting existing asset: ${file.name}`);
-                  await github.rest.repos.deleteReleaseAsset({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    asset_id: existingAsset.id
-                  });
-                  updatedCount++;
-                } else {
-                  console.log(`Skipping existing asset: ${file.name}`);
-                  continue;
-                }
+                console.log(`Deleting existing asset: ${file.name}`);
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: existingAsset.id
+                });
+                updatedCount++;
               } else {
                 addedCount++;
               }
