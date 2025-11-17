@@ -120,7 +120,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = ${{ steps.target.outputs.runId }};
+            let runId = ${{ steps.target.outputs.runId }};
             const releaseId = ${{ steps.target.outputs.releaseId }};
 
             if (!runId) {
