@@ -44,6 +44,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const { setOutput } = require('@actions/core');
+
             let tagName = '';
             let runId = '';
 
@@ -54,7 +56,8 @@ jobs:
                 tagName = '${{ inputs.custom_tag }}';
                 if (!tagName) {
                   console.log('Custom mode requires tag name');
-                  return { skip: true };
+                  core.setOutput('skip', 'true');
+                  return;
                 }
               }
             }
@@ -62,7 +65,7 @@ jobs:
             // 如果是自动触发或手动latest模式，获取最新release
             if (!tagName) {
               if (context.eventName === 'workflow_run') {
-                runId = context.payload.workflow_run.id;
+                runId = String(context.payload.workflow_run.id);
               }
 
               // 获取最新的 release
@@ -78,11 +81,13 @@ jobs:
                   console.log(`Will update release: ${tagName}`);
                 } else {
                   console.log('No existing release found, skipping update');
-                  return { skip: true };
+                  core.setOutput('skip', 'true');
+                  return;
                 }
               } catch (error) {
                 console.log('Error getting releases:', error.message);
-                return { skip: true };
+                core.setOutput('skip', 'true');
+                return;
               }
             }
 
@@ -96,15 +101,13 @@ jobs:
 
               console.log(`Found release: ${release.data.name} (ID: ${release.data.id})`);
 
-              return {
-                skip: false,
-                tagName: tagName,
-                releaseId: release.data.id,
-                runId: runId
-              };
+              core.setOutput('skip', 'false');
+              core.setOutput('tagName', tagName);
+              core.setOutput('releaseId', String(release.data.id));
+              core.setOutput('runId', runId || '');
             } catch (error) {
               console.log(`Release ${tagName} not found:`, error.message);
-              return { skip: true };
+              core.setOutput('skip', 'true');
             }
 
       - name: Check if should skip
@@ -120,10 +123,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            let runId = ${{ steps.target.outputs.runId }};
-            const releaseId = ${{ steps.target.outputs.releaseId }};
+            let runId = '${{ steps.target.outputs.runId }}';
+            const releaseId = '${{ steps.target.outputs.releaseId }}';
 
-            if (!runId) {
+            if (!runId || runId === '') {
               console.log('No run ID specified, getting latest');
               // 获取最新的成功构建
               const runs = await github.rest.actions.listWorkflowRuns({
@@ -136,7 +139,8 @@ jobs:
 
               if (runs.data.workflow_runs.length === 0) {
                 console.log('No successful builds found');
-                return { success: false };
+                core.setOutput('success', 'false');
+                return;
               }
 
               runId = runs.data.workflow_runs[0].id;
@@ -182,19 +186,18 @@ jobs:
               }
             }
 
-            return {
-              success: true,
-              releaseId: releaseId,
-              files: downloadedFiles
-            };
+            core.setOutput('success', 'true');
+            core.setOutput('releaseId', releaseId);
+            core.setOutput('files', JSON.stringify(downloadedFiles));
 
       - name: Update release assets
         if: steps.target.outputs.skip != 'true' && steps.download.outputs.success == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const releaseId = ${{ steps.download.outputs.releaseId }};
-            const newFiles = ${{ steps.download.outputs.files }};
+            const releaseId = '${{ steps.download.outputs.releaseId }}';
+            const filesJson = '${{ steps.download.outputs.files }}';
+            const newFiles = filesJson ? JSON.parse(filesJson) : [];
 
             console.log(`Updating release ${releaseId} with ${newFiles.length} files`);
 
@@ -245,10 +248,8 @@ jobs:
 
             console.log(`✅ Updated ${updatedCount} assets, added ${addedCount} new assets`);
 
-            return {
-              updated: updatedCount,
-              added: addedCount
-            };
+            core.setOutput('updated', String(updatedCount));
+            core.setOutput('added', String(addedCount));
 
       - name: Create summary
         if: steps.target.outputs.skip != 'true'
