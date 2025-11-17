@@ -522,26 +522,26 @@ jobs:
           # 从CHANGELOG.md提取当前版本的更新说明
           awk -v version="$VERSION" '
             BEGIN { found=0; content="" }
-            /^## 📌 版本/ {
+            /^## 版本/ {
               if (found) exit
               if ($0 ~ version) { found=1; next }
             }
-            found && /^## 📌 版本/ { exit }
+            found && /^## 版本/ { exit }
             found && /^---$/ { exit }
-            found { 
+            found {
               # 移除标题中的 ### 保留内容
               gsub(/^### /, "## ", $0)
               gsub(/^#### /, "### ", $0)
-              content = content $0 "\n" 
+              content = content $0 "\n"
             }
-            END { 
+            END {
               if (content == "") {
-                print "## Release " version "\n\n请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/Docs/CHANGELOG.md) 获取详细更新说明。"
+                print "## Release " version "\n\n请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/Docs/版本变更/CHANGELOG.md) 获取详细更新说明。"
               } else {
                 print content
               }
             }
-          ' Docs/CHANGELOG.md > release_notes.md
+          ' Docs/版本变更/CHANGELOG.md > release_notes.md
           
           echo "### 📝 Release Notes Preview" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
