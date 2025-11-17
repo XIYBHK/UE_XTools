@@ -129,12 +129,18 @@ USortLibrary::SortActorArrayByDistance(ActorArray, CenterLocation);
 - 修复手动重命名保护机制和数字后缀规范化
 - 修复晃动节点断开连接问题
 - 优化 BlueprintScreenshotTool 性能（CPU占用降低60%）
-- 修复 UE 5.4 版本兼容性问题
+- 修复 UE 5.4 版本 FCompression API 兼容性问题
 
-### v1.9.0
+### v1.9.1 (2025-11-13)
+- 集成 BlueprintScreenshotTool 蓝图截图模块
+- 资产命名系统增强（冲突检测、变体命名、数字后缀规范化）
+- 统一错误处理到 FXToolsErrorReporter
+- 修复 UE 5.6 编译错误和多个模块稳定性问题
+
+### v1.9.0 (2025-11-06)
 - 集成并汉化 AutoSizeComments、BlueprintAssist、ElectronicNodes
 - 修复 K2Node 通配符类型丢失问题
-- 完善跨版本兼容性（UE 5.3-5.7）
+- 完善跨版本兼容性（UE 5.3-5.6）
 
 [查看完整更新日志](Docs/版本变更/CHANGELOG.md)
 
