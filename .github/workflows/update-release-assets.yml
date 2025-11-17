@@ -1,0 +1,263 @@
+name: Update Release Assets
+
+on:
+  workflow_run:
+    workflows: ["Build Plugin Multi-UE Optimized"]
+    types:
+      - completed
+
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to update (e.g., v1.9.2)'
+        required: true
+        type: string
+      workflow_run_id:
+        description: 'Workflow run ID to get artifacts from'
+        required: false
+        type: string
+      replace_existing:
+        description: 'Replace existing assets with same name?'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  update-assets:
+    # 只在构建成功时运行，或手动触发时运行
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine target release
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let tagName = '${{ inputs.tag_name }}';
+            let runId = '${{ inputs.workflow_run_id }}';
+
+            // 如果是自动触发
+            if (context.eventName === 'workflow_run') {
+              runId = context.payload.workflow_run.id;
+
+              // 获取最新的 release
+              try {
+                const releases = await github.rest.repos.listReleases({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  per_page: 1
+                });
+
+                if (releases.data.length > 0) {
+                  tagName = releases.data[0].tag_name;
+                  console.log(`Will update release: ${tagName}`);
+                } else {
+                  console.log('No existing release found, skipping update');
+                  return { skip: true };
+                }
+              } catch (error) {
+                console.log('Error getting releases:', error.message);
+                return { skip: true };
+              }
+            }
+
+            // 验证 release 存在
+            try {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName
+              });
+
+              console.log(`Found release: ${release.data.name} (ID: ${release.data.id})`);
+
+              return {
+                skip: false,
+                tagName: tagName,
+                releaseId: release.data.id,
+                runId: runId
+              };
+            } catch (error) {
+              console.log(`Release ${tagName} not found:`, error.message);
+              return { skip: true };
+            }
+
+      - name: Check if should skip
+        if: steps.target.outputs.skip == 'true'
+        run: |
+          echo "### ⏭️ Skipping Update" >> $GITHUB_STEP_SUMMARY
+          echo "No release to update or release not found." >> $GITHUB_STEP_SUMMARY
+          exit 0
+
+      - name: Download build artifacts
+        if: steps.target.outputs.skip != 'true'
+        id: download
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = ${{ steps.target.outputs.runId }};
+            const releaseId = ${{ steps.target.outputs.releaseId }};
+
+            if (!runId) {
+              console.log('No run ID specified, getting latest');
+              // 获取最新的成功构建
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'build-plugin-optimized.yml',
+                status: 'success',
+                per_page: 1
+              });
+
+              if (runs.data.workflow_runs.length === 0) {
+                console.log('No successful builds found');
+                return { success: false };
+              }
+
+              runId = runs.data.workflow_runs[0].id;
+            }
+
+            console.log(`Downloading artifacts from run ${runId}`);
+
+            // 获取 artifacts 列表
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+
+            const fs = require('fs');
+            const path = require('path');
+
+            // 创建临时目录
+            const dir = 'new-assets';
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+            }
+
+            const downloadedFiles = [];
+
+            // 下载每个 XTools 相关的 artifact
+            for (const artifact of artifacts.data.artifacts) {
+              if (artifact.name.includes('XTools-UE_')) {
+                console.log(`Downloading ${artifact.name}...`);
+
+                const download = await github.rest.actions.downloadArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id,
+                  archive_format: 'zip'
+                });
+
+                const fileName = `${artifact.name}.zip`;
+                const filePath = path.join(dir, fileName);
+                fs.writeFileSync(filePath, Buffer.from(download.data));
+                downloadedFiles.push({ name: fileName, path: filePath });
+                console.log(`Downloaded: ${fileName}`);
+              }
+            }
+
+            return {
+              success: true,
+              releaseId: releaseId,
+              files: downloadedFiles
+            };
+
+      - name: Update release assets
+        if: steps.target.outputs.skip != 'true' && steps.download.outputs.success == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releaseId = ${{ steps.download.outputs.releaseId }};
+            const newFiles = ${{ steps.download.outputs.files }};
+            const replaceExisting = ${{ inputs.replace_existing != 'false' }};
+
+            console.log(`Updating release ${releaseId} with ${newFiles.length} files`);
+
+            // 获取现有资产列表
+            const existingAssets = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              per_page: 100
+            });
+
+            const fs = require('fs');
+
+            let updatedCount = 0;
+            let addedCount = 0;
+
+            for (const file of newFiles) {
+              // 检查是否已存在同名资产
+              const existingAsset = existingAssets.data.find(a => a.name === file.name);
+
+              if (existingAsset) {
+                if (replaceExisting) {
+                  console.log(`Deleting existing asset: ${file.name}`);
+                  await github.rest.repos.deleteReleaseAsset({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    asset_id: existingAsset.id
+                  });
+                  updatedCount++;
+                } else {
+                  console.log(`Skipping existing asset: ${file.name}`);
+                  continue;
+                }
+              } else {
+                addedCount++;
+              }
+
+              // 上传新资产
+              console.log(`Uploading: ${file.name}`);
+              const data = fs.readFileSync(file.path);
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: releaseId,
+                name: file.name,
+                data: data,
+                headers: {
+                  'content-type': 'application/zip'
+                }
+              });
+            }
+
+            console.log(`✅ Updated ${updatedCount} assets, added ${addedCount} new assets`);
+
+            return {
+              updated: updatedCount,
+              added: addedCount
+            };
+
+      - name: Create summary
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          echo "### 📦 Release Assets Update Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Release**: ${{ steps.target.outputs.tagName }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d "new-assets" ]; then
+            echo "**Updated Files**:" >> $GITHUB_STEP_SUMMARY
+            ls -lh new-assets/*.zip 2>/dev/null | while read -r line; do
+              echo "- ${line}" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.target.outputs.tagName }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -rf new-assets release-assets || true

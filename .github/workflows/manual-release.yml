@@ -1,0 +1,206 @@
+name: Manual Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for release (e.g., v1.9.2)'
+        required: true
+        type: string
+      release_name:
+        description: 'Release name (optional, defaults to tag name)'
+        required: false
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        type: boolean
+        default: false
+      use_latest_artifacts:
+        description: 'Use artifacts from the latest build workflow?'
+        required: false
+        type: boolean
+        default: true
+      workflow_run_id:
+        description: 'Specific workflow run ID to get artifacts from (optional)'
+        required: false
+        type: string
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          TAG_NAME="${{ inputs.tag_name }}"
+          RELEASE_NAME="${{ inputs.release_name }}"
+
+          # 如果没有提供 release name，使用 tag name
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="$TAG_NAME"
+          fi
+
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+
+          # 检查 tag 是否已存在
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "::warning::Tag $TAG_NAME already exists locally"
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.validate.outputs.tag_name }}"
+
+          # 从CHANGELOG.md提取当前版本的更新说明
+          if [ -f "Docs/版本变更/CHANGELOG.md" ]; then
+            awk -v version="$VERSION" '
+              BEGIN { found=0; content="" }
+              /^## 版本/ {
+                if (found) exit
+                if ($0 ~ version) { found=1; next }
+              }
+              found && /^## 版本/ { exit }
+              found && /^---$/ { exit }
+              found {
+                content = content $0 "\n"
+              }
+              END {
+                if (content == "") {
+                  print "## Release " version "\n\n请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/Docs/版本变更/CHANGELOG.md) 获取详细更新说明。"
+                } else {
+                  print content
+                }
+              }
+            ' Docs/版本变更/CHANGELOG.md > release_notes.md
+          else
+            echo "## Release $VERSION" > release_notes.md
+            echo "" >> release_notes.md
+            echo "手动创建的发布版本。" >> release_notes.md
+          fi
+
+          echo "### 📝 Release Notes Preview" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          head -n 30 release_notes.md >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Get artifacts from latest build
+        if: inputs.use_latest_artifacts
+        id: get_artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let runId = '${{ inputs.workflow_run_id }}';
+
+            if (!runId) {
+              // 获取最新的成功构建
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'build-plugin-optimized.yml',
+                status: 'success',
+                per_page: 1
+              });
+
+              if (runs.data.workflow_runs.length > 0) {
+                runId = runs.data.workflow_runs[0].id;
+                console.log(`Using artifacts from run #${runs.data.workflow_runs[0].run_number} (ID: ${runId})`);
+              }
+            }
+
+            if (runId) {
+              // 下载所有 artifacts
+              const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId
+              });
+
+              console.log(`Found ${artifacts.data.artifacts.length} artifacts`);
+
+              const fs = require('fs');
+              const path = require('path');
+
+              // 创建目录
+              const dir = 'release-assets';
+              if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+              }
+
+              // 下载每个 artifact
+              for (const artifact of artifacts.data.artifacts) {
+                if (artifact.name.includes('XTools-UE_')) {
+                  console.log(`Downloading ${artifact.name}...`);
+
+                  const download = await github.rest.actions.downloadArtifact({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: artifact.id,
+                    archive_format: 'zip'
+                  });
+
+                  const filePath = path.join(dir, `${artifact.name}.zip`);
+                  fs.writeFileSync(filePath, Buffer.from(download.data));
+                  console.log(`Saved to ${filePath}`);
+                }
+              }
+
+              return runId;
+            }
+
+            return null;
+
+      - name: List release assets
+        run: |
+          if [ -d "release-assets" ]; then
+            echo "### 📦 Release Assets" >> $GITHUB_STEP_SUMMARY
+            ls -lh release-assets/*.zip 2>/dev/null | while read -r line; do
+              echo "- ${line}" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "### ⚠️ No assets found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create tag if not exists
+        if: steps.validate.outputs.tag_exists == 'false'
+        run: |
+          TAG_NAME="${{ steps.validate.outputs.tag_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.validate.outputs.tag_name }}
+          name: ${{ steps.validate.outputs.release_name }}
+          body_path: release_notes.md
+          files: release-assets/*.zip
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: false
+
+      - name: Summary
+        run: |
+          echo "### ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: ${{ steps.validate.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: ${{ steps.validate.outputs.release_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pre-release**: ${{ inputs.prerelease }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.validate.outputs.tag_name }})" >> $GITHUB_STEP_SUMMARY
