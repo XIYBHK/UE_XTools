@@ -214,10 +214,11 @@ FString FBAMiscUtils::CompressString(const FString& InString, FName FormatName)
 	const int32 UncompressedSize = UncompressedData.Num();
 
 	int64 MaxCompressedSize = -1;
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
+	// UE5.5+ signature: GetMaximumCompressedSize(FName, int64&, int32)
 	if (!FCompression::GetMaximumCompressedSize(FormatName, MaxCompressedSize, UncompressedSize))
 #else
-	// UE5.3 signature: GetMaximumCompressedSize(FName, int32, ECompressionFlags, int32)
+	// UE5.3-5.4 signature: GetMaximumCompressedSize(FName, int32, ECompressionFlags, int32)
 	int32 MaxCompressedSize32 = 0;
 	if (!FCompression::GetMaximumCompressedSize(FormatName, UncompressedSize, ECompressionFlags::COMPRESS_None, MaxCompressedSize32))
 	{

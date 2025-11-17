@@ -1,21 +1,84 @@
-MIT License
+UE_XTools License
 
-Copyright (c) 2024 Yang Biao
+Copyright (c) 2025 XIYBHK. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+=======================================================================
+                        内部使用许可条款
+=======================================================================
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+本软件及其相关文档（以下简称"本软件"）是专有软件，仅供内部使用。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+一、许可授权
+1. 本软件仅授权给内部团队成员和授权合作伙伴使用。
+2. 使用者可以在内部项目中自由使用、修改本软件。
+3. 本软件不得公开发布、销售或以其他形式对外传播。
+
+二、使用限制
+1. 禁止将本软件或其任何部分进行商业化销售。
+2. 禁止在未经授权的情况下将本软件分享给第三方。
+3. 禁止移除或修改本软件中的版权声明和许可信息。
+4. 禁止在公开的开源项目中使用本软件。
+
+三、知识产权
+1. 本软件的所有知识产权归 XIYBHK 所有。
+2. 使用者基于本软件开发的衍生作品，其知识产权归属需与作者协商确定。
+3. 本软件集成的第三方组件遵循其原始许可证。
+
+四、第三方组件
+本软件集成了以下第三方组件，这些组件保留其原始许可证：
+
+1. AutoSizeComments (XTools_AutoSizeComments)
+   - 原作者：fpwong
+   - 许可证：CC-BY-4.0 (Creative Commons Attribution 4.0 International)
+
+2. BlueprintAssist (XTools_BlueprintAssist)
+   - 原作者：fpwong
+   - 许可证：MIT License
+
+3. ElectronicNodes (XTools_ElectronicNodes)
+   - 原作者：Herobrine20XX
+   - 许可证：按照 Marketplace EULA 使用
+
+4. BlueprintScreenshotTool (XTools_BlueprintScreenshotTool)
+   - 原作者：Gradess Games
+   - 许可证：MIT License
+
+5. EnhancedCodeFlow (XTools_EnhancedCodeFlow)
+   - 基于公开的增强代码流框架
+   - 经修改以适配 XTools 插件系统
+
+五、免责声明
+1. 本软件按"现状"提供，不提供任何明示或暗示的保证。
+2. 作者不对使用本软件造成的任何直接或间接损失负责。
+3. 使用者需自行承担使用本软件的风险。
+
+六、技术支持
+1. 内部技术支持请联系插件维护团队。
+2. 不对外提供技术支持服务。
+
+七、许可终止
+1. 违反本许可条款将自动终止使用权。
+2. 许可终止后，使用者必须停止使用并删除本软件的所有副本。
+
+八、适用法律
+本许可条款受中华人民共和国法律管辖。
+
+=======================================================================
+                            联系方式
+=======================================================================
+
+内部使用问题请联系：
+- 插件维护团队
+- 项目负责人
+
+请勿对外传播本软件。
+
+=======================================================================
+                          版本历史
+=======================================================================
+
+版本：1.9.1
+日期：2025年1月
+说明：XTools 插件系统内部发布版本
+
+=======================================================================
