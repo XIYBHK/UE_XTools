@@ -44,8 +44,6 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { setOutput } = require('@actions/core');
-
             let tagName = '';
             let runId = '';
 
