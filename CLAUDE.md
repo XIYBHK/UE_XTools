@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-XTools 是一个为 Unreal Engine 5.3-5.6 设计的模块化插件系统，提供蓝图节点和 C++ 功能库。插件采用多模块架构，每个模块独立编译和打包。
+XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.2），提供蓝图节点和 C++ 功能库。插件采用多模块架构（20个模块），每个模块独立编译和打包。
 
 **核心设计原则**：
 - 单一职责原则：每个模块专注于一个特定功能领域
 - 蓝图友好：所有功能通过 `UFUNCTION(BlueprintCallable/Pure)` 暴露
 - 中文优先：所有元数据、注释、文档使用中文
-- 跨版本兼容：支持 UE 5.3-5.6，零警告编译
+- 跨版本兼容：支持 UE 5.3-5.7，零警告编译
+- 性能优先：包含 Unreal Insights 跟踪和性能优化
 
 ## 构建和编译
 
@@ -31,14 +32,19 @@ XTools 是一个为 Unreal Engine 5.3-5.6 设计的模块化插件系统，提�
 
 ### 插件打包（多版本）
 ```powershell
-# 为 UE 5.3-5.6 打包插件
-.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.3","UE_5.4","UE_5.5","UE_5.6" -Follow
+# 为 UE 5.3-5.7 打包插件
+.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.3","UE_5.4","UE_5.5","UE_5.6","UE_5.7" -Follow
 
 # 支持的参数：
-# -EngineRoots   指定引擎路径列表
-# -OutputBase    自定义输出目录（默认：Plugin_Packages/）
-# -Follow        实时跟踪打包进度
-# -Clean         打包前清理输出目录
+# -EngineRoots     指定引擎路径列表（留空则自动检测已安装引擎）
+# -OutputBase      自定义输出目录（默认：Plugin_Packages/）
+# -Follow          实时跟踪打包进度（每3秒显示最新40行日志）
+# -CleanOutput     打包前清理输出目录
+# -StrictIncludes  启用严格包含检查（默认启用）
+# -NoHostProject   不需要宿主项目（默认启用）
+
+# 示例：自动检测引擎并实时跟踪
+.\Scripts\BuildPlugin-MultiUE.ps1 -Follow
 ```
 
 ### 清理项目
@@ -46,7 +52,7 @@ XTools 是一个为 Unreal Engine 5.3-5.6 设计的模块化插件系统，提�
 # 清理插件临时文件
 .\Scripts\Clean-UEPlugin.ps1
 
-# 清理范围：Binaries/, Intermediate/, .vs/, *.sln, *.lib, *.exp
+# 清理范围：*.pdb, Intermediate/
 ```
 
 ## 模块架构
@@ -55,39 +61,61 @@ XTools 是一个为 Unreal Engine 5.3-5.6 设计的模块化插件系统，提�
 
 ### 基础模块
 - **XToolsCore** (Runtime, PreDefault): 核心工具和跨版本兼容性层
-  - 提供 `XToolsVersionCompat.h`: UE 5.3-5.6 版本兼容性宏
-  - 提供 `XToolsErrorReporter.h`: 统一错误/日志处理
+  - 提供 `XToolsVersionCompat.h`: UE 5.3-5.7 版本兼容性宏
+  - 提供 `XToolsErrorReporter.h`: 统一错误/日志处理（支持所有日志分类，包括 FNoLoggingCategory）
   - 提供 `XToolsDefines.h`: 插件版本和通用宏定义
   - **所有 Runtime 模块都应依赖此模块**
   - **Editor 模块可选依赖此模块**
 
-### 核心模块
-- **XTools**: 主模块（Editor），包含编辑器工具和插件入口
+### 运行时功能模块（9个）
+- **XTools**: 主模块（Runtime），包含插件入口和欢迎界面
 - **Sort**: 排序算法库（整数、浮点、字符串、向量、Actor、通用结构体）
-- **RandomShuffles**: PRD（伪随机分布）算法和数组洗牌
-- **EnhancedCodeFlow**: 异步操作和流程控制（延迟、时间轴、循环、协程）
-- **PointSampling**: 几何工具（静态网格体内部点阵生成、贝塞尔曲线）
-- **FormationSystem**: 编队系统
+- **RandomShuffles**: PRD（伪随机分布）算法和数组洗牌（仅 Win64）
+- **XTools_EnhancedCodeFlow**: 异步操作和流程控制（延迟、时间轴、循环、协程，仅 Win64）
+- **PointSampling**: 几何工具（静态网格体内部点阵生成、贝塞尔曲线、泊松圆盘采样）
+- **FormationSystem**: 编队系统和移动控制
+- **XTools_ComponentTimelineRuntime**: 组件时间轴系统（运行时核心）
+- **BlueprintExtensionsRuntime**: 蓝图运行时函数库（支持 Android/iOS）
+- **ObjectPool**: Actor 对象池（智能管理、自动扩池、状态重置，支持 Android/iOS）
+- **FieldSystemExtensions**: Chaos Field System 增强（高性能筛选，支持 Android/iOS）
 
-### 运行时-编辑器模块对
-- **ComponentTimelineRuntime** + **ComponentTimelineUncooked**: 组件时间轴系统
-- **BlueprintExtensionsRuntime** + **BlueprintExtensions**: 自定义 K2Node 蓝图节点
-- **ObjectPool** + **ObjectPoolEditor**: Actor 对象池系统
-- **Sort** + **SortEditor**: 排序工具的编辑器扩展
+### 编辑器专用模块（UncookedOnly，4个）
+- **BlueprintExtensions** → BlueprintExtensionsRuntime: 自定义 K2Node（14+ 节点）
+- **ObjectPoolEditor** → ObjectPool: K2Node_SpawnActorFromPool（对象池蓝图节点）
+- **XTools_ComponentTimelineUncooked** → ComponentTimelineRuntime: K2Node_ComponentTimeline（时间轴蓝图节点）
+- **SortEditor** → Sort: K2Node_SmartSort（智能排序节点）
 
-### 编辑器专用模块
-- **X_AssetEditor**: 资产批量处理工具（碰撞、材质函数、命名规范）
-- **XTools_AutoSizeComments**: 集成第三方编辑器插件（已汉化）
-- **XTools_BlueprintAssist**: 集成第三方编辑器插件（已汉化）
-- **XTools_ElectronicNodes**: 集成第三方编辑器插件（已汉化）
+### Editor Only 模块（7个）
+- **X_AssetEditor**: 资产批量处理工具（碰撞、材质函数、命名规范、纹理打包后缀，仅 Win64）
+- **XTools_AutoSizeComments**: 注释框自动调整（已汉化，仅 Win64）
+- **XTools_BlueprintAssist**: 蓝图节点自动格式化（已汉化，100+ 设置项，仅 Win64）
+- **XTools_ElectronicNodes**: 蓝图连线美化（已汉化，仅 Win64）
+- **XTools_BlueprintScreenshotTool**: 蓝图截图工具（已汉化，CPU 占用降低 60%，仅 Win64）
+- **XTools_SwitchLanguage**: 编辑器语言切换（支持 Win64/Mac/Linux）
 
 ### 模块依赖关系
 ```
-BlueprintExtensions (UncookedOnly) → BlueprintExtensionsRuntime (Runtime)
-ObjectPoolEditor (UncookedOnly) → ObjectPool (Runtime)
-ComponentTimelineUncooked (UncookedOnly) → ComponentTimelineRuntime (Runtime)
-SortEditor (UncookedOnly) → Sort (Runtime)
-X_AssetEditor (Editor) → EditorScriptingUtilities (引擎插件)
+核心层（Runtime, PreDefault）
+└─ XToolsCore
+
+运行时模块层（依赖 XToolsCore）
+├─ Sort
+├─ ObjectPool
+├─ BlueprintExtensionsRuntime
+├─ XTools_EnhancedCodeFlow
+├─ FieldSystemExtensions
+└─ XTools_ComponentTimelineRuntime
+
+编辑器模块层（UncookedOnly）
+├─ BlueprintExtensions → BlueprintExtensionsRuntime
+├─ ObjectPoolEditor → ObjectPool
+├─ SortEditor → Sort
+└─ XTools_ComponentTimelineUncooked → ComponentTimelineRuntime
+
+Editor Only 模块
+├─ XTools（主模块）
+├─ X_AssetEditor → EditorScriptingUtilities
+└─ XTools_SwitchLanguage / AutoSizeComments / BlueprintAssist / ElectronicNodes / BlueprintScreenshotTool
 ```
 
 ## 开发规范
@@ -281,8 +309,10 @@ PublicDependencyModuleNames.AddRange(new string[] {
 ```
 
 **API 变更处理**：
-- UE 5.5+ 弃用 `FProperty::ElementSize` → 使用条件编译适配
+- UE 5.4+ 强制执行 IWYU 原则（Include What You Use）→ 显式包含所有头文件
+- UE 5.5+ 弃用 `FProperty::ElementSize` → 使用 `GetElementSize()/SetElementSize()`
 - UE 5.5+ 弃用 `BufferCommand` → 使用 `BufferFieldCommand_Internal`
+- UE 5.4+ `FCompression::GetMaximumCompressedSize` 参数变更 → 条件编译适配
 - TAtomic API 在 UE 5.3+ 支持直接赋值，5.0-5.2 需要 `load()/store()`
 
 ### EnhancedCodeFlow 异步系统
@@ -312,20 +342,23 @@ const FProperty* Property = StructType->FindPropertyByName(PropertyName);
 
 ## 跨版本兼容性
 
-支持 UE 5.3-5.6，主要差异点：
+支持 UE 5.3-5.7，主要差异点：
 - 编译器版本：UE 5.3 使用 VS2019，5.4+ 使用 VS2022
-- API 变更：少量引擎 API 在版本间有微小差异（主要是参数顺序）
+- API 变更：通过 XToolsVersionCompat.h 统一适配
 - 构建工具：UBT（UnrealBuildTool）的路径和参数在各版本保持兼容
+- IWYU 原则：UE 5.4+ 强制执行显式头文件包含
 
 **注意**：UE 5.0-5.2 不受支持（5.0 依赖 .NET 3.1，5.2 有编译器兼容性问题）。
 
 ## 性能考虑
 
+- **BlueprintScreenshotTool**：间隔检查替代每帧 Tick，CPU 占用降低约 60%
 - **贝塞尔曲线匀速模式**：计算量大，避免每帧调用
 - **几何采样**：点数与网格大小成正比，大型网格使用 `MaxPoints` 参数限制
 - **对象池预热**：初始化时有一次性开销，运行时性能提升显著
 - **PRD 状态**：每个系统的 PRD 状态持久保存，注意内存使用
 - **异步操作**：使用 `FECFHandle` 管理生命周期，避免悬空引用
+- **Unreal Insights**：EnhancedCodeFlow 支持编译时启用 `ECF_INSIGHTS_ENABLED` 进行性能分析
 
 ## 文件结构约定
 
@@ -392,3 +425,104 @@ TRACE_CPUPROFILER_EVENT_SCOPE(FunctionName);
 // EnhancedCodeFlow 内置统计
 // 编译时定义 ECF_INSIGHTS_ENABLED=1
 ```
+
+## 重要新增功能（v1.9.0-v1.9.2）
+
+### FieldSystemExtensions 模块
+全新模块，增强 UE 的 Chaos Field System（物理场系统）：
+```cpp
+// 核心类：AXFieldSystemActor（继承自 AFieldSystemActor）
+// 功能：精确控制物理场影响范围
+
+// 三种筛选模式：
+1. 作用类型筛选（只影响破碎物体或 Cloth 等）
+2. 排除类型筛选（排除特定类型）
+3. Actor Tag 筛选（通过 Tag 精确控制）
+
+// 使用场景：GeometryCollection 破碎、Chaos 物理场精确控制
+```
+
+### BlueprintScreenshotTool 性能优化
+- CPU 占用降低约 60%（间隔检查替代每帧 Tick）
+- 使用 BFS 队列遍历避免栈溢出
+- 支持多显示器环境的 DPI 获取
+- 完整本地化（15 项设置 + 2 个命令 + 3 个错误提示）
+
+### X_AssetEditor 增强功能
+```cpp
+// 新增功能：
+- 命名冲突检测：自动避免重命名失败
+- 变体命名支持：兼容 Allar Style Guide 规范
+- 数字后缀规范化：_1 → _01（自动转换为两位数）
+- 纹理打包后缀：_ERO、_ARM 等组合
+- MaterialTools 智能连接：失败时回溯 MaterialAttributes 链路
+
+// 修复：
+- 手动重命名保护机制（基于调用堆栈检测）
+- 数字后缀规范化移至重命名流程最终步骤
+```
+
+### BlueprintAssist 关键修复
+- 修复晃动节点断开连接后节点不跟随鼠标问题
+- 调整晃动断开连接灵敏度（MinShakeDistance 5→30，DotProduct <0→<-0.5）
+- 新增 `bSkipAutoFormattingAfterBreakingPins` 设置
+- 新增 `ExpandNodesMaxDist` 限制节点展开距离
+- 检测外部 BlueprintAssist 插件时集成版保持空载
+
+## GitHub Actions 自动化
+
+项目包含完整的 CI/CD 工作流：
+
+### manual-release.yml
+手动触发创建发行版：
+```yaml
+# 功能：
+- 自动从 Docs/版本变更/CHANGELOG.md 提取版本说明
+- 创建 Git Tag 并推送到远程
+- 生成 GitHub Release
+- 支持预发布版本标记
+```
+
+### update-release-assets.yml
+更新现有发行版资产：
+```yaml
+# 功能：
+- 手动触发更新指定发行版的资产文件
+- 支持上传插件打包文件
+```
+
+### build-plugin-optimized.yml
+自动化构建和测试：
+```yaml
+# 触发条件：推送到 main 分支或 Pull Request
+# 功能：
+- 多版本编译测试
+- 构建结果汇总到 GitHub Summary
+```
+
+## 文档体系
+
+项目包含完整的文档系统（`Docs/` 目录）：
+
+### 版本变更
+- `CHANGELOG.md`: 完整版本历史（v1.9.0-v1.9.2）
+- `UNRELEASED.md`: 未发布更新
+- `BLUEPRINT_NODES.md`: 蓝图节点速查表
+
+### 开发文档
+- `UE K2Node 开发指南.md`: 自定义蓝图节点开发
+- `FieldSystemExtensions_测试指南.md`: Field System 扩展测试
+- `PointSampling模块设计方案.md`: 几何采样模块设计
+- `UE5.7-兼容性修复指南.md`: UE 5.7 兼容性指南
+- `XTools 设计模式最佳实践.md`: 设计模式和最佳实践
+
+### 专题文档
+- `ObjectPool_模块设计文档.md`: 对象池系统设计
+- `Actor状态重置实现总结.md`: Actor 状态重置机制
+- `UE_多版本插件打包_问题与解决方案.md`: 多版本打包方案
+- `UE_跨版本条件编译_问题与解决方案.md`: 跨版本兼容性方案
+
+### UE C++ 最佳实践
+- `UE_CPP_插件架构设计.md`: 插件架构设计原则
+- `UE_CPP_核心最佳实践.md`: 核心开发实践
+- `UE_CPP_高级优化技巧.md`: 高级优化技巧

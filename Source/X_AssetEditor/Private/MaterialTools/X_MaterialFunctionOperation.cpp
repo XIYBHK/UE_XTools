@@ -6,6 +6,7 @@
 #include "Materials/MaterialFunction.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionComment.h"
+#include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/MeshComponent.h"
@@ -237,6 +238,23 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         return nullptr;
     }
 
+    // 如果材质编辑器已打开，先关闭以避免冲突
+    bool bWasEditorOpen = false;
+    if (GEditor)
+    {
+        UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+        if (AssetEditorSubsystem)
+        {
+            TArray<IAssetEditorInstance*> OpenEditors = AssetEditorSubsystem->FindEditorsForAsset(Material);
+            if (OpenEditors.Num() > 0)
+            {
+                bWasEditorOpen = true;
+                AssetEditorSubsystem->CloseAllEditorsForAsset(Material);
+                UE_LOG(LogX_AssetEditor, Log, TEXT("材质编辑器已打开，先关闭以避免冲突"));
+            }
+        }
+    }
+    
     // 创建撤销事务，包装整个材质函数添加操作
     FScopedTransaction Transaction(NSLOCTEXT("XTools", "AddMaterialFunction", "添加材质函数"));
     
@@ -405,6 +423,44 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
                 UMaterialExpression* MetallicExpr = EditorOnlyData->Metallic.Expression;
                 UMaterialExpression* RoughnessExpr = EditorOnlyData->Roughness.Expression;
                 
+                // 检查是否启用了MaterialAttributes模式，并查找MakeMaterialAttributes节点
+                UMaterialExpression* MakeMaterialAttributesNode = nullptr;
+                if (EditorOnlyData->MaterialAttributes.IsConnected())
+                {
+                    // 回溯查找MakeMaterialAttributes节点
+                    UMaterialExpression* CurrentExpr = EditorOnlyData->MaterialAttributes.Expression;
+                    while (CurrentExpr)
+                    {
+                        if (UMaterialExpressionMakeMaterialAttributes* MakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(CurrentExpr))
+                        {
+                            MakeMaterialAttributesNode = MakeMANode;
+                            UE_LOG(LogX_AssetEditor, Log, TEXT("找到MakeMaterialAttributes节点用于位置计算"));
+                            break;
+                        }
+                        // 如果是MaterialFunctionCall，继续向前查找其输入
+                        if (UMaterialExpressionMaterialFunctionCall* FuncCall = Cast<UMaterialExpressionMaterialFunctionCall>(CurrentExpr))
+                        {
+                            // 查找第一个连接的输入
+                            bool bFoundInput = false;
+                            for (const FFunctionExpressionInput& Input : FuncCall->FunctionInputs)
+                            {
+                                if (Input.Input.IsConnected() && Input.Input.Expression)
+                                {
+                                    CurrentExpr = Input.Input.Expression;
+                                    bFoundInput = true;
+                                    break;
+                                }
+                            }
+                            if (!bFoundInput)
+                                break;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                }
+                
                 // 获取材质中所有表达式中心点
                 int32 CenterX = 0;
                 int32 CenterY = 0;
@@ -430,11 +486,18 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
                 
                 // 根据函数类型和材质内容进行智能位置计算
                 FString FunctionName = Function->GetName();
-                
+                    
                 if (FunctionName.Contains(TEXT("Fresnel")))
                 {
+                    // 优先：如果找到了MakeMaterialAttributes节点，放在其左侧
+                    if (MakeMaterialAttributesNode)
+                    {
+                        PosX = MakeMaterialAttributesNode->MaterialExpressionEditorX - 250;
+                        PosY = MakeMaterialAttributesNode->MaterialExpressionEditorY;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在MakeMaterialAttributes节点左侧: (%d, %d)"), PosX, PosY);
+                    }
                     // 对于菲涅尔函数，优先考虑放在与EmissiveColor相关的表达式附近
-                    if (EmissiveExpr)
+                    else if (EmissiveExpr)
                     {
                         // 放在EmissiveColor表达式右侧
                         PosX = EmissiveExpr->MaterialExpressionEditorX + 250;
@@ -544,6 +607,73 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
             }
         }
         
+        // 重叠检测和避让
+        const int32 NodeWidth = 200;
+        const int32 NodeHeight = 120;
+        const int32 OffsetStep = 50;
+        const int32 MaxAttempts = 20;
+        
+        bool bFoundValidPosition = false;
+        int32 AttemptCount = 0;
+        int32 CurrentPosX = PosX;
+        int32 CurrentPosY = PosY;
+        
+        while (!bFoundValidPosition && AttemptCount < MaxAttempts)
+        {
+            bool bOverlaps = false;
+            
+            TArrayView<const TObjectPtr<UMaterialExpression>> CheckExpressions = Material->GetExpressions();
+            for (const TObjectPtr<UMaterialExpression>& ExprPtr : CheckExpressions)
+            {
+                UMaterialExpression* Expr = ExprPtr.Get();
+                if (!Expr) continue;
+                
+                int32 ExprX = Expr->MaterialExpressionEditorX;
+                int32 ExprY = Expr->MaterialExpressionEditorY;
+                
+                bool bXOverlap = (CurrentPosX < ExprX + NodeWidth) && (CurrentPosX + NodeWidth > ExprX);
+                bool bYOverlap = (CurrentPosY < ExprY + NodeHeight) && (CurrentPosY + NodeHeight > ExprY);
+                
+                if (bXOverlap && bYOverlap)
+                {
+                    bOverlaps = true;
+                    break;
+                }
+            }
+            
+            if (!bOverlaps)
+            {
+                bFoundValidPosition = true;
+                PosX = CurrentPosX;
+                PosY = CurrentPosY;
+                UE_LOG(LogX_AssetEditor, Log, TEXT("找到无重叠位置: (%d, %d)"), PosX, PosY);
+            }
+            else
+            {
+                // 优先向上偏移
+                CurrentPosY -= OffsetStep;
+                AttemptCount++;
+                
+                // 如果向上偏移5次还有重叠，尝试向下偏移
+                if (AttemptCount == 5)
+                {
+                    CurrentPosY = PosY + OffsetStep * 5;
+                }
+                // 如果向下也偏移5次还有重叠，向左偏移并重置Y
+                else if (AttemptCount % 10 == 0)
+                {
+                    CurrentPosX -= NodeWidth + 50;
+                    CurrentPosY = PosY;
+                }
+            }
+        }
+        
+        if (!bFoundValidPosition)
+        {
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("未找到完全无重叠的位置，使用最后尝试的位置: (%d, %d)"), CurrentPosX, CurrentPosY);
+            PosX = CurrentPosX;
+            PosY = CurrentPosY;
+        }
         FunctionCall->MaterialExpressionEditorX = PosX;
         FunctionCall->MaterialExpressionEditorY = PosY;
         

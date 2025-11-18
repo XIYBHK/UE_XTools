@@ -1333,10 +1333,12 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(UMa
     };
     TArray<FAvailableConnection> AvailableConnections;
     
-    //  首先尝试从MakeMaterialAttributes节点获取连接
+    //  首先尝试从MaterialAttributes连接的节点获取连接
     if (EditorOnlyData->MaterialAttributes.IsConnected())
     {
         UMaterialExpression* MAExpression = EditorOnlyData->MaterialAttributes.Expression;
+        
+        // 情况1：MaterialAttributes连接到MakeMaterialAttributes节点
         if (UMaterialExpressionMakeMaterialAttributes* MakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(MAExpression))
         {
             UE_LOG(LogX_AssetEditor, Log, TEXT("从MakeMaterialAttributes节点收集可用连接"));
@@ -1356,6 +1358,41 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(UMa
                 AvailableConnections.Add({MakeMANode->Specular.Expression, MakeMANode->Specular.OutputIndex, MP_Specular, TEXT("specular")});
             if (MakeMANode->AmbientOcclusion.IsConnected())
                 AvailableConnections.Add({MakeMANode->AmbientOcclusion.Expression, MakeMANode->AmbientOcclusion.OutputIndex, MP_AmbientOcclusion, TEXT("ambient")});
+        }
+        // 情况2：MaterialAttributes连接到MaterialFunctionCall（如MF_VT_Mat）
+        else if (UMaterialExpressionMaterialFunctionCall* FunctionNode = Cast<UMaterialExpressionMaterialFunctionCall>(MAExpression))
+        {
+            UE_LOG(LogX_AssetEditor, Log, TEXT("检测到MaterialFunctionCall节点，回溯查找MakeMaterialAttributes节点"));
+            
+            // 回溯查找第一个同时拥有BaseColor和EmissiveColor输入的节点
+            UMaterialExpression* TargetNode = FindFirstNodeWithBaseAndEmissiveInputs(MAExpression);
+            if (TargetNode)
+            {
+                if (UMaterialExpressionMakeMaterialAttributes* FoundMakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(TargetNode))
+                {
+                    UE_LOG(LogX_AssetEditor, Log, TEXT("回溯找到MakeMaterialAttributes节点，从该节点收集连接"));
+                    
+                    // 从MakeMaterialAttributes节点的输入引脚收集连接
+                    if (FoundMakeMANode->BaseColor.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->BaseColor.Expression, FoundMakeMANode->BaseColor.OutputIndex, MP_BaseColor, TEXT("basecolor")});
+                    if (FoundMakeMANode->EmissiveColor.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->EmissiveColor.Expression, FoundMakeMANode->EmissiveColor.OutputIndex, MP_EmissiveColor, TEXT("emissive")});
+                    if (FoundMakeMANode->Metallic.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->Metallic.Expression, FoundMakeMANode->Metallic.OutputIndex, MP_Metallic, TEXT("metallic")});
+                    if (FoundMakeMANode->Roughness.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->Roughness.Expression, FoundMakeMANode->Roughness.OutputIndex, MP_Roughness, TEXT("roughness")});
+                    if (FoundMakeMANode->Normal.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->Normal.Expression, FoundMakeMANode->Normal.OutputIndex, MP_Normal, TEXT("normal")});
+                    if (FoundMakeMANode->Specular.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->Specular.Expression, FoundMakeMANode->Specular.OutputIndex, MP_Specular, TEXT("specular")});
+                    if (FoundMakeMANode->AmbientOcclusion.IsConnected())
+                        AvailableConnections.Add({FoundMakeMANode->AmbientOcclusion.Expression, FoundMakeMANode->AmbientOcclusion.OutputIndex, MP_AmbientOcclusion, TEXT("ambient")});
+                }
+            }
+            else
+            {
+                UE_LOG(LogX_AssetEditor, Warning, TEXT("回溯未找到MakeMaterialAttributes节点"));
+            }
         }
     }
     
@@ -1391,28 +1428,86 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(UMa
     //  尝试将可用连接匹配到函数的输入引脚
     bool bAnyInputConnected = false;
     
-    for (const FFunctionExpressionInput& FunctionInput : FunctionInputs)
+    //  通用方案：检查函数是否同时有输入和输出引脚
+    const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
+    bool bHasInputsAndOutputs = (FunctionInputs.Num() >= 2 && FunctionOutputs.Num() > 0);
+    
+    if (bHasInputsAndOutputs)
     {
-        const FExpressionInput& Input = FunctionInput.Input;
-        const FString InputName = Input.InputName.ToString().ToLower();
+        //  对于有输入和输出的函数（如菲涅尔），使用插入模式：
+        //  将函数插入到BaseColor和EmissiveColor的连接中作为中间节点
+        UE_LOG(LogX_AssetEditor, Log, TEXT("检测到有输入输出的函数，使用插入模式连接逻辑"));
         
-        UE_LOG(LogX_AssetEditor, Log, TEXT("处理函数输入引脚: %s"), *Input.InputName.ToString());
+        //  查找BaseColor和EmissiveColor的源连接
+        const FAvailableConnection* BaseColorConn = nullptr;
+        const FAvailableConnection* EmissiveConn = nullptr;
         
-        // 尝试根据名称匹配
         for (const FAvailableConnection& Connection : AvailableConnections)
         {
-            if (InputName.Contains(Connection.PropertyName))
+            if (Connection.Property == MP_BaseColor)
             {
-                // 连接这个属性到函数输入
-                FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
-                if (InputPtr && Connection.Expression)
+                BaseColorConn = &Connection;
+            }
+            else if (Connection.Property == MP_EmissiveColor)
+            {
+                EmissiveConn = &Connection;
+            }
+        }
+        
+        //  连接第一个输入到BaseColor源（插入到BaseColor连接中）
+        if (BaseColorConn && FunctionInputs.Num() > 0)
+        {
+            const FExpressionInput& Input = FunctionInputs[0].Input;
+            FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
+            if (InputPtr && BaseColorConn->Expression)
+            {
+                InputPtr->Connect(BaseColorConn->OutputIndex, BaseColorConn->Expression);
+                UE_LOG(LogX_AssetEditor, Log, TEXT("插入模式：连接第一个输入 '%s' 到 BaseColor源节点"),
+                    *Input.InputName.ToString());
+                bAnyInputConnected = true;
+            }
+        }
+        
+        //  连接第二个输入到EmissiveColor源（插入到EmissiveColor连接中）
+        if (EmissiveConn && FunctionInputs.Num() > 1)
+        {
+            const FExpressionInput& Input = FunctionInputs[1].Input;
+            FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
+            if (InputPtr && EmissiveConn->Expression)
+            {
+                InputPtr->Connect(EmissiveConn->OutputIndex, EmissiveConn->Expression);
+                UE_LOG(LogX_AssetEditor, Log, TEXT("插入模式：连接第二个输入 '%s' 到 EmissiveColor源节点"),
+                    *Input.InputName.ToString());
+                bAnyInputConnected = true;
+            }
+        }
+    }
+    else
+    {
+        //  普通函数（只有输入或只有输出）：使用名称匹配逻辑
+        for (const FFunctionExpressionInput& FunctionInput : FunctionInputs)
+        {
+            const FExpressionInput& Input = FunctionInput.Input;
+            const FString InputName = Input.InputName.ToString().ToLower();
+            
+            UE_LOG(LogX_AssetEditor, Log, TEXT("处理函数输入引脚: %s"), *Input.InputName.ToString());
+            
+            // 尝试根据名称匹配
+            for (const FAvailableConnection& Connection : AvailableConnections)
+            {
+                if (InputName.Contains(Connection.PropertyName))
                 {
-                    InputPtr->Connect(Connection.OutputIndex, Connection.Expression);
-                    UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes模式：自动连接 %s 到函数输入 %s"),
-                        *Connection.PropertyName, *Input.InputName.ToString());
-                    bAnyInputConnected = true;
+                    // 连接这个属性到函数输入
+                    FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
+                    if (InputPtr && Connection.Expression)
+                    {
+                        InputPtr->Connect(Connection.OutputIndex, Connection.Expression);
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes模式：自动连接 %s 到函数输入 %s"),
+                            *Connection.PropertyName, *Input.InputName.ToString());
+                        bAnyInputConnected = true;
+                    }
+                    break; // 找到匹配就停止
                 }
-                break; // 找到匹配就停止
             }
         }
     }

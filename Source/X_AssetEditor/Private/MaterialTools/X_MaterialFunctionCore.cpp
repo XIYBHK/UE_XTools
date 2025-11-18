@@ -203,21 +203,10 @@ bool FX_MaterialFunctionCore::RefreshOpenMaterialEditor(UMaterial* Material)
     Material->PostEditChange();
     Material->MarkPackageDirty();
     
-    // 判断材质编辑器是否已打开
-    TArray<IAssetEditorInstance*> OpenEditors = AssetEditorSubsystem->FindEditorsForAsset(Material);
-    if (OpenEditors.Num() > 0)
-    {
-        UE_LOG(LogX_AssetEditor, Log, TEXT("找到材质 %s 的编辑器实例，重新打开以刷新视图"), *Material->GetName());
-        
-        // 通过关闭然后重新打开编辑器来强制刷新视图
-        AssetEditorSubsystem->CloseAllEditorsForAsset(Material);
-        AssetEditorSubsystem->OpenEditorForAsset(Material);
-        
-        UE_LOG(LogX_AssetEditor, Log, TEXT("已重新打开材质编辑器以刷新视图"));
-        return true;
-    }
-    
-    UE_LOG(LogX_AssetEditor, Log, TEXT("材质编辑器未打开，已重新编译材质 %s"), *Material->GetName());
+    // 判断材质编辑器是否已打开（这里应该已经被关闭了）
+    // 重新打开编辑器以显示最新状态
+    AssetEditorSubsystem->OpenEditorForAsset(Material);
+    UE_LOG(LogX_AssetEditor, Log, TEXT("已重新打开材质编辑器"));
     return true;
 }
 
