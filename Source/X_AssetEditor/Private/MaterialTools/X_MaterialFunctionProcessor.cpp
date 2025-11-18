@@ -44,6 +44,53 @@ void FX_MaterialFunctionProcessor::ProcessAssetMaterialFunction(
     
     UE_LOG(LogX_AssetEditor, Log, TEXT("从%d个资产中收集到%d个材质"), SelectedAssets.Num(), Materials.Num());
     
+    // 统一处理
+    ProcessMaterialsInternal(Materials, MaterialFunction, TargetNode, Params);
+}
+
+void FX_MaterialFunctionProcessor::ProcessActorMaterialFunction(
+    const TArray<AActor*>& SelectedActors,
+    UMaterialFunctionInterface* MaterialFunction,
+    const FName& TargetNode,
+    const TSharedPtr<FX_MaterialFunctionParams>& Params)
+{
+    // 参数验证
+    if (SelectedActors.Num() == 0)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("ProcessActorMaterialFunction: 未选择任何Actor"));
+        return;
+    }
+    
+    if (!MaterialFunction)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("ProcessActorMaterialFunction: 材质函数为空"));
+        return;
+    }
+
+    UE_LOG(LogX_AssetEditor, Log, TEXT("开始处理%d个Actor的材质函数应用: %s"), 
+        SelectedActors.Num(), *MaterialFunction->GetName());
+
+    // 收集所有材质，使用并行处理提高性能
+    TArray<UMaterial*> Materials = FX_MaterialFunctionCollector::CollectMaterialsFromActorParallel(SelectedActors);
+    
+    if (Materials.Num() == 0)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("ProcessActorMaterialFunction: 从选中Actor中未找到任何有效材质"));
+        return;
+    }
+    
+    UE_LOG(LogX_AssetEditor, Log, TEXT("从%d个Actor中收集到%d个材质"), SelectedActors.Num(), Materials.Num());
+    
+    // 统一处理
+    ProcessMaterialsInternal(Materials, MaterialFunction, TargetNode, Params);
+}
+
+void FX_MaterialFunctionProcessor::ProcessMaterialsInternal(
+    const TArray<UMaterial*>& Materials,
+    UMaterialFunctionInterface* MaterialFunction,
+    const FName& TargetNode,
+    const TSharedPtr<FX_MaterialFunctionParams>& Params)
+{
     // 处理所有材质
     int32 SuccessCount = 0;
     int32 FailedCount = 0;
@@ -92,89 +139,6 @@ void FX_MaterialFunctionProcessor::ProcessAssetMaterialFunction(
     }
     
     UE_LOG(LogX_AssetEditor, Log, TEXT("材质函数处理完成: 成功=%d, 失败=%d"), SuccessCount, FailedCount);
-}
-
-void FX_MaterialFunctionProcessor::ProcessActorMaterialFunction(
-    const TArray<AActor*>& SelectedActors,
-    UMaterialFunctionInterface* MaterialFunction,
-    const FName& TargetNode,
-    const TSharedPtr<FX_MaterialFunctionParams>& Params)
-{
-    // 参数验证
-    if (SelectedActors.Num() == 0)
-    {
-        UE_LOG(LogX_AssetEditor, Warning, TEXT("ProcessActorMaterialFunction: 未选择任何Actor"));
-        return;
-    }
-    
-    if (!MaterialFunction)
-    {
-        UE_LOG(LogX_AssetEditor, Warning, TEXT("ProcessActorMaterialFunction: 材质函数为空"));
-        return;
-    }
-
-    UE_LOG(LogX_AssetEditor, Log, TEXT("开始处理%d个Actor的材质函数应用: %s"), 
-        SelectedActors.Num(), *MaterialFunction->GetName());
-
-    // 收集所有材质，使用并行处理提高性能
-    TArray<UMaterial*> Materials = FX_MaterialFunctionCollector::CollectMaterialsFromActorParallel(SelectedActors);
-    
-    if (Materials.Num() == 0)
-    {
-        UE_LOG(LogX_AssetEditor, Warning, TEXT("ProcessActorMaterialFunction: 从选中Actor中未找到任何有效材质"));
-        return;
-    }
-    
-    UE_LOG(LogX_AssetEditor, Log, TEXT("从%d个Actor中收集到%d个材质"), SelectedActors.Num(), Materials.Num());
-    
-    // 处理所有材质
-    int32 SuccessCount = 0;
-    int32 FailedCount = 0;
-    
-    for (UMaterial* Material : Materials)
-    {
-        if (Material)
-        {
-            // 委托给Operation类处理
-            UMaterialExpressionMaterialFunctionCall* Result = nullptr;
-            
-            if (Params.IsValid())
-            {
-                // 使用用户提供的参数
-                Result = FX_MaterialFunctionOperation::AddFunctionToMaterial(
-                    Material, 
-                    MaterialFunction, 
-                    TargetNode, 
-                    Params->PosX, 
-                    Params->PosY, 
-                    Params->bSetupConnections,
-                    Params->bEnableSmartConnect,
-                    Params->ConnectionMode,
-                    Params);
-            }
-            else
-            {
-                // 使用默认参数
-                Result = FX_MaterialFunctionOperation::AddMaterialFunctionToMaterial(
-                    Material, MaterialFunction, TargetNode);
-            }
-            
-            if (Result)
-            {
-                SuccessCount++;
-            }
-            else
-            {
-                FailedCount++;
-            }
-        }
-        else
-        {
-            FailedCount++;
-        }
-    }
-    
-    UE_LOG(LogX_AssetEditor, Log, TEXT("Actor材质函数处理完成: 成功=%d, 失败=%d"), SuccessCount, FailedCount);
 }
 
 FMaterialProcessResult FX_MaterialFunctionProcessor::AddFunctionToMultipleMaterials(
@@ -332,4 +296,4 @@ FMaterialProcessResult FX_MaterialFunctionProcessor::AddFresnelToAssets(
     UE_LOG(LogX_AssetEditor, Log, TEXT("添加菲涅尔函数，使用自动位置计算，连接到自发光通道"));
     return AddFunctionToMultipleMaterials(SourceObjects, FresnelFunction, FName(FresnelParams.NodeName), 
         0, 0, FresnelParams.bSetupConnections, MakeShared<FX_MaterialFunctionParams>(FresnelParams));
-} 
+}

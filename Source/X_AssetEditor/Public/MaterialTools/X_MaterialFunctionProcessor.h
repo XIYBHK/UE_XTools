@@ -3,7 +3,6 @@
 * Licensed under UE_XTools License
 */
 
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -12,7 +11,7 @@
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "AssetRegistry/AssetData.h"
 #include "MaterialTools/X_MaterialFunctionParams.h"
-#include "MaterialTools/X_MaterialFunctionOperation.h" // 添加此行以包含FMaterialProcessResult结构
+#include "MaterialTools/X_MaterialFunctionOperation.h"
 
 /**
  * 材质函数处理器类
@@ -74,4 +73,18 @@ public:
         UMaterialFunctionInterface* MaterialFunction,
         const FName& TargetNode,
         const TSharedPtr<FX_MaterialFunctionParams>& Params = nullptr);
-}; 
+
+private:
+    /**
+     * 内部材质处理逻辑（去重用）
+     * @param Materials - 要处理的材质列表
+     * @param MaterialFunction - 材质函数
+     * @param TargetNode - 目标节点名称
+     * @param Params - 参数
+     */
+    static void ProcessMaterialsInternal(
+        const TArray<UMaterial*>& Materials,
+        UMaterialFunctionInterface* MaterialFunction,
+        const FName& TargetNode,
+        const TSharedPtr<FX_MaterialFunctionParams>& Params);
+};
