@@ -7,6 +7,10 @@
 #include "UObject/UnrealType.h"
 #include "Misc/ConfigCacheIni.h"
 
+// Initialize static maps
+TMap<FString, ETraceTypeQuery> UTraceExtensionsLibrary::CachedTraceChannels;
+TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
+
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #pragma region QueryNames
@@ -29,7 +33,6 @@
                 // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
                 if (DisplayNameCleaned != EnumNameCleaned)
                 {
-                    FName Key = FName(*DisplayName);
                     Keys.Add(FName(*DisplayName)); // 使用原版参数
                 }
             }
@@ -55,7 +58,6 @@
                 // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
                 if (DisplayNameCleaned != EnumNameCleaned)
                 {
-                    FName Key = FName(*DisplayName);
                     Keys.Add(FName(*DisplayName)); // 使用原版参数
                 }
             }
@@ -81,7 +83,6 @@
                 // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
                 if (DisplayNameCleaned != EnumNameCleaned)
                 {
-                    FName Key = FName(*DisplayName);
                     TraceTypeQueryMap.Add(FName(*DisplayName), EnumName); // 使用原版参数
                 }
             }
@@ -115,7 +116,6 @@
                 // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
                 if (DisplayNameCleaned != EnumNameCleaned)
                 {
-                    FName Key = FName(*DisplayName);
                     ObjectTypeQueryMap.Add(FName(*DisplayName), EnumName); // 使用原版参数
                 }
             }
@@ -163,12 +163,18 @@
         Params.bReturnPhysicalMaterial = true;
         Params.AddIgnoredActors(ActorsToIgnore);
 
-        // 直接将TraceChannelType转换为枚举值
-        int64 EnumValue = StaticEnum<ETraceTypeQuery>()->GetValueByName(FName(*TraceChannelType));
-        ETraceTypeQuery TraceChannelEnum = static_cast<ETraceTypeQuery>(EnumValue);
-
-        // 获取枚举的显示名称
-        FString EnumDisplayName = StaticEnum<ETraceTypeQuery>()->GetDisplayNameTextByValue(EnumValue).ToString();
+        // Use Cache for TraceChannelType -> Enum
+        ETraceTypeQuery TraceChannelEnum;
+        if (const ETraceTypeQuery* CachedEnum = CachedTraceChannels.Find(TraceChannelType))
+        {
+            TraceChannelEnum = *CachedEnum;
+        }
+        else
+        {
+            int64 EnumValue = StaticEnum<ETraceTypeQuery>()->GetValueByName(FName(*TraceChannelType));
+            TraceChannelEnum = static_cast<ETraceTypeQuery>(EnumValue);
+            CachedTraceChannels.Add(TraceChannelType, TraceChannelEnum);
+        }
 
         // 执行射线检测
         bool bHit = World->LineTraceSingleByChannel(OutHit, Start, End, UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum), Params);
@@ -177,15 +183,9 @@
         Block = bHit;
         ImpactPoint = bHit ? OutHit.ImpactPoint : FVector::ZeroVector;
 
-        // 绘制调试线并打印输入的TraceChannelType和枚举的显示名称
+        // 绘制调试线
         if (DrawDebugType != EDebugTraceType::None)
         {
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("Input TraceChannelType: %s"), *TraceChannelType));
-                GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("EnumDisplayName: %s"), *EnumDisplayName));
-            }
-
             if (bHit)
             {
                 DrawDebugLine(World, Start, OutHit.ImpactPoint, TraceColor.ToFColor(true), false, DrawTime, 0, 0.0f);
@@ -301,20 +301,19 @@
         FCollisionObjectQueryParams ObjectParams;
         for (const FString& TraceChannel : TraceObjectType)
         {
-            int64 EnumValue = StaticEnum<EObjectTypeQuery>()->GetValueByName(FName(*TraceChannel));
-            EObjectTypeQuery ObjectTypeEnum = static_cast<EObjectTypeQuery>(EnumValue);
+            EObjectTypeQuery ObjectTypeEnum;
+            if (const EObjectTypeQuery* CachedEnum = CachedObjectTypes.Find(TraceChannel))
+            {
+                ObjectTypeEnum = *CachedEnum;
+            }
+            else
+            {
+                int64 EnumValue = StaticEnum<EObjectTypeQuery>()->GetValueByName(FName(*TraceChannel));
+                ObjectTypeEnum = static_cast<EObjectTypeQuery>(EnumValue);
+                CachedObjectTypes.Add(TraceChannel, ObjectTypeEnum);
+            }
 
             ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum));
-
-            // 获取枚举的显示名称
-            FString EnumDisplayName = StaticEnum<EObjectTypeQuery>()->GetDisplayNameTextByValue(EnumValue).ToString();
-
-            // 打印输入的TraceObjectType和枚举的显示名称
-            if (DrawDebugType != EDebugTraceType::None && GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("Input TraceObjectType: %s"), *TraceChannel));
-                GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("EnumDisplayName: %s"), *EnumDisplayName));
-            }
         }
 
         // 执行射线检测
@@ -373,12 +372,18 @@ void UTraceExtensionsLibrary::TraceSphereChannel(
     Params.bReturnPhysicalMaterial = true;
     Params.AddIgnoredActors(ActorsToIgnore);
 
-    // 直接将TraceChannelType转换为枚举值
-    int64 EnumValue = StaticEnum<ETraceTypeQuery>()->GetValueByName(FName(*TraceChannelType));
-    ETraceTypeQuery TraceChannelEnum = static_cast<ETraceTypeQuery>(EnumValue);
-
-    // 获取枚举的显示名称
-    FString EnumDisplayName = StaticEnum<ETraceTypeQuery>()->GetDisplayNameTextByValue(EnumValue).ToString();
+    // Use Cache for TraceChannelType -> Enum
+    ETraceTypeQuery TraceChannelEnum;
+    if (const ETraceTypeQuery* CachedEnum = CachedTraceChannels.Find(TraceChannelType))
+    {
+        TraceChannelEnum = *CachedEnum;
+    }
+    else
+    {
+        int64 EnumValue = StaticEnum<ETraceTypeQuery>()->GetValueByName(FName(*TraceChannelType));
+        TraceChannelEnum = static_cast<ETraceTypeQuery>(EnumValue);
+        CachedTraceChannels.Add(TraceChannelType, TraceChannelEnum);
+    }
 
     // 执行球体检测
     bool bHit = World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum), FCollisionShape::MakeSphere(Radius), Params);
@@ -387,15 +392,9 @@ void UTraceExtensionsLibrary::TraceSphereChannel(
     Block = bHit;
     ImpactPoint = bHit ? OutHit.ImpactPoint : FVector::ZeroVector;
 
-    // 绘制调试线并打印输入的TraceChannelType和枚举的显示名称
+    // 绘制调试线
     if (DrawDebugType != EDebugTraceType::None)
     {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("Input TraceChannelType: %s"), *TraceChannelType));
-            GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("EnumDisplayName: %s"), *EnumDisplayName));
-        }
-
         if (bHit)
         {
             DrawDebugSphere(World, Start, Radius, 12, TraceColor.ToFColor(true), DrawDebugType == EDebugTraceType::Persistent, DrawTime);
@@ -443,20 +442,19 @@ void UTraceExtensionsLibrary::TraceSphereObject(
     FCollisionObjectQueryParams ObjectParams;
     for (const FString& TraceChannel : TraceObjectType)
     {
-        int64 EnumValue = StaticEnum<EObjectTypeQuery>()->GetValueByName(FName(*TraceChannel));
-        EObjectTypeQuery ObjectTypeEnum = static_cast<EObjectTypeQuery>(EnumValue);
+        EObjectTypeQuery ObjectTypeEnum;
+        if (const EObjectTypeQuery* CachedEnum = CachedObjectTypes.Find(TraceChannel))
+        {
+            ObjectTypeEnum = *CachedEnum;
+        }
+        else
+        {
+            int64 EnumValue = StaticEnum<EObjectTypeQuery>()->GetValueByName(FName(*TraceChannel));
+            ObjectTypeEnum = static_cast<EObjectTypeQuery>(EnumValue);
+            CachedObjectTypes.Add(TraceChannel, ObjectTypeEnum);
+        }
 
         ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum));
-
-        // 获取枚举的显示名称
-        FString EnumDisplayName = StaticEnum<EObjectTypeQuery>()->GetDisplayNameTextByValue(EnumValue).ToString();
-
-        // 打印输入的TraceObjectType和枚举的显示名称
-        if (DrawDebugType != EDebugTraceType::None && GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red, FString::Printf(TEXT("Input TraceObjectType: %s"), *TraceChannel));
-            GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green, FString::Printf(TEXT("EnumDisplayName: %s"), *EnumDisplayName));
-        }
     }
 
     // 执行球体检测
@@ -487,5 +485,3 @@ void UTraceExtensionsLibrary::TraceSphereObject(
 }
 
 #pragma endregion
-
-//————————————————————————————————————————————————————————————————————————————————————————————————————

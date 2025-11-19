@@ -166,5 +166,10 @@ public:
 
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 	
+//————————————————————————————————————————————————————————————————————————————————————————————————————
+	
+private:
+	static TMap<FString, ETraceTypeQuery> CachedTraceChannels;
+	static TMap<FString, EObjectTypeQuery> CachedObjectTypes;
 };
 

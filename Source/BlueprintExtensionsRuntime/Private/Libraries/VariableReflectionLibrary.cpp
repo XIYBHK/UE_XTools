@@ -1,12 +1,13 @@
 ﻿#include "Libraries/VariableReflectionLibrary.h"
 
-TArray<FString> UVariableReflectionLibrary::GetVariableNames(UClass* Class)
+TArray<FString> UVariableReflectionLibrary::GetVariableNames(UClass* Class, bool bIncludeSuper)
 {
 	TArray<FString> VariableName;
 	if (Class)
 	{
 		ensureAlwaysMsgf(Class, TEXT("Class is Null on UVariableReflectionLibrary::GetVariableNames"));
-		for (TFieldIterator<FProperty> PropertyIt(Class, EFieldIteratorFlags::ExcludeSuper); PropertyIt; ++PropertyIt)
+		EFieldIteratorFlags::SuperClassFlags IteratorFlags = bIncludeSuper ? EFieldIteratorFlags::IncludeSuper : EFieldIteratorFlags::ExcludeSuper;
+		for (TFieldIterator<FProperty> PropertyIt(Class, IteratorFlags); PropertyIt; ++PropertyIt)
 		{
 			FProperty* Property = *PropertyIt;
 

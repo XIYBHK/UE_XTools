@@ -13,7 +13,7 @@ class BLUEPRINTEXTENSIONSRUNTIME_API UVariableReflectionLibrary : public UBluepr
 	GENERATED_BODY()
 
 	UFUNCTION(BlueprintPure, Category = "XTools|Blueprint Extensions|Variable", meta = (DisplayName = "获取变量名列表", CompactNodeTitle = "GetVariableNames"))
-	static TArray<FString> GetVariableNames(UClass* Class);
+	static TArray<FString> GetVariableNames(UClass* Class, bool bIncludeSuper = true);
 
 	UFUNCTION(BlueprintCallable, Category = "XTools|Blueprint Extensions|Variable", meta = (DisplayName = "按字符串设置值", CompactNodeTitle = "SetValueByString", BlueprintAuthorityOnly))
 	static void SetValueByString(UObject* OwnerObject, FString VariableName, FString Value);

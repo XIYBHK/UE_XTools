@@ -86,15 +86,21 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 	);
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnFilesLoaded 委托"));
 
-	// 检查 AssetRegistry 是否已经加载完成
-	bIsAssetRegistryReady = !AssetRegistry.IsLoadingAssets();
-	if (bIsAssetRegistryReady)
+	// ========== 【关键修复】无论 AssetRegistry 是否已加载，都延迟激活 ==========
+	// 即使 AssetRegistry 已完成初始加载，引擎仍可能在启动阶段触发资产事件
+	// 统一使用 OnFilesLoaded + 延迟激活机制，避免误处理启动时的资产操作
+	// 始终保持 bIsAssetRegistryReady = false，直到 OnFilesLoaded 触发并完成延迟
+	bIsAssetRegistryReady = false;
+
+	if (!AssetRegistry.IsLoadingAssets())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 已加载完成，可以立即处理资产重命名"));
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("AssetRegistry 已加载完成，但仍将通过 OnFilesLoaded 延迟激活以确保安全"));
 	}
 	else
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 仍在加载中，启动时的资产将被跳过，加载完成后新创建的资产将被处理"));
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("AssetRegistry 仍在加载中，将在 OnFilesLoaded 触发后延迟激活"));
 	}
 
 	bIsActive = true;
@@ -154,13 +160,17 @@ void FX_AssetNamingDelegates::Shutdown()
 		OnFilesLoadedHandle.Reset();
 	}
 
+	// ========== 【关键修复】先禁用标志，阻止新的 Lambda 执行 ==========
+	// 必须在 Unbind 回调之前设置 bIsActive = false，避免竞态条件
+	// 时间窗口：Lambda 检查 bIsActive 后 → Unbind 前 → Execute 时崩溃
+	bIsActive = false;
+
 	// 清空重入标志和缓存
 	bIsProcessingAsset = false;
 	bIsAssetRegistryReady = false;
 	RecentManualRenames.Empty();
 
 	RenameCallback.Unbind();
-	bIsActive = false;
 
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("资产命名委托已关闭"));
 }
@@ -284,13 +294,15 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			}
 			
 			// 移除数字后缀（如 _1, _01, _001）
-			FRegexPattern NumericSuffixPattern(TEXT("_[0-9]+$"));
+			// ========== 【性能优化】使用静态正则表达式避免重复创建 ==========
+			static const FRegexPattern NumericSuffixPattern(TEXT("_[0-9]+$"));
+
 			FRegexMatcher CurrentMatcher(NumericSuffixPattern, CurrentBaseName);
 			if (CurrentMatcher.FindNext())
 			{
 				CurrentBaseName = CurrentBaseName.Left(CurrentMatcher.GetMatchBeginning());
 			}
-			
+
 			FRegexMatcher CachedMatcher(NumericSuffixPattern, CachedBaseName);
 			if (CachedMatcher.FindNext())
 			{
@@ -341,15 +353,25 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	// 使用 NextTick 延迟到下一帧执行，此时资产已完全稳定
 	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this, AssetData](float DeltaTime) -> bool
 	{
+		// ========== 【安全检查】防止在 Shutdown 后执行 ==========
+		// Lambda 可能在模块 Shutdown 后执行，需要检查委托是否仍然有效
+		if (!bIsActive || !RenameCallback.IsBound())
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("Lambda 执行时委托已失效，跳过重命名: %s"),
+				*AssetData.AssetName.ToString());
+			return false;
+		}
+
 		// 设置重入保护标志
 		bIsProcessingAsset = true;
-		
+
 		// 触发重命名回调
 		RenameCallback.Execute(AssetData);
-		
+
 		// 清除重入保护标志
 		bIsProcessingAsset = false;
-		
+
 		// 返回 false 表示只执行一次
 		return false;
 	}), 0.0f);
@@ -373,6 +395,22 @@ void FX_AssetNamingDelegates::OnAssetRenamed(const FAssetData& AssetData, const 
 	// 验证资产是否需要处理
 	if (!ShouldProcessAsset(AssetData))
 	{
+		return;
+	}
+
+	// ========== 【关键修复】跳过启动时的资产重命名事件 ==========
+	// OnFilesLoaded 触发后，AssetRegistry 可能仍会继续加载资产并触发 OnAssetRenamed
+	// 这些是引擎内部的资产加载操作，不是用户手动重命名，应该跳过处理
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	if (!bIsAssetRegistryReady || AssetRegistry.IsLoadingAssets())
+	{
+		// AssetRegistry 仍在加载中，说明这是启动时的资产操作
+		// 跳过处理，避免启动时批量重命名已存在资产
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
+			TEXT("AssetRegistry 加载中，跳过重命名事件: %s（原路径: %s）"),
+			*AssetData.AssetName.ToString(), *OldObjectPath);
 		return;
 	}
 
@@ -425,20 +463,26 @@ void FX_AssetNamingDelegates::OnAssetRenamed(const FAssetData& AssetData, const 
 		UE_LOG(LogX_AssetNamingDelegates, Log,
 			TEXT("Detected manual rename (not triggered by our system): '%s' -> '%s'"),
 			*OldName, *CurrentName);
-		
+
 		// 记录到手动重命名缓存中，并设置较长的保护时间
 		FString PackagePath = AssetData.PackageName.ToString();
 		double CurrentTime = FPlatformTime::Seconds();
 		RecentManualRenames.Add(PackagePath, CurrentTime);
-		
+
 		UE_LOG(LogX_AssetNamingDelegates, Log,
 			TEXT("Added to manual rename cache: %s"), *PackagePath);
-		
+
 		return;
 	}
-	
-	// 触发重命名回调
-	RenameCallback.Execute(AssetData);
+
+	// ========== 【性能优化】移除系统重命名的二次调用 ==========
+	// 如果是系统触发的重命名（bIsOurSystemRename = true），说明是从 OnAssetAdded 触发的
+	// 此时资产已经被正确重命名，不需要再次调用 RenameCallback
+	// 移除下面这行避免不必要的重复调用：
+	// RenameCallback.Execute(AssetData);  // ❌ 已移除：会导致重复处理
+
+	UE_LOG(LogX_AssetNamingDelegates, Verbose,
+		TEXT("System rename detected, skipping redundant callback: %s"), *CurrentName);
 }
 
 void FX_AssetNamingDelegates::OnAssetPostImport(UFactory* Factory, UObject* CreatedObject)
@@ -482,8 +526,24 @@ void FX_AssetNamingDelegates::OnAssetPostImport(UFactory* Factory, UObject* Crea
 		return;
 	}
 
+	// ========== 【关键修复】添加重入保护 ==========
+	// 重命名操作可能触发导入事件，需要防止递归调用
+	if (bIsProcessingAsset)
+	{
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("检测到重入调用（导入），跳过以防止递归: %s"),
+			*AssetData.AssetName.ToString());
+		return;
+	}
+
+	// 设置重入保护标志
+	bIsProcessingAsset = true;
+
 	// 执行重命名回调
 	RenameCallback.Execute(AssetData);
+
+	// 清除重入保护标志
+	bIsProcessingAsset = false;
 }
 
 bool FX_AssetNamingDelegates::ShouldProcessAsset(const FAssetData& AssetData) const
@@ -563,8 +623,55 @@ bool FX_AssetNamingDelegates::ShouldProcessAsset(const FAssetData& AssetData) co
 
 void FX_AssetNamingDelegates::OnFilesLoaded()
 {
-	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，开始处理新创建的资产"));
-	bIsAssetRegistryReady = true;
+	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，延迟 60 秒后开始处理新创建的资产"));
+
+	// ========== 【关键修复】延迟激活，避免启动时的资产操作被误处理 ==========
+	// OnFilesLoaded 只表示初始文件扫描完成，但引擎可能仍在加载资产并触发各种事件
+	// 延迟 60 秒确保所有启动时的资产加载、内部重命名操作和编辑器初始化都已完成
+	// 这是一个保守的延迟时间，避免在启动阶段的任何资产操作被误认为用户操作
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float DeltaTime) -> bool
+	{
+		// ========== 【安全检查】防止在 Shutdown 后执行 ==========
+		if (!bIsActive)
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("延迟激活 Lambda 执行时委托已失效，跳过"));
+			return false;
+		}
+
+		// 再次检查 AssetRegistry 状态，确保真的完成加载
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+		IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+		if (AssetRegistry.IsLoadingAssets())
+		{
+			// 如果 60 秒后 AssetRegistry 仍在加载，再延迟 10 秒
+			UE_LOG(LogX_AssetNamingDelegates, Warning,
+				TEXT("延迟激活超时但 AssetRegistry 仍在加载，再延迟 10 秒"));
+
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float DT) -> bool
+			{
+				// ========== 【安全检查】防止在 Shutdown 后执行 ==========
+				if (!bIsActive)
+				{
+					UE_LOG(LogX_AssetNamingDelegates, Verbose,
+						TEXT("二次延迟激活 Lambda 执行时委托已失效，跳过"));
+					return false;
+				}
+
+				bIsAssetRegistryReady = true;
+				UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("延迟激活完成（强制），现在开始处理新创建的资产"));
+				return false;
+			}), 10.0f);
+		}
+		else
+		{
+			bIsAssetRegistryReady = true;
+			UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("延迟激活完成，现在开始处理新创建的资产"));
+		}
+
+		return false; // 只执行一次
+	}), 60.0f);
 }
 
 bool FX_AssetNamingDelegates::DetectUserOperationContext() const
@@ -578,14 +685,17 @@ bool FX_AssetNamingDelegates::DetectUserOperationContext() const
 	}
 
 	// 2. 检查编辑器状态（遵循UE最佳实践）
-	bool bInValidEditorMode = true;
-	if (GEditor)
+	// ========== 【修复】添加 GEditor 空指针检查 ==========
+	if (!GEditor)
 	{
-		// 检查是否在PIE模式、烘焙或其他非编辑状态
-		bInValidEditorMode = !GEditor->IsPlayingSessionInEditor() && 
-							 !GEditor->GetPIEWorldContext() &&
-							 !GEditor->IsSimulatingInEditor();
+		return false;
 	}
+
+	bool bInValidEditorMode = true;
+	// 检查是否在PIE模式、烘焙或其他非编辑状态
+	bInValidEditorMode = !GEditor->IsPlayingSessionInEditor() &&
+						 !GEditor->GetPIEWorldContext() &&
+						 !GEditor->IsSimulatingInEditor();
 
 	if (!bInValidEditorMode)
 	{
@@ -717,13 +827,15 @@ bool FX_AssetNamingDelegates::IsSimilarToRecentlyRenamed(const FAssetData& Asset
 			}
 			
 			// 移除数字后缀（如 _1, _01, _001）
-			FRegexPattern NumericSuffixPattern(TEXT("_[0-9]+$"));
+			// ========== 【性能优化】使用静态正则表达式避免重复创建 ==========
+			static const FRegexPattern NumericSuffixPattern(TEXT("_[0-9]+$"));
+
 			FRegexMatcher CurrentMatcher(NumericSuffixPattern, CurrentBaseName);
 			if (CurrentMatcher.FindNext())
 			{
 				CurrentBaseName = CurrentBaseName.Left(CurrentMatcher.GetMatchBeginning());
 			}
-			
+
 			FRegexMatcher CachedMatcher(NumericSuffixPattern, CachedBaseName);
 			if (CachedMatcher.FindNext())
 			{

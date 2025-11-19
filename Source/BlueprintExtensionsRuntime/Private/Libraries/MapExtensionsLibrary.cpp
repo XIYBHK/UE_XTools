@@ -488,34 +488,34 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RemoveEntriesWithValue)
 	CurrValueProp->DestroyValue(ValueStorageSpace);
 }
 
-bool UMapExtensionsLibrary::GenericMap_RemoveEntriesWithValue(const void* MapAddr, const FMapProperty* MapProperty, const FProperty* ValueProperty, const void* ValuePtr)
+bool UMapExtensionsLibrary::GenericMap_RemoveEntriesWithValue(const void* MapAddr, const FMapProperty* MapProperty, const FProperty* ValueProp, const void* ValuePtr)
 {
-	if(MapAddr)
+	if (MapAddr)
 	{
+		bool bResult = false;
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
-
-		bool bFound = false;
-		TArray<int32> Indices;
-		for(int32 i = MapHelper.Num()-1; i >= 0; i--)
+		
+		TArray<int32> IndicesToRemove;
+		for (int32 Index = 0; Index < MapHelper.GetMaxIndex(); ++Index)
 		{
-			const void* MapValuePtr = MapHelper.GetValuePtr(MapHelper.FindInternalIndex(i));
-			if(!MapValuePtr) continue;
-			
-			if(ValueProperty->Identical(ValuePtr, MapValuePtr, PPF_None))
+			if (MapHelper.IsValidIndex(Index))
 			{
-				bFound = true;
-				Indices.Add(i);
+				uint8* ValueData = MapHelper.GetValuePtr(Index);
+				if (ValueProp->Identical(ValueData, ValuePtr))
+				{
+					IndicesToRemove.Add(Index);
+					bResult = true;
+				}
 			}
 		}
 
-		for(int32 i = 0; i < Indices.Num(); i++)
+		for (int32 i = IndicesToRemove.Num() - 1; i >= 0; --i)
 		{
-			MapHelper.RemoveAt(MapHelper.FindInternalIndex(Indices[i]));
+			MapHelper.RemoveAt(IndicesToRemove[i]);
 		}
 
-		return bFound;
+		return bResult;
 	}
-
 	return false;
 }
 #pragma endregion
