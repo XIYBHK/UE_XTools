@@ -41,6 +41,12 @@
 
 ---
 
+## CI/CD 工作流
+
+- **修复** update-release-assets 工作流重复删除资产导致 404 错误
+- **优化** 并发控制策略，取消旧任务只保留最新任务
+- **优化** 下载 artifacts 时去重，避免处理重复文件
+
 ## XTools_AutoSizeComments
 
 - **修复** GetNodePos 函数空指针访问导致材质编辑器崩溃

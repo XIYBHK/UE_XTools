@@ -39,7 +39,7 @@ jobs:
     # 并发控制：防止同时更新同一个 Release
     concurrency:
       group: release-assets-update
-      cancel-in-progress: false  # 不取消进行中的更新操作
+      cancel-in-progress: true  # 取消旧的更新操作，只保留最新的
 
     # 最小权限：仅需要必要的权限
     permissions:
@@ -176,10 +176,24 @@ jobs:
             }
 
             const downloadedFiles = [];
+            const processedNames = new Set();  // 用于去重
 
             // 下载每个 XTools 相关的 artifact
             for (const artifact of artifacts.data.artifacts) {
               if (artifact.name.includes('XTools-UE_')) {
+                // 确保文件名只有一个 .zip 后缀
+                let fileName = artifact.name;
+                if (!fileName.endsWith('.zip')) {
+                  fileName = `${fileName}.zip`;
+                }
+
+                // 跳过重复的文件名
+                if (processedNames.has(fileName)) {
+                  console.log(`⏭️ Skipping duplicate: ${fileName}`);
+                  continue;
+                }
+                processedNames.add(fileName);
+
                 console.log(`Downloading ${artifact.name}...`);
 
                 const download = await github.rest.actions.downloadArtifact({
@@ -189,7 +203,6 @@ jobs:
                   archive_format: 'zip'
                 });
 
-                const fileName = `${artifact.name}.zip`;
                 const filePath = path.join(dir, fileName);
                 fs.writeFileSync(filePath, Buffer.from(download.data));
                 downloadedFiles.push({ name: fileName, path: filePath });
@@ -234,12 +247,22 @@ jobs:
 
               if (existingAsset) {
                 console.log(`Deleting existing asset: ${file.name}`);
-                await github.rest.repos.deleteReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  asset_id: existingAsset.id
-                });
-                updatedCount++;
+                try {
+                  await github.rest.repos.deleteReleaseAsset({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    asset_id: existingAsset.id
+                  });
+                  updatedCount++;
+                } catch (error) {
+                  // 如果资产已被删除（404），忽略错误继续
+                  if (error.status === 404) {
+                    console.log(`⚠️ Asset already deleted (404): ${file.name}`);
+                    addedCount++;  // 视为新增
+                  } else {
+                    throw error;  // 其他错误则抛出
+                  }
+                }
               } else {
                 addedCount++;
               }
