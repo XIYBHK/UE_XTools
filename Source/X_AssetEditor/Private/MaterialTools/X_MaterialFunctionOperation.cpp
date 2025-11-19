@@ -57,6 +57,31 @@ static bool IsEngineMaterial(UMaterial* Material)
 }
 
 /**
+ * 检查表达式是否为简单的常量节点
+ * @param Expression 要检查的表达式
+ * @return 如果是简单常量节点返回true
+ */
+static bool IsSimpleConstantExpression(UMaterialExpression* Expression)
+{
+    if (!Expression)
+    {
+        return false;
+    }
+
+    // 使用类名检查，兼容所有 UE 版本
+    FString ClassName = Expression->GetClass()->GetName();
+
+    // 检查是否为常量或参数类型
+    if (ClassName.Contains(TEXT("Constant")) ||
+        ClassName.Contains(TEXT("Parameter")))
+    {
+        return true;
+    }
+
+    return false;
+}
+
+/**
  * 显示屏幕消息
  * @param Message 要显示的消息
  * @param bIsError 是否为错误消息
@@ -486,105 +511,138 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
                 
                 // 根据函数类型和材质内容进行智能位置计算
                 FString FunctionName = Function->GetName();
-                    
-                if (FunctionName.Contains(TEXT("Fresnel")))
+
+                // 【统一逻辑】优先检查是否在MaterialAttributes模式下，如果是则统一放在目标节点左侧
+                if (MakeMaterialAttributesNode)
                 {
-                    // 优先：如果找到了MakeMaterialAttributes节点，放在其左侧
-                    if (MakeMaterialAttributesNode)
+                    // MaterialAttributes模式：无论什么函数类型，都放在MakeMaterialAttributes节点左侧齐高
+                    PosX = MakeMaterialAttributesNode->MaterialExpressionEditorX - 250;
+                    PosY = MakeMaterialAttributesNode->MaterialExpressionEditorY;
+                    UE_LOG(LogX_AssetEditor, Log, TEXT("[MaterialAttributes模式] 将函数 %s 放置在MakeMaterialAttributes节点左侧: (%d, %d)"),
+                        *FunctionName, PosX, PosY);
+                }
+                // 普通模式：根据函数类型放在对应属性节点附近
+                else if (FunctionName.Contains(TEXT("Fresnel")))
+                {
+                    // 检查EmissiveExpr是否为简单常量，如果是则忽略
+                    bool bHasComplexEmissiveExpr = EmissiveExpr && !IsSimpleConstantExpression(EmissiveExpr);
+                    bool bHasComplexBaseColorExpr = BaseColorExpr && !IsSimpleConstantExpression(BaseColorExpr);
+
+                    // 对于菲涅尔函数，优先考虑放在与EmissiveColor相关的表达式左侧
+                    if (bHasComplexEmissiveExpr)
                     {
-                        PosX = MakeMaterialAttributesNode->MaterialExpressionEditorX - 250;
-                        PosY = MakeMaterialAttributesNode->MaterialExpressionEditorY;
-                        UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在MakeMaterialAttributes节点左侧: (%d, %d)"), PosX, PosY);
-                    }
-                    // 对于菲涅尔函数，优先考虑放在与EmissiveColor相关的表达式附近
-                    else if (EmissiveExpr)
-                    {
-                        // 放在EmissiveColor表达式右侧
-                        PosX = EmissiveExpr->MaterialExpressionEditorX + 250;
+                        PosX = EmissiveExpr->MaterialExpressionEditorX - 250;
                         PosY = EmissiveExpr->MaterialExpressionEditorY;
-                        UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在EmissiveColor表达式右侧: (%d, %d)"), PosX, PosY);
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在EmissiveColor表达式左侧: (%d, %d)"), PosX, PosY);
                     }
                     // 如果有BaseColor表达式，也可以考虑放在附近
-                    else if (BaseColorExpr)
+                    else if (bHasComplexBaseColorExpr)
                     {
-                        PosX = BaseColorExpr->MaterialExpressionEditorX + 250;
+                        PosX = BaseColorExpr->MaterialExpressionEditorX - 250;
                         PosY = BaseColorExpr->MaterialExpressionEditorY;
-                        UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在BaseColor表达式右侧: (%d, %d)"), PosX, PosY);
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在BaseColor表达式左侧: (%d, %d)"), PosX, PosY);
                     }
-                    // 否则使用材质表达式的平均位置
-                    else if (ExprCount > 0)
+                    // 否则使用材质表达式的平均位置（排除简单常量）
+                    else if (ExprCount > 1)  // 如果只有1个节点且是简单常量，ExprCount=1，应该走下面的空白材质逻辑
                     {
                         PosX = CenterX + 200;
                         PosY = CenterY;
                         UE_LOG(LogX_AssetEditor, Log, TEXT("将菲涅尔函数放置在材质表达式中心点右侧: (%d, %d)"), PosX, PosY);
                     }
-                    // 如果材质是空白的，使用更合理的默认位置
+                    // 如果材质是空白的或只有简单常量，放在材质主节点左侧
                     else
                     {
-                        // 对于空白材质，使用更合理的默认位置
-                        PosX = 200;  // 使用正值而不是-300，更好地适配空白材质
-                        PosY = 200;  // 使用一个合理的Y值
-                        UE_LOG(LogX_AssetEditor, Log, TEXT("使用默认位置放置菲涅尔函数: (%d, %d)"), PosX, PosY);
+                        // 获取材质主节点的实际位置（UMaterial的EditorX/EditorY）
+                        int32 MaterialNodeX = Material->EditorX;
+                        int32 MaterialNodeY = Material->EditorY;
+                        PosX = MaterialNodeX - 250;
+                        PosY = MaterialNodeY;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("空白材质或仅有简单常量：材质主节点位置(%d, %d)，将菲涅尔函数放置在其左侧: (%d, %d)"),
+                            MaterialNodeX, MaterialNodeY, PosX, PosY);
                     }
                 }
                 else if (FunctionName.Contains(TEXT("BaseColor")))
                 {
-                    // 对于BaseColor相关函数，放在与BaseColor相关的表达式附近
-                    if (BaseColorExpr)
+                    // 检查BaseColorExpr是否为简单常量，如果是则忽略
+                    bool bHasComplexBaseColorExpr = BaseColorExpr && !IsSimpleConstantExpression(BaseColorExpr);
+
+                    // 对于BaseColor相关函数，放在与BaseColor相关的表达式左侧
+                    if (bHasComplexBaseColorExpr)
                     {
-                        PosX = BaseColorExpr->MaterialExpressionEditorX + 250;
+                        PosX = BaseColorExpr->MaterialExpressionEditorX - 250;
                         PosY = BaseColorExpr->MaterialExpressionEditorY;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("将BaseColor函数放置在BaseColor表达式左侧: (%d, %d)"), PosX, PosY);
                     }
-                    else if (ExprCount > 0)
+                    else if (ExprCount > 1)
                     {
                         PosX = CenterX + 200;
                         PosY = CenterY;
                     }
                     else
                     {
-                        // 对于空白材质，使用合理的默认位置
-                        PosX = 200;
-                        PosY = 250;
+                        // 空白材质或仅有简单常量：获取材质主节点实际位置，BaseColor引脚在主节点偏上约50px
+                        int32 MaterialNodeX = Material->EditorX;
+                        int32 MaterialNodeY = Material->EditorY;
+                        PosX = MaterialNodeX - 250;
+                        PosY = MaterialNodeY - 50;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("空白材质或仅有简单常量：材质主节点位置(%d, %d)，将BaseColor函数放置在其左侧: (%d, %d)"),
+                            MaterialNodeX, MaterialNodeY, PosX, PosY);
                     }
                 }
                 else if (FunctionName.Contains(TEXT("Metallic")))
                 {
-                    // 对于Metallic相关函数，放在与Metallic相关的表达式附近
-                    if (MetallicExpr)
+                    // 检查MetallicExpr是否为简单常量，如果是则忽略
+                    bool bHasComplexMetallicExpr = MetallicExpr && !IsSimpleConstantExpression(MetallicExpr);
+
+                    // 对于Metallic相关函数，放在与Metallic相关的表达式左侧
+                    if (bHasComplexMetallicExpr)
                     {
-                        PosX = MetallicExpr->MaterialExpressionEditorX + 250;
+                        PosX = MetallicExpr->MaterialExpressionEditorX - 250;
                         PosY = MetallicExpr->MaterialExpressionEditorY;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("将Metallic函数放置在Metallic表达式左侧: (%d, %d)"), PosX, PosY);
                     }
-                    else if (ExprCount > 0)
+                    else if (ExprCount > 1)
                     {
                         PosX = CenterX + 200;
-                        PosY = CenterY + 100; // 偏下一些
+                        PosY = CenterY + 100;
                     }
                     else
                     {
-                        // 对于空白材质，使用合理的默认位置
-                        PosX = 200;
-                        PosY = 300;
+                        // 空白材质或仅有简单常量：获取材质主节点实际位置，Metallic引脚在主节点偏下约50px
+                        int32 MaterialNodeX = Material->EditorX;
+                        int32 MaterialNodeY = Material->EditorY;
+                        PosX = MaterialNodeX - 250;
+                        PosY = MaterialNodeY + 50;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("空白材质或仅有简单常量：材质主节点位置(%d, %d)，将Metallic函数放置在其左侧: (%d, %d)"),
+                            MaterialNodeX, MaterialNodeY, PosX, PosY);
                     }
                 }
                 else if (FunctionName.Contains(TEXT("Roughness")))
                 {
-                    // 对于Roughness相关函数，放在与Roughness相关的表达式附近
-                    if (RoughnessExpr)
+                    // 检查RoughnessExpr是否为简单常量，如果是则忽略
+                    bool bHasComplexRoughnessExpr = RoughnessExpr && !IsSimpleConstantExpression(RoughnessExpr);
+
+                    // 对于Roughness相关函数，放在与Roughness相关的表达式左侧
+                    if (bHasComplexRoughnessExpr)
                     {
-                        PosX = RoughnessExpr->MaterialExpressionEditorX + 250;
+                        PosX = RoughnessExpr->MaterialExpressionEditorX - 250;
                         PosY = RoughnessExpr->MaterialExpressionEditorY;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("将Roughness函数放置在Roughness表达式左侧: (%d, %d)"), PosX, PosY);
                     }
-                    else if (ExprCount > 0)
+                    else if (ExprCount > 1)
                     {
                         PosX = CenterX + 200;
-                        PosY = CenterY + 150; // 偏下一些
+                        PosY = CenterY + 150;
                     }
                     else
                     {
-                        // 对于空白材质，使用合理的默认位置
-                        PosX = 200;
-                        PosY = 350;
+                        // 空白材质或仅有简单常量：获取材质主节点实际位置，Roughness引脚在主节点偏下约100px
+                        int32 MaterialNodeX = Material->EditorX;
+                        int32 MaterialNodeY = Material->EditorY;
+                        PosX = MaterialNodeX - 250;
+                        PosY = MaterialNodeY + 100;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("空白材质或仅有简单常量：材质主节点位置(%d, %d)，将Roughness函数放置在其左侧: (%d, %d)"),
+                            MaterialNodeX, MaterialNodeY, PosX, PosY);
                     }
                 }
                 else
@@ -597,9 +655,13 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
                     }
                     else
                     {
-                        // 对于空白材质，使用合理的默认位置
-                        PosX = 200;
-                        PosY = 200;
+                        // 空白材质：获取材质主节点实际位置并放在其左侧
+                        int32 MaterialNodeX = Material->EditorX;
+                        int32 MaterialNodeY = Material->EditorY;
+                        PosX = MaterialNodeX - 250;
+                        PosY = MaterialNodeY;
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("空白材质：材质主节点位置(%d, %d)，将函数放置在其左侧: (%d, %d)"),
+                            MaterialNodeX, MaterialNodeY, PosX, PosY);
                     }
                 }
                 

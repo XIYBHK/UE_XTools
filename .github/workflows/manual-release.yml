@@ -13,13 +13,24 @@ on:
         type: boolean
         default: false
 
+# 默认权限：只读（遵循最小权限原则）
+permissions:
+  contents: read
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # 防止工作流挂起
 
+    # 并发控制：同一时间只能创建/更新一个 Release
+    concurrency:
+      group: release-${{ inputs.tag_name }}
+      cancel-in-progress: false  # 不取消进行中的 Release 操作
+
+    # 最小权限：仅需要必要的权限
     permissions:
-      contents: write
-      actions: read
+      contents: write  # 创建 Release、创建 Tag、上传资产
+      actions: read    # 下载构建产物
 
     steps:
       - name: Checkout repository
@@ -84,7 +95,9 @@ jobs:
       - name: Get artifacts from latest build
         id: get_artifacts
         uses: actions/github-script@v7
+        continue-on-error: false  # 下载失败应停止流程
         with:
+          retries: 3  # GitHub API 可能不稳定，重试3次
           script: |
             // 始终获取最新的成功构建
             const runs = await github.rest.actions.listWorkflowRuns({
@@ -163,7 +176,34 @@ jobs:
           git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
           git push origin "$TAG_NAME"
 
-      - name: Create Release
+      - name: Check if Release exists
+        id: check_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tagName = '${{ steps.validate.outputs.tag_name }}';
+
+            try {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName
+              });
+
+              console.log(`Release ${tagName} already exists (ID: ${release.data.id})`);
+              core.setOutput('exists', 'true');
+              core.setOutput('release_id', String(release.data.id));
+              core.setOutput('html_url', release.data.html_url);
+            } catch (error) {
+              if (error.status === 404) {
+                console.log(`Release ${tagName} does not exist, will create new one`);
+                core.setOutput('exists', 'false');
+              } else {
+                throw error;
+              }
+            }
+
+      - name: Create or Update Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.validate.outputs.tag_name }}
@@ -172,10 +212,17 @@ jobs:
           files: release-assets/*.zip
           prerelease: ${{ inputs.prerelease }}
           fail_on_unmatched_files: false
+          # 如果 Release 已存在，softprops/action-gh-release 会自动更新
 
       - name: Summary
         run: |
-          echo "### ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check_release.outputs.exists }}" == "true" ]; then
+            echo "### ✅ Release Updated Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> ℹ️ Release already existed, assets have been updated" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag**: ${{ steps.validate.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Name**: ${{ steps.validate.outputs.release_name }}" >> $GITHUB_STEP_SUMMARY

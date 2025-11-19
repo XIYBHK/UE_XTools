@@ -1,4 +1,4 @@
-﻿name: Build XTools Plugin (Optimized BuildPlugin)
+name: Build XTools Plugin (Optimized BuildPlugin)
 
 on:
   workflow_dispatch:
@@ -18,6 +18,10 @@ on:
   push:
     tags:
       - 'v*'
+
+# 默认权限：只读（遵循最小权限原则）
+permissions:
+  contents: read
 
 jobs:
   # 验证 MSVC 工具链
@@ -430,28 +434,26 @@ jobs:
         Write-Host ""
         Write-Host "[OK] Validation passed" -ForegroundColor Green
 
-    - name: Create Release Zip Package
+    - name: Prepare Release Package
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "==> Create Release Zip Package" -ForegroundColor Cyan
+        Write-Host "==> Prepare Release Package" -ForegroundColor Cyan
 
-        # Create zip file for release
-        $zip_name = "${{ env.ARTIFACT_NAME }}.zip"
-        $zip_path = Join-Path "${{ runner.temp }}" $zip_name
-        Write-Host "Creating release zip: $zip_path"
+        # 如果是tag触发（准备创建发行版），需要创建zip并复制到持久化目录
+        if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
+          # 创建 zip 文件用于 GitHub Release
+          $zip_name = "${{ env.ARTIFACT_NAME }}.zip"
+          $zip_path = Join-Path "${{ runner.temp }}" $zip_name
+          Write-Host "Creating release zip: $zip_path"
 
-        # Use PowerShell's Compress-Archive
-        Compress-Archive -Path "${{ env.OUTPUT_DIR }}\*" -DestinationPath $zip_path -Force
+          # Use PowerShell's Compress-Archive
+          Compress-Archive -Path "${{ env.OUTPUT_DIR }}\*" -DestinationPath $zip_path -Force
 
-        # Verify zip creation
-        if (Test-Path $zip_path) {
-          $zip_size = (Get-Item $zip_path).Length / 1MB
-          Write-Host "[OK] Created zip file: $([math]::Round($zip_size, 2)) MB"
-          echo "ZIP_PATH=$zip_path" >> $env:GITHUB_ENV
-          echo "ZIP_NAME=$zip_name" >> $env:GITHUB_ENV
+          # Verify zip creation
+          if (Test-Path $zip_path) {
+            $zip_size = (Get-Item $zip_path).Length / 1MB
+            Write-Host "[OK] Created zip file: $([math]::Round($zip_size, 2)) MB"
 
-          # 如果是tag触发（准备创建发行版），复制到持久化目录
-          if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
             # 使用固定的发行版临时目录（在runner工作目录下）
             $release_temp_dir = "D:\GitHubActions\ReleaseTemp"
 
@@ -471,9 +473,11 @@ jobs:
             Copy-Item $zip_path $release_zip_path -Force
 
             echo "RELEASE_ZIP_PATH=$release_zip_path" >> $env:GITHUB_ENV
+          } else {
+            throw "Failed to create zip file"
           }
         } else {
-          throw "Failed to create zip file"
+          Write-Host "[INFO] Not a tag push, skipping release zip creation" -ForegroundColor DarkGray
         }
 
     - name: Generate Job Summary
@@ -513,9 +517,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.ZIP_PATH }}
+        path: ${{ env.OUTPUT_DIR }}  # 直接上传文件夹，GitHub Actions 会自动打包
         retention-days: 30
-        compression-level: 0  # 已经是zip文件，不需要再压缩
+        compression-level: 6  # 使用标准压缩级别
         if-no-files-found: error
 
     - name: Cleanup Temporary Files
@@ -542,8 +546,11 @@ jobs:
     runs-on: [self-hosted, Windows]  # 使用同一台自托管机器
     needs: build-windows-optimized
     if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 20  # 防止工作流挂起
+
+    # 最小权限：仅需要创建 Release 的写权限
     permissions:
-      contents: write
+      contents: write  # 创建 Release 和上传资产
 
     steps:
       - name: Checkout code

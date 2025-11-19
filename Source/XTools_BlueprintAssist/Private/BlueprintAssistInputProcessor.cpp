@@ -635,10 +635,7 @@ bool FBAInputProcessor::OnMouseDrag(FSlateApplication& SlateApp, const FVector2D
 			0, // WheelDelta
 			FModifierKeysState()
 		);
-		if (TryProcessAsShakeNodeOffWireEvent(DummyEvent, AnchorNode.Get(), Delta))
-		{
-			return true;
-		}
+		TryProcessAsShakeNodeOffWireEvent(DummyEvent, AnchorNode.Get(), Delta);
 	}
 
 	// process extra drag nodes
@@ -1226,13 +1223,6 @@ bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
 			TrackingInfo->RecentMovements.Empty();
 			TrackingInfo->MovementTimes.Empty();
 			TrackingInfo->ShakeCount = 0;
-
-			// Show notification
-			FNotificationInfo Info(FText::FromString(FString::Printf(
-				TEXT("Disconnected all pins on node: %s"), 
-				*FBAUtils::GetNodeName(Node))));
-			Info.ExpireDuration = 2.0f;
-			FSlateNotificationManager::Get().AddNotification(Info);
 
 			return true;
 		}

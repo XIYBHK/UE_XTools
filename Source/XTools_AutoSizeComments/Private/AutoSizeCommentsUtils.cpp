@@ -501,6 +501,12 @@ FASCMetaData* FASCUtils::GetPackageMetaData(UPackage* Package)
 
 FASCVector2 FASCUtils::GetNodePos(const SGraphNode* Node)
 {
+	// 防御性检查：确保指针有效
+	if (!Node)
+	{
+		return FASCVector2(0.0f, 0.0f);
+	}
+
 #if ASC_UE_VERSION_OR_LATER(5, 6)
 	return Node->GetPosition2f();
 #else
