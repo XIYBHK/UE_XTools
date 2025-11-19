@@ -179,6 +179,7 @@ jobs:
             const processedNames = new Set();  // 用于去重
 
             // 下载每个 XTools 相关的 artifact
+            let downloadIndex = 0;
             for (const artifact of artifacts.data.artifacts) {
               if (artifact.name.includes('XTools-UE_')) {
                 // 确保文件名只有一个 .zip 后缀
@@ -189,12 +190,13 @@ jobs:
 
                 // 跳过重复的文件名
                 if (processedNames.has(fileName)) {
-                  console.log(`⏭️ Skipping duplicate: ${fileName}`);
+                  console.log(`[${downloadIndex}] ⏭️ Skipping duplicate: ${fileName} (artifact_id: ${artifact.id})`);
+                  downloadIndex++;
                   continue;
                 }
                 processedNames.add(fileName);
 
-                console.log(`Downloading ${artifact.name}...`);
+                console.log(`[${downloadIndex}] 📥 START download: ${fileName} (artifact_id: ${artifact.id})`);
 
                 const download = await github.rest.actions.downloadArtifact({
                   owner: context.repo.owner,
@@ -206,9 +208,14 @@ jobs:
                 const filePath = path.join(dir, fileName);
                 fs.writeFileSync(filePath, Buffer.from(download.data));
                 downloadedFiles.push({ name: fileName, path: filePath });
-                console.log(`Downloaded: ${fileName}`);
+                console.log(`[${downloadIndex}] ✅ DONE download: ${fileName} (size: ${download.data.byteLength} bytes)`);
+                downloadIndex++;
               }
             }
+
+            console.log(`\n📊 Download Summary: ${downloadedFiles.length} files downloaded, ${processedNames.size - downloadedFiles.length} duplicates skipped`);
+            console.log(`Files: ${downloadedFiles.map(f => f.name).join(', ')}`);
+
 
             core.setOutput('success', 'true');
             core.setOutput('releaseId', releaseId);
@@ -240,13 +247,16 @@ jobs:
 
             let updatedCount = 0;
             let addedCount = 0;
+            let uploadIndex = 0;
 
             for (const file of newFiles) {
+              console.log(`\n[${uploadIndex}/${newFiles.length}] Processing: ${file.name}`);
+
               // 检查是否已存在同名资产
               const existingAsset = existingAssets.data.find(a => a.name === file.name);
 
               if (existingAsset) {
-                console.log(`Deleting existing asset: ${file.name}`);
+                console.log(`  🗑️ Deleting existing asset (id: ${existingAsset.id})`);
                 try {
                   await github.rest.repos.deleteReleaseAsset({
                     owner: context.repo.owner,
@@ -254,22 +264,24 @@ jobs:
                     asset_id: existingAsset.id
                   });
                   updatedCount++;
+                  console.log(`  ✅ Deleted successfully`);
                 } catch (error) {
                   // 如果资产已被删除（404），忽略错误继续
                   if (error.status === 404) {
-                    console.log(`⚠️ Asset already deleted (404): ${file.name}`);
+                    console.log(`  ⚠️ Asset already deleted (404), treating as new`);
                     addedCount++;  // 视为新增
                   } else {
                     throw error;  // 其他错误则抛出
                   }
                 }
               } else {
+                console.log(`  ➕ New asset (not found in release)`);
                 addedCount++;
               }
 
               // 上传新资产
-              console.log(`Uploading: ${file.name}`);
               const data = fs.readFileSync(file.path);
+              console.log(`  📤 Uploading ${file.name} (${data.length} bytes)...`);
 
               await github.rest.repos.uploadReleaseAsset({
                 owner: context.repo.owner,
@@ -281,6 +293,8 @@ jobs:
                   'content-type': 'application/zip'
                 }
               });
+              console.log(`  ✅ Upload completed`);
+              uploadIndex++;
             }
 
             console.log(`✅ Updated ${updatedCount} assets, added ${addedCount} new assets`);
