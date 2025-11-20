@@ -118,7 +118,12 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		Func(bTimedOut, bStopped);
+		// 【防御性编程】：确保 Owner 仍然有效
+		if (HasValidOwner() && Func)
+		{
+			Func(bTimedOut, bStopped);
+		}
+		// 注：Owner 已销毁时静默跳过回调，避免崩溃
 	}
 };
 
