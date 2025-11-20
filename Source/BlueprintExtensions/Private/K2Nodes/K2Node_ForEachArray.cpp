@@ -89,8 +89,17 @@ void UK2Node_ForEachArray::ExpandNode(FKismetCompilerContext& CompilerContext, U
 {
     Super::ExpandNode(CompilerContext, SourceGraph);
 
-	// 【最佳实践 3.1】：验证必要连接
+	// 【防御性编程】：额外的空指针检查（超越 UE 标准实践，防御硬件不稳定）
+	// 注：虽然 FindPinChecked() 在 UE 中被认为安全，但在硬件不稳定时可能返回损坏指针
 	UEdGraphPin* ArrayPin = GetArrayPin();
+	if (!ArrayPin)
+	{
+		CompilerContext.MessageLog.Error(*LOCTEXT("ArrayPinNotFound", "Internal error: Array pin not found @@").ToString(), this);
+		BreakAllNodeLinks();
+		return;
+	}
+
+	// 【最佳实践 3.1】：验证必要连接
 	if (ArrayPin->LinkedTo.Num() == 0)
 	{
 		// 【最佳实践 4.3】：使用LOCTEXT本地化

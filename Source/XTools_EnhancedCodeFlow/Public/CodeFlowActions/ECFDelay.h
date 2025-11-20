@@ -78,7 +78,12 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		CallbackFunc(bStopped);
+		// 【防御性编程】：确保 Owner 仍然有效
+		if (HasValidOwner() && CallbackFunc)
+		{
+			CallbackFunc(bStopped);
+		}
+		// 注：Owner 已销毁时静默跳过回调，避免崩溃
 	}
 };
 

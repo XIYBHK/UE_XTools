@@ -82,10 +82,12 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		if (CallbackFunc)
+		// 【防御性编程】：确保 Owner 仍然有效
+		if (HasValidOwner() && CallbackFunc)
 		{
 			CallbackFunc(CurrentValue, CurrentTime, bStopped);
 		}
+		// 注：Owner 已销毁时静默跳过回调，避免崩溃
 	}
 
 private:
