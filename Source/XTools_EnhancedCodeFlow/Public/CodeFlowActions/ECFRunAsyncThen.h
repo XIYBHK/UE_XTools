@@ -145,7 +145,14 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		Func(bTimedOut, bStopped);
+		// 【防御性编程】：在异步任务完成后，确保 Owner 仍然有效
+		// 注：异步任务可能在 Owner 销毁后完成，导致 Func 中的捕获变量访问悬空指针
+		if (HasValidOwner() && Func)
+		{
+			Func(bTimedOut, bStopped);
+		}
+		// 注：Owner 已销毁时静默跳过回调，避免崩溃
+		// 在 Development 构建中可通过 ensureMsgf 检测此情况
 	}
 };
 

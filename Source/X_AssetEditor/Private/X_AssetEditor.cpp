@@ -153,15 +153,9 @@ void FX_AssetEditorModule::CleanupManagers()
     // 2. 清理模块注册
     FX_ModuleRegistrationManager::Get().UnregisterAll();
 
-    // 3. 清理工具菜单所有者（使用 ensure 验证）
-    if (UToolMenus* ToolMenus = UToolMenus::Get())
-    {
-        ToolMenus->UnregisterOwner(this);
-    }
-    else
-    {
-        ensureMsgf(false, TEXT("UToolMenus not available during cleanup"));
-    }
+    // 3. UToolMenus 会在模块卸载时自动清理，无需显式调用 UnregisterOwner
+    // 参考：BlueprintAssist 和 AutoSizeComments 等成熟插件都不手动清理 UToolMenus
+    // 在编辑器退出时调用可能导致访问已卸载的模块，引发误报 Ensure
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("X_AssetEditor 管理器清理完成"));
 }
