@@ -41,6 +41,25 @@
 
 ---
 
+## XToolsCore
+
+- **增加** 新增 6 个防御性编程宏（指针/UObject/数组检查）
+- **优化** 提升硬件不稳定环境下的代码鲁棒性
+
+## BlueprintExtensions
+
+- **修复** K2Node 蓝图编译时增加空指针防护，避免硬件异常崩溃
+- **优化** ForEachArray/ForEachLoopWithDelay 节点增加引脚有效性检查
+
+## XTools_EnhancedCodeFlow
+
+- **修复** 所有异步 Action 增加 Owner 有效性检查，防止悬空指针
+- **优化** Owner 销毁后静默跳过回调，避免崩溃（10个 Action）
+
+## X_AssetEditor
+
+- **修复** 移除 UToolMenus 显式清理调用，符合 UE 标准实践
+
 ## CI/CD 工作流
 
 - **修复** update-release-assets 工作流重复删除资产导致 404 错误
