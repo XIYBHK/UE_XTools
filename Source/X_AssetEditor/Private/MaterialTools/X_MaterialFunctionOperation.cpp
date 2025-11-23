@@ -29,6 +29,8 @@
 // 参数相关
 #include "MaterialTools/X_MaterialFunctionParams.h"
 
+#define LOCTEXT_NAMESPACE "X_MaterialFunctionOperation"
+
 // 屏幕消息显示
 #include "Engine/Engine.h"
 
@@ -293,22 +295,23 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
     //  检查是否为引擎自带材质
     if (IsEngineMaterial(Material))
     {
-        FString ErrorMessage = FString::Printf(
-            TEXT("无法修改引擎自带材质: %s\n修改引擎材质易导致崩溃，请复制材质到项目文件夹后再操作"),
-            *Material->GetName());
+        FText ErrorText = FText::Format(
+            LOCTEXT("CannotModifyEngineMaterial", "无法修改引擎自带材质: {0}\n修改引擎材质易导致崩溃，请复制材质到项目文件夹后再操作"),
+            FText::FromString(Material->GetName()));
 
-        ShowScreenMessage(ErrorMessage, true);
+        ShowScreenMessage(ErrorText.ToString(), true);
         return nullptr;
     }
 
     // 检查材质是否已包含该函数
     if (DoesMaterialContainFunction(Material, Function))
     {
-        FString WarningMessage = FString::Printf(
-            TEXT("材质 %s 已包含函数 %s，跳过重复添加"),
-            *Material->GetName(), *Function->GetName());
+        FText WarningText = FText::Format(
+            LOCTEXT("MaterialAlreadyContainsFunction", "材质 {0} 已包含函数 {1}，跳过重复添加"),
+            FText::FromString(Material->GetName()),
+            FText::FromString(Function->GetName()));
 
-        ShowScreenMessage(WarningMessage, true);
+        ShowScreenMessage(WarningText.ToString(), true);
         UE_LOG(LogX_AssetEditor, Warning, TEXT("材质 %s 已包含函数 %s"),
             *Material->GetName(), *Function->GetName());
         return nullptr;
@@ -834,3 +837,5 @@ void FX_MaterialFunctionOperation::GetFunctionInputOutputCount(
     FunctionCall->MarkAsGarbage();
     TempMaterial->MarkAsGarbage();
 }
+
+#undef LOCTEXT_NAMESPACE

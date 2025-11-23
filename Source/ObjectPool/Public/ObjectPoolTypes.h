@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 #include "Engine/Engine.h"
+#include "Internationalization/Text.h"
 #include "ObjectPoolTypes.generated.h"
 
 /**

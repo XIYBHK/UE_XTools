@@ -16,6 +16,8 @@
 #include "ObjectPool.h"
 #include "ObjectPoolSubsystem.h"
 
+#define LOCTEXT_NAMESPACE "ObjectPoolLibrary"
+
 namespace XTools::ObjectPool
 {
     static UWorld* ResolveWorld(const UObject* WorldContext)
@@ -342,22 +344,29 @@ void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclass
         FObjectPoolStats Stats = GetPoolStats(WorldContext, ActorClass);
         if (Stats.PoolSize > 0 || Stats.TotalCreated > 0)
         {
-            StatsText = FString::Printf(TEXT("=== 对象池统计信息 ===\n%s"), *Stats.ToString());
+            FText HeaderText = LOCTEXT("PoolStatsHeader", "=== 对象池统计信息 ===");
+            StatsText = FString::Printf(TEXT("%s\n%s"), *HeaderText.ToString(), *Stats.ToString());
         }
         else
         {
-            StatsText = FString::Printf(TEXT("=== 对象池统计信息 ===\n对象池[%s]: 未找到或未初始化"),
-                ActorClass ? *ActorClass->GetName() : TEXT("Unknown"));
+            FText HeaderText = LOCTEXT("PoolStatsHeader", "=== 对象池统计信息 ===");
+            FText NotFoundText = FText::Format(
+                LOCTEXT("PoolNotFoundOrUninitialized", "对象池[{0}]: 未找到或未初始化"),
+                FText::FromString(ActorClass ? ActorClass->GetName() : TEXT("Unknown"))
+            );
+            StatsText = FString::Printf(TEXT("%s\n%s"), *HeaderText.ToString(), *NotFoundText.ToString());
         }
     }
     else
     {
         // 显示所有池的统计信息
-        StatsText = TEXT("=== 所有对象池统计信息 ===\n");
+        FText AllPoolsHeaderText = LOCTEXT("AllPoolsStatsHeader", "=== 所有对象池统计信息 ===");
+        StatsText = AllPoolsHeaderText.ToString() + TEXT("\n");
 
         //  优先使用简化子系统
         //  极简API设计：移除统计功能
-        StatsText += TEXT("统计功能已被移除（极简API设计）");
+        FText StatsRemovedText = LOCTEXT("StatsFeatureRemoved", "统计功能已被移除（极简API设计）");
+        StatsText += StatsRemovedText.ToString();
     }
 
     //  显示到屏幕（使用固定的键值确保不被覆盖）
@@ -655,3 +664,5 @@ bool UObjectPoolLibrary::IsActorPooled(const UObject* WorldContext, const AActor
     }
     return PoolSubsystem->IsActorPooled(Actor);
 }
+
+#undef LOCTEXT_NAMESPACE
