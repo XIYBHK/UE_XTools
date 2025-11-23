@@ -31,8 +31,21 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallFunctionByName) {
 				return;
 			}
 
+			// 【安全检查】栈分配大小限制，防止栈溢出
+			const int32 PropertySize = Stack.MostRecentProperty->GetSize();
+			constexpr int32 MaxStackAllocSize = 65536; // 64KB 栈分配上限
+			
+			if (PropertySize > MaxStackAllocSize) {
+				FXToolsErrorReporter::Error(
+					LogBlueprintExtensionsRuntime,
+					FString::Printf(TEXT("参数过大 (%d bytes)，超过栈分配限制 (%d bytes): %s"), 
+						PropertySize, MaxStackAllocSize, *FunctionName),
+					TEXT("CallFunctionByName"));
+				return;
+			}
+
 			void* FunctionDataPtr = FMemory_Alloca_Aligned(
-				Stack.MostRecentProperty->GetSize(),
+				PropertySize,
 				Stack.MostRecentProperty->GetMinAlignment()
 			);
 			Stack.MostRecentProperty->InitializeValue(FunctionDataPtr);
@@ -68,9 +81,22 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallEventByName)
 		UFunction* EventFunction = EventOwnerObject->FindFunction(FName(*EventName));
 
 		if (EventFunction && EventFunction->HasAnyFunctionFlags(FUNC_BlueprintEvent)) {
+			// 【安全检查】栈分配大小限制，防止栈溢出
+			const int32 PropertySize = Stack.MostRecentProperty->GetSize();
+			constexpr int32 MaxStackAllocSize = 65536; // 64KB 栈分配上限
+			
+			if (PropertySize > MaxStackAllocSize) {
+				FXToolsErrorReporter::Error(
+					LogBlueprintExtensionsRuntime,
+					FString::Printf(TEXT("事件参数过大 (%d bytes)，超过栈分配限制 (%d bytes): %s"), 
+						PropertySize, MaxStackAllocSize, *EventName),
+					TEXT("CallEventByName"));
+				return;
+			}
+
 			// 分配临时内存并复制结构体数据
 			void* EventData = FMemory_Alloca_Aligned(
-				Stack.MostRecentProperty->GetSize(),
+				PropertySize,
 				Stack.MostRecentProperty->GetMinAlignment()
 			);
 			Stack.MostRecentProperty->InitializeValue(EventData);
