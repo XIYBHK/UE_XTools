@@ -26,6 +26,7 @@ protected:
 	float CurrentValue = 0.f;
 	float CurrentTime = 0.f;
 	float PlayRate = 1.0f;
+	bool bSuppressCallback = false;  // 用于阻止Setup中PlayFromStart触发的过早回调
 
 	UPROPERTY(Transient)
 	UCurveFloat* CurveFloat = nullptr;
@@ -49,7 +50,11 @@ protected:
 			MyTimeline.SetPlayRate(PlayRate);
 			SetMaxActionTime(MyTimeline.GetTimelineLength() / FMath::Max(FMath::Abs(PlayRate), KINDA_SMALL_NUMBER));
 
+			// 阻止PlayFromStart触发的回调，因为此时时机太早
+			// 初始值会在第一次Tick时手动触发
+			bSuppressCallback = true;
 			MyTimeline.PlayFromStart();
+			bSuppressCallback = false;
 
 			return true;
 		}
@@ -77,6 +82,23 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("CustomTimeline - Tick"), STAT_ECFDETAILS_CUSTOMTIMELINE, STATGROUP_ECFDETAILS);
 #endif
+		// 【修复】第一次Tick时触发初始值，与UE原生时间轴行为一致
+		// Setup中的PlayFromStart虽然会触发HandleProgress，但时机太早，需要在第一次Tick时确保触发
+		// 这样FirstDelay会自然生效（延迟后才会进入第一次Tick）
+		if (bFirstTick && CurveFloat)
+		{
+			float MinTime, MaxTime;
+			CurveFloat->GetTimeRange(MinTime, MaxTime);
+			const float InitialValue = CurveFloat->GetFloatValue(MinTime);
+			CurrentValue = InitialValue;
+			CurrentTime = MinTime;
+			if (HasValidOwner() && TickFunc)
+			{
+				TickFunc(CurrentValue, CurrentTime);
+			}
+			bFirstTick = false;
+		}
+		
 		MyTimeline.TickTimeline(DeltaTime);
 	}
 
@@ -95,6 +117,9 @@ private:
 	UFUNCTION()
 	void HandleProgress(float Value)
 	{
+		// 如果回调被阻止（Setup阶段），直接返回
+		if (bSuppressCallback) return;
+		
 		CurrentValue = Value;
 		CurrentTime = MyTimeline.GetPlaybackPosition();
 		if (HasValidOwner())

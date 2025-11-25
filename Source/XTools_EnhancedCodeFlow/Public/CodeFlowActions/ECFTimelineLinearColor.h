@@ -74,6 +74,18 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline Linear Color - Tick"), STAT_ECFDETAILS_TIMELINELINEARCOLOR, STATGROUP_ECFDETAILS);
 #endif
+		// 【修复】第一次Tick时触发初始值，与UE原生时间轴行为一致
+		// 这样FirstDelay会自然生效（延迟后才会进入第一次Tick）
+		if (bFirstTick)
+		{
+			CurrentValue = StartValue;
+			if (HasValidOwner() && TickFunc)
+			{
+				TickFunc(CurrentValue, CurrentTime);
+			}
+			bFirstTick = false;
+		}
+		
 		CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
 
 		const float LerpValue = CurrentTime / Time;

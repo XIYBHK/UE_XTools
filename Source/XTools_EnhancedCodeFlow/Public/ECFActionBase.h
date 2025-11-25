@@ -233,12 +233,14 @@ private:
 		}
 	}
 
-	// Indicates if this action has finished and will be deleted soon.
-	bool bHasFinished = false;
-
+protected:
 	// Indicates if this is a first tick. First tick should be launched as
 	// soon as possible, without consideration of tick interval.
 	bool bFirstTick = false;
+
+private:
+	// Indicates if this action has finished and will be deleted soon.
+	bool bHasFinished = false;
 
 	// Indicates if this action is paused (by the ECF system).
 	bool bIsPaused = false;
