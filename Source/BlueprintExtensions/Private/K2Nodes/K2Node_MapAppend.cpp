@@ -75,13 +75,14 @@ TSharedPtr<SWidget> UK2Node_MapAppend::CreateNodeImage() const
 
 void UK2Node_MapAppend::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	Super::ExpandNode(CompilerContext, SourceGraph);
+	// 【UE 最佳实践】不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+	// Super::ExpandNode(CompilerContext, SourceGraph);
 
 	// 【最佳实践 3.1】：验证输入类型
 	if(GetTargetMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard || GetSourceMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
 	{
-		// 【最佳实践 4.3】：使用LOCTEXT本地化
-		CompilerContext.MessageLog.Error(*LOCTEXT("InvalidMapType", "Target map and source map pins must be of a valid type @@").ToString(), this);
+		// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
+		CompilerContext.MessageLog.Warning(*LOCTEXT("InvalidMapType", "Target map and source map pins must be of a valid type @@").ToString(), this);
 		// 【最佳实践 3.1】：错误后必须调用BreakAllNodeLinks
 		BreakAllNodeLinks();
 		return;

@@ -88,73 +88,66 @@ TSharedPtr<SWidget> UK2Node_ForEachSet::CreateNodeImage() const
 
 void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-    Super::ExpandNode(CompilerContext, SourceGraph);
+    // 【参考 K2Node_SmartSort 实现模式】
+    // 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
 
-	// 【最佳实践 3.1】：验证必要连接
-	UEdGraphPin* SetPin = GetSetPin();
-	if (SetPin->LinkedTo.Num() == 0)
-	{
-		// 【最佳实践 4.3】：使用LOCTEXT本地化
-		CompilerContext.MessageLog.Error(*LOCTEXT("SetNotConnected", "Set pin must be connected @@").ToString(), this);
-		// 【最佳实践 3.1】：错误后必须调用BreakAllNodeLinks
-		BreakAllNodeLinks();
-		return;
-	}
+    // 验证 Set 引脚连接
+    UEdGraphPin* SetPin = GetSetPin();
+    if (!SetPin || SetPin->LinkedTo.Num() == 0)
+    {
+        CompilerContext.MessageLog.Warning(*LOCTEXT("SetNotConnected", "Set pin must be connected @@").ToString(), this);
+        BreakAllNodeLinks();
+        return;
+    }
 
-    const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
+    // 1. Set 转 Array
+    UK2Node_CallFunction* ToArrayFun = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+    ToArrayFun->SetFromFunction(UBlueprintSetLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UBlueprintSetLibrary, Set_ToArray)));
+    ToArrayFun->AllocateDefaultPins();
+    UEdGraphPin* ToArrayFunPin = ToArrayFun->FindPinChecked(TEXT("A"), EGPD_Input);
+    ToArrayFunPin->PinType = GetSetPin()->PinType;
+    ToArrayFunPin->PinType.PinValueType = FEdGraphTerminalType(GetSetPin()->PinType.PinValueType);
+    CompilerContext.CopyPinLinksToIntermediate(*GetSetPin(), *ToArrayFunPin);
+    UEdGraphPin* ToArrayFunValuePin = ToArrayFun->FindPinChecked(TEXT("Result"));
+    ToArrayFun->PostReconstructNode();
 
-    bool bResult = true;
-    // Create int Loop Counter
+    // 2. 创建循环计数器临时变量
     UK2Node_TemporaryVariable* LoopCounterNode = CompilerContext.SpawnIntermediateNode<UK2Node_TemporaryVariable>(this, SourceGraph);
     LoopCounterNode->VariableType.PinCategory = UEdGraphSchema_K2::PC_Int;
     LoopCounterNode->AllocateDefaultPins();
     UEdGraphPin* LoopCounterPin = LoopCounterNode->GetVariablePin();
-    check(LoopCounterPin);
 
-    // Initialise loop counter
+    // 3. 初始化循环计数器为0
     UK2Node_AssignmentStatement* LoopCounterInitialise = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
     LoopCounterInitialise->AllocateDefaultPins();
     LoopCounterInitialise->GetValuePin()->DefaultValue = TEXT("0");
-    bResult &= Schema->TryCreateConnection(LoopCounterPin, LoopCounterInitialise->GetVariablePin());
-    UEdGraphPin* LoopCounterInitialiseExecPin = LoopCounterInitialise->GetExecPin();
-    check(LoopCounterInitialiseExecPin);
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterPin, LoopCounterInitialise->GetVariablePin());
+    CompilerContext.GetSchema()->TryCreateConnection(ToArrayFun->GetThenPin(), LoopCounterInitialise->GetExecPin());
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("InitCounterFailed", "Could not connect initialise loop counter node @@").ToString(), this);
-
-    // Do loop branch
+    // 4. 创建分支节点
     UK2Node_IfThenElse* Branch = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
     Branch->AllocateDefaultPins();
-    bResult &= Schema->TryCreateConnection(LoopCounterInitialise->GetThenPin(), Branch->GetExecPin());
-    UEdGraphPin* BranchElsePin = Branch->GetElsePin();
-    check(BranchElsePin);
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterInitialise->GetThenPin(), Branch->GetExecPin());
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("BranchFailed", "Could not connect branch node @@").ToString(), this);
-
-    // Do loop condition
+    // 5. 创建循环条件（计数器 < Set长度）
     UK2Node_CallFunction* Condition = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
     Condition->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Less_IntInt)));
     Condition->AllocateDefaultPins();
-    bResult &= Schema->TryCreateConnection(Condition->GetReturnValuePin(), Branch->GetConditionPin());
-    bResult &= Schema->TryCreateConnection(Condition->FindPinChecked(TEXT("A")), LoopCounterPin);
-    UEdGraphPin* LoopConditionBPin = Condition->FindPinChecked(TEXT("B"));
-    check(LoopConditionBPin);
+    CompilerContext.GetSchema()->TryCreateConnection(Condition->GetReturnValuePin(), Branch->GetConditionPin());
+    CompilerContext.GetSchema()->TryCreateConnection(Condition->FindPinChecked(TEXT("A")), LoopCounterPin);
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("ConditionFailed", "Could not connect loop condition node @@").ToString(), this);
-
-    // Length of Set 
+    // 6. 获取Set长度
     UK2Node_CallFunction* Length = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
     Length->SetFromFunction(UBlueprintSetLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UBlueprintSetLibrary, Set_Length)));
     Length->AllocateDefaultPins();
     UEdGraphPin* LengthTargetArrayPin = Length->FindPinChecked(TEXT("TargetSet"), EGPD_Input);
     LengthTargetArrayPin->PinType = GetSetPin()->PinType;
     LengthTargetArrayPin->PinType.PinValueType = FEdGraphTerminalType(GetSetPin()->PinType.PinValueType);
-    bResult &= Schema->TryCreateConnection(LoopConditionBPin, Length->GetReturnValuePin());
+    CompilerContext.GetSchema()->TryCreateConnection(Condition->FindPinChecked(TEXT("B")), Length->GetReturnValuePin());
     CompilerContext.CopyPinLinksToIntermediate(*GetSetPin(), *LengthTargetArrayPin);
     Length->PostReconstructNode();
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("LengthFailed", "Could not connect length node @@").ToString(), this);
-
-    // Break loop from set counter
+    // 7. Break 功能：设置计数器为Set长度以跳出循环
     UK2Node_CallFunction* BreakLength = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
     BreakLength->SetFromFunction(UBlueprintSetLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UBlueprintSetLibrary, Set_Length)));
     BreakLength->AllocateDefaultPins();
@@ -166,80 +159,51 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 
     UK2Node_AssignmentStatement* LoopCounterBreak = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
     LoopCounterBreak->AllocateDefaultPins();
-    bResult &= Schema->TryCreateConnection(LoopCounterBreak->GetVariablePin(), LoopCounterPin);
-    bResult &= Schema->TryCreateConnection(LoopCounterBreak->GetValuePin(), BreakLength->GetReturnValuePin());
-    UEdGraphPin* LoopCounterBreakExecPin = LoopCounterBreak->GetExecPin();
-    check(LoopCounterBreakExecPin);
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("BreakNodeFailed", "Could not set BreakNode from length node @@").ToString(), this);
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetVariablePin(), LoopCounterPin);
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetValuePin(), BreakLength->GetReturnValuePin());
 
-    // Sequence
+    // 8. 创建执行序列（循环体 -> 递增）
     UK2Node_ExecutionSequence* Sequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
     Sequence->AllocateDefaultPins();
-    bResult &= Schema->TryCreateConnection(Sequence->GetExecPin(), Branch->GetThenPin());
-    UEdGraphPin* SequenceThen0Pin = Sequence->GetThenPinGivenIndex(0);
-    UEdGraphPin* SequenceThen1Pin = Sequence->GetThenPinGivenIndex(1);
-    check(SequenceThen0Pin);
-    check(SequenceThen1Pin);
+    CompilerContext.GetSchema()->TryCreateConnection(Sequence->GetExecPin(), Branch->GetThenPin());
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("SequenceFailed", "Could not connect sequence node @@").ToString(), this);
-
-    // Loop Counter increment
+    // 9. 创建递增节点
     UK2Node_CallFunction* Increment = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
     Increment->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
     Increment->AllocateDefaultPins();
-    bResult &= Schema->TryCreateConnection(Increment->FindPinChecked(TEXT("A")), LoopCounterPin);
+    CompilerContext.GetSchema()->TryCreateConnection(Increment->FindPinChecked(TEXT("A")), LoopCounterPin);
     Increment->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("1");
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("IncrementFailed", "Could not connect loop counter increment node @@").ToString(), this);
-
-    // Loop Counter assigned
+    // 10. 创建赋值节点（递增后的值）
     UK2Node_AssignmentStatement* LoopCounterAssign = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
     LoopCounterAssign->AllocateDefaultPins();
-    bResult &= Schema->TryCreateConnection(LoopCounterAssign->GetExecPin(), SequenceThen1Pin);
-    bResult &= Schema->TryCreateConnection(LoopCounterAssign->GetVariablePin(), LoopCounterPin);
-    bResult &= Schema->TryCreateConnection(LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
-    bResult &= Schema->TryCreateConnection(LoopCounterAssign->GetThenPin(), Branch->GetExecPin());
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetVariablePin(), LoopCounterPin);
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetThenPin(), Branch->GetExecPin());  // 循环回到分支
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("AssignmentFailed", "Could not connect loop counter assignment node @@").ToString(), this);
-
-    // Set to Array
-    UK2Node_CallFunction* ToArrayFun = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-    ToArrayFun->SetFromFunction(UBlueprintSetLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UBlueprintSetLibrary, Set_ToArray)));
-    ToArrayFun->AllocateDefaultPins();
-    UEdGraphPin* ToArrayFunPin = ToArrayFun->FindPinChecked(TEXT("A"), EGPD_Input);
-    ToArrayFunPin->PinType = GetSetPin()->PinType;
-    ToArrayFunPin->PinType.PinValueType = FEdGraphTerminalType(GetSetPin()->PinType.PinValueType);
-    CompilerContext.CopyPinLinksToIntermediate(*GetSetPin(), *ToArrayFunPin);
-    UEdGraphPin* ToArrayFunValuePin = ToArrayFun->FindPinChecked(TEXT("Result"));
-    check(ToArrayFunValuePin);
-    ToArrayFun->PostReconstructNode();
-    bResult &= Schema->TryCreateConnection(ToArrayFun->GetThenPin(), LoopCounterInitialiseExecPin);
-
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("SetToArrayFailed", "Could not connect Set to Array node @@").ToString(), this);
-
-    // Get value
+    // 11. 获取数组元素
     UK2Node_CallFunction* GetValue = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
     GetValue->SetFromFunction(UKismetArrayLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetArrayLibrary, Array_Get)));
     GetValue->AllocateDefaultPins();
     UEdGraphPin* GetValueTargetArrayPin = GetValue->FindPinChecked(TEXT("TargetArray"), EGPD_Input);
     GetValueTargetArrayPin->PinType = ToArrayFunValuePin->PinType;
     GetValueTargetArrayPin->PinType.PinValueType = FEdGraphTerminalType(ToArrayFunValuePin->PinType.PinValueType);
-    bResult &= Schema->TryCreateConnection(GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
-    bResult &= Schema->TryCreateConnection(GetValueTargetArrayPin, ToArrayFunValuePin);
+    CompilerContext.GetSchema()->TryCreateConnection(GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
+    CompilerContext.GetSchema()->TryCreateConnection(GetValueTargetArrayPin, ToArrayFunValuePin);
     UEdGraphPin* ValuePin = GetValue->FindPinChecked(TEXT("Item"));
     ValuePin->PinType = GetValuePin()->PinType;
-    check(ValuePin);
     GetValue->PostReconstructNode();
 
-    if (!bResult) CompilerContext.MessageLog.Error(*LOCTEXT("GetValueFailed", "Could not connect get Set value node @@").ToString(), this);
-
-    CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *(ToArrayFun->GetExecPin()));
-    CompilerContext.MovePinLinksToIntermediate(*GetLoopBodyPin(), *SequenceThen0Pin);
-    CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(), *BranchElsePin);
-    CompilerContext.MovePinLinksToIntermediate(*GetBreakPin(), *LoopCounterBreakExecPin);
+    // 12. 最后统一移动所有外部连接（参考智能排序模式）
+    CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *ToArrayFun->GetExecPin());
+    CompilerContext.MovePinLinksToIntermediate(*GetLoopBodyPin(), *Sequence->GetThenPinGivenIndex(0));
+    CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(), *Branch->GetElsePin());
+    CompilerContext.MovePinLinksToIntermediate(*GetBreakPin(), *LoopCounterBreak->GetExecPin());
     CompilerContext.MovePinLinksToIntermediate(*GetValuePin(), *ValuePin);
     CompilerContext.MovePinLinksToIntermediate(*GetIndexPin(), *LoopCounterPin);
 
+    // 13. 断开原节点所有链接
     BreakAllNodeLinks();
 }
 

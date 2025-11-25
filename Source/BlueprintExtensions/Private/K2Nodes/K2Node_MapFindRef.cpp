@@ -68,7 +68,8 @@ TSharedPtr<SWidget> UK2Node_MapFindRef::CreateNodeImage() const
 // 因为KCST_MapFindOutRef在标准UE中不存在
 void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	Super::ExpandNode(CompilerContext, SourceGraph);
+	// 【UE 最佳实践】不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+	// Super::ExpandNode(CompilerContext, SourceGraph);
 
 	// 【最佳实践 3.1】：在开头检查所有必要的输入连接
 	UEdGraphPin* MapPin = GetMapPin();
@@ -79,24 +80,25 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	// 【最佳实践 5.2】：空指针检查
 	if (!MapPin || !KeyPin || !ValuePin || !FoundPin)
 			{
-		// 【最佳实践 4.3】：使用LOCTEXT本地化错误信息
-		CompilerContext.MessageLog.Error(*LOCTEXT("InvalidPins", "MapFindRef node has invalid pins @@").ToString(), this);
+		// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
+		CompilerContext.MessageLog.Warning(*LOCTEXT("InvalidPins", "MapFindRef node has invalid pins @@").ToString(), this);
 		// 【最佳实践 3.1】：错误后必须调用BreakAllNodeLinks
 		BreakAllNodeLinks();
 					return;
 				}
 
 	// 【最佳实践 3.1】：验证必要输入
+	// 【UE 最佳实践】用户输入错误使用 Warning 而非 Error，避免触发 EdGraphNode.h:563 断言崩溃
 	if (MapPin->LinkedTo.Num() == 0)
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("MapNotConnected", "MapFindRef requires a Map connection @@").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("MapNotConnected", "MapFindRef requires a Map connection @@").ToString(), this);
 		BreakAllNodeLinks();
 							return;
 						}
 
 	if (KeyPin->LinkedTo.Num() == 0)
 			{
-		CompilerContext.MessageLog.Error(*LOCTEXT("KeyNotConnected", "MapFindRef requires a Key connection @@").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("KeyNotConnected", "MapFindRef requires a Key connection @@").ToString(), this);
 		BreakAllNodeLinks();
 				return;
 			}

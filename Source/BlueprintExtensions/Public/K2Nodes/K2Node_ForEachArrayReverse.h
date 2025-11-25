@@ -65,6 +65,7 @@ public:
     UEdGraphPin* GetCompletedPin() const;
 
     UEdGraphPin* GetArrayPin() const;
+    UEdGraphPin* GetDelayPin() const;
     UEdGraphPin* GetValuePin() const;
     UEdGraphPin* GetIndexPin() const;
 
