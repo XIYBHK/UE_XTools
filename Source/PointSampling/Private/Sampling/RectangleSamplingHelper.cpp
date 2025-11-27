@@ -15,7 +15,7 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSolidRectangle(
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
-	if (PointCount <= 0 || Spacing <= 0.0f)
+	if (Spacing <= 0.0f)
 	{
 		return Points;
 	}
@@ -23,13 +23,22 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSolidRectangle(
 	// 计算行列数
 	int32 Rows = RowCount;
 	int32 Cols = ColumnCount;
+
+	// 如果行列数都未指定，则根据 PointCount 自动计算
 	if (Rows <= 0 || Cols <= 0)
 	{
-		CalculateOptimalRowsCols(PointCount, Rows, Cols);
+		// 如果 PointCount 也未指定（-1），使用默认值
+		int32 EffectivePointCount = (PointCount > 0) ? PointCount : 25; // 默认5x5
+		CalculateOptimalRowsCols(EffectivePointCount, Rows, Cols);
 	}
 
-	// 限制实际生成的点数
-	int32 ActualPointCount = FMath::Min(PointCount, Rows * Cols);
+	// 计算实际生成的点数
+	int32 ActualPointCount = Rows * Cols;
+	// 如果指定了 PointCount，则限制生成数量
+	if (PointCount > 0)
+	{
+		ActualPointCount = FMath::Min(PointCount, Rows * Cols);
+	}
 	Points.Reserve(ActualPointCount);
 
 	// 计算起始偏移（使阵型居中）
@@ -70,7 +79,7 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
-	if (PointCount <= 0 || Spacing <= 0.0f)
+	if (Spacing <= 0.0f)
 	{
 		return Points;
 	}
@@ -81,12 +90,19 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	if (Rows <= 0 || Cols <= 0)
 	{
 		// 对于空心矩形，估算周长需要的点数
-		int32 EstimatedPerimeter = FMath::CeilToInt(FMath::Sqrt(PointCount * 4.0f));
+		int32 EffectivePointCount = (PointCount > 0) ? PointCount : 20; // 默认周长约20个点
+		int32 EstimatedPerimeter = FMath::CeilToInt(FMath::Sqrt(EffectivePointCount * 4.0f));
 		Rows = EstimatedPerimeter / 2;
 		Cols = EstimatedPerimeter / 2;
+		// 确保至少是2x2
+		Rows = FMath::Max(2, Rows);
+		Cols = FMath::Max(2, Cols);
 	}
 
-	Points.Reserve(PointCount);
+	// 计算最大可能生成的点数（空心矩形周长）
+	int32 MaxPoints = 2 * (Rows + Cols) - 4; // 四条边的总点数（去掉重复的角点）
+	int32 ActualPointCount = (PointCount > 0) ? FMath::Min(PointCount, MaxPoints) : MaxPoints;
+	Points.Reserve(ActualPointCount);
 
 	// 计算起始偏移
 	float StartX = -(Cols - 1) * Spacing * 0.5f;
@@ -96,14 +112,14 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	int32 GeneratedCount = 0;
 
 	// 上边
-	for (int32 Col = 0; Col < Cols && GeneratedCount < PointCount; ++Col)
+	for (int32 Col = 0; Col < Cols && GeneratedCount < ActualPointCount; ++Col)
 	{
 		Points.Add(FVector(StartX + Col * Spacing, StartY, 0.0f));
 		++GeneratedCount;
 	}
 
 	// 右边（跳过角点）
-	for (int32 Row = 1; Row < Rows && GeneratedCount < PointCount; ++Row)
+	for (int32 Row = 1; Row < Rows && GeneratedCount < ActualPointCount; ++Row)
 	{
 		Points.Add(FVector(StartX + (Cols - 1) * Spacing, StartY + Row * Spacing, 0.0f));
 		++GeneratedCount;
@@ -112,7 +128,7 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	// 下边（从右到左，跳过角点）
 	if (Rows > 1)
 	{
-		for (int32 Col = Cols - 2; Col >= 0 && GeneratedCount < PointCount; --Col)
+		for (int32 Col = Cols - 2; Col >= 0 && GeneratedCount < ActualPointCount; --Col)
 		{
 			Points.Add(FVector(StartX + Col * Spacing, StartY + (Rows - 1) * Spacing, 0.0f));
 			++GeneratedCount;
@@ -122,7 +138,7 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	// 左边（从下到上，跳过角点）
 	if (Cols > 1)
 	{
-		for (int32 Row = Rows - 2; Row > 0 && GeneratedCount < PointCount; --Row)
+		for (int32 Row = Rows - 2; Row > 0 && GeneratedCount < ActualPointCount; --Row)
 		{
 			Points.Add(FVector(StartX, StartY + Row * Spacing, 0.0f));
 			++GeneratedCount;
@@ -146,12 +162,21 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSpiralRectangle(
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
-	if (PointCount <= 0 || Spacing <= 0.0f)
+	if (Spacing <= 0.0f)
 	{
 		return Points;
 	}
 
-	Points.Reserve(PointCount);
+	// 如果 PointCount 未指定（-1），根据圈数估算合理的点数
+	int32 ActualPointCount = PointCount;
+	if (ActualPointCount <= 0)
+	{
+		// 每圈大约需要 4 * (圈数) 个点
+		ActualPointCount = FMath::CeilToInt(4.0f * SpiralTurns * SpiralTurns);
+		ActualPointCount = FMath::Max(25, ActualPointCount); // 至少25个点
+	}
+
+	Points.Reserve(ActualPointCount);
 
 	// 从中心开始螺旋向外
 	// 方向：右 -> 下 -> 左 -> 上 -> 右（重复，每次步长增加）
@@ -170,10 +195,10 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSpiralRectangle(
 		FVector(0.0f, -Spacing, 0.0f)  // 上
 	};
 
-	while (GeneratedCount < PointCount)
+	while (GeneratedCount < ActualPointCount)
 	{
 		// 每个方向走 StepSize 步
-		for (int32 Step = 0; Step < StepSize && GeneratedCount < PointCount; ++Step)
+		for (int32 Step = 0; Step < StepSize && GeneratedCount < ActualPointCount; ++Step)
 		{
 			CurrentPos += Directions[DirectionIndex];
 			Points.Add(CurrentPos);

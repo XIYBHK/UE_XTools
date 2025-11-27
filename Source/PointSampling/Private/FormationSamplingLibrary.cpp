@@ -10,6 +10,7 @@
 #include "Sampling/SplineSamplingHelper.h"
 #include "Sampling/MeshSamplingHelper.h"
 #include "Sampling/TextureSamplingHelper.h"
+#include "Components/SplineComponent.h"
 
 // ============================================================================
 // 辅助函数：坐标变换
@@ -71,6 +72,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSolidRectangle(
 	float Spacing,
 	int32 RowCount,
 	int32 ColumnCount,
+	float Height,
 	EPoissonCoordinateSpace CoordinateSpace,
 	float JitterStrength,
 	int32 RandomSeed)
@@ -83,6 +85,17 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSolidRectangle(
 		PointCount, Spacing, RowCount, ColumnCount, JitterStrength, RandomStream
 	);
 
+	// 应用高度参数（在Z轴上分布）
+	if (Height > 1.0f && LocalPoints.Num() > 0)
+	{
+		float HalfHeight = Height * 0.5f;
+		for (FVector& Point : LocalPoints)
+		{
+			// 在[-HalfHeight, HalfHeight]范围内随机分布Z坐标
+			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
+		}
+	}
+
 	// 转换到目标坐标空间
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -94,6 +107,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHollowRectangle(
 	float Spacing,
 	int32 RowCount,
 	int32 ColumnCount,
+	float Height,
 	EPoissonCoordinateSpace CoordinateSpace,
 	float JitterStrength,
 	int32 RandomSeed)
@@ -104,6 +118,17 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHollowRectangle(
 		PointCount, Spacing, RowCount, ColumnCount, JitterStrength, RandomStream
 	);
 
+	// 应用高度参数（在Z轴上分布）
+	if (Height > 1.0f && LocalPoints.Num() > 0)
+	{
+		float HalfHeight = Height * 0.5f;
+		for (FVector& Point : LocalPoints)
+		{
+			// 在[-HalfHeight, HalfHeight]范围内随机分布Z坐标
+			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
+		}
+	}
+
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
 
@@ -113,6 +138,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSpiralRectangle(
 	FRotator Rotation,
 	float Spacing,
 	float SpiralTurns,
+	float Height,
 	EPoissonCoordinateSpace CoordinateSpace,
 	float JitterStrength,
 	int32 RandomSeed)
@@ -122,6 +148,17 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSpiralRectangle(
 	TArray<FVector> LocalPoints = FRectangleSamplingHelper::GenerateSpiralRectangle(
 		PointCount, Spacing, SpiralTurns, JitterStrength, RandomStream
 	);
+
+	// 应用高度参数（在Z轴上分布）
+	if (Height > 1.0f && LocalPoints.Num() > 0)
+	{
+		float HalfHeight = Height * 0.5f;
+		for (FVector& Point : LocalPoints)
+		{
+			// 在[-HalfHeight, HalfHeight]范围内随机分布Z坐标
+			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
+		}
+	}
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -244,12 +281,37 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSnowflakeArc(
 
 TArray<FVector> UFormationSamplingLibrary::GenerateAlongSpline(
 	int32 PointCount,
-	const TArray<FVector>& SplineControlPoints,
+	USplineComponent* SplineComponent,
 	bool bClosedSpline,
 	EPoissonCoordinateSpace CoordinateSpace)
 {
+	TArray<FVector> Points;
+
+	// 验证样条组件有效性
+	if (!SplineComponent)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[样条线采样] 样条组件指针为空"));
+		return Points;
+	}
+
+	// 从样条组件提取控制点（世界坐标）
+	TArray<FVector> SplineControlPoints;
+	int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
+	SplineControlPoints.Reserve(NumPoints);
+
+	for (int32 i = 0; i < NumPoints; ++i)
+	{
+		SplineControlPoints.Add(SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World));
+	}
+
+	if (SplineControlPoints.Num() < 2)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[样条线采样] 样条组件至少需要2个控制点"));
+		return Points;
+	}
+
 	// 样条线采样：控制点已经是世界坐标
-	TArray<FVector> Points = FSplineSamplingHelper::GenerateAlongSpline(
+	Points = FSplineSamplingHelper::GenerateAlongSpline(
 		PointCount, SplineControlPoints, bClosedSpline
 	);
 
@@ -289,15 +351,40 @@ TArray<FVector> UFormationSamplingLibrary::GenerateAlongSpline(
 
 TArray<FVector> UFormationSamplingLibrary::GenerateSplineBoundary(
 	int32 TargetPointCount,
-	const TArray<FVector>& SplineControlPoints,
+	USplineComponent* SplineComponent,
 	float MinDistance,
 	EPoissonCoordinateSpace CoordinateSpace,
 	int32 RandomSeed)
 {
+	TArray<FVector> Points;
+
+	// 验证样条组件有效性
+	if (!SplineComponent)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[样条线边界采样] 样条组件指针为空"));
+		return Points;
+	}
+
+	// 从样条组件提取控制点（世界坐标）
+	TArray<FVector> SplineControlPoints;
+	int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
+	SplineControlPoints.Reserve(NumPoints);
+
+	for (int32 i = 0; i < NumPoints; ++i)
+	{
+		SplineControlPoints.Add(SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World));
+	}
+
+	if (SplineControlPoints.Num() < 3)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[样条线边界采样] 样条组件至少需要3个控制点形成封闭区域"));
+		return Points;
+	}
+
 	FRandomStream RandomStream(RandomSeed);
 
 	// 调用helper生成边界内的泊松采样点
-	TArray<FVector> Points = FSplineSamplingHelper::GenerateWithinBoundary(
+	Points = FSplineSamplingHelper::GenerateWithinBoundary(
 		TargetPointCount, SplineControlPoints, MinDistance, RandomStream
 	);
 
@@ -430,13 +517,15 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromTexture(
 	UTexture2D* Texture,
 	FVector CenterLocation,
 	FRotator Rotation,
+	int32 MaxSampleSize,
+	float Spacing,
 	float PixelThreshold,
 	float TextureScale,
 	EPoissonCoordinateSpace CoordinateSpace)
 {
-	// 从纹理提取像素点（局部坐标，居中）
+	// 从纹理提取像素点（局部坐标，居中，智能降采样）
 	TArray<FVector> LocalPoints = FTextureSamplingHelper::GenerateFromTexture(
-		Texture, PixelThreshold, TextureScale
+		Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale
 	);
 
 	// 转换到目标坐标空间

@@ -32,6 +32,7 @@ struct FPointSamplingPinNames
 	// 矩形参数
 	static const FName PN_RowCount;
 	static const FName PN_ColumnCount;
+	static const FName PN_Height;
 
 	// 三角形参数
 	static const FName PN_InvertedTriangle;
@@ -52,7 +53,7 @@ struct FPointSamplingPinNames
 	static const FName PN_SnowflakeLayers;
 
 	// 样条线参数
-	static const FName PN_SplineControlPoints;
+	static const FName PN_SplineComponent;
 	static const FName PN_ClosedSpline;
 
 	// 静态网格体参数
@@ -66,6 +67,8 @@ struct FPointSamplingPinNames
 
 	// 纹理参数
 	static const FName PN_Texture;
+	static const FName PN_MaxSampleSize;
+	static const FName PN_TextureSpacing;
 	static const FName PN_PixelThreshold;
 	static const FName PN_TextureScale;
 };
@@ -124,6 +127,9 @@ public:
 	static void SetEnumPinDefaultValue(UEdGraphPin* EnumPin, UEnum* EnumClass);
 
 private:
+	// 创建通用参数引脚（根据模式按需创建）
+	static void CreateCommonPins(UK2Node* Node, EPointSamplingMode SamplingMode);
+
 	// 创建特定采样模式的引脚
 	static void CreateRectanglePins(UK2Node* Node, EPointSamplingMode SamplingMode);
 	static void CreateTrianglePins(UK2Node* Node, EPointSamplingMode SamplingMode);

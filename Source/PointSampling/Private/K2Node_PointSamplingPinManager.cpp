@@ -8,6 +8,7 @@
 #include "Engine/Texture2D.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
+#include "Components/SplineComponent.h"
 
 #define LOCTEXT_NAMESPACE "K2Node_PointSampling"
 
@@ -32,6 +33,7 @@ const FName FPointSamplingPinNames::PN_OutputPositions(TEXT("OutputPositions"));
 
 const FName FPointSamplingPinNames::PN_RowCount(TEXT("RowCount"));
 const FName FPointSamplingPinNames::PN_ColumnCount(TEXT("ColumnCount"));
+const FName FPointSamplingPinNames::PN_Height(TEXT("Height"));
 
 const FName FPointSamplingPinNames::PN_InvertedTriangle(TEXT("bInvertedTriangle"));
 
@@ -47,7 +49,7 @@ const FName FPointSamplingPinNames::PN_SpiralTurns(TEXT("SpiralTurns"));
 const FName FPointSamplingPinNames::PN_SnowflakeBranches(TEXT("SnowflakeBranches"));
 const FName FPointSamplingPinNames::PN_SnowflakeLayers(TEXT("SnowflakeLayers"));
 
-const FName FPointSamplingPinNames::PN_SplineControlPoints(TEXT("SplineControlPoints"));
+const FName FPointSamplingPinNames::PN_SplineComponent(TEXT("SplineComponent"));
 const FName FPointSamplingPinNames::PN_ClosedSpline(TEXT("bClosedSpline"));
 
 const FName FPointSamplingPinNames::PN_StaticMesh(TEXT("StaticMesh"));
@@ -58,6 +60,8 @@ const FName FPointSamplingPinNames::PN_SkeletalMesh(TEXT("SkeletalMesh"));
 const FName FPointSamplingPinNames::PN_SocketNamePrefix(TEXT("SocketNamePrefix"));
 
 const FName FPointSamplingPinNames::PN_Texture(TEXT("Texture"));
+const FName FPointSamplingPinNames::PN_MaxSampleSize(TEXT("MaxSampleSize"));
+const FName FPointSamplingPinNames::PN_TextureSpacing(TEXT("Spacing"));
 const FName FPointSamplingPinNames::PN_PixelThreshold(TEXT("PixelThreshold"));
 const FName FPointSamplingPinNames::PN_TextureScale(TEXT("TextureScale"));
 
@@ -79,49 +83,11 @@ void FPointSamplingPinManager::CreateBasePins(UK2Node* Node)
 	ModePin->PinToolTip = LOCTEXT("ModePin_Tooltip", "选择点采样模式").ToString();
 	SetEnumPinDefaultValue(ModePin, StaticEnum<EPointSamplingMode>());
 
-	// 创建点数量引脚
-	UEdGraphPin* PointCountPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_PointCount);
-	PointCountPin->DefaultValue = TEXT("10");
-	PointCountPin->PinToolTip = LOCTEXT("PointCount_Tooltip", "生成的点数量").ToString();
-
-	// 创建中心位置引脚
-	UEdGraphPin* CenterPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct,
-		TBaseStructure<FVector>::Get(), FPointSamplingPinNames::PN_CenterLocation);
-	CenterPin->PinToolTip = LOCTEXT("CenterLocation_Tooltip", "点阵中心位置").ToString();
-
-	// 创建旋转引脚
-	UEdGraphPin* RotationPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct,
-		TBaseStructure<FRotator>::Get(), FPointSamplingPinNames::PN_Rotation);
-	RotationPin->PinToolTip = LOCTEXT("Rotation_Tooltip", "点阵旋转").ToString();
-
-	// 创建坐标空间引脚
+	// 创建坐标空间引脚（所有模式都需要）
 	UEdGraphPin* SpacePin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte,
 		StaticEnum<EPoissonCoordinateSpace>(), FPointSamplingPinNames::PN_CoordinateSpace);
 	SpacePin->PinToolTip = LOCTEXT("CoordinateSpace_Tooltip", "坐标空间类型").ToString();
 	SetEnumPinDefaultValue(SpacePin, StaticEnum<EPoissonCoordinateSpace>());
-
-	// 创建间距引脚
-	UEdGraphPin* SpacingPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_Spacing);
-	SpacingPin->DefaultValue = TEXT("100.0");
-	SpacingPin->PinToolTip = LOCTEXT("Spacing_Tooltip", "点之间的间距").ToString();
-
-	// 创建扰动强度引脚（高级参数）
-	UEdGraphPin* JitterPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_JitterStrength);
-	JitterPin->DefaultValue = TEXT("0.0");
-	JitterPin->PinToolTip = LOCTEXT("JitterStrength_Tooltip", "噪波扰动强度 (0-1)").ToString();
-	JitterPin->bAdvancedView = true;
-
-	// 创建缓存引脚（高级参数）
-	UEdGraphPin* CachePin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Boolean, FPointSamplingPinNames::PN_UseCache);
-	CachePin->DefaultValue = TEXT("true");
-	CachePin->PinToolTip = LOCTEXT("UseCache_Tooltip", "是否使用结果缓存").ToString();
-	CachePin->bAdvancedView = true;
-
-	// 创建随机种子引脚（高级参数）
-	UEdGraphPin* SeedPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_RandomSeed);
-	SeedPin->DefaultValue = TEXT("0");
-	SeedPin->PinToolTip = LOCTEXT("RandomSeed_Tooltip", "随机种子").ToString();
-	SeedPin->bAdvancedView = true;
 
 	// 创建输出位置数组引脚
 	UEdGraphPin* OutputPin = Node->CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Struct,
@@ -137,7 +103,10 @@ void FPointSamplingPinManager::RebuildDynamicPins(UK2Node* Node, EPointSamplingM
 	// 先清除现有动态引脚
 	ClearDynamicPins(Node);
 
-	// 根据采样模式创建对应的动态引脚
+	// 创建通用参数引脚（根据模式按需创建）
+	CreateCommonPins(Node, SamplingMode);
+
+	// 根据采样模式创建对应的模式特定引脚
 	switch (SamplingMode)
 	{
 	case EPointSamplingMode::SolidRectangle:
@@ -212,8 +181,67 @@ bool FPointSamplingPinManager::IsDynamicPin(const FName& PinName)
 
 bool FPointSamplingPinManager::SamplingModeNeedsPin(EPointSamplingMode SamplingMode, const FName& PinName)
 {
+	// 通用参数 - PointCount
+	if (PinName == FPointSamplingPinNames::PN_PointCount)
+	{
+		return SamplingMode != EPointSamplingMode::StaticMeshVertices &&
+			   SamplingMode != EPointSamplingMode::SkeletalSockets &&
+			   SamplingMode != EPointSamplingMode::TexturePixels;
+	}
+
+	// 通用参数 - CenterLocation
+	if (PinName == FPointSamplingPinNames::PN_CenterLocation)
+	{
+		return SamplingMode != EPointSamplingMode::Spline &&
+			   SamplingMode != EPointSamplingMode::SplineBoundary &&
+			   SamplingMode != EPointSamplingMode::StaticMeshVertices &&
+			   SamplingMode != EPointSamplingMode::SkeletalSockets;
+	}
+
+	// 通用参数 - Rotation
+	if (PinName == FPointSamplingPinNames::PN_Rotation)
+	{
+		return SamplingMode != EPointSamplingMode::Spline &&
+			   SamplingMode != EPointSamplingMode::SplineBoundary &&
+			   SamplingMode != EPointSamplingMode::StaticMeshVertices &&
+			   SamplingMode != EPointSamplingMode::SkeletalSockets;
+	}
+
+	// 通用参数 - Spacing
+	if (PinName == FPointSamplingPinNames::PN_Spacing)
+	{
+		return SamplingMode == EPointSamplingMode::SolidRectangle ||
+			   SamplingMode == EPointSamplingMode::HollowRectangle ||
+			   SamplingMode == EPointSamplingMode::SpiralRectangle ||
+			   SamplingMode == EPointSamplingMode::SolidTriangle ||
+			   SamplingMode == EPointSamplingMode::HollowTriangle ||
+			   SamplingMode == EPointSamplingMode::Snowflake ||
+			   SamplingMode == EPointSamplingMode::SnowflakeArc;
+	}
+
+	// 通用参数 - JitterStrength
+	if (PinName == FPointSamplingPinNames::PN_JitterStrength)
+	{
+		return SamplingMode != EPointSamplingMode::Spline &&
+			   SamplingMode != EPointSamplingMode::SplineBoundary &&
+			   SamplingMode != EPointSamplingMode::StaticMeshVertices &&
+			   SamplingMode != EPointSamplingMode::SkeletalSockets &&
+			   SamplingMode != EPointSamplingMode::TexturePixels;
+	}
+
+	// 通用参数 - RandomSeed
+	if (PinName == FPointSamplingPinNames::PN_RandomSeed)
+	{
+		return SamplingMode != EPointSamplingMode::Spline &&
+			   SamplingMode != EPointSamplingMode::SplineBoundary &&
+			   SamplingMode != EPointSamplingMode::StaticMeshVertices &&
+			   SamplingMode != EPointSamplingMode::SkeletalSockets;
+	}
+
 	// 矩形参数
-	if (PinName == FPointSamplingPinNames::PN_RowCount || PinName == FPointSamplingPinNames::PN_ColumnCount)
+	if (PinName == FPointSamplingPinNames::PN_RowCount ||
+		PinName == FPointSamplingPinNames::PN_ColumnCount ||
+		PinName == FPointSamplingPinNames::PN_Height)
 	{
 		return SamplingMode == EPointSamplingMode::SolidRectangle ||
 			   SamplingMode == EPointSamplingMode::HollowRectangle ||
@@ -257,8 +285,8 @@ bool FPointSamplingPinManager::SamplingModeNeedsPin(EPointSamplingMode SamplingM
 			   SamplingMode == EPointSamplingMode::SnowflakeArc;
 	}
 
-	// 样条线控制点参数（样条线和样条线边界共用）
-	if (PinName == FPointSamplingPinNames::PN_SplineControlPoints)
+	// 样条组件参数（样条线和样条线边界共用）
+	if (PinName == FPointSamplingPinNames::PN_SplineComponent)
 	{
 		return SamplingMode == EPointSamplingMode::Spline ||
 			   SamplingMode == EPointSamplingMode::SplineBoundary;
@@ -283,7 +311,11 @@ bool FPointSamplingPinManager::SamplingModeNeedsPin(EPointSamplingMode SamplingM
 	}
 
 	// 纹理参数
-	if (PinName == FPointSamplingPinNames::PN_Texture || PinName == FPointSamplingPinNames::PN_PixelThreshold || PinName == FPointSamplingPinNames::PN_TextureScale)
+	if (PinName == FPointSamplingPinNames::PN_Texture ||
+		PinName == FPointSamplingPinNames::PN_MaxSampleSize ||
+		PinName == FPointSamplingPinNames::PN_TextureSpacing ||
+		PinName == FPointSamplingPinNames::PN_PixelThreshold ||
+		PinName == FPointSamplingPinNames::PN_TextureScale)
 	{
 		return SamplingMode == EPointSamplingMode::TexturePixels;
 	}
@@ -310,17 +342,77 @@ void FPointSamplingPinManager::SetEnumPinDefaultValue(UEdGraphPin* EnumPin, UEnu
 // 私有方法实现 - 创建特定类型的引脚
 // ============================================================================
 
+void FPointSamplingPinManager::CreateCommonPins(UK2Node* Node, EPointSamplingMode SamplingMode)
+{
+	if (!Node) return;
+
+	// PointCount - 重用 SamplingModeNeedsPin 判断逻辑
+	if (SamplingModeNeedsPin(SamplingMode, FPointSamplingPinNames::PN_PointCount))
+	{
+		UEdGraphPin* PointCountPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_PointCount);
+		PointCountPin->DefaultValue = TEXT("-1");
+		PointCountPin->PinToolTip = LOCTEXT("PointCount_Tooltip", "生成的点数量（-1表示由行列/半径等参数控制）").ToString();
+	}
+
+	// CenterLocation
+	if (SamplingModeNeedsPin(SamplingMode, FPointSamplingPinNames::PN_CenterLocation))
+	{
+		UEdGraphPin* CenterPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct,
+			TBaseStructure<FVector>::Get(), FPointSamplingPinNames::PN_CenterLocation);
+		CenterPin->PinToolTip = LOCTEXT("CenterLocation_Tooltip", "点阵中心位置").ToString();
+	}
+
+	// Rotation
+	if (SamplingModeNeedsPin(SamplingMode, FPointSamplingPinNames::PN_Rotation))
+	{
+		UEdGraphPin* RotationPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct,
+			TBaseStructure<FRotator>::Get(), FPointSamplingPinNames::PN_Rotation);
+		RotationPin->PinToolTip = LOCTEXT("Rotation_Tooltip", "点阵旋转").ToString();
+	}
+
+	// Spacing
+	if (SamplingModeNeedsPin(SamplingMode, FPointSamplingPinNames::PN_Spacing))
+	{
+		UEdGraphPin* SpacingPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_Spacing);
+		SpacingPin->DefaultValue = TEXT("100.0");
+		SpacingPin->PinToolTip = LOCTEXT("Spacing_Tooltip", "点之间的间距").ToString();
+	}
+
+	// JitterStrength
+	if (SamplingModeNeedsPin(SamplingMode, FPointSamplingPinNames::PN_JitterStrength))
+	{
+		UEdGraphPin* JitterPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_JitterStrength);
+		JitterPin->DefaultValue = TEXT("0.0");
+		JitterPin->PinToolTip = LOCTEXT("JitterStrength_Tooltip", "噪波扰动强度 (0-1)").ToString();
+		JitterPin->bAdvancedView = true;
+	}
+
+	// RandomSeed
+	if (SamplingModeNeedsPin(SamplingMode, FPointSamplingPinNames::PN_RandomSeed))
+	{
+		UEdGraphPin* SeedPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_RandomSeed);
+		SeedPin->DefaultValue = TEXT("0");
+		SeedPin->PinToolTip = LOCTEXT("RandomSeed_Tooltip", "随机种子").ToString();
+		SeedPin->bAdvancedView = true;
+	}
+}
+
 void FPointSamplingPinManager::CreateRectanglePins(UK2Node* Node, EPointSamplingMode SamplingMode)
 {
 	if (!Node) return;
 
 	UEdGraphPin* RowPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_RowCount);
-	RowPin->DefaultValue = TEXT("0");
-	RowPin->PinToolTip = LOCTEXT("RowCount_Tooltip", "行数（0表示自动计算）").ToString();
+	RowPin->DefaultValue = TEXT("5");
+	RowPin->PinToolTip = LOCTEXT("RowCount_Tooltip", "行数（0表示由PointCount自动计算）").ToString();
 
 	UEdGraphPin* ColPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_ColumnCount);
-	ColPin->DefaultValue = TEXT("0");
-	ColPin->PinToolTip = LOCTEXT("ColumnCount_Tooltip", "列数（0表示自动计算）").ToString();
+	ColPin->DefaultValue = TEXT("5");
+	ColPin->PinToolTip = LOCTEXT("ColumnCount_Tooltip", "列数（0表示由PointCount自动计算）").ToString();
+
+	UEdGraphPin* HeightPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_Height);
+	HeightPin->DefaultValue = TEXT("1.0");
+	HeightPin->PinToolTip = LOCTEXT("Height_Tooltip", "高度，支持3D矩形点阵（1=2D平面）").ToString();
+	HeightPin->bAdvancedView = true;
 }
 
 void FPointSamplingPinManager::CreateTrianglePins(UK2Node* Node, EPointSamplingMode SamplingMode)
@@ -391,10 +483,10 @@ void FPointSamplingPinManager::CreateSplinePins(UK2Node* Node)
 {
 	if (!Node) return;
 
-	UEdGraphPin* ControlPointsPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct,
-		TBaseStructure<FVector>::Get(), FPointSamplingPinNames::PN_SplineControlPoints);
-	ControlPointsPin->PinType.ContainerType = EPinContainerType::Array;
-	ControlPointsPin->PinToolTip = LOCTEXT("SplineControlPoints_Tooltip", "样条线控制点数组").ToString();
+	// 修改为样条组件类型
+	UEdGraphPin* SplineComponentPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object,
+		USplineComponent::StaticClass(), FPointSamplingPinNames::PN_SplineComponent);
+	SplineComponentPin->PinToolTip = LOCTEXT("SplineComponent_Tooltip", "样条组件引用").ToString();
 
 	UEdGraphPin* ClosedPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Boolean, FPointSamplingPinNames::PN_ClosedSpline);
 	ClosedPin->DefaultValue = TEXT("false");
@@ -405,10 +497,10 @@ void FPointSamplingPinManager::CreateSplineBoundaryPins(UK2Node* Node)
 {
 	if (!Node) return;
 
-	UEdGraphPin* ControlPointsPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct,
-		TBaseStructure<FVector>::Get(), FPointSamplingPinNames::PN_SplineControlPoints);
-	ControlPointsPin->PinType.ContainerType = EPinContainerType::Array;
-	ControlPointsPin->PinToolTip = LOCTEXT("SplineControlPoints_Tooltip", "样条线控制点数组").ToString();
+	// 修改为样条组件类型
+	UEdGraphPin* SplineComponentPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object,
+		USplineComponent::StaticClass(), FPointSamplingPinNames::PN_SplineComponent);
+	SplineComponentPin->PinToolTip = LOCTEXT("SplineComponent_Tooltip", "样条组件引用").ToString();
 
 	UEdGraphPin* MinDistancePin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_MinDistance);
 	MinDistancePin->DefaultValue = TEXT("50.0");
@@ -454,29 +546,48 @@ void FPointSamplingPinManager::CreateTexturePins(UK2Node* Node)
 		UTexture2D::StaticClass(), FPointSamplingPinNames::PN_Texture);
 	TexturePin->PinToolTip = LOCTEXT("Texture_Tooltip", "纹理引用").ToString();
 
+	UEdGraphPin* MaxSampleSizePin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FPointSamplingPinNames::PN_MaxSampleSize);
+	MaxSampleSizePin->DefaultValue = TEXT("512");
+	MaxSampleSizePin->PinToolTip = LOCTEXT("MaxSampleSize_Tooltip", "最大采样尺寸（纹理会被智能降采样到此尺寸，控制最大点数量）").ToString();
+
+	UEdGraphPin* SpacingPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_TextureSpacing);
+	SpacingPin->DefaultValue = TEXT("20.0");
+	SpacingPin->PinToolTip = LOCTEXT("TextureSpacing_Tooltip", "像素步长（采样间隔，建议范围10-50，值越大点越稀疏）").ToString();
+
 	UEdGraphPin* ThresholdPin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_PixelThreshold);
 	ThresholdPin->DefaultValue = TEXT("0.5");
 	ThresholdPin->PinToolTip = LOCTEXT("PixelThreshold_Tooltip", "像素采样阈值 (0-1)").ToString();
+	ThresholdPin->bAdvancedView = true;
 
 	UEdGraphPin* ScalePin = Node->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, FPointSamplingPinNames::PN_TextureScale);
 	ScalePin->DefaultValue = TEXT("1.0");
-	ScalePin->PinToolTip = LOCTEXT("TextureScale_Tooltip", "图片缩放").ToString();
+	ScalePin->PinToolTip = LOCTEXT("TextureScale_Tooltip", "图片缩放（影响生成点位的物理尺寸）").ToString();
+	ScalePin->bAdvancedView = true;
 }
 
 TArray<FName> FPointSamplingPinManager::GetDynamicPinNames()
 {
 	return {
-		FPointSamplingPinNames::PN_RowCount, FPointSamplingPinNames::PN_ColumnCount,
+		// 通用参数（现在也是动态的）
+		FPointSamplingPinNames::PN_PointCount,
+		FPointSamplingPinNames::PN_CenterLocation,
+		FPointSamplingPinNames::PN_Rotation,
+		FPointSamplingPinNames::PN_Spacing,
+		FPointSamplingPinNames::PN_JitterStrength,
+		FPointSamplingPinNames::PN_RandomSeed,
+		// 模式特定参数
+		FPointSamplingPinNames::PN_RowCount, FPointSamplingPinNames::PN_ColumnCount, FPointSamplingPinNames::PN_Height,
 		FPointSamplingPinNames::PN_InvertedTriangle,
 		FPointSamplingPinNames::PN_Radius, FPointSamplingPinNames::PN_Is3D,
 		FPointSamplingPinNames::PN_DistributionMode, FPointSamplingPinNames::PN_MinDistance,
 		FPointSamplingPinNames::PN_StartAngle, FPointSamplingPinNames::PN_Clockwise,
 		FPointSamplingPinNames::PN_SpiralTurns,
 		FPointSamplingPinNames::PN_SnowflakeBranches, FPointSamplingPinNames::PN_SnowflakeLayers,
-		FPointSamplingPinNames::PN_SplineControlPoints, FPointSamplingPinNames::PN_ClosedSpline,
+		FPointSamplingPinNames::PN_SplineComponent, FPointSamplingPinNames::PN_ClosedSpline,
 		FPointSamplingPinNames::PN_StaticMesh, FPointSamplingPinNames::PN_LODLevel, FPointSamplingPinNames::PN_BoundaryVerticesOnly,
 		FPointSamplingPinNames::PN_SkeletalMesh, FPointSamplingPinNames::PN_SocketNamePrefix,
-		FPointSamplingPinNames::PN_Texture, FPointSamplingPinNames::PN_PixelThreshold, FPointSamplingPinNames::PN_TextureScale
+		FPointSamplingPinNames::PN_Texture, FPointSamplingPinNames::PN_MaxSampleSize, FPointSamplingPinNames::PN_TextureSpacing,
+		FPointSamplingPinNames::PN_PixelThreshold, FPointSamplingPinNames::PN_TextureScale
 	};
 }
 

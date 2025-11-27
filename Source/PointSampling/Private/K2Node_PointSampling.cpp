@@ -442,6 +442,13 @@ void UK2Node_PointSampling::ConnectModeSpecificPins(FKismetCompilerContext& Comp
 				CompilerContext.MovePinLinksToIntermediate(*ColumnCountPin, *FuncColumnCountPin);
 			}
 
+			UEdGraphPin* HeightPin = FindPin(FPointSamplingPinNames::PN_Height);
+			UEdGraphPin* FuncHeightPin = CallFunctionNode->FindPin(TEXT("Height"), EGPD_Input);
+			if (HeightPin && FuncHeightPin)
+			{
+				CompilerContext.MovePinLinksToIntermediate(*HeightPin, *FuncHeightPin);
+			}
+
 			// 螺旋矩形特有
 			if (SamplingMode == EPointSamplingMode::SpiralRectangle)
 			{
@@ -560,11 +567,11 @@ void UK2Node_PointSampling::ConnectModeSpecificPins(FKismetCompilerContext& Comp
 	case EPointSamplingMode::Spline:
 		{
 			// 样条线参数
-			UEdGraphPin* ControlPointsPin = FindPin(FPointSamplingPinNames::PN_SplineControlPoints);
-			UEdGraphPin* FuncControlPointsPin = CallFunctionNode->FindPin(TEXT("SplineControlPoints"), EGPD_Input);
-			if (ControlPointsPin && FuncControlPointsPin)
+			UEdGraphPin* SplineComponentPin = FindPin(FPointSamplingPinNames::PN_SplineComponent);
+			UEdGraphPin* FuncSplineComponentPin = CallFunctionNode->FindPin(TEXT("SplineComponent"), EGPD_Input);
+			if (SplineComponentPin && FuncSplineComponentPin)
 			{
-				CompilerContext.MovePinLinksToIntermediate(*ControlPointsPin, *FuncControlPointsPin);
+				CompilerContext.MovePinLinksToIntermediate(*SplineComponentPin, *FuncSplineComponentPin);
 			}
 
 			UEdGraphPin* ClosedSplinePin = FindPin(FPointSamplingPinNames::PN_ClosedSpline);
@@ -587,11 +594,11 @@ void UK2Node_PointSampling::ConnectModeSpecificPins(FKismetCompilerContext& Comp
 				CompilerContext.MovePinLinksToIntermediate(*PointCountPin, *FuncTargetPointCountPin);
 			}
 
-			UEdGraphPin* ControlPointsPin = FindPin(FPointSamplingPinNames::PN_SplineControlPoints);
-			UEdGraphPin* FuncControlPointsPin = CallFunctionNode->FindPin(TEXT("SplineControlPoints"), EGPD_Input);
-			if (ControlPointsPin && FuncControlPointsPin)
+			UEdGraphPin* SplineComponentPin = FindPin(FPointSamplingPinNames::PN_SplineComponent);
+			UEdGraphPin* FuncSplineComponentPin = CallFunctionNode->FindPin(TEXT("SplineComponent"), EGPD_Input);
+			if (SplineComponentPin && FuncSplineComponentPin)
 			{
-				CompilerContext.MovePinLinksToIntermediate(*ControlPointsPin, *FuncControlPointsPin);
+				CompilerContext.MovePinLinksToIntermediate(*SplineComponentPin, *FuncSplineComponentPin);
 			}
 
 			UEdGraphPin* MinDistancePin = FindPin(FPointSamplingPinNames::PN_MinDistance);
@@ -659,6 +666,20 @@ void UK2Node_PointSampling::ConnectModeSpecificPins(FKismetCompilerContext& Comp
 			if (TexturePin && FuncTexturePin)
 			{
 				CompilerContext.MovePinLinksToIntermediate(*TexturePin, *FuncTexturePin);
+			}
+
+			UEdGraphPin* MaxSampleSizePin = FindPin(FPointSamplingPinNames::PN_MaxSampleSize);
+			UEdGraphPin* FuncMaxSampleSizePin = CallFunctionNode->FindPin(TEXT("MaxSampleSize"), EGPD_Input);
+			if (MaxSampleSizePin && FuncMaxSampleSizePin)
+			{
+				CompilerContext.MovePinLinksToIntermediate(*MaxSampleSizePin, *FuncMaxSampleSizePin);
+			}
+
+			UEdGraphPin* TextureSpacingPin = FindPin(FPointSamplingPinNames::PN_TextureSpacing);
+			UEdGraphPin* FuncSpacingPin = CallFunctionNode->FindPin(TEXT("Spacing"), EGPD_Input);
+			if (TextureSpacingPin && FuncSpacingPin)
+			{
+				CompilerContext.MovePinLinksToIntermediate(*TextureSpacingPin, *FuncSpacingPin);
 			}
 
 			UEdGraphPin* PixelThresholdPin = FindPin(FPointSamplingPinNames::PN_PixelThreshold);

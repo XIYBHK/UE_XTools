@@ -46,6 +46,7 @@ public:
 	 * @param Spacing 点间距
 	 * @param RowCount 行数（0=自动计算）
 	 * @param ColumnCount 列数（0=自动计算）
+	 * @param Height 高度，支持3D矩形点阵（1=2D平面）
 	 * @param CoordinateSpace 坐标空间
 	 * @param JitterStrength 扰动强度(0-1)
 	 * @param RandomSeed 随机种子
@@ -60,6 +61,7 @@ public:
 		float Spacing = 100.0f,
 		int32 RowCount = 0,
 		int32 ColumnCount = 0,
+		float Height = 1.0f,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
 		int32 RandomSeed = 0
@@ -67,6 +69,7 @@ public:
 
 	/**
 	 * 生成空心矩形点阵
+	 * @param Height 高度，支持3D矩形点阵（1=2D平面）
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|矩形",
 		meta = (DisplayName = "生成空心矩形点阵", AdvancedDisplay = "JitterStrength,RandomSeed"))
@@ -77,6 +80,7 @@ public:
 		float Spacing = 100.0f,
 		int32 RowCount = 0,
 		int32 ColumnCount = 0,
+		float Height = 1.0f,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
 		int32 RandomSeed = 0
@@ -84,6 +88,7 @@ public:
 
 	/**
 	 * 生成螺旋矩形点阵（从内向外螺旋）
+	 * @param Height 高度，支持3D矩形点阵（1=2D平面）
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|矩形",
 		meta = (DisplayName = "生成螺旋矩形点阵", AdvancedDisplay = "JitterStrength,RandomSeed"))
@@ -93,6 +98,7 @@ public:
 		FRotator Rotation,
 		float Spacing = 100.0f,
 		float SpiralTurns = 2.0f,
+		float Height = 1.0f,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
 		int32 RandomSeed = 0
@@ -221,7 +227,7 @@ public:
 		meta = (DisplayName = "沿样条线生成点阵"))
 	static TArray<FVector> GenerateAlongSpline(
 		int32 PointCount,
-		const TArray<FVector>& SplineControlPoints,
+		USplineComponent* SplineComponent,
 		bool bClosedSpline = false,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
 	);
@@ -233,7 +239,7 @@ public:
 		meta = (DisplayName = "样条线边界泊松采样", AdvancedDisplay = "MinDistance,RandomSeed"))
 	static TArray<FVector> GenerateSplineBoundary(
 		int32 TargetPointCount,
-		const TArray<FVector>& SplineControlPoints,
+		USplineComponent* SplineComponent,
 		float MinDistance = 50.0f,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World,
 		int32 RandomSeed = 0
@@ -273,7 +279,7 @@ public:
 	// ============================================================================
 
 	/**
-	 * 从纹理像素生成点阵
+	 * 从纹理像素生成点阵（智能降采样方法）
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
 		meta = (DisplayName = "从纹理像素生成点阵"))
@@ -281,6 +287,8 @@ public:
 		UTexture2D* Texture,
 		FVector CenterLocation,
 		FRotator Rotation,
+		int32 MaxSampleSize = 512,
+		float Spacing = 20.0f,
 		float PixelThreshold = 0.5f,
 		float TextureScale = 1.0f,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
