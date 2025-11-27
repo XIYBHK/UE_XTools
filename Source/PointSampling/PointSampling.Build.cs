@@ -37,6 +37,7 @@ public class PointSampling : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"RenderCore",  // 用于访问静态网格体渲染数据
 			"XToolsCore"  // XTools版本兼容层
 		});
 
@@ -45,6 +46,18 @@ public class PointSampling : ModuleRules
 		{
 			// 未来如需要添加其他依赖
 		});
+
+		//  编辑器专用依赖 - 支持自定义 K2Node
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[]
+			{
+				"UnrealEd",
+				"BlueprintGraph",
+				"KismetCompiler",
+				"GraphEditor"
+			});
+		}
 
 		//  添加模块定义
 		PublicDefinitions.AddRange(new string[]

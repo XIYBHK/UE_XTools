@@ -29,6 +29,69 @@ enum class EPoissonCoordinateSpace : uint8
 };
 
 /**
+ * 点采样模式枚举
+ * 定义各种点阵生成算法
+ */
+UENUM(BlueprintType)
+enum class EPointSamplingMode : uint8
+{
+	/** 实心矩形阵型 */
+	SolidRectangle      UMETA(DisplayName = "实心矩形"),
+
+	/** 空心矩形阵型 */
+	HollowRectangle     UMETA(DisplayName = "空心矩形"),
+
+	/** 螺旋矩形阵型 */
+	SpiralRectangle     UMETA(DisplayName = "螺旋矩形"),
+
+	/** 实心三角形阵型 */
+	SolidTriangle       UMETA(DisplayName = "实心三角形"),
+
+	/** 空心三角形阵型 */
+	HollowTriangle      UMETA(DisplayName = "空心三角形"),
+
+	/** 圆形阵型 */
+	Circle              UMETA(DisplayName = "圆形"),
+
+	/** 雪花形阵型 */
+	Snowflake           UMETA(DisplayName = "雪花形"),
+
+	/** 雪花弧形阵型 */
+	SnowflakeArc        UMETA(DisplayName = "雪花弧形"),
+
+	/** 样条线阵型 */
+	Spline              UMETA(DisplayName = "样条线"),
+
+	/** 样条线边界泊松采样 */
+	SplineBoundary      UMETA(DisplayName = "样条线边界"),
+
+	/** 静态网格体顶点阵型 */
+	StaticMeshVertices  UMETA(DisplayName = "静态模型顶点"),
+
+	/** 骨骼插槽阵型 */
+	SkeletalSockets     UMETA(DisplayName = "骨骼插槽"),
+
+	/** 图片像素阵型 */
+	TexturePixels       UMETA(DisplayName = "图片像素")
+};
+
+/**
+ * 圆形/球体采样的分布模式
+ */
+UENUM(BlueprintType)
+enum class ECircleDistributionMode : uint8
+{
+	/** 圆周均匀角度分布（2D）或经纬度网格（3D） */
+	Uniform     UMETA(DisplayName = "均匀分布"),
+
+	/** 黄金角螺旋分布（2D）或斐波那契球面（3D），分布最均匀 */
+	Fibonacci   UMETA(DisplayName = "斐波那契"),
+
+	/** 随机但保证最小距离的自然分布 */
+	Poisson     UMETA(DisplayName = "泊松分布")
+};
+
+/**
  * 泊松采样配置结构体
  */
 USTRUCT(BlueprintType)
