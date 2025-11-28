@@ -39,10 +39,50 @@ public:
 
 private:
 	/**
+	 * 检查纹理源格式是否受支持（参考 UE SubUVAnimation.cpp）
+	 */
+	static bool IsSupportedSourceFormat(ETextureSourceFormat Format);
+
+	/**
+	 * 获取每像素字节数（参考 UE SubUVAnimation.cpp）
+	 */
+	static uint32 GetBytesPerPixel(ETextureSourceFormat Format);
+
+	/**
+	 * 智能判断是否应该使用 Alpha 通道采样
+	 * 基于纹理的 CompressionSettings 和 Alpha 通道属性
+	 */
+	static bool ShouldUseAlphaChannel(UTexture2D* Texture);
+
+	/**
 	 * 计算像素的采样值（基于 Alpha 或亮度）
 	 * @param Color 像素颜色
-	 * @param bHasAlphaChannel 纹理是否有 Alpha 通道
+	 * @param bUseAlpha 是否使用 Alpha 通道
 	 * @return 采样值 (0-1)
 	 */
-	static float CalculatePixelSamplingValue(const FColor& Color, bool bHasAlphaChannel);
+	static float CalculatePixelSamplingValue(const FColor& Color, bool bUseAlpha);
+
+#if WITH_EDITOR
+	/**
+	 * 从编辑器源数据生成点阵（支持所有压缩格式）
+	 */
+	static TArray<FVector> GenerateFromTextureSource(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float Spacing,
+		float PixelThreshold,
+		float TextureScale
+	);
+#endif
+
+	/**
+	 * 从运行时平台数据生成点阵（仅支持未压缩格式）
+	 */
+	static TArray<FVector> GenerateFromTexturePlatformData(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float Spacing,
+		float PixelThreshold,
+		float TextureScale
+	);
 };

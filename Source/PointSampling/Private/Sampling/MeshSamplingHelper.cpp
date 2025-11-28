@@ -4,6 +4,8 @@
 */
 
 #include "MeshSamplingHelper.h"
+#include "PointDeduplicationHelper.h"
+#include "PointSamplingTypes.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
@@ -13,7 +15,8 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
 	UStaticMesh* StaticMesh,
 	const FTransform& Transform,
 	int32 LODLevel,
-	bool bBoundaryVerticesOnly)
+	bool bBoundaryVerticesOnly,
+	int32 MaxPoints)
 {
 	TArray<FVector> Points;
 
@@ -39,9 +42,24 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
 
 	// 获取所有顶点位置
 	uint32 NumVertices = VertexBuffer.GetNumVertices();
-	Points.Reserve(NumVertices);
 
-	for (uint32 i = 0; i < NumVertices; ++i)
+	// 智能降采样：使用用户指定的 MaxPoints，如果未指定则使用防御性限制（10万）
+	const uint32 MaxVertices = (MaxPoints > 0) ? static_cast<uint32>(MaxPoints) : 100000;
+	uint32 Step = 1;
+
+	if (NumVertices > MaxVertices)
+	{
+		// 计算采样步长以达到目标点数（采样前降采样，保持形状分布）
+		Step = FMath::CeilToInt((float)NumVertices / MaxVertices);
+
+		UE_LOG(LogPointSampling, Log,
+			TEXT("[静态网格采样] 顶点数 %d 超过目标 %d，每隔 %d 个顶点采样一次（预期采样 ~%d 个点）"),
+			NumVertices, MaxVertices, Step, NumVertices / Step);
+	}
+
+	Points.Reserve(FMath::Min(NumVertices, MaxVertices));
+
+	for (uint32 i = 0; i < NumVertices; i += Step)
 	{
 		// 获取顶点位置（局部坐标）
 		FVector VertexPosition = FVector(VertexBuffer.VertexPosition(i));
@@ -54,6 +72,25 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
 	// TODO: 边界顶点过滤（bBoundaryVerticesOnly）
 	// 这需要分析网格拓扑，找出只被一个三角形使用的顶点
 	// 由于实现复杂度较高，暂时保留所有顶点
+
+	// 去除重复/重叠点位（静态模型通常有大量重复顶点）
+	if (Points.Num() > 0)
+	{
+		int32 OriginalCount, RemovedCount;
+		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+			Points,
+			1.0f,  // 容差：1cm（UE单位）
+			OriginalCount,
+			RemovedCount
+		);
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[静态网格采样] 去重：原始 %d 个点 -> 去除 %d 个重复点 -> 剩余 %d 个点"),
+				OriginalCount, RemovedCount, Points.Num());
+		}
+	}
 
 	return Points;
 }

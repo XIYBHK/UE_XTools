@@ -251,12 +251,26 @@ public:
 
 	/**
 	 * 从静态网格体顶点生成点阵
+	 *
+	 * @param StaticMesh 静态网格体资产
+	 * @param Transform 变换（位置、旋转、缩放）
+	 * @param MaxPoints 最大点数（0=不限制，>0=智能降采样到目标数量）
+	 * @param LODLevel LOD 级别（0=最高精度）
+	 * @param bBoundaryVerticesOnly 仅边界顶点（暂未实现）
+	 * @param CoordinateSpace 坐标空间
+	 *
+	 * 推荐设置：
+	 * - 快速预览：MaxPoints = 500-1000
+	 * - 普通使用：MaxPoints = 1000-5000
+	 * - 高精度：MaxPoints = 10000+
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|网格",
-		meta = (DisplayName = "从静态网格体生成点阵"))
+		meta = (DisplayName = "从静态网格体生成点阵",
+			AdvancedDisplay = "LODLevel,bBoundaryVerticesOnly"))
 	static TArray<FVector> GenerateFromStaticMesh(
 		UStaticMesh* StaticMesh,
 		FTransform Transform,
+		int32 MaxPoints = 1000,
 		int32 LODLevel = 0,
 		bool bBoundaryVerticesOnly = false,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
@@ -280,17 +294,45 @@ public:
 
 	/**
 	 * 从纹理像素生成点阵（智能降采样方法）
+	 *
+	 * @param Texture 纹理资产（必须设置为未压缩格式，见下方说明）
+	 * @param CenterLocation 中心位置
+	 * @param Rotation 旋转角度
+	 * @param MaxSampleSize 最大采样尺寸（纹理会降采样到此尺寸）
+	 * @param Spacing 像素采样间隔（值越大点越稀疏）
+	 * @param PixelThreshold 像素阈值（0-1，只采样 Alpha/亮度高于此值的像素）
+	 * @param TextureScale 纹理物理尺寸缩放
+	 * @param CoordinateSpace 坐标空间（局部/世界）
+	 *
+	 * 重要：纹理必须设置为未压缩格式，否则无法读取像素数据！
+	 * 在纹理资产中设置：
+	 * 1. Compression Settings -> VectorDisplacementmap (RGBA8)
+	 * 2. Mip Gen Settings -> NoMipmaps
+	 * 3. sRGB -> 取消勾选
+	 * 4. 保存并重新导入纹理
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
-		meta = (DisplayName = "从纹理像素生成点阵"))
+		meta = (DisplayName = "从纹理像素生成点阵",
+			ToolTip = "从纹理像素生成点阵（基于 Alpha 通道或亮度）。\n重要：纹理必须设置为未压缩格式（VectorDisplacementmap）！"))
 	static TArray<FVector> GenerateFromTexture(
 		UTexture2D* Texture,
 		FVector CenterLocation,
 		FRotator Rotation,
 		int32 MaxSampleSize = 512,
-		float Spacing = 20.0f,
+		float Spacing = 1.0f,
 		float PixelThreshold = 0.5f,
 		float TextureScale = 1.0f,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
 	);
+
+	/**
+	 * 验证纹理设置是否适合点采样（调试辅助函数）
+	 *
+	 * @param Texture 要验证的纹理
+	 * @return 如果纹理设置正确返回 true，否则返回 false 并输出错误日志
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
+		meta = (DisplayName = "验证纹理采样设置",
+			ToolTip = "检查纹理是否设置为未压缩格式，并输出详细的设置信息"))
+	static bool ValidateTextureForSampling(UTexture2D* Texture);
 };

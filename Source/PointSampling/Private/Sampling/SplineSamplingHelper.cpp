@@ -4,6 +4,8 @@
 */
 
 #include "SplineSamplingHelper.h"
+#include "PointDeduplicationHelper.h"
+#include "PointSamplingTypes.h"
 #include "Algorithms/PoissonDiskSampling.h"
 #include "Math/UnrealMathUtility.h"
 
@@ -89,6 +91,25 @@ TArray<FVector> FSplineSamplingHelper::GenerateAlongSpline(
 			FVector Point = CatmullRomInterpolate(P0, P1, P2, P3, T);
 			Points.Add(Point);
 			++GeneratedCount;
+		}
+	}
+
+	// 去除重复/重叠点位（样条线段连接处可能产生重复点）
+	if (Points.Num() > 0)
+	{
+		int32 OriginalCount, RemovedCount;
+		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+			Points,
+			1.0f,  // 容差：1cm（UE单位）
+			OriginalCount,
+			RemovedCount
+		);
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[样条线采样] 去重：原始 %d 个点 -> 去除 %d 个重复点 -> 剩余 %d 个点"),
+				OriginalCount, RemovedCount, Points.Num());
 		}
 	}
 
@@ -237,6 +258,25 @@ TArray<FVector> FSplineSamplingHelper::GenerateWithinBoundary(
 			{
 				break;
 			}
+		}
+	}
+
+	// 去除重复/重叠点位（防御性编程，泊松采样理论上不应有重复点）
+	if (Points.Num() > 0)
+	{
+		int32 OriginalCount, RemovedCount;
+		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+			Points,
+			Radius * 0.5f,  // 容差：MinDistance 的一半
+			OriginalCount,
+			RemovedCount
+		);
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[样条线边界采样] 去重：原始 %d 个点 -> 去除 %d 个重复点 -> 剩余 %d 个点"),
+				OriginalCount, RemovedCount, Points.Num());
 		}
 	}
 

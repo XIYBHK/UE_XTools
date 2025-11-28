@@ -26,5 +26,9 @@ public:
 	/** IModuleInterface implementation */
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+
+private:
+	/** 自定义节点工厂 */
+	TSharedPtr<struct FGraphPanelNodeFactory> GraphPanelNodeFactory;
 };
 

@@ -429,13 +429,14 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSplineBoundary(
 TArray<FVector> UFormationSamplingLibrary::GenerateFromStaticMesh(
 	UStaticMesh* StaticMesh,
 	FTransform Transform,
+	int32 MaxPoints,
 	int32 LODLevel,
 	bool bBoundaryVerticesOnly,
 	EPoissonCoordinateSpace CoordinateSpace)
 {
 	// 从静态网格体提取顶点
 	TArray<FVector> Points = FMeshSamplingHelper::GenerateFromStaticMesh(
-		StaticMesh, Transform, LODLevel, bBoundaryVerticesOnly
+		StaticMesh, Transform, LODLevel, bBoundaryVerticesOnly, MaxPoints
 	);
 
 	// 根据坐标空间类型处理
@@ -530,4 +531,59 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromTexture(
 
 	// 转换到目标坐标空间
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}
+
+bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
+{
+	if (!Texture)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[纹理验证] 纹理指针为空"));
+		return false;
+	}
+
+	// 检查平台数据
+	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
+	if (!PlatformData || PlatformData->Mips.Num() == 0)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[纹理验证] 纹理平台数据无效"));
+		return false;
+	}
+
+	// 获取纹理信息
+	int32 Width = Texture->GetSizeX();
+	int32 Height = Texture->GetSizeY();
+	EPixelFormat PixelFormat = PlatformData->PixelFormat;
+
+	UE_LOG(LogPointSampling, Display, TEXT("========================================"));
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 纹理: %s"), *Texture->GetName());
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 尺寸: %dx%d"), Width, Height);
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 像素格式: %s (%d)"), GetPixelFormatString(PixelFormat), (int32)PixelFormat);
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] Mip 级别数: %d"), PlatformData->Mips.Num());
+
+	// 检查纹理压缩设置
+	TextureCompressionSettings CompressionSettings = Texture->CompressionSettings;
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 压缩设置: %d"), (int32)CompressionSettings);
+
+	// 检查是否为支持的格式
+	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
+	                          (PixelFormat == PF_R8G8B8A8) ||
+	                          (PixelFormat == PF_A8R8G8B8) ||
+	                          (PixelFormat == PF_FloatRGBA);
+
+	if (!bIsSupportedFormat)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[纹理验证] ❌ 纹理格式不支持！"));
+		UE_LOG(LogPointSampling, Error, TEXT("========================================"));
+		UE_LOG(LogPointSampling, Error, TEXT("请在纹理资产中进行以下设置："));
+		UE_LOG(LogPointSampling, Error, TEXT("  1. Compression Settings -> VectorDisplacementmap (RGBA8)"));
+		UE_LOG(LogPointSampling, Error, TEXT("  2. Mip Gen Settings -> NoMipmaps"));
+		UE_LOG(LogPointSampling, Error, TEXT("  3. sRGB -> 取消勾选"));
+		UE_LOG(LogPointSampling, Error, TEXT("  4. 点击 'Save' 保存纹理"));
+		UE_LOG(LogPointSampling, Error, TEXT("========================================"));
+		return false;
+	}
+
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] ✓ 纹理设置正确，可以用于点采样"));
+	UE_LOG(LogPointSampling, Display, TEXT("========================================"));
+	return true;
 }

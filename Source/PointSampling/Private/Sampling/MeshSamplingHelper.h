@@ -27,13 +27,15 @@ public:
 	 * @param Transform 变换矩阵
 	 * @param LODLevel LOD 级别
 	 * @param bBoundaryVerticesOnly 是否仅使用边界顶点
+	 * @param MaxPoints 最大点数（0=不限制，>0=智能降采样到目标数量）
 	 * @return 顶点位置数组
 	 */
 	static TArray<FVector> GenerateFromStaticMesh(
 		UStaticMesh* StaticMesh,
 		const FTransform& Transform,
 		int32 LODLevel,
-		bool bBoundaryVerticesOnly
+		bool bBoundaryVerticesOnly,
+		int32 MaxPoints = 0
 	);
 
 	/**
