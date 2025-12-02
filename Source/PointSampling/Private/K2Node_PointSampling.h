@@ -1,20 +1,17 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/ObjectMacros.h"
-#include "PointSamplingTypes.h"
 
 #if WITH_EDITOR
+
+#include "UObject/ObjectMacros.h"
+#include "PointSamplingTypes.h"
 #include "K2Node.h"
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "BlueprintActionDatabaseRegistrar.h"
-#endif
-
 #include "K2Node_PointSampling.generated.h"
-
-#if WITH_EDITOR
 
 class FBlueprintActionDatabaseRegistrar;
 class UEdGraphPin;
