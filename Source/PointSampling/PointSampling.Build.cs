@@ -55,15 +55,6 @@ public class PointSampling : ModuleRules
 				"ToolMenus"        // FToolMenuSection, FUIAction等
 			});
 		}
-		else
-		{
-			// 非编辑器构建时排除K2Node相关文件
-			ExcludeSourceFiles.AddRange(new string[]
-			{
-				ModuleDirectory + "/Private/K2Node_PointSampling.cpp",
-				ModuleDirectory + "/Private/K2Node_PointSamplingPinManager.cpp"
-			});
-		}
 
 		//  添加模块定义
 		PublicDefinitions.AddRange(new string[]
