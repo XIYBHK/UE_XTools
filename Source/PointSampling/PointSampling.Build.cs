@@ -55,7 +55,10 @@ public class PointSampling : ModuleRules
 				"UnrealEd",
 				"BlueprintGraph",
 				"KismetCompiler",
-				"GraphEditor"
+				"GraphEditor",
+				"Slate",           // FSlateIcon
+				"SlateCore",       // Slate基础类型
+				"ToolMenus"        // FToolMenuSection, FUIAction等
 			});
 		}
 

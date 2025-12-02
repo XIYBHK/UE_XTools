@@ -44,9 +44,16 @@ TArray<FVector> FTriangleSamplingHelper::GenerateSolidTriangle(
 		// 生成这一行的点
 		for (int32 Col = 0; Col < PointsInRow && GeneratedCount < PointCount; ++Col)
 		{
+			// 计算当前点的基本坐标
+			float BaseX = StartX + Col * Spacing;
+			float BaseY = bInverted ? -YPos : YPos; // 倒三角时Y坐标取反
+			
+			// 应用行偏移，使点分布更均匀（类似六边形网格）
+			float XOffset = (Row % 2 == 1) ? Spacing * 0.5f : 0.0f;
+			
 			FVector Point(
-				StartX + Col * Spacing,
-				bInverted ? -YPos : YPos,  // 倒三角时Y坐标取反
+				BaseX + XOffset,
+				BaseY,
 				0.0f
 			);
 
@@ -79,6 +86,9 @@ TArray<FVector> FTriangleSamplingHelper::GenerateSolidTriangle(
 	{
 		ApplyJitter(Points, JitterStrength, Spacing, RandomStream);
 	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("GenerateSolidTriangle: 生成了 %d 个点 (间距: %.1f, 层数: %d, 倒三角: %s, 算法: 改进的等边三角形采样)"),
+		Points.Num(), Spacing, Layers, bInverted ? TEXT("是") : TEXT("否"));
 
 	return Points;
 }

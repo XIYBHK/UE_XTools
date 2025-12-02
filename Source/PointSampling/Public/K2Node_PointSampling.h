@@ -51,6 +51,8 @@ public:
 	virtual FText GetTooltipText() const override;
 	virtual void PinDefaultValueChanged(UEdGraphPin* Pin) override;
 	virtual FText GetMenuCategory() const override;
+	virtual FLinearColor GetNodeTitleColor() const override;
+	virtual bool ShouldShowNodeProperties() const override { return true; }
 	virtual void ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins) override;
 	virtual void PostReconstructNode() override;
 	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
@@ -63,6 +65,10 @@ public:
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const override;
 	virtual void NotifyPinConnectionListChanged(UEdGraphPin* Pin) override;
 	virtual void PinConnectionListChanged(UEdGraphPin* Pin) override;
+	virtual bool IsNodeSafeToIgnore() const override { return true; }
+	virtual void PostPasteNode() override;
+	virtual FSlateIcon GetIconAndTint(FLinearColor& OutColor) const override;
+	virtual void GetNodeContextMenuActions(class UToolMenu* Menu, class UGraphNodeContextMenuContext* Context) const override;
 	//~ End UK2Node interface
 
 	/** 获取采样模式引脚 */
@@ -83,13 +89,18 @@ private:
 	EPointSamplingMode GetCurrentSamplingMode() const;
 
 	// ExpandNode 辅助函数
-	bool DetermineSamplingFunction(EPointSamplingMode SamplingMode, FName& OutFunctionName);
-	void ConnectCommonPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode);
+	bool DetermineSamplingFunction(EPointSamplingMode SamplingMode, FName& OutFunctionName) const;
+	bool CheckForErrors(const FKismetCompilerContext& CompilerContext) const;
+	void ConnectCommonPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode, EPointSamplingMode SamplingMode);
 	void ConnectModeSpecificPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode, EPointSamplingMode SamplingMode);
 	void ConnectOutputPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode);
+	bool MovePinLinksOrCopyDefaults(FKismetCompilerContext& CompilerContext, UEdGraphPin* SourcePin, UEdGraphPin* DestPin);
 
 	// 类型名称映射辅助函数
 	FString GetModeDisplayName(EPointSamplingMode SamplingMode) const;
+	
+	// 引脚查找辅助函数
+	UEdGraphPin* FindPinCheckedSafe(const FName& PinName, EEdGraphPinDirection Direction = EGPD_MAX) const;
 
 #if WITH_EDITORONLY_DATA
 	/** 防止递归调用的标志 */

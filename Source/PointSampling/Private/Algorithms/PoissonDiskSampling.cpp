@@ -32,12 +32,12 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 	TArray<FVector2D> ActivePoints;
 	TArray<FVector2D> Points;
 
-	// 计算网格参数
+	// 计算网格参数 - Robert Bridson's Fast Poisson Disk Sampling
 	const float CellSize = Radius / FMath::Sqrt(2.0f);
 	const int32 GridWidth = FMath::CeilToInt(Width / CellSize);
 	const int32 GridHeight = FMath::CeilToInt(Height / CellSize);
 
-	// 初始化网格
+	// 初始化网格 - 使用FVector2D::ZeroVector作为无效标记
 	TArray<FVector2D> Grid;
 	Grid.SetNumZeroed(GridWidth * GridHeight);
 
@@ -50,17 +50,68 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 		);
 	};
 
+	// Lambda：检查点是否在网格范围内
+	auto IsInGridBounds = [GridWidth, GridHeight](const FIntPoint& Cell) -> bool
+	{
+		return Cell.X >= 0 && Cell.X < GridWidth && Cell.Y >= 0 && Cell.Y < GridHeight;
+	};
+
+	// Lambda：检查点是否有效（在区域内且与其他点保持最小距离）
+	auto IsValidPoint = [&Grid, GridWidth, GridHeight, CellSize, Radius, Width, Height, &GetCellCoords, &IsInGridBounds](const FVector2D& Point) -> bool
+	{
+		// 检查是否在区域内
+		if (Point.X < 0.0f || Point.X >= Width || Point.Y < 0.0f || Point.Y >= Height)
+		{
+			return false;
+		}
+
+		// 获取当前点所在的网格单元
+		FIntPoint Cell = GetCellCoords(Point);
+
+		// 检查3x3邻域内的所有点
+		for (int32 dx = -1; dx <= 1; ++dx)
+		{
+			for (int32 dy = -1; dy <= 1; ++dy)
+			{
+				FIntPoint NeighborCell(Cell.X + dx, Cell.Y + dy);
+				if (IsInGridBounds(NeighborCell))
+				{
+					FVector2D NeighborPoint = Grid[NeighborCell.Y * GridWidth + NeighborCell.X];
+					if (NeighborPoint != FVector2D::ZeroVector)
+					{
+						float DistSquared = FVector2D::DistSquared(Point, NeighborPoint);
+						if (DistSquared < Radius * Radius)
+						{
+							return false;
+						}
+					}
+				}
+			}
+		}
+
+		return true;
+	};
+
+	// Lambda：在圆环内生成随机点（Radius到2*Radius之间）
+	auto GenerateRandomPointInRing = [Radius](const FVector2D& Center) -> FVector2D
+	{
+		float R = FMath::Sqrt(FMath::FRandRange(Radius * Radius, 4.0f * Radius * Radius));
+		float Theta = FMath::FRandRange(0.0f, 2.0f * PI);
+		return FVector2D(Center.X + R * FMath::Cos(Theta), Center.Y + R * FMath::Sin(Theta));
+	};
+
 	// 生成初始点
-	const FVector2D InitialPoint(FMath::FRandRange(0.0f, Width), FMath::FRandRange(0.0f, Height));
+	FVector2D InitialPoint(FMath::FRandRange(0.0f, Width), FMath::FRandRange(0.0f, Height));
 	ActivePoints.Add(InitialPoint);
 	Points.Add(InitialPoint);
 	
-	const FIntPoint InitialCell = GetCellCoords(InitialPoint);
+	FIntPoint InitialCell = GetCellCoords(InitialPoint);
 	Grid[InitialCell.Y * GridWidth + InitialCell.X] = InitialPoint;
 
-	// 主循环
+	// 主循环 - Robert Bridson's Fast Poisson Disk Sampling
 	while (ActivePoints.Num() > 0)
 	{
+		// 从活跃列表中随机选择一个点
 		const int32 Index = FMath::RandRange(0, ActivePoints.Num() - 1);
 		const FVector2D Point = ActivePoints[Index];
 		bool bFound = false;
@@ -68,14 +119,16 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 		// 尝试在当前点周围生成新点
 		for (int32 i = 0; i < MaxAttempts; ++i)
 		{
-			const FVector2D NewPoint = GenerateRandomPointAround2D(Point, Radius, 2.0f * Radius);
+			FVector2D NewPoint = GenerateRandomPointInRing(Point);
 			
-			if (IsValidPoint2D(NewPoint, Radius, Width, Height, Grid, GridWidth, GridHeight, CellSize))
+			if (IsValidPoint(NewPoint))
 			{
+				// 将新点添加到活跃列表和结果列表
 				ActivePoints.Add(NewPoint);
 				Points.Add(NewPoint);
 				
-				const FIntPoint NewCell = GetCellCoords(NewPoint);
+				// 更新网格
+				FIntPoint NewCell = GetCellCoords(NewPoint);
 				Grid[NewCell.Y * GridWidth + NewCell.X] = NewPoint;
 				
 				bFound = true;
@@ -83,14 +136,14 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 			}
 		}
 
-		// 如果未找到有效点，将当前点标记为不活跃
+		// 如果未找到有效点，将当前点从活跃列表中移除
 		if (!bFound)
 		{
 			ActivePoints.RemoveAt(Index);
 		}
 	}
 
-	UE_LOG(LogPointSampling, Log, TEXT("GeneratePoisson2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
+	UE_LOG(LogPointSampling, Log, TEXT("GeneratePoisson2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f, 算法: Robert Bridson's Fast Poisson Disk Sampling)"),
 		Points.Num(), Width, Height, Radius);
 
 	return Points;
@@ -113,13 +166,13 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 	TArray<FVector> ActivePoints;
 	TArray<FVector> Points;
 
-	// 计算网格参数（3D中使用sqrt(3)而不是sqrt(2)）
+	// 计算网格参数 - Robert Bridson's Fast Poisson Disk Sampling
 	const float CellSize = Radius / FMath::Sqrt(3.0f);
 	const int32 GridWidth = FMath::CeilToInt(Width / CellSize);
 	const int32 GridHeight = FMath::CeilToInt(Height / CellSize);
 	const int32 GridDepth = FMath::CeilToInt(Depth / CellSize);
 
-	// 初始化网格
+	// 初始化网格 - 使用FVector::ZeroVector作为无效标记
 	TArray<FVector> Grid;
 	Grid.SetNumZeroed(GridWidth * GridHeight * GridDepth);
 
@@ -133,8 +186,79 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 		);
 	};
 
+	// Lambda：检查点是否在网格范围内
+	auto IsInGridBounds = [GridWidth, GridHeight, GridDepth](const FIntVector& Cell) -> bool
+	{
+		return Cell.X >= 0 && Cell.X < GridWidth && 
+			   Cell.Y >= 0 && Cell.Y < GridHeight && 
+			   Cell.Z >= 0 && Cell.Z < GridDepth;
+	};
+
+	// Lambda：检查点是否有效（在区域内且与其他点保持最小距离）
+	auto IsValidPoint = [&Grid, GridWidth, GridHeight, GridDepth, CellSize, Radius, Width, Height, Depth, &GetCellCoords, &IsInGridBounds](const FVector& Point) -> bool
+	{
+		// 检查是否在区域内
+		if (Point.X < 0.0f || Point.X >= Width || 
+		    Point.Y < 0.0f || Point.Y >= Height || 
+		    Point.Z < 0.0f || Point.Z >= Depth)
+		{
+			return false;
+		}
+
+		// 获取当前点所在的网格单元
+		FIntVector Cell = GetCellCoords(Point);
+
+		// 检查3x3x3邻域内的所有点
+		for (int32 dx = -1; dx <= 1; ++dx)
+		{
+			for (int32 dy = -1; dy <= 1; ++dy)
+			{
+				for (int32 dz = -1; dz <= 1; ++dz)
+				{
+					FIntVector NeighborCell(Cell.X + dx, Cell.Y + dy, Cell.Z + dz);
+					if (IsInGridBounds(NeighborCell))
+					{
+						int32 NeighborIndex = NeighborCell.Z * (GridWidth * GridHeight) + 
+						                      NeighborCell.Y * GridWidth + NeighborCell.X;
+						FVector NeighborPoint = Grid[NeighborIndex];
+						if (NeighborPoint != FVector::ZeroVector)
+						{
+							float DistSquared = FVector::DistSquared(Point, NeighborPoint);
+							if (DistSquared < Radius * Radius)
+							{
+								return false;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return true;
+	};
+
+	// Lambda：在球壳内生成随机点（Radius到2*Radius之间）
+	auto GenerateRandomPointInSphere = [Radius](const FVector& Center) -> FVector
+	{
+		// 生成球壳内的随机点
+		float R = FMath::Sqrt(FMath::FRandRange(Radius * Radius, 4.0f * Radius * Radius));
+		float Theta = FMath::FRandRange(0.0f, PI);
+		float Phi = FMath::FRandRange(0.0f, 2.0f * PI);
+		
+		float SinTheta = FMath::Sin(Theta);
+		float CosTheta = FMath::Cos(Theta);
+		float SinPhi = FMath::Sin(Phi);
+		float CosPhi = FMath::Cos(Phi);
+		
+		return FVector(
+			Center.X + R * SinTheta * CosPhi,
+			Center.Y + R * CosTheta,
+			Center.Z + R * SinTheta * SinPhi
+		);
+	};
+
 	// 生成初始点
-	const FVector InitialPoint(
+	FVector InitialPoint(
 		FMath::FRandRange(0.0f, Width),
 		FMath::FRandRange(0.0f, Height),
 		FMath::FRandRange(0.0f, Depth)
@@ -142,14 +266,15 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 	ActivePoints.Add(InitialPoint);
 	Points.Add(InitialPoint);
 	
-	const FIntVector InitialCell = GetCellCoords(InitialPoint);
+	FIntVector InitialCell = GetCellCoords(InitialPoint);
 	const int32 InitialIndex = InitialCell.Z * (GridWidth * GridHeight) + 
-							   InitialCell.Y * GridWidth + InitialCell.X;
+				   InitialCell.Y * GridWidth + InitialCell.X;
 	Grid[InitialIndex] = InitialPoint;
 
-	// 主循环
+	// 主循环 - Robert Bridson's Fast Poisson Disk Sampling
 	while (ActivePoints.Num() > 0)
 	{
+		// 从活跃列表中随机选择一个点
 		const int32 Index = FMath::RandRange(0, ActivePoints.Num() - 1);
 		const FVector Point = ActivePoints[Index];
 		bool bFound = false;
@@ -157,17 +282,18 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 		// 尝试在当前点周围生成新点
 		for (int32 i = 0; i < MaxAttempts; ++i)
 		{
-			const FVector NewPoint = GenerateRandomPointAround3D(Point, Radius, 2.0f * Radius);
+			FVector NewPoint = GenerateRandomPointInSphere(Point);
 			
-			if (IsValidPoint3D(NewPoint, Radius, Width, Height, Depth, 
-							  Grid, GridWidth, GridHeight, GridDepth, CellSize))
+			if (IsValidPoint(NewPoint))
 			{
+				// 将新点添加到活跃列表和结果列表
 				ActivePoints.Add(NewPoint);
 				Points.Add(NewPoint);
 				
-				const FIntVector NewCell = GetCellCoords(NewPoint);
+				// 更新网格
+				FIntVector NewCell = GetCellCoords(NewPoint);
 				const int32 NewIndex = NewCell.Z * (GridWidth * GridHeight) + 
-									  NewCell.Y * GridWidth + NewCell.X;
+				                       NewCell.Y * GridWidth + NewCell.X;
 				Grid[NewIndex] = NewPoint;
 				
 				bFound = true;
@@ -175,14 +301,14 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 			}
 		}
 
-		// 如果未找到有效点，将当前点标记为不活跃
+		// 如果未找到有效点，将当前点从活跃列表中移除
 		if (!bFound)
 		{
 			ActivePoints.RemoveAt(Index);
 		}
 	}
 
-	UE_LOG(LogPointSampling, Log, TEXT("GeneratePoisson3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
+	UE_LOG(LogPointSampling, Log, TEXT("GeneratePoisson3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f, 算法: Robert Bridson's Fast Poisson Disk Sampling)"),
 		Points.Num(), Width, Height, Depth, Radius);
 
 	return Points;

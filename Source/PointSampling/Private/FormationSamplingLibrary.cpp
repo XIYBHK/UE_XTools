@@ -587,3 +587,24 @@ bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 	UE_LOG(LogPointSampling, Display, TEXT("========================================"));
 	return true;
 }
+
+TArray<FVector> UFormationSamplingLibrary::GenerateFromTextureWithPoisson(
+	UTexture2D* Texture,
+	FVector CenterLocation,
+	FRotator Rotation,
+	int32 MaxSampleSize,
+	float MinRadius,
+	float MaxRadius,
+	float PixelThreshold,
+	float TextureScale,
+	int32 MaxAttempts,
+	EPoissonCoordinateSpace CoordinateSpace)
+{
+	// 从纹理提取像素点（局部坐标，居中，基于泊松圆盘采样的改进算法）
+	TArray<FVector> LocalPoints = FTextureSamplingHelper::GenerateFromTextureWithPoisson(
+		Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts
+	);
+
+	// 转换到目标坐标空间
+	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}

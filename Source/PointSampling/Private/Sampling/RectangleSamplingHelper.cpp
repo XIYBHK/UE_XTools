@@ -171,48 +171,40 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSpiralRectangle(
 	int32 ActualPointCount = PointCount;
 	if (ActualPointCount <= 0)
 	{
-		// 每圈大约需要 4 * (圈数) 个点
-		ActualPointCount = FMath::CeilToInt(4.0f * SpiralTurns * SpiralTurns);
+		// 每圈大约需要 100 个点
+		ActualPointCount = FMath::CeilToInt(100.0f * SpiralTurns);
 		ActualPointCount = FMath::Max(25, ActualPointCount); // 至少25个点
 	}
 
 	Points.Reserve(ActualPointCount);
 
-	// 从中心开始螺旋向外
-	// 方向：右 -> 下 -> 左 -> 上 -> 右（重复，每次步长增加）
-	FVector CurrentPos = FVector::ZeroVector;
-	Points.Add(CurrentPos);
-
-	int32 GeneratedCount = 1;
-	int32 StepSize = 1; // 当前方向的步数
-	int32 DirectionIndex = 0; // 0=右, 1=下, 2=左, 3=上
-
-	// 方向向量
-	const FVector Directions[] = {
-		FVector(Spacing, 0.0f, 0.0f),  // 右
-		FVector(0.0f, Spacing, 0.0f),  // 下
-		FVector(-Spacing, 0.0f, 0.0f), // 左
-		FVector(0.0f, -Spacing, 0.0f)  // 上
-	};
-
-	while (GeneratedCount < ActualPointCount)
+	// 基于极坐标的连续螺旋曲线生成
+	// 使用阿基米德螺旋：r = a + b*theta
+	// a = 0.0f（从中心开始）
+	// b = Spacing / (2*PI)（控制螺旋的紧密程度）
+	const float b = Spacing / (2.0f * PI);
+	
+	// 总旋转角度（弧度）
+	const float TotalTheta = SpiralTurns * 2.0f * PI;
+	
+	// 生成螺旋点
+	for (int32 i = 0; i < ActualPointCount; ++i)
 	{
-		// 每个方向走 StepSize 步
-		for (int32 Step = 0; Step < StepSize && GeneratedCount < ActualPointCount; ++Step)
-		{
-			CurrentPos += Directions[DirectionIndex];
-			Points.Add(CurrentPos);
-			++GeneratedCount;
-		}
-
-		// 切换方向
-		DirectionIndex = (DirectionIndex + 1) % 4;
-
-		// 每完成两个方向（右下 或 左上），步长增加
-		if (DirectionIndex == 0 || DirectionIndex == 2)
-		{
-			++StepSize;
-		}
+		// 计算当前点的比例（0到1）
+		float t = static_cast<float>(i) / (ActualPointCount - 1);
+		
+		// 计算当前角度和半径
+		float theta = t * TotalTheta;
+		float r = b * theta;
+		
+		// 转换为笛卡尔坐标
+		FVector Point(
+			r * FMath::Cos(theta),  // X
+			r * FMath::Sin(theta),  // Y
+			0.0f                     // Z
+		);
+		
+		Points.Add(Point);
 	}
 
 	// 应用扰动
@@ -220,6 +212,9 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSpiralRectangle(
 	{
 		ApplyJitter(Points, JitterStrength, Spacing, RandomStream);
 	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("GenerateSpiralRectangle: 生成了 %d 个点 (间距: %.1f, 圈数: %.1f, 算法: 基于极坐标的连续螺旋曲线)"),
+		Points.Num(), Spacing, SpiralTurns);
 
 	return Points;
 }

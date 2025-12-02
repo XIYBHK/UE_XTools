@@ -37,6 +37,27 @@ public:
 		float TextureScale
 	);
 
+	/**
+	 * 从纹理像素生成点阵（基于泊松圆盘采样的改进算法）
+	 * @param Texture 纹理引用
+	 * @param MaxSampleSize 最大采样尺寸（纹理会被降采样到此尺寸以下，控制最大点数量）
+	 * @param MinRadius 最小采样半径（密集区域）
+	 * @param MaxRadius 最大采样半径（稀疏区域）
+	 * @param PixelThreshold 像素采样阈值 (0-1)，只有亮度/Alpha 高于此值的像素会被采样
+	 * @param TextureScale 纹理缩放（影响生成点位的物理尺寸）
+	 * @param MaxAttempts 最大尝试次数（泊松采样参数）
+	 * @return 基于纹理密度的泊松采样点位数组（局部坐标，居中）
+	 */
+	static TArray<FVector> GenerateFromTextureWithPoisson(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float MinRadius,
+		float MaxRadius,
+		float PixelThreshold,
+		float TextureScale,
+		int32 MaxAttempts = 30
+	);
+
 private:
 	/**
 	 * 检查纹理源格式是否受支持（参考 UE SubUVAnimation.cpp）
@@ -62,6 +83,15 @@ private:
 	 */
 	static float CalculatePixelSamplingValue(const FColor& Color, bool bUseAlpha);
 
+	/**
+	 * 根据纹理密度计算采样半径
+	 * @param Density 纹理密度 (0-1)
+	 * @param MinRadius 最小半径
+	 * @param MaxRadius 最大半径
+	 * @return 计算出的半径
+	 */
+	static float CalculateRadiusFromDensity(float Density, float MinRadius, float MaxRadius);
+
 #if WITH_EDITOR
 	/**
 	 * 从编辑器源数据生成点阵（支持所有压缩格式）
@@ -72,6 +102,33 @@ private:
 		float Spacing,
 		float PixelThreshold,
 		float TextureScale
+	);
+
+	/**
+	 * 从编辑器源数据生成点阵（基于泊松圆盘采样）
+	 */
+	static TArray<FVector> GenerateFromTextureSourceWithPoisson(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float MinRadius,
+		float MaxRadius,
+		float PixelThreshold,
+		float TextureScale,
+		int32 MaxAttempts
+	);
+	
+	/**
+	 * 获取纹理在指定坐标的密度值（编辑器版本）
+	 */
+	static float GetTextureDensityAtCoordinate(
+		UTexture2D* Texture,
+		const FVector2D& Coordinate,
+		bool bUseAlphaChannel,
+		ETextureSourceFormat SourceFormat,
+		const uint8* SourceData,
+		int32 OriginalWidth,
+		int32 OriginalHeight,
+		uint32 BytesPerPixel
 	);
 #endif
 
@@ -84,5 +141,32 @@ private:
 		float Spacing,
 		float PixelThreshold,
 		float TextureScale
+	);
+
+	/**
+	 * 从运行时平台数据生成点阵（基于泊松圆盘采样）
+	 */
+	static TArray<FVector> GenerateFromTexturePlatformDataWithPoisson(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float MinRadius,
+		float MaxRadius,
+		float PixelThreshold,
+		float TextureScale,
+		int32 MaxAttempts
+	);
+	
+	/**
+	 * 获取纹理在指定坐标的密度值（运行时版本）
+	 */
+	static float GetTextureDensityAtCoordinatePlatform(
+		UTexture2D* Texture,
+		const FVector2D& Coordinate,
+		bool bUseAlphaChannel,
+		EPixelFormat PixelFormat,
+		const uint8* PixelData,
+		int32 OriginalWidth,
+		int32 OriginalHeight,
+		uint32 BytesPerPixel
 	);
 };
