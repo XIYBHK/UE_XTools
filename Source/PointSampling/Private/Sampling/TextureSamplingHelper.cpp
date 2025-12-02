@@ -10,6 +10,7 @@
 #include "Engine/TextureDefines.h"
 #include "Math/UnrealMathUtility.h"
 #include "TextureResource.h"
+#include "PixelFormat.h"
 #include "Algorithms/PoissonDiskSampling.h"
 
 // ============================================================================
@@ -34,6 +35,7 @@ uint32 FTextureSamplingHelper::GetBytesPerPixel(ETextureSourceFormat Format)
 	default:			return 0;
 	}
 }
+#endif // WITH_EDITOR
 
 bool FTextureSamplingHelper::ShouldUseAlphaChannel(UTexture2D* Texture)
 {
@@ -42,6 +44,7 @@ bool FTextureSamplingHelper::ShouldUseAlphaChannel(UTexture2D* Texture)
 		return false;
 	}
 
+#if WITH_EDITOR
 	// 根据 CompressionSettings 判断纹理类型
 	TextureCompressionSettings CompressionSettings = Texture->CompressionSettings;
 
@@ -60,6 +63,7 @@ bool FTextureSamplingHelper::ShouldUseAlphaChannel(UTexture2D* Texture)
 	{
 		return false;
 	}
+#endif
 
 	// 默认纹理：需要智能判断Alpha通道是否包含有用信息
 	// 问题：很多PNG虽然有Alpha通道，但Alpha值全是255（完全不透明），真正的图案在RGB中
