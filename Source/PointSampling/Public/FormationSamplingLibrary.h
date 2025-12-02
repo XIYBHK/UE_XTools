@@ -325,8 +325,9 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
 	);
 
+#if WITH_EDITORONLY_DATA
 	/**
-	 * 验证纹理设置是否适合点采样（调试辅助函数）
+	 * 验证纹理是否设置为未压缩格式（用于调试，仅编辑器可用）
 	 *
 	 * @param Texture 要验证的纹理
 	 * @return 如果纹理设置正确返回 true，否则返回 false 并输出错误日志
@@ -335,6 +336,7 @@ public:
 		meta = (DisplayName = "验证纹理采样设置",
 			ToolTip = "检查纹理是否设置为未压缩格式，并输出详细的设置信息"))
 	static bool ValidateTextureForSampling(UTexture2D* Texture);
+#endif
 
 	/**
 	 * 从纹理像素生成点阵（基于泊松圆盘采样的改进算法）

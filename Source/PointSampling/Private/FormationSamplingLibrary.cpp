@@ -533,6 +533,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromTexture(
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
 
+#if WITH_EDITOR
 bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 {
 	if (!Texture)
@@ -587,6 +588,7 @@ bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 	UE_LOG(LogPointSampling, Display, TEXT("========================================"));
 	return true;
 }
+#endif // WITH_EDITOR
 
 TArray<FVector> UFormationSamplingLibrary::GenerateFromTextureWithPoisson(
 	UTexture2D* Texture,

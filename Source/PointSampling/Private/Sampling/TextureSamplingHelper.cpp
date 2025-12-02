@@ -16,6 +16,7 @@
 // 辅助函数（参考 UE SubUVAnimation.cpp 的标准实现）
 // ============================================================================
 
+#if WITH_EDITOR
 bool FTextureSamplingHelper::IsSupportedSourceFormat(ETextureSourceFormat Format)
 {
 	// 只支持 UE 官方支持的格式
@@ -890,6 +891,7 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
 	
 	return SamplingValue;
 }
+#endif // WITH_EDITOR
 
 // 基于纹理密度的泊松圆盘采样（运行时平台数据版本）
 TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoisson(
