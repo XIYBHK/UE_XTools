@@ -756,7 +756,7 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 // 辅助函数实现
 // ============================================================================
 
-// 根据纹理密度计算采样半径
+// 根据纹理密度计算采样半径（非编辑器专用）
 float FTextureSamplingHelper::CalculateRadiusFromDensity(float Density, float MinRadius, float MaxRadius)
 {
 	// 确保密度在有效范围内
@@ -769,6 +769,7 @@ float FTextureSamplingHelper::CalculateRadiusFromDensity(float Density, float Mi
 	return FMath::Max(MinRadius, Radius);
 }
 
+#if WITH_EDITOR
 // 获取指定坐标的纹理密度值（源数据版本）
 float FTextureSamplingHelper::GetTextureDensityAtCoordinate(
 	UTexture2D* Texture,
