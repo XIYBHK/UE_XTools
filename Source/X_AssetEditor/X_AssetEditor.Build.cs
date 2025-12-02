@@ -78,6 +78,10 @@ public class X_AssetEditor : ModuleRules
 			"RawMesh",
 			"StaticMeshEditor",
 
+			// JSON 序列化模块
+			"Json",
+			"JsonUtilities",
+
 			// 其他工具模块
 			"Projects",
 			"InputCore",

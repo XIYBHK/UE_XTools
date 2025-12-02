@@ -14,6 +14,7 @@
 #include "CollisionTools/X_CollisionManager.h"
 #include "CollisionTools/X_CollisionSettingsDialog.h"
 #include "CollisionTools/X_AutoConvexDialog.h"
+#include "PivotTools/X_PivotManager.h"
 #include "RawMesh.h"
 #include "StaticMeshEditorSubsystem.h"
 #include "StaticMeshEditorSubsystemHelpers.h"
@@ -24,6 +25,7 @@
 #include "ToolMenus.h"
 #include "Misc/MessageDialog.h"
 #include "X_AssetEditor.h"
+#include "Engine/StaticMeshActor.h"
 
 #define LOCTEXT_NAMESPACE "X_MenuExtensionManager"
 
@@ -168,6 +170,13 @@ TSharedRef<FExtender> FX_MenuExtensionManager::OnExtendContentBrowserAssetSelect
                 nullptr,
                 FMenuExtensionDelegate::CreateRaw(this, &FX_MenuExtensionManager::AddCollisionManagementMenuEntry, SelectedAssets)
             );
+
+            Extender->AddMenuExtension(
+                "GetAssetActions",
+                EExtensionHook::After,
+                nullptr,
+                FMenuExtensionDelegate::CreateRaw(this, &FX_MenuExtensionManager::AddPivotToolsMenuEntry, SelectedAssets)
+            );
         }
     }
 
@@ -190,6 +199,27 @@ TSharedRef<FExtender> FX_MenuExtensionManager::OnExtendLevelEditorActorContextMe
                 EExtensionHook::After,
                 CommandList,
                 FMenuExtensionDelegate::CreateRaw(this, &FX_MenuExtensionManager::AddActorMaterialMenuEntry, SelectedActors)
+            );
+        }
+
+        // 检查是否有 StaticMeshActor
+        bool bHasStaticMeshActors = false;
+        for (AActor* Actor : SelectedActors)
+        {
+            if (Actor && Actor->IsA<AStaticMeshActor>())
+            {
+                bHasStaticMeshActors = true;
+                break;
+            }
+        }
+
+        if (bHasStaticMeshActors)
+        {
+            Extender->AddMenuExtension(
+                "ActorControl",
+                EExtensionHook::After,
+                CommandList,
+                FMenuExtensionDelegate::CreateRaw(this, &FX_MenuExtensionManager::AddActorPivotToolsMenuEntry, SelectedActors)
             );
         }
     }
@@ -547,6 +577,226 @@ void FX_MenuExtensionManager::OnMaterialFunctionSelected(UMaterialFunctionInterf
             MakeShared<FX_MaterialFunctionParams>(Params)
         );
     }
+}
+
+void FX_MenuExtensionManager::AddPivotToolsMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets)
+{
+    MenuBuilder.BeginSection("PivotTools", LOCTEXT("PivotTools", "枢轴工具"));
+    {
+        // 记录 Pivot
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("RecordPivot", "记录 Pivot"),
+            LOCTEXT("RecordPivotTooltip", "记录选中网格的当前 Pivot 状态，用于后续还原"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Save"),
+            FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
+            {
+                FX_PivotManager::RecordPivotSnapshots(SelectedAssets);
+            }))
+        );
+
+        // 还原 Pivot
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("RestorePivot", "还原 Pivot"),
+            FText::Format(LOCTEXT("RestorePivotTooltip", "还原之前记录的 Pivot 状态\n当前有 {0} 个快照"),
+                FText::AsNumber(FX_PivotManager::GetSnapshotCount())),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Refresh"),
+            FUIAction(
+                FExecuteAction::CreateLambda([SelectedAssets]()
+                {
+                    FX_PivotManager::RestorePivotSnapshots(SelectedAssets);
+                }),
+                FCanExecuteAction::CreateLambda([]()
+                {
+                    return FX_PivotManager::GetSnapshotCount() > 0;
+                })
+            )
+        );
+
+        // 清除快照
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("ClearPivotSnapshots", "清除所有快照"),
+            FText::Format(LOCTEXT("ClearPivotSnapshotsTooltip", "清除所有已记录的 Pivot 快照\n当前有 {0} 个快照"),
+                FText::AsNumber(FX_PivotManager::GetSnapshotCount())),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Delete"),
+            FUIAction(
+                FExecuteAction::CreateLambda([]()
+                {
+                    FX_PivotManager::ClearPivotSnapshots();
+                }),
+                FCanExecuteAction::CreateLambda([]()
+                {
+                    return FX_PivotManager::GetSnapshotCount() > 0;
+                })
+            )
+        );
+
+        MenuBuilder.AddSeparator();
+
+        MenuBuilder.AddSubMenu(
+            LOCTEXT("SetPivot", "设置 Pivot"),
+            LOCTEXT("SetPivotTooltip", "批量设置选中静态网格体的Pivot位置"),
+            FNewMenuDelegate::CreateLambda([SelectedAssets](FMenuBuilder& SubMenu)
+            {
+                // 快速设置到中心
+                SubMenu.AddMenuEntry(
+                    LOCTEXT("SetPivotToCenter", "设置到中心"),
+                    LOCTEXT("SetPivotToCenterTooltip", "将Pivot设置到边界盒中心"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.TranslateMode"),
+                    FUIAction(FExecuteAction::CreateLambda([SelectedAssets]()
+                    {
+                        FX_PivotManager::SetPivotToCenterForAssets(SelectedAssets);
+                    }))
+                );
+
+                SubMenu.AddSeparator();
+
+                // 其他位置选项
+                auto AddPivotOption = [&SubMenu, SelectedAssets](
+                    const FText& Label,
+                    EPivotBoundsPoint BoundsPoint)
+                {
+                    SubMenu.AddMenuEntry(
+                        Label,
+                        FText::Format(LOCTEXT("SetPivotToBoundsPointTooltip", "将Pivot设置到{0}"), Label),
+                        FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.TranslateMode"),
+                        FUIAction(FExecuteAction::CreateLambda([SelectedAssets, BoundsPoint]()
+                        {
+                            FX_PivotManager::SetPivotForAssets(SelectedAssets, BoundsPoint);
+                        }))
+                    );
+                };
+
+                AddPivotOption(LOCTEXT("SetPivotToBottom", "设置到底部中心"), EPivotBoundsPoint::Bottom);
+                AddPivotOption(LOCTEXT("SetPivotToTop", "设置到顶部中心"), EPivotBoundsPoint::Top);
+                AddPivotOption(LOCTEXT("SetPivotToLeft", "设置到左面中心"), EPivotBoundsPoint::Left);
+                AddPivotOption(LOCTEXT("SetPivotToRight", "设置到右面中心"), EPivotBoundsPoint::Right);
+                AddPivotOption(LOCTEXT("SetPivotToFront", "设置到前面中心"), EPivotBoundsPoint::Front);
+                AddPivotOption(LOCTEXT("SetPivotToBack", "设置到后面中心"), EPivotBoundsPoint::Back);
+            })
+        );
+    }
+    MenuBuilder.EndSection();
+}
+
+void FX_MenuExtensionManager::AddActorPivotToolsMenuEntry(FMenuBuilder& MenuBuilder, TArray<AActor*> SelectedActors)
+{
+    MenuBuilder.BeginSection("ActorPivotTools", LOCTEXT("ActorPivotTools", "Actor枢轴工具"));
+    {
+        // 提取 Actor 使用的 StaticMesh 资产
+        auto GetStaticMeshAssets = [](const TArray<AActor*>& Actors) -> TArray<FAssetData>
+        {
+            TArray<FAssetData> Assets;
+            TSet<UStaticMesh*> ProcessedMeshes;
+            
+            for (AActor* Actor : Actors)
+            {
+                if (AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(Actor))
+                {
+                    if (UStaticMeshComponent* MeshComp = SMActor->GetStaticMeshComponent())
+                    {
+                        if (UStaticMesh* Mesh = MeshComp->GetStaticMesh())
+                        {
+                            if (!ProcessedMeshes.Contains(Mesh))
+                            {
+                                ProcessedMeshes.Add(Mesh);
+                                Assets.Add(FAssetData(Mesh));
+                            }
+                        }
+                    }
+                }
+            }
+            return Assets;
+        };
+
+        // 记录 Pivot
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("RecordActorPivot", "记录 Pivot"),
+            LOCTEXT("RecordActorPivotTooltip", "记录选中Actor使用的网格的当前 Pivot 状态"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Save"),
+            FUIAction(FExecuteAction::CreateLambda([SelectedActors, GetStaticMeshAssets]()
+            {
+                TArray<FAssetData> Assets = GetStaticMeshAssets(SelectedActors);
+                FX_PivotManager::RecordPivotSnapshots(Assets);
+            }))
+        );
+
+        // 还原 Pivot
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("RestoreActorPivot", "还原 Pivot"),
+            FText::Format(LOCTEXT("RestoreActorPivotTooltip", "还原之前记录的 Pivot 状态（保持Actor位置）\n当前有 {0} 个快照"),
+                FText::AsNumber(FX_PivotManager::GetSnapshotCount())),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Refresh"),
+            FUIAction(
+                FExecuteAction::CreateLambda([SelectedActors]()
+                {
+                    FX_PivotManager::RestorePivotSnapshotsForActors(SelectedActors);
+                }),
+                FCanExecuteAction::CreateLambda([]()
+                {
+                    return FX_PivotManager::GetSnapshotCount() > 0;
+                })
+            )
+        );
+
+        MenuBuilder.AddSeparator();
+
+        MenuBuilder.AddSubMenu(
+            LOCTEXT("SetActorPivot", "设置 Pivot"),
+            LOCTEXT("SetActorPivotTooltip", "批量设置选中Actor的Pivot位置（保持世界位置）"),
+            FNewMenuDelegate::CreateLambda([SelectedActors](FMenuBuilder& SubMenu)
+            {
+                // 快速设置到中心
+                SubMenu.AddMenuEntry(
+                    LOCTEXT("SetActorPivotToCenter", "设置到中心"),
+                    LOCTEXT("SetActorPivotToCenterTooltip", "将Pivot设置到边界盒中心"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.TranslateMode"),
+                    FUIAction(FExecuteAction::CreateLambda([SelectedActors]()
+                    {
+                        FX_PivotManager::SetPivotToCenterForActors(SelectedActors);
+                    }))
+                );
+
+                SubMenu.AddSeparator();
+
+                // 其他位置选项
+                auto AddPivotOption = [&SubMenu, SelectedActors](
+                    const FText& Label,
+                    EPivotBoundsPoint BoundsPoint)
+                {
+                    SubMenu.AddMenuEntry(
+                        Label,
+                        FText::Format(LOCTEXT("SetActorPivotToBoundsPointTooltip", "将Pivot设置到{0}"), Label),
+                        FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.TranslateMode"),
+                        FUIAction(FExecuteAction::CreateLambda([SelectedActors, BoundsPoint]()
+                        {
+                            FX_PivotManager::SetPivotForActors(SelectedActors, BoundsPoint);
+                        }))
+                    );
+                };
+
+                AddPivotOption(LOCTEXT("SetActorPivotToBottom", "设置到底部中心"), EPivotBoundsPoint::Bottom);
+                AddPivotOption(LOCTEXT("SetActorPivotToTop", "设置到顶部中心"), EPivotBoundsPoint::Top);
+                AddPivotOption(LOCTEXT("SetActorPivotToLeft", "设置到左面中心"), EPivotBoundsPoint::Left);
+                AddPivotOption(LOCTEXT("SetActorPivotToRight", "设置到右面中心"), EPivotBoundsPoint::Right);
+                AddPivotOption(LOCTEXT("SetActorPivotToFront", "设置到前面中心"), EPivotBoundsPoint::Front);
+                AddPivotOption(LOCTEXT("SetActorPivotToBack", "设置到后面中心"), EPivotBoundsPoint::Back);
+
+                SubMenu.AddSeparator();
+
+                // 世界原点
+                SubMenu.AddMenuEntry(
+                    LOCTEXT("SetActorPivotToWorldOrigin", "设置到世界原点"),
+                    LOCTEXT("SetActorPivotToWorldOriginTooltip", "将Pivot设置到世界原点(0,0,0)"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Viewport.TranslateMode"),
+                    FUIAction(FExecuteAction::CreateLambda([SelectedActors]()
+                    {
+                        FX_PivotManager::SetPivotForActors(SelectedActors, EPivotBoundsPoint::WorldOrigin);
+                    }))
+                );
+            })
+        );
+    }
+    MenuBuilder.EndSection();
 }
 
 #undef LOCTEXT_NAMESPACE

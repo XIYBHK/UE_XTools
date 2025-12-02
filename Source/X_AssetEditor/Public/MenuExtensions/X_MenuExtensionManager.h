@@ -129,4 +129,18 @@ private:
      * @param SelectedActors 选中的Actor
      */
     void AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilder, TArray<AActor*> SelectedActors);
+
+    /**
+     * 添加 Pivot 工具菜单项
+     * @param MenuBuilder 菜单构建器
+     * @param SelectedAssets 选中的资产
+     */
+    void AddPivotToolsMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
+
+    /**
+     * 添加 Actor Pivot 工具菜单项
+     * @param MenuBuilder 菜单构建器
+     * @param SelectedActors 选中的Actor
+     */
+    void AddActorPivotToolsMenuEntry(FMenuBuilder& MenuBuilder, TArray<AActor*> SelectedActors);
 };

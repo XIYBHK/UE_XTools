@@ -11,6 +11,7 @@
 #include "Core/X_ModuleRegistrationManager.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
 #include "CollisionTools/X_CollisionManager.h"
+#include "PivotTools/X_PivotManager.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "Settings/X_AssetEditorSettingsCustomization.h"
 #include "XToolsErrorReporter.h"
@@ -109,6 +110,9 @@ void FX_AssetEditorModule::InitializeManagers()
 
     // 5. 延迟注册菜单 - 简化逻辑
     RegisterMenusWhenReady();
+
+    // 6. 加载 Pivot 快照
+    FX_PivotManager::LoadSnapshotsFromDisk();
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("X_AssetEditor 管理器初始化完成"));
 }

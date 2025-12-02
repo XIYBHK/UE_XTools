@@ -9,11 +9,9 @@
 #include "K2Nodes/K2Node_MultiBranch.h"
 #include "K2Nodes/K2Node_ConditionalSequence.h"
 #include "K2Nodes/K2Node_MultiConditionalSelect.h"
-#include "K2Nodes/K2Node_SafeCastChain.h"
 #include "SGraphNodes/SGraphNodeMultiBranch.h"
 #include "SGraphNodes/SGraphNodeConditionalSequence.h"
 #include "SGraphNodes/SGraphNodeMultiConditionalSelect.h"
-#include "SGraphNodes/SGraphNodeSafeCastChain.h"
 
 #define LOCTEXT_NAMESPACE "FBlueprintExtensionsModule"
 
@@ -37,10 +35,6 @@ class FGraphPanelNodeFactory_BlueprintExtensions : public FGraphPanelNodeFactory
 		else if (UK2Node_MultiConditionalSelect* MultiConditionalSelect = Cast<UK2Node_MultiConditionalSelect>(Node))
 		{
 			return SNew(SGraphNodeMultiConditionalSelect, MultiConditionalSelect);
-		}
-		else if (UK2Node_SafeCastChain* SafeCastChain = Cast<UK2Node_SafeCastChain>(Node))
-		{
-			return SNew(SGraphNodeSafeCastChain, SafeCastChain);
 		}
 
 		return nullptr;
