@@ -41,8 +41,8 @@ class FKismetCompilerContext;
  * - 坐标空间切换（世界/局部/原始）
  * - 随机种子控制
  */
-UCLASS()
-class POINTSAMPLING_API UK2Node_PointSampling : public UK2Node
+UCLASS(MinimalAPI)
+class UK2Node_PointSampling : public UK2Node
 {
 	GENERATED_BODY()
 

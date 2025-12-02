@@ -41,13 +41,7 @@ public class PointSampling : ModuleRules
 			"XToolsCore"  // XTools版本兼容层
 		});
 
-		//  私有依赖模块
-		PrivateDependencyModuleNames.AddRange(new string[]
-		{
-			// 未来如需要添加其他依赖
-		});
-
-		//  编辑器专用依赖 - 支持自定义 K2Node
+		//  编辑器专用依赖 - K2Node需要编辑器环境
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[]
@@ -59,6 +53,15 @@ public class PointSampling : ModuleRules
 				"Slate",           // FSlateIcon
 				"SlateCore",       // Slate基础类型
 				"ToolMenus"        // FToolMenuSection, FUIAction等
+			});
+		}
+		else
+		{
+			// 非编辑器构建时排除K2Node相关文件
+			ExcludeSourceFiles.AddRange(new string[]
+			{
+				ModuleDirectory + "/Private/K2Node_PointSampling.cpp",
+				ModuleDirectory + "/Private/K2Node_PointSamplingPinManager.cpp"
 			});
 		}
 
