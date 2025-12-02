@@ -325,7 +325,7 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
 	);
 
-#if WITH_EDITORONLY_DATA
+#if WITH_EDITOR
 	/**
 	 * 验证纹理是否设置为未压缩格式（用于调试，仅编辑器可用）
 	 *
@@ -334,7 +334,8 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
 		meta = (DisplayName = "验证纹理采样设置",
-			ToolTip = "检查纹理是否设置为未压缩格式，并输出详细的设置信息"))
+			ToolTip = "检查纹理是否设置为未压缩格式，并输出详细的设置信息",
+			DevelopmentOnly))
 	static bool ValidateTextureForSampling(UTexture2D* Texture);
 #endif
 
