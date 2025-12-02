@@ -59,6 +59,7 @@ public:
 	);
 
 private:
+#if WITH_EDITOR
 	/**
 	 * 检查纹理源格式是否受支持（参考 UE SubUVAnimation.cpp）
 	 */
@@ -68,6 +69,7 @@ private:
 	 * 获取每像素字节数（参考 UE SubUVAnimation.cpp）
 	 */
 	static uint32 GetBytesPerPixel(ETextureSourceFormat Format);
+#endif
 
 	/**
 	 * 智能判断是否应该使用 Alpha 通道采样
@@ -156,6 +158,7 @@ private:
 		int32 MaxAttempts
 	);
 	
+#if WITH_EDITOR
 	/**
 	 * 获取纹理在指定坐标的密度值（运行时版本）
 	 */
@@ -169,4 +172,5 @@ private:
 		int32 OriginalHeight,
 		uint32 BytesPerPixel
 	);
+#endif
 };
