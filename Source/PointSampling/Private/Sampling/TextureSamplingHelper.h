@@ -158,9 +158,8 @@ private:
 		int32 MaxAttempts
 	);
 	
-#if WITH_EDITOR
 	/**
-	 * 获取纹理在指定坐标的密度值（运行时版本）
+	 * 获取纹理在指定坐标的密度值（平台数据版本，运行时可用）
 	 */
 	static float GetTextureDensityAtCoordinatePlatform(
 		UTexture2D* Texture,
@@ -172,5 +171,4 @@ private:
 		int32 OriginalHeight,
 		uint32 BytesPerPixel
 	);
-#endif
 };

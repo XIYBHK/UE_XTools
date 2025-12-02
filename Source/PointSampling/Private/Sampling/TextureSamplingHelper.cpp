@@ -827,8 +827,9 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinate(
 	
 	return SamplingValue;
 }
+#endif // WITH_EDITOR
 
-// 获取指定坐标的纹理密度值（平台数据版本）
+// 获取指定坐标的纹理密度值（平台数据版本，运行时可用）
 float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
 	UTexture2D* Texture,
 	const FVector2D& Coordinate,
@@ -896,7 +897,6 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
 	
 	return SamplingValue;
 }
-#endif // WITH_EDITOR
 
 // 基于纹理密度的泊松圆盘采样（运行时平台数据版本）
 TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoisson(
