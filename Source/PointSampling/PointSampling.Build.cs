@@ -41,21 +41,6 @@ public class PointSampling : ModuleRules
 			"XToolsCore"  // XTools版本兼容层
 		});
 
-		//  编辑器专用依赖 - K2Node需要编辑器环境
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.AddRange(new string[]
-			{
-				"UnrealEd",
-				"BlueprintGraph",
-				"KismetCompiler",
-				"GraphEditor",
-				"Slate",           // FSlateIcon
-				"SlateCore",       // Slate基础类型
-				"ToolMenus"        // FToolMenuSection, FUIAction等
-			});
-		}
-
 		//  添加模块定义
 		PublicDefinitions.AddRange(new string[]
 		{

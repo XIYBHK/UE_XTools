@@ -1,7 +1,5 @@
 #include "K2Node_PointSampling.h"
 
-#if WITH_EDITOR
-
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintNodeSpawner.h"
 #include "EdGraphSchema_K2.h"
@@ -914,5 +912,3 @@ void UK2Node_PointSampling::ConnectOutputPins(FKismetCompilerContext& CompilerCo
 }
 
 #undef LOCTEXT_NAMESPACE
-
-#endif // WITH_EDITOR

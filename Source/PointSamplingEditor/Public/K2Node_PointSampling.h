@@ -1,9 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
-#if WITH_EDITOR
-
 #include "UObject/ObjectMacros.h"
 #include "PointSamplingTypes.h"
 #include "K2Node.h"
@@ -11,6 +8,7 @@
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "BlueprintActionDatabaseRegistrar.h"
+
 #include "K2Node_PointSampling.generated.h"
 
 class FBlueprintActionDatabaseRegistrar;
@@ -108,5 +106,3 @@ private:
 	bool bIsReconstructingPins;
 #endif
 };
-
-#endif // WITH_EDITOR

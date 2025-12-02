@@ -47,6 +47,19 @@
 			]
 		},
 		{
+			"Name": "PointSamplingEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostDefault",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			],
+			"AdditionalDependencies": [
+				"PointSampling"
+			]
+		},
+		{
 			"Name": "ObjectPoolEditor",
 			"Type": "UncookedOnly",
 			"LoadingPhase": "PostDefault",
