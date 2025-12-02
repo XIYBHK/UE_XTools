@@ -48,7 +48,7 @@
 		},
 		{
 			"Name": "PointSamplingEditor",
-			"Type": "Editor",
+			"Type": "UncookedOnly",
 			"LoadingPhase": "PostDefault",
 			"PlatformAllowList": [
 				"Win64",
