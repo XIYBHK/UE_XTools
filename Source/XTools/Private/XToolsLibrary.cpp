@@ -274,6 +274,67 @@ AActor* UXToolsLibrary::GetTopmostAttachedActor(USceneComponent* StartComponent,
     return HighestMatchingActor;
 }
 
+/**
+ * 获取所有附加的子Actor（递归查找）
+ * 
+ * 使用迭代式广度优先搜索（BFS）算法，避免递归调用导致的栈溢出风险。
+ * 核心思想：在遍历过程中动态扩展数组，新发现的子Actor会追加到数组末尾，
+ * 循环会自动处理这些新加入的元素，直到没有更多子Actor为止。
+ * 
+ * @param ParentActor 要查找的父级Actor
+ * @param OutAllChildren 输出的所有子级Actor（包含子级的子级）
+ * @param bIncludeSelf 结果是否包含ParentActor自身
+ */
+void UXToolsLibrary::GetAllAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutAllChildren, bool bIncludeSelf)
+{
+    // 1. 清理输出数组，避免脏数据
+    OutAllChildren.Reset();
+
+    // 2. 安全检查（IsValid 优于 != nullptr，因为它处理了 PendingKill 状态）
+    if (!IsValid(ParentActor))
+    {
+        FXToolsErrorReporter::Warning(LogXTools,
+            TEXT("GetAllAttachedActorsRecursively: 提供的父级Actor无效 (ParentActor is null or pending kill)."),
+            TEXT("GetAllAttachedActorsRecursively"));
+        return;
+    }
+
+    // 3. 如果需要包含自身，先加入
+    if (bIncludeSelf)
+    {
+        OutAllChildren.Add(ParentActor);
+    }
+
+    // 4. 获取第一层子Actor
+    // GetAttachedActors(OutArr, bResetArray, bRecursivelyIncludeAttachedActors)
+    // 第三个参数设为false，我们手动控制递归遍历以获得更好的性能和控制
+    ParentActor->GetAttachedActors(OutAllChildren, false, false);
+
+    // 5. 核心算法：迭代式广度优先搜索（BFS）
+    // 不使用递归函数调用，而是直接遍历数组本身
+    // 因为我们在遍历过程中会不断向数组末尾 Add 元素，Num() 会动态增加，
+    // 这个循环会自动处理所有新加入的"孙子"节点
+    for (int32 i = 0; i < OutAllChildren.Num(); ++i)
+    {
+        AActor* CurrentActor = OutAllChildren[i];
+
+        if (IsValid(CurrentActor))
+        {
+            // 获取当前子Actor的下一级子Actor，并追加到数组末尾
+            // bResetArray = false (不重置，追加模式)
+            // bRecursivelyIncludeAttachedActors = false (我们自己控制递归，只取下一层)
+            CurrentActor->GetAttachedActors(OutAllChildren, false, false);
+        }
+    }
+    
+    // 算法解析：
+    // i=0: 处理 子A。子A 有孩子 A1, A2。A1, A2 被加到数组末尾。
+    // i=1: 处理 子B。子B 有孩子 B1。B1 被加到数组末尾。
+    // ...
+    // 当 i 移动到 A1 的位置时，会继续处理 A1 的孩子。
+    // 直到数组末尾不再增加新元素，循环自然结束。
+}
+
 FVector UXToolsLibrary::EvaluateBezierConstantSpeed(
         UWorld* World,
         const TArray<FVector>& Points,
