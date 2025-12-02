@@ -41,19 +41,27 @@ public class PointSampling : ModuleRules
 			"XToolsCore"  // XTools版本兼容层
 		});
 
+		//  编辑器专用公共依赖 - K2Node_PointSampling在Public目录，需要公共依赖
+		if (Target.bBuildEditor)
+		{
+			PublicDependencyModuleNames.AddRange(new string[]
+			{
+				"BlueprintGraph"  // UK2Node基类
+			});
+		}
+
 		//  私有依赖模块
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			// 未来如需要添加其他依赖
 		});
 
-		//  编辑器专用依赖 - 支持自定义 K2Node
+		//  编辑器专用私有依赖
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
 				"UnrealEd",
-				"BlueprintGraph",
 				"KismetCompiler",
 				"GraphEditor",
 				"Slate",           // FSlateIcon
