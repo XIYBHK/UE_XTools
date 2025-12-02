@@ -10,7 +10,11 @@
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "BlueprintActionDatabaseRegistrar.h"
+#endif
+
 #include "K2Node_PointSampling.generated.h"
+
+#if WITH_EDITOR
 
 class FBlueprintActionDatabaseRegistrar;
 class UEdGraphPin;
