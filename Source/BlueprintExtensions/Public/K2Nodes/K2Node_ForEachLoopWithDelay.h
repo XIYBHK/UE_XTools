@@ -53,6 +53,7 @@ public:
     
 	virtual void GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const override;
 	virtual void PostReconstructNode() override;
+	virtual bool IsCompatibleWithGraph(const UEdGraph* TargetGraph) const override;
     
 #pragma endregion
 

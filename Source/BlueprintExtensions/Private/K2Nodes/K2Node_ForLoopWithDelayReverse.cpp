@@ -1,4 +1,4 @@
-#include "K2Nodes/K2Node_ForLoopWithDelay.h"
+#include "K2Nodes/K2Node_ForLoopWithDelayReverse.h"
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
@@ -23,13 +23,13 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 
-#define LOCTEXT_NAMESPACE "XTools_K2Node_ForLoopWithDelay"
+#define LOCTEXT_NAMESPACE "XTools_K2Node_ForLoopWithDelayReverse"
 
 //——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #pragma region Helper
 
-namespace ForLoopWithDelayHelper
+namespace ForLoopWithDelayReverseHelper
 {
 	const FName FirstPinName = FName("FirstIndex");
 	const FName LastPinName = FName("LastIndex");
@@ -45,32 +45,32 @@ namespace ForLoopWithDelayHelper
 
 #pragma region NodeAppearance
 
-FText UK2Node_ForLoopWithDelay::GetNodeTitle(ENodeTitleType::Type TitleType) const
+FText UK2Node_ForLoopWithDelayReverse::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
-	return LOCTEXT("NodeTitle", "带延迟的ForLoop");
+	return LOCTEXT("NodeTitle", "带延迟的倒序ForLoop");
 }
 
-FText UK2Node_ForLoopWithDelay::GetCompactNodeTitle() const
+FText UK2Node_ForLoopWithDelayReverse::GetCompactNodeTitle() const
 {
-	return LOCTEXT("CompactNodeTitle", "FORLOOP DELAY");
+	return LOCTEXT("CompactNodeTitle", "FORLOOP DELAY REV");
 }
 
-FText UK2Node_ForLoopWithDelay::GetTooltipText() const
+FText UK2Node_ForLoopWithDelayReverse::GetTooltipText() const
 {
-	return LOCTEXT("TooltipText", "在指定范围内循环执行，每次迭代之间等待指定的延迟时间");
+	return LOCTEXT("TooltipText", "从LastIndex递减到FirstIndex循环执行，每次迭代之间等待指定的延迟时间");
 }
 
-FText UK2Node_ForLoopWithDelay::GetKeywords() const
+FText UK2Node_ForLoopWithDelayReverse::GetKeywords() const
 {
-	return LOCTEXT("Keywords", "for loop delay 循环 延迟 等待 for each 遍历 计数");
+	return LOCTEXT("Keywords", "for loop delay reverse 循环 延迟 等待 倒序 反向 递减 计数");
 }
 
-FText UK2Node_ForLoopWithDelay::GetMenuCategory() const
+FText UK2Node_ForLoopWithDelayReverse::GetMenuCategory() const
 {
 	return LOCTEXT("MenuCategory", "XTools|Blueprint Extensions|Loops");
 }
 
-FSlateIcon UK2Node_ForLoopWithDelay::GetIconAndTint(FLinearColor& OutColor) const
+FSlateIcon UK2Node_ForLoopWithDelayReverse::GetIconAndTint(FLinearColor& OutColor) const
 {
 	static FSlateIcon Icon("EditorStyle", "GraphEditor.Macro.Loop_16x");
 	return Icon;
@@ -82,9 +82,9 @@ FSlateIcon UK2Node_ForLoopWithDelay::GetIconAndTint(FLinearColor& OutColor) cons
 
 #pragma region BlueprintCompile
 
-void UK2Node_ForLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
+void UK2Node_ForLoopWithDelayReverse::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	// 【参考 K2Node_SmartSort 实现模式】
+	// 【参考 K2Node_ForLoopWithDelay 实现模式，修改为倒序】
 	// 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
 
 	// 编译时检查：确保必要引脚有效
@@ -100,7 +100,7 @@ void UK2Node_ForLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContex
 	LoopCounterNode->AllocateDefaultPins();
 	UEdGraphPin* LoopCounterPin = LoopCounterNode->GetVariablePin();
 
-	// 2. 初始化循环计数器
+	// 2. 初始化循环计数器（从 LastIndex 开始）
 	UK2Node_AssignmentStatement* LoopCounterInit = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
 	LoopCounterInit->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterPin, LoopCounterInit->GetVariablePin());
@@ -110,9 +110,9 @@ void UK2Node_ForLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContex
 	Branch->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterInit->GetThenPin(), Branch->GetExecPin());
 
-	// 4. 创建循环条件（计数器 <= 最后索引）
+	// 4. 创建循环条件（计数器 >= FirstIndex，倒序使用 >=）
 	UK2Node_CallFunction* Condition = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	Condition->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_IntInt)));
+	Condition->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, GreaterEqual_IntInt)));
 	Condition->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(Condition->GetReturnValuePin(), Branch->GetConditionPin());
 	CompilerContext.GetSchema()->TryCreateConnection(Condition->FindPinChecked(TEXT("A")), LoopCounterPin);
@@ -123,29 +123,29 @@ void UK2Node_ForLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContex
 	DelayNode->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(Branch->GetThenPin(), DelayNode->GetExecPin());
 
-	// 6. 创建执行序列（循环体 -> 递增）
+	// 6. 创建执行序列（循环体 -> 递减）
 	UK2Node_ExecutionSequence* Sequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
 	Sequence->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(DelayNode->GetThenPin(), Sequence->GetExecPin());
 
-	// 7. 创建递增节点
-	UK2Node_CallFunction* Increment = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	Increment->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
-	Increment->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(Increment->FindPinChecked(TEXT("A")), LoopCounterPin);
-	Increment->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("1");
+	// 7. 创建递减节点（倒序使用减法）
+	UK2Node_CallFunction* Decrement = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+	Decrement->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Subtract_IntInt)));
+	Decrement->AllocateDefaultPins();
+	CompilerContext.GetSchema()->TryCreateConnection(Decrement->FindPinChecked(TEXT("A")), LoopCounterPin);
+	Decrement->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("1");
 
-	// 8. 创建赋值节点（递增后的值）
+	// 8. 创建赋值节点（递减后的值）
 	UK2Node_AssignmentStatement* LoopCounterAssign = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
 	LoopCounterAssign->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
 	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetVariablePin(), LoopCounterPin);
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
+	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetValuePin(), Decrement->GetReturnValuePin());
 	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetThenPin(), Branch->GetExecPin());  // 循环回到分支
 
-	// 9. Break 功能：创建 LastIndex+1 来跳出循环
+	// 9. Break 功能：创建 FirstIndex-1 来跳出循环
 	UK2Node_CallFunction* BreakValue = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	BreakValue->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
+	BreakValue->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Subtract_IntInt)));
 	BreakValue->AllocateDefaultPins();
 	CompilerContext.GetSchema()->TryCreateConnection(BreakValue->FindPinChecked(TEXT("A")), Condition->FindPinChecked(TEXT("B")));
 	BreakValue->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("1");
@@ -158,8 +158,8 @@ void UK2Node_ForLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContex
 
 	// 10. 最后统一移动所有外部连接（参考智能排序模式）
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *LoopCounterInit->GetExecPin());
-	CompilerContext.MovePinLinksToIntermediate(*GetFirstIndexPin(), *LoopCounterInit->GetValuePin());
-	CompilerContext.MovePinLinksToIntermediate(*GetLastIndexPin(), *Condition->FindPinChecked(TEXT("B")));
+	CompilerContext.MovePinLinksToIntermediate(*GetLastIndexPin(), *LoopCounterInit->GetValuePin());  // 倒序：从 LastIndex 开始
+	CompilerContext.MovePinLinksToIntermediate(*GetFirstIndexPin(), *Condition->FindPinChecked(TEXT("B")));  // 倒序：到 FirstIndex 结束
 	CompilerContext.MovePinLinksToIntermediate(*GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
 	CompilerContext.MovePinLinksToIntermediate(*GetLoopBodyPin(), *Sequence->GetThenPinGivenIndex(0));
 	CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(), *Branch->GetElsePin());
@@ -181,7 +181,7 @@ void UK2Node_ForLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContex
 
 #pragma region BlueprintSystem
 
-void UK2Node_ForLoopWithDelay::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
+void UK2Node_ForLoopWithDelayReverse::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
 	UClass* ActionKey = GetClass();
 	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
@@ -192,12 +192,12 @@ void UK2Node_ForLoopWithDelay::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 	}
 }
 
-void UK2Node_ForLoopWithDelay::PostReconstructNode()
+void UK2Node_ForLoopWithDelayReverse::PostReconstructNode()
 {
 	Super::PostReconstructNode();
 }
 
-bool UK2Node_ForLoopWithDelay::IsCompatibleWithGraph(const UEdGraph* TargetGraph) const
+bool UK2Node_ForLoopWithDelayReverse::IsCompatibleWithGraph(const UEdGraph* TargetGraph) const
 {
 	// Delay 节点需要支持 Latent 操作的图
 	const UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
@@ -210,22 +210,22 @@ bool UK2Node_ForLoopWithDelay::IsCompatibleWithGraph(const UEdGraph* TargetGraph
 
 #pragma region PinManagement
 
-void UK2Node_ForLoopWithDelay::AllocateDefaultPins()
+void UK2Node_ForLoopWithDelayReverse::AllocateDefaultPins()
 {
-	using namespace ForLoopWithDelayHelper;
+	using namespace ForLoopWithDelayReverseHelper;
 
 	// 输入执行引脚
 	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
 
-	// FirstIndex 输入
+	// FirstIndex 输入（倒序的结束值）
 	UEdGraphPin* FirstPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, FirstPinName);
 	FirstPin->DefaultValue = TEXT("0");
-	FirstPin->PinToolTip = LOCTEXT("FirstIndexTooltip", "起始索引").ToString();
+	FirstPin->PinToolTip = LOCTEXT("FirstIndexTooltip", "结束索引（递减到此值）").ToString();
 
-	// LastIndex 输入
+	// LastIndex 输入（倒序的起始值）
 	UEdGraphPin* LastPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Int, LastPinName);
 	LastPin->DefaultValue = TEXT("10");
-	LastPin->PinToolTip = LOCTEXT("LastIndexTooltip", "结束索引").ToString();
+	LastPin->PinToolTip = LOCTEXT("LastIndexTooltip", "起始索引（从此值开始递减）").ToString();
 
 	// Delay 输入
 	UEdGraphPin* DelayPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, UEdGraphSchema_K2::PC_Float, DelayPinName);
@@ -238,7 +238,7 @@ void UK2Node_ForLoopWithDelay::AllocateDefaultPins()
 
 	// Index 输出
 	UEdGraphPin* IndexPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Int, IndexPinName);
-	IndexPin->PinToolTip = LOCTEXT("IndexTooltip", "当前循环索引").ToString();
+	IndexPin->PinToolTip = LOCTEXT("IndexTooltip", "当前循环索引（递减）").ToString();
 
 	// Break 输入执行引脚（可选）
 	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, BreakPinName);
@@ -249,42 +249,41 @@ void UK2Node_ForLoopWithDelay::AllocateDefaultPins()
 	CompletedPin->PinToolTip = LOCTEXT("CompletedTooltip", "循环完成时执行").ToString();
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetFirstIndexPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetFirstIndexPin() const
 {
-	return FindPinChecked(ForLoopWithDelayHelper::FirstPinName, EGPD_Input);
+	return FindPinChecked(ForLoopWithDelayReverseHelper::FirstPinName, EGPD_Input);
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetLastIndexPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetLastIndexPin() const
 {
-	return FindPinChecked(ForLoopWithDelayHelper::LastPinName, EGPD_Input);
+	return FindPinChecked(ForLoopWithDelayReverseHelper::LastPinName, EGPD_Input);
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetDelayPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetDelayPin() const
 {
-	return FindPinChecked(ForLoopWithDelayHelper::DelayPinName, EGPD_Input);
+	return FindPinChecked(ForLoopWithDelayReverseHelper::DelayPinName, EGPD_Input);
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetLoopBodyPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetLoopBodyPin() const
 {
-	return FindPinChecked(ForLoopWithDelayHelper::LoopBodyPinName, EGPD_Output);
+	return FindPinChecked(ForLoopWithDelayReverseHelper::LoopBodyPinName, EGPD_Output);
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetBreakPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetBreakPin() const
 {
-	return FindPin(ForLoopWithDelayHelper::BreakPinName, EGPD_Input);
+	return FindPin(ForLoopWithDelayReverseHelper::BreakPinName, EGPD_Input);
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetCompletedPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetCompletedPin() const
 {
 	return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
-UEdGraphPin* UK2Node_ForLoopWithDelay::GetIndexPin() const
+UEdGraphPin* UK2Node_ForLoopWithDelayReverse::GetIndexPin() const
 {
-	return FindPinChecked(ForLoopWithDelayHelper::IndexPinName, EGPD_Output);
+	return FindPinChecked(ForLoopWithDelayReverseHelper::IndexPinName, EGPD_Output);
 }
 
 #pragma endregion
 
 #undef LOCTEXT_NAMESPACE
-

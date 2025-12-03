@@ -165,16 +165,16 @@ public:
 
     /**
      * 获取所有附加的子Actor（递归查找）
-     * 使用C++原生迭代遍历，性能比蓝图快10-100倍，且不会触发无限循环报错。
+     * 使用C++原生迭代遍历，性能比蓝图快，且不会触发无限循环报错。
      * 
      * @param ParentActor 要查找的父级Actor
      * @param OutAllChildren 输出的所有子级Actor（包含子级的子级）
      * @param bIncludeSelf 结果是否包含ParentActor自身
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|Actors",
-        meta = (DisplayName = "获取所有附加的子Actor",
-               Keywords = "Get Attached Child Children Recursively",
-               ToolTip = "递归获取所有附加的子Actor（包括子级的子级）\n使用C++迭代算法，避免栈溢出，性能远超蓝图递归\n适用于复杂层级结构的Actor查找"))
+        meta = (DisplayName = "获取所有附加的子Actor(BFS)",
+               Keywords = "Get Attached Child Children Recursively BFS",
+               ToolTip = "递归获取所有附加的子Actor（包括子级的子级）\n使用C++ BFS迭代算法，避免栈溢出，性能更好\n适用于复杂层级结构的Actor查找"))
     static void GetAllAttachedActorsRecursively(
         AActor* ParentActor,
         TArray<AActor*>& OutAllChildren,

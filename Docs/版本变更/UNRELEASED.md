@@ -48,12 +48,16 @@
 
 ## BlueprintExtensions
 
+- **增加** 带延迟的倒序ForLoop节点（K2Node_ForLoopWithDelayReverse）
+- **优化** 所有Delay循环节点增加图兼容性检查（仅EventGraph可用）
+- **优化** ForLoop/ForEach延迟节点增加编译时引脚有效性检查
 - **修复** K2Node 蓝图编译时增加空指针防护，避免硬件异常崩溃
 - **优化** ForEachArray/ForEachLoopWithDelay 节点增加引脚有效性检查
 
 ## XTools_EnhancedCodeFlow
 
 - **修复** 所有异步 Action 增加 Owner 有效性检查，防止悬空指针
+- **修复** 时间轴首次 tick 时初始值触发问题
 - **优化** Owner 销毁后静默跳过回调，避免崩溃（10个 Action）
 
 ## X_AssetEditor
@@ -108,3 +112,20 @@
 
 - **增加** `GetVariableNames` 增加 `bIncludeSuper` 参数，支持获取父类变量
 - **修复** 修复文件内容损坏导致的编译错误
+
+## PointSampling
+
+- **增加** 基于泊松圆盘采样的纹理点阵生成功能
+- **增加** 多种点阵生成算法（圆形/矩形/三角形/样条线/网格）
+- **增加** 3D矩形点阵生成支持
+- **重构** 拆分为 Runtime 和 Editor 模块，优化构建配置
+- **修复** 非编辑器构建时的多处编译错误
+- **修复** K2Node 条件编译和 UHT 解析问题
+
+## XToolsLibrary
+
+- **增加** 递归获取所有子 Actor（BFS）
+
+## PivotTool
+
+- **增加** 静态网格体枢轴点管理功能

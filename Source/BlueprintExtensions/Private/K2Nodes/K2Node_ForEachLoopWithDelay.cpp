@@ -2,6 +2,7 @@
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 
 // 蓝图系统
 #include "BlueprintActionDatabaseRegistrar.h"
@@ -255,6 +256,13 @@ void UK2Node_ForEachLoopWithDelay::PostReconstructNode()
 			}
 		}
 	}
+}
+
+bool UK2Node_ForEachLoopWithDelay::IsCompatibleWithGraph(const UEdGraph* TargetGraph) const
+{
+	// Delay 节点需要支持 Latent 操作的图
+	const UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
+	return Blueprint && FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint) && Super::IsCompatibleWithGraph(TargetGraph);
 }
 
 #pragma endregion
