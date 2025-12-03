@@ -4,7 +4,9 @@
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistUtils.h"
 #include "IAssetFamily.h"
+#if BA_UE_VERSION_OR_LATER(5, 4)
 #include "IAssetSearchModule.h"
+#endif
 #include "K2Node_DynamicCast.h"
 #include "K2Node_VariableGet.h"
 #include "SGraphPanel.h"

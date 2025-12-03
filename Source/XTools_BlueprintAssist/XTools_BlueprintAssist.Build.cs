@@ -51,7 +51,6 @@ public class XTools_BlueprintAssist : ModuleRules
 				"PropertyEditor",
 				"ApplicationCore",
 				"AudioEditor", 
-				"AssetSearch",
 				"HTTP",
 				"XmlParser", 
 				"ContentBrowserData",
@@ -81,6 +80,12 @@ public class XTools_BlueprintAssist : ModuleRules
 				PrivateDependencyModuleNames.Add("ToolWidgets");
 				PrivateDependencyModuleNames.Add("AssetDefinition");
 				PrivateDependencyModuleNames.Add("MaterialEditor");
+			}
+			
+			// AssetSearch 模块在 UE 5.4+ 可用
+			if (Target.Version.MinorVersion >= 4)
+			{
+				PrivateDependencyModuleNames.Add("AssetSearch");
 			}
 		}
 
