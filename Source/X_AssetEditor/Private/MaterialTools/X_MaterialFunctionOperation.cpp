@@ -427,15 +427,17 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
     int32 PosX,
     int32 PosY)
 {
-    if (!Material || !Function)
-    {
-        return nullptr;
-    }
-
-    // 创建材质函数调用表达式
     UMaterialExpressionMaterialFunctionCall* FunctionCall = NewObject<UMaterialExpressionMaterialFunctionCall>(Material);
     if (FunctionCall)
     {
+        // 设置RF_Transactional标志以支持撤销系统（参考BlueprintAssistUtils.cpp中的模式）
+        if (Material->HasAnyFlags(RF_Transactional))
+        {
+            FunctionCall->SetFlags(RF_Transactional);
+        }
+        // 调用Modify()将对象注册到当前事务中
+        FunctionCall->Modify();
+        
         FunctionCall->MaterialFunction = Function;
         
         // 如果PosX和PosY都是0，进行智能位置计算

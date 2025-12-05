@@ -601,12 +601,20 @@ UMaterialExpressionAdd* FX_MaterialFunctionConnector::CreateAddConnectionToPrope
         return nullptr;
     }
 
-    // 创建Add节点
+    // 创建Add节点（遵循UE最佳实践支持撤销）
     UMaterialExpressionAdd* AddExpression = NewObject<UMaterialExpressionAdd>(Material);
     if (!AddExpression)
     {
         return nullptr;
     }
+    
+    // 设置RF_Transactional标志以支持撤销系统
+    if (Material->HasAnyFlags(RF_Transactional))
+    {
+        AddExpression->SetFlags(RF_Transactional);
+    }
+    // 调用Modify()将对象注册到当前事务中
+    AddExpression->Modify();
 
     // 设置Add节点位置
     AddExpression->MaterialExpressionEditorX = FunctionCall->MaterialExpressionEditorX + 200;
@@ -661,12 +669,20 @@ UMaterialExpressionMultiply* FX_MaterialFunctionConnector::CreateMultiplyConnect
         return nullptr;
     }
 
-    // 创建Multiply节点
+    // 创建Multiply节点（遵循UE最佳实践支持撤销）
     UMaterialExpressionMultiply* MultiplyExpression = NewObject<UMaterialExpressionMultiply>(Material);
     if (!MultiplyExpression)
     {
         return nullptr;
     }
+    
+    // 设置RF_Transactional标志以支持撤销系统
+    if (Material->HasAnyFlags(RF_Transactional))
+    {
+        MultiplyExpression->SetFlags(RF_Transactional);
+    }
+    // 调用Modify()将对象注册到当前事务中
+    MultiplyExpression->Modify();
 
     // 设置Multiply节点位置
     MultiplyExpression->MaterialExpressionEditorX = FunctionCall->MaterialExpressionEditorX + 200;
