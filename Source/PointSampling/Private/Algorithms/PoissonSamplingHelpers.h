@@ -56,7 +56,7 @@ namespace PoissonSamplingHelpers
 	// ============================================================================
 
 	/** 应用扰动噪波 */
-	void ApplyJitter(TArray<FVector>& Points, float Radius, float JitterStrength, const FRandomStream* Stream = nullptr);
+	void ApplyJitter(TArray<FVector>& Points, float Radius, float JitterStrength, bool bIs2D = false, const FRandomStream* Stream = nullptr);
 
 	/** 应用坐标变换（根据坐标空间类型） */
 	void ApplyTransform(TArray<FVector>& Points, const FTransform& Transform, EPoissonCoordinateSpace CoordinateSpace, const FVector& ScaleCompensation = FVector::OneVector);
@@ -98,5 +98,32 @@ namespace PoissonSamplingHelpers
 		int32 GridHeight,
 		int32 GridDepth,
 		float CellSize);
+
+	// ============================================================================
+	// 核心采样函数（统一随机源）
+	// ============================================================================
+
+	/** 
+	 * 2D泊松采样核心实现
+	 * @param Stream 可选随机流，nullptr时使用全局随机
+	 */
+	TArray<FVector2D> GeneratePoisson2DInternal(
+		float Width,
+		float Height,
+		float Radius,
+		int32 MaxAttempts,
+		const FRandomStream* Stream = nullptr);
+
+	/** 
+	 * 3D泊松采样核心实现
+	 * @param Stream 可选随机流，nullptr时使用全局随机
+	 */
+	TArray<FVector> GeneratePoisson3DInternal(
+		float Width,
+		float Height,
+		float Depth,
+		float Radius,
+		int32 MaxAttempts,
+		const FRandomStream* Stream = nullptr);
 }
 

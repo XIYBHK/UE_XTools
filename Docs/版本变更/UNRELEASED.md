@@ -40,6 +40,14 @@
 4. 清空此文件，准备下一轮开发
 
 ---
+## PointSampling 模块
+- 修复 3D 泊松采样球面分布不均匀问题（极点附近过密）
+- 修复 Grid 使用 ZeroVector 作为无效标记的潜在冲突问题
+- 修复 Depth 较小时 3D 采样仅生成几个点的问题（自动降级为 2D）
+- 修复 FromStream 版本 TargetPointCount 与 Radius 同时指定时行为不一致
+- 修复 2D 采样时 ApplyJitter 错误扰动 Z 坐标的问题
+- 重构 2D/3D 采样核心逻辑为内部函数，统一随机源处理
+- 合并 Local/Raw 坐标空间重复代码
 
 ## XToolsCore
 
