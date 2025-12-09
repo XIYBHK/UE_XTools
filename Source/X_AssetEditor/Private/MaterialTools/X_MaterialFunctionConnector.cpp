@@ -11,6 +11,7 @@
 #include "MaterialTools/X_MaterialFunctionParams.h"
 //  添加UE官方API支持
 #include "MaterialEditingLibrary.h"
+#include "MaterialGraph/MaterialGraph.h"
 //  添加MakeMaterialAttributes支持
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 //  引入常量定义
@@ -601,27 +602,16 @@ UMaterialExpressionAdd* FX_MaterialFunctionConnector::CreateAddConnectionToPrope
         return nullptr;
     }
 
-    // 创建Add节点（遵循UE最佳实践支持撤销）
-    UMaterialExpressionAdd* AddExpression = NewObject<UMaterialExpressionAdd>(Material);
+    // 使用UE官方API创建Add节点（自动处理RF_Transactional、GUID、Material属性等）
+    int32 PosX = FunctionCall->MaterialExpressionEditorX + 200;
+    int32 PosY = FunctionCall->MaterialExpressionEditorY;
+    UMaterialExpression* NewExpression = UMaterialEditingLibrary::CreateMaterialExpression(
+        Material, UMaterialExpressionAdd::StaticClass(), PosX, PosY);
+    UMaterialExpressionAdd* AddExpression = Cast<UMaterialExpressionAdd>(NewExpression);
     if (!AddExpression)
     {
         return nullptr;
     }
-    
-    // 设置RF_Transactional标志以支持撤销系统
-    if (Material->HasAnyFlags(RF_Transactional))
-    {
-        AddExpression->SetFlags(RF_Transactional);
-    }
-    // 调用Modify()将对象注册到当前事务中
-    AddExpression->Modify();
-
-    // 设置Add节点位置
-    AddExpression->MaterialExpressionEditorX = FunctionCall->MaterialExpressionEditorX + 200;
-    AddExpression->MaterialExpressionEditorY = FunctionCall->MaterialExpressionEditorY;
-
-    // 添加Add节点到材质
-    EditorOnlyData->ExpressionCollection.Expressions.Add(AddExpression);
 
     // 连接函数输出到Add节点的A输入
     AddExpression->A.Connect(OutputIndex, FunctionCall);
@@ -669,27 +659,16 @@ UMaterialExpressionMultiply* FX_MaterialFunctionConnector::CreateMultiplyConnect
         return nullptr;
     }
 
-    // 创建Multiply节点（遵循UE最佳实践支持撤销）
-    UMaterialExpressionMultiply* MultiplyExpression = NewObject<UMaterialExpressionMultiply>(Material);
+    // 使用UE官方API创建Multiply节点（自动处理RF_Transactional、GUID、Material属性等）
+    int32 PosX = FunctionCall->MaterialExpressionEditorX + 200;
+    int32 PosY = FunctionCall->MaterialExpressionEditorY;
+    UMaterialExpression* NewExpression = UMaterialEditingLibrary::CreateMaterialExpression(
+        Material, UMaterialExpressionMultiply::StaticClass(), PosX, PosY);
+    UMaterialExpressionMultiply* MultiplyExpression = Cast<UMaterialExpressionMultiply>(NewExpression);
     if (!MultiplyExpression)
     {
         return nullptr;
     }
-    
-    // 设置RF_Transactional标志以支持撤销系统
-    if (Material->HasAnyFlags(RF_Transactional))
-    {
-        MultiplyExpression->SetFlags(RF_Transactional);
-    }
-    // 调用Modify()将对象注册到当前事务中
-    MultiplyExpression->Modify();
-
-    // 设置Multiply节点位置
-    MultiplyExpression->MaterialExpressionEditorX = FunctionCall->MaterialExpressionEditorX + 200;
-    MultiplyExpression->MaterialExpressionEditorY = FunctionCall->MaterialExpressionEditorY;
-
-    // 添加Multiply节点到材质
-    EditorOnlyData->ExpressionCollection.Expressions.Add(MultiplyExpression);
 
     // 连接函数输出到Multiply节点的A输入
     MultiplyExpression->A.Connect(OutputIndex, FunctionCall);

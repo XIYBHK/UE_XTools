@@ -46,7 +46,10 @@ protected:
 
 		if (TickFunc && Time > 0 && BlendExp != 0 && StartValue != StopValue)
 		{
-			SetMaxActionTime(Time / PlayRate);
+			if (!Settings.bLoop)
+			{
+				SetMaxActionTime(Time / PlayRate);
+			}
 			CurrentTime = 0.f;
 			return true;
 		}
@@ -74,47 +77,60 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline Vector - Tick"), STAT_ECFDETAILS_TIMELINEVECTOR, STATGROUP_ECFDETAILS);
 #endif
-		// 【修复】第一次Tick时触发初始值，与UE原生时间轴行为一致
-		// 这样FirstDelay会自然生效（延迟后才会进入第一次Tick）
-		if (bFirstTick)
+		// 第一次Tick不累加时间，直接输出StartValue，与UE原生时间轴行为一致
+		if (!bFirstTick)
 		{
-			CurrentValue = StartValue;
-			if (HasValidOwner() && TickFunc)
-			{
-				TickFunc(CurrentValue, CurrentTime);
-			}
-			bFirstTick = false;
+			CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
 		}
-		
-		CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
+		bFirstTick = false;
 
-		const float LerpValue = CurrentTime / Time;
+		const float Alpha = CurrentTime / Time;
 
 		switch (BlendFunc)
 		{
 		case EECFBlendFunc::ECFBlend_Linear:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, LerpValue);
+			CurrentValue = FMath::Lerp(StartValue, StopValue, Alpha);
 			break;
 		case EECFBlendFunc::ECFBlend_Cubic:
-			CurrentValue = FMath::CubicInterp(StartValue, FVector::ZeroVector, StopValue, FVector::ZeroVector, LerpValue);
+			CurrentValue = FMath::CubicInterp(StartValue, FVector::ZeroVector, StopValue, FVector::ZeroVector, Alpha);
 			break;
 		case EECFBlendFunc::ECFBlend_EaseIn:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(LerpValue, BlendExp));
+			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, BlendExp));
 			break;
 		case EECFBlendFunc::ECFBlend_EaseOut:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(LerpValue, 1.f / BlendExp));
+			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, 1.f / BlendExp));
 			break;
 		case EECFBlendFunc::ECFBlend_EaseInOut:
-			CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, LerpValue, BlendExp);
+			CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, Alpha, BlendExp);
 			break;
 		}
 
 		TickFunc(CurrentValue, CurrentTime);
 
-		if (LerpValue >= 1.f)
+		if (CurrentTime >= Time)
 		{
-			Complete(false);
-			MarkAsFinished();
+			if (Settings.bLoop)
+			{
+				// 参考UE原生FTimeline::TickTimeline的Loop实现
+				// 1. 先触发精确的终点值
+				CurrentValue = StopValue;
+				TickFunc(StopValue, Time);
+				
+				// 2. 处理溢出时间，计算新位置
+				while (CurrentTime > Time)
+				{
+					CurrentTime -= Time;
+				}
+			}
+			else
+			{
+				// 确保最终值精确到达StopValue，避免浮点精度问题
+				CurrentValue = StopValue;
+				CurrentTime = Time;
+				TickFunc(CurrentValue, CurrentTime);
+				Complete(false);
+				MarkAsFinished();
+			}
 		}
 	}
 

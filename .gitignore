@@ -83,6 +83,4 @@ Docs/UE5.3_Source/*
 /Docs/临时日志
 .vscode/settings.json
 /.claude
-Docs/BlueprintAssistDiff_5.7_XTools.md
-Docs/XTools_BlueprintAssist_Modifications.md
-Docs/版本变更/UNRELEASED.md
+.kiro/steering/xiybhk.md

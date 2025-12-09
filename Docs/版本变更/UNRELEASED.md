@@ -65,8 +65,14 @@
 ## XTools_EnhancedCodeFlow
 
 - **修复** 所有异步 Action 增加 Owner 有效性检查，防止悬空指针
-- **修复** 时间轴首次 tick 时初始值触发问题
+- **修复** 时间轴首次 tick 时初始值触发问题，对齐UE原生行为
 - **优化** Owner 销毁后静默跳过回调，避免崩溃（10个 Action）
+- **修复** BP 时间轴 OnFinished 回调 bStopped 参数始终为 false
+- **修复** ECFTimeline 完成条件使用值比较导致的浮点精度问题
+- **增加** 时间轴循环功能（bLoop），对齐UE原生FTimeline实现
+- **修复** 时间轴结束时最终值精度问题，确保精确到达终点值
+- **优化** 移除Custom时间轴多余的bSuppressCallback机制
+- **修复** Loop模式下触发精确终点值并处理溢出时间
 
 ## X_AssetEditor
 
@@ -96,6 +102,8 @@
 
 ## MaterialTools
 
+- **修复** 添加材质函数后撤销崩溃（移除Transaction避免撤销系统冲突）
+- **优化** 移除冗余的ExecuteWithTransaction和PrepareForModification
 - **增加** 引入材质常量，减少硬编码
 - **优化** 支持并行材质收集，提升批量处理性能
 - **优化** 改进智能连接逻辑，引入评分系统解决误判

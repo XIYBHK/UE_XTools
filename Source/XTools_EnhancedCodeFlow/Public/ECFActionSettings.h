@@ -15,17 +15,19 @@ struct XTOOLS_ENHANCEDCODEFLOW_API FECFActionSettings
 		FirstDelay(0.f),
 		bIgnorePause(false),
 		bIgnoreGlobalTimeDilation(false),
-		bStartPaused(false)
+		bStartPaused(false),
+		bLoop(false)
 	{
 
 	}
 
-	FECFActionSettings(float InTickInterval, float InFirstDelay = 0.f, bool InIgnorePause = false, bool InIgnoreTimeDilation = false, bool InStartPaused = false) :
+	FECFActionSettings(float InTickInterval, float InFirstDelay = 0.f, bool InIgnorePause = false, bool InIgnoreTimeDilation = false, bool InStartPaused = false, bool InLoop = false) :
 		TickInterval(InTickInterval),
 		FirstDelay(InFirstDelay),
 		bIgnorePause(InIgnorePause),
 		bIgnoreGlobalTimeDilation(InIgnoreTimeDilation),
-		bStartPaused(InStartPaused)
+		bStartPaused(InStartPaused),
+		bLoop(InLoop)
 	{
 
 	}
@@ -44,6 +46,9 @@ struct XTOOLS_ENHANCEDCODEFLOW_API FECFActionSettings
 
 	UPROPERTY(BlueprintReadWrite, Category = "XTools|ECF|设置", meta = (DisplayName = "开始时暂停", Tooltip = "是否在创建时就处于暂停状态"))
 	bool bStartPaused = false;
+
+	UPROPERTY(BlueprintReadWrite, Category = "XTools|ECF|设置", meta = (DisplayName = "循环", Tooltip = "时间轴到达终点后是否从头开始（无限循环）"))
+	bool bLoop = false;
 };
 
 #define ECF_TICKINTERVAL(_Interval) FECFActionSettings(_Interval, 0.f, false, false, false)

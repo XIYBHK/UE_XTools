@@ -24,7 +24,7 @@ UECFTimelineBP* UECFTimelineBP::ECFTimeline(const UObject* WorldContextObject, f
 			{
 				if (IsProxyValid(Proxy))
 				{
-					Proxy->OnFinished.Broadcast(Value, Time, false);
+					Proxy->OnFinished.Broadcast(Value, Time, bStopped);
 					Proxy->ClearAsyncBPAction();
 				}
 			},

@@ -37,6 +37,11 @@
 // 撤销支持
 #include "ScopedTransaction.h"
 
+// UE官方材质编辑API
+#include "MaterialEditingLibrary.h"
+#include "MaterialGraph/MaterialGraph.h"
+
+
 /**
  * 检查材质是否为引擎自带材质
  * @param Material 要检查的材质
@@ -282,15 +287,8 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         }
     }
     
-    // 创建撤销事务，包装整个材质函数添加操作
-    FScopedTransaction Transaction(NSLOCTEXT("XTools", "AddMaterialFunction", "添加材质函数"));
-    
-    // 准备材质修改（支持撤销）
-    if (!Material->Modify())
-    {
-        UE_LOG(LogX_AssetEditor, Warning, TEXT("无法准备材质修改，撤销功能可能不可用: %s"), *Material->GetName());
-        // 继续执行，但撤销可能不工作
-    }
+    // 不使用FScopedTransaction，避免在材质编辑器中撤销时崩溃
+    // 用户可以通过删除节点来移除添加的材质函数
 
     //  检查是否为引擎自带材质
     if (IsEngineMaterial(Material))
@@ -427,18 +425,15 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
     int32 PosX,
     int32 PosY)
 {
-    UMaterialExpressionMaterialFunctionCall* FunctionCall = NewObject<UMaterialExpressionMaterialFunctionCall>(Material);
+    // 使用UE官方API创建材质表达式（自动处理RF_Transactional、GUID、Material属性等）
+    UMaterialExpression* NewExpression = UMaterialEditingLibrary::CreateMaterialExpression(
+        Material, UMaterialExpressionMaterialFunctionCall::StaticClass(), PosX, PosY);
+    
+    UMaterialExpressionMaterialFunctionCall* FunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(NewExpression);
     if (FunctionCall)
     {
-        // 设置RF_Transactional标志以支持撤销系统（参考BlueprintAssistUtils.cpp中的模式）
-        if (Material->HasAnyFlags(RF_Transactional))
-        {
-            FunctionCall->SetFlags(RF_Transactional);
-        }
-        // 调用Modify()将对象注册到当前事务中
-        FunctionCall->Modify();
-        
-        FunctionCall->MaterialFunction = Function;
+        // 设置材质函数引用
+        FunctionCall->SetMaterialFunction(Function);
         
         // 如果PosX和PosY都是0，进行智能位置计算
         if (PosX == 0 && PosY == 0)
@@ -741,14 +736,13 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
             PosX = CurrentPosX;
             PosY = CurrentPosY;
         }
+        // 更新位置（官方API已设置初始位置，这里更新为计算后的位置）
         FunctionCall->MaterialExpressionEditorX = PosX;
         FunctionCall->MaterialExpressionEditorY = PosY;
         
-        // 添加到材质表达式列表
-        Material->GetEditorOnlyData()->ExpressionCollection.Expressions.Add(FunctionCall);
-        
-        // 更新函数引用
+        // 更新函数引用（官方API的SetMaterialFunction已处理，这里确保更新）
         FunctionCall->UpdateFromFunctionResource();
+        
         UE_LOG(LogX_AssetEditor, Log, TEXT("函数资源已更新"));
     }
     

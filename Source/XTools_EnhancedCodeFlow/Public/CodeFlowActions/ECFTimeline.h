@@ -46,7 +46,11 @@ protected:
 
 		if (TickFunc && Time > 0 && BlendExp != 0 && StartValue != StopValue)
 		{
-			SetMaxActionTime(Time / PlayRate);
+			// 循环模式不设置MaxActionTime，由Tick自行管理
+			if (!Settings.bLoop)
+			{
+				SetMaxActionTime(Time / PlayRate);
+			}
 			CurrentTime = 0.f;
 			return true;
 		}
@@ -74,45 +78,67 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline - Tick"), STAT_ECFDETAILS_TIMELINE, STATGROUP_ECFDETAILS);
 #endif
-		// 【修复】第一次Tick时触发初始值，与UE原生时间轴行为一致
-		// 这样FirstDelay会自然生效（延迟后才会进入第一次Tick）
-		if (bFirstTick)
-		{
-			CurrentValue = StartValue;
-			if (HasValidOwner() && TickFunc)
-			{
-				TickFunc(CurrentValue, CurrentTime);
-			}
-			bFirstTick = false;
-		}
+		// 参考UE原生FTimeline::TickTimeline实现
+		// 先计算新位置，再根据位置计算值并触发回调
 		
-		CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
+		// 第一次Tick时DeltaTime应用前CurrentTime=0，直接输出StartValue
+		// 后续Tick累加时间并插值
+		if (!bFirstTick)
+		{
+			CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
+		}
+		bFirstTick = false;
+
+		// 计算插值比例
+		const float Alpha = CurrentTime / Time;
 
 		switch (BlendFunc)
 		{
 		case EECFBlendFunc::ECFBlend_Linear:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, CurrentTime / Time);
+			CurrentValue = FMath::Lerp(StartValue, StopValue, Alpha);
 			break;
 		case EECFBlendFunc::ECFBlend_Cubic:
-			CurrentValue = FMath::CubicInterp(StartValue, 0.f, StopValue, 0.f, CurrentTime / Time);
+			CurrentValue = FMath::CubicInterp(StartValue, 0.f, StopValue, 0.f, Alpha);
 			break;
 		case EECFBlendFunc::ECFBlend_EaseIn:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(CurrentTime / Time, BlendExp));
+			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, BlendExp));
 			break;
 		case EECFBlendFunc::ECFBlend_EaseOut:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(CurrentTime / Time, 1.f / BlendExp));
+			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, 1.f / BlendExp));
 			break;
 		case EECFBlendFunc::ECFBlend_EaseInOut:
-			CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, CurrentTime / Time, BlendExp);
+			CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, Alpha, BlendExp);
 			break;
 		}
 
 		TickFunc(CurrentValue, CurrentTime);
 
-		if ((StopValue > StartValue && CurrentValue >= StopValue) || (StopValue < StartValue && CurrentValue <= StopValue))
+		// 检查是否到达终点
+		if (CurrentTime >= Time)
 		{
-			Complete(false);
-			MarkAsFinished();
+			if (Settings.bLoop)
+			{
+				// 参考UE原生FTimeline::TickTimeline的Loop实现
+				// 1. 先触发精确的终点值
+				CurrentValue = StopValue;
+				TickFunc(StopValue, Time);
+				
+				// 2. 处理溢出时间，计算新位置
+				while (CurrentTime > Time)
+				{
+					CurrentTime -= Time;
+				}
+				// CurrentTime现在是新周期的位置
+			}
+			else
+			{
+				// 确保最终值精确到达StopValue，避免浮点精度问题
+				CurrentValue = StopValue;
+				CurrentTime = Time;
+				TickFunc(CurrentValue, CurrentTime);
+				Complete(false);
+				MarkAsFinished();
+			}
 		}
 	}
 

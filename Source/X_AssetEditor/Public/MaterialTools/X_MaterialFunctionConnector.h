@@ -13,7 +13,6 @@
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionMultiply.h"
-#include "ScopedTransaction.h"
 #include "Logging/LogMacros.h"
 #include "MaterialTools/X_MaterialFunctionParams.h"
 #include "X_AssetEditor.h"
@@ -234,64 +233,6 @@ private:
                                                UMaterialExpression* Expression,
                                                EMaterialProperty MaterialProperty,
                                                int32 OutputIndex);
-
-    //  错误恢复机制：使用UE内置事务系统
-    
-    /**
-     * 准备材质对象用于修改（调用Modify方法支持撤销/重做）
-     * @param Material - 材质对象
-     * @return 是否成功准备
-     */
-    static bool PrepareForModification(UMaterial* Material);
-    
-    /**
-     * 执行带事务保护的材质连接操作
-     * @param Material - 材质对象
-     * @param TransactionText - 事务描述文本
-     * @param Operation - 要执行的操作
-     * @return 操作是否成功
-     */
-    template<typename FunctionType>
-    static bool ExecuteWithTransaction(UMaterial* Material, const FText& TransactionText, FunctionType&& Operation)
-    {
-        if (!Material)
-        {
-            UE_LOG(LogX_AssetEditor, Warning, TEXT("材质对象为空，无法执行事务操作"));
-            return false;
-        }
-        
-        //  使用FScopedTransaction自动管理事务范围
-        FScopedTransaction Transaction(TransactionText);
-        
-        //  准备对象用于修改（支持撤销/重做）
-        if (!PrepareForModification(Material))
-        {
-            UE_LOG(LogX_AssetEditor, Warning, TEXT("准备材质修改失败，取消事务"));
-            return false;
-        }
-        
-        UE_LOG(LogX_AssetEditor, Log, TEXT("开始事务: %s，材质: %s"), 
-            *TransactionText.ToString(), *Material->GetName());
-        
-        //  执行用户操作
-        bool bOperationSuccess = Operation();
-        
-        if (bOperationSuccess)
-        {
-            //  操作成功，标记材质为已修改并重新编译
-            Material->MarkPackageDirty();
-            Material->PostEditChange();
-            
-            UE_LOG(LogX_AssetEditor, Log, TEXT("事务成功完成: %s"), *TransactionText.ToString());
-        }
-        else
-        {
-            UE_LOG(LogX_AssetEditor, Warning, TEXT("事务操作失败: %s，将自动回滚"), *TransactionText.ToString());
-            //  FScopedTransaction析构时会自动回滚事务
-        }
-        
-        return bOperationSuccess;
-    }
 
 public:
     /**

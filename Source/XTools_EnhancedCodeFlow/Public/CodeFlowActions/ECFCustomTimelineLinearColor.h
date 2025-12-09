@@ -26,7 +26,7 @@ protected:
 	FLinearColor CurrentValue = FLinearColor::Black;
 	float CurrentTime = 0.f;
 	float PlayRate = 1.0f;
-	bool bSuppressCallback = false;  // 用于阻止Setup中PlayFromStart触发的过早回调
+
 
 	UPROPERTY(Transient)
 	UCurveLinearColor* CurveLinearColor = nullptr;
@@ -48,13 +48,17 @@ protected:
 			FinishFunction.BindUFunction(this, FName("HandleFinish"));
 			MyTimeline.SetTimelineFinishedFunc(FinishFunction);
 			MyTimeline.SetPlayRate(PlayRate);
-			SetMaxActionTime(MyTimeline.GetTimelineLength() / FMath::Max(FMath::Abs(PlayRate), KINDA_SMALL_NUMBER));
+			
+			if (!Settings.bLoop)
+			{
+				SetMaxActionTime(MyTimeline.GetTimelineLength() / FMath::Max(FMath::Abs(PlayRate), KINDA_SMALL_NUMBER));
+			}
 
-			// 阻止PlayFromStart触发的回调，因为此时时机太早
-			// 初始值会在第一次Tick时手动触发
-			bSuppressCallback = true;
+			// 设置Loop模式，让FTimeline内部处理循环
+			MyTimeline.SetLooping(Settings.bLoop);
+			
+			// PlayFromStart设置Position=0并开始播放，不会触发回调
 			MyTimeline.PlayFromStart();
-			bSuppressCallback = false;
 
 			return true;
 		}
@@ -82,19 +86,20 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("CustomTimelineLinearColor - Tick"), STAT_ECFDETAILS_CUSTOMTIMELINELINEARCOLOR, STATGROUP_ECFDETAILS);
 #endif
-		// 【修复】第一次Tick时触发初始值，与UE原生时间轴行为一致
+		// 第一次Tick输出曲线起点值，与UE原生时间轴行为一致
+		// 从第二次Tick开始正常调用TickTimeline累加时间
 		if (bFirstTick && CurveLinearColor)
 		{
 			float MinTime, MaxTime;
 			CurveLinearColor->GetTimeRange(MinTime, MaxTime);
-			const FLinearColor InitialValue = CurveLinearColor->GetLinearColorValue(MinTime);
-			CurrentValue = InitialValue;
+			CurrentValue = CurveLinearColor->GetLinearColorValue(MinTime);
 			CurrentTime = MinTime;
 			if (HasValidOwner() && TickFunc)
 			{
 				TickFunc(CurrentValue, CurrentTime);
 			}
 			bFirstTick = false;
+			return;  // 第一次Tick不调用TickTimeline，避免重复触发
 		}
 		
 		MyTimeline.TickTimeline(DeltaTime);
@@ -115,12 +120,9 @@ private:
 	UFUNCTION()
 	void HandleProgress(FLinearColor Value)
 	{
-		// 如果回调被阻止（Setup阶段），直接返回
-		if (bSuppressCallback) return;
-		
 		CurrentValue = Value;
 		CurrentTime = MyTimeline.GetPlaybackPosition();
-		if (HasValidOwner())
+		if (HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
 		}
@@ -129,6 +131,21 @@ private:
 	UFUNCTION()
 	void HandleFinish()
 	{
+		// Loop模式由FTimeline内部处理，不会触发HandleFinish
+		// 这里只处理非Loop模式的结束
+		
+		// 确保最终值精确到达曲线终点，避免浮点精度问题
+		if (CurveLinearColor)
+		{
+			float MinTime, MaxTime;
+			CurveLinearColor->GetTimeRange(MinTime, MaxTime);
+			CurrentTime = MaxTime;
+			CurrentValue = CurveLinearColor->GetLinearColorValue(MaxTime);
+			if (HasValidOwner() && TickFunc)
+			{
+				TickFunc(CurrentValue, CurrentTime);
+			}
+		}
 		if (HasValidOwner())
 		{
 			Complete(false);

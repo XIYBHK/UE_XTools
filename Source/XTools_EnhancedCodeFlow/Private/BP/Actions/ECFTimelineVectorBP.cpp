@@ -24,7 +24,7 @@ UECFTimelineVectorBP* UECFTimelineVectorBP::ECFTimelineVector(const UObject* Wor
 			{
 				if (IsProxyValid(Proxy))
 				{
-					Proxy->OnFinished.Broadcast(Value, Time, false);
+					Proxy->OnFinished.Broadcast(Value, Time, bStopped);
 					Proxy->ClearAsyncBPAction();
 				}
 			},

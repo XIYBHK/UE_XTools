@@ -24,7 +24,7 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 			{
 				if (IsProxyValid(Proxy))
 				{
-					Proxy->OnFinished.Broadcast(Value, Time, false);
+					Proxy->OnFinished.Broadcast(Value, Time, bStopped);
 					Proxy->ClearAsyncBPAction();
 				}
 			},
