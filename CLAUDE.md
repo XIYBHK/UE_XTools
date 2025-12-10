@@ -79,7 +79,7 @@ XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.
 - **ObjectPool**: Actor 对象池（智能管理、自动扩池、状态重置，支持 Android/iOS）
 - **FieldSystemExtensions**: Chaos Field System 增强（高性能筛选，支持 Android/iOS）
 
-### 编辑器专用模块（UncookedOnly，4个）
+### 编辑器专用模块（UncookedOnly，3个）
 - **BlueprintExtensions** → BlueprintExtensionsRuntime: 自定义 K2Node（14+ 节点）
 - **ObjectPoolEditor** → ObjectPool: K2Node_SpawnActorFromPool（对象池蓝图节点）
 - **XTools_ComponentTimelineUncooked** → ComponentTimelineRuntime: K2Node_ComponentTimeline（时间轴蓝图节点）
