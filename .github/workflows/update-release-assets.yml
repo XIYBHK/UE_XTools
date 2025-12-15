@@ -32,7 +32,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       !startsWith(github.event.workflow_run.head_branch, 'refs/tags/v'))
+       !startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     timeout-minutes: 30  # 防止工作流挂起
 
