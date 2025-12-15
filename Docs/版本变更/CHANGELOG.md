@@ -1,5 +1,144 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.3 (2025-12-15)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 新增功能
+- **PointSampling**: 纹理点阵生成、多种算法支持、3D矩形点阵
+- **XToolsCore**: 6个防御性编程宏（指针/UObject/数组检查）
+- **BlueprintExtensions**: 带延迟的倒序ForLoop节点
+- **XTools_EnhancedCodeFlow**: 时间轴循环功能（bLoop）
+- **X_AssetEditor**: 特殊编辑模式检测（破碎/建模/地形等模式下禁用重命名）
+- **PivotTool**: 静态网格体枢轴点管理功能
+- **XToolsLibrary**: 递归获取所有子Actor（BFS）
+- **VariableReflectionLibrary**: GetVariableNames增加bIncludeSuper参数
+
+### 重要修复
+- **X_AssetEditor**: 启动时误触发自动重命名、Lambda生命周期竞态等多处崩溃问题
+- **MaterialTools**: 添加材质函数后撤销崩溃、EmissiveColor连接失败
+- **XTools_AutoSizeComments**: GetNodePos空指针访问导致材质编辑器崩溃
+- **PointSampling**: 3D泊松采样球面分布不均匀、Grid无效标记冲突等问题
+
+### 性能优化
+- **X_AssetEditor**: 使用OnEditorModeIDChanged回调跟踪模式切换，替代轮询检测
+- **MaterialTools**: 并行材质收集、智能连接评分系统
+- **MapExtensionsLibrary**: RemoveEntriesWithValue复杂度O(N^2)降至O(N)
+
+</details>
+
+<details>
+<summary><strong>PointSampling 模块</strong></summary>
+
+- **修复** 3D泊松采样球面分布不均匀问题（极点附近过密）
+- **修复** Grid使用ZeroVector作为无效标记的潜在冲突问题
+- **修复** Depth较小时3D采样仅生成几个点的问题（自动降级为2D）
+- **修复** FromStream版本TargetPointCount与Radius同时指定时行为不一致
+- **修复** 2D采样时ApplyJitter错误扰动Z坐标的问题
+- **修复** 非编辑器构建时的多处编译错误
+- **修复** K2Node条件编译和UHT解析问题
+- **重构** 2D/3D采样核心逻辑为内部函数，统一随机源处理
+- **重构** 拆分为Runtime和Editor模块，优化构建配置
+- **增加** 基于泊松圆盘采样的纹理点阵生成功能
+- **增加** 多种点阵生成算法（圆形/矩形/三角形/样条线/网格）
+- **增加** 3D矩形点阵生成支持
+
+</details>
+
+<details>
+<summary><strong>X_AssetEditor 模块</strong></summary>
+
+- **修复** 启动时资产检查阶段误触发自动重命名
+- **修复** 模块关闭时的Lambda生命周期竞态条件
+- **修复** 初始化时跳过延迟保护机制的问题
+- **修复** 导入资产缺少重入保护导致的潜在递归
+- **修复** Lambda在模块Shutdown后仍执行导致崩溃（3处）
+- **修复** OnAssetRenamed缺少GEditor空指针检查
+- **修复** 移除UToolMenus显式清理调用，符合UE标准实践
+- **增加** 特殊编辑模式检测，破碎/建模/地形等模式下自动禁用重命名
+- **优化** 使用OnEditorModeIDChanged回调跟踪模式切换，替代轮询检测
+- **优化** 正则表达式性能，使用静态常量避免重复创建
+- **优化** 移除OnAssetRenamed的冗余回调调用，提升性能
+
+</details>
+
+<details>
+<summary><strong>MaterialTools 模块</strong></summary>
+
+- **修复** 添加材质函数后撤销崩溃（移除Transaction避免撤销系统冲突）
+- **修复** EmissiveColor输出引脚连接失败（添加Emissive别名）
+- **修复** 材质函数节点位置计算错误，忽略简单常量节点
+- **增加** 引入材质常量，减少硬编码
+- **优化** 移除冗余的ExecuteWithTransaction和PrepareForModification
+- **优化** 支持并行材质收集，提升批量处理性能
+- **优化** 改进智能连接逻辑，引入评分系统解决误判
+- **优化** 消除代码重复，统一核心处理逻辑
+- **优化** 使用材质主节点实际位置计算新节点坐标
+- **本地化** 全面本地化日志输出为中文
+
+</details>
+
+<details>
+<summary><strong>XTools_EnhancedCodeFlow 模块</strong></summary>
+
+- **修复** 所有异步Action增加Owner有效性检查，防止悬空指针
+- **修复** 时间轴首次tick时初始值触发问题，对齐UE原生行为
+- **修复** BP时间轴OnFinished回调bStopped参数始终为false
+- **修复** ECFTimeline完成条件使用值比较导致的浮点精度问题
+- **修复** 时间轴结束时最终值精度问题，确保精确到达终点值
+- **修复** Loop模式下触发精确终点值并处理溢出时间
+- **增加** 时间轴循环功能（bLoop），对齐UE原生FTimeline实现
+- **优化** Owner销毁后静默跳过回调，避免崩溃（10个Action）
+- **优化** 移除Custom时间轴多余的bSuppressCallback机制
+
+</details>
+
+<details>
+<summary><strong>其他模块更新</strong></summary>
+
+### XToolsCore
+- **增加** 新增6个防御性编程宏（指针/UObject/数组检查）
+- **优化** 提升硬件不稳定环境下的代码鲁棒性
+
+### BlueprintExtensions
+- **增加** 带延迟的倒序ForLoop节点（K2Node_ForLoopWithDelayReverse）
+- **优化** 所有Delay循环节点增加图兼容性检查（仅EventGraph可用）
+- **优化** ForLoop/ForEach延迟节点增加编译时引脚有效性检查
+- **修复** K2Node蓝图编译时增加空指针防护，避免硬件异常崩溃
+
+### XTools_AutoSizeComments
+- **修复** GetNodePos函数空指针访问导致材质编辑器崩溃
+
+### MapExtensionsLibrary
+- **优化** RemoveEntriesWithValue移除O(N^2)复杂度，提升至O(N)
+- **修复** GenericMap_RemoveEntries函数定义不完整导致的编译错误
+- **修复** 恢复丢失的RemoveEntriesWithValue、SetValueAt、RandomItem函数
+
+### TraceExtensionsLibrary
+- **优化** 增加TraceChannel和ObjectType的静态缓存，优化字符串查找性能
+- **优化** 移除调试日志输出，减少运行时开销
+
+### VariableReflectionLibrary
+- **增加** GetVariableNames增加bIncludeSuper参数，支持获取父类变量
+- **修复** 文件内容损坏导致的编译错误
+
+### XToolsLibrary
+- **增加** 递归获取所有子Actor（BFS）
+
+### PivotTool
+- **增加** 静态网格体枢轴点管理功能
+
+### CI/CD工作流
+- **修复** update-release-assets工作流重复删除资产导致404错误
+- **优化** 并发控制策略，取消旧任务只保留最新任务
+- **优化** 下载artifacts时去重，避免处理重复文件
+- **优化** 改进日志输出格式，添加序号和文件大小信息
+
+</details>
+
+---
+
 ## 版本 v1.9.2 (2025-11-17)
 
 <details>

@@ -16,8 +16,19 @@
 #include "HAL/PlatformFilemanager.h"
 #include "HAL/ThreadSafeCounter64.h"
 #include "Internationalization/Regex.h"
+#include "EditorModeManager.h"
+#include "EditorModes.h"
 
 DEFINE_LOG_CATEGORY(LogX_AssetNamingDelegates);
+
+// 需要排除自动重命名的特殊编辑模式（ID 来自 UE 源码）
+static const TArray<FEditorModeID> GSpecialEditorModes = {
+	TEXT("EM_FractureEditorMode"),        // 破碎模式 (ChaosEditor)
+	TEXT("EM_ModelingToolsEditorMode"),   // 建模模式 (ModelingToolsEditorMode)
+	TEXT("EM_Landscape"),                 // 地形模式
+	TEXT("EM_Foliage"),                   // 植被模式
+	TEXT("EM_MeshPaint"),                 // 网格体绘制模式
+};
 
 TUniquePtr<FX_AssetNamingDelegates> FX_AssetNamingDelegates::Instance = nullptr;
 
@@ -103,6 +114,9 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 			TEXT("AssetRegistry 仍在加载中，将在 OnFilesLoaded 触发后延迟激活"));
 	}
 
+	// 5. 绑定编辑模式切换回调
+	BindEditorModeChangedDelegate();
+
 	bIsActive = true;
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("资产命名委托已初始化"));
 }
@@ -160,6 +174,9 @@ void FX_AssetNamingDelegates::Shutdown()
 		OnFilesLoadedHandle.Reset();
 	}
 
+	// 5. 解绑编辑模式切换回调
+	UnbindEditorModeChangedDelegate();
+
 	// ========== 【关键修复】先禁用标志，阻止新的 Lambda 执行 ==========
 	// 必须在 Unbind 回调之前设置 bIsActive = false，避免竞态条件
 	// 时间窗口：Lambda 检查 bIsActive 后 → Unbind 前 → Execute 时崩溃
@@ -168,6 +185,7 @@ void FX_AssetNamingDelegates::Shutdown()
 	// 清空重入标志和缓存
 	bIsProcessingAsset = false;
 	bIsAssetRegistryReady = false;
+	bIsInSpecialMode = false;
 	RecentManualRenames.Empty();
 
 	RenameCallback.Unbind();
@@ -211,6 +229,14 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		UE_LOG(LogX_AssetNamingDelegates, Verbose, 
 			TEXT("检测到新资产但创建时自动重命名已关闭 - Settings=%p, bAutoRenameOnCreate=%d: %s"), 
 			Settings, Settings ? Settings->bAutoRenameOnCreate : false, *AssetData.AssetName.ToString());
+		return;
+	}
+
+	// 检查是否处于特殊编辑模式（破碎模式、建模模式等）
+	if (IsInSpecialEditorMode())
+	{
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
+			TEXT("处于特殊编辑模式，跳过自动重命名: %s"), *AssetData.AssetName.ToString());
 		return;
 	}
 
@@ -497,6 +523,14 @@ void FX_AssetNamingDelegates::OnAssetPostImport(UFactory* Factory, UObject* Crea
 	if (!Settings || !Settings->bAutoRenameOnImport)
 	{
 		UE_LOG(LogX_AssetNamingDelegates, Verbose, TEXT("检测到资产导入但导入时自动重命名已关闭: %s"), *CreatedObject->GetName());
+		return;
+	}
+
+	// 检查是否处于特殊编辑模式（破碎模式、建模模式等）
+	if (IsInSpecialEditorMode())
+	{
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
+			TEXT("处于特殊编辑模式，跳过导入资产自动重命名: %s"), *CreatedObject->GetName());
 		return;
 	}
 
@@ -851,4 +885,89 @@ bool FX_AssetNamingDelegates::IsSimilarToRecentlyRenamed(const FAssetData& Asset
 	}
 	
 	return false;
+}
+
+bool FX_AssetNamingDelegates::IsInSpecialEditorMode() const
+{
+	// 直接返回通过回调跟踪的状态
+	return bIsInSpecialMode;
+}
+
+bool FX_AssetNamingDelegates::IsSpecialModeID(const FEditorModeID& ModeID)
+{
+	return GSpecialEditorModes.Contains(ModeID);
+}
+
+void FX_AssetNamingDelegates::OnEditorModeChanged(const FEditorModeID& ModeID, bool bIsEntering)
+{
+	if (!IsSpecialModeID(ModeID))
+	{
+		return;
+	}
+
+	bIsInSpecialMode = bIsEntering;
+
+	UE_LOG(LogX_AssetNamingDelegates, Log,
+		TEXT("编辑模式切换: %s %s，自动重命名%s"),
+		*ModeID.ToString(),
+		bIsEntering ? TEXT("进入") : TEXT("退出"),
+		bIsInSpecialMode ? TEXT("已禁用") : TEXT("已启用"));
+}
+
+void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
+{
+	if (OnEditorModeChangedHandle.IsValid())
+	{
+		return;
+	}
+
+	// 延迟绑定，确保 GLevelEditorModeTools 已初始化
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float) -> bool
+	{
+		if (!bIsActive)
+		{
+			return false;
+		}
+
+		if (!GEditor || GEditor->GetWorldContexts().Num() == 0)
+		{
+			return true; // 编辑器尚未就绪，下一帧重试
+		}
+
+		FEditorModeTools& ModeTools = GLevelEditorModeTools();
+		OnEditorModeChangedHandle = ModeTools.OnEditorModeIDChanged().AddRaw(
+			this, &FX_AssetNamingDelegates::OnEditorModeChanged
+		);
+
+		// 检查当前是否已在特殊模式中
+		for (const FEditorModeID& ModeID : GSpecialEditorModes)
+		{
+			if (ModeTools.IsModeActive(ModeID))
+			{
+				bIsInSpecialMode = true;
+				UE_LOG(LogX_AssetNamingDelegates, Log,
+					TEXT("检测到当前已在特殊模式 %s 中，自动重命名已禁用"), *ModeID.ToString());
+				break;
+			}
+		}
+
+		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnEditorModeIDChanged 委托"));
+		return false;
+	}), 0.1f);
+}
+
+void FX_AssetNamingDelegates::UnbindEditorModeChangedDelegate()
+{
+	if (!OnEditorModeChangedHandle.IsValid())
+	{
+		return;
+	}
+
+	if (GEditor && GEditor->GetWorldContexts().Num() > 0)
+	{
+		FEditorModeTools& ModeTools = GLevelEditorModeTools();
+		ModeTools.OnEditorModeIDChanged().Remove(OnEditorModeChangedHandle);
+	}
+
+	OnEditorModeChangedHandle.Reset();
 }
