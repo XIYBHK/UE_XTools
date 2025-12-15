@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
+#include "EditorModes.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNamingDelegates, Log, All);
 
@@ -85,9 +86,13 @@ private:
 	FDelegateHandle OnAssetPostImportHandle;
 	FDelegateHandle OnAssetRenamedHandle;
 	FDelegateHandle OnFilesLoadedHandle;
+	FDelegateHandle OnEditorModeChangedHandle;
 
 	/** 激活状态 */
 	bool bIsActive = false;
+
+	/** 当前是否处于特殊编辑模式（通过回调跟踪） */
+	bool bIsInSpecialMode = false;
 
 	/** AssetRegistry 是否已加载完成 */
 	bool bIsAssetRegistryReady = false;
@@ -142,5 +147,34 @@ private:
 	 * 用于标记 AssetRegistry 已就绪，之后的所有 OnAssetAdded 都是新创建的资产
 	 */
 	void OnFilesLoaded();
+
+	/**
+	 * 检测是否处于特殊编辑模式（破碎模式、建模模式等）
+	 * 这些模式会批量创建资产，不应触发自动重命名
+	 * @return true 如果处于特殊编辑模式，应跳过自动重命名
+	 */
+	bool IsInSpecialEditorMode() const;
+
+	/**
+	 * 编辑模式切换回调
+	 * @param ModeID - 切换的模式 ID
+	 * @param bIsEntering - true 表示进入模式，false 表示退出模式
+	 */
+	void OnEditorModeChanged(const FEditorModeID& ModeID, bool bIsEntering);
+
+	/**
+	 * 绑定编辑模式切换回调
+	 */
+	void BindEditorModeChangedDelegate();
+
+	/**
+	 * 解绑编辑模式切换回调
+	 */
+	void UnbindEditorModeChangedDelegate();
+
+	/**
+	 * 检查指定模式 ID 是否为特殊模式
+	 */
+	static bool IsSpecialModeID(const FEditorModeID& ModeID);
 };
 
