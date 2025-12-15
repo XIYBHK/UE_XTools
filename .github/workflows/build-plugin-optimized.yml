@@ -377,7 +377,15 @@ jobs:
             Write-Host "[OK] Removed lib/exp files (saved $([math]::Round($lib_size, 2)) MB)"
           }
         }
-        
+
+        # Optimization 4: Remove Source folder
+        $source_path = Join-Path $output_directory "Source"
+        if (Test-Path $source_path) {
+          $source_size = (Get-ChildItem $source_path -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+          Remove-Item -Recurse -Force $source_path
+          Write-Host "[OK] Removed Source folder (saved $([math]::Round($source_size, 2)) MB)"
+        }
+
         # Calculate final package size
         $final_size = (Get-ChildItem $output_directory -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
         Write-Host ""
