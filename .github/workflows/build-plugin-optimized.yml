@@ -439,21 +439,23 @@ jobs:
       run: |
         Write-Host "==> Prepare Release Package" -ForegroundColor Cyan
 
-        # 如果是tag触发（准备创建发行版），需要创建zip并复制到持久化目录
-        if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
-          # 创建 zip 文件用于 GitHub Release
-          $zip_name = "${{ env.ARTIFACT_NAME }}.zip"
-          $zip_path = Join-Path "${{ runner.temp }}" $zip_name
-          Write-Host "Creating release zip: $zip_path"
+        # 创建 zip 文件用于上传 Artifact 和 GitHub Release
+        $zip_name = "${{ env.ARTIFACT_NAME }}.zip"
+        $zip_path = Join-Path "${{ runner.temp }}" $zip_name
+        Write-Host "Creating release zip: $zip_path"
 
-          # Use PowerShell's Compress-Archive
-          Compress-Archive -Path "${{ env.OUTPUT_DIR }}\*" -DestinationPath $zip_path -Force
+        # Use PowerShell's Compress-Archive
+        Compress-Archive -Path "${{ env.OUTPUT_DIR }}\*" -DestinationPath $zip_path -Force
 
-          # Verify zip creation
-          if (Test-Path $zip_path) {
-            $zip_size = (Get-Item $zip_path).Length / 1MB
-            Write-Host "[OK] Created zip file: $([math]::Round($zip_size, 2)) MB"
+        # Verify zip creation
+        if (Test-Path $zip_path) {
+          $zip_size = (Get-Item $zip_path).Length / 1MB
+          Write-Host "[OK] Created zip file: $([math]::Round($zip_size, 2)) MB"
 
+          echo "ZIP_PATH=$zip_path" >> $env:GITHUB_ENV
+
+          # 如果是tag触发（准备创建发行版），复制到持久化目录
+          if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
             # 使用固定的发行版临时目录（在runner工作目录下）
             $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
 
@@ -473,11 +475,9 @@ jobs:
             Copy-Item $zip_path $release_zip_path -Force
 
             echo "RELEASE_ZIP_PATH=$release_zip_path" >> $env:GITHUB_ENV
-          } else {
-            throw "Failed to create zip file"
           }
         } else {
-          Write-Host "[INFO] Not a tag push, skipping release zip creation" -ForegroundColor DarkGray
+          throw "Failed to create zip file"
         }
 
     - name: Generate Job Summary
@@ -517,9 +517,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.OUTPUT_DIR }}  # 直接上传文件夹，GitHub Actions 会自动打包
+        path: ${{ env.ZIP_PATH }}  # 上传 ZIP 文件，避免上传大量单个文件导致网络问题
         retention-days: 30
-        compression-level: 6  # 使用标准压缩级别
+        compression-level: 0  # 已经是 ZIP 文件，不需要再压缩
         if-no-files-found: error
 
     - name: Cleanup Temporary Files
