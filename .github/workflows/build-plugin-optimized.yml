@@ -455,7 +455,7 @@ jobs:
             Write-Host "[OK] Created zip file: $([math]::Round($zip_size, 2)) MB"
 
             # 使用固定的发行版临时目录（在runner工作目录下）
-            $release_temp_dir = "D:\GitHubActions\ReleaseTemp"
+            $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
 
             # 清理旧的临时文件（防止堆积）
             if (Test-Path $release_temp_dir) {
@@ -623,7 +623,7 @@ jobs:
         shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
           # 发行版临时目录
-          $release_temp_dir = "D:\GitHubActions\ReleaseTemp"
+          $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
           $release_assets_dir = ".\release-assets"
 
           # 创建发行版资产目录
@@ -682,7 +682,7 @@ jobs:
         shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
           # 清理临时目录中的文件（发布完成后）
-          $release_temp_dir = "D:\GitHubActions\ReleaseTemp"
+          $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
 
           if (Test-Path $release_temp_dir) {
             Write-Host "Cleaning release temp directory..."
