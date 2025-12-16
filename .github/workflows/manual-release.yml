@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows]  # 使用自托管机器优先从本地读取
     timeout-minutes: 30  # 防止工作流挂起
 
     # 并发控制：同一时间只能创建/更新一个 Release
@@ -40,66 +40,114 @@ jobs:
 
       - name: Validate inputs
         id: validate
+        shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
-          TAG_NAME="${{ inputs.tag_name }}"
-          RELEASE_NAME="$TAG_NAME"
+          $TAG_NAME = "${{ inputs.tag_name }}"
+          $RELEASE_NAME = $TAG_NAME
 
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          "tag_name=$TAG_NAME" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "release_name=$RELEASE_NAME" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           # 检查 tag 是否已存在
-          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-            echo "::warning::Tag $TAG_NAME already exists locally"
-            echo "tag_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "tag_exists=false" >> $GITHUB_OUTPUT
-          fi
+          $tagExists = git rev-parse $TAG_NAME 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "::warning::Tag $TAG_NAME already exists locally"
+            "tag_exists=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            "tag_exists=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
 
       - name: Extract changelog
         id: changelog
+        shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
-          VERSION="${{ steps.validate.outputs.tag_name }}"
+          $VERSION = "${{ steps.validate.outputs.tag_name }}"
+          $changelog_path = "Docs\版本变更\CHANGELOG.md"
+          $release_notes_path = "release_notes.md"
 
           # 从CHANGELOG.md提取当前版本的更新说明
-          if [ -f "Docs/版本变更/CHANGELOG.md" ]; then
-            awk -v version="$VERSION" '
-              BEGIN { found=0; content="" }
-              /^## 版本/ {
-                if (found) exit
-                if ($0 ~ version) { found=1; next }
+          if (Test-Path $changelog_path) {
+            $content = Get-Content $changelog_path -Raw -Encoding UTF8
+            $lines = $content -split "`n"
+
+            $found = $false
+            $release_content = @()
+
+            foreach ($line in $lines) {
+              if ($line -match "^## 版本.*$VERSION") {
+                $found = $true
+                continue
               }
-              found && /^## 版本/ { exit }
-              found && /^---$/ { exit }
-              found {
-                content = content $0 "\n"
-              }
-              END {
-                if (content == "") {
-                  print "## Release " version "\n\n请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/Docs/版本变更/CHANGELOG.md) 获取详细更新说明。"
-                } else {
-                  print content
+
+              if ($found) {
+                if ($line -match "^## 版本" -or $line -match "^---") {
+                  break
                 }
+                $release_content += $line
               }
-            ' Docs/版本变更/CHANGELOG.md > release_notes.md
-          else
-            echo "## Release $VERSION" > release_notes.md
-            echo "" >> release_notes.md
-            echo "手动创建的发布版本。" >> release_notes.md
-          fi
+            }
 
-          echo "### 📝 Release Notes Preview" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          head -n 30 release_notes.md >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+            if ($release_content.Count -gt 0) {
+              $release_content | Out-File -FilePath $release_notes_path -Encoding utf8
+            } else {
+              "## Release $VERSION`n`n请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/Docs/版本变更/CHANGELOG.md) 获取详细更新说明。" |
+                Out-File -FilePath $release_notes_path -Encoding utf8
+            }
+          } else {
+            "## Release $VERSION`n`n手动创建的发布版本。" | Out-File -FilePath $release_notes_path -Encoding utf8
+          }
 
-      - name: Get artifacts from latest build
+          # 预览
+          "### 📝 Release Notes Preview" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          Get-Content $release_notes_path -Head 30 | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Get artifacts (local first, fallback to download)
         id: get_artifacts
+        shell: powershell -ExecutionPolicy Bypass -File {0}
+        run: |
+          Write-Host "==> Get Release Assets" -ForegroundColor Cyan
+
+          $release_assets_dir = ".\release-assets"
+          $local_temp_dir = "C:\GitHubActions\ReleaseTemp"
+
+          # 创建资产目录
+          New-Item -ItemType Directory -Path $release_assets_dir -Force | Out-Null
+
+          # 优先从本地临时目录读取
+          if (Test-Path $local_temp_dir) {
+            $local_files = Get-ChildItem -Path $local_temp_dir -Filter "*.zip" -ErrorAction SilentlyContinue
+
+            if ($local_files.Count -gt 0) {
+              Write-Host "[本地读取] 从本地临时目录复制 $($local_files.Count) 个文件" -ForegroundColor Green
+
+              foreach ($file in $local_files) {
+                Write-Host "  - $($file.Name)"
+                Copy-Item $file.FullName -Destination $release_assets_dir -Force
+              }
+
+              "source=local" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              "asset_count=$($local_files.Count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              exit 0
+            }
+          }
+
+          Write-Host "[回退] 本地文件不存在，将从 Artifacts 下载" -ForegroundColor Yellow
+          "source=download" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Download from Artifacts (fallback)
+        if: steps.get_artifacts.outputs.source == 'download'
         uses: actions/github-script@v7
-        continue-on-error: false  # 下载失败应停止流程
+        continue-on-error: false
         with:
-          retries: 3  # GitHub API 可能不稳定，重试3次
+          retries: 3
           script: |
-            // 始终获取最新的成功构建
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const path = require('path');
+
+            // 获取最新的成功构建
             const runs = await github.rest.actions.listWorkflowRuns({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -108,73 +156,103 @@ jobs:
               per_page: 1
             });
 
-            let runId = null;
-            if (runs.data.workflow_runs.length > 0) {
-              runId = runs.data.workflow_runs[0].id;
-              console.log(`Using artifacts from run #${runs.data.workflow_runs[0].run_number} (ID: ${runId})`);
+            if (runs.data.workflow_runs.length === 0) {
+              throw new Error('No successful builds found');
             }
 
-            if (runId) {
-              // 下载所有 artifacts
-              const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                run_id: runId
-              });
+            const runId = runs.data.workflow_runs[0].id;
+            console.log(`Downloading from run #${runs.data.workflow_runs[0].run_number} (ID: ${runId})`);
 
-              console.log(`Found ${artifacts.data.artifacts.length} artifacts`);
+            // 下载所有 artifacts
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
 
-              const fs = require('fs');
-              const path = require('path');
+            const releaseDir = 'release-assets';
+            const tempDir = 'temp-download';
 
-              // 创建目录
-              const dir = 'release-assets';
-              if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-              }
+            if (!fs.existsSync(tempDir)) {
+              fs.mkdirSync(tempDir, { recursive: true });
+            }
 
-              // 下载每个 artifact
-              for (const artifact of artifacts.data.artifacts) {
-                if (artifact.name.includes('XTools-UE_')) {
-                  console.log(`Downloading ${artifact.name}...`);
+            let downloadCount = 0;
 
-                  const download = await github.rest.actions.downloadArtifact({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    artifact_id: artifact.id,
-                    archive_format: 'zip'
-                  });
+            for (const artifact of artifacts.data.artifacts) {
+              if (artifact.name.includes('XTools-UE_')) {
+                console.log(`\n[${downloadCount}] Downloading: ${artifact.name}`);
 
-                  const filePath = path.join(dir, `${artifact.name}.zip`);
-                  fs.writeFileSync(filePath, Buffer.from(download.data));
-                  console.log(`Saved to ${filePath}`);
+                // 下载 Artifact（会得到外层 ZIP）
+                const download = await github.rest.actions.downloadArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id,
+                  archive_format: 'zip'
+                });
+
+                // 保存外层 ZIP
+                const tempZipPath = path.join(tempDir, `${artifact.name}-outer.zip`);
+                fs.writeFileSync(tempZipPath, Buffer.from(download.data));
+                console.log(`  Saved outer ZIP: ${tempZipPath}`);
+
+                // 解压外层 ZIP，提取内部的原始 ZIP 文件
+                try {
+                  const extractedDir = path.join(tempDir, artifact.name);
+                  execSync(`powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractedDir}' -Force"`, { stdio: 'inherit' });
+
+                  // 查找内部的 .zip 文件
+                  const innerZips = fs.readdirSync(extractedDir).filter(f => f.endsWith('.zip'));
+
+                  if (innerZips.length > 0) {
+                    // 移动内部 ZIP 到发布目录
+                    const innerZipPath = path.join(extractedDir, innerZips[0]);
+                    const destPath = path.join(releaseDir, innerZips[0]);
+                    fs.copyFileSync(innerZipPath, destPath);
+                    console.log(`  ✓ Extracted: ${innerZips[0]}`);
+                    downloadCount++;
+                  } else {
+                    console.log(`  ⚠ No inner ZIP found, artifact may not be nested`);
+                  }
+                } catch (error) {
+                  console.error(`  ✗ Failed to extract: ${error.message}`);
                 }
               }
-
-              return runId;
             }
 
-            return null;
+            // 清理临时目录
+            if (fs.existsSync(tempDir)) {
+              fs.rmSync(tempDir, { recursive: true, force: true });
+            }
+
+            console.log(`\n✓ Downloaded and extracted ${downloadCount} files`);
 
       - name: List release assets
+        shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
-          if [ -d "release-assets" ]; then
-            echo "### 📦 Release Assets" >> $GITHUB_STEP_SUMMARY
-            ls -lh release-assets/*.zip 2>/dev/null | while read -r line; do
-              echo "- ${line}" >> $GITHUB_STEP_SUMMARY
-            done
-          else
-            echo "### ⚠️ No assets found" >> $GITHUB_STEP_SUMMARY
-          fi
+          if (Test-Path "release-assets") {
+            "### 📦 Release Assets" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+            $files = Get-ChildItem -Path "release-assets" -Filter "*.zip" -ErrorAction SilentlyContinue
+            if ($files) {
+              foreach ($file in $files) {
+                $size_mb = [math]::Round($file.Length / 1MB, 2)
+                "- ``$($file.Name)`` ($size_mb MB)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+              }
+            }
+          } else {
+            "### ⚠️ No assets found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
 
       - name: Create tag if not exists
         if: steps.validate.outputs.tag_exists == 'false'
+        shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
-          TAG_NAME="${{ steps.validate.outputs.tag_name }}"
+          $TAG_NAME = "${{ steps.validate.outputs.tag_name }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
-          git push origin "$TAG_NAME"
+          git tag -a $TAG_NAME -m "Release $TAG_NAME"
+          git push origin $TAG_NAME
 
       - name: Check if Release exists
         id: check_release
@@ -215,17 +293,18 @@ jobs:
           # 如果 Release 已存在，softprops/action-gh-release 会自动更新
 
       - name: Summary
+        shell: powershell -ExecutionPolicy Bypass -File {0}
         run: |
-          if [ "${{ steps.check_release.outputs.exists }}" == "true" ]; then
-            echo "### ✅ Release Updated Successfully" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> ℹ️ Release already existed, assets have been updated" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag**: ${{ steps.validate.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Name**: ${{ steps.validate.outputs.release_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Pre-release**: ${{ inputs.prerelease }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.validate.outputs.tag_name }})" >> $GITHUB_STEP_SUMMARY
+          if ("${{ steps.check_release.outputs.exists }}" -eq "true") {
+            "### ✅ Release Updated Successfully" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "> ℹ️ Release already existed, assets have been updated" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } else {
+            "### ✅ Release Created Successfully" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- **Tag**: ${{ steps.validate.outputs.tag_name }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- **Name**: ${{ steps.validate.outputs.release_name }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- **Pre-release**: ${{ inputs.prerelease }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ steps.validate.outputs.tag_name }})" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

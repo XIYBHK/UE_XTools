@@ -462,28 +462,30 @@ jobs:
 
           echo "ZIP_PATH=$zip_path" >> $env:GITHUB_ENV
 
-          # 如果是tag触发（准备创建发行版），复制到持久化目录
-          if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
-            # 使用固定的发行版临时目录（在runner工作目录下）
-            $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
+          # 总是复制到本地临时目录（支持本地优先策略）
+          $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
 
-            # 清理旧的临时文件（防止堆积）
-            if (Test-Path $release_temp_dir) {
-              Write-Host "Cleaning old release temp files..."
-              Get-ChildItem $release_temp_dir -Filter "*.zip" |
-                Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
-                Remove-Item -Force
-            } else {
-              New-Item -ItemType Directory -Path $release_temp_dir -Force | Out-Null
-            }
-
-            # 复制到临时目录
-            $release_zip_path = Join-Path $release_temp_dir $zip_name
-            Write-Host "Copying to release temp: $release_zip_path"
-            Copy-Item $zip_path $release_zip_path -Force
-
-            echo "RELEASE_ZIP_PATH=$release_zip_path" >> $env:GITHUB_ENV
+          # 清理旧的临时文件（防止堆积）
+          if (Test-Path $release_temp_dir) {
+            Write-Host "Cleaning old release temp files..."
+            Get-ChildItem $release_temp_dir -Filter "*.zip" |
+              Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+              Remove-Item -Force
+          } else {
+            New-Item -ItemType Directory -Path $release_temp_dir -Force | Out-Null
           }
+
+          # 复制到临时目录
+          $release_zip_path = Join-Path $release_temp_dir $zip_name
+
+          if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
+            Write-Host "[Tag Push] Copying to release temp: $release_zip_path" -ForegroundColor Green
+          } else {
+            Write-Host "[Non-Tag] Copying to release temp: $release_zip_path" -ForegroundColor Cyan
+          }
+
+          Copy-Item $zip_path $release_zip_path -Force
+          echo "RELEASE_ZIP_PATH=$release_zip_path" >> $env:GITHUB_ENV
         } else {
           throw "Failed to create zip file"
         }
