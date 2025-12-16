@@ -279,42 +279,49 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 		ModePin->PinType.PinSubCategoryObject = SortModeEnum;
 		ModePin->bHidden = false;
 
-		// 关键修复：检查排序模式引脚是否被连接（提升为变量）
+		// 检查排序模式引脚是否被连接（提升为变量）
 		const bool bModePinIsConnected = (ModePin->LinkedTo.Num() > 0);
 
-		// 如果排序模式引脚被连接（提升为变量），显示所有可能的动态引脚
-		// 因为运行时值未知，我们需要确保所有可能需要的引脚都可用
 		if (bModePinIsConnected)
 		{
-			UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 排序模式引脚已连接到变量，显示所有可能的动态引脚"));
+			// 排序模式引脚连接到变量：显示所有可能的引脚，运行时根据变量值选择
+			// 使用 Advanced 视图折叠不常用的引脚，保持 UI 简洁
+			UE_LOG(LogBlueprint, Log, TEXT("[智能排序] 排序模式连接到变量，显示所有可能的引脚（部分折叠到高级选项）"));
 
 			if (SortModeEnum == StaticEnum<ESmartSort_ActorSortMode>())
 			{
 				// Actor 排序：创建所有可能需要的引脚
 				UEdGraphPin* LocationPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Location);
 				LocationPin->PinToolTip = LOCTEXT("LocationPin_Tooltip", "参考位置或中心点（用于距离/角度/方位角排序）").ToString();
+				LocationPin->bAdvancedView = false; // 常用，始终显示
 
 				UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
 				DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "参考方向（用于角度排序）").ToString();
+				DirectionPin->bAdvancedView = true; // 不常用，折叠到高级选项
 
 				UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
 				AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴（用于坐标轴排序）").ToString();
 				SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
+				AxisPin->bAdvancedView = true; // 不常用，折叠到高级选项
 			}
 			else if (SortModeEnum == StaticEnum<ESmartSort_VectorSortMode>())
 			{
 				// Vector 排序：创建所有可能需要的引脚
 				UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
 				DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "投影方向（用于投影排序）").ToString();
+				DirectionPin->bAdvancedView = true; // 不常用，折叠到高级选项
 
 				UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
 				AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴（用于坐标轴排序）").ToString();
 				SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
+				AxisPin->bAdvancedView = true; // 不常用，折叠到高级选项
 			}
 		}
 		else
 		{
-			// 排序模式引脚未连接，根据默认值只显示需要的引脚
+			// 排序模式引脚未连接：根据默认值只显示需要的引脚（原有逻辑）
+			UE_LOG(LogBlueprint, Log, TEXT("[智能排序] 排序模式使用直接输入，仅显示当前模式需要的引脚"));
+
 			// 检查当前默认值是否属于新的枚举类型
 			bool bNeedResetDefault = true;
 			const FString CurrentDefault = ModePin->GetDefaultAsString();

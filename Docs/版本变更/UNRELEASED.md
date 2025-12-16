@@ -23,6 +23,7 @@
 ## SortEditor
 
 - **修复** K2Node_SmartSort 提升枚举引脚为变量时第二个引脚消失
+- **优化** 提升为变量时使用 AdvancedView 折叠不常用引脚（Location 始终显示，Direction/Axis 折叠到高级选项）
 - **增加** 排序模式引脚连接状态检测（连接时显示所有可能引脚）
 - **增加** 排序模式引脚连接变化监听（PinConnectionListChanged）
 - **优化** 动态引脚 Tooltip 更新（描述各引脚适用场景）
