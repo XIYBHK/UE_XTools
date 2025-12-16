@@ -91,7 +91,9 @@ Out RandomSample(It begin, It end, Wt weightBegin, Out out, int32 count, Rand ra
         return out;
     }
 
-    MinIndexQueue H(validCount);
+    // MinIndexQueue 以“原始索引”作为键存储优先级，因此容量必须至少覆盖 sampleSize。
+    // 之前使用 validCount 会在存在 0 权重元素时导致越界写入（Index 可能远大于 validCount）。
+    MinIndexQueue H(sampleSize);
 
     // 将所有有效元素推入优先队列
     for(int32 idx = 0; idx < sampleSize; ++idx) {

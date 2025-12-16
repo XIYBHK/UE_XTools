@@ -13,11 +13,20 @@ public class XTools : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		// 添加模块定义
-		PublicDefinitions.AddRange(new string[] {
-			"WITH_XTOOLS=1",
-			"DLLEXPORT=__declspec(dllexport)",
-			"DLLIMPORT=__declspec(dllimport)"
-		});
+		PublicDefinitions.Add("WITH_XTOOLS=1");
+
+		// 兼容旧代码中的 DLLEXPORT/DLLIMPORT 宏（非 UE 最佳实践，但为避免破坏性改动保留）
+		// 注意：在非 Windows 平台上 __declspec 不可用，必须定义为空以保证可编译（插件支持 Win64/Mac/Linux）。
+		if (Target.Platform.IsInGroup(UnrealPlatformGroup.Windows))
+		{
+			PublicDefinitions.Add("DLLEXPORT=__declspec(dllexport)");
+			PublicDefinitions.Add("DLLIMPORT=__declspec(dllimport)");
+		}
+		else
+		{
+			PublicDefinitions.Add("DLLEXPORT=");
+			PublicDefinitions.Add("DLLIMPORT=");
+		}
 
 		// UE版本宏定义（用于跨版本兼容性系统）
 		// 
@@ -64,22 +73,22 @@ public class XTools : ModuleRules
 		//  开发时配置 - 确保代码质量
 		bUseUnity = false;
 
-	//  UE 标准设置 - 符合引擎最佳实践
-	bEnableExceptions = false;
-	bUseRTTI = false;
+		//  UE 标准设置 - 符合引擎最佳实践
+		bEnableExceptions = false;
+		bUseRTTI = false;
 
 		// 编译优化设置
 		bUsePrecompiled = false;
 
-	//  简化的公共包含路径 - 移除不必要的引擎内部路径
-	PublicIncludePaths.AddRange(new string[] {
-		ModuleDirectory + "/Public"
-	});
+		//  简化的公共包含路径 - 移除不必要的引擎内部路径
+		PublicIncludePaths.AddRange(new string[] {
+			ModuleDirectory + "/Public"
+		});
 
-	//  简化的私有包含路径
-	PrivateIncludePaths.AddRange(new string[] {
-		ModuleDirectory + "/Private"
-	});
+		//  简化的私有包含路径
+		PrivateIncludePaths.AddRange(new string[] {
+			ModuleDirectory + "/Private"
+		});
 
 	// Public dependencies
 	PublicDependencyModuleNames.AddRange(new string[] {
@@ -135,6 +144,6 @@ public class XTools : ModuleRules
 		DynamicallyLoadedModuleNames.AddRange(new string[] {
 		});
 
-		//  移除重复的定义 - WITH_XTOOLS=1 已在第17行定义
+	//  移除重复的定义 - WITH_XTOOLS=1 已在第17行定义
 	}
 }

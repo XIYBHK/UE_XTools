@@ -26,9 +26,9 @@ public class RandomShuffles : ModuleRules
 		//  开发时禁用 Unity Build，确保代码质量
 		bUseUnity = false;
 
-	//  UE 标准设置
-	bEnableExceptions = false;
-	bUseRTTI = false;
+		//  UE 标准设置
+		bEnableExceptions = false;
+		bUseRTTI = false;
 
 		//  添加模块定义
 		PublicDefinitions.AddRange(new string[] {

@@ -5,4 +5,4 @@
 #include "RandomShuffleLog.h"
 #include "CoreMinimal.h"
 
-DEFINE_LOG_CATEGORY(LogRandomShuffle)
+DEFINE_LOG_CATEGORY(LogRandomShuffle);

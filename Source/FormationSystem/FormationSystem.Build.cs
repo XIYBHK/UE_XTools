@@ -14,11 +14,20 @@ public class FormationSystem : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		//  添加模块定义
-		PublicDefinitions.AddRange(new string[] {
-			"WITH_FORMATIONSYSTEM=1",
-			"DLLEXPORT=__declspec(dllexport)",
-			"DLLIMPORT=__declspec(dllimport)"
-		});
+		PublicDefinitions.Add("WITH_FORMATIONSYSTEM=1");
+
+		// 兼容旧代码中的 DLLEXPORT/DLLIMPORT 宏（非 UE 最佳实践，但为避免破坏性改动保留）
+		// 注意：在非 Windows 平台上 __declspec 不可用，必须定义为空以保证可编译（本模块允许 Win64/Mac/Linux）。
+		if (Target.Platform.IsInGroup(UnrealPlatformGroup.Windows))
+		{
+			PublicDefinitions.Add("DLLEXPORT=__declspec(dllexport)");
+			PublicDefinitions.Add("DLLIMPORT=__declspec(dllimport)");
+		}
+		else
+		{
+			PublicDefinitions.Add("DLLEXPORT=");
+			PublicDefinitions.Add("DLLIMPORT=");
+		}
 
 		//  UE5.3+ C++20 标准配置
 		CppStandard = CppStandardVersion.Default;
@@ -29,9 +38,9 @@ public class FormationSystem : ModuleRules
 		//  开发时配置 - 确保代码质量
 		bUseUnity = false;
 
-	//  UE 标准设置 - 符合引擎最佳实践
-	bEnableExceptions = false;
-	bUseRTTI = false;
+		//  UE 标准设置 - 符合引擎最佳实践
+		bEnableExceptions = false;
+		bUseRTTI = false;
 
 		// 编译优化设置
 		bUsePrecompiled = false;

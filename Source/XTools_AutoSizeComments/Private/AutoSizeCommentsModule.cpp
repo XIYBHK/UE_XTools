@@ -18,7 +18,7 @@
 #define LOCTEXT_NAMESPACE "FAutoSizeCommentsModule"
 #define ASC_ENABLED (!IS_MONOLITHIC && !UE_BUILD_SHIPPING && !UE_BUILD_TEST && !UE_GAME && !UE_SERVER)
 
-DEFINE_LOG_CATEGORY(LogAutoSizeComments)
+DEFINE_LOG_CATEGORY(LogAutoSizeComments);
 
 void FAutoSizeCommentsModule::StartupModule()
 {
