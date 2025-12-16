@@ -5,6 +5,34 @@
 
 ---
 
+## PointSampling
+
+- **修复** 泊松缓存键哈希/相等性契约不一致（改用量化比较）
+- **修复** 泊松缓存键缺少 Scale 和 MaxAttempts 字段
+- **修复** ApplyTransform 中除零风险（SafeScale 检查）
+- **修复** 随机种子参数失效（新增 GeneratePoisson2D/3DFromStream）
+- **修复** 纹理采样坐标归一化错误（[0..W] 误当 [-W/2..W/2]）
+- **修复** FloatRGBA 格式 FP16/FP32 平台差异（动态判断字节数）
+- **修复** 纹理采样数据越界风险（添加大小验证和范围 Clamp）
+- **优化** 泊松采样日志级别从 Log 改为 Verbose（减少刷屏）
+- **优化** EPoissonCoordinateSpace 枚举文档（详细说明 World/Local/Raw 差异）
+- **调整** RenderCore 从 Public 依赖移至 Private（符合 IWYU 原则）
+- **调整** 新增 RHI 模块依赖（用于 EPixelFormat 定义）
+- **移除** MeshSamplingHelper 中未使用的 SocketRotation 和 SocketTransform 变量
+
+## SortEditor
+
+- **修复** K2Node_SmartSort 提升枚举引脚为变量时第二个引脚消失
+- **增加** 排序模式引脚连接状态检测（连接时显示所有可能引脚）
+- **增加** 排序模式引脚连接变化监听（PinConnectionListChanged）
+- **优化** 动态引脚 Tooltip 更新（描述各引脚适用场景）
+
+## 质量保证
+
+- **检查** 全面审查 20 个 K2Node 节点，确认无类似引脚消失问题
+
+---
+
 ## 📋 日志格式说明
 
 ### 模块分类

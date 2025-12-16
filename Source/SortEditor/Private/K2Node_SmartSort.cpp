@@ -115,6 +115,7 @@ void UK2Node_SmartSort::PinConnectionListChanged(UEdGraphPin* Pin)
 	}
 #endif
 
+	// 处理数组引脚连接变化
 	if (Pin && Pin->PinName == FSmartSort_Helper::PN_TargetArray)
 	{
 #if WITH_EDITORONLY_DATA
@@ -146,6 +147,27 @@ void UK2Node_SmartSort::PinConnectionListChanged(UEdGraphPin* Pin)
 		{
 			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 		}
+
+#if WITH_EDITORONLY_DATA
+		bIsReconstructingPins = false;
+#endif
+	}
+	// 处理排序模式引脚连接变化（提升为变量或断开连接）
+	else if (Pin && Pin->PinName == FSmartSort_Helper::PN_SortMode)
+	{
+#if WITH_EDITORONLY_DATA
+		bIsReconstructingPins = true;
+#endif
+
+		// 当排序模式引脚连接状态改变时，重建动态引脚
+		// 如果连接了（提升为变量），显示所有可能的引脚
+		// 如果断开连接，根据默认值显示需要的引脚
+		RebuildDynamicPins();
+
+		// 重建图形
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(FBlueprintEditorUtils::FindBlueprintForNode(this));
+
+		UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 排序模式引脚连接状态改变，已重建动态引脚"));
 
 #if WITH_EDITORONLY_DATA
 		bIsReconstructingPins = false;
@@ -257,90 +279,127 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 		ModePin->PinType.PinSubCategoryObject = SortModeEnum;
 		ModePin->bHidden = false;
 
-		// 检查当前默认值是否属于新的枚举类型
-		bool bNeedResetDefault = true;
-		const FString CurrentDefault = ModePin->GetDefaultAsString();
-		if (!CurrentDefault.IsEmpty())
+		// 关键修复：检查排序模式引脚是否被连接（提升为变量）
+		const bool bModePinIsConnected = (ModePin->LinkedTo.Num() > 0);
+
+		// 如果排序模式引脚被连接（提升为变量），显示所有可能的动态引脚
+		// 因为运行时值未知，我们需要确保所有可能需要的引脚都可用
+		if (bModePinIsConnected)
 		{
-			int64 IntValue = SortModeEnum->GetValueByNameString(CurrentDefault);
-			if (IntValue != INDEX_NONE)
+			UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 排序模式引脚已连接到变量，显示所有可能的动态引脚"));
+
+			if (SortModeEnum == StaticEnum<ESmartSort_ActorSortMode>())
 			{
-				bNeedResetDefault = false; // 当前默认值有效，不需要重置
+				// Actor 排序：创建所有可能需要的引脚
+				UEdGraphPin* LocationPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Location);
+				LocationPin->PinToolTip = LOCTEXT("LocationPin_Tooltip", "参考位置或中心点（用于距离/角度/方位角排序）").ToString();
+
+				UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
+				DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "参考方向（用于角度排序）").ToString();
+
+				UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
+				AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴（用于坐标轴排序）").ToString();
+				SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
 			}
-		}
-
-		// 获取当前选择的排序模式
-		uint8 EnumValue = 0;
-
-		if (bNeedResetDefault)
-		{
-			// 需要重置默认值，设置为枚举的第一项
-			if (SortModeEnum->NumEnums() > 1)
+			else if (SortModeEnum == StaticEnum<ESmartSort_VectorSortMode>())
 			{
-				FString FirstEnumName = SortModeEnum->GetNameStringByIndex(0);
-				ModePin->DefaultValue = FirstEnumName;
-				EnumValue = 0;
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 重置排序模式默认值: %s"), *FirstEnumName);
+				// Vector 排序：创建所有可能需要的引脚
+				UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
+				DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "投影方向（用于投影排序）").ToString();
+
+				UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
+				AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴（用于坐标轴排序）").ToString();
+				SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
 			}
 		}
 		else
 		{
-			// 使用现有的有效默认值
-			const FString DefaultStr = ModePin->GetDefaultAsString();
-			int64 IntValue = SortModeEnum->GetValueByNameString(DefaultStr);
-			EnumValue = static_cast<uint8>(IntValue);
-            UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 保持现有排序模式: %s"), *DefaultStr);
-		}
-
-		// 根据选择的排序模式，创建额外的输入引脚
-		if (SortModeEnum == StaticEnum<ESmartSort_ActorSortMode>())
-		{
-			switch (static_cast<ESmartSort_ActorSortMode>(EnumValue))
+			// 排序模式引脚未连接，根据默认值只显示需要的引脚
+			// 检查当前默认值是否属于新的枚举类型
+			bool bNeedResetDefault = true;
+			const FString CurrentDefault = ModePin->GetDefaultAsString();
+			if (!CurrentDefault.IsEmpty())
 			{
-			case ESmartSort_ActorSortMode::ByDistance:
-			case ESmartSort_ActorSortMode::ByAngle:
-			case ESmartSort_ActorSortMode::ByAzimuth:
+				int64 IntValue = SortModeEnum->GetValueByNameString(CurrentDefault);
+				if (IntValue != INDEX_NONE)
 				{
-					UEdGraphPin* LocationPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Location);
-					LocationPin->PinToolTip = LOCTEXT("LocationPin_Tooltip", "参考位置或中心点").ToString();
+					bNeedResetDefault = false; // 当前默认值有效，不需要重置
+				}
+			}
 
-					if (static_cast<ESmartSort_ActorSortMode>(EnumValue) == ESmartSort_ActorSortMode::ByAngle)
+			// 获取当前选择的排序模式
+			uint8 EnumValue = 0;
+
+			if (bNeedResetDefault)
+			{
+				// 需要重置默认值，设置为枚举的第一项
+				if (SortModeEnum->NumEnums() > 1)
+				{
+					FString FirstEnumName = SortModeEnum->GetNameStringByIndex(0);
+					ModePin->DefaultValue = FirstEnumName;
+					EnumValue = 0;
+					UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 重置排序模式默认值: %s"), *FirstEnumName);
+				}
+			}
+			else
+			{
+				// 使用现有的有效默认值
+				const FString DefaultStr = ModePin->GetDefaultAsString();
+				int64 IntValue = SortModeEnum->GetValueByNameString(DefaultStr);
+				EnumValue = static_cast<uint8>(IntValue);
+				UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 保持现有排序模式: %s"), *DefaultStr);
+			}
+
+			// 根据选择的排序模式，创建额外的输入引脚
+			if (SortModeEnum == StaticEnum<ESmartSort_ActorSortMode>())
+			{
+				switch (static_cast<ESmartSort_ActorSortMode>(EnumValue))
+				{
+				case ESmartSort_ActorSortMode::ByDistance:
+				case ESmartSort_ActorSortMode::ByAngle:
+				case ESmartSort_ActorSortMode::ByAzimuth:
+					{
+						UEdGraphPin* LocationPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Location);
+						LocationPin->PinToolTip = LOCTEXT("LocationPin_Tooltip", "参考位置或中心点").ToString();
+
+						if (static_cast<ESmartSort_ActorSortMode>(EnumValue) == ESmartSort_ActorSortMode::ByAngle)
+						{
+							UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
+							DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "参考方向").ToString();
+						}
+					}
+					break;
+				case ESmartSort_ActorSortMode::ByAxis:
+					{
+						UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
+						AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴").ToString();
+						// 设置默认值为第一个枚举项
+						SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
+					}
+					break;
+				default: break;
+				}
+			}
+			else if (SortModeEnum == StaticEnum<ESmartSort_VectorSortMode>())
+			{
+				switch (static_cast<ESmartSort_VectorSortMode>(EnumValue))
+				{
+				case ESmartSort_VectorSortMode::ByProjection:
 					{
 						UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
-						DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "参考方向").ToString();
+						DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "投影方向").ToString();
 					}
+					break;
+				case ESmartSort_VectorSortMode::ByAxis:
+					{
+						UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
+						AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴").ToString();
+						// 设置默认值为第一个枚举项
+						SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
+					}
+					break;
+				default: break;
 				}
-				break;
-			case ESmartSort_ActorSortMode::ByAxis:
-				{
-					UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
-					AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴").ToString();
-					// 设置默认值为第一个枚举项
-					SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
-				}
-				break;
-			default: break;
-			}
-		}
-		else if (SortModeEnum == StaticEnum<ESmartSort_VectorSortMode>())
-		{
-			switch (static_cast<ESmartSort_VectorSortMode>(EnumValue))
-			{
-			case ESmartSort_VectorSortMode::ByProjection:
-				{
-					UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
-					DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "投影方向").ToString();
-				}
-				break;
-			case ESmartSort_VectorSortMode::ByAxis:
-				{
-					UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
-					AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴").ToString();
-					// 设置默认值为第一个枚举项
-					SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
-				}
-				break;
-			default: break;
 			}
 		}
 	}

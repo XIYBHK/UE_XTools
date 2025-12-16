@@ -588,13 +588,18 @@ namespace PoissonSamplingHelpers
                 // - 旋转由HISMC的父变换自动处理
                 // 注：Local和Raw当前行为相同，保留Raw枚举值以便未来扩展
                 const FVector ParentScale = Transform.GetScale3D();
+                const FVector SafeScale(
+                    FMath::IsNearlyZero(ParentScale.X) ? 1.0f : ParentScale.X,
+                    FMath::IsNearlyZero(ParentScale.Y) ? 1.0f : ParentScale.Y,
+                    FMath::IsNearlyZero(ParentScale.Z) ? 1.0f : ParentScale.Z
+                );
                 
                 for (FVector& Point : Points)
                 {
                     // 除以父缩放，补偿AddInstance会再次应用的缩放
-                    Point.X /= ParentScale.X;
-                    Point.Y /= ParentScale.Y;
-                    Point.Z /= ParentScale.Z;
+                    Point.X /= SafeScale.X;
+                    Point.Y /= SafeScale.Y;
+                    Point.Z /= SafeScale.Z;
                 }
                 break;
             }

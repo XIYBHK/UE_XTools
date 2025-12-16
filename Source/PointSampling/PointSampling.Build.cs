@@ -37,8 +37,14 @@ public class PointSampling : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"RenderCore",  // 用于访问静态网格体渲染数据
 			"XToolsCore"  // XTools版本兼容层
+		});
+
+		//  私有依赖模块(仅实现代码使用)
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"RenderCore",  // 用于访问静态网格体渲染数据
+			"RHI"          // 用于 EPixelFormat 等像素格式定义
 		});
 
 		//  添加模块定义

@@ -128,10 +128,6 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromSkeletalSockets(
 
 		// 获取插槽的相对位置和旋转
 		FVector SocketLocation = Socket->RelativeLocation;
-		FRotator SocketRotation = Socket->RelativeRotation;
-
-		// 应用插槽变换和外部变换
-		FTransform SocketTransform(SocketRotation, SocketLocation);
 		FVector WorldPosition = Transform.TransformPosition(SocketLocation);
 
 		Points.Add(WorldPosition);

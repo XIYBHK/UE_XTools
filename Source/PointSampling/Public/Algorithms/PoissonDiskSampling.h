@@ -7,6 +7,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Math/RandomStream.h"
 #include "PointSamplingTypes.h"
 
 class UBoxComponent;
@@ -32,7 +33,26 @@ public:
 		int32 MaxAttempts = 30
 	);
 
+	/** 2D泊松采样（使用指定随机流，保证可复现） */
+	static TArray<FVector2D> GeneratePoisson2DFromStream(
+		const FRandomStream& RandomStream,
+		float Width,
+		float Height,
+		float Radius,
+		int32 MaxAttempts = 30
+	);
+
 	static TArray<FVector> GeneratePoisson3D(
+		float Width,
+		float Height,
+		float Depth,
+		float Radius,
+		int32 MaxAttempts = 30
+	);
+
+	/** 3D泊松采样（使用指定随机流，保证可复现） */
+	static TArray<FVector> GeneratePoisson3DFromStream(
+		const FRandomStream& RandomStream,
 		float Width,
 		float Height,
 		float Depth,

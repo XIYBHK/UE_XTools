@@ -24,9 +24,24 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 {
 	TArray<FVector2D> Points = GeneratePoisson2DInternal(Width, Height, Radius, MaxAttempts, nullptr);
 	
-	UE_LOG(LogPointSampling, Log, TEXT("GeneratePoisson2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
+	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
 		Points.Num(), Width, Height, Radius);
 	
+	return Points;
+}
+
+TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2DFromStream(
+	const FRandomStream& RandomStream,
+	float Width,
+	float Height,
+	float Radius,
+	int32 MaxAttempts)
+{
+	TArray<FVector2D> Points = GeneratePoisson2DInternal(Width, Height, Radius, MaxAttempts, &RandomStream);
+
+	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson2DFromStream: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
+		Points.Num(), Width, Height, Radius);
+
 	return Points;
 }
 
@@ -39,9 +54,25 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 {
 	TArray<FVector> Points = GeneratePoisson3DInternal(Width, Height, Depth, Radius, MaxAttempts, nullptr);
 	
-	UE_LOG(LogPointSampling, Log, TEXT("GeneratePoisson3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
+	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
 		Points.Num(), Width, Height, Depth, Radius);
 	
+	return Points;
+}
+
+TArray<FVector> FPoissonDiskSampling::GeneratePoisson3DFromStream(
+	const FRandomStream& RandomStream,
+	float Width,
+	float Height,
+	float Depth,
+	float Radius,
+	int32 MaxAttempts)
+{
+	TArray<FVector> Points = GeneratePoisson3DInternal(Width, Height, Depth, Radius, MaxAttempts, &RandomStream);
+
+	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson3DFromStream: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
+		Points.Num(), Width, Height, Depth, Radius);
+
 	return Points;
 }
 
@@ -152,8 +183,10 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 		CacheKey.BoxExtent = BoxExtent;
 		CacheKey.Position = Transform.GetLocation();  // Position仅在World空间参与缓存比较
 		CacheKey.Rotation = Transform.GetRotation();
+		CacheKey.Scale = Transform.GetScale3D();
 		CacheKey.Radius = ActualRadius;
 		CacheKey.TargetPointCount = TargetPointCount;
+		CacheKey.MaxAttempts = MaxAttempts;
 		CacheKey.JitterStrength = JitterStrength;
 		CacheKey.bIs2D = bIs2D;
 		CacheKey.CoordinateSpace = CoordinateSpace;
@@ -181,7 +214,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 			Points.Add(FVector(Point2D.X, Point2D.Y, 0.0f));
 		}
 		
-		UE_LOG(LogPointSampling, Log, TEXT("泊松采样: 2D平面 | BoxExtent=(%.1f,%.1f) | 采样空间=[0,%.1f]x[0,%.1f] | 结果范围=[±%.1f,±%.1f]"), 
+		UE_LOG(LogPointSampling, Verbose, TEXT("泊松采样: 2D平面 | BoxExtent=(%.1f,%.1f) | 采样空间=[0,%.1f]x[0,%.1f] | 结果范围=[±%.1f,±%.1f]"), 
 			BoxExtent.X, BoxExtent.Y, Width, Height, BoxExtent.X, BoxExtent.Y);
 	}
 	else
@@ -189,7 +222,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 		// 3D体积采样
 		Points = GeneratePoisson3D(Width, Height, Depth, ActualRadius, MaxAttempts);
 		
-		UE_LOG(LogPointSampling, Log, TEXT("泊松采样: 3D体积 | BoxExtent=(%.1f,%.1f,%.1f) | 采样空间=[0,%.1f]x[0,%.1f]x[0,%.1f] | 结果范围=[±%.1f,±%.1f,±%.1f]"), 
+		UE_LOG(LogPointSampling, Verbose, TEXT("泊松采样: 3D体积 | BoxExtent=(%.1f,%.1f,%.1f) | 采样空间=[0,%.1f]x[0,%.1f]x[0,%.1f] | 结果范围=[±%.1f,±%.1f,±%.1f]"), 
 			BoxExtent.X, BoxExtent.Y, BoxExtent.Z, Width, Height, Depth, BoxExtent.X, BoxExtent.Y, BoxExtent.Z);
 	}
 
@@ -223,7 +256,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 		(CoordinateSpace == EPoissonCoordinateSpace::World) ? TEXT("世界空间") :
 		(CoordinateSpace == EPoissonCoordinateSpace::Local) ? TEXT("局部空间") : TEXT("原始空间");
 	
-	UE_LOG(LogPointSampling, Log, TEXT("泊松采样完成: %d个点 | Radius=%.2f | 坐标=%s"), 
+	UE_LOG(LogPointSampling, Verbose, TEXT("泊松采样完成: %d个点 | Radius=%.2f | 坐标=%s"), 
 		Points.Num(), ActualRadius, SpaceTypeName);
 
 	// 存入缓存（包含位置和旋转信息）
@@ -233,8 +266,10 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 		CacheKey.BoxExtent = BoxExtent;
 		CacheKey.Position = Transform.GetLocation();  // Position仅在World空间参与缓存比较
 		CacheKey.Rotation = Transform.GetRotation();
+		CacheKey.Scale = Transform.GetScale3D();
 		CacheKey.Radius = ActualRadius;
 		CacheKey.TargetPointCount = TargetPointCount;
+		CacheKey.MaxAttempts = MaxAttempts;
 		CacheKey.JitterStrength = JitterStrength;
 		CacheKey.bIs2D = bIs2D;
 		CacheKey.CoordinateSpace = CoordinateSpace;

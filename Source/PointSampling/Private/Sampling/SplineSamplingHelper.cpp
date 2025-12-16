@@ -229,7 +229,8 @@ TArray<FVector> FSplineSamplingHelper::GenerateWithinBoundary(
 
 	// 3. 使用Bridson泊松圆盘采样算法在AABB内生成候选点
 	// 这比简单的dart throwing高效得多：O(n) vs O(n²)
-	TArray<FVector2D> CandidatePoints2D = FPoissonDiskSampling::GeneratePoisson2D(
+	TArray<FVector2D> CandidatePoints2D = FPoissonDiskSampling::GeneratePoisson2DFromStream(
+		RandomStream,
 		Width,
 		Height,
 		Radius,

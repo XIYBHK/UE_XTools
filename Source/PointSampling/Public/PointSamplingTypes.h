@@ -11,20 +11,48 @@
 
 /**
  * 泊松采样坐标空间类型
+ *
+ * 定义泊松采样生成点位的坐标系统。不同坐标空间影响 AddInstance 时的行为：
+ * - World: 返回世界绝对坐标（已应用 Transform 的位置 + 旋转）
+ * - Local/Raw: 返回相对坐标（仅补偿缩放，位置 + 旋转由父组件处理）
+ *
+ * 注意：Local 与 Raw 当前行为相同，保留 Raw 枚举值以便未来扩展。
  */
 UENUM(BlueprintType)
 enum class EPoissonCoordinateSpace : uint8
 {
-	/** 世界空间 - 返回世界绝对坐标（应用位置+旋转）
-	 * 适用场景：AddInstance的World Space = true，或手动放置Actor */
+	/** 世界空间 - 返回世界绝对坐标（应用 Transform 的位置 + 旋转）
+	 *
+	 * 适用场景：
+	 * - HISMC.AddInstance(Point, WorldSpace = true)
+	 * - SpawnActor(Point) 直接作为世界坐标
+	 *
+	 * 缓存行为：缓存键包含 Position + Rotation（移动或旋转组件会使缓存失效）
+	 */
 	World		UMETA(DisplayName = "世界空间"),
-	
-	/** 局部空间 - 返回相对于Box中心的坐标（不应用旋转，由父组件处理）
-	 * 适用场景：AddInstance的World Space = false（最常用） */
+
+	/** 局部空间 - 返回相对于 Transform 中心的坐标（补偿缩放，位置 + 旋转由父组件处理）
+	 *
+	 * 适用场景（推荐）：
+	 * - HISMC.AddInstance(Point, WorldSpace = false)
+	 * - 子组件相对父组件放置
+	 *
+	 * 缓存行为：缓存键包含 Scale（改变缩放会使缓存失效，位置/旋转不影响缓存）
+	 *
+	 * 注意：当前与 Raw 行为相同，用于语义清晰性
+	 */
 	Local		UMETA(DisplayName = "局部空间"),
-	
-	/** 原始空间 - 返回算法原始输出（未旋转，相对于Box中心）
-	 * 适用场景：需要自行处理坐标变换的情况 */
+
+	/** 原始空间 - 返回算法原始输出（补偿缩放，未应用位置 + 旋转）
+	 *
+	 * 适用场景：
+	 * - 需要自行处理坐标变换的高级用法
+	 * - 批量处理点位后再应用 Transform
+	 *
+	 * 缓存行为：缓存键包含 Scale（改变缩放会使缓存失效，位置/旋转不影响缓存）
+	 *
+	 * 注意：当前与 Local 行为相同，保留以便未来扩展为完全未变换的坐标
+	 */
 	Raw			UMETA(DisplayName = "原始空间")
 };
 

@@ -9,6 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "Engine/TextureDefines.h"
 #include "Math/UnrealMathUtility.h"
+#include "Math/Float16.h"
 #include "TextureResource.h"
 #include "PixelFormat.h"
 #include "Algorithms/PoissonDiskSampling.h"
@@ -502,8 +503,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSourceWithPoisson(
 	{
 		// 将泊松点坐标转换为纹理归一化坐标
 		FVector2D NormalizedCoords;
-		NormalizedCoords.X = (PoissonPoint.X / Width) + 0.5f; // 从 [-Width/2, Width/2] 转换到 [0, 1]
-		NormalizedCoords.Y = 0.5f - (PoissonPoint.Y / Height); // 从 [-Height/2, Height/2] 转换到 [0, 1] 并翻转Y轴
+		// 注意：FPoissonDiskSampling::GeneratePoisson2D 输出范围为 [0..Width]x[0..Height]
+		// 纹理归一化坐标系：左上角(0,0)，右下角(1,1)
+		NormalizedCoords.X = FMath::Clamp(PoissonPoint.X / Width, 0.0f, 1.0f);
+		NormalizedCoords.Y = FMath::Clamp(PoissonPoint.Y / Height, 0.0f, 1.0f);
 
 		// 确保坐标在有效范围内
 		if (NormalizedCoords.X < 0.0f || NormalizedCoords.X > 1.0f ||
@@ -521,8 +524,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSourceWithPoisson(
 			continue;
 		}
 
-		// 将点添加到结果集
-		Points.Add(FVector(PoissonPoint.X, PoissonPoint.Y, 0.0f));
+		// 将点添加到结果集（局部坐标，居中，Y轴翻转以匹配纹理坐标系）
+		const float LocalX = PoissonPoint.X - Width * 0.5f;
+		const float LocalY = Height * 0.5f - PoissonPoint.Y;
+		Points.Add(FVector(LocalX, LocalY, 0.0f));
 	}
 
 	UE_LOG(LogPointSampling, Log, TEXT("[纹理密度采样] 根据纹理密度筛选后剩余 %d 个点"), Points.Num());
@@ -884,14 +889,36 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
 	}
 	else if (PixelFormat == PF_FloatRGBA)
 	{
-		// FloatRGBA 格式（浮点/通道）
-		const float* FloatData = reinterpret_cast<const float*>(PixelData + PixelIndex);
-		float R = FloatData[0];
-		float G = FloatData[1];
-		float B = FloatData[2];
-		float A = FloatData[3];
-		
-		FColor Color(FMath::RoundToInt(R * 255.0f), FMath::RoundToInt(G * 255.0f), FMath::RoundToInt(B * 255.0f), FMath::RoundToInt(A * 255.0f));
+		// FloatRGBA：不同平台可能是 FP32x4（16字节）或 FP16x4（8字节）
+		float R = 0.0f, G = 0.0f, B = 0.0f, A = 0.0f;
+
+		if (BytesPerPixel == 16)
+		{
+			const float* FloatData = reinterpret_cast<const float*>(PixelData + PixelIndex);
+			R = FloatData[0];
+			G = FloatData[1];
+			B = FloatData[2];
+			A = FloatData[3];
+		}
+		else if (BytesPerPixel == 8)
+		{
+			const FFloat16* HalfData = reinterpret_cast<const FFloat16*>(PixelData + PixelIndex);
+			R = HalfData[0].GetFloat();
+			G = HalfData[1].GetFloat();
+			B = HalfData[2].GetFloat();
+			A = HalfData[3].GetFloat();
+		}
+		else
+		{
+			return 0.0f;
+		}
+
+		FColor Color(
+			FMath::Clamp(FMath::RoundToInt(R * 255.0f), 0, 255),
+			FMath::Clamp(FMath::RoundToInt(G * 255.0f), 0, 255),
+			FMath::Clamp(FMath::RoundToInt(B * 255.0f), 0, 255),
+			FMath::Clamp(FMath::RoundToInt(A * 255.0f), 0, 255)
+		);
 		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
 	}
 	
@@ -961,7 +988,29 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoiss
 		return Points;
 	}
 
-	uint32 BytesPerPixel = 4; // BGRA8, RGBA8 或 FloatRGBA 格式
+	const int64 PixelCount64 = (int64)OriginalWidth * (int64)OriginalHeight;
+	const int64 DataSize64 = (int64)Mip0.BulkData.GetBulkDataSize();
+	if (PixelCount64 <= 0 || DataSize64 <= 0 || (DataSize64 % PixelCount64) != 0)
+	{
+		Mip0.BulkData.Unlock();
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 纹理数据大小异常: Data=%lld, Pixels=%lld"), DataSize64, PixelCount64);
+		return Points;
+	}
+
+	uint32 BytesPerPixel = (uint32)(DataSize64 / PixelCount64);
+	if ((PixelFormat == PF_B8G8R8A8 || PixelFormat == PF_R8G8B8A8 || PixelFormat == PF_A8R8G8B8) && BytesPerPixel != 4)
+	{
+		Mip0.BulkData.Unlock();
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 8位纹理BytesPerPixel应为4，当前=%u"), BytesPerPixel);
+		return Points;
+	}
+	if (PixelFormat == PF_FloatRGBA && (BytesPerPixel != 8 && BytesPerPixel != 16))
+	{
+		Mip0.BulkData.Unlock();
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] FloatRGBA纹理BytesPerPixel应为8或16，当前=%u"), BytesPerPixel);
+		return Points;
+	}
+
 	const uint8* PixelData = static_cast<const uint8*>(RawData);
 
 	// 智能判断使用哪个通道采样
@@ -986,8 +1035,8 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoiss
 	{
 		// 将泊松点坐标转换为纹理归一化坐标
 		FVector2D NormalizedCoords;
-		NormalizedCoords.X = (PoissonPoint.X / Width) + 0.5f; // 从 [-Width/2, Width/2] 转换到 [0, 1]
-		NormalizedCoords.Y = 0.5f - (PoissonPoint.Y / Height); // 从 [-Height/2, Height/2] 转换到 [0, 1] 并翻转Y轴
+		NormalizedCoords.X = FMath::Clamp(PoissonPoint.X / Width, 0.0f, 1.0f);
+		NormalizedCoords.Y = FMath::Clamp(PoissonPoint.Y / Height, 0.0f, 1.0f);
 
 		// 获取当前坐标的纹理密度值
 		float Density = GetTextureDensityAtCoordinatePlatform(
@@ -1007,8 +1056,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoiss
 			continue;
 		}
 
-		// 将点添加到结果集
-		Points.Add(FVector(PoissonPoint.X, PoissonPoint.Y, 0.0f));
+		// 将点添加到结果集（局部坐标，居中，Y轴翻转以匹配纹理坐标系）
+		const float LocalX = PoissonPoint.X - Width * 0.5f;
+		const float LocalY = Height * 0.5f - PoissonPoint.Y;
+		Points.Add(FVector(LocalX, LocalY, 0.0f));
 	}
 
 	// 解锁纹理数据
