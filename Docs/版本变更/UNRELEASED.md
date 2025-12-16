@@ -28,6 +28,16 @@
 - **增加** 排序模式引脚连接变化监听（PinConnectionListChanged）
 - **优化** 动态引脚 Tooltip 更新（描述各引脚适用场景）
 
+## PhysicsAssetOptimizer
+
+- **新增** 物理资产一键优化模块（Editor Only，仅 Win64）
+- **新增** 12条硬规则自动优化（移除小骨骼、配置阻尼、禁用碰撞等）
+- **新增** 骨骼识别系统（三通道融合：命名规则+拓扑链+几何校验）
+- **新增** FPhysicsOptimizerCore 核心优化类（P0/P1/P2 优先级规则）
+- **新增** FBoneIdentificationSystem 骨骼分类（Spine/Head/Arm/Leg等12种类型）
+- **新增** LSV（Level Set Volume）生成支持（使用内部 API LevelSetHelpers）
+- **集成** PhysicsUtilities 模块依赖（访问 Private 头文件用于 LSV）
+
 ## 质量保证
 
 - **检查** 全面审查 20 个 K2Node 节点，确认无类似引脚消失问题
