@@ -60,6 +60,8 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
         GCDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddLambda([this]()
         {
             FScopeLock Lock(&GCSection);
+            // GC 期间也要遵守池的锁约定（CleanupInvalidActors 需要写锁）
+            FWriteScopeLock PoolWriteLock(PoolLock);
             CleanupInvalidActors();
         });
         
@@ -88,60 +90,6 @@ FActorPool::~FActorPool()
         ACTORPOOL_LOG(Log, TEXT("销毁Actor池: %s"), 
             ActorClass ? *ActorClass->GetName() : TEXT("Unknown"));
     }
-}
-
-//  移动语义实现
-
-FActorPool::FActorPool(FActorPool&& Other) noexcept
-    : ActorClass(Other.ActorClass)
-    , MaxPoolSize(Other.MaxPoolSize)
-    , InitialSize(Other.InitialSize)
-    , TotalRequests(Other.TotalRequests)
-    , PoolHits(Other.PoolHits)
-    , TotalCreated(Other.TotalCreated)
-    , bIsInitialized(Other.bIsInitialized)
-    , AvailableActors(MoveTemp(Other.AvailableActors))
-    , ActiveActors(MoveTemp(Other.ActiveActors))
-    , GCDelegateHandle(MoveTemp(Other.GCDelegateHandle)) //  移动GC委托句柄
-{
-    // 重置源对象
-    Other.ActorClass = nullptr;
-    Other.bIsInitialized = false;
-    Other.GCDelegateHandle.Reset(); //  重置源对象的委托句柄
-}
-
-FActorPool& FActorPool::operator=(FActorPool&& Other) noexcept
-{
-    if (this != &Other)
-    {
-        //  首先清理当前对象的GC委托，避免泄漏
-        if (GCDelegateHandle.IsValid())
-        {
-            FCoreUObjectDelegates::GetPreGarbageCollectDelegate().Remove(GCDelegateHandle);
-            GCDelegateHandle.Reset();
-        }
-        
-        // 清理当前对象
-        ClearPool();
-
-        // 移动数据
-        ActorClass = Other.ActorClass;
-        MaxPoolSize = Other.MaxPoolSize;
-        InitialSize = Other.InitialSize;
-        TotalRequests = Other.TotalRequests;
-        PoolHits = Other.PoolHits;
-        TotalCreated = Other.TotalCreated;
-        bIsInitialized = Other.bIsInitialized;
-        AvailableActors = MoveTemp(Other.AvailableActors);
-        ActiveActors = MoveTemp(Other.ActiveActors);
-        GCDelegateHandle = MoveTemp(Other.GCDelegateHandle); //  移动GC委托句柄
-
-        // 重置源对象
-        Other.ActorClass = nullptr;
-        Other.bIsInitialized = false;
-        Other.GCDelegateHandle.Reset(); //  重置源对象的委托句柄
-    }
-    return *this;
 }
 
 //  核心池管理功能实现

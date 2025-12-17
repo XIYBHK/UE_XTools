@@ -520,15 +520,12 @@ bool FObjectPoolManager::ShouldPerformPreallocation(const FActorPool& Pool) cons
 void FObjectPoolManager::UpdateUsageHistory(UClass* ActorClass, float UsageRatio) const
 {
     // 注意：调用者应该持有锁
-    // 使用const_cast来修改mutable数据
-
-    TMap<UClass*, TArray<float>>& MutableUsageHistory = const_cast<TMap<UClass*, TArray<float>>&>(UsageHistory);
-
-    TArray<float>* History = MutableUsageHistory.Find(ActorClass);
+    // UsageHistory 为 mutable，在 const 方法中可直接修改，无需 const_cast
+    TArray<float>* History = UsageHistory.Find(ActorClass);
     if (!History)
     {
-        MutableUsageHistory.Add(ActorClass, TArray<float>());
-        History = MutableUsageHistory.Find(ActorClass);
+        UsageHistory.Add(ActorClass, TArray<float>());
+        History = UsageHistory.Find(ActorClass);
     }
 
     History->Add(UsageRatio);

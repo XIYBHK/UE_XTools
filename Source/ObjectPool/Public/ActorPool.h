@@ -69,9 +69,9 @@ public:
     FActorPool(const FActorPool&) = delete;
     FActorPool& operator=(const FActorPool&) = delete;
 
-    //  支持移动语义
-    FActorPool(FActorPool&& Other) noexcept;
-    FActorPool& operator=(FActorPool&& Other) noexcept;
+    // 禁用移动语义：该类型会向全局 GC 委托注册回调（捕获 this），移动会导致回调指向悬空对象。
+    FActorPool(FActorPool&& Other) noexcept = delete;
+    FActorPool& operator=(FActorPool&& Other) noexcept = delete;
 
 public:
     //  核心池管理功能
