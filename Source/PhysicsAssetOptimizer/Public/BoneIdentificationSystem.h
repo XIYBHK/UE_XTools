@@ -140,4 +140,12 @@ private:
 		const FReferenceSkeleton& Skel,
 		int32 BoneIndex
 	);
+
+	/**
+	 * 获取骨骼在世界空间的 Z 坐标（用于区分上下肢）
+	 */
+	static float GetBoneWorldZ(
+		const FReferenceSkeleton& Skel,
+		int32 BoneIndex
+	);
 };

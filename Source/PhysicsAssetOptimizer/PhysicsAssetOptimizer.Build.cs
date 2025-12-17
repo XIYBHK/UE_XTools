@@ -29,7 +29,8 @@ public class PhysicsAssetOptimizer : ModuleRules
 			"Persona",            // 物理资产编辑器
 			"PhysicsAssetEditor", // 物理资产编辑器扩展
 			"ToolMenus",          // 工具栏菜单系统
-			"GeometryCore"        // FDynamicMesh3（LSV 生成需要）
+			"GeometryCore",       // FDynamicMesh3（LSV 生成需要）
+			"EditorSubsystem"     // UAssetEditorSubsystem
 		});
 
 		// ⚠️ 注意：PhysicsUtilities 是 Developer 模块，包含 Private 头文件

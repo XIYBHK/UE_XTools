@@ -20,7 +20,7 @@
  * - 生成 LSV（Level Set Volume）
  * - 配置 Sleep 设置
  *
- * 目标：在5秒内将���认物理资产优化为影视级布娃娃
+ * 目标：在5秒内将默认物理资产优化为影视级布娃娃
  */
 class FPhysicsAssetOptimizerModule : public IModuleInterface
 {
@@ -28,14 +28,4 @@ public:
 	/** IModuleInterface implementation */
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
-
-private:
-	/** 扩展物理资产编辑器工具栏 */
-	void ExtendPhysicsAssetEditorToolbar();
-
-	/** 移除工具栏扩展 */
-	void RemoveToolbarExtension();
-
-	/** 工具栏扩展管理器 */
-	TSharedPtr<class FExtender> ToolbarExtender;
 };

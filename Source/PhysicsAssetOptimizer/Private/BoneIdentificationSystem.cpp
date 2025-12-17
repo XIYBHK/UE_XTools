@@ -123,7 +123,14 @@ TMap<FName, EBoneType> FBoneIdentificationSystem::IdentifyByNaming(const FRefere
 		{
 			Result.Add(BoneName, EBoneType::Face);
 		}
-		// 手臂和腿部需要更复杂的匹配，先跳过
+		else if (MatchesBoneType(BoneNameStr, EBoneType::Arm))
+		{
+			Result.Add(BoneName, EBoneType::Arm);
+		}
+		else if (MatchesBoneType(BoneNameStr, EBoneType::Leg))
+		{
+			Result.Add(BoneName, EBoneType::Leg);
+		}
 	}
 
 	return Result;
@@ -135,8 +142,10 @@ bool FBoneIdentificationSystem::MatchesBoneType(const FString& BoneName, EBoneTy
 	{
 	case EBoneType::Spine:
 		return BoneName.Contains(TEXT("spine")) || BoneName.Contains(TEXT("spn")) ||
-		       BoneName.Contains(TEXT("back")) || BoneName.Contains(TEXT("脊")) ||
-		       BoneName.Contains(TEXT("背"));
+		       BoneName.Contains(TEXT("back")) || BoneName.Contains(TEXT("chest")) ||
+		       BoneName.Contains(TEXT("neck")) || BoneName.Contains(TEXT("脊")) ||
+		       BoneName.Contains(TEXT("背")) || BoneName.Contains(TEXT("胸")) ||
+		       BoneName.Contains(TEXT("颈"));
 
 	case EBoneType::Head:
 		return BoneName.Contains(TEXT("head")) || BoneName.Contains(TEXT("hd")) ||
@@ -145,28 +154,50 @@ bool FBoneIdentificationSystem::MatchesBoneType(const FString& BoneName, EBoneTy
 
 	case EBoneType::Clavicle:
 		return BoneName.Contains(TEXT("clavicle")) || BoneName.Contains(TEXT("clav")) ||
-		       BoneName.Contains(TEXT("collar")) || BoneName.Contains(TEXT("锁骨")) ||
-		       BoneName.Contains(TEXT("肩.*骨根"));
+		       BoneName.Contains(TEXT("collar")) || BoneName.Contains(TEXT("scapula")) ||
+		       BoneName.Contains(TEXT("锁骨")) || BoneName.Contains(TEXT("肩胛"));
 
 	case EBoneType::Pelvis:
+		// 注意：不匹配 "root"，因为 root 通常是整个模型的根骨骼，不是骨盆
 		return BoneName.Contains(TEXT("pelvis")) || BoneName.Contains(TEXT("hip")) ||
-		       BoneName.Contains(TEXT("骨盆")) || BoneName.Contains(TEXT("腰"));
+		       BoneName.Contains(TEXT("骨盆")) || BoneName.Contains(TEXT("腰")) ||
+		       BoneName.Contains(TEXT("髋"));
+
+	case EBoneType::Arm:
+		return (BoneName.Contains(TEXT("arm")) || BoneName.Contains(TEXT("upperarm")) ||
+		        BoneName.Contains(TEXT("lowerarm")) || BoneName.Contains(TEXT("forearm")) ||
+		        BoneName.Contains(TEXT("elbow")) || BoneName.Contains(TEXT("bicep")) ||
+		        BoneName.Contains(TEXT("shoulder")) ||
+		        BoneName.Contains(TEXT("大臂")) || BoneName.Contains(TEXT("小臂")) ||
+		        BoneName.Contains(TEXT("上臂")) || BoneName.Contains(TEXT("前臂"))) &&
+		       !BoneName.Contains(TEXT("hand")) && !BoneName.Contains(TEXT("finger")) &&
+		       !BoneName.Contains(TEXT("scapula")) && !BoneName.Contains(TEXT("clavicle"));
+
+	case EBoneType::Leg:
+		return (BoneName.Contains(TEXT("leg")) || BoneName.Contains(TEXT("thigh")) ||
+		        BoneName.Contains(TEXT("calf")) || BoneName.Contains(TEXT("shin")) ||
+		        BoneName.Contains(TEXT("knee")) || BoneName.Contains(TEXT("大腿")) ||
+		        BoneName.Contains(TEXT("小腿")) || BoneName.Contains(TEXT("膝"))) &&
+		       !BoneName.Contains(TEXT("foot")) && !BoneName.Contains(TEXT("toe"));
 
 	case EBoneType::Hand:
 		return (BoneName.Contains(TEXT("hand")) || BoneName.Contains(TEXT("wrist")) ||
-		        BoneName.Contains(TEXT("手掌")) || BoneName.Contains(TEXT("腕"))) &&
-		       !BoneName.Contains(TEXT("finger"));  // 排除手指
+		        BoneName.Contains(TEXT("手掌")) || BoneName.Contains(TEXT("腕")) ||
+		        BoneName.Contains(TEXT("手"))) &&
+		       !BoneName.Contains(TEXT("finger")) && !BoneName.Contains(TEXT("thumb"));
 
 	case EBoneType::Foot:
 		return (BoneName.Contains(TEXT("foot")) || BoneName.Contains(TEXT("ankle")) ||
-		        BoneName.Contains(TEXT("脚")) || BoneName.Contains(TEXT("踝"))) &&
-		       !BoneName.Contains(TEXT("toe"));  // 排除脚趾
+		        BoneName.Contains(TEXT("脚")) || BoneName.Contains(TEXT("踝")) ||
+		        BoneName.Contains(TEXT("足"))) &&
+		       !BoneName.Contains(TEXT("toe"));
 
 	case EBoneType::Finger:
 		return BoneName.Contains(TEXT("finger")) || BoneName.Contains(TEXT("thumb")) ||
 		       BoneName.Contains(TEXT("index")) || BoneName.Contains(TEXT("middle")) ||
 		       BoneName.Contains(TEXT("ring")) || BoneName.Contains(TEXT("pinky")) ||
-		       BoneName.Contains(TEXT("手指"));
+		       BoneName.Contains(TEXT("手指")) || BoneName.Contains(TEXT("拇")) ||
+		       BoneName.Contains(TEXT("食")) || BoneName.Contains(TEXT("中指"));
 
 	case EBoneType::Tail:
 		return BoneName.Contains(TEXT("tail")) || BoneName.Contains(TEXT("尾")) ||
@@ -176,7 +207,8 @@ bool FBoneIdentificationSystem::MatchesBoneType(const FString& BoneName, EBoneTy
 		return BoneName.Contains(TEXT("face")) || BoneName.Contains(TEXT("jaw")) ||
 		       BoneName.Contains(TEXT("eye")) || BoneName.Contains(TEXT("brow")) ||
 		       BoneName.Contains(TEXT("lip")) || BoneName.Contains(TEXT("cheek")) ||
-		       BoneName.Contains(TEXT("脸")) || BoneName.Contains(TEXT("面"));
+		       BoneName.Contains(TEXT("脸")) || BoneName.Contains(TEXT("面")) ||
+		       BoneName.Contains(TEXT("眼")) || BoneName.Contains(TEXT("嘴"));
 
 	default:
 		return false;
@@ -217,22 +249,49 @@ TMap<FName, EBoneType> FBoneIdentificationSystem::IdentifyByTopology(const FRefe
 		UE_LOG(LogTemp, Verbose, TEXT("[骨骼识别] 头部: %s"), *Skel.GetBoneName(HeadBoneIndex).ToString());
 	}
 
-	// 4. 识别四肢链
+	// 4. 计算骨盆高度（用于区分上下肢）
+	float PelvisHeight = 0.0f;
+	if (SpineChain.Num() > 0)
+	{
+		// 骨盆是脊柱链的第一个骨骼
+		PelvisHeight = GetBoneWorldZ(Skel, SpineChain[0]);
+	}
+
+	// 5. 识别四肢链并区分手臂/腿部
 	TArray<TArray<int32>> LimbChains = IdentifyLimbChains(Skel, SpineChain);
+	
 	for (const TArray<int32>& LimbChain : LimbChains)
 	{
-		if (LimbChain.Num() > 0)
+		if (LimbChain.Num() == 0)
 		{
-			// 暂时标记为 Arm（后续通过几何或命名细化为 Leg）
-			for (int32 BoneIndex : LimbChain)
+			continue;
+		}
+
+		// 使用四肢起点的 Z 坐标判断是手臂还是腿
+		// 高于骨盆的是手臂，低于或等于骨盆的是腿
+		float LimbStartZ = GetBoneWorldZ(Skel, LimbChain[0]);
+		bool bIsArm = (LimbStartZ > PelvisHeight);
+		
+		EBoneType LimbType = bIsArm ? EBoneType::Arm : EBoneType::Leg;
+		EBoneType EndType = bIsArm ? EBoneType::Hand : EBoneType::Foot;
+
+		// 标记四肢骨骼
+		for (int32 i = 0; i < LimbChain.Num(); ++i)
+		{
+			int32 BoneIndex = LimbChain[i];
+			FName BoneName = Skel.GetBoneName(BoneIndex);
+			
+			// 最后一个骨骼是手/脚
+			if (i == LimbChain.Num() - 1)
 			{
-				Result.Add(Skel.GetBoneName(BoneIndex), EBoneType::Arm);
+				Result.Add(BoneName, EndType);
+			}
+			else
+			{
+				Result.Add(BoneName, LimbType);
 			}
 		}
 	}
-
-	// TODO: 5. 尾巴识别（脊柱根反方向）
-	// TODO: 6. 手脚识别（四肢末端）
 
 	UE_LOG(LogTemp, Log, TEXT("[骨骼识别] 拓扑分析: 脊柱链=%d, 四肢链=%d"),
 		SpineChain.Num(), LimbChains.Num());
@@ -424,6 +483,37 @@ bool FBoneIdentificationSystem::IsTerminalBone(
 	int32 BoneIndex)
 {
 	return GetDirectChildren(Skel, BoneIndex).Num() == 0;
+}
+
+float FBoneIdentificationSystem::GetBoneWorldZ(
+	const FReferenceSkeleton& Skel,
+	int32 BoneIndex)
+{
+	if (BoneIndex < 0 || BoneIndex >= Skel.GetNum())
+	{
+		return 0.0f;
+	}
+
+	// 计算骨骼的世界空间位置（累积父骨骼变换）
+	FTransform WorldTransform = FTransform::Identity;
+	int32 CurrentBone = BoneIndex;
+
+	// 从当前骨骼向上遍历到根骨骼，累积变换
+	TArray<int32> BoneChain;
+	while (CurrentBone != INDEX_NONE)
+	{
+		BoneChain.Add(CurrentBone);
+		CurrentBone = Skel.GetParentIndex(CurrentBone);
+	}
+
+	// 从根骨骼向下累积变换
+	for (int32 i = BoneChain.Num() - 1; i >= 0; --i)
+	{
+		const FTransform& LocalTransform = Skel.GetRefBonePose()[BoneChain[i]];
+		WorldTransform = LocalTransform * WorldTransform;
+	}
+
+	return WorldTransform.GetLocation().Z;
 }
 
 #undef LOCTEXT_NAMESPACE
