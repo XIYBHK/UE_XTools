@@ -2,18 +2,14 @@
 
 #pragma region TransformMember
 
-const FVector& UTransformExtensionsLibrary::TLocation(const FTransform& Transform)
+FVector UTransformExtensionsLibrary::TLocation(const FTransform& Transform)
 {
-	static FVector Location;
-	Location = Transform.GetTranslation();
-	return Location;
+	return Transform.GetTranslation();
 }
 
-const FRotator& UTransformExtensionsLibrary::TRotation(const FTransform& Transform)
+FRotator UTransformExtensionsLibrary::TRotation(const FTransform& Transform)
 {
-	static FRotator Rotation;
-	Rotation = Transform.Rotator();
-	return Rotation;
+	return Transform.Rotator();
 }
 
 #pragma endregion

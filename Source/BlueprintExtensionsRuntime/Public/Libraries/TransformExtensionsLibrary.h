@@ -14,10 +14,10 @@ public:
 #pragma region TransformMember
 	
 	UFUNCTION(BlueprintPure, Category = "XTools|Blueprint Extensions|Transform", meta = (DisplayName = "获取位置", CompactNodeTitle = "位置"))
-	static const FVector& TLocation(const FTransform& Transform);
+	static FVector TLocation(const FTransform& Transform);
 
 	UFUNCTION(BlueprintPure, Category = "XTools|Blueprint Extensions|Transform", meta = (DisplayName = "获取旋转", CompactNodeTitle = "旋转"))
-	static const FRotator& TRotation(const FTransform& Transform);
+	static FRotator TRotation(const FTransform& Transform);
 	
 #pragma endregion
 

@@ -57,12 +57,24 @@ void USupportSystemLibrary::StabilizeHeight(
 {
     // 检查输入参数的有效性
     if (!TargetComponent || !WorldContextObject || WorldFulcrumTransform.Num() == 0) return;
+	if (DeltaTime <= KINDA_SMALL_NUMBER || ErrorRange <= KINDA_SMALL_NUMBER)
+	{
+		AveragePressureFactor = 0.0f;
+		AverageImpactNormal = FVector::UpVector;
+		return;
+	}
 
     // 计算每个支点的质量
     const float Mass = TargetComponent->GetMass() / WorldFulcrumTransform.Num();
 
-    // 获取世界对象和碰撞通道
-    UWorld* World = GEngine->GetWorldFromContextObjectChecked(WorldContextObject);
+    // 获取世界对象（蓝图工具函数：避免使用 Checked 版本导致开发期断言崩溃）
+    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+    if (!World)
+    {
+        AveragePressureFactor = 0.0f;
+        AverageImpactNormal = FVector::UpVector;
+        return;
+    }
     ECollisionChannel CollisionChannel = UEngineTypes::ConvertToCollisionChannel(ChannelType);
 
     // 确保LastError和IntegralError的大小与支点数量一致
@@ -143,8 +155,9 @@ void USupportSystemLibrary::StabilizeHeight(
             float Error = FVector::DotProduct(HitResult.ImpactPoint - StableLocation, FVector(0.0f, 0.0f, 1.0f));
             Error = FMath::Clamp(Error, -ErrorRange, ErrorRange);
 
-            // 计算NormalFactor
-            float Angle = FMath::Acos(FVector::DotProduct(FulcrumTransform.GetUnitAxis(EAxis::Z), AverageImpactNormal));
+             // 计算NormalFactor
+            const float Dot = FMath::Clamp(FVector::DotProduct(FulcrumTransform.GetUnitAxis(EAxis::Z), AverageImpactNormal), -1.0f, 1.0f);
+            float Angle = FMath::Acos(Dot);
             float NormalFactor = FMath::Clamp(1.0f - (Angle / (PI / 4.0f)), 0.0f, 1.0f);
 
             // 绘制StableLocation到ImpactPoint的向量

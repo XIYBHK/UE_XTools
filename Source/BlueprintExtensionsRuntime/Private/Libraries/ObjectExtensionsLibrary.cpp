@@ -28,6 +28,11 @@
 
 	void UObjectExtensionsLibrary::ClearObject(UObject* Object)
 	{
+		if (!IsValid(Object))
+		{
+			return;
+		}
+
 		UObject* DefaultObject = Object->GetClass()->GetDefaultObject();
 		if (DefaultObject != nullptr)
 		{

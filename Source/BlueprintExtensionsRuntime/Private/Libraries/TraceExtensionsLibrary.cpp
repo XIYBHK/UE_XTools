@@ -155,7 +155,7 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
     {
         if (!WorldContextObject) return;
 
-        UWorld* World = GEngine->GetWorldFromContextObjectChecked(WorldContextObject);
+        UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
         if (!World) return;
 
         // 设置碰撞查询参数
@@ -290,7 +290,7 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
     {
         if (!WorldContextObject) return;
 
-        UWorld* World = GEngine->GetWorldFromContextObjectChecked(WorldContextObject);
+        UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
         if (!World) return;
 
         // 设置碰撞查询参数
@@ -364,7 +364,7 @@ void UTraceExtensionsLibrary::TraceSphereChannel(
 {
     if (!WorldContextObject) return;
 
-    UWorld* World = GEngine->GetWorldFromContextObjectChecked(WorldContextObject);
+    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
     if (!World) return;
 
     // 设置碰撞查询参数
@@ -431,7 +431,7 @@ void UTraceExtensionsLibrary::TraceSphereObject(
 {
     if (!WorldContextObject) return;
 
-    UWorld* World = GEngine->GetWorldFromContextObjectChecked(WorldContextObject);
+    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
     if (!World) return;
 
     // 设置碰撞查询参数

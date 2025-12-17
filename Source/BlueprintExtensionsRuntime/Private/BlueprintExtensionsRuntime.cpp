@@ -21,5 +21,5 @@ void FBlueprintExtensionsRuntimeModule::ShutdownModule()
 
 #undef LOCTEXT_NAMESPACE
 
-IMPLEMENT_MODULE(FBlueprintExtensionsRuntimeModule, BlueprintExtensionsRuntime)
+IMPLEMENT_MODULE(FBlueprintExtensionsRuntimeModule, BlueprintExtensionsRuntime);
 

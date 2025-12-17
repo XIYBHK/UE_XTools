@@ -13,6 +13,11 @@ float UMathExtensionsLibrary::StableFrame(float DeltaTime, const TArray<float>& 
 	const float MaxDeviation = 1.0f;
 	const int32 MaxHistorySize = 5;
 
+	if (DeltaTime <= KINDA_SMALL_NUMBER)
+	{
+		return DeltaTime;
+	}
+
 	if (PastDeltaTime.Num() == 0)
 	{
 		return DeltaTime;
@@ -20,9 +25,18 @@ float UMathExtensionsLibrary::StableFrame(float DeltaTime, const TArray<float>& 
 
 	float Frame = 1.0f / DeltaTime;
 	TArray<float> PastFrames;
+	PastFrames.Reserve(PastDeltaTime.Num());
 	for (float PastTime : PastDeltaTime)
 	{
-		PastFrames.Add(1.0f / PastTime);
+		if (PastTime > KINDA_SMALL_NUMBER)
+		{
+			PastFrames.Add(1.0f / PastTime);
+		}
+	}
+
+	if (PastFrames.Num() == 0)
+	{
+		return DeltaTime;
 	}
 
 	float Sum = 0.0f;
