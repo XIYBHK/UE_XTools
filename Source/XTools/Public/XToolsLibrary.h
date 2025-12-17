@@ -29,7 +29,7 @@ enum class EXToolsSamplingMethod : uint8
 	/** [待实现] 对模型的内部进行完整的实体填充采样，会填满所有内部空间。*/
 	Voxelize			UMETA(DisplayName = "实体填充采样 (待实现)"),
 
-	/** UE原生表面采样：使用FMeshSurfacePointSampling直接在网格表面生成泊松分布的点。性能极高，点分布均匀，自带法线方向。⚠️ 仅在编辑器中可用（依赖MeshDescription）。*/
+	/** UE 原生表面采样：使用 FMeshSurfacePointSampling 直接在网格表面生成泊松分布的点。性能高、分布均匀、自带法线方向。注意：仅在编辑器中可用（依赖 MeshDescription）。*/
 	NativeSurface		UMETA(DisplayName = "原生表面采样 (仅编辑器)")
 };
 
@@ -193,14 +193,13 @@ public:
      */
     UFUNCTION(BlueprintPure, Category = "XTools|Bezier", 
         meta = (DisplayName = "计算贝塞尔曲线点", 
-               WorldContext="Context",
-               Duration = 0.03))
-    static FVector CalculateBezierPoint(const UObject* Context,UPARAM(ref) const TArray<FVector>& Points, 
-                                      float Progress, 
-                                      bool bShowDebug, 
-                                      float Duration = 0.03, 
-                                      FBezierDebugColors DebugColors = FBezierDebugColors(),
-                                      FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
+               WorldContext="Context"))
+    static FVector CalculateBezierPoint(const UObject* Context, UPARAM(ref) const TArray<FVector>& Points, 
+                                       float Progress, 
+                                       bool bShowDebug, 
+                                       float Duration = 0.03, 
+                                       FBezierDebugColors DebugColors = FBezierDebugColors(),
+                                       FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
 
     /**
      * 测试PRD算法的分布情况。

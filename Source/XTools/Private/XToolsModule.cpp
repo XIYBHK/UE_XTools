@@ -15,5 +15,5 @@ void FXToolsModule::ShutdownModule()
 }
 
 #undef LOCTEXT_NAMESPACE
-    
-IMPLEMENT_MODULE(FXToolsModule, XTools)
+     
+IMPLEMENT_MODULE(FXToolsModule, XTools);

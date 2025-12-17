@@ -67,6 +67,11 @@ public class XTools : ModuleRules
 		//  UE5.3+ C++20 标准配置
 		CppStandard = CppStandardVersion.Default;
 
+		// 源文件包含中文/Unicode 字符时，Windows 下需要显式启用 UTF-8 源码解析，避免日志/显示名乱码。
+		// 说明：XTools 工程历史文件为 UTF-8（无 BOM），在非中文系统区域设置下若未启用 /utf-8，MSVC 可能按 ACP 解析导致乱码。
+		// 注意：UE5.3+ 使用 bUseDefaultCompilerArguments 或直接在 Target.cs 中配置
+		bEnableUndefinedIdentifierWarnings = false;
+
 		//  IWYU 强制执行 - 提升编译速度和代码质量 (UE5.2+)
 		IWYUSupport = IWYUSupport.Full;
 

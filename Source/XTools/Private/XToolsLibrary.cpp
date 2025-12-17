@@ -122,25 +122,99 @@ struct FGridParameters
 };
 
 //  智能缓存系统
+namespace XToolsGridParametersCacheKey
+{
+	// 与旧实现的 0.001f NearlyEqual 容差对齐，保证缓存键在小抖动下稳定。
+	static constexpr double QuantizeStep = 1e-3;
+
+	static int64 QuantizeFloat(const float Value)
+	{
+		return FMath::RoundToInt64(static_cast<double>(Value) / QuantizeStep);
+	}
+
+	static void QuantizeVector(const FVector& Vec, int64& OutX, int64& OutY, int64& OutZ)
+	{
+		OutX = QuantizeFloat(Vec.X);
+		OutY = QuantizeFloat(Vec.Y);
+		OutZ = QuantizeFloat(Vec.Z);
+	}
+}
+
 struct FGridParametersKey
 {
-    FVector BoxExtent;
-    FTransform BoxTransform;
-    float GridSpacing;
+	int64 ExtentXQ = 0;
+	int64 ExtentYQ = 0;
+	int64 ExtentZQ = 0;
+
+	int64 LocationXQ = 0;
+	int64 LocationYQ = 0;
+	int64 LocationZQ = 0;
+
+	int64 RotationXQ = 0;
+	int64 RotationYQ = 0;
+	int64 RotationZQ = 0;
+	int64 RotationWQ = 0;
+
+	int64 ScaleXQ = 0;
+	int64 ScaleYQ = 0;
+	int64 ScaleZQ = 0;
+
+	int64 GridSpacingQ = 0;
+
+	static FGridParametersKey Make(const FVector& BoxExtent, const FTransform& BoxTransform, const float GridSpacing)
+	{
+		FGridParametersKey Key;
+
+		XToolsGridParametersCacheKey::QuantizeVector(BoxExtent, Key.ExtentXQ, Key.ExtentYQ, Key.ExtentZQ);
+		XToolsGridParametersCacheKey::QuantizeVector(BoxTransform.GetLocation(), Key.LocationXQ, Key.LocationYQ, Key.LocationZQ);
+		XToolsGridParametersCacheKey::QuantizeVector(BoxTransform.GetScale3D(), Key.ScaleXQ, Key.ScaleYQ, Key.ScaleZQ);
+
+		const FQuat Rotation = BoxTransform.GetRotation().GetNormalized();
+		Key.RotationXQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.X);
+		Key.RotationYQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.Y);
+		Key.RotationZQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.Z);
+		Key.RotationWQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.W);
+
+		Key.GridSpacingQ = XToolsGridParametersCacheKey::QuantizeFloat(GridSpacing);
+		return Key;
+	}
 
     bool operator==(const FGridParametersKey& Other) const
     {
-        return BoxExtent.Equals(Other.BoxExtent, 0.001f) &&
-               BoxTransform.Equals(Other.BoxTransform, 0.001f) &&
-               FMath::IsNearlyEqual(GridSpacing, Other.GridSpacing, 0.001f);
+		return ExtentXQ == Other.ExtentXQ &&
+			ExtentYQ == Other.ExtentYQ &&
+			ExtentZQ == Other.ExtentZQ &&
+			LocationXQ == Other.LocationXQ &&
+			LocationYQ == Other.LocationYQ &&
+			LocationZQ == Other.LocationZQ &&
+			RotationXQ == Other.RotationXQ &&
+			RotationYQ == Other.RotationYQ &&
+			RotationZQ == Other.RotationZQ &&
+			RotationWQ == Other.RotationWQ &&
+			ScaleXQ == Other.ScaleXQ &&
+			ScaleYQ == Other.ScaleYQ &&
+			ScaleZQ == Other.ScaleZQ &&
+			GridSpacingQ == Other.GridSpacingQ;
     }
 
     friend uint32 GetTypeHash(const FGridParametersKey& Key)
     {
-        return HashCombine(
-            HashCombine(GetTypeHash(Key.BoxExtent), GetTypeHash(Key.BoxTransform.GetLocation())),
-            GetTypeHash(Key.GridSpacing)
-        );
+		uint32 Hash = 0;
+		Hash = HashCombine(Hash, GetTypeHash(Key.ExtentXQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.ExtentYQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.ExtentZQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.LocationXQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.LocationYQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.LocationZQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.RotationXQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.RotationYQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.RotationZQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.RotationWQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.ScaleXQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.ScaleYQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.ScaleZQ));
+		Hash = HashCombine(Hash, GetTypeHash(Key.GridSpacingQ));
+		return Hash;
     }
 };
 
@@ -350,6 +424,7 @@ FVector UXToolsLibrary::EvaluateBezierConstantSpeed(
     {
         AdjustedProgress = SpeedOptions.SpeedCurve->GetFloatValue(AdjustedProgress);
     }
+    AdjustedProgress = FMath::Clamp(AdjustedProgress, 0.0f, 1.0f);
 
     const int32 Segments = 100;
     TArray<float> SegmentLengths;
@@ -447,6 +522,14 @@ void UXToolsLibrary::DrawBezierDebug(
 
 FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray<FVector>& Points, float Progress, bool bShowDebug, float Duration, FBezierDebugColors DebugColors, FBezierSpeedOptions SpeedOptions)
 {
+    if (!GEngine)
+    {
+        FXToolsErrorReporter::Error(LogXTools,
+            TEXT("CalculateBezierPoint: GEngine为空，引擎未正确初始化"),
+            TEXT("CalculateBezierPoint"));
+        return FVector::ZeroVector;
+    }
+
     UWorld* World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
     if (!World)
     {
@@ -860,11 +943,11 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
 //  支持缓存的网格参数计算
 static FGridParameters CalculateGridParameters(UBoxComponent* BoundingBox, float GridSpacing)
 {
-    //  创建缓存键
-    FGridParametersKey CacheKey;
-    CacheKey.BoxExtent = BoundingBox->GetScaledBoxExtent();
-    CacheKey.BoxTransform = BoundingBox->GetComponentTransform();
-    CacheKey.GridSpacing = GridSpacing;
+    //  创建缓存键（注意：Hash/Equals 必须一致，否则会导致 TMap 命中/冲突异常）
+    const FGridParametersKey CacheKey = FGridParametersKey::Make(
+        BoundingBox->GetScaledBoxExtent(),
+        BoundingBox->GetComponentTransform(),
+        GridSpacing);
 
     //  尝试从缓存获取
     FGridParametersCache& Cache = FGridParametersCache::Get();
@@ -1025,8 +1108,11 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
         }
         ActorsToIgnore = UniqueActors.Array();
         
-        UE_LOG(LogXTools, Log, TEXT("[采样诊断] 局部空间查询: 采样区域内发现 %d 个其他Actor（已排除目标Actor）"), 
-            ActorsToIgnore.Num());
+        if (bEnableDebugDraw)
+        {
+            UE_LOG(LogXTools, Verbose, TEXT("[采样诊断] 局部空间查询: 采样区域内发现 %d 个其他Actor（已排除目标Actor）"),
+                ActorsToIgnore.Num());
+        }
     }
     
     // 忽略自身：将BoundingBox所属的Actor加入忽略列表（参考UE官方ConfigureCollisionParams实现）
@@ -1036,8 +1122,11 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
         if (SelfActor && SelfActor != TargetActor)
         {
             ActorsToIgnore.AddUnique(SelfActor);
-            UE_LOG(LogXTools, Log, TEXT("[采样诊断] 忽略自身: 已将BoundingBox所属Actor '%s' 加入忽略列表"), 
-                *SelfActor->GetName());
+            if (bEnableDebugDraw)
+            {
+                UE_LOG(LogXTools, Verbose, TEXT("[采样诊断] 忽略自身: 已将BoundingBox所属Actor '%s' 加入忽略列表"),
+                    *SelfActor->GetName());
+            }
         }
     }
     
@@ -1135,9 +1224,9 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
                     const bool bValidHit = bActorMatch && bComponentMatch;
                     
                     // 诊断日志：简化输出（仅前3个点）
-                    if (DiagnosticLogCount < 3)
+                    if (bEnableDebugDraw && DiagnosticLogCount < 3)
                     {
-                        UE_LOG(LogXTools, Log, TEXT("[采样诊断] 点%d: 命中Actor=%s, 命中组件=%s, 结果=%s"), 
+                        UE_LOG(LogXTools, Verbose, TEXT("[采样诊断] 点%d: 命中Actor=%s, 命中组件=%s, 结果=%s"), 
                             DiagnosticLogCount + 1,
                             HitActor ? *HitActor->GetName() : TEXT("NULL"),
                             HitComponent ? *HitComponent->GetName() : TEXT("NULL"),
@@ -1166,15 +1255,15 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
     }
 
     // 诊断总结：如果有大量命中但验证失败的情况，输出性能提示
-    if (HitButNotMatchCount > TotalPointsChecked * 0.5f) // 超过50%的检测点命中了其他对象
+    if (bEnableDebugDraw && HitButNotMatchCount > TotalPointsChecked * 0.5f) // 超过50%的检测点命中了其他对象
     {
         UE_LOG(LogXTools, Warning, TEXT("[采样诊断] 发现 %d 个检测点（%.1f%%）命中了非目标对象，这会影响性能。建议：1.目标mesh设置为独特的对象类型（避免与场景中大量对象相同） 2.减小采样范围（BoundingBox）以避开其他对象"), 
             HitButNotMatchCount, 
             (float)HitButNotMatchCount / TotalPointsChecked * 100.0f);
     }
-    else if (HitButNotMatchCount > 0)
+    else if (bEnableDebugDraw && HitButNotMatchCount > 0)
     {
-        UE_LOG(LogXTools, Log, TEXT("[采样诊断] 过滤了 %d 个非目标对象的命中（%.1f%%），性能影响较小"), 
+        UE_LOG(LogXTools, Verbose, TEXT("[采样诊断] 过滤了 %d 个非目标对象的命中（%.1f%%），性能影响较小"), 
             HitButNotMatchCount,
             (float)HitButNotMatchCount / TotalPointsChecked * 100.0f);
     }
@@ -1228,14 +1317,16 @@ static FXToolsSamplingResult SamplePointsInternal(
     };
     
     // 诊断日志：输出碰撞类型信息（显示为名称便于理解）
-    // 碰撞通道名称（例如：ECC_WorldDynamic）
-    const FString CollisionChannelName = UEnum::GetValueAsString(CollisionChannel);
-    
-    // 对象类型查询实际对应的碰撞通道名称（更直观）
-    // 直接显示碰撞通道，因为对象类型查询本质上就是从碰撞通道转换而来
-    UE_LOG(LogXTools, Log, TEXT("[采样诊断] 目标组件: %s, 碰撞通道: %s"), 
-        *TargetMeshComponent->GetName(), 
-        *CollisionChannelName);
+    if (bEnableDebugDraw)
+    {
+        // 碰撞通道名称（例如：ECC_WorldDynamic）
+        const FString CollisionChannelName = UEnum::GetValueAsString(CollisionChannel);
+
+        // 直接显示碰撞通道，因为对象类型查询本质上就是从碰撞通道转换而来
+        UE_LOG(LogXTools, Verbose, TEXT("[采样诊断] 目标组件: %s, 碰撞通道: %s"),
+            *TargetMeshComponent->GetName(),
+            *CollisionChannelName);
+    }
     
     const EDrawDebugTrace::Type DebugDrawType = (bEnableDebugDraw && !bDrawOnlySuccessfulHits) ? 
         EDrawDebugTrace::ForDuration : EDrawDebugTrace::None;

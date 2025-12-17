@@ -10,6 +10,9 @@
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "HAL/PlatformTime.h"
+#include "Misc/App.h"
+#include "Modules/ModuleManager.h"
 #include "Engine/Blueprint.h"
 #include "K2Node_FunctionEntry.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -29,14 +32,14 @@ UBlueprint* UXBlueprintLibraryCleanupTool::GetBlueprintFromAssetData(const FAsse
     UObject* ExistingAsset = FindObject<UBlueprint>(nullptr, *AssetData.GetObjectPathString());
     if (ExistingAsset)
     {
-        UE_LOG(LogXTools, Log, TEXT("   从内存中找到蓝图: %s"), *AssetData.AssetName.ToString());
+        UE_LOG(LogXTools, Verbose, TEXT("   从内存中找到蓝图: %s"), *AssetData.AssetName.ToString());
         return Cast<UBlueprint>(ExistingAsset);
     }
     
     // 2. 尝试FastGetAsset（不强制加载）
     if (UObject* FastAsset = AssetData.FastGetAsset(false))
     {
-        UE_LOG(LogXTools, Log, TEXT("   通过FastGetAsset获取: %s"), *AssetData.AssetName.ToString());
+        UE_LOG(LogXTools, Verbose, TEXT("   通过FastGetAsset获取: %s"), *AssetData.AssetName.ToString());
         return Cast<UBlueprint>(FastAsset);
     }
     
@@ -469,50 +472,25 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
                             }
                         }
                         
-                        if (UserPinToRemove.IsValid())
-                        {
-                            try 
+                         if (UserPinToRemove.IsValid())
+                         {
+                            // UE 默认禁用 C++ 异常（bEnableExceptions=false）；这里不使用 try/catch。
+                            // 如果出现异常情况，通常会以 ensure/check 或无效指针导致的崩溃形式表现，try/catch 也无法可靠拦截。
+                            EntryNode->RemoveUserDefinedPin(UserPinToRemove);
+                            bRemoveSuccess = true;
+                         }
+                         else
+                         {
+                             // 如果不是用户定义引脚，尝试普通移除
+                            EntryNode->RemovePin(PinToRemove);
+                            bRemoveSuccess = true;
+                            
+                            if (bLogToConsole)
                             {
-                                // 移除用户定义引脚
-                                EntryNode->RemoveUserDefinedPin(UserPinToRemove);
-                                bRemoveSuccess = true;
-                                
-                                // 移除成功，记录日志在下面统一处理
+                                UE_LOG(LogXTools, Warning, TEXT("   通过普通方式移除: %s::%s"), 
+                                       *Result.FunctionName, *Result.PinName);
                             }
-                            catch (...)
-                            {
-                                if (bLogToConsole)
-                                {
-                                    FXToolsErrorReporter::Error(LogXTools,
-                                        FString::Printf(TEXT("移除用户定义引脚时发生异常: %s::%s"), *Result.FunctionName, *Result.PinName),
-                                        TEXT("ExecuteCleanupWorldContextParams"));
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // 如果不是用户定义引脚，尝试普通移除
-                            try
-                            {
-                                EntryNode->RemovePin(PinToRemove);
-                                bRemoveSuccess = true;
-                                
-                                if (bLogToConsole)
-                                {
-                                    UE_LOG(LogXTools, Warning, TEXT("   通过普通方式移除: %s::%s"), 
-                                           *Result.FunctionName, *Result.PinName);
-                                }
-                            }
-                            catch (...)
-                            {
-                                if (bLogToConsole)
-                                {
-                                    FXToolsErrorReporter::Error(LogXTools,
-                                        FString::Printf(TEXT("移除引脚时发生异常: %s::%s"), *Result.FunctionName, *Result.PinName),
-                                        TEXT("ExecuteCleanupWorldContextParams"));
-                                }
-                            }
-                        }
+                         }
                         
                         // 3. 重构节点以更新界面
                         if (bRemoveSuccess)
@@ -555,49 +533,38 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
         }
         
         // 如果蓝图被修改，重新编译并保存
-        if (bBlueprintModified)
-        {
-            // 更安全的编译方式
-            try
-            {
-                // 1. 先刷新节点
-                FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
-                
-                // 2. 重新编译蓝图
-                FKismetEditorUtilities::CompileBlueprint(Blueprint);
-                
-                // 3. 检查编译结果
-                if (Blueprint->Status == BS_Error)
-                {
-                    if (bLogToConsole)
-                    {
-                        FXToolsErrorReporter::Error(LogXTools,
-                            FString::Printf(TEXT("蓝图编译失败: %s"), *Blueprint->GetName()),
-                            TEXT("ExecuteCleanupWorldContextParams"));
-                    }
-                }
-                else
-                {
-                    // 4. 标记为已修改
-                    Blueprint->MarkPackageDirty();
-                    
-                    if (bLogToConsole)
-                    {
-                        UE_LOG(LogXTools, Warning, TEXT("   已重新编译蓝图"));
-                    }
-                }
-            }
-            catch (...)
+         if (bBlueprintModified)
+         {
+             // 更安全的编译方式
+            // UE 默认禁用 C++ 异常；这里不使用 try/catch。
+            // 1. 先刷新节点
+            FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+            
+            // 2. 重新编译蓝图
+            FKismetEditorUtilities::CompileBlueprint(Blueprint);
+            
+            // 3. 检查编译结果
+            if (Blueprint->Status == BS_Error)
             {
                 if (bLogToConsole)
                 {
                     FXToolsErrorReporter::Error(LogXTools,
-                        FString::Printf(TEXT("蓝图编译过程中发生异常: %s"), *Blueprint->GetName()),
+                        FString::Printf(TEXT("蓝图编译失败: %s"), *Blueprint->GetName()),
                         TEXT("ExecuteCleanupWorldContextParams"));
                 }
             }
-        }
-    }
+            else
+            {
+                // 4. 标记为已修改
+                Blueprint->MarkPackageDirty();
+                
+                if (bLogToConsole)
+                {
+                    UE_LOG(LogXTools, Warning, TEXT("   已重新编译蓝图"));
+                }
+            }
+         }
+     }
     
     if (bLogToConsole)
     {
