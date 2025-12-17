@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.2），提供蓝图节点和 C++ 功能库。插件采用多模块架构（20个模块），每个模块独立编译和打包。
+XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.3），提供蓝图节点和 C++ 功能库。插件采用多模块架构（20个模块），每个模块独立编译和打包。
 
 **核心设计原则**：
 - 单一职责原则：每个模块专注于一个特定功能领域
@@ -294,7 +294,7 @@ XTools|Blueprint Extensions|Loops/Array/Map/Variable/Math/Features
    ```cpp
    #define XTOOLS_VERSION_MAJOR 1
    #define XTOOLS_VERSION_MINOR 9
-   #define XTOOLS_VERSION_PATCH 1
+   #define XTOOLS_VERSION_PATCH 3
    ```
 
 **使用方法**：
@@ -426,7 +426,7 @@ TRACE_CPUPROFILER_EVENT_SCOPE(FunctionName);
 // 编译时定义 ECF_INSIGHTS_ENABLED=1
 ```
 
-## 重要新增功能（v1.9.0-v1.9.2）
+## 重要新增功能（v1.9.0-v1.9.3）
 
 ### FieldSystemExtensions 模块
 全新模块，增强 UE 的 Chaos Field System（物理场系统）：
@@ -505,7 +505,7 @@ TRACE_CPUPROFILER_EVENT_SCOPE(FunctionName);
 项目包含完整的文档系统（`Docs/` 目录）：
 
 ### 版本变更
-- `CHANGELOG.md`: 完整版本历史（v1.9.0-v1.9.2）
+- `CHANGELOG.md`: 完整版本历史（v1.9.0-v1.9.3）
 - `UNRELEASED.md`: 未发布更新
 - `BLUEPRINT_NODES.md`: 蓝图节点速查表
 

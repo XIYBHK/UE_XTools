@@ -3,7 +3,7 @@
 [![UE Version](https://img.shields.io/badge/UE-5.3--5.7-blue.svg)](https://www.unrealengine.com/)
 [![License](https://img.shields.io/badge/License-Internal-red.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-1.9.2-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
+[![Version](https://img.shields.io/badge/Version-1.9.3-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
 
 XTools 是一个为 Unreal Engine 5.3+ 设计的模块化工具插件，提供丰富的蓝图节点和 C++ 功能库，显著提升开发效率。
 
@@ -124,6 +124,9 @@ USortLibrary::SortActorArrayByDistance(ActorArray, CenterLocation);
 ```
 
 ## 📈 版本历史
+
+### v1.9.3 (2025-12-15)
+- 详见更新日志：`Docs/版本变更/CHANGELOG.md`
 
 ### v1.9.2 (2025-11-17)
 - 修复手动重命名保护机制和数字后缀规范化

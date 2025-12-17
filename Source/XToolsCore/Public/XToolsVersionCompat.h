@@ -263,16 +263,19 @@ namespace XToolsVersionCompat
  * @param Prop FProperty指针
  * @param Size 新的元素大小
  */
-#define XTOOLS_SET_ELEMENT_SIZE(Prop, Size) \
-    do { \
-        if (XTOOLS_ENGINE_5_5_OR_LATER) \
-        { \
-            (Prop)->SetElementSize(Size); \
-        } \
-        else \
-        { \
-            (Prop)->ElementSize = Size; \
-        } \
-    } while (0)
+#if XTOOLS_ENGINE_5_5_OR_LATER
+	// UE 5.5+: ElementSize 被弃用，且 SetElementSize 可能为受保护成员。
+	// 若在你的上下文中 SetElementSize 不可访问，请避免在插件代码中设置 FProperty 元素大小（通常属于引擎/UHT 内部行为）。
+	#define XTOOLS_SET_ELEMENT_SIZE(Prop, Size) \
+		do { \
+			(Prop)->SetElementSize(Size); \
+		} while (0)
+#else
+	// UE 5.3-5.4: 直接访问 ElementSize
+	#define XTOOLS_SET_ELEMENT_SIZE(Prop, Size) \
+		do { \
+			(Prop)->ElementSize = (Size); \
+		} while (0)
+#endif
 #define XTOOLS_ATOMIC_EXCHANGE(AtomicVar, Value) XToolsVersionCompat::AtomicExchange(AtomicVar, Value)
 #define XTOOLS_ATOMIC_COMPARE_EXCHANGE(AtomicVar, Expected, Desired) XToolsVersionCompat::AtomicCompareExchange(AtomicVar, Expected, Desired)

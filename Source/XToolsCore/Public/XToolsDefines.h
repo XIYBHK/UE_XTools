@@ -5,10 +5,16 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
+
+// XToolsCore 的日志类别在 XToolsCore.cpp 中定义，这里做前向声明以保证本头文件自洽。
+//（允许重复声明 extern）
+DECLARE_LOG_CATEGORY_EXTERN(LogXToolsCore, Log, All);
+
 // Plugin version
 #define XTOOLS_VERSION_MAJOR 1
 #define XTOOLS_VERSION_MINOR 9
-#define XTOOLS_VERSION_PATCH 2
+#define XTOOLS_VERSION_PATCH 3
 
 // Debugging
 #if !UE_BUILD_SHIPPING
