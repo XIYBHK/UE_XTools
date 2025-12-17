@@ -10,7 +10,6 @@
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "PhysicsProxy/GeometryCollectionPhysicsProxy.h"
 #include "PBDRigidsSolver.h"
-#include "ChaosSolversModule.h"
 
 AXFieldSystemActor::AXFieldSystemActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -264,8 +263,8 @@ void AXFieldSystemActor::CollectGeometryCollections()
 		UGeometryCollectionComponent* GC = Actor->FindComponentByClass<UGeometryCollectionComponent>();
 		if (GC)
 		{
-			CachedGeometryCollections.Add(GC);
-			UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Cached GeometryCollection from '%s'"), 
+			CachedGeometryCollections.AddUnique(GC);
+			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Cached GeometryCollection from '%s'"), 
 				*Actor->GetName());
 		}
 	}
@@ -301,11 +300,10 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 	FFieldSystemCommand Command = FFieldObjectCommands::CreateFieldCommand(Target, Field, MetaData);
 
 	int32 AppliedCount = 0;
-	FChaosSolversModule* ChaosModule = FChaosSolversModule::GetModule();
 	
 	for (UGeometryCollectionComponent* GC : CachedGeometryCollections)
 	{
-		if (!GC || !GC->IsValidLowLevel())
+		if (!IsValid(GC))
 		{
 			continue;
 		}
@@ -359,7 +357,7 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 
 	for (UGeometryCollectionComponent* GC : CachedGeometryCollections)
 	{
-		if (!GC || !GC->IsValidLowLevel())
+		if (!IsValid(GC))
 		{
 			continue;
 		}
@@ -374,8 +372,9 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 		GC->InitializationFields.Add(this);
 		RegisteredCount++;
 
-		UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Registered to GeometryCollection '%s'"), 
-			*GC->GetOwner()->GetName());
+		const AActor* OwnerActor = GC->GetOwner();
+		UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Registered to GeometryCollection '%s'"),
+			OwnerActor ? *OwnerActor->GetName() : TEXT("<NoOwner>"));
 	}
 
 	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Registered to %d/%d GeometryCollections"), 
@@ -411,7 +410,7 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 	// 遍历每个GC
 	for (UGeometryCollectionComponent* GC : CachedGeometryCollections)
 	{
-		if (!GC || !GC->IsValidLowLevel())
+		if (!IsValid(GC))
 		{
 			continue;
 		}
@@ -556,8 +555,8 @@ void AXFieldSystemActor::OnActorSpawned(AActor* SpawnedActor)
 		UGeometryCollectionComponent* GC = SpawnedActor->FindComponentByClass<UGeometryCollectionComponent>();
 		if (GC)
 		{
-			CachedGeometryCollections.Add(GC);
-			UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Added spawned GeometryCollection from '%s'"), 
+			CachedGeometryCollections.AddUnique(GC);
+			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Added spawned GeometryCollection from '%s'"), 
 				*SpawnedActor->GetName());
 		}
 	}
@@ -588,7 +587,7 @@ void AXFieldSystemActor::DisableFieldResponseForActor(AActor* Actor)
 			// 参数：bSimulate=false, bMaintainPhysicsBlending=false, bUpdatePhysicsProperties=true
 			BodyInstance->SetInstanceSimulatePhysics(false, false, true);
 			
-			UE_LOG(LogFieldSystemExtensions, Log, TEXT("  ✓ Set kinematic for '%s' (Field response blocked, collision retained)"), 
+			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("  - Set kinematic for '%s' (Field response blocked, collision retained)"), 
 				*Primitive->GetName());
 		}
 		else
@@ -597,7 +596,7 @@ void AXFieldSystemActor::DisableFieldResponseForActor(AActor* Actor)
 			Primitive->SetSimulatePhysics(false);
 			Primitive->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			
-			UE_LOG(LogFieldSystemExtensions, Log, TEXT("  ✓ Disabled physics for '%s' (fallback method)"), 
+			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("  - Disabled physics for '%s' (fallback method)"), 
 				*Primitive->GetName());
 		}
 	}
