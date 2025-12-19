@@ -105,7 +105,12 @@ void FPhysicsOptimizerCore::RebuildPhysicsBodies(
 
 	// 使用 UE 官方 API 计算每个骨骼的顶点信息
 	TArray<FBoneVertInfo> BoneVertInfos;
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+	// UE 5.7+ 新增 SourceLodIndex 参数
+	FMeshUtilitiesEngine::CalcBoneVertInfos(Mesh, BoneVertInfos, false, 0);
+#else
 	FMeshUtilitiesEngine::CalcBoneVertInfos(Mesh, BoneVertInfos, false);
+#endif
 	
 	UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] 计算了 %d 个骨骼的顶点信息"), BoneVertInfos.Num());
 
