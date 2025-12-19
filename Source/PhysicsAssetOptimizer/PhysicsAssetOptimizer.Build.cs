@@ -16,8 +16,10 @@ public class PhysicsAssetOptimizer : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"UnrealEd",           // FPhysicsAssetUtils
-			"PhysicsUtilities",   // ⭐ LSV 支持（LevelSetHelpers）
+			"UnrealEd",              // FPhysicsAssetUtils
+			"PhysicsUtilities",      // CreateCollisionFromBone
+			"MeshUtilitiesCommon",   // FBoneVertInfo
+			"MeshUtilitiesEngine",   // CalcBoneVertInfos
 			"Slate",
 			"SlateCore",
 			"InputCore"

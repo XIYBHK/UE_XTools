@@ -10,6 +10,7 @@
 
 class UPhysicsAsset;
 class USkeletalMesh;
+struct FBoneVertInfo;
 
 /**
  * 物理资产优化核心
@@ -46,16 +47,24 @@ private:
 		const FPhysicsOptimizerSettings& Settings
 	);
 
-	/** 为单个骨骼创建物理形体 */
-	static void CreateBodyForBone(
+	/** 使用 UE 官方 API 为单个骨骼创建物理形体 */
+	static bool CreateBodyForBoneUsingUEAPI(
 		UPhysicsAsset* PA,
 		USkeletalMesh* Mesh,
 		const FName& BoneName,
-		EBoneType BoneType
+		EBoneType BoneType,
+		EPhysicsShapeType ShapeType,
+		const FBoneVertInfo& VertInfo
 	);
 
-	/** 计算骨骼影响顶点的包围盒 */
-	static bool CalculateBoneBounds(USkeletalMesh* Mesh, int32 BoneIndex, FVector& OutSize, FVector& OutCenter);
+	/** 创建回退形状（当官方 API 失败时） */
+	static void CreateFallbackShape(
+		UBodySetup* BodySetup,
+		EPhysicsShapeType ShapeType,
+		float BoneLength
+	);
+
+
 
 	/** 计算骨骼长度（回退方案） */
 	static float GetBoneLength(const FReferenceSkeleton& RefSkel, int32 BoneIndex);

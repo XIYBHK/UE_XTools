@@ -13,18 +13,11 @@
 #include "PhysicsEngine/ConstraintInstance.h"
 #include "PhysicsEngine/PhysicsConstraintTemplate.h"
 #include "Rendering/SkeletalMeshRenderData.h"
+#include "MeshUtilitiesCommon.h"
+#include "MeshUtilitiesEngine.h"
 
 // 性能分析
 #include "ProfilingDebugging/ScopedTimers.h"
-
-// LSV 生成（来自 PhysicsUtilities Private 目录）
-// 注意：这是内部 API，未来版本可能变更
-#if WITH_EDITOR
-	// LevelSetHelpers 在 Developer/PhysicsUtilities/Private 中
-	// 由于是 Private 头文件，可能在某些情况下不可用
-	// 如果编译失败，可以注释掉 Rule10 的实现
-	//#include "LevelSetHelpers.h"
-#endif
 
 #define LOCTEXT_NAMESPACE "PhysicsOptimizerCore"
 
@@ -101,17 +94,11 @@ void FPhysicsOptimizerCore::RebuildPhysicsBodies(
 	
 	UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] 已清空现有物理形体"));
 
-	// 只为核心骨骼类型生成物理形体
-	TSet<EBoneType> CoreTypes = {
-		EBoneType::Pelvis,    // 骨盆
-		EBoneType::Spine,     // 脊椎
-		EBoneType::Head,      // 头
-		EBoneType::Clavicle,  // 锁骨
-		EBoneType::Arm,       // 大臂/小臂
-		EBoneType::Leg,       // 大腿/小腿
-		EBoneType::Hand,      // 手
-		EBoneType::Foot       // 脚
-	};
+	// 使用 UE 官方 API 计算每个骨骼的顶点信息
+	TArray<FBoneVertInfo> BoneVertInfos;
+	FMeshUtilitiesEngine::CalcBoneVertInfos(Mesh, BoneVertInfos, false);
+	
+	UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] 计算了 %d 个骨骼的顶点信息"), BoneVertInfos.Num());
 
 	const FReferenceSkeleton& RefSkel = Mesh->GetRefSkeleton();
 	int32 CreatedCount = 0;
@@ -121,8 +108,9 @@ void FPhysicsOptimizerCore::RebuildPhysicsBodies(
 		const FName& BoneName = Pair.Key;
 		const EBoneType BoneType = Pair.Value;
 
-		// 只处理核心骨骼类型
-		if (!CoreTypes.Contains(BoneType))
+		// 根据配置的规则检查是否需要创建物理形体
+		const FBonePhysicsRule& Rule = Settings.GetRuleForBoneType(BoneType);
+		if (!Rule.bCreateBody)
 		{
 			continue;
 		}
@@ -140,11 +128,18 @@ void FPhysicsOptimizerCore::RebuildPhysicsBodies(
 			continue;
 		}
 
-		CreateBodyForBone(PA, Mesh, BoneName, BoneType);
-		CreatedCount++;
-		
-		UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] 创建: %s (类型=%d)"),
-			*BoneName.ToString(), static_cast<int32>(BoneType));
+		// 获取该骨骼的顶点信息
+		const FBoneVertInfo& VertInfo = (BoneIndex < BoneVertInfos.Num()) 
+			? BoneVertInfos[BoneIndex] 
+			: FBoneVertInfo();
+
+		if (CreateBodyForBoneUsingUEAPI(PA, Mesh, BoneName, BoneType, Rule.ShapeType, VertInfo))
+		{
+			CreatedCount++;
+			UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] 创建: %s (类型=%d, 形状=%d, 顶点=%d)"),
+				*BoneName.ToString(), static_cast<int32>(BoneType), 
+				static_cast<int32>(Rule.ShapeType), VertInfo.Positions.Num());
+		}
 	}
 
 	// 更新索引映射和碰撞设置
@@ -161,253 +156,181 @@ void FPhysicsOptimizerCore::RebuildPhysicsBodies(
 	UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] 创建了 %d 个物理形体"), CreatedCount);
 }
 
-void FPhysicsOptimizerCore::CreateBodyForBone(
+bool FPhysicsOptimizerCore::CreateBodyForBoneUsingUEAPI(
 	UPhysicsAsset* PA,
 	USkeletalMesh* Mesh,
 	const FName& BoneName,
-	EBoneType BoneType)
+	EBoneType BoneType,
+	EPhysicsShapeType ShapeType,
+	const FBoneVertInfo& VertInfo)
 {
 	if (!PA || !Mesh)
 	{
-		return;
+		return false;
 	}
 
 	const FReferenceSkeleton& RefSkel = Mesh->GetRefSkeleton();
 	const int32 BoneIndex = RefSkel.FindBoneIndex(BoneName);
 	if (BoneIndex == INDEX_NONE)
 	{
-		return;
+		return false;
 	}
 
 	// 检查是否已存在该骨骼的 Body
 	if (PA->FindBodyIndex(BoneName) != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Verbose, TEXT("[物理资产优化器] %s 已存在物理形体，跳过"), *BoneName.ToString());
-		return;
+		return false;
 	}
 
-	// 创建 BodySetup
-	USkeletalBodySetup* BodySetup = NewObject<USkeletalBodySetup>(PA, NAME_None, RF_Transactional);
+	// 配置 UE 官方的物理形体创建参数
+	FPhysAssetCreateParams CreateParams;
+	CreateParams.MinBoneSize = 1.0f;
+	CreateParams.VertWeight = EVW_AnyWeight;
+	CreateParams.bAutoOrientToBone = true;  // 使用协方差矩阵自动对齐骨骼方向
+	CreateParams.bCreateConstraints = false;
+	
+	// 根据配置的形状类型设置 UE 参数
+	switch (ShapeType)
+	{
+	case EPhysicsShapeType::Box:
+		CreateParams.GeomType = EFG_Box;
+		break;
+	case EPhysicsShapeType::Sphere:
+		CreateParams.GeomType = EFG_Sphere;
+		break;
+	case EPhysicsShapeType::Convex:
+		CreateParams.GeomType = EFG_SingleConvexHull;
+		break;
+	case EPhysicsShapeType::Capsule:
+	default:
+		CreateParams.GeomType = EFG_Sphyl;
+		break;
+	}
+
+	// 1. 创建空的 BodySetup
+	int32 NewBodyIndex = FPhysicsAssetUtils::CreateNewBody(PA, BoneName, CreateParams);
+	if (NewBodyIndex == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[物理资产优化器] 创建 %s BodySetup 失败"), *BoneName.ToString());
+		return false;
+	}
+
+	UBodySetup* BodySetup = PA->SkeletalBodySetups[NewBodyIndex];
 	if (!BodySetup)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[物理资产优化器] 无法为 %s 创建物理形体"), *BoneName.ToString());
+		return false;
+	}
+
+	// 2. 使用 UE 官方 API 创建碰撞形状（自动计算尺寸和方向）
+	bool bSuccess = false;
+	
+	if (VertInfo.Positions.Num() > 0)
+	{
+		// 有顶点信息，使用官方 API
+		bSuccess = FPhysicsAssetUtils::CreateCollisionFromBone(
+			BodySetup, 
+			Mesh, 
+			BoneIndex, 
+			CreateParams, 
+			VertInfo
+		);
+		
+		if (bSuccess)
+		{
+			// 检查是否成功创建了碰撞形状
+			int32 ShapeCount = BodySetup->AggGeom.SphylElems.Num() + 
+				BodySetup->AggGeom.BoxElems.Num() + 
+				BodySetup->AggGeom.SphereElems.Num();
+			
+			if (ShapeCount == 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[物理资产优化器] %s: CreateCollisionFromBone 返回成功但没有创建形状"), 
+					*BoneName.ToString());
+				bSuccess = false;
+			}
+			else
+			{
+				UE_LOG(LogTemp, Verbose, TEXT("[物理资产优化器] %s: 官方API创建了 %d 个形状"), 
+					*BoneName.ToString(), ShapeCount);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[物理资产优化器] %s: CreateCollisionFromBone 失败"), 
+				*BoneName.ToString());
+		}
+	}
+	
+	if (!bSuccess)
+	{
+		// 回退：基于骨骼长度创建简单形状
+		UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] %s 使用回退方案"), *BoneName.ToString());
+		
+		float BoneLength = GetBoneLength(RefSkel, BoneIndex);
+		BoneLength = FMath::Max(BoneLength, 10.0f);
+		
+		CreateFallbackShape(BodySetup, ShapeType, BoneLength);
+		bSuccess = true;
+	}
+
+	// 刷新物理数据
+	BodySetup->InvalidatePhysicsData();
+	BodySetup->CreatePhysicsMeshes();
+
+	return bSuccess;
+}
+
+void FPhysicsOptimizerCore::CreateFallbackShape(
+	UBodySetup* BodySetup,
+	EPhysicsShapeType ShapeType,
+	float BoneLength)
+{
+	if (!BodySetup)
+	{
 		return;
 	}
 
-	// 初始化 BodySetup
-	BodySetup->BoneName = BoneName;
-	BodySetup->PhysicsType = EPhysicsType::PhysType_Default;
-	BodySetup->CollisionTraceFlag = CTF_UseDefault;
-	BodySetup->CollisionReponse = EBodyCollisionResponse::BodyCollision_Enabled;
-	
-	// 添加到物理资产
-	PA->SkeletalBodySetups.Add(BodySetup);
-
-	// 计算骨骼尺寸（优先使用顶点包围盒）
-	FVector BoneSize;
-	FVector BoneCenter;
-	bool bHasBounds = CalculateBoneBounds(Mesh, BoneIndex, BoneSize, BoneCenter);
-	
-	if (!bHasBounds)
+	switch (ShapeType)
 	{
-		// 回退：使用子骨骼距离
-		float BoneLength = GetBoneLength(RefSkel, BoneIndex);
-		BoneLength = FMath::Max(BoneLength, 10.0f);
-		BoneSize = FVector(BoneLength, BoneLength * 0.3f, BoneLength * 0.3f);
-		BoneCenter = FVector(BoneLength * 0.5f, 0, 0);
-	}
-
-	// 确保最小尺寸
-	BoneSize.X = FMath::Max(BoneSize.X, 5.0f);
-	BoneSize.Y = FMath::Max(BoneSize.Y, 3.0f);
-	BoneSize.Z = FMath::Max(BoneSize.Z, 3.0f);
-
-	// 根据骨骼类型创建形状
-	if (BoneType == EBoneType::Hand || BoneType == EBoneType::Foot)
-	{
-		// 手脚：使用盒体（上上版逻辑，你说满意的）
-		FKBoxElem Box;
-		Box.Center = BoneCenter;
-		Box.Rotation = FRotator::ZeroRotator;
-		Box.X = BoneSize.X;
-		Box.Y = BoneSize.Y;
-		Box.Z = BoneSize.Z;
-		
-		BodySetup->AggGeom.BoxElems.Add(Box);
-	}
-	else
-	{
-		// 其他骨骼：使用胶囊体
-		FKSphylElem Capsule;
-		Capsule.Center = BoneCenter;
-		Capsule.Rotation = FRotator(0, 0, 90); // 沿骨骼 X 轴方向
-		
-		// 胶囊体总长度 = BoneSize.X（沿骨骼方向的尺寸）
-		float TotalLength = BoneSize.X;
-		
-		// 半径 = 横截面的一半，但不能超过总长度的 25%
-		float CrossSection = FMath::Max(BoneSize.Y, BoneSize.Z);
-		Capsule.Radius = FMath::Min(CrossSection * 0.5f, TotalLength * 0.25f);
-		Capsule.Radius = FMath::Max(Capsule.Radius, 2.0f); // 最小半径
-		
-		// 头部特殊处理：更圆
-		if (BoneType == EBoneType::Head)
+	case EPhysicsShapeType::Box:
 		{
-			Capsule.Radius = FMath::Max(TotalLength, CrossSection) * 0.35f;
+			FKBoxElem Box;
+			Box.Center = FVector(BoneLength * 0.5f, 0, 0);
+			Box.X = BoneLength;
+			Box.Y = BoneLength * 0.6f;
+			Box.Z = BoneLength * 0.3f;
+			BodySetup->AggGeom.BoxElems.Add(Box);
 		}
-		
-		// 圆柱部分长度 = 总长度 - 两端半球
-		// 确保至少有 50% 是圆柱部分
-		Capsule.Length = FMath::Max(TotalLength - Capsule.Radius * 2.0f, TotalLength * 0.5f);
-		
-		BodySetup->AggGeom.SphylElems.Add(Capsule);
-		
-		UE_LOG(LogTemp, Log, TEXT("[物理资产优化器] %s: Size=(%.1f,%.1f,%.1f), Radius=%.1f, Length=%.1f"),
-			*BoneName.ToString(), BoneSize.X, BoneSize.Y, BoneSize.Z, Capsule.Radius, Capsule.Length);
+		break;
+
+	case EPhysicsShapeType::Sphere:
+		{
+			FKSphereElem Sphere;
+			Sphere.Center = FVector(BoneLength * 0.5f, 0, 0);
+			Sphere.Radius = BoneLength * 0.4f;
+			BodySetup->AggGeom.SphereElems.Add(Sphere);
+		}
+		break;
+
+	case EPhysicsShapeType::Capsule:
+	default:
+		{
+			FKSphylElem Capsule;
+			Capsule.Center = FVector(BoneLength * 0.5f, 0, 0);
+			Capsule.Rotation = FRotator(0, 0, 90);
+			Capsule.Radius = BoneLength * 0.15f;
+			Capsule.Length = FMath::Max(BoneLength - Capsule.Radius * 2.0f, BoneLength * 0.5f);
+			BodySetup->AggGeom.SphylElems.Add(Capsule);
+		}
+		break;
 	}
 
 	BodySetup->InvalidatePhysicsData();
 	BodySetup->CreatePhysicsMeshes();
 }
 
-bool FPhysicsOptimizerCore::CalculateBoneBounds(
-	USkeletalMesh* Mesh,
-	int32 BoneIndex,
-	FVector& OutSize,
-	FVector& OutCenter)
-{
-	if (!Mesh || BoneIndex == INDEX_NONE)
-	{
-		return false;
-	}
 
-	const FReferenceSkeleton& RefSkel = Mesh->GetRefSkeleton();
-	
-	// 获取骨骼的世界变换（用于将顶点转换到骨骼局部空间）
-	TArray<FMatrix> ComponentSpaceTransforms;
-	ComponentSpaceTransforms.SetNum(RefSkel.GetNum());
-	
-	// 计算所有骨骼的组件空间变换
-	for (int32 i = 0; i < RefSkel.GetNum(); ++i)
-	{
-		const FTransform& LocalTransform = RefSkel.GetRefBonePose()[i];
-		int32 ParentIndex = RefSkel.GetParentIndex(i);
-		
-		if (ParentIndex == INDEX_NONE)
-		{
-			ComponentSpaceTransforms[i] = LocalTransform.ToMatrixWithScale();
-		}
-		else
-		{
-			ComponentSpaceTransforms[i] = LocalTransform.ToMatrixWithScale() * ComponentSpaceTransforms[ParentIndex];
-		}
-	}
-
-	// 获取骨骼变换的逆矩阵（用于将顶点转换到骨骼局部空间）
-	FMatrix BoneToComponent = ComponentSpaceTransforms[BoneIndex];
-	FMatrix ComponentToBone = BoneToComponent.Inverse();
-
-	// 获取渲染数据
-	FSkeletalMeshRenderData* RenderData = Mesh->GetResourceForRendering();
-	if (!RenderData || RenderData->LODRenderData.Num() == 0)
-	{
-		return false;
-	}
-
-	const FSkeletalMeshLODRenderData& LODData = RenderData->LODRenderData[0];
-	const FSkinWeightVertexBuffer* SkinWeightBuffer = LODData.GetSkinWeightVertexBuffer();
-	const FPositionVertexBuffer& PositionBuffer = LODData.StaticVertexBuffers.PositionVertexBuffer;
-
-	if (!SkinWeightBuffer || PositionBuffer.GetNumVertices() == 0)
-	{
-		return false;
-	}
-
-	// 收集受该骨骼影响的顶点（权重 > 0.1）
-	FBox BoneBounds(ForceInit);
-	int32 VertexCount = 0;
-	const float MinWeight = 0.1f;
-
-	for (uint32 VertexIndex = 0; VertexIndex < PositionBuffer.GetNumVertices(); ++VertexIndex)
-	{
-		// 检查该顶点是否受当前骨骼影响
-		bool bInfluenced = false;
-		float TotalWeight = 0.0f;
-
-		// 获取骨骼权重（最多 MAX_TOTAL_INFLUENCES 个影响）
-		int32 SectionIndex = 0;
-		int32 VertexIndexInSection = VertexIndex;
-		
-		// 查找顶点所在的 Section
-		for (int32 i = 0; i < LODData.RenderSections.Num(); ++i)
-		{
-			const FSkelMeshRenderSection& Section = LODData.RenderSections[i];
-			if (VertexIndex >= Section.BaseVertexIndex && 
-			    VertexIndex < Section.BaseVertexIndex + Section.NumVertices)
-			{
-				SectionIndex = i;
-				VertexIndexInSection = VertexIndex - Section.BaseVertexIndex;
-				break;
-			}
-		}
-
-		const FSkelMeshRenderSection& Section = LODData.RenderSections[SectionIndex];
-		
-		// 检查骨骼影响
-		for (int32 InfluenceIndex = 0; InfluenceIndex < MAX_TOTAL_INFLUENCES; ++InfluenceIndex)
-		{
-			int32 InfluenceBoneIndex = SkinWeightBuffer->GetBoneIndex(VertexIndex, InfluenceIndex);
-			uint8 InfluenceWeight = SkinWeightBuffer->GetBoneWeight(VertexIndex, InfluenceIndex);
-			
-			if (InfluenceWeight == 0)
-			{
-				continue;
-			}
-
-			// 将 Section 的骨骼映射转换为骨架骨骼索引
-			if (InfluenceBoneIndex < Section.BoneMap.Num())
-			{
-				int32 SkeletonBoneIndex = Section.BoneMap[InfluenceBoneIndex];
-				if (SkeletonBoneIndex == BoneIndex)
-				{
-					float Weight = static_cast<float>(InfluenceWeight) / 255.0f;
-					if (Weight >= MinWeight)
-					{
-						bInfluenced = true;
-						TotalWeight = Weight;
-						break;
-					}
-				}
-			}
-		}
-
-		if (bInfluenced)
-		{
-			// 获取顶点位置并转换到骨骼局部空间
-			FVector3f VertexPos = PositionBuffer.VertexPosition(VertexIndex);
-			FVector WorldPos = FVector(VertexPos.X, VertexPos.Y, VertexPos.Z);
-			FVector LocalPos = ComponentToBone.TransformPosition(WorldPos);
-			
-			BoneBounds += LocalPos;
-			VertexCount++;
-		}
-	}
-
-	// 如果没有找到足够的顶点，返回失败
-	if (VertexCount < 3)
-	{
-		return false;
-	}
-
-	// 计算尺寸和中心
-	OutSize = BoneBounds.GetSize();
-	OutCenter = BoneBounds.GetCenter();
-
-	UE_LOG(LogTemp, Verbose, TEXT("[物理资产优化器] %s 包围盒: 顶点=%d, 尺寸=(%.1f, %.1f, %.1f)"),
-		*RefSkel.GetBoneName(BoneIndex).ToString(), VertexCount, OutSize.X, OutSize.Y, OutSize.Z);
-
-	return true;
-}
 
 float FPhysicsOptimizerCore::GetBoneLength(
 	const FReferenceSkeleton& RefSkel,
@@ -729,6 +652,13 @@ void FPhysicsOptimizerCore::CreateConstraints(UPhysicsAsset* PA, USkeletalMesh* 
 		return;
 	}
 
+	// 检查是否允许创建约束
+	if (!FPhysicsAssetUtils::CanCreateConstraints())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[物理资产优化器] 约束创建被禁用"));
+		return;
+	}
+
 	const FReferenceSkeleton& RefSkel = Mesh->GetRefSkeleton();
 	int32 CreatedCount = 0;
 
@@ -751,11 +681,13 @@ void FPhysicsOptimizerCore::CreateConstraints(UPhysicsAsset* PA, USkeletalMesh* 
 		// 查找父骨骼（向上遍历直到找到有物理形体的骨骼）
 		int32 ParentBoneIndex = RefSkel.GetParentIndex(BoneIndex);
 		FName ParentBodyBoneName = NAME_None;
+		int32 ParentBodyIndex = INDEX_NONE;
 
 		while (ParentBoneIndex != INDEX_NONE)
 		{
 			FName ParentBoneName = RefSkel.GetBoneName(ParentBoneIndex);
-			if (PA->FindBodyIndex(ParentBoneName) != INDEX_NONE)
+			ParentBodyIndex = PA->FindBodyIndex(ParentBoneName);
+			if (ParentBodyIndex != INDEX_NONE)
 			{
 				ParentBodyBoneName = ParentBoneName;
 				break;
@@ -769,25 +701,39 @@ void FPhysicsOptimizerCore::CreateConstraints(UPhysicsAsset* PA, USkeletalMesh* 
 			continue;
 		}
 
-		// 创建约束
-		UPhysicsConstraintTemplate* Constraint = NewObject<UPhysicsConstraintTemplate>(PA, NAME_None, RF_Transactional);
+		// 使用 UE 官方 API 创建约束
+		int32 NewConstraintIndex = FPhysicsAssetUtils::CreateNewConstraint(PA, BoneName);
+		if (NewConstraintIndex == INDEX_NONE)
+		{
+			continue;
+		}
+
+		UPhysicsConstraintTemplate* Constraint = PA->ConstraintSetup[NewConstraintIndex];
 		if (!Constraint)
 		{
 			continue;
 		}
 
-		// 设置约束连接的两个骨骼
 		FConstraintInstance& DefaultInstance = Constraint->DefaultInstance;
+
+		// 设置角度约束模式（默认 Limited）
+		DefaultInstance.SetAngularSwing1Motion(EAngularConstraintMotion::ACM_Limited);
+		DefaultInstance.SetAngularSwing2Motion(EAngularConstraintMotion::ACM_Limited);
+		DefaultInstance.SetAngularTwistMotion(EAngularConstraintMotion::ACM_Limited);
+
+		// 设置约束连接的两个骨骼
 		DefaultInstance.ConstraintBone1 = BoneName;
 		DefaultInstance.ConstraintBone2 = ParentBodyBoneName;
 
-		// 设置默认约束参数
-		DefaultInstance.SetDisableCollision(true);
-		DefaultInstance.SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
-		DefaultInstance.SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Limited, 45.0f);
-		DefaultInstance.SetAngularTwistLimit(EAngularConstraintMotion::ACM_Limited, 45.0f);
+		// 使用官方 API 自动对齐约束位置
+		DefaultInstance.SnapTransformsToDefault(EConstraintTransformComponentFlags::All, PA);
 
-		PA->ConstraintSetup.Add(Constraint);
+		// 设置默认配置
+		Constraint->SetDefaultProfile(DefaultInstance);
+
+		// 禁用约束骨骼间的碰撞
+		PA->DisableCollision(BodyIndex, ParentBodyIndex);
+
 		CreatedCount++;
 
 		UE_LOG(LogTemp, Verbose, TEXT("[物理资产优化器] 创建约束: %s -> %s"),

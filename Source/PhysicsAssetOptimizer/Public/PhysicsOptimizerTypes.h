@@ -30,6 +30,45 @@ enum class EBoneType : uint8
 };
 
 /**
+ * 物理形体形状类型
+ */
+UENUM(BlueprintType)
+enum class EPhysicsShapeType : uint8
+{
+	Capsule   UMETA(DisplayName = "胶囊体"),
+	Box       UMETA(DisplayName = "盒体"),
+	Sphere    UMETA(DisplayName = "球体"),
+	Convex    UMETA(DisplayName = "凸包")
+};
+
+/**
+ * 单个骨骼类型的物理形体规则
+ */
+USTRUCT(BlueprintType)
+struct FBonePhysicsRule
+{
+	GENERATED_BODY()
+
+	FBonePhysicsRule()
+		: ShapeType(EPhysicsShapeType::Capsule)
+		, bCreateBody(true)
+	{}
+
+	FBonePhysicsRule(EPhysicsShapeType InShape, bool bCreate = true)
+		: ShapeType(InShape)
+		, bCreateBody(bCreate)
+	{}
+
+	/** 使用的形状类型 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "规则")
+	EPhysicsShapeType ShapeType;
+
+	/** 是否为该类型骨骼创建物理形体 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "规则")
+	bool bCreateBody;
+};
+
+/**
  * 物理资产优化设置
  */
 USTRUCT(BlueprintType)
@@ -49,7 +88,43 @@ struct FPhysicsOptimizerSettings
 		, bUseLSV(false)
 		, bUseConvexForLongBones(true)
 		, bConfigureSleep(true)
-	{}
+	{
+		// 初始化默认物理形体规则（UE最佳实践）
+		InitDefaultBoneRules();
+	}
+
+	/** 初始化默认骨骼物理规则 */
+	void InitDefaultBoneRules()
+	{
+		// 核心骨骼：使用胶囊体
+		BoneRules.Add(EBoneType::Pelvis,   FBonePhysicsRule(EPhysicsShapeType::Capsule));
+		BoneRules.Add(EBoneType::Spine,    FBonePhysicsRule(EPhysicsShapeType::Capsule));
+		BoneRules.Add(EBoneType::Head,     FBonePhysicsRule(EPhysicsShapeType::Capsule));
+		BoneRules.Add(EBoneType::Clavicle, FBonePhysicsRule(EPhysicsShapeType::Capsule));
+		BoneRules.Add(EBoneType::Arm,      FBonePhysicsRule(EPhysicsShapeType::Capsule));
+		BoneRules.Add(EBoneType::Leg,      FBonePhysicsRule(EPhysicsShapeType::Capsule));
+		
+		// 手脚：使用盒体（更好地包裹扁平形状）
+		BoneRules.Add(EBoneType::Hand,     FBonePhysicsRule(EPhysicsShapeType::Box));
+		BoneRules.Add(EBoneType::Foot,     FBonePhysicsRule(EPhysicsShapeType::Box));
+		
+		// 不创建物理形体的骨骼类型
+		BoneRules.Add(EBoneType::Finger,   FBonePhysicsRule(EPhysicsShapeType::Capsule, false));
+		BoneRules.Add(EBoneType::Face,     FBonePhysicsRule(EPhysicsShapeType::Sphere, false));
+		BoneRules.Add(EBoneType::Tail,     FBonePhysicsRule(EPhysicsShapeType::Capsule, true));
+		BoneRules.Add(EBoneType::Unknown,  FBonePhysicsRule(EPhysicsShapeType::Capsule, false));
+	}
+
+	/** 获取骨骼类型对应的物理规则 */
+	const FBonePhysicsRule& GetRuleForBoneType(EBoneType BoneType) const
+	{
+		if (const FBonePhysicsRule* Rule = BoneRules.Find(BoneType))
+		{
+			return *Rule;
+		}
+		static FBonePhysicsRule DefaultRule(EPhysicsShapeType::Capsule, false);
+		return DefaultRule;
+	}
 
 	/** 忽略长度小于此值的末端骨骼（cm） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "优化设置")
@@ -94,6 +169,10 @@ struct FPhysicsOptimizerSettings
 	/** 是否配置 Sleep 设置 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "高级设置")
 	bool bConfigureSleep;
+
+	/** 每种骨骼类型的物理形体规则 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "形体规则")
+	TMap<EBoneType, FBonePhysicsRule> BoneRules;
 };
 
 /**
