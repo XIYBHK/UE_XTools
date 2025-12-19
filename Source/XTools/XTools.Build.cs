@@ -67,17 +67,10 @@ public class XTools : ModuleRules
 		//  UE5.3+ C++20 标准配置
 		CppStandard = CppStandardVersion.Default;
 
-		// 源文件包含中文/Unicode 字符时，Windows 下需要显式启用 UTF-8 源码解析，避免日志/显示名乱码。
-		// 说明：XTools 工程历史文件为 UTF-8（无 BOM），在非中文系统区域设置下若未启用 /utf-8，MSVC 可能按 ACP 解析导致乱码。
-		// UE 5.5+ 使用 UndefinedIdentifierWarningLevel 替代废弃的 bEnableUndefinedIdentifierWarnings
-		if (Target.Version.MajorVersion >= 5 && Target.Version.MinorVersion >= 5)
-		{
-			UndefinedIdentifierWarningLevel = WarningLevel.Off;
-		}
-		else
-		{
-			bEnableUndefinedIdentifierWarnings = false;
-		}
+		// 禁用未定义标识符警告
+		// UE 5.5+ 废弃了 bEnableUndefinedIdentifierWarnings，改用 UndefinedIdentifierWarningLevel
+		// 使用反射动态设置，避免编译时类型不存在的问题
+		SetUndefinedIdentifierWarning(false);
 
 		//  IWYU 强制执行 - 提升编译速度和代码质量 (UE5.2+)
 		IWYUSupport = IWYUSupport.Full;
@@ -157,5 +150,30 @@ public class XTools : ModuleRules
 		});
 
 	//  移除重复的定义 - WITH_XTOOLS=1 已在第17行定义
+	}
+
+	/// <summary>
+	/// 设置未定义标识符警告（兼容 UE 5.3-5.7）
+	/// UE 5.5+ 使用 UndefinedIdentifierWarningLevel，旧版本使用 bEnableUndefinedIdentifierWarnings
+	/// </summary>
+	private void SetUndefinedIdentifierWarning(bool bEnable)
+	{
+		// 尝试新 API (UE 5.5+)
+		var newProp = GetType().GetProperty("UndefinedIdentifierWarningLevel");
+		if (newProp != null)
+		{
+			// WarningLevel.Off = 0, WarningLevel.Warning = 1, WarningLevel.Error = 2
+			var warningLevelType = newProp.PropertyType;
+			var offValue = System.Enum.Parse(warningLevelType, bEnable ? "Warning" : "Off");
+			newProp.SetValue(this, offValue);
+			return;
+		}
+
+		// 回退到旧 API (UE 5.3/5.4)
+		var oldProp = GetType().GetProperty("bEnableUndefinedIdentifierWarnings");
+		if (oldProp != null)
+		{
+			oldProp.SetValue(this, bEnable);
+		}
 	}
 }
