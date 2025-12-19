@@ -1,0 +1,32 @@
+﻿2025-12-19T06:26:39.3904125Z ##[group]Run Write-Host "==> Cleanup Temporary Files" -ForegroundColor Cyan
+2025-12-19T06:26:39.3904451Z [36;1mWrite-Host "==> Cleanup Temporary Files" -ForegroundColor Cyan[0m
+2025-12-19T06:26:39.3904598Z [36;1m[0m
+2025-12-19T06:26:39.3904688Z [36;1m# Clean build directory in RUNNER_TEMP[0m
+2025-12-19T06:26:39.3904841Z [36;1m$base_out = Join-Path $env:RUNNER_TEMP "XTools"[0m
+2025-12-19T06:26:39.3904980Z [36;1mif (Test-Path $base_out) {[0m
+2025-12-19T06:26:39.3905078Z [36;1m  try {[0m
+2025-12-19T06:26:39.3905303Z [36;1m    $size = (Get-ChildItem $base_out -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB[0m
+2025-12-19T06:26:39.3905596Z [36;1m    Remove-Item -Recurse -Force $base_out -ErrorAction Stop[0m
+2025-12-19T06:26:39.3905822Z [36;1m    Write-Host "[OK] Cleanup completed, freed $([math]::Round($size, 2)) MB" -ForegroundColor Green[0m
+2025-12-19T06:26:39.3906008Z [36;1m  } catch {[0m
+2025-12-19T06:26:39.3906117Z [36;1m    Write-Warning "Cleanup failed: $_"[0m
+2025-12-19T06:26:39.3906248Z [36;1m  }[0m
+2025-12-19T06:26:39.3906321Z [36;1m}[0m
+2025-12-19T06:26:39.3925843Z shell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -ExecutionPolicy Bypass -File {0}
+2025-12-19T06:26:39.3926048Z env:
+2025-12-19T06:26:39.3926132Z   UE_VERSION: 5.4
+2025-12-19T06:26:39.3926228Z   UE_PATH: F:\Epic Games\UE_5.4
+2025-12-19T06:26:39.3926381Z   RUNUAT_PATH: F:\Epic Games\UE_5.4\Engine\Build\BatchFiles\RunUAT.bat
+2025-12-19T06:26:39.3926574Z   UE_EDITOR_PATH: F:\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor.exe
+2025-12-19T06:26:39.3926763Z   PLUGIN_FILE: C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin
+2025-12-19T06:26:39.3926962Z   OUTPUT_DIR: C:\actions-runner\_work\_temp\XTools\XTools-UE_5.4-AllPlatforms
+2025-12-19T06:26:39.3927142Z   TEMP_OUTPUT: C:\actions-runner\_work\_temp\XTools\TempPackage
+2025-12-19T06:26:39.3927288Z   BUILD_DURATION: 7m 44s
+2025-12-19T06:26:39.3927379Z   PACKAGE_SIZE_MB: 17.07
+2025-12-19T06:26:39.3927488Z   VERSION_TAG: v1.9.3
+2025-12-19T06:26:39.3927594Z   ARTIFACT_NAME: XTools-UE_5.4-v1.9.3
+2025-12-19T06:26:39.3927736Z   ZIP_PATH: C:\actions-runner\_work\_temp\XTools-UE_5.4-v1.9.3.zip
+2025-12-19T06:26:39.3927913Z   RELEASE_ZIP_PATH: C:\GitHubActions\ReleaseTemp\XTools-UE_5.4-v1.9.3.zip
+2025-12-19T06:26:39.3928074Z ##[endgroup]
+2025-12-19T06:26:39.5774866Z ==> Cleanup Temporary Files
+2025-12-19T06:26:39.6451706Z [OK] Cleanup completed, freed 17.07 MB

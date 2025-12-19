@@ -1,0 +1,15 @@
+﻿2025-12-19T06:37:18.4263487Z Post job cleanup.
+2025-12-19T06:37:18.5515838Z [command]"C:\Program Files\Git\cmd\git.exe" version
+2025-12-19T06:37:18.5917338Z git version 2.51.2.windows.1
+2025-12-19T06:37:18.5963008Z Copying 'C:\Users\xiybh\.gitconfig' to 'C:\actions-runner\_work\_temp\b28d6250-94ed-42af-abb3-8966f5b15825\.gitconfig'
+2025-12-19T06:37:18.5979596Z Temporarily overriding HOME='C:\actions-runner\_work\_temp\b28d6250-94ed-42af-abb3-8966f5b15825' before making global git config changes
+2025-12-19T06:37:18.5979939Z Adding repository directory to the temporary git global config as a safe directory
+2025-12-19T06:37:18.5989466Z [command]"C:\Program Files\Git\cmd\git.exe" config --global --add safe.directory C:\actions-runner\_work\UE_XTools\UE_XTools
+2025-12-19T06:37:18.6545082Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2025-12-19T06:37:18.7068144Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2025-12-19T06:37:19.6414675Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-12-19T06:37:19.6908420Z http.https://github.com/.extraheader
+2025-12-19T06:37:19.6947696Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2025-12-19T06:37:19.7473491Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2025-12-19T06:37:20.7242004Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2025-12-19T06:37:20.7832489Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"

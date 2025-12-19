@@ -7,6 +7,7 @@
 #include "PhysicsAssetUtils.h"
 #include "BoneIdentificationSystem.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+#include "PhysicsEngine/SkeletalBodySetup.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -216,7 +217,7 @@ bool FPhysicsOptimizerCore::CreateBodyForBoneUsingUEAPI(
 		return false;
 	}
 
-	UBodySetup* BodySetup = PA->SkeletalBodySetups[NewBodyIndex];
+	USkeletalBodySetup* BodySetup = PA->SkeletalBodySetups[NewBodyIndex].Get();
 	if (!BodySetup)
 	{
 		return false;
@@ -365,8 +366,9 @@ void FPhysicsOptimizerCore::ConfigureDamping(
 
 	int32 ConfiguredCount = 0;
 
-	for (USkeletalBodySetup* BodySetup : PA->SkeletalBodySetups)
+	for (const auto& BodySetupPtr : PA->SkeletalBodySetups)
 	{
+		USkeletalBodySetup* BodySetup = BodySetupPtr.Get();
 		if (!BodySetup)
 		{
 			continue;
@@ -428,8 +430,9 @@ void FPhysicsOptimizerCore::ConfigureMassDistribution(
 	int32 ConfiguredCount = 0;
 
 	// 为每个 Body 设置质量
-	for (USkeletalBodySetup* BodySetup : PA->SkeletalBodySetups)
+	for (const auto& BodySetupPtr : PA->SkeletalBodySetups)
 	{
+		USkeletalBodySetup* BodySetup = BodySetupPtr.Get();
 		if (!BodySetup)
 		{
 			continue;
@@ -565,8 +568,9 @@ void FPhysicsOptimizerCore::ConfigureSleepSettings(
 
 	int32 ConfiguredCount = 0;
 
-	for (USkeletalBodySetup* BodySetup : PA->SkeletalBodySetups)
+	for (const auto& BodySetupPtr : PA->SkeletalBodySetups)
 	{
+		USkeletalBodySetup* BodySetup = BodySetupPtr.Get();
 		if (!BodySetup)
 		{
 			continue;
@@ -665,7 +669,7 @@ void FPhysicsOptimizerCore::CreateConstraints(UPhysicsAsset* PA, USkeletalMesh* 
 	// 为每个物理形体创建与父骨骼的约束
 	for (int32 BodyIndex = 0; BodyIndex < PA->SkeletalBodySetups.Num(); ++BodyIndex)
 	{
-		USkeletalBodySetup* BodySetup = PA->SkeletalBodySetups[BodyIndex];
+		USkeletalBodySetup* BodySetup = PA->SkeletalBodySetups[BodyIndex].Get();
 		if (!BodySetup)
 		{
 			continue;

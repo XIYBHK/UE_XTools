@@ -1,0 +1,15 @@
+﻿2025-12-19T06:41:28.2592712Z Current runner version: '2.330.0'
+2025-12-19T06:41:28.2602122Z Runner name: 'XIYBHK'
+2025-12-19T06:41:28.2602550Z Runner group name: 'Default'
+2025-12-19T06:41:28.2603025Z Machine name: 'XIYBHK'
+2025-12-19T06:41:28.2604865Z ##[group]GITHUB_TOKEN Permissions
+2025-12-19T06:41:28.2606338Z Contents: read
+2025-12-19T06:41:28.2606606Z Metadata: read
+2025-12-19T06:41:28.2606844Z ##[endgroup]
+2025-12-19T06:41:28.2608059Z Secret source: Actions
+2025-12-19T06:41:28.2608436Z Prepare workflow directory
+2025-12-19T06:41:28.3402054Z Prepare all required actions
+2025-12-19T06:41:28.3429799Z Getting action download info
+2025-12-19T06:41:29.8837335Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2025-12-19T06:41:31.7805470Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2025-12-19T06:41:34.0407208Z Complete job name: build-windows-optimized (5.7)

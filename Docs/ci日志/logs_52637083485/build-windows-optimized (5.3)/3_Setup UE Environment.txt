@@ -1,0 +1,45 @@
+﻿2025-12-19T06:30:54.4498609Z ##[group]Run Write-Host "==> Setup UE 5.3 Environment" -ForegroundColor Cyan
+2025-12-19T06:30:54.4499084Z [36;1mWrite-Host "==> Setup UE 5.3 Environment" -ForegroundColor Cyan[0m
+2025-12-19T06:30:54.4499286Z [36;1m[0m
+2025-12-19T06:30:54.4499412Z [36;1m# UE installation path[0m
+2025-12-19T06:30:54.4499568Z [36;1m$ue_version = "5.3"[0m
+2025-12-19T06:30:54.4499788Z [36;1m$ue_path = "F:\Epic Games\UE_$ue_version"[0m
+2025-12-19T06:30:54.4499966Z [36;1mWrite-Host "UE Path: $ue_path"[0m
+2025-12-19T06:30:54.4500099Z [36;1m[0m
+2025-12-19T06:30:54.4500215Z [36;1mif (-not (Test-Path $ue_path)) {[0m
+2025-12-19T06:30:54.4500417Z [36;1m  throw "UE installation not found: $ue_path"[0m
+2025-12-19T06:30:54.4500659Z [36;1m}[0m
+2025-12-19T06:30:54.4500759Z [36;1m[0m
+2025-12-19T06:30:54.4500872Z [36;1m# Verify key files[0m
+2025-12-19T06:30:54.4501064Z [36;1m$runuat_path = "$ue_path\Engine\Build\BatchFiles\RunUAT.bat"[0m
+2025-12-19T06:30:54.4501891Z [36;1m$ue_editor_path = "$ue_path\Engine\Binaries\Win64\UnrealEditor.exe"[0m
+2025-12-19T06:30:54.4502152Z [36;1m[0m
+2025-12-19T06:30:54.4502268Z [36;1mif (-not (Test-Path $runuat_path)) {[0m
+2025-12-19T06:30:54.4502456Z [36;1m  throw "RunUAT.bat not found: $runuat_path"[0m
+2025-12-19T06:30:54.4502588Z [36;1m}[0m
+2025-12-19T06:30:54.4502699Z [36;1m[0m
+2025-12-19T06:30:54.4502828Z [36;1mif (-not (Test-Path $ue_editor_path)) {[0m
+2025-12-19T06:30:54.4503046Z [36;1m  throw "UnrealEditor.exe not found: $ue_editor_path"[0m
+2025-12-19T06:30:54.4503219Z [36;1m}[0m
+2025-12-19T06:30:54.4503356Z [36;1m[0m
+2025-12-19T06:30:54.4503516Z [36;1m# Verify plugin file[0m
+2025-12-19T06:30:54.4503726Z [36;1m$plugin_file = "C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin"[0m
+2025-12-19T06:30:54.4503938Z [36;1mif (-not (Test-Path $plugin_file)) {[0m
+2025-12-19T06:30:54.4504176Z [36;1m  throw "Plugin file not found: $plugin_file"[0m
+2025-12-19T06:30:54.4504343Z [36;1m}[0m
+2025-12-19T06:30:54.4504450Z [36;1m[0m
+2025-12-19T06:30:54.4504600Z [36;1mWrite-Host "[OK] Environment validation passed" -ForegroundColor Green[0m
+2025-12-19T06:30:54.4504805Z [36;1m[0m
+2025-12-19T06:30:54.4504900Z [36;1m# Set environment variables[0m
+2025-12-19T06:30:54.4505071Z [36;1mecho "UE_PATH=$ue_path" >> $env:GITHUB_ENV[0m
+2025-12-19T06:30:54.4505268Z [36;1mecho "UE_VERSION=$ue_version" >> $env:GITHUB_ENV[0m
+2025-12-19T06:30:54.4505439Z [36;1mecho "RUNUAT_PATH=$runuat_path" >> $env:GITHUB_ENV[0m
+2025-12-19T06:30:54.4505654Z [36;1mecho "UE_EDITOR_PATH=$ue_editor_path" >> $env:GITHUB_ENV[0m
+2025-12-19T06:30:54.4505849Z [36;1mecho "PLUGIN_FILE=$plugin_file" >> $env:GITHUB_ENV[0m
+2025-12-19T06:30:54.4528030Z shell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -ExecutionPolicy Bypass -File {0}
+2025-12-19T06:30:54.4528291Z env:
+2025-12-19T06:30:54.4582082Z   UE_VERSION: 5.3
+2025-12-19T06:30:54.4582278Z ##[endgroup]
+2025-12-19T06:30:54.6398375Z ==> Setup UE 5.3 Environment
+2025-12-19T06:30:54.6411762Z UE Path: F:\Epic Games\UE_5.3
+2025-12-19T06:30:54.6688961Z [OK] Environment validation passed

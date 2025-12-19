@@ -1,0 +1,39 @@
+﻿2025-12-19T06:40:52.1528164Z ##[group]Run $trigger_info = ""
+2025-12-19T06:40:52.1528360Z [36;1m$trigger_info = ""[0m
+2025-12-19T06:40:52.1528503Z [36;1mif ("workflow_dispatch" -eq "workflow_dispatch") {[0m
+2025-12-19T06:40:52.1528656Z [36;1m  $selected_version = "all"[0m
+2025-12-19T06:40:52.1528812Z [36;1m  $trigger_info = "- **Trigger**: Manual (Selected: $selected_version)`n"[0m
+2025-12-19T06:40:52.1528951Z [36;1m} else {[0m
+2025-12-19T06:40:52.1529051Z [36;1m  $trigger_info = "- **Trigger**: Tag push`n"[0m
+2025-12-19T06:40:52.1529160Z [36;1m}[0m
+2025-12-19T06:40:52.1529231Z [36;1m[0m
+2025-12-19T06:40:52.1529305Z [36;1m$summary = @"[0m
+2025-12-19T06:40:52.1529397Z [36;1m## Build Completed - UE 5.6[0m
+2025-12-19T06:40:52.1529500Z [36;1m[0m
+2025-12-19T06:40:52.1529574Z [36;1m### Build Information[0m
+2025-12-19T06:40:52.1529671Z [36;1m$trigger_info- **Version**: [0m
+2025-12-19T06:40:52.1529779Z [36;1m- **UE Version**: 5.6[0m
+2025-12-19T06:40:52.1529881Z [36;1m- **Build Duration**: [0m
+2025-12-19T06:40:52.1530001Z [36;1m- **Package Size**:  MB[0m
+2025-12-19T06:40:52.1530100Z [36;1m- **Artifact Name**: ````[0m
+2025-12-19T06:40:52.1530658Z [36;1m[0m
+2025-12-19T06:40:52.1530730Z [36;1m### Build Status[0m
+2025-12-19T06:40:52.1530834Z [36;1m- [OK] Compilation successful[0m
+2025-12-19T06:40:52.1530949Z [36;1m- [OK] Post-processing completed[0m
+2025-12-19T06:40:52.1531063Z [36;1m- [OK] Validation passed[0m
+2025-12-19T06:40:52.1531159Z [36;1m[0m
+2025-12-19T06:40:52.1531231Z [36;1m### Download[0m
+2025-12-19T06:40:52.1531354Z [36;1mArtifact uploaded to Actions Artifacts, retained for 30 days.[0m
+2025-12-19T06:40:52.1531492Z [36;1m"@[0m
+2025-12-19T06:40:52.1531561Z [36;1m[0m
+2025-12-19T06:40:52.1531684Z [36;1m$summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8[0m
+2025-12-19T06:40:52.1553434Z shell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -ExecutionPolicy Bypass -File {0}
+2025-12-19T06:40:52.1553634Z env:
+2025-12-19T06:40:52.1553716Z   UE_VERSION: 5.6
+2025-12-19T06:40:52.1553869Z   UE_PATH: F:\Epic Games\UE_5.6
+2025-12-19T06:40:52.1554011Z   RUNUAT_PATH: F:\Epic Games\UE_5.6\Engine\Build\BatchFiles\RunUAT.bat
+2025-12-19T06:40:52.1554196Z   UE_EDITOR_PATH: F:\Epic Games\UE_5.6\Engine\Binaries\Win64\UnrealEditor.exe
+2025-12-19T06:40:52.1554385Z   PLUGIN_FILE: C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin
+2025-12-19T06:40:52.1554580Z   OUTPUT_DIR: C:\actions-runner\_work\_temp\XTools\XTools-UE_5.6-AllPlatforms
+2025-12-19T06:40:52.1554757Z   TEMP_OUTPUT: C:\actions-runner\_work\_temp\XTools\TempPackage
+2025-12-19T06:40:52.1554890Z ##[endgroup]

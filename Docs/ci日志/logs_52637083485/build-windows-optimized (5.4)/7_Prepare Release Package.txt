@@ -1,0 +1,64 @@
+﻿2025-12-19T06:26:31.7501718Z ##[group]Run Write-Host "==> Prepare Release Package" -ForegroundColor Cyan
+2025-12-19T06:26:31.7502044Z [36;1mWrite-Host "==> Prepare Release Package" -ForegroundColor Cyan[0m
+2025-12-19T06:26:31.7502188Z [36;1m[0m
+2025-12-19T06:26:31.7502282Z [36;1m# 创建 zip 文件用于上传 Artifact 和 GitHub Release[0m
+2025-12-19T06:26:31.7502424Z [36;1m$zip_name = "XTools-UE_5.4-v1.9.3.zip"[0m
+2025-12-19T06:26:31.7502583Z [36;1m$zip_path = Join-Path "C:\actions-runner\_work\_temp" $zip_name[0m
+2025-12-19T06:26:31.7502751Z [36;1mWrite-Host "Creating release zip: $zip_path"[0m
+2025-12-19T06:26:31.7502894Z [36;1m[0m
+2025-12-19T06:26:31.7502977Z [36;1m# Use PowerShell's Compress-Archive[0m
+2025-12-19T06:26:31.7503233Z [36;1mCompress-Archive -Path "C:\actions-runner\_work\_temp\XTools\XTools-UE_5.4-AllPlatforms\*" -DestinationPath $zip_path -Force[0m
+2025-12-19T06:26:31.7503451Z [36;1m[0m
+2025-12-19T06:26:31.7503528Z [36;1m# Verify zip creation[0m
+2025-12-19T06:26:31.7503634Z [36;1mif (Test-Path $zip_path) {[0m
+2025-12-19T06:26:31.7503789Z [36;1m  $zip_size = (Get-Item $zip_path).Length / 1MB[0m
+2025-12-19T06:26:31.7503951Z [36;1m  Write-Host "[OK] Created zip file: $([math]::Round($zip_size, 2)) MB"[0m
+2025-12-19T06:26:31.7504096Z [36;1m[0m
+2025-12-19T06:26:31.7504186Z [36;1m  echo "ZIP_PATH=$zip_path" >> $env:GITHUB_ENV[0m
+2025-12-19T06:26:31.7504295Z [36;1m[0m
+2025-12-19T06:26:31.7504367Z [36;1m  # 总是复制到本地临时目录（支持本地优先策略）[0m
+2025-12-19T06:26:31.7504499Z [36;1m  $release_temp_dir = "C:\GitHubActions\ReleaseTemp"[0m
+2025-12-19T06:26:31.7504899Z [36;1m[0m
+2025-12-19T06:26:31.7504971Z [36;1m  # 清理旧的临时文件（防止堆积）[0m
+2025-12-19T06:26:31.7505074Z [36;1m  if (Test-Path $release_temp_dir) {[0m
+2025-12-19T06:26:31.7505210Z [36;1m    Write-Host "Cleaning old release temp files..."[0m
+2025-12-19T06:26:31.7505368Z [36;1m    Get-ChildItem $release_temp_dir -Filter "*.zip" |[0m
+2025-12-19T06:26:31.7505536Z [36;1m      Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |[0m
+2025-12-19T06:26:31.7505898Z [36;1m      Remove-Item -Force[0m
+2025-12-19T06:26:31.7506032Z [36;1m  } else {[0m
+2025-12-19T06:26:31.7506194Z [36;1m    New-Item -ItemType Directory -Path $release_temp_dir -Force | Out-Null[0m
+2025-12-19T06:26:31.7506345Z [36;1m  }[0m
+2025-12-19T06:26:31.7506426Z [36;1m[0m
+2025-12-19T06:26:31.7506501Z [36;1m  # 复制到临时目录[0m
+2025-12-19T06:26:31.7506627Z [36;1m  $release_zip_path = Join-Path $release_temp_dir $zip_name[0m
+2025-12-19T06:26:31.7506758Z [36;1m[0m
+2025-12-19T06:26:31.7506862Z [36;1m  if ("refs/heads/main".StartsWith("refs/tags/v")) {[0m
+2025-12-19T06:26:31.7507079Z [36;1m    Write-Host "[Tag Push] Copying to release temp: $release_zip_path" -ForegroundColor Green[0m
+2025-12-19T06:26:31.7507250Z [36;1m  } else {[0m
+2025-12-19T06:26:31.7507402Z [36;1m    Write-Host "[Non-Tag] Copying to release temp: $release_zip_path" -ForegroundColor Cyan[0m
+2025-12-19T06:26:31.7507565Z [36;1m  }[0m
+2025-12-19T06:26:31.7507634Z [36;1m[0m
+2025-12-19T06:26:31.7507747Z [36;1m  Copy-Item $zip_path $release_zip_path -Force[0m
+2025-12-19T06:26:31.7507906Z [36;1m  echo "RELEASE_ZIP_PATH=$release_zip_path" >> $env:GITHUB_ENV[0m
+2025-12-19T06:26:31.7508044Z [36;1m} else {[0m
+2025-12-19T06:26:31.7508131Z [36;1m  throw "Failed to create zip file"[0m
+2025-12-19T06:26:31.7508239Z [36;1m}[0m
+2025-12-19T06:26:31.7528642Z shell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -ExecutionPolicy Bypass -File {0}
+2025-12-19T06:26:31.7528831Z env:
+2025-12-19T06:26:31.7528914Z   UE_VERSION: 5.4
+2025-12-19T06:26:31.7529001Z   UE_PATH: F:\Epic Games\UE_5.4
+2025-12-19T06:26:31.7529139Z   RUNUAT_PATH: F:\Epic Games\UE_5.4\Engine\Build\BatchFiles\RunUAT.bat
+2025-12-19T06:26:31.7529319Z   UE_EDITOR_PATH: F:\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor.exe
+2025-12-19T06:26:31.7529508Z   PLUGIN_FILE: C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin
+2025-12-19T06:26:31.7529694Z   OUTPUT_DIR: C:\actions-runner\_work\_temp\XTools\XTools-UE_5.4-AllPlatforms
+2025-12-19T06:26:31.7531248Z   TEMP_OUTPUT: C:\actions-runner\_work\_temp\XTools\TempPackage
+2025-12-19T06:26:31.7531385Z   BUILD_DURATION: 7m 44s
+2025-12-19T06:26:31.7531473Z   PACKAGE_SIZE_MB: 17.07
+2025-12-19T06:26:31.7531562Z   VERSION_TAG: v1.9.3
+2025-12-19T06:26:31.7531652Z   ARTIFACT_NAME: XTools-UE_5.4-v1.9.3
+2025-12-19T06:26:31.7531761Z ##[endgroup]
+2025-12-19T06:26:31.9351757Z ==> Prepare Release Package
+2025-12-19T06:26:31.9589430Z Creating release zip: C:\actions-runner\_work\_temp\XTools-UE_5.4-v1.9.3.zip
+2025-12-19T06:26:33.4434758Z [OK] Created zip file: 5.86 MB
+2025-12-19T06:26:33.4472236Z Cleaning old release temp files...
+2025-12-19T06:26:33.4542619Z [Non-Tag] Copying to release temp: C:\GitHubActions\ReleaseTemp\XTools-UE_5.4-v1.9.3.zip

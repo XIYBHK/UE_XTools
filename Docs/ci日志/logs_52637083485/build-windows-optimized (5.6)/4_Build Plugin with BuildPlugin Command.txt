@@ -1,0 +1,589 @@
+﻿2025-12-19T06:37:48.9231543Z ##[group]Run Write-Host "==> Build Plugin for UE 5.6" -ForegroundColor Cyan
+2025-12-19T06:37:48.9231840Z [36;1mWrite-Host "==> Build Plugin for UE 5.6" -ForegroundColor Cyan[0m
+2025-12-19T06:37:48.9231982Z [36;1m$build_start = Get-Date[0m
+2025-12-19T06:37:48.9232084Z [36;1m[0m
+2025-12-19T06:37:48.9232212Z [36;1m# Output directory setup (use RUNNER_TEMP to avoid writing to repo)[0m
+2025-12-19T06:37:48.9232382Z [36;1m$base_out = Join-Path $env:RUNNER_TEMP "XTools"[0m
+2025-12-19T06:37:48.9232575Z [36;1m$output_directory = Join-Path $base_out ("XTools-UE_" + $env:UE_VERSION + "-AllPlatforms")[0m
+2025-12-19T06:37:48.9232768Z [36;1m$temp_output = Join-Path $base_out "TempPackage"[0m
+2025-12-19T06:37:48.9232883Z [36;1m[0m
+2025-12-19T06:37:48.9232978Z [36;1mWrite-Host "Output Directory: $output_directory"[0m
+2025-12-19T06:37:48.9233104Z [36;1m[0m
+2025-12-19T06:37:48.9233184Z [36;1m# Clean old output directories[0m
+2025-12-19T06:37:48.9233300Z [36;1mif (Test-Path $temp_output) {[0m
+2025-12-19T06:37:48.9233456Z [36;1m  Write-Host "Cleaning old temp directory..."[0m
+2025-12-19T06:37:48.9233595Z [36;1m  Remove-Item -Recurse -Force $temp_output[0m
+2025-12-19T06:37:48.9233703Z [36;1m}[0m
+2025-12-19T06:37:48.9233792Z [36;1mif (Test-Path $output_directory) {[0m
+2025-12-19T06:37:48.9233918Z [36;1m  Write-Host "Cleaning old output directory..."[0m
+2025-12-19T06:37:48.9234053Z [36;1m  Remove-Item -Recurse -Force $output_directory[0m
+2025-12-19T06:37:48.9234161Z [36;1m}[0m
+2025-12-19T06:37:48.9234223Z [36;1m[0m
+2025-12-19T06:37:48.9234294Z [36;1m# Create output directories[0m
+2025-12-19T06:37:48.9234433Z [36;1mNew-Item -ItemType Directory -Force -Path $base_out | Out-Null[0m
+2025-12-19T06:37:48.9234623Z [36;1mNew-Item -ItemType Directory -Force -Path $temp_output | Out-Null[0m
+2025-12-19T06:37:48.9235039Z [36;1mNew-Item -ItemType Directory -Force -Path $output_directory | Out-Null[0m
+2025-12-19T06:37:48.9235186Z [36;1m[0m
+2025-12-19T06:37:48.9235270Z [36;1m# Export output directories for later steps[0m
+2025-12-19T06:37:48.9235420Z [36;1mecho "OUTPUT_DIR=$output_directory" >> $env:GITHUB_ENV[0m
+2025-12-19T06:37:48.9235582Z [36;1mecho "TEMP_OUTPUT=$temp_output" >> $env:GITHUB_ENV[0m
+2025-12-19T06:37:48.9235704Z [36;1m[0m
+2025-12-19T06:37:48.9235779Z [36;1m# Execute BuildPlugin command[0m
+2025-12-19T06:37:48.9235884Z [36;1m$pluginPath = $env:PLUGIN_FILE[0m
+2025-12-19T06:37:48.9236005Z [36;1m$packagePath = $temp_output[0m
+2025-12-19T06:37:48.9236112Z [36;1m$buildArgs = @([0m
+2025-12-19T06:37:48.9236210Z [36;1m  "BuildPlugin",[0m
+2025-12-19T06:37:48.9236308Z [36;1m  "-Plugin=$pluginPath",[0m
+2025-12-19T06:37:48.9236416Z [36;1m  "-Package=$packagePath",[0m
+2025-12-19T06:37:48.9236528Z [36;1m  "-CreateSubFolder",[0m
+2025-12-19T06:37:48.9236622Z [36;1m  "-NoHostProject",[0m
+2025-12-19T06:37:48.9236723Z [36;1m  "-Rocket"[0m
+2025-12-19T06:37:48.9236796Z [36;1m)[0m
+2025-12-19T06:37:48.9236861Z [36;1m[0m
+2025-12-19T06:37:48.9236929Z [36;1mWrite-Host ""[0m
+2025-12-19T06:37:48.9237055Z [36;1mWrite-Host "Starting build..." -ForegroundColor Yellow[0m
+2025-12-19T06:37:48.9237229Z [36;1m& "F:\Epic Games\UE_5.6\Engine\Build\BatchFiles\RunUAT.bat" @buildArgs[0m
+2025-12-19T06:37:48.9237362Z [36;1m[0m
+2025-12-19T06:37:48.9237441Z [36;1mif ($LASTEXITCODE -ne 0) {[0m
+2025-12-19T06:37:48.9237571Z [36;1m  Write-Error "Build failed with exit code: $LASTEXITCODE"[0m
+2025-12-19T06:37:48.9237709Z [36;1m  exit $LASTEXITCODE[0m
+2025-12-19T06:37:48.9237796Z [36;1m}[0m
+2025-12-19T06:37:48.9237931Z [36;1m[0m
+2025-12-19T06:37:48.9238012Z [36;1m$build_duration = (Get-Date) - $build_start[0m
+2025-12-19T06:37:48.9238187Z [36;1m$duration_str = "{0:N0}m {1:N0}s" -f $build_duration.TotalMinutes, $build_duration.Seconds[0m
+2025-12-19T06:37:48.9238355Z [36;1mWrite-Host ""[0m
+2025-12-19T06:37:48.9238491Z [36;1mWrite-Host "[OK] Build completed in: $duration_str" -ForegroundColor Green[0m
+2025-12-19T06:37:48.9238640Z [36;1m[0m
+2025-12-19T06:37:48.9239698Z [36;1mecho "BUILD_DURATION=$duration_str" >> $env:GITHUB_ENV[0m
+2025-12-19T06:37:48.9259043Z shell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -ExecutionPolicy Bypass -File {0}
+2025-12-19T06:37:48.9259244Z env:
+2025-12-19T06:37:48.9259322Z   UE_VERSION: 5.6
+2025-12-19T06:37:48.9259413Z   UE_PATH: F:\Epic Games\UE_5.6
+2025-12-19T06:37:48.9259564Z   RUNUAT_PATH: F:\Epic Games\UE_5.6\Engine\Build\BatchFiles\RunUAT.bat
+2025-12-19T06:37:48.9259768Z   UE_EDITOR_PATH: F:\Epic Games\UE_5.6\Engine\Binaries\Win64\UnrealEditor.exe
+2025-12-19T06:37:48.9259960Z   PLUGIN_FILE: C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin
+2025-12-19T06:37:48.9260102Z ##[endgroup]
+2025-12-19T06:37:49.1035425Z ==> Build Plugin for UE 5.6
+2025-12-19T06:37:49.1301177Z Output Directory: C:\actions-runner\_work\_temp\XTools\XTools-UE_5.6-AllPlatforms
+2025-12-19T06:37:49.1492458Z 
+2025-12-19T06:37:49.1497023Z Starting build...
+2025-12-19T06:37:49.1726936Z Running AutomationTool...
+2025-12-19T06:37:49.1979698Z Using bundled DotNet SDK version: 8.0.300 win-x64
+2025-12-19T06:37:49.4501390Z Starting AutomationTool...
+2025-12-19T06:37:49.4651650Z Parsing command line: BuildPlugin -Plugin=C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin -Package=C:\actions-runner\_work\_temp\XTools\TempPackage -CreateSubFolder -NoHostProject -Rocket
+2025-12-19T06:37:49.6039124Z Initializing script modules...
+2025-12-19T06:37:49.9164206Z Total script module initialization time: 0.31 s.
+2025-12-19T06:37:49.9724221Z Using E:\VisualStudio\2022\MSBuild\Current\Bin\MSBuild.exe
+2025-12-19T06:37:50.2654376Z Executing commands...
+2025-12-19T06:37:50.2990070Z Copying 2539 file(s) using max 64 thread(s)
+2025-12-19T06:37:50.7141569Z Reading plugin from C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\XTools.uplugin...
+2025-12-19T06:37:50.7248730Z Building plugin for host platforms: Win64
+2025-12-19T06:37:50.7379139Z Running: F:\Epic Games\UE_5.6\Engine\Binaries\ThirdParty\DotNet\8.0.300\win-x64\dotnet.exe "F:\Epic Games\UE_5.6\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" UnrealEditor Win64 Development -Project="C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\HostProject.uproject" -plugin="C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\XTools.uplugin" -noubtmakefiles -manifest="C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Saved\Manifest-UnrealEditor-Win64-Development.xml" -nohotreload -log="C:\Users\xiybh\AppData\Roaming\Unreal Engine\AutomationTool\Logs\F+Epic+Games+UE_5.6\UBA-UnrealEditor-Win64-Development.txt"
+2025-12-19T06:37:51.0061981Z Log file: C:\Users\xiybh\AppData\Roaming\Unreal Engine\AutomationTool\Logs\F+Epic+Games+UE_5.6\UBA-UnrealEditor-Win64-Development.txt
+2025-12-19T06:37:52.7470205Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\XTools\XTools.Build.cs(73,3): warning CS0618: 'ModuleRules.bEnableUndefinedIdentifierWarnings' is obsolete: 'Deprecated in UE5.5 - Replace with ModuleRules.UndefinedIdentifierWarningLevel'
+2025-12-19T06:37:52.7474230Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\XTools\XTools.Build.cs(73,3): warning CS0618: 'ModuleRules.bEnableUndefinedIdentifierWarnings' is obsolete: 'Deprecated in UE5.5 - Replace with ModuleRules.UndefinedIdentifierWarningLevel'
+2025-12-19T06:37:52.7475200Z Available x64 toolchains (1):
+2025-12-19T06:37:52.7475489Z  * E:\VisualStudio\2022\VC\Tools\MSVC\14.44.35207
+2025-12-19T06:37:52.7476021Z     (Family=14.44.35207, FamilyRank=1, Version=14.44.35220, HostArchitecture=x64, ReleaseChannel=Latest, Architecture=x64)
+2025-12-19T06:37:52.7476478Z Unavailable x64 toolchains (1):
+2025-12-19T06:37:52.7476736Z  * E:\VisualStudio\2022\VC\Tools\MSVC\14.36.32532
+2025-12-19T06:37:52.7479531Z     (Family=14.36.32532, FamilyRank=1, Version=14.36.32548, HostArchitecture=x64, ReleaseChannel=Latest, Architecture=x64, Error="UnrealBuildTool requires at minimum the MSVC 14.38.33130 toolchain. Please install a later toolchain such as 14.38.33130 from the Visual Studio installer.")
+2025-12-19T06:37:52.7481237Z Visual Studio 2022 compiler version 14.44.35220 is not a preferred version. Please use the latest preferred version 14.38.33130
+2025-12-19T06:37:55.6619964Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\PhysicsAssetOptimizer.Build.cs: warning: Referenced directory 'C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\Developer\PhysicsUtilities\Private' does not exist.
+2025-12-19T06:37:55.6620832Z Warning: Plugin 'XTools' does not list plugin 'AssetSearch' as a dependency, but module 'XTools_BlueprintAssist' depends on module 'AssetSearch'.
+2025-12-19T06:37:55.6621114Z Parsing headers for UnrealEditor
+2025-12-19T06:37:55.6628770Z   Running Internal UnrealHeaderTool C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\HostProject.uproject C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Intermediate\Build\Win64\UnrealEditor\Development\UnrealEditor.uhtmanifest -WarningsAsErrors -installed
+2025-12-19T06:37:58.2543838Z Total of 301 written
+2025-12-19T06:37:58.2557993Z Reflection code generated for UnrealEditor in 2.5934193 seconds
+2025-12-19T06:38:00.2324786Z Writing manifest to C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Saved\Manifest-UnrealEditor-Win64-Development.xml
+2025-12-19T06:38:00.4167415Z Building UnrealEditor...
+2025-12-19T06:38:00.4170098Z Using Visual Studio 2022 14.44.35220 toolchain (E:\VisualStudio\2022\VC\Tools\MSVC\14.44.35207) and Windows 10.0.26100.0 SDK (C:\Program Files (x86)\Windows Kits\10).
+2025-12-19T06:38:00.4172068Z Warning: Visual Studio 2022 compiler is not a preferred version
+2025-12-19T06:38:00.4172964Z [Adaptive Build] Excluded from PhysicsAssetOptimizer unity file: BoneIdentificationSystem.cpp, PhysicsAssetEditorExtension.cpp, PhysicsAssetOptimizer.cpp, PhysicsOptimizerCore.cpp, SPhysicsOptimizerPanel.cpp
+2025-12-19T06:38:00.4175190Z [Adaptive Build] Excluded from MetaHumanCore unity file: DNAUtilities.cpp, Integration.cpp, LoadLiveLinkFaceCameraCalibration.cpp, Logger.cpp, MetaHumanAuthoringObjects.cpp, MetaHumanContourData.cpp, MetaHumanContourDataVersion.cpp, MetaHumanCoreLog.cpp, MetaHumanCoreModule.cpp, MetaHumanCoreStyle.cpp, MetaHumanCurveDataController.cpp, MetaHumanSupportedRHI.cpp, MetaHumanViewportSettings.cpp, ScopedTimer.cpp, ShapeAnnotation.cpp, ShapeAnnotationWrapper.cpp
+2025-12-19T06:38:00.4176180Z [Adaptive Build] Excluded from CaptureDataUtils unity file: CaptureDataUtilsModule.cpp, ImageSequenceTimecodeUtils.cpp, ParseTakeUtils.cpp, SoundWaveTimecodeUtils.cpp
+2025-12-19T06:38:00.4176962Z [Adaptive Build] Excluded from MetaHumanCoreTech unity file: CoreUtils.cpp, FrameAnimationData.cpp, GuiToRawControlsUtils.cpp, MetaHumanCoreCustomVersion.cpp, MetaHumanCoreModule.cpp, MetaHumanHeadTransform.cpp, MetaHumanOneEuroFilter.cpp, MetaHumanRealtimeCalibration.cpp, MetaHumanRealtimeSmoothing.cpp
+2025-12-19T06:38:00.4177757Z [Adaptive Build] Excluded from MetaHumanCoreEditor unity file: MetaHumanCameraCalibrationImporterFactory.cpp, MetaHumanCoreEditorModule.cpp, MetaHumanEditorSettings.cpp, MetaHumanCoreTests.cpp
+2025-12-19T06:38:00.4178658Z [Adaptive Build] Excluded from MetaHumanImageViewerEditor unity file: CurveEditingTests.cpp, MetaHumanCurveDragOperations.cpp, MetaHumanDepthMeshComponent.cpp, MetaHumanFootageComponent.cpp, MetaHumanImageViewerEditorModule.cpp, MetaHumanSceneCaptureComponent2D.cpp, SABImage.cpp, STrackerImageViewer.cpp, CustomMaterialUtils.cpp
+2025-12-19T06:38:00.4179367Z [Adaptive Build] Excluded from MetaHumanImageViewer unity file: MetaHumanImageViewerModule.cpp, SMetaHumanImageViewer.cpp
+2025-12-19T06:38:00.4180364Z [Adaptive Build] Excluded from MetaHumanPipeline unity file: DoesNNEAssetExist.cpp, MetaHumanPipelineModule.cpp, AnimationUtilNodes.cpp, ControlUtilNodes.cpp, DepthMapDiagnosticsNode.cpp, FaceTrackerNode.cpp, FaceTrackerPostProcessingFilterNode.cpp, FaceTrackerPostProcessingNode.cpp, HyprsenseNode.cpp, HyprsenseNodeBase.cpp, HyprsenseSparseNode.cpp, HyprsenseTestNode.cpp, SpeechToAnimNode.cpp, TestNodes.cpp, TongueTrackerNode.cpp, TrackerUtilNodes.cpp, PipelineTests.cpp
+2025-12-19T06:38:00.4181905Z [Adaptive Build] Excluded from MetaHumanSpeech2Face unity file: AudioDrivenAnimationConfig.cpp, AudioDrivenAnimationCustomizations.cpp, MetaHumanSpeech2FaceModule.cpp, Speech2Face.cpp, Speech2Face.spec.cpp, Speech2FaceInternal.cpp
+2025-12-19T06:38:00.4182966Z [Adaptive Build] Excluded from MetaHumanPipelineCore unity file: MetaHumanPipelineCoreModule.cpp, AudioUtilNodes.cpp, HyprsenseRealtimeNode.cpp, HyprsenseRealtimeSmoothingNode.cpp, HyprsenseUtils.cpp, ImageUtilNodes.cpp, NeutralFrameNode.cpp, RealtimeSpeechToAnimNode.cpp, Connection.cpp, DataTree.cpp, Log.cpp, Node.cpp, Pin.cpp, Pipeline.cpp, PipelineData.cpp, PipelineProcess.cpp
+2025-12-19T06:38:00.4184509Z [Adaptive Build] Excluded from MetaHumanCaptureData unity file: FrameNumberTransformer.cpp, FramePathResolver.cpp, FramePathResolverSingleFile.cpp, MetaHumanCaptureDataModule.cpp, SequencedImageTrackInfo.cpp, TrackingPathUtils.cpp, TestCalculateRateMatchingDropFrames.cpp, TestFindFirstCommonFrameNumber.cpp, TestFrameNumberTransformer.cpp, TestFramePathResolver.cpp, TestFramePathResolverSingleFile.cpp, TestFrameRatesAreCompatible.cpp, TestTracksHaveCompatibleFrameRates.cpp, TestTracksHaveDifferentFrameRates.cpp
+2025-12-19T06:38:00.4185630Z [Adaptive Build] Excluded from MetaHumanConfig unity file: MetaHumanConfig.cpp, MetaHumanConfigLog.cpp, MetaHumanConfigModule.cpp, MetaHumanConfigStyle.cpp, MetaHumanConfigTests.cpp
+2025-12-19T06:38:00.4186292Z [Adaptive Build] Excluded from MetaHumanFaceAnimationSolver unity file: MetaHumanFaceAnimationSolver.cpp, MetaHumanFaceAnimationSolverModule.cpp, MetaHumanFaceAnimationSolverStyle.cpp, MetaHumanFaceAnimationSolverTests.cpp
+2025-12-19T06:38:00.4187159Z [Adaptive Build] Excluded from MetaHumanPlatform unity file: MetaHumanMinSpec.cpp, MetaHumanPlatformLog.cpp, MetaHumanPlatformModule.cpp, MetaHumanPhysicalDeviceProvider_Other.cpp, MetaHumanPhysicalDeviceProvider_Windows.cpp
+2025-12-19T06:38:00.4187982Z [Adaptive Build] Excluded from MetaHumanFaceContourTracker unity file: MetaHumanFaceContourTrackerAsset.cpp, MetaHumanFaceContourTrackerModule.cpp, MetaHumanFaceContourTrackerStyle.cpp
+2025-12-19T06:38:00.4188676Z [Adaptive Build] Excluded from MetaHumanFaceContourTrackerEditor unity file: MetaHumanFaceContourTrackerAssetFactoryNew.cpp, MetaHumanMeshTrackerEditorModule.cpp, AssetDefinition_MetaHumanFaceContourTracker.cpp
+2025-12-19T06:38:00.4190119Z [Adaptive Build] Excluded from MetaHumanIdentity unity file: LandmarkConfigIdentityHelper.cpp, MetaHumanIdentity.cpp, MetaHumanIdentityLog.cpp, MetaHumanIdentityModule.cpp, MetaHumanIdentityParts.cpp, MetaHumanIdentityPose.cpp, MetaHumanIdentityPromotedFrames.cpp, MetaHumanIdentityStateValidator.cpp, MetaHumanIdentityStyle.cpp, MetaHumanIdentityViewportSettings.cpp, MetaHumanPredictiveSolversTask.cpp, MetaHumanTemplateMeshComponent.cpp, PredictiveSolverInterface.cpp, PromotedFrameUtils.cpp, MetaHumanIdentityTests.cpp
+2025-12-19T06:38:00.4191314Z [Adaptive Build] Excluded from MetaHumanFaceFittingSolver unity file: MetaHumanFaceFittingSolver.cpp, MetaHumanFaceFittingSolverModule.cpp, MetaHumanFaceFittingSolverStyle.cpp, MetaHumanFaceFittingSolverTests.cpp
+2025-12-19T06:38:00.4191936Z [Adaptive Build] Excluded from MetaHumanCaptureDataEditor unity file: CaptureDataUtils.cpp, MetaHumanCaptureDataEditorModule.cpp, SMetaHumanCameraCombo.cpp
+2025-12-19T06:38:00.4193349Z [Adaptive Build] Excluded from MetaHumanIdentityEditor unity file: MetaHumanIdentityAssetEditor.cpp, MetaHumanIdentityAssetEditorToolkit.cpp, MetaHumanIdentityCommands.cpp, MetaHumanIdentityEditorModule.cpp, MetaHumanIdentityFactoryNew.cpp, MetaHumanIdentityTooltipProvider.cpp, AssetDefinition_MetaHumanIdentity.cpp, MetaHumanIdentityPoseCustomizations.cpp, MetaHumanIdentityEditorTests.cpp, MetaHumanIdentityThumbnailRenderer.cpp, MetaHumanIdentityViewportClient.cpp, SMetaHumanIdentityOutliner.cpp, SMetaHumanIdentityPartsClassCombo.cpp, SMetaHumanIdentityPartsEditor.cpp, SMetaHumanIdentityPromotedFramesEditor.cpp
+2025-12-19T06:38:00.4195299Z [Adaptive Build] Excluded from MetaHumanSequencer unity file: MetaHumanAudioSection.cpp, MetaHumanAudioTrack.cpp, MetaHumanAudioTrackEditor.cpp, MetaHumanMediaSection.cpp, MetaHumanMediaTrackEditor.cpp, MetaHumanMovieSceneChannel.cpp, MetaHumanMovieSceneMediaSection.cpp, MetaHumanMovieSceneMediaTrack.cpp, MetaHumanSequence.cpp, MetaHumanSequencerModule.cpp, MetaHumanSequencerPlaybackContext.cpp
+2025-12-19T06:38:00.4196390Z [Adaptive Build] Excluded from MetaHumanToolkit unity file: MetaHumanEditorViewportClient.cpp, MetaHumanToolkitBase.cpp, MetaHumanToolkitCommands.cpp, MetaHumanToolkitModule.cpp, MetaHumanToolkitStyle.cpp, SMetaHumanEditorViewport.cpp, SMetaHumanEditorViewportToolBar.cpp
+2025-12-19T06:38:00.4197145Z [Adaptive Build] Excluded from MetaHumanCaptureUtils unity file: MetaHumanCaptureUtilsModule.cpp, CallbackSynchronizer.cpp, Event.cpp, EventSourceUtils.cpp, EventSourceUtils.spec.cpp, StopToken.cpp
+2025-12-19T06:38:00.4199576Z [Adaptive Build] Excluded from MetaHumanCaptureSource unity file: IpAddressDetailsCustomization.cpp, MetaHumanCaptureError.cpp, MetaHumanCaptureIngester.cpp, MetaHumanCaptureSource.cpp, MetaHumanCaptureSourceAutoReimport.cpp, MetaHumanCaptureSourceFactoryNew.cpp, MetaHumanCaptureSourceLog.cpp, MetaHumanCaptureSourceModule.cpp, MetaHumanCaptureSourceSync.cpp, AssetDefinition_MetaHumanCaptureSource.cpp, CubicCameraSystemIngest.cpp, CubicCameraSystemTakeMetadata.cpp, FileFootageIngest.cpp, FootageIngest.cpp, HMCArchiveIngest.cpp, LiveLinkFaceConnectionIngest.cpp, LiveLinkFaceFootageIngest.cpp, LiveLinkFaceMetadata.cpp, ResolutionResolver.cpp, StereoReconstructionSystemIngest.cpp, BaseCommand.cpp, CommandHandler.cpp, ImageSequenceWriter.cpp, IngestAssetCreator.cpp, LiveLinkFaceConnectionCommands.cpp, LiveLinkFaceConnectionExportStreams.cpp, LiveLinkFaceTakeDataConverter.cpp, MetaHumanDepthConverter.cpp, MetaHumanStringUtils.cpp, MetaHumanWaveFileWriter.cpp, MetaHumanMediaSourceReader_Dummy.cpp, MetaHumanMediaSourceReader_Windows.cpp, TestCaptureSourceImport.cpp, TestCaptureSourceProperties.cpp
+2025-12-19T06:38:00.4204647Z [Adaptive Build] Excluded from MetaHumanCaptureProtocolStack unity file: MetaHumanCaptureProtocolStack.cpp, TcpClient.cpp, TcpServer.cpp, UdpClient.cpp, ControlMessenger.cpp, ControlCommunication.cpp, ControlPacket.cpp, Constants.cpp, ControlJsonUtilities.cpp, ControlMessage.cpp, ControlRequest.cpp, ControlResponse.cpp, ControlUpdate.cpp, DiscoveryMessenger.cpp, DiscoveryCommunication.cpp, DiscoveryPacket.cpp, DiscoveryNotify.cpp, DiscoveryRequest.cpp, DiscoveryResponse.cpp, ExportClient.cpp, ExportWorker.cpp, ExportCommunication.cpp, ExportHeader.cpp, ExportRequest.cpp, ExportResponse.cpp, TestControlJsonUtilities.cpp, TestControlMessage.cpp, TestControlPacket.cpp, TestControlRequest.cpp, TestControlResponse.cpp, TestControlUpdate.cpp, TestDiscoveryNotify.cpp, TestDiscoveryPacket.cpp, TestDiscoveryRequest.cpp, TestDiscoveryResponse.cpp, TestExportHeader.cpp, TestExportRequest.cpp, TestExportResponse.cpp, Error.cpp, TimerManager.cpp
+2025-12-19T06:38:00.4206779Z [Adaptive Build] Excluded from MetaHumanFootageIngest unity file: CaptureManager.cpp, CaptureManagerCommands.cpp, CaptureManagerLog.cpp, CaptureManagerWidget.cpp, CaptureSourcesWidget.cpp, DevelopersContentFilter.cpp, FootageIngestWidget.cpp, MetaHumanFootageIngestModule.cpp, MetaHumanFootageRetrievalWindowStyle.cpp, DevelopersContentFilterTests.cpp, AppleDeviceList.cpp
+2025-12-19T06:38:00.4207816Z [Adaptive Build] Excluded from MetaHumanDepthGenerator unity file: MetaHumanDepthGenerator.cpp, MetaHumanDepthGeneratorAutoReimport.cpp, MetaHumanDepthGeneratorModule.cpp, MetaHumanGenerateDepthWindowOptions.cpp, SMetaHumanGenerateDepthWindow.cpp
+2025-12-19T06:38:00.4210718Z [Adaptive Build] Excluded from MetaHumanPerformance unity file: MetaHumanPerformance.cpp, MetaHumanPerformanceEditor.cpp, MetaHumanPerformanceEditorToolkit.cpp, MetaHumanPerformanceExportUtils.cpp, MetaHumanPerformanceFactoryNew.cpp, MetaHumanPerformanceLog.cpp, MetaHumanPerformanceModule.cpp, MetaHumanPerformanceViewportSettings.cpp, MetaHumanPerformerCommands.cpp, AssetDefinition_MetaHumanPerformance.cpp, MetaHumanPerformanceCustomizations.cpp, MetaHumanPerformanceAudioSection.cpp, MetaHumanPerformanceAudioTrackEditor.cpp, MetaHumanPerformanceMediaSection.cpp, MetaHumanPerformanceMediaTrackEditor.cpp, MetaHumanPerformanceMovieSceneAudioSection.cpp, MetaHumanPerformanceMovieSceneAudioTrack.cpp, MetaHumanPerformanceMovieSceneMediaSection.cpp, MetaHumanPerformanceMovieSceneMediaTrack.cpp, MetaHumanPerformancePlaybackContext.cpp, MetaHumanPerformanceSequence.cpp, MetaHumanPerformanceTests.cpp, MetaHumanPerformanceControlRigComponent.cpp, MetaHumanPerformanceControlRigViewportClient.cpp, MetaHumanPerformanceControlRigViewportManager.cpp, MetaHumanPerformanceStyle.cpp, MetaHumanPerformanceViewportClient.cpp
+2025-12-19T06:38:00.4213936Z [Adaptive Build] Excluded from MetaHumanBatchProcessor unity file: MetaHumanBatchLog.cpp, MetaHumanBatchMenuExtensions.cpp, MetaHumanBatchOperation.cpp, MetaHumanBatchProcessorModule.cpp, SMetaHumanBatchExportPathDialog.cpp, SMetaHumanSpeechProcessingSettings.cpp
+2025-12-19T06:38:00.4214775Z [Adaptive Build] Excluded from MetaHumanConfigEditor unity file: MetaHumanConfigEditorModule.cpp, MetaHumanConfigFactory.cpp, SMetaHumanConfigCombo.cpp, AssetDefinition_MetaHumanConfig.cpp, MetaHumanConfigCustomizations.cpp
+2025-12-19T06:38:00.4215637Z [Adaptive Build] Excluded from MetaHumanFaceAnimationSolverEditor unity file: MetaHumanFaceAnimationSolverEditorModule.cpp, MetaHumanFaceAnimationSolverFactoryNew.cpp, AssetDefinition_MetaHumanFaceAnimationSolver.cpp, MetaHumanFaceAnimationSolverCustomizations.cpp
+2025-12-19T06:38:00.4216579Z [Adaptive Build] Excluded from MetaHumanFaceFittingSolverEditor unity file: MetaHumanFaceFittingSolverEditorModule.cpp, MetaHumanFaceFittingSolverFactoryNew.cpp, AssetDefinition_MetaHumanFaceFittingSolver.cpp, MetaHumanFaceFittingSolverCustomizations.cpp
+2025-12-19T06:38:00.4217515Z [Adaptive Build] Excluded from MetaHumanControlsConversionTest unity file: MetaHumanControlsConversionTestModule.cpp, ConversionDataGenerator.cpp, GuiToRawControlsTests.cpp
+2025-12-19T06:38:00.4218220Z [Adaptive Build] Excluded from MetaHumanCalibrationGenerator unity file: MetaHumanCalibrationGenerator.cpp, MetaHumanCalibrationGeneratorModule.cpp, MetaHumanCalibrationGeneratorOptions.cpp, SMetaHumanCalibrationGeneratorWindow.cpp
+2025-12-19T06:38:00.4220285Z [Adaptive Build] Excluded from CaptureProtocolStack unity file: CaptureProtocolStack.cpp, ControlMessenger.cpp, ControlCommunication.cpp, ControlPacket.cpp, Constants.cpp, ControlJsonUtilities.cpp, ControlMessage.cpp, ControlRequest.cpp, ControlResponse.cpp, ControlUpdate.cpp, DiscoveryMessenger.cpp, DiscoveryCommunication.cpp, DiscoveryPacket.cpp, DiscoveryNotify.cpp, DiscoveryRequest.cpp, DiscoveryResponse.cpp, ExportClient.cpp, ExportWorker.cpp, ExportCommunication.cpp, ExportHeader.cpp, ExportRequest.cpp, ExportResponse.cpp, TestControlJsonUtilities.cpp, TestControlMessage.cpp, TestControlPacket.cpp, TestControlRequest.cpp, TestControlResponse.cpp, TestControlUpdate.cpp, TestDiscoveryNotify.cpp, TestDiscoveryPacket.cpp, TestDiscoveryRequest.cpp, TestDiscoveryResponse.cpp, TestExportHeader.cpp, TestExportRequest.cpp, TestExportResponse.cpp
+2025-12-19T06:38:00.4231884Z Determining max actions to execute in parallel (8 physical cores, 16 logical cores)
+2025-12-19T06:38:00.4232741Z   Executing up to 8 processes, one per physical core
+2025-12-19T06:38:00.4365483Z Using Unreal Build Accelerator local executor to run 360 action(s)
+2025-12-19T06:38:00.4451488Z   Storage capacity 40Gb
+2025-12-19T06:38:00.4680794Z ---- Starting trace: 251219_143800 ----
+2025-12-19T06:38:00.4716655Z UbaServer - bind 0.0.0.0:1345 failed (An attempt was made to access a socket in a way forbidden by its access permissions.)
+2025-12-19T06:38:00.4752385Z ------ Building 360 action(s) started ------
+2025-12-19T06:38:00.7174837Z [1/360] Resource Default.rc2
+2025-12-19T06:38:00.7175539Z [2/360] Resource Default.rc2
+2025-12-19T06:38:00.7175992Z [3/360] Resource Default.rc2
+2025-12-19T06:38:00.7177158Z [4/360] Resource Default.rc2
+2025-12-19T06:38:00.7178101Z [5/360] Resource Default.rc2
+2025-12-19T06:38:00.7178603Z [6/360] Resource Default.rc2
+2025-12-19T06:38:00.7506085Z [7/360] Resource Default.rc2
+2025-12-19T06:38:00.7506439Z [8/360] Resource Default.rc2
+2025-12-19T06:38:00.7506896Z [9/360] Resource Default.rc2
+2025-12-19T06:38:00.7507193Z [10/360] Resource Default.rc2
+2025-12-19T06:38:00.7507434Z [11/360] Resource Default.rc2
+2025-12-19T06:38:00.7507683Z [12/360] Resource Default.rc2
+2025-12-19T06:38:00.7837142Z [13/360] Resource Default.rc2
+2025-12-19T06:38:00.7837534Z [14/360] Resource Default.rc2
+2025-12-19T06:38:00.7837755Z [15/360] Resource Default.rc2
+2025-12-19T06:38:00.7869818Z [16/360] Resource Default.rc2
+2025-12-19T06:38:13.1635669Z [17/360] Compile [x64] BACrashReportDialog.cpp
+2025-12-19T06:38:14.3847342Z [18/360] Compile [x64] BACrashReporter.cpp
+2025-12-19T06:38:19.5742143Z [19/360] Compile [x64] BABlueprintHandlerObject.cpp
+2025-12-19T06:38:19.6954655Z [20/360] Compile [x64] BAAssetEditorHandlerObject.cpp
+2025-12-19T06:38:20.1281505Z [21/360] Compile [x64] BABlueprintActionMenu.cpp
+2025-12-19T06:38:27.7975416Z [22/360] Compile [x64] BAAddSymbolMenu.cpp
+2025-12-19T06:38:31.7979710Z [23/360] Compile [x64] BACrashUpload.cpp
+2025-12-19T06:38:32.8193752Z [24/360] Compile [x64] BAFormatterUtils.cpp
+2025-12-19T06:38:35.1075843Z [25/360] Compile [x64] BADebugMenu.cpp
+2025-12-19T06:38:35.2736339Z [26/360] Compile [x64] BAEditDetailsMenu.cpp
+2025-12-19T06:38:37.3519548Z [27/360] Compile [x64] BALinkPinMenu.cpp
+2025-12-19T06:38:37.9380367Z [28/360] Compile [x64] BAFocusSearchBoxMenu.cpp
+2025-12-19T06:38:39.2677656Z [29/360] Compile [x64] SharedPCH.UnrealEd.NonOptimized.Cpp20.cpp
+2025-12-19T06:38:40.1049832Z [30/360] Compile [x64] SharedPCH.UnrealEd.Cpp20.cpp
+2025-12-19T06:38:40.4125154Z [31/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:40.5407375Z [32/360] Compile [x64] XToolsCore.cpp
+2025-12-19T06:38:40.6370114Z [33/360] Compile [x64] XToolsErrorReporter.cpp
+2025-12-19T06:38:40.6370703Z [34/360] Compile [x64] BAGoToSymbolMenu.cpp
+2025-12-19T06:38:40.6371505Z [35/360] Link [x64] UnrealEditor-XToolsCore.lib
+2025-12-19T06:38:40.6378657Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XToolsCore/UnrealEditor-XToolsCore.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XToolsCore/UnrealEditor-XToolsCore.exp
+2025-12-19T06:38:41.6479313Z [36/360] Link [x64] UnrealEditor-XToolsCore.dll
+2025-12-19T06:38:42.2469938Z [37/360] Compile [x64] ComponentTimelineRuntime.cpp
+2025-12-19T06:38:42.3319674Z [38/360] Compile [x64] ComponentTimelineSettings.cpp
+2025-12-19T06:38:42.4051747Z [39/360] Compile [x64] ComponentTimelineLibrary.cpp
+2025-12-19T06:38:42.4689009Z [40/360] Compile [x64] Module.XTools_ComponentTimelineRuntime.gen.cpp
+2025-12-19T06:38:42.4689474Z [41/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:42.4689806Z [42/360] Link [x64] UnrealEditor-XTools_ComponentTimelineRuntime.lib
+2025-12-19T06:38:42.4692929Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_ComponentTimelineRuntime/UnrealEditor-XTools_ComponentTimelineRuntime.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_ComponentTimelineRuntime/UnrealEditor-XTools_ComponentTimelineRuntime.exp
+2025-12-19T06:38:43.4804325Z [43/360] Compile [x64] BlueprintExtensionsRuntime.cpp
+2025-12-19T06:38:43.4804840Z [44/360] Compile [x64] MapExtensionsLibrary.cpp
+2025-12-19T06:38:43.4805182Z [45/360] Link [x64] UnrealEditor-XTools_ComponentTimelineRuntime.dll
+2025-12-19T06:38:44.4584093Z [46/360] Compile [x64] MathExtensionsLibrary.cpp
+2025-12-19T06:38:44.4968562Z [47/360] Compile [x64] ObjectExtensionsLibrary.cpp
+2025-12-19T06:38:44.6888611Z [48/360] Compile [x64] Module.BlueprintExtensionsRuntime.gen.cpp
+2025-12-19T06:38:44.8635647Z [49/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:44.9217331Z [50/360] Compile [x64] ProcessExtensionsLibrary.cpp
+2025-12-19T06:38:45.0265510Z [51/360] Compile [x64] SplineExtensionsLibrary.cpp
+2025-12-19T06:38:45.2529456Z [52/360] Compile [x64] BARootObject.cpp
+2025-12-19T06:38:45.5891395Z [53/360] Compile [x64] SplineTrajectoryLibrary.cpp
+2025-12-19T06:38:45.6627515Z [54/360] Compile [x64] TransformExtensionsLibrary.cpp
+2025-12-19T06:38:45.7769229Z [55/360] Compile [x64] TraceExtensionsLibrary.cpp
+2025-12-19T06:38:45.8512038Z [56/360] Compile [x64] SupportSystemLibrary.cpp
+2025-12-19T06:38:45.9160318Z [57/360] Compile [x64] TurretRotationLibrary.cpp
+2025-12-19T06:38:45.9160748Z [58/360] Compile [x64] VariableReflectionLibrary.cpp
+2025-12-19T06:38:45.9161180Z [59/360] Link [x64] UnrealEditor-BlueprintExtensionsRuntime.lib
+2025-12-19T06:38:45.9164081Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/BlueprintExtensionsRuntime/UnrealEditor-BlueprintExtensionsRuntime.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/BlueprintExtensionsRuntime/UnrealEditor-BlueprintExtensionsRuntime.exp
+2025-12-19T06:38:46.4949175Z [60/360] Compile [x64] BAScopedRollbackTransaction.cpp
+2025-12-19T06:38:46.6538603Z [61/360] Compile [x64] FormationData.cpp
+2025-12-19T06:38:46.6608212Z [62/360] Compile [x64] FormationAlgorithms.cpp
+2025-12-19T06:38:46.9342798Z [63/360] Compile [x64] FormationLog.cpp
+2025-12-19T06:38:46.9345509Z [64/360] Compile [x64] FormationLibrary.cpp
+2025-12-19T06:38:46.9345888Z [65/360] Link [x64] UnrealEditor-BlueprintExtensionsRuntime.dll
+2025-12-19T06:38:47.1001253Z [66/360] Compile [x64] FormationBlueprintNodes.cpp
+2025-12-19T06:38:47.2785601Z [67/360] Compile [x64] FormationMathUtils.cpp
+2025-12-19T06:38:47.4550186Z [68/360] Compile [x64] FormationSystem.cpp
+2025-12-19T06:38:47.4855921Z [69/360] Compile [x64] BAMiscUtils.cpp
+2025-12-19T06:38:47.4885972Z [70/360] Compile [x64] FormationManagerComponent.cpp
+2025-12-19T06:38:47.6275748Z [71/360] Compile [x64] FormationTypes.cpp
+2025-12-19T06:38:47.8320705Z [72/360] Compile [x64] FormationTestActor.cpp
+2025-12-19T06:38:48.0578961Z [73/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:48.1606460Z [74/360] Compile [x64] FormationMovementComponent.cpp
+2025-12-19T06:38:48.2904517Z [75/360] Compile [x64] BASettingsBase.cpp
+2025-12-19T06:38:48.6370623Z [76/360] Compile [x64] ActorPoolMemoryOptimizer.cpp
+2025-12-19T06:38:48.7330354Z [77/360] Compile [x64] ActorPool.cpp
+2025-12-19T06:38:48.9432410Z [78/360] Compile [x64] ObjectPoolInterface.cpp
+2025-12-19T06:38:48.9462335Z [79/360] Compile [x64] Module.FormationSystem.gen.cpp
+2025-12-19T06:38:48.9462795Z [80/360] Compile [x64] ActorStateResetter.cpp
+2025-12-19T06:38:48.9463092Z [81/360] Link [x64] UnrealEditor-FormationSystem.lib
+2025-12-19T06:38:48.9466131Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/FormationSystem/UnrealEditor-FormationSystem.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/FormationSystem/UnrealEditor-FormationSystem.exp
+2025-12-19T06:38:49.1803358Z [82/360] Compile [x64] ObjectPoolConfigManager.cpp
+2025-12-19T06:38:49.3690317Z [83/360] Compile [x64] Module.ObjectPool.gen.cpp
+2025-12-19T06:38:49.5361935Z [84/360] Compile [x64] ObjectPoolLibrary.cpp
+2025-12-19T06:38:49.5457408Z [85/360] Compile [x64] ObjectPoolModule.cpp
+2025-12-19T06:38:49.6282987Z [86/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:49.7199011Z [87/360] Compile [x64] ObjectPoolManager.cpp
+2025-12-19T06:38:49.7835112Z [88/360] Compile [x64] ObjectPoolPreallocator.cpp
+2025-12-19T06:38:49.9453641Z [89/360] Compile [x64] MinIndexQueue.cpp
+2025-12-19T06:38:49.9882657Z [90/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:50.0832899Z [91/360] Compile [x64] Module.RandomShuffles.gen.cpp
+2025-12-19T06:38:50.0833378Z [92/360] Compile [x64] RandomShuffleLog.cpp
+2025-12-19T06:38:50.0833694Z [93/360] Link [x64] UnrealEditor-FormationSystem.dll
+2025-12-19T06:38:50.2664969Z [94/360] Compile [x64] RandomShuffles.cpp
+2025-12-19T06:38:50.3108997Z [95/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:50.3713510Z [96/360] Compile [x64] ObjectPoolSubsystem.cpp
+2025-12-19T06:38:50.3714175Z [97/360] Compile [x64] RandomShuffleArrayLibrary.cpp
+2025-12-19T06:38:50.3714572Z [98/360] Link [x64] UnrealEditor-RandomShuffles.lib
+2025-12-19T06:38:50.3717663Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/RandomShuffles/UnrealEditor-RandomShuffles.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/RandomShuffles/UnrealEditor-RandomShuffles.exp
+2025-12-19T06:38:50.5628255Z [99/360] Compile [x64] ComponentTimelineUncooked.cpp
+2025-12-19T06:38:50.9772703Z [100/360] Compile [x64] SortModule.cpp
+2025-12-19T06:38:50.9866117Z [101/360] Compile [x64] Module.Sort.gen.cpp
+2025-12-19T06:38:51.0612896Z [102/360] Compile [x64] K2Node_ComponentTimeline.cpp
+2025-12-19T06:38:51.0613340Z [103/360] Compile [x64] ObjectPoolUtils.cpp
+2025-12-19T06:38:51.0613887Z [104/360] Link [x64] UnrealEditor-ObjectPool.lib
+2025-12-19T06:38:51.0616639Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/ObjectPool/UnrealEditor-ObjectPool.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/ObjectPool/UnrealEditor-ObjectPool.exp
+2025-12-19T06:38:51.5542660Z [105/360] Link [x64] UnrealEditor-RandomShuffles.dll
+2025-12-19T06:38:51.7022646Z [106/360] Compile [x64] SortLibrary.cpp
+2025-12-19T06:38:51.7073386Z [107/360] Compile [x64] K2Node_BaseTimeline.cpp
+2025-12-19T06:38:51.7073904Z [108/360] Compile [x64] K2Node_ObjectTimeline.cpp
+2025-12-19T06:38:51.7074947Z [109/360] Link [x64] UnrealEditor-Sort.lib
+2025-12-19T06:38:51.7077286Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/Sort/UnrealEditor-Sort.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/Sort/UnrealEditor-Sort.exp
+2025-12-19T06:38:52.1984479Z [110/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:52.1984941Z [111/360] Compile [x64] Module.XTools_ComponentTimelineUncooked.gen.cpp
+2025-12-19T06:38:52.1985225Z [112/360] Link [x64] UnrealEditor-ObjectPool.dll
+2025-12-19T06:38:52.7452022Z [113/360] Compile [x64] K2Node_HackTimeline.cpp
+2025-12-19T06:38:52.7452571Z [114/360] Link [x64] UnrealEditor-Sort.dll
+2025-12-19T06:38:52.8119688Z [115/360] Compile [x64] BlueprintExtensions.cpp
+2025-12-19T06:38:52.8120269Z [116/360] Link [x64] UnrealEditor-XTools_ComponentTimelineUncooked.lib
+2025-12-19T06:38:52.8122878Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_ComponentTimelineUncooked/UnrealEditor-XTools_ComponentTimelineUncooked.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_ComponentTimelineUncooked/UnrealEditor-XTools_ComponentTimelineUncooked.exp
+2025-12-19T06:38:53.8488728Z [117/360] Compile [x64] K2NodeSafetyHelpers.cpp
+2025-12-19T06:38:53.9991192Z [118/360] Compile [x64] K2Node_CasePairedPinsNode.cpp
+2025-12-19T06:38:54.0316651Z [119/360] Compile [x64] K2Node_Assign.cpp
+2025-12-19T06:38:54.0317118Z [120/360] Compile [x64] K2Node_ConditionalSequence.cpp
+2025-12-19T06:38:54.0317877Z [121/360] Link [x64] UnrealEditor-XTools_ComponentTimelineUncooked.dll
+2025-12-19T06:38:55.2663183Z [122/360] Compile [x64] K2Node_ForEachMap.cpp
+2025-12-19T06:38:55.8782163Z [123/360] Compile [x64] K2Node_ForEachArrayReverse.cpp
+2025-12-19T06:38:56.2879056Z [124/360] Compile [x64] K2Node_ForEachLoopWithDelay.cpp
+2025-12-19T06:38:56.4563136Z [125/360] Compile [x64] K2Node_ForEachSet.cpp
+2025-12-19T06:38:56.4738978Z [126/360] Compile [x64] K2Node_MapAddArrayItem.cpp
+2025-12-19T06:38:56.6153798Z [127/360] Compile [x64] K2Node_ForLoopWithDelay.cpp
+2025-12-19T06:38:56.6681464Z [128/360] Compile [x64] K2Node_ForLoopWithDelayReverse.cpp
+2025-12-19T06:38:57.1426607Z [129/360] Compile [x64] K2Node_MapAddMapItem.cpp
+2025-12-19T06:38:57.5750945Z [130/360] Compile [x64] K2Node_MapAddSetItem.cpp
+2025-12-19T06:38:57.6639446Z [131/360] Compile [x64] K2Node_MapAppend.cpp
+2025-12-19T06:38:57.8435390Z [132/360] Compile [x64] K2Node_MapRemoveArrayItem.cpp
+2025-12-19T06:38:57.8558200Z [133/360] Compile [x64] K2Node_MapIdentical.cpp
+2025-12-19T06:38:58.0556119Z [134/360] Compile [x64] K2Node_MapRemoveSetItem.cpp
+2025-12-19T06:38:58.2361520Z [135/360] Compile [x64] K2Node_MapRemoveMapItem.cpp
+2025-12-19T06:38:58.6385622Z [136/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:58.9812168Z [137/360] Compile [x64] K2Node_MapFindRef.cpp
+2025-12-19T06:38:59.1250402Z [138/360] Compile [x64] Module.BlueprintExtensions.gen.cpp
+2025-12-19T06:38:59.2336832Z [139/360] Compile [x64] SGraphNodeCasePairedPinsNode.cpp
+2025-12-19T06:38:59.4574403Z [140/360] Compile [x64] K2Node_MultiBranch.cpp
+2025-12-19T06:38:59.4684209Z [141/360] Compile [x64] FieldSystemExtensions.cpp
+2025-12-19T06:38:59.4947455Z [142/360] Compile [x64] SGraphNodeConditionalSequence.cpp
+2025-12-19T06:38:59.7926079Z [143/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:38:59.7969237Z [144/360] Compile [x64] K2Node_MultiConditionalSelect.cpp
+2025-12-19T06:38:59.8502912Z [145/360] Compile [x64] BAOpenWindowMenu.cpp
+2025-12-19T06:38:59.9825695Z [146/360] Compile [x64] SGraphNodeMultiConditionalSelect.cpp
+2025-12-19T06:39:00.0849950Z [147/360] Compile [x64] SGraphNodeMultiBranch.cpp
+2025-12-19T06:39:00.0851882Z [148/360] Compile [x64] ObjectPoolEditorModule.cpp
+2025-12-19T06:39:00.0852233Z [149/360] Link [x64] UnrealEditor-BlueprintExtensions.lib
+2025-12-19T06:39:00.0854195Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/BlueprintExtensions/UnrealEditor-BlueprintExtensions.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/BlueprintExtensions/UnrealEditor-BlueprintExtensions.exp
+2025-12-19T06:39:00.7229627Z [150/360] Compile [x64] Module.ObjectPoolEditor.gen.cpp
+2025-12-19T06:39:00.9434687Z [151/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:39:00.9435231Z [152/360] Compile [x64] Module.PhysicsAssetOptimizer.cpp
+2025-12-19T06:39:00.9435577Z [153/360] Link [x64] UnrealEditor-BlueprintExtensions.dll
+2025-12-19T06:39:02.0701353Z [154/360] Compile [x64] PhysicsAssetOptimizer.cpp
+2025-12-19T06:39:02.1405707Z [155/360] Compile [x64] K2Node_SpawnActorFromPool.cpp
+2025-12-19T06:39:02.1406199Z [156/360] Compile [x64] PhysicsAssetEditorExtension.cpp
+2025-12-19T06:39:02.1406547Z [157/360] Link [x64] UnrealEditor-ObjectPoolEditor.lib
+2025-12-19T06:39:02.1409099Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/ObjectPoolEditor/UnrealEditor-ObjectPoolEditor.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/ObjectPoolEditor/UnrealEditor-ObjectPoolEditor.exp
+2025-12-19T06:39:02.6753891Z [158/360] Compile [x64] BoneIdentificationSystem.cpp
+2025-12-19T06:39:02.6754351Z [159/360] Compile [x64] CircleSamplingHelper.cpp
+2025-12-19T06:39:02.6754663Z [160/360] Link [x64] UnrealEditor-ObjectPoolEditor.dll
+2025-12-19T06:39:03.2678500Z [161/360] Compile [x64] FormationSamplingLibrary.cpp
+2025-12-19T06:39:03.7031133Z [162/360] Compile [x64] MeshSamplingHelper.cpp
+2025-12-19T06:39:03.8299482Z [163/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:39:03.9029042Z [164/360] Compile [x64] Module.PointSampling.gen.cpp
+2025-12-19T06:39:04.0597627Z [165/360] Compile [x64] PointDeduplicationHelper.cpp
+2025-12-19T06:39:04.1527365Z [166/360] Compile [x64] PointSamplingLibrary.cpp
+2025-12-19T06:39:04.3639269Z [167/360] Compile [x64] SPhysicsOptimizerPanel.cpp
+2025-12-19T06:39:04.3906949Z [168/360] Compile [x64] PointSamplingModule.cpp
+2025-12-19T06:39:04.5418300Z [169/360] Compile [x64] RectangleSamplingHelper.cpp
+2025-12-19T06:39:04.5443807Z [170/360] Compile [x64] PoissonDiskSampling.cpp
+2025-12-19T06:39:04.5487009Z [171/360] Compile [x64] PhysicsOptimizerCore.cpp
+2025-12-19T06:39:04.5491678Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(219,24): error C2440: ����ʼ����: �޷��ӡ�TObjectPtr<USkeletalBodySetup>��ת��Ϊ��UBodySetup *��
+2025-12-19T06:39:04.5492786Z 	UBodySetup* BodySetup = PA->SkeletalBodySetups[NewBodyIndex];
+2025-12-19T06:39:04.5493076Z 	                      ^
+2025-12-19T06:39:04.5493832Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(219,24): note: û�п�����ִ�и�ת�����û������ת��������������޷����ø������
+2025-12-19T06:39:04.5509502Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(376,36): error C2027: ʹ����δ�������͡�USkeletalBodySetup��
+2025-12-19T06:39:04.5512543Z 		FBodyInstance& DefaultInstance = BodySetup->DefaultInstance;
+2025-12-19T06:39:04.5512902Z 		                                 ^
+2025-12-19T06:39:04.5513424Z F:\Epic Games\UE_5.6\Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h(20,7): note: �μ���USkeletalBodySetup��������
+2025-12-19T06:39:04.5513866Z class USkeletalBodySetup;
+2025-12-19T06:39:04.5514055Z       ^
+2025-12-19T06:39:04.5530837Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(376,34): error C2530: ��DefaultInstance��: �����ʼ������
+2025-12-19T06:39:04.5531681Z 		FBodyInstance& DefaultInstance = BodySetup->DefaultInstance;
+2025-12-19T06:39:04.5531998Z 		                               ^
+2025-12-19T06:39:04.5552063Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(438,26): error C2027: ʹ����δ�������͡�USkeletalBodySetup��
+2025-12-19T06:39:04.5552973Z 		const FName BoneName = BodySetup->BoneName;
+2025-12-19T06:39:04.5553235Z 		                       ^
+2025-12-19T06:39:04.5553754Z F:\Epic Games\UE_5.6\Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h(20,7): note: �μ���USkeletalBodySetup��������
+2025-12-19T06:39:04.5554251Z class USkeletalBodySetup;
+2025-12-19T06:39:04.5554445Z       ^
+2025-12-19T06:39:04.5577349Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(458,3): error C2027: ʹ����δ�������͡�USkeletalBodySetup��
+2025-12-19T06:39:04.5584031Z 		BodySetup->PhysicsType = EPhysicsType::PhysType_Simulated;
+2025-12-19T06:39:04.5584334Z 		^
+2025-12-19T06:39:04.5584825Z F:\Epic Games\UE_5.6\Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h(20,7): note: �μ���USkeletalBodySetup��������
+2025-12-19T06:39:04.5585328Z class USkeletalBodySetup;
+2025-12-19T06:39:04.5585512Z       ^
+2025-12-19T06:39:04.5601135Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(462,36): error C2027: ʹ����δ�������͡�USkeletalBodySetup��
+2025-12-19T06:39:04.5603440Z 		FBodyInstance& DefaultInstance = BodySetup->DefaultInstance;
+2025-12-19T06:39:04.5603757Z 		                                 ^
+2025-12-19T06:39:04.5604329Z F:\Epic Games\UE_5.6\Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h(20,7): note: �μ���USkeletalBodySetup��������
+2025-12-19T06:39:04.5604886Z class USkeletalBodySetup;
+2025-12-19T06:39:04.5605065Z       ^
+2025-12-19T06:39:04.5620637Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(462,34): error C2530: ��DefaultInstance��: �����ʼ������
+2025-12-19T06:39:04.5621441Z 		FBodyInstance& DefaultInstance = BodySetup->DefaultInstance;
+2025-12-19T06:39:04.5621751Z 		                               ^
+2025-12-19T06:39:04.5641547Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(576,36): error C2027: ʹ����δ�������͡�USkeletalBodySetup��
+2025-12-19T06:39:04.5642374Z 		FBodyInstance& DefaultInstance = BodySetup->DefaultInstance;
+2025-12-19T06:39:04.5642648Z 		                                 ^
+2025-12-19T06:39:04.5643163Z F:\Epic Games\UE_5.6\Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h(20,7): note: �μ���USkeletalBodySetup��������
+2025-12-19T06:39:04.5643601Z class USkeletalBodySetup;
+2025-12-19T06:39:04.5643773Z       ^
+2025-12-19T06:39:04.6331729Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(576,34): error C2530: ��DefaultInstance��: �����ʼ������
+2025-12-19T06:39:04.6333004Z 		FBodyInstance& DefaultInstance = BodySetup->DefaultInstance;
+2025-12-19T06:39:04.6335006Z 		                               ^
+2025-12-19T06:39:04.6887423Z C:\actions-runner\_work\_temp\XTools\TempPackage\HostProject\Plugins\XTools\Source\PhysicsAssetOptimizer\Private\PhysicsOptimizerCore.cpp(674,26): error C2027: ʹ����δ�������͡�USkeletalBodySetup��
+2025-12-19T06:39:04.6888499Z 		const FName BoneName = BodySetup->BoneName;
+2025-12-19T06:39:04.6888741Z 		                       ^
+2025-12-19T06:39:04.6889235Z F:\Epic Games\UE_5.6\Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h(20,7): note: �μ���USkeletalBodySetup��������
+2025-12-19T06:39:04.6889677Z class USkeletalBodySetup;
+2025-12-19T06:39:04.6889858Z       ^
+2025-12-19T06:39:04.7391530Z [172/360] Compile [x64] BASearchMenu.cpp
+2025-12-19T06:39:04.9008676Z [173/360] Compile [x64] SplineSamplingHelper.cpp
+2025-12-19T06:39:04.9033749Z [174/360] Compile [x64] PoissonSamplingHelpers.cpp
+2025-12-19T06:39:04.9971887Z [175/360] Compile [x64] SamplingCache.cpp
+2025-12-19T06:39:05.0518408Z [176/360] Compile [x64] TriangleSamplingHelper.cpp
+2025-12-19T06:39:05.1193396Z [177/360] Compile [x64] TextureSamplingHelper.cpp
+2025-12-19T06:39:05.1193906Z [178/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:39:05.1194182Z [179/360] Link [x64] UnrealEditor-PointSampling.lib
+2025-12-19T06:39:05.1196556Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/PointSampling/UnrealEditor-PointSampling.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/PointSampling/UnrealEditor-PointSampling.exp
+2025-12-19T06:39:05.3364664Z [180/360] Compile [x64] XFieldSystemLibrary.cpp
+2025-12-19T06:39:05.7135564Z [181/360] Compile [x64] Module.SortEditor.gen.cpp
+2025-12-19T06:39:05.8449840Z [182/360] Compile [x64] Module.FieldSystemExtensions.gen.cpp
+2025-12-19T06:39:05.8924874Z [183/360] Compile [x64] Module.XTools.gen.cpp
+2025-12-19T06:39:05.9088752Z [184/360] Compile [x64] SortEditorModule.cpp
+2025-12-19T06:39:06.0235545Z [185/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:39:06.0237486Z [186/360] Compile [x64] SortTestLibrary.cpp
+2025-12-19T06:39:06.0237785Z [187/360] Link [x64] UnrealEditor-PointSampling.dll
+2025-12-19T06:39:06.6422128Z [188/360] Compile [x64] XToolsModule.cpp
+2025-12-19T06:39:06.9537001Z [189/360] Compile [x64] SortGraphPinFactory.cpp
+2025-12-19T06:39:08.1169841Z [190/360] Compile [x64] K2Node_SmartSort.cpp
+2025-12-19T06:39:08.2384105Z [191/360] Compile [x64] XBlueprintLibraryCleanupTool.cpp
+2025-12-19T06:39:08.6601081Z [192/360] Compile [x64] AutoSizeCommentsCommands.cpp
+2025-12-19T06:39:08.7267781Z [193/360] Compile [x64] SGraphPinStructPropertyName.cpp
+2025-12-19T06:39:08.7385126Z [194/360] Compile [x64] AutoSizeCommentsGraphPanelNodeFactory.cpp
+2025-12-19T06:39:08.7385603Z [195/360] Compile [x64] XToolsLibrary.cpp
+2025-12-19T06:39:08.7385888Z [196/360] Link [x64] UnrealEditor-SortEditor.lib
+2025-12-19T06:39:08.7388646Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/SortEditor/UnrealEditor-SortEditor.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/SortEditor/UnrealEditor-SortEditor.exp
+2025-12-19T06:39:08.8198263Z [197/360] Link [x64] UnrealEditor-XTools.lib
+2025-12-19T06:39:08.8201749Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools/UnrealEditor-XTools.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools/UnrealEditor-XTools.exp
+2025-12-19T06:39:09.7034990Z [198/360] Compile [x64] AutoSizeCommentsCacheFile.cpp
+2025-12-19T06:39:09.7035460Z [199/360] Link [x64] UnrealEditor-SortEditor.dll
+2025-12-19T06:39:10.4581469Z [200/360] Compile [x64] AutoSizeCommentsInputProcessor.cpp
+2025-12-19T06:39:10.4581979Z [201/360] Compile [x64] AutoSizeCommentsGraphHandler.cpp
+2025-12-19T06:39:10.4582437Z [202/360] Link [x64] UnrealEditor-XTools.dll
+2025-12-19T06:39:11.2179986Z [203/360] Compile [x64] AutoSizeCommentsNodeChangeData.cpp
+2025-12-19T06:39:11.4844135Z [204/360] Compile [x64] AutoSizeCommentsNotifications.cpp
+2025-12-19T06:39:11.5391659Z [205/360] Compile [x64] AutoSizeCommentsStyle.cpp
+2025-12-19T06:39:11.6202757Z [206/360] Compile [x64] AutoSizeCommentsState.cpp
+2025-12-19T06:39:12.0727986Z [207/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:39:12.2259026Z [208/360] Compile [x64] AutoSizeCommentsModule.cpp
+2025-12-19T06:39:12.5739750Z [209/360] Compile [x64] AutoSizeCommentsGraphNode.cpp
+2025-12-19T06:39:12.8576389Z [210/360] Compile [x64] AutoSizeCommentsSettings.cpp
+2025-12-19T06:39:13.8537638Z [211/360] Compile [x64] Module.XTools_AutoSizeComments.gen.cpp
+2025-12-19T06:39:13.8538111Z [212/360] Compile [x64] AutoSizeCommentsUtils.cpp
+2025-12-19T06:39:13.8538451Z [213/360] Link [x64] UnrealEditor-XTools_AutoSizeComments.dll
+2025-12-19T06:39:13.9344265Z [214/360] Link [x64] UnrealEditor-XTools_AutoSizeComments.lib
+2025-12-19T06:39:13.9346270Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_AutoSizeComments/UnrealEditor-XTools_AutoSizeComments.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_AutoSizeComments/UnrealEditor-XTools_AutoSizeComments.exp
+2025-12-19T06:39:15.7500065Z [215/360] Compile [x64] XFieldSystemActor.cpp
+2025-12-19T06:39:15.7500559Z [216/360] Link [x64] UnrealEditor-FieldSystemExtensions.dll
+2025-12-19T06:39:15.8194191Z [217/360] Link [x64] UnrealEditor-FieldSystemExtensions.lib
+2025-12-19T06:39:15.8197242Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/FieldSystemExtensions/UnrealEditor-FieldSystemExtensions.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/FieldSystemExtensions/UnrealEditor-FieldSystemExtensions.exp
+2025-12-19T06:39:22.5509549Z [218/360] Compile [x64] BlueprintAssistCommands.cpp
+2025-12-19T06:39:26.1553344Z [219/360] Compile [x64] BehaviorTreeGraphFormatter.cpp
+2025-12-19T06:39:27.1480502Z [220/360] Compile [x64] BlueprintAssistActionsBase.cpp
+2025-12-19T06:39:27.7271473Z [221/360] Compile [x64] BAWelcomeScreen.cpp
+2025-12-19T06:39:28.4258744Z [222/360] Compile [x64] BASettingsChangeWindow.cpp
+2025-12-19T06:39:28.9024296Z [223/360] Compile [x64] BlueprintAssistCache.cpp
+2025-12-19T06:39:30.2756069Z [224/360] Compile [x64] BlueprintAssistDelayedDelegate.cpp
+2025-12-19T06:39:32.7896692Z [225/360] Compile [x64] BlueprintAssistBlueprintActions.cpp
+2025-12-19T06:39:32.8864886Z [226/360] Compile [x64] BlueprintAssistGlobals.cpp
+2025-12-19T06:39:33.8615787Z [227/360] Compile [x64] BlueprintAssistCommentContainsGraph.cpp
+2025-12-19T06:39:35.1602315Z [228/360] Compile [x64] BAVariableSelectorMenu.cpp
+2025-12-19T06:39:35.5122384Z [229/360] Compile [x64] BlueprintAssistCommentHandler.cpp
+2025-12-19T06:39:41.0977937Z [230/360] Compile [x64] BlueprintAssistEditorFeatures.cpp
+2025-12-19T06:39:42.9416726Z [231/360] Compile [x64] BlueprintAssistGraphCommands.cpp
+2025-12-19T06:39:44.1550917Z [232/360] Compile [x64] BlueprintAssistGraphActions.cpp
+2025-12-19T06:39:44.3469954Z [233/360] Compile [x64] BlueprintAssistCreateAssetMenu.cpp
+2025-12-19T06:39:49.3331037Z [234/360] Compile [x64] BlueprintAssistGraphOverlay.cpp
+2025-12-19T06:39:49.4454524Z [235/360] Compile [x64] BlueprintAssistGraphPanelNodeFactory.cpp
+2025-12-19T06:39:53.7422315Z [236/360] Compile [x64] BlueprintAssistGraphExtender.cpp
+2025-12-19T06:39:54.3115046Z [237/360] Compile [x64] BlueprintAssistGlobalActions.cpp
+2025-12-19T06:39:55.7677003Z [238/360] Compile [x64] BlueprintAssistKnotNode.cpp
+2025-12-19T06:39:59.2266912Z [239/360] Compile [x64] BlueprintAssistHotkeyMenu.cpp
+2025-12-19T06:39:59.6321539Z [240/360] Compile [x64] BlueprintAssistGraphHandler.cpp
+2025-12-19T06:40:00.1829255Z [241/360] Compile [x64] BlueprintAssistInputProcessor.cpp
+2025-12-19T06:40:02.3601215Z [242/360] Compile [x64] BlueprintAssistNodeSizeChangeData.cpp
+2025-12-19T06:40:03.3594091Z [243/360] Compile [x64] BlueprintAssistInputProcessorState.cpp
+2025-12-19T06:40:04.0983103Z [244/360] Compile [x64] BlueprintAssistModule.cpp
+2025-12-19T06:40:06.4394405Z [245/360] Compile [x64] BlueprintAssistNodeActions.cpp
+2025-12-19T06:40:06.7252933Z [246/360] Compile [x64] BlueprintAssistSettings_Search.cpp
+2025-12-19T06:40:07.2119410Z [247/360] Compile [x64] BlueprintAssistSettings.cpp
+2025-12-19T06:40:08.6712081Z [248/360] Compile [x64] BlueprintAssistPinActions.cpp
+2025-12-19T06:40:09.5801107Z [249/360] Compile [x64] BlueprintAssistStyle.cpp
+2025-12-19T06:40:10.4422814Z [250/360] Compile [x64] BlueprintAssistOpenFileMenu.cpp
+2025-12-19T06:40:14.2871239Z [251/360] Compile [x64] BlueprintAssistSettings_Advanced.cpp
+2025-12-19T06:40:17.1519911Z [252/360] Compile [x64] BlueprintAssistSettings_EditorFeatures.cpp
+2025-12-19T06:40:17.2051091Z [253/360] Compile [x64] BlueprintAssistTabActions.cpp
+2025-12-19T06:40:17.2053885Z [254/360] Compile [x64] BlueprintAssistTabHandler.cpp
+2025-12-19T06:40:17.2054189Z [255/360] Resource Default.rc2
+2025-12-19T06:40:20.4031598Z [256/360] Compile [x64] BlueprintAssistToolbar_BlueprintImpl.cpp
+2025-12-19T06:40:21.6763587Z [257/360] Compile [x64] BlueprintAssistTabSwitcher.cpp
+2025-12-19T06:40:23.5794384Z [258/360] Compile [x64] BlueprintAssistToolkitActions.cpp
+2025-12-19T06:40:29.4533145Z [259/360] Compile [x64] BlueprintAssistTypes.cpp
+2025-12-19T06:40:29.9925866Z [260/360] Compile [x64] BlueprintAssistToolbar.cpp
+2025-12-19T06:40:30.5757954Z [261/360] Compile [x64] EdGraphParameterFormatter.cpp
+2025-12-19T06:40:30.8452011Z [262/360] Compile [x64] FBAScopedPropertySetter.cpp
+2025-12-19T06:40:32.6148303Z [263/360] Compile [x64] EdGraphFormatter.cpp
+2025-12-19T06:40:32.9260320Z [264/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:40:33.2494132Z [265/360] Compile [x64] BlueprintAssistUtils.cpp
+2025-12-19T06:40:33.4047560Z [266/360] Compile [x64] KnotTrack.cpp
+2025-12-19T06:40:33.7125614Z [267/360] Compile [x64] BlueprintScreenshotToolCommandManager.cpp
+2025-12-19T06:40:34.3037708Z [268/360] Compile [x64] BlueprintScreenshotToolCommands.cpp
+2025-12-19T06:40:35.1594609Z [269/360] Compile [x64] BlueprintScreenshotToolDiffWindowButton.cpp
+2025-12-19T06:40:36.2051612Z [270/360] Compile [x64] BlueprintScreenshotToolModule.cpp
+2025-12-19T06:40:36.2527392Z [271/360] Compile [x64] BlueprintScreenshotToolStyle.cpp
+2025-12-19T06:40:36.2527839Z [272/360] Compile [x64] GraphFormatterTypes.cpp
+2025-12-19T06:40:36.2528080Z [273/360] Resource Default.rc2
+2025-12-19T06:40:37.0453599Z [274/360] Compile [x64] Module.XTools_BlueprintScreenshotTool.gen.cpp
+2025-12-19T06:40:37.1215898Z [275/360] Compile [x64] BlueprintScreenshotToolHandler.cpp
+2025-12-19T06:40:37.1216398Z [276/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:40:37.1216679Z [277/360] Resource Default.rc2
+2025-12-19T06:40:38.3504240Z [278/360] Compile [x64] BlueprintAssistWorkflowModeMenu.cpp
+2025-12-19T06:40:38.5411351Z [279/360] Compile [x64] BlueprintScreenshotToolWindowManager.cpp
+2025-12-19T06:40:38.5411800Z [280/360] Compile [x64] ENPathDrawer.cpp
+2025-12-19T06:40:38.5412138Z [281/360] Link [x64] UnrealEditor-XTools_BlueprintScreenshotTool.lib
+2025-12-19T06:40:38.5414802Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_BlueprintScreenshotTool/UnrealEditor-XTools_BlueprintScreenshotTool.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_BlueprintScreenshotTool/UnrealEditor-XTools_BlueprintScreenshotTool.exp
+2025-12-19T06:40:38.7992673Z [282/360] Link [x64] UnrealEditor-XTools_BlueprintScreenshotTool.dll
+2025-12-19T06:40:39.2376210Z [283/360] Compile [x64] ENUpdatePopup.cpp
+2025-12-19T06:40:39.2737800Z [284/360] Compile [x64] Module.XTools_ElectronicNodes.gen.cpp
+2025-12-19T06:40:39.2738247Z [285/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:40:39.2738522Z [286/360] Resource Default.rc2
+2025-12-19T06:40:40.0500860Z [287/360] Compile [x64] ECFActionBP.cpp
+2025-12-19T06:40:40.0842526Z [288/360] Compile [x64] ENConnectionDrawingPolicy.cpp
+2025-12-19T06:40:40.3303710Z [289/360] Compile [x64] ECFActionBase.cpp
+2025-12-19T06:40:40.4413621Z [290/360] Compile [x64] NodeFactoryPatch.cpp
+2025-12-19T06:40:40.5189713Z [291/360] Compile [x64] ECFBPLibrary.cpp
+2025-12-19T06:40:40.7659439Z [292/360] Compile [x64] ECFCustomTimelineBP.cpp
+2025-12-19T06:40:40.8631072Z [293/360] Compile [x64] ECFCoroutineAwaiters.cpp
+2025-12-19T06:40:40.9071064Z [294/360] Compile [x64] ECFCustomTimelineLinearColorBP.cpp
+2025-12-19T06:40:40.9317181Z [295/360] Compile [x64] ECFCustomTimelineVectorBP.cpp
+2025-12-19T06:40:40.9995027Z [296/360] Compile [x64] ElectronicNodes.cpp
+2025-12-19T06:40:40.9995425Z [297/360] Compile [x64] ECFDelayBP.cpp
+2025-12-19T06:40:40.9995713Z [298/360] Link [x64] UnrealEditor-XTools_ElectronicNodes.lib
+2025-12-19T06:40:40.9999116Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_ElectronicNodes/UnrealEditor-XTools_ElectronicNodes.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_ElectronicNodes/UnrealEditor-XTools_ElectronicNodes.exp
+2025-12-19T06:40:41.1651939Z [299/360] Compile [x64] KnotTrackCreator.cpp
+2025-12-19T06:40:41.2208989Z [300/360] Compile [x64] ECFDelayTicksBP.cpp
+2025-12-19T06:40:41.3940687Z [301/360] Compile [x64] ECFInstanceId.cpp
+2025-12-19T06:40:41.5226067Z [302/360] Compile [x64] ECFDoNoMoreThanXTimeBP.cpp
+2025-12-19T06:40:41.5682273Z [303/360] Compile [x64] ECFRunAsyncThenBP.cpp
+2025-12-19T06:40:41.7877110Z [304/360] Compile [x64] ECFTickerBP.cpp
+2025-12-19T06:40:41.8127253Z [305/360] Compile [x64] ECFTimelineBP.cpp
+2025-12-19T06:40:41.9253494Z [306/360] Compile [x64] ECFTimelineLinearColorBP.cpp
+2025-12-19T06:40:41.9309028Z [307/360] Compile [x64] ECFSubsystem.cpp
+2025-12-19T06:40:41.9309480Z [308/360] Compile [x64] ECFTimelineVectorBP.cpp
+2025-12-19T06:40:41.9309828Z [309/360] Link [x64] UnrealEditor-XTools_ElectronicNodes.dll
+2025-12-19T06:40:42.1226380Z [310/360] Compile [x64] ECFWaitAndExecuteBP.cpp
+2025-12-19T06:40:42.1279018Z [311/360] Compile [x64] EnhancedCodeFlowModule.cpp
+2025-12-19T06:40:42.1279535Z [312/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:40:42.1279824Z [313/360] Resource Default.rc2
+2025-12-19T06:40:42.3636512Z [314/360] Compile [x64] ECFWhileTrueExecuteBP.cpp
+2025-12-19T06:40:42.4073092Z [315/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:40:42.4073453Z [316/360] Compile [x64] XTools_SwitchLanguageCommands.cpp
+2025-12-19T06:40:42.4073676Z [317/360] Resource Default.rc2
+2025-12-19T06:40:43.7460426Z [318/360] Compile [x64] XTools_SwitchLanguageStyle.cpp
+2025-12-19T06:40:43.8142264Z [319/360] Compile [x64] XTools_SwitchLanguage.cpp
+2025-12-19T06:40:43.8142791Z [320/360] Compile [x64] EnhancedCodeFlow.cpp
+2025-12-19T06:40:43.8143101Z [321/360] Link [x64] UnrealEditor-XTools_SwitchLanguage.lib
+2025-12-19T06:40:43.8145519Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_SwitchLanguage/UnrealEditor-XTools_SwitchLanguage.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_SwitchLanguage/UnrealEditor-XTools_SwitchLanguage.exp
+2025-12-19T06:40:44.3175541Z [322/360] Compile [x64] SimpleFormatter.cpp
+2025-12-19T06:40:44.3176048Z [323/360] Compile [x64] PerModuleInline.gen.cpp
+2025-12-19T06:40:44.3176370Z [324/360] Link [x64] UnrealEditor-XTools_SwitchLanguage.dll
+2025-12-19T06:40:44.9896798Z [325/360] Compile [x64] Module.XTools_EnhancedCodeFlow.gen.cpp
+2025-12-19T06:40:44.9956042Z [326/360] Compile [x64] X_AssetEditor.cpp
+2025-12-19T06:40:45.0899747Z [327/360] Compile [x64] X_AssetEditorSettings.cpp
+2025-12-19T06:40:45.0900212Z [328/360] Compile [x64] Module.XTools_BlueprintAssist.gen.cpp
+2025-12-19T06:40:45.0900554Z [329/360] Link [x64] UnrealEditor-XTools_EnhancedCodeFlow.lib
+2025-12-19T06:40:45.0902634Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_EnhancedCodeFlow/UnrealEditor-XTools_EnhancedCodeFlow.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_EnhancedCodeFlow/UnrealEditor-XTools_EnhancedCodeFlow.exp
+2025-12-19T06:40:45.3118937Z [330/360] Compile [x64] X_AssetNamingBlueprintLibrary.cpp
+2025-12-19T06:40:45.3452694Z [331/360] Compile [x64] X_AssetNamingTests.cpp
+2025-12-19T06:40:45.5246238Z [332/360] Compile [x64] Module.X_AssetEditor.gen.cpp
+2025-12-19T06:40:45.5805093Z [333/360] Compile [x64] SBASizeProgress.cpp
+2025-12-19T06:40:45.5805593Z [334/360] Compile [x64] X_AssetEditorSettingsCustomization.cpp
+2025-12-19T06:40:45.5805966Z [335/360] Link [x64] UnrealEditor-XTools_EnhancedCodeFlow.dll
+2025-12-19T06:40:46.0005073Z [336/360] Link [x64] UnrealEditor-XTools_BlueprintAssist.lib
+2025-12-19T06:40:46.0007801Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_BlueprintAssist/UnrealEditor-XTools_BlueprintAssist.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/XTools_BlueprintAssist/UnrealEditor-XTools_BlueprintAssist.exp
+2025-12-19T06:40:46.7619717Z [337/360] Compile [x64] X_AutoConvexDialog.cpp
+2025-12-19T06:40:46.7800995Z [338/360] Compile [x64] X_AssetNamingManager.cpp
+2025-12-19T06:40:47.0283591Z [339/360] Compile [x64] X_MaterialFunctionCollector.cpp
+2025-12-19T06:40:47.0936035Z [340/360] Compile [x64] X_AssetNamingDelegates.cpp
+2025-12-19T06:40:47.2637568Z [341/360] Compile [x64] X_MaterialFunctionConnector.cpp
+2025-12-19T06:40:47.6857571Z [342/360] Compile [x64] X_MaterialFunctionCore.cpp
+2025-12-19T06:40:47.9116879Z [343/360] Compile [x64] X_MaterialFunctionOperation.cpp
+2025-12-19T06:40:47.9682544Z [344/360] Compile [x64] X_MaterialFunctionProcessor.cpp
+2025-12-19T06:40:47.9682951Z [345/360] Compile [x64] X_MaterialFunctionParamDialog.cpp
+2025-12-19T06:40:47.9683202Z [346/360] Link [x64] UnrealEditor-XTools_BlueprintAssist.dll
+2025-12-19T06:40:48.9095556Z [347/360] Compile [x64] X_CollisionSettingsDialog.cpp
+2025-12-19T06:40:48.9096023Z [348/360] Compile [x64] X_ModuleRegistrationManager.cpp
+2025-12-19T06:40:49.5728387Z [349/360] Compile [x64] X_PivotManager.cpp
+2025-12-19T06:40:49.6126994Z [350/360] Compile [x64] X_MaterialFunctionManager.cpp
+2025-12-19T06:40:49.6859398Z [351/360] Compile [x64] X_MenuExtensionManager.cpp
+2025-12-19T06:40:49.7664326Z [352/360] Compile [x64] X_CollisionBlueprintLibrary.cpp
+2025-12-19T06:40:51.0536310Z [353/360] Compile [x64] X_MaterialFunctionUI.cpp
+2025-12-19T06:40:51.1899103Z [354/360] Compile [x64] X_CollisionManager.cpp
+2025-12-19T06:40:51.1899378Z [355/360] Compile [x64] X_PivotOperation.cpp
+2025-12-19T06:40:51.1899543Z [356/360] Link [x64] UnrealEditor-X_AssetEditor.lib
+2025-12-19T06:40:51.1901392Z   ���ڴ����� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/X_AssetEditor/UnrealEditor-X_AssetEditor.lib �Ͷ��� C:/actions-runner/_work/_temp/XTools/TempPackage/HostProject/Plugins/XTools/Intermediate/Build/Win64/x64/UnrealEditor/Development/X_AssetEditor/UnrealEditor-X_AssetEditor.exp
+2025-12-19T06:40:51.8786406Z [357/360] Link [x64] UnrealEditor-X_AssetEditor.dll
+2025-12-19T06:40:51.8844749Z Trace written to file C:/Users/xiybh/AppData/Roaming/Unreal Engine/AutomationTool/Logs/F+Epic+Games+UE_5.6/UBA-UnrealEditor-Win64-Development.uba with size 94.7kb
+2025-12-19T06:40:51.9319151Z Total time in Unreal Build Accelerator local executor: 171.50 seconds
+2025-12-19T06:40:52.0156199Z 
+2025-12-19T06:40:52.0157363Z Result: Failed (OtherCompilationError)
+2025-12-19T06:40:52.0157607Z Total execution time: 181.19 seconds
+2025-12-19T06:40:52.0228943Z Took 181.29s to run dotnet.exe, ExitCode=6
+2025-12-19T06:40:52.0302168Z UnrealBuildTool failed. See log for more details. (C:\Users\xiybh\AppData\Roaming\Unreal Engine\AutomationTool\Logs\F+Epic+Games+UE_5.6\UBA-UnrealEditor-Win64-Development.txt)
+2025-12-19T06:40:52.0323472Z AutomationTool executed for 0h 3m 2s
+2025-12-19T06:40:52.0325267Z AutomationTool exiting with ExitCode=6 (6)
+2025-12-19T06:40:52.0498366Z BUILD FAILED
+2025-12-19T06:40:52.1179835Z C:\actions-runner\_work\_temp\7105f61a-5b19-4eaf-8b57-4e17177a32e1.ps1 : Build failed with exit code: 6
+2025-12-19T06:40:52.1181844Z At C:\actions-runner\_work\_temp\7105f61a-5b19-4eaf-8b57-4e17177a32e1.ps1:48 char:3
+2025-12-19T06:40:52.1182087Z +   Write-Error "Build failed with exit code: $LASTEXITCODE"
+2025-12-19T06:40:52.1182262Z +   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2025-12-19T06:40:52.1182471Z     + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+2025-12-19T06:40:52.1182827Z     + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,7105f61a-5b19-4eaf-8b57-4e17177a32e1.p 
+2025-12-19T06:40:52.1183069Z    s1
+2025-12-19T06:40:52.1183164Z  
+2025-12-19T06:40:52.1324264Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,73 @@
+﻿2025-12-19T06:30:48.1175311Z ##[group]Run actions/checkout@v4
+2025-12-19T06:30:48.1175878Z with:
+2025-12-19T06:30:48.1176084Z   fetch-depth: 0
+2025-12-19T06:30:48.1176277Z   fetch-tags: true
+2025-12-19T06:30:48.1176418Z   repository: XIYBHK/UE_XTools
+2025-12-19T06:30:48.1176767Z   token: ***
+2025-12-19T06:30:48.1176948Z   ssh-strict: true
+2025-12-19T06:30:48.1177079Z   ssh-user: git
+2025-12-19T06:30:48.1177277Z   persist-credentials: true
+2025-12-19T06:30:48.1177453Z   clean: true
+2025-12-19T06:30:48.1177670Z   sparse-checkout-cone-mode: true
+2025-12-19T06:30:48.1177821Z   show-progress: true
+2025-12-19T06:30:48.1178031Z   lfs: false
+2025-12-19T06:30:48.1178226Z   submodules: false
+2025-12-19T06:30:48.1178373Z   set-safe-directory: true
+2025-12-19T06:30:48.1178634Z env:
+2025-12-19T06:30:48.1178762Z   UE_VERSION: 5.3
+2025-12-19T06:30:48.1178938Z ##[endgroup]
+2025-12-19T06:30:48.2203955Z Syncing repository: XIYBHK/UE_XTools
+2025-12-19T06:30:48.2204899Z ##[group]Getting Git version info
+2025-12-19T06:30:48.2205212Z Working directory is 'C:\actions-runner\_work\UE_XTools\UE_XTools'
+2025-12-19T06:30:48.2477042Z [command]"C:\Program Files\Git\cmd\git.exe" version
+2025-12-19T06:30:48.2896237Z git version 2.51.2.windows.1
+2025-12-19T06:30:48.2934271Z ##[endgroup]
+2025-12-19T06:30:48.2946986Z Copying 'C:\Users\xiybh\.gitconfig' to 'C:\actions-runner\_work\_temp\93a2459b-8441-489c-ba4b-49e07d331edc\.gitconfig'
+2025-12-19T06:30:48.2969561Z Temporarily overriding HOME='C:\actions-runner\_work\_temp\93a2459b-8441-489c-ba4b-49e07d331edc' before making global git config changes
+2025-12-19T06:30:48.2970059Z Adding repository directory to the temporary git global config as a safe directory
+2025-12-19T06:30:48.2977300Z [command]"C:\Program Files\Git\cmd\git.exe" config --global --add safe.directory C:\actions-runner\_work\UE_XTools\UE_XTools
+2025-12-19T06:30:48.3552608Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get remote.origin.url
+2025-12-19T06:30:48.4055756Z https://github.com/XIYBHK/UE_XTools
+2025-12-19T06:30:48.4111318Z ##[group]Removing previously created refs, to avoid conflicts
+2025-12-19T06:30:48.4119083Z [command]"C:\Program Files\Git\cmd\git.exe" rev-parse --symbolic-full-name --verify --quiet HEAD
+2025-12-19T06:30:48.4647923Z refs/heads/main
+2025-12-19T06:30:48.4691791Z [command]"C:\Program Files\Git\cmd\git.exe" checkout --detach
+2025-12-19T06:30:48.5501932Z HEAD is now at 958264e fix(SortEditor): K2Node_SmartSort枚举引脚提升为变量支持
+2025-12-19T06:30:48.6724329Z ##[endgroup]
+2025-12-19T06:30:48.6732465Z [command]"C:\Program Files\Git\cmd\git.exe" submodule status
+2025-12-19T06:30:49.5832542Z ##[group]Cleaning the repository
+2025-12-19T06:30:49.5839234Z [command]"C:\Program Files\Git\cmd\git.exe" clean -ffdx
+2025-12-19T06:30:49.6465143Z [command]"C:\Program Files\Git\cmd\git.exe" reset --hard HEAD
+2025-12-19T06:30:49.7513614Z HEAD is now at 958264e fix(SortEditor): K2Node_SmartSort枚举引脚提升为变量支持
+2025-12-19T06:30:49.7550138Z ##[endgroup]
+2025-12-19T06:30:49.7557583Z ##[group]Disabling automatic garbage collection
+2025-12-19T06:30:49.7564524Z [command]"C:\Program Files\Git\cmd\git.exe" config --local gc.auto 0
+2025-12-19T06:30:49.8075010Z ##[endgroup]
+2025-12-19T06:30:49.8075363Z ##[group]Setting up auth
+2025-12-19T06:30:49.8084588Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2025-12-19T06:30:49.8618532Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2025-12-19T06:30:50.7470996Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-12-19T06:30:50.8021295Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2025-12-19T06:30:51.7223800Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2025-12-19T06:30:51.7810219Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2025-12-19T06:30:52.6891345Z [command]"C:\Program Files\Git\cmd\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2025-12-19T06:30:52.7463356Z ##[endgroup]
+2025-12-19T06:30:52.7463886Z ##[group]Fetching the repository
+2025-12-19T06:30:52.7473160Z [command]"C:\Program Files\Git\cmd\git.exe" -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2025-12-19T06:30:53.9754893Z [command]"C:\Program Files\Git\cmd\git.exe" branch --list --remote origin/main
+2025-12-19T06:30:54.0293099Z   origin/main
+2025-12-19T06:30:54.0335740Z [command]"C:\Program Files\Git\cmd\git.exe" rev-parse refs/remotes/origin/main
+2025-12-19T06:30:54.0838182Z 958264e5f4e910d904f6b657c8400d4e9b6184fe
+2025-12-19T06:30:54.0870856Z ##[endgroup]
+2025-12-19T06:30:54.0871213Z ##[group]Determining the checkout info
+2025-12-19T06:30:54.0871923Z ##[endgroup]
+2025-12-19T06:30:54.0879561Z [command]"C:\Program Files\Git\cmd\git.exe" sparse-checkout disable
+2025-12-19T06:30:54.1495121Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset-all extensions.worktreeConfig
+2025-12-19T06:30:54.2017869Z ##[group]Checking out the ref
+2025-12-19T06:30:54.2025300Z [command]"C:\Program Files\Git\cmd\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+2025-12-19T06:30:54.2987417Z branch 'main' set up to track 'origin/main'.
+2025-12-19T06:30:54.2987721Z Your branch is up to date with 'origin/main'.
+2025-12-19T06:30:54.2989144Z Switched to and reset branch 'main'
+2025-12-19T06:30:54.3024043Z ##[endgroup]
+2025-12-19T06:30:54.3636117Z [command]"C:\Program Files\Git\cmd\git.exe" log -1 --format=%H
+2025-12-19T06:30:54.4165243Z 958264e5f4e910d904f6b657c8400d4e9b6184fe

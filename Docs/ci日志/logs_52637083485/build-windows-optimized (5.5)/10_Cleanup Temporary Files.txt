@@ -1,0 +1,26 @@
+﻿2025-12-19T06:30:24.3859157Z ##[group]Run Write-Host "==> Cleanup Temporary Files" -ForegroundColor Cyan
+2025-12-19T06:30:24.3859463Z [36;1mWrite-Host "==> Cleanup Temporary Files" -ForegroundColor Cyan[0m
+2025-12-19T06:30:24.3859600Z [36;1m[0m
+2025-12-19T06:30:24.3859688Z [36;1m# Clean build directory in RUNNER_TEMP[0m
+2025-12-19T06:30:24.3859824Z [36;1m$base_out = Join-Path $env:RUNNER_TEMP "XTools"[0m
+2025-12-19T06:30:24.3859955Z [36;1mif (Test-Path $base_out) {[0m
+2025-12-19T06:30:24.3860055Z [36;1m  try {[0m
+2025-12-19T06:30:24.3860261Z [36;1m    $size = (Get-ChildItem $base_out -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB[0m
+2025-12-19T06:30:24.3860516Z [36;1m    Remove-Item -Recurse -Force $base_out -ErrorAction Stop[0m
+2025-12-19T06:30:24.3860741Z [36;1m    Write-Host "[OK] Cleanup completed, freed $([math]::Round($size, 2)) MB" -ForegroundColor Green[0m
+2025-12-19T06:30:24.3860928Z [36;1m  } catch {[0m
+2025-12-19T06:30:24.3861020Z [36;1m    Write-Warning "Cleanup failed: $_"[0m
+2025-12-19T06:30:24.3861160Z [36;1m  }[0m
+2025-12-19T06:30:24.3861235Z [36;1m}[0m
+2025-12-19T06:30:24.3880985Z shell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -ExecutionPolicy Bypass -File {0}
+2025-12-19T06:30:24.3881182Z env:
+2025-12-19T06:30:24.3881256Z   UE_VERSION: 5.5
+2025-12-19T06:30:24.3881344Z   UE_PATH: F:\Epic Games\UE_5.5
+2025-12-19T06:30:24.3881493Z   RUNUAT_PATH: F:\Epic Games\UE_5.5\Engine\Build\BatchFiles\RunUAT.bat
+2025-12-19T06:30:24.3881670Z   UE_EDITOR_PATH: F:\Epic Games\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe
+2025-12-19T06:30:24.3881857Z   PLUGIN_FILE: C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin
+2025-12-19T06:30:24.3882045Z   OUTPUT_DIR: C:\actions-runner\_work\_temp\XTools\XTools-UE_5.5-AllPlatforms
+2025-12-19T06:30:24.3882333Z   TEMP_OUTPUT: C:\actions-runner\_work\_temp\XTools\TempPackage
+2025-12-19T06:30:24.3882559Z ##[endgroup]
+2025-12-19T06:30:24.5768198Z ==> Cleanup Temporary Files
+2025-12-19T06:30:26.9700757Z [OK] Cleanup completed, freed 7303.3 MB

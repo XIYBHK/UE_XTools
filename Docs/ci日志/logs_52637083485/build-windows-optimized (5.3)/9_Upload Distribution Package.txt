@@ -1,0 +1,35 @@
+﻿2025-12-19T06:37:12.8156078Z ##[group]Run actions/upload-artifact@v4
+2025-12-19T06:37:12.8156264Z with:
+2025-12-19T06:37:12.8156351Z   name: XTools-UE_5.3-v1.9.3
+2025-12-19T06:37:12.8156482Z   path: C:\actions-runner\_work\_temp\XTools-UE_5.3-v1.9.3.zip
+2025-12-19T06:37:12.8156612Z   retention-days: 30
+2025-12-19T06:37:12.8156705Z   compression-level: 0
+2025-12-19T06:37:12.8156798Z   if-no-files-found: error
+2025-12-19T06:37:12.8156892Z   overwrite: false
+2025-12-19T06:37:12.8156976Z   include-hidden-files: false
+2025-12-19T06:37:12.8157062Z env:
+2025-12-19T06:37:12.8157141Z   UE_VERSION: 5.3
+2025-12-19T06:37:12.8157217Z   UE_PATH: F:\Epic Games\UE_5.3
+2025-12-19T06:37:12.8157359Z   RUNUAT_PATH: F:\Epic Games\UE_5.3\Engine\Build\BatchFiles\RunUAT.bat
+2025-12-19T06:37:12.8157536Z   UE_EDITOR_PATH: F:\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe
+2025-12-19T06:37:12.8157742Z   PLUGIN_FILE: C:\actions-runner\_work\UE_XTools\UE_XTools\XTools.uplugin
+2025-12-19T06:37:12.8157939Z   OUTPUT_DIR: C:\actions-runner\_work\_temp\XTools\XTools-UE_5.3-AllPlatforms
+2025-12-19T06:37:12.8158131Z   TEMP_OUTPUT: C:\actions-runner\_work\_temp\XTools\TempPackage
+2025-12-19T06:37:12.8158278Z   BUILD_DURATION: 6m 12s
+2025-12-19T06:37:12.8158364Z   PACKAGE_SIZE_MB: 16.43
+2025-12-19T06:37:12.8158454Z   VERSION_TAG: v1.9.3
+2025-12-19T06:37:12.8158541Z   ARTIFACT_NAME: XTools-UE_5.3-v1.9.3
+2025-12-19T06:37:12.8158681Z   ZIP_PATH: C:\actions-runner\_work\_temp\XTools-UE_5.3-v1.9.3.zip
+2025-12-19T06:37:12.8158849Z   RELEASE_ZIP_PATH: C:\GitHubActions\ReleaseTemp\XTools-UE_5.3-v1.9.3.zip
+2025-12-19T06:37:12.8158992Z ##[endgroup]
+2025-12-19T06:37:13.0287693Z With the provided path, there will be 1 file uploaded
+2025-12-19T06:37:13.0290381Z Artifact name is valid!
+2025-12-19T06:37:13.0293525Z Root directory input is valid!
+2025-12-19T06:37:14.1086867Z Beginning upload of artifact content to blob storage
+2025-12-19T06:37:17.4610330Z Uploaded bytes 5874633
+2025-12-19T06:37:17.7672790Z Finished uploading artifact content to blob storage!
+2025-12-19T06:37:17.7675509Z SHA256 digest of uploaded artifact zip is 0dafbef4b59ace2971debff452e014a7331494b64094b90c36fecab06e4c8cc3
+2025-12-19T06:37:17.7676770Z Finalizing artifact upload
+2025-12-19T06:37:18.1283938Z Artifact XTools-UE_5.3-v1.9.3.zip successfully finalized. Artifact ID 4921145854
+2025-12-19T06:37:18.1284355Z Artifact XTools-UE_5.3-v1.9.3 has been successfully uploaded! Final size is 5874633 bytes. Artifact ID is 4921145854
+2025-12-19T06:37:18.1301906Z Artifact download URL: https://github.com/XIYBHK/UE_XTools/actions/runs/20361742706/artifacts/4921145854
