@@ -23,7 +23,10 @@
 ## SortEditor
 
 - **修复** K2Node_SmartSort 提升枚举引脚为变量时第二个引脚消失
-- **优化** 提升为变量时使用 AdvancedView 折叠不常用引脚（Location 始终显示，Direction/Axis 折叠到高级选项）
+- **修复** 提升为变量后排序模式无效（始终使用默认值）
+- **修复** Vector数组连接后标题错误显示为"结构体属性排序"
+- **重构** 使用统一入口函数替代Switch分支（SortVectorsUnified/SortActorsUnified）
+- **优化** 提升为变量时使用 AdvancedView 折叠不常用引脚
 - **增加** 排序模式引脚连接状态检测（连接时显示所有可能引脚）
 - **增加** 排序模式引脚连接变化监听（PinConnectionListChanged）
 - **优化** 动态引脚 Tooltip 更新（描述各引脚适用场景）

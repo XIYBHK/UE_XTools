@@ -18,6 +18,26 @@ enum class ECoordinateAxis : uint8
     Z UMETA(DisplayName = "Z轴")
 };
 
+/** 向量排序模式 */
+UENUM(BlueprintType)
+enum class EVectorSortMode : uint8
+{
+    ByLength     UMETA(DisplayName = "按长度"),
+    ByProjection UMETA(DisplayName = "按投影"),
+    ByAxis       UMETA(DisplayName = "按坐标轴")
+};
+
+/** Actor排序模式 */
+UENUM(BlueprintType)
+enum class EActorSortMode : uint8
+{
+    ByDistance  UMETA(DisplayName = "按距离"),
+    ByHeight    UMETA(DisplayName = "按高度"),
+    ByAxis      UMETA(DisplayName = "按坐标轴"),
+    ByAngle     UMETA(DisplayName = "按夹角"),
+    ByAzimuth   UMETA(DisplayName = "按方位角")
+};
+
 /**
  * 提供一个可从蓝图调用的、用于排序和数组操作的静态函数库。
  */
@@ -244,6 +264,44 @@ public:
         UPARAM(DisplayName="排序后数组") TArray<FVector>& SortedVectors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
         UPARAM(DisplayName="已排序坐标") TArray<float>& SortedAxisValues,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
+
+    //~ 统一入口排序函数（供K2Node使用）
+    // =================================================================================================
+
+    /** 向量数组统一排序入口 - 根据排序模式自动选择排序方式 */
+    UFUNCTION(BlueprintPure,
+        Category = "XTools|排序|向量",
+        meta = (
+            DisplayName = "智能排序向量数组",
+            Keywords = "排序,向量,智能,统一",
+            AutoCreateRefTerm = "Direction"
+        ))
+    static void SortVectorsUnified(
+        UPARAM(DisplayName="向量数组") const TArray<FVector>& Vectors,
+        UPARAM(DisplayName="排序模式") EVectorSortMode SortMode,
+        UPARAM(DisplayName="投影方向") const FVector& Direction,
+        UPARAM(DisplayName="坐标轴") ECoordinateAxis Axis,
+        UPARAM(DisplayName="排序后数组") TArray<FVector>& SortedVectors,
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
+        UPARAM(DisplayName="升序排序") bool bAscending = true);
+
+    /** Actor数组统一排序入口 - 根据排序模式自动选择排序方式 */
+    UFUNCTION(BlueprintPure,
+        Category = "XTools|排序|Actor",
+        meta = (
+            DisplayName = "智能排序Actor数组",
+            Keywords = "排序,Actor,智能,统一",
+            AutoCreateRefTerm = "Location,Direction"
+        ))
+    static void SortActorsUnified(
+        UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors,
+        UPARAM(DisplayName="排序模式") EActorSortMode SortMode,
+        UPARAM(DisplayName="参考位置") const FVector& Location,
+        UPARAM(DisplayName="参考方向") const FVector& Direction,
+        UPARAM(DisplayName="坐标轴") ECoordinateAxis Axis,
+        UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors,
+        UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
         UPARAM(DisplayName="升序排序") bool bAscending = true);
 
     //~ 数组截取函数

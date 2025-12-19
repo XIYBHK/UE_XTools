@@ -8,32 +8,8 @@
 // 公共枚举：运行时与编辑器均可见，便于在蓝图/代码侧直接引用
 // ----------------------------------------------------------------------------
 
-UENUM(BlueprintType)
-enum class ESmartSort_BaseSortMode : uint8
-{
-	Integer     UMETA(DisplayName = "整数"),
-	Float       UMETA(DisplayName = "浮点"),
-	String      UMETA(DisplayName = "字符串"),
-	Name        UMETA(DisplayName = "名称")
-};
-
-UENUM(BlueprintType)
-enum class ESmartSort_ActorSortMode : uint8
-{
-	ByDistance  UMETA(DisplayName = "按距离"),
-	ByHeight    UMETA(DisplayName = "按高度"),
-	ByAxis      UMETA(DisplayName = "按坐标轴"),
-	ByAngle     UMETA(DisplayName = "按夹角"),
-	ByAzimuth   UMETA(DisplayName = "按方位角")
-};
-
-UENUM(BlueprintType)
-enum class ESmartSort_VectorSortMode : uint8
-{
-	ByLength     UMETA(DisplayName = "按长度"),
-	ByProjection UMETA(DisplayName = "按投影"),
-	ByAxis       UMETA(DisplayName = "按坐标轴")
-};
+// 使用 SortLibrary.h 中定义的枚举
+// EVectorSortMode, EActorSortMode, ECoordinateAxis
 
 #if WITH_EDITOR
 #include "K2Node.h"
@@ -137,7 +113,12 @@ private:
 	void PropagatePinType(const FEdGraphPinType& TypeToPropagate);
 	void PropagateTypeToFunctionNode(UK2Node_CallFunction* FunctionNode, const FEdGraphPinType& ArrayType);
 
-	// ExpandNode辅助函数
+	// ExpandNode辅助函数 - 静态函数路径（编译时确定，用于基础类型）
+	void ExpandNodeWithStaticFunction(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const FEdGraphPinType& ConnectedType);
+	
+	// ExpandNode辅助函数 - 统一入口函数路径（用于 Vector/Actor 类型）
+	void ExpandNodeWithUnifiedFunction(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const FEdGraphPinType& ConnectedType, FName UnifiedFunctionName);
+
 	bool DetermineSortFunction(const FEdGraphPinType& ConnectedType, FName& OutFunctionName);
 	bool DetermineActorSortFunction(FName& OutFunctionName);
 	bool DetermineVectorSortFunction(FName& OutFunctionName);
@@ -145,6 +126,13 @@ private:
 	bool ConnectArrayInputPin(FKismetCompilerContext& CompilerContext, UEdGraphPin* ArrayInputPin, UK2Node_CallFunction* CallFunctionNode);
 	void ConnectOutputPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode);
 	void ConnectDynamicInputPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode);
+	
+	// Switch分支专用连接函数
+	void ConnectArrayInputPinForSwitch(FKismetCompilerContext& CompilerContext, UEdGraphPin* ArrayInputPin, UK2Node_CallFunction* CallFunctionNode);
+	void ConnectDynamicInputPinsForSwitch(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode, int64 EnumValue, UEnum* SortEnum);
+	
+	// 查找 Switch 节点的 Case 引脚
+	UEdGraphPin* FindSwitchCasePin(class UK2Node_SwitchEnum* SwitchNode, FName EnumName) const;
 
 	// Pure函数特殊处理
 	void CreatePureFunctionExecutionFlow(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode, UEdGraph* SourceGraph);

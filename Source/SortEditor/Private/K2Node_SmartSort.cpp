@@ -7,6 +7,9 @@
 #include "EdGraphSchema_K2.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_IfThenElse.h"
+#include "K2Node_SwitchEnum.h"
+#include "K2Node_TemporaryVariable.h"
+#include "K2Node_AssignmentStatement.h"
 #include "KismetCompiler.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/CompilerResultsLog.h"
@@ -37,8 +40,8 @@ UK2Node_SmartSort::UK2Node_SmartSort(const FObjectInitializer& ObjectInitializer
 #endif
 {
 	// 编译时验证枚举完整性
-	static_assert(static_cast<int32>(ESmartSort_ActorSortMode::ByAzimuth) == 4, "Actor排序模式枚举不完整");
-	static_assert(static_cast<int32>(ESmartSort_VectorSortMode::ByAxis) == 2, "Vector排序模式枚举不完整");
+	static_assert(static_cast<int32>(EActorSortMode::ByAzimuth) == 4, "Actor排序模式枚举不完整");
+	static_assert(static_cast<int32>(EVectorSortMode::ByAxis) == 2, "Vector排序模式枚举不完整");
 }
 
 void UK2Node_SmartSort::AllocateDefaultPins()
@@ -221,14 +224,14 @@ UEnum* UK2Node_SmartSort::GetSortModeEnumForType(const FEdGraphPinType& ArrayTyp
 		{
 			if (Class->IsChildOf(AActor::StaticClass()))
 			{
-				return StaticEnum<ESmartSort_ActorSortMode>();
+				return StaticEnum<EActorSortMode>();
 			}
 		}
 	}
 	else if (ArrayType.PinCategory == UEdGraphSchema_K2::PC_Struct &&
 			 ArrayType.PinSubCategoryObject == TBaseStructure<FVector>::Get())
 	{
-		return StaticEnum<ESmartSort_VectorSortMode>();
+		return StaticEnum<EVectorSortMode>();
 	}
 
 	return nullptr; // 基础类型不需要枚举
@@ -288,7 +291,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 			// 使用 Advanced 视图折叠不常用的引脚，保持 UI 简洁
 			UE_LOG(LogBlueprint, Log, TEXT("[智能排序] 排序模式连接到变量，显示所有可能的引脚（部分折叠到高级选项）"));
 
-			if (SortModeEnum == StaticEnum<ESmartSort_ActorSortMode>())
+			if (SortModeEnum == StaticEnum<EActorSortMode>())
 			{
 				// Actor 排序：创建所有可能需要的引脚
 				UEdGraphPin* LocationPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Location);
@@ -304,7 +307,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 				SetEnumPinDefaultValue(AxisPin, StaticEnum<ECoordinateAxis>());
 				AxisPin->bAdvancedView = true; // 不常用，折叠到高级选项
 			}
-			else if (SortModeEnum == StaticEnum<ESmartSort_VectorSortMode>())
+			else if (SortModeEnum == StaticEnum<EVectorSortMode>())
 			{
 				// Vector 排序：创建所有可能需要的引脚
 				UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
@@ -358,25 +361,25 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 			}
 
 			// 根据选择的排序模式，创建额外的输入引脚
-			if (SortModeEnum == StaticEnum<ESmartSort_ActorSortMode>())
+			if (SortModeEnum == StaticEnum<EActorSortMode>())
 			{
-				switch (static_cast<ESmartSort_ActorSortMode>(EnumValue))
+				switch (static_cast<EActorSortMode>(EnumValue))
 				{
-				case ESmartSort_ActorSortMode::ByDistance:
-				case ESmartSort_ActorSortMode::ByAngle:
-				case ESmartSort_ActorSortMode::ByAzimuth:
+				case EActorSortMode::ByDistance:
+				case EActorSortMode::ByAngle:
+				case EActorSortMode::ByAzimuth:
 					{
 						UEdGraphPin* LocationPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Location);
 						LocationPin->PinToolTip = LOCTEXT("LocationPin_Tooltip", "参考位置或中心点").ToString();
 
-						if (static_cast<ESmartSort_ActorSortMode>(EnumValue) == ESmartSort_ActorSortMode::ByAngle)
+						if (static_cast<EActorSortMode>(EnumValue) == EActorSortMode::ByAngle)
 						{
 							UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
 							DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "参考方向").ToString();
 						}
 					}
 					break;
-				case ESmartSort_ActorSortMode::ByAxis:
+				case EActorSortMode::ByAxis:
 					{
 						UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
 						AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴").ToString();
@@ -387,17 +390,17 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 				default: break;
 				}
 			}
-			else if (SortModeEnum == StaticEnum<ESmartSort_VectorSortMode>())
+			else if (SortModeEnum == StaticEnum<EVectorSortMode>())
 			{
-				switch (static_cast<ESmartSort_VectorSortMode>(EnumValue))
+				switch (static_cast<EVectorSortMode>(EnumValue))
 				{
-				case ESmartSort_VectorSortMode::ByProjection:
+				case EVectorSortMode::ByProjection:
 					{
 						UEdGraphPin* DirectionPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, TBaseStructure<FVector>::Get(), FSmartSort_Helper::PN_Direction);
 						DirectionPin->PinToolTip = LOCTEXT("DirectionPin_Tooltip", "投影方向").ToString();
 					}
 					break;
-				case ESmartSort_VectorSortMode::ByAxis:
+				case EVectorSortMode::ByAxis:
 					{
 						UEdGraphPin* AxisPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Byte, StaticEnum<ECoordinateAxis>(), FSmartSort_Helper::PN_Axis);
 						AxisPin->PinToolTip = LOCTEXT("AxisPin_Tooltip", "排序使用的坐标轴").ToString();
@@ -526,7 +529,33 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 		return;
 	}
 
-	// 2. 根据类型确定要调用的库函数名
+	// 检查是否需要使用统一入口函数（Vector 或 Actor 类型）
+	UEnum* SortEnum = GetSortModeEnumForType(ConnectedType);
+
+	if (SortEnum == StaticEnum<EVectorSortMode>())
+	{
+		// Vector 类型：使用统一入口函数
+		ExpandNodeWithUnifiedFunction(CompilerContext, SourceGraph, ConnectedType, 
+			GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsUnified));
+	}
+	else if (SortEnum == StaticEnum<EActorSortMode>())
+	{
+		// Actor 类型：使用统一入口函数
+		ExpandNodeWithUnifiedFunction(CompilerContext, SourceGraph, ConnectedType,
+			GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsUnified));
+	}
+	else
+	{
+		// 基础类型或结构体：使用静态函数路径
+		ExpandNodeWithStaticFunction(CompilerContext, SourceGraph, ConnectedType);
+	}
+}
+
+void UK2Node_SmartSort::ExpandNodeWithStaticFunction(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const FEdGraphPinType& ConnectedType)
+{
+	UEdGraphPin* ArrayInputPin = GetArrayInputPin();
+
+	// 根据类型确定要调用的库函数名
 	FName FunctionName;
 	if (!DetermineSortFunction(ConnectedType, FunctionName))
 	{
@@ -535,15 +564,15 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 		return;
 	}
 
-	// 3. 创建函数调用节点
+	// 创建函数调用节点
 	UK2Node_CallFunction* CallFunctionNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	CallFunctionNode->FunctionReference.SetExternalMember(FunctionName, USortLibrary::StaticClass());
 	CallFunctionNode->AllocateDefaultPins();
 
-	// 3.5. 传播类型信息到函数调用节点
+	// 传播类型信息到函数调用节点
 	PropagateTypeToFunctionNode(CallFunctionNode, ConnectedType);
 
-	// 4. 检查函数是否为Pure函数并进行相应处理
+	// 检查函数是否为Pure函数并进行相应处理
 	UFunction* Function = CallFunctionNode->GetTargetFunction();
 	bool bIsPureFunction = Function && Function->HasAnyFunctionFlags(FUNC_BlueprintPure);
 
@@ -553,7 +582,7 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 	}
 	else
 	{
-		// 4. 连接执行引脚（非Pure函数）
+		// 连接执行引脚（非Pure函数）
 		UEdGraphPin* MyExecPin = GetExecPin();
 		UEdGraphPin* FuncExecPin = CallFunctionNode->GetExecPin();
 
@@ -563,7 +592,7 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 		}
 	}
 
-	// 5. 连接数组输入引脚
+	// 连接数组输入引脚
 	if (!ConnectArrayInputPin(CompilerContext, ArrayInputPin, CallFunctionNode))
 	{
 		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
@@ -571,20 +600,79 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 		return;
 	}
 
-	// 5.5. 连接后再次确保类型传播正确
+	// 连接后再次确保类型传播正确
 	UEdGraphPin* FuncArrayPin = CallFunctionNode->FindPin(TEXT("TargetArray"), EGPD_Input);
 	if (FuncArrayPin)
 	{
 		FuncArrayPin->PinType = ConnectedType;
 	}
 
-	// 6. 连接输出引脚
+	// 连接输出引脚
 	ConnectOutputPins(CompilerContext, CallFunctionNode);
 
-	// 7. 连接动态输入引脚
+	// 连接动态输入引脚
 	ConnectDynamicInputPins(CompilerContext, CallFunctionNode);
 
-	// 8. 断开所有原始连接
+	// 断开所有原始连接
+	BreakAllNodeLinks();
+}
+
+void UK2Node_SmartSort::ExpandNodeWithUnifiedFunction(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const FEdGraphPinType& ConnectedType, FName UnifiedFunctionName)
+{
+	UEdGraphPin* ArrayInputPin = GetArrayInputPin();
+
+	// 创建统一入口函数调用节点
+	UK2Node_CallFunction* CallFunctionNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+	CallFunctionNode->FunctionReference.SetExternalMember(UnifiedFunctionName, USortLibrary::StaticClass());
+	CallFunctionNode->AllocateDefaultPins();
+
+	// 传播类型信息
+	PropagateTypeToFunctionNode(CallFunctionNode, ConnectedType);
+
+	// 连接执行引脚（统一入口函数是 Pure 函数）
+	CreatePureFunctionExecutionFlow(CompilerContext, CallFunctionNode, SourceGraph);
+
+	// 连接数组输入引脚
+	if (!ConnectArrayInputPin(CompilerContext, ArrayInputPin, CallFunctionNode))
+	{
+		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
+		BreakAllNodeLinks();
+		return;
+	}
+
+	// 连接排序模式引脚
+	UEdGraphPin* ModePin = GetSortModePin();
+	UEdGraphPin* FuncModePin = CallFunctionNode->FindPin(TEXT("SortMode"), EGPD_Input);
+	
+	if (ModePin && FuncModePin)
+	{
+		if (ModePin->LinkedTo.Num() > 0)
+		{
+			// 提升为变量：移动连接
+			CompilerContext.MovePinLinksToIntermediate(*ModePin, *FuncModePin);
+		}
+		else
+		{
+			// 使用默认值
+			FString DefaultStr = ModePin->GetDefaultAsString();
+			if (DefaultStr.IsEmpty())
+			{
+				DefaultStr = ModePin->DefaultValue;
+			}
+			if (!DefaultStr.IsEmpty())
+			{
+				FuncModePin->DefaultValue = DefaultStr;
+			}
+		}
+	}
+
+	// 连接其他动态输入引脚
+	ConnectDynamicInputPins(CompilerContext, CallFunctionNode);
+
+	// 连接输出引脚
+	ConnectOutputPins(CompilerContext, CallFunctionNode);
+
+	// 断开所有原始连接
 	BreakAllNodeLinks();
 }
 
@@ -598,12 +686,12 @@ bool UK2Node_SmartSort::DetermineSortFunction(const FEdGraphPinType& ConnectedTy
 		ConnectedType.PinSubCategoryObject.IsValid() ? *ConnectedType.PinSubCategoryObject->GetName() : TEXT("None"),
 		(int32)ConnectedType.ContainerType);
 
-	if (SortEnum == StaticEnum<ESmartSort_ActorSortMode>())
+	if (SortEnum == StaticEnum<EActorSortMode>())
 	{
         UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 使用Actor排序模式"));
 		return DetermineActorSortFunction(OutFunctionName);
 	}
-	else if (SortEnum == StaticEnum<ESmartSort_VectorSortMode>())
+	else if (SortEnum == StaticEnum<EVectorSortMode>())
 	{
         UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 使用Vector排序模式"));
 		return DetermineVectorSortFunction(OutFunctionName);
@@ -642,24 +730,24 @@ bool UK2Node_SmartSort::DetermineActorSortFunction(FName& OutFunctionName)
 	// 如果默认值为空，使用第一个枚举值
 	if (DefaultStr.IsEmpty())
 	{
-		UEnum* SortEnum = StaticEnum<ESmartSort_ActorSortMode>();
+		UEnum* SortEnum = StaticEnum<EActorSortMode>();
 		DefaultStr = SortEnum->GetNameStringByIndex(0);
 	}
 
-	UEnum* SortEnum = StaticEnum<ESmartSort_ActorSortMode>();
+	UEnum* SortEnum = StaticEnum<EActorSortMode>();
 	int64 EnumValue = SortEnum->GetValueByNameString(DefaultStr);
 	if (EnumValue == INDEX_NONE)
 	{
 		EnumValue = 0; // 默认使用第一个值
 	}
 
-	switch (static_cast<ESmartSort_ActorSortMode>(EnumValue))
+	switch (static_cast<EActorSortMode>(EnumValue))
 	{
-		case ESmartSort_ActorSortMode::ByDistance: OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByDistance); return true;
-		case ESmartSort_ActorSortMode::ByHeight:   OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByHeight);   return true;
-		case ESmartSort_ActorSortMode::ByAxis:     OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByAxis);     return true;
-		case ESmartSort_ActorSortMode::ByAngle:    OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByAngle);    return true;
-		case ESmartSort_ActorSortMode::ByAzimuth:  OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByAzimuth);  return true;
+		case EActorSortMode::ByDistance: OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByDistance); return true;
+		case EActorSortMode::ByHeight:   OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByHeight);   return true;
+		case EActorSortMode::ByAxis:     OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByAxis);     return true;
+		case EActorSortMode::ByAngle:    OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByAngle);    return true;
+		case EActorSortMode::ByAzimuth:  OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortActorsByAzimuth);  return true;
 	}
 
 	return false;
@@ -673,12 +761,12 @@ bool UK2Node_SmartSort::DetermineVectorSortFunction(FName& OutFunctionName)
 	// 如果默认值为空，使用第一个枚举值
 	if (DefaultStr.IsEmpty())
 	{
-		UEnum* SortEnum = StaticEnum<ESmartSort_VectorSortMode>();
+		UEnum* SortEnum = StaticEnum<EVectorSortMode>();
 		DefaultStr = SortEnum->GetNameStringByIndex(0);
             UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 向量排序模式为空，使用默认值: %s"), *DefaultStr);
 	}
 
-	UEnum* SortEnum = StaticEnum<ESmartSort_VectorSortMode>();
+	UEnum* SortEnum = StaticEnum<EVectorSortMode>();
 	int64 EnumValue = SortEnum->GetValueByNameString(DefaultStr);
 	if (EnumValue == INDEX_NONE)
 	{
@@ -688,17 +776,17 @@ bool UK2Node_SmartSort::DetermineVectorSortFunction(FName& OutFunctionName)
 
     UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 向量排序模式: %s (值: %d)"), *DefaultStr, (int32)EnumValue);
 
-	switch (static_cast<ESmartSort_VectorSortMode>(EnumValue))
+	switch (static_cast<EVectorSortMode>(EnumValue))
 	{
-		case ESmartSort_VectorSortMode::ByLength:
+		case EVectorSortMode::ByLength:
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsByLength);
             UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择向量长度排序函数: %s"), *OutFunctionName.ToString());
 			return true;
-		case ESmartSort_VectorSortMode::ByProjection:
+		case EVectorSortMode::ByProjection:
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsByProjection);
             UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择向量投影排序函数: %s"), *OutFunctionName.ToString());
 			return true;
-		case ESmartSort_VectorSortMode::ByAxis:
+		case EVectorSortMode::ByAxis:
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsByAxis);
             UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择向量坐标轴排序函数: %s"), *OutFunctionName.ToString());
 			return true;
@@ -939,8 +1027,10 @@ FText UK2Node_SmartSort::GetNodeTitle(ENodeTitleType::Type TitleType) const
 		return LOCTEXT("NodeTitle_Default", "K2_数组排序");
 	}
 
-	// 对于结构体类型，显示"结构体属性排序"
-	if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Struct && ConnectedType.PinSubCategoryObject.IsValid())
+	// 对于结构体类型（排除FVector），显示"结构体属性排序"
+	if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Struct && 
+		ConnectedType.PinSubCategoryObject.IsValid() &&
+		!IsVectorType(ConnectedType))
 	{
 		return LOCTEXT("NodeTitle_Struct", "K2_结构体属性排序");
 	}

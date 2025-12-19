@@ -562,6 +562,61 @@ void USortLibrary::SortVectorsByAxis(const TArray<FVector>& Vectors, ECoordinate
     SortLibrary_Private::GenericSort<FVector, float>(Vectors, bAscending, GetAxisValue, SortedVectors, OriginalIndices, &SortedAxisValues);
 }
 
+//~ 统一入口排序函数
+// =================================================================================================
+
+void USortLibrary::SortVectorsUnified(const TArray<FVector>& Vectors, EVectorSortMode SortMode,
+    const FVector& Direction, ECoordinateAxis Axis,
+    TArray<FVector>& SortedVectors, TArray<int32>& OriginalIndices, bool bAscending)
+{
+    TArray<float> TempValues;
+
+    switch (SortMode)
+    {
+    case EVectorSortMode::ByLength:
+        SortVectorsByLength(Vectors, SortedVectors, OriginalIndices, TempValues, bAscending);
+        break;
+    case EVectorSortMode::ByProjection:
+        SortVectorsByProjection(Vectors, Direction, SortedVectors, OriginalIndices, TempValues, bAscending);
+        break;
+    case EVectorSortMode::ByAxis:
+        SortVectorsByAxis(Vectors, Axis, SortedVectors, OriginalIndices, TempValues, bAscending);
+        break;
+    default:
+        SortVectorsByLength(Vectors, SortedVectors, OriginalIndices, TempValues, bAscending);
+        break;
+    }
+}
+
+void USortLibrary::SortActorsUnified(const TArray<AActor*>& Actors, EActorSortMode SortMode,
+    const FVector& Location, const FVector& Direction, ECoordinateAxis Axis,
+    TArray<AActor*>& SortedActors, TArray<int32>& OriginalIndices, bool bAscending)
+{
+    TArray<float> TempValues;
+
+    switch (SortMode)
+    {
+    case EActorSortMode::ByDistance:
+        SortActorsByDistance(Actors, Location, SortedActors, OriginalIndices, TempValues, bAscending, false);
+        break;
+    case EActorSortMode::ByHeight:
+        SortActorsByHeight(Actors, SortedActors, OriginalIndices, bAscending);
+        break;
+    case EActorSortMode::ByAxis:
+        SortActorsByAxis(Actors, Axis, SortedActors, OriginalIndices, TempValues, bAscending);
+        break;
+    case EActorSortMode::ByAngle:
+        SortActorsByAngle(Actors, Location, Direction, SortedActors, OriginalIndices, TempValues, bAscending, false);
+        break;
+    case EActorSortMode::ByAzimuth:
+        SortActorsByAzimuth(Actors, Location, SortedActors, OriginalIndices, TempValues, bAscending);
+        break;
+    default:
+        SortActorsByDistance(Actors, Location, SortedActors, OriginalIndices, TempValues, bAscending, false);
+        break;
+    }
+}
+
 namespace SortLibrary_Private
 {
     /**
