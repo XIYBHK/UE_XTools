@@ -42,10 +42,17 @@
 - **重构** 按UE官方最佳实践重建物理形体（清空后重建核心骨骼）
 - **优化** 碰撞形状自动对齐骨骼方向（bAutoOrientToBone=true）
 - **修复** 武器骨骼误识别为人形骨骼（移除后缀判断依赖）
+- **修复** UE5.5+兼容性（TObjectPtr转换、SkeletalBodySetup头文件）
 
 ## 质量保证
 
 - **检查** 全面审查 20 个 K2Node 节点，确认无类似引脚消失问题
+
+## CI/CD
+
+- **优化** 移除 Artifact 上传前的手动压缩，直接使用 upload-artifact@v4 自动压缩
+- **优化** Release zip 仅在 tag push 时创建（非 tag 构建不再双重压缩）
+- **清理** 从仓库移除误提交的 ci日志 目录
 
 ---
 

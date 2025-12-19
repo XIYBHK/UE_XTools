@@ -78,7 +78,7 @@ DerivedDataCache/*
 Docs/UE5.3_Source/*
 /Docs/ref
 .cursor/rules/xiybhk.mdc
-#/Docs/ci日志
+/Docs/ci日志
 /NodeSizeCache
 /Docs/临时日志
 .vscode/settings.json

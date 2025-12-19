@@ -1,8 +1,0 @@
-﻿2025-12-19T06:19:09.0642897Z ##[group]Run if [[ "workflow_dispatch" == "workflow_dispatch" && "all" != "all" ]]; then
-2025-12-19T06:19:09.0644148Z [36;1mif [[ "workflow_dispatch" == "workflow_dispatch" && "all" != "all" ]]; then[0m
-2025-12-19T06:19:09.0644984Z [36;1m  echo "matrix=[\"all\"]" >> $GITHUB_OUTPUT[0m
-2025-12-19T06:19:09.0645720Z [36;1melse[0m
-2025-12-19T06:19:09.0646287Z [36;1m  echo "matrix=[\"5.3\",\"5.4\",\"5.5\",\"5.6\",\"5.7\"]" >> $GITHUB_OUTPUT[0m
-2025-12-19T06:19:09.0647437Z [36;1mfi[0m
-2025-12-19T06:19:09.1119307Z shell: /usr/bin/bash -e {0}
-2025-12-19T06:19:09.1120598Z ##[endgroup]
