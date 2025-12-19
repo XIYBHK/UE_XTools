@@ -298,8 +298,6 @@ jobs:
               per_page: 100
             });
 
-            const fs = require('fs');
-
             let updatedCount = 0;
             let addedCount = 0;
             let uploadIndex = 0;

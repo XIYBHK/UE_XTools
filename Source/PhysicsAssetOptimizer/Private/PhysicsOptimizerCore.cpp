@@ -7,7 +7,15 @@
 #include "PhysicsAssetUtils.h"
 #include "BoneIdentificationSystem.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+#include "Runtime/Launch/Resources/Version.h"
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
 #include "PhysicsEngine/SkeletalBodySetup.h"
+#define GET_BODY_SETUP(Array, Index) (Array[Index].Get())
+#define GET_BODY_SETUP_FROM_PTR(Ptr) (Ptr.Get())
+#else
+#define GET_BODY_SETUP(Array, Index) (Array[Index])
+#define GET_BODY_SETUP_FROM_PTR(Ptr) (Ptr)
+#endif
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -217,7 +225,7 @@ bool FPhysicsOptimizerCore::CreateBodyForBoneUsingUEAPI(
 		return false;
 	}
 
-	USkeletalBodySetup* BodySetup = PA->SkeletalBodySetups[NewBodyIndex].Get();
+	USkeletalBodySetup* BodySetup = GET_BODY_SETUP(PA->SkeletalBodySetups, NewBodyIndex);
 	if (!BodySetup)
 	{
 		return false;
@@ -368,7 +376,7 @@ void FPhysicsOptimizerCore::ConfigureDamping(
 
 	for (const auto& BodySetupPtr : PA->SkeletalBodySetups)
 	{
-		USkeletalBodySetup* BodySetup = BodySetupPtr.Get();
+		USkeletalBodySetup* BodySetup = GET_BODY_SETUP_FROM_PTR(BodySetupPtr);
 		if (!BodySetup)
 		{
 			continue;
@@ -432,7 +440,7 @@ void FPhysicsOptimizerCore::ConfigureMassDistribution(
 	// 为每个 Body 设置质量
 	for (const auto& BodySetupPtr : PA->SkeletalBodySetups)
 	{
-		USkeletalBodySetup* BodySetup = BodySetupPtr.Get();
+		USkeletalBodySetup* BodySetup = GET_BODY_SETUP_FROM_PTR(BodySetupPtr);
 		if (!BodySetup)
 		{
 			continue;
@@ -570,7 +578,7 @@ void FPhysicsOptimizerCore::ConfigureSleepSettings(
 
 	for (const auto& BodySetupPtr : PA->SkeletalBodySetups)
 	{
-		USkeletalBodySetup* BodySetup = BodySetupPtr.Get();
+		USkeletalBodySetup* BodySetup = GET_BODY_SETUP_FROM_PTR(BodySetupPtr);
 		if (!BodySetup)
 		{
 			continue;
@@ -669,7 +677,7 @@ void FPhysicsOptimizerCore::CreateConstraints(UPhysicsAsset* PA, USkeletalMesh* 
 	// 为每个物理形体创建与父骨骼的约束
 	for (int32 BodyIndex = 0; BodyIndex < PA->SkeletalBodySetups.Num(); ++BodyIndex)
 	{
-		USkeletalBodySetup* BodySetup = PA->SkeletalBodySetups[BodyIndex].Get();
+		USkeletalBodySetup* BodySetup = GET_BODY_SETUP(PA->SkeletalBodySetups, BodyIndex);
 		if (!BodySetup)
 		{
 			continue;
