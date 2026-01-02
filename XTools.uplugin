@@ -123,14 +123,7 @@
 				"Win64"
 			]
 		},
-		{
-			"Name": "PhysicsAssetOptimizer",
-			"Type": "Editor",
-			"LoadingPhase": "Default",
-			"PlatformAllowList": [
-				"Win64"
-			]
-		},
+
 		{
 			"Name": "SortEditor",
 			"Type": "UncookedOnly",
