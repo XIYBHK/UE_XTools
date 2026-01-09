@@ -607,7 +607,7 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     {
         Result.FailedCount++;
         Result.FailedRenames.Add(CurrentName);
-        UE_LOG(LogX_AssetNaming, Error, TEXT("Numeric suffix normalization failed: %s"), *CurrentName);
+        UE_LOG(LogX_AssetNaming, Error, TEXT("Rename failed: %s"), *CurrentName);
     }
 }
 

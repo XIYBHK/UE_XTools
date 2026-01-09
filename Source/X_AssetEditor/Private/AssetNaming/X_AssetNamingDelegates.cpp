@@ -156,7 +156,7 @@ void FX_AssetNamingDelegates::Shutdown()
 		OnFilesLoadedHandle.Reset();
 	}
 
-	// 5. 解绑 OnNewAssetCreated
+	// 4. 解绑 OnNewAssetCreated
 	if (OnNewAssetCreatedHandle.IsValid())
 	{
 		FEditorDelegates::OnNewAssetCreated.Remove(OnNewAssetCreatedHandle);

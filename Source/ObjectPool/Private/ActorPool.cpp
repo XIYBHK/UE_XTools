@@ -6,6 +6,7 @@
 
 #include "ActorPool.h"
 #include "ObjectPool.h"
+#include "ObjectPoolUtils.h"
 
 //  生命周期接口
 #include "ObjectPoolInterface.h"
@@ -33,10 +34,10 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
     : ActorClass(InActorClass)
     , MaxPoolSize(InHardLimit > 0 ? InHardLimit : DEFAULT_HARD_LIMIT)
     , InitialSize(FMath::Clamp(InInitialSize, 1, MaxPoolSize))
+    , bIsInitialized(false)
     , TotalRequests(0)
     , PoolHits(0)
     , TotalCreated(0)
-    , bIsInitialized(false)
 {
     //  验证输入参数
     if (!IsValid(ActorClass))
@@ -45,26 +46,19 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
         return;
     }
 
-    //  UE标准优化：预分配和缓存初始化
+    //  预分配容器
     AvailableActors.Reserve(InitialSize);
     ActiveActors.Reserve(InitialSize);
-    PreallocationCache.Reserve(InitialSize / 2); // 预分配缓存
-    
-    //  缓存Actor类引用，减少查找开销
-    CachedActorClass = TSoftObjectPtr<UClass>(ActorClass);
-    
-    //  与UE垃圾回收系统协调
+
+    //  注册GC回调
     if (GEngine)
     {
-        //  注册垃圾回收回调，确保池与GC协调工作 - 保存句柄以便安全清理
         GCDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddLambda([this]()
         {
-            FScopeLock Lock(&GCSection);
-            // GC 期间也要遵守池的锁约定（CleanupInvalidActors 需要写锁）
-            FWriteScopeLock PoolWriteLock(PoolLock);
+            FWriteScopeLock WriteLock(PoolLock);
             CleanupInvalidActors();
         });
-        
+
         ACTORPOOL_LOG(VeryVerbose, TEXT("已注册GC委托句柄"));
     }
 
@@ -107,79 +101,46 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
     ++TotalRequests;
     AActor* ResultActor = nullptr;
 
-    //  直接使用写锁避免锁升级死锁问题
+    // 从可用列表获取Actor
     {
         FWriteScopeLock WriteLock(PoolLock);
-
-        // 定期清理无效引用
-        if (TotalRequests % CLEANUP_FREQUENCY == 0)
-        {
-            CleanupInvalidActors();
-        }
-
-        // 尝试从可用列表获取Actor（仅取出，不在锁内激活）
-        if (AvailableActors.Num() > 0)
-        {
-            for (int32 i = AvailableActors.Num() - 1; i >= 0; --i)
-            {
-                if (AvailableActors[i].IsValid())
-                {
-                    ResultActor = AvailableActors[i].Get();
-                    AvailableActors.RemoveAtSwap(i);
-                    break;
-                }
-            }
-        }
+        PeriodicCleanup_RequiresLock();
+        ResultActor = TakeFromAvailable_RequiresLock();
     }
 
-    // 如果成功取到可复用Actor，锁外激活并在成功后加入活跃列表
+    // 锁外激活复用的Actor
     if (ResultActor)
     {
         if (IsValid(ResultActor) && FObjectPoolUtils::ActivateActorFromPool(ResultActor, SpawnTransform))
         {
-            // 写锁内加入活跃列表
-            {
-                FWriteScopeLock WriteLock(PoolLock);
-                ActiveActors.Add(ResultActor);
-            }
-            UpdateStats(true, false);
+            FWriteScopeLock WriteLock(PoolLock);
+            ActiveActors.Add(ResultActor);
+            UpdateStats(true);
             ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
             return ResultActor;
         }
-        else
-        {
-            ResultActor = nullptr;
-        }
+        ResultActor = nullptr;
     }
 
-    //  池中没有可用Actor，尝试创建新的（锁外创建与激活）
-    if (!ResultActor && CanCreateMoreActors())
+    // 池中没有可用Actor，尝试创建新的
+    if (CanCreateMoreActors())
     {
-        // 在锁外创建Actor以避免长时间持有锁
         AActor* NewActor = CreateNewActor(World);
-        if (NewActor)
+        if (NewActor && FObjectPoolUtils::ActivateActorFromPool(NewActor, SpawnTransform))
         {
-            // 重新获取写锁添加到活跃列表
-            if (FObjectPoolUtils::ActivateActorFromPool(NewActor, SpawnTransform))
-            {
-                FWriteScopeLock WriteLock(PoolLock);
-                ActiveActors.Add(NewActor);
-                UpdateStats(false, true); // 新创建
-                ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
-                return NewActor;
-            }
-            else
-            {
-                if (IsValid(NewActor))
-                {
-                    NewActor->Destroy();
-                }
-            }
+            FWriteScopeLock WriteLock(PoolLock);
+            ActiveActors.Add(NewActor);
+            UpdateStats(false);
+            ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
+            return NewActor;
+        }
+        if (IsValid(NewActor))
+        {
+            NewActor->Destroy();
         }
     }
 
-    //  无法获取或创建Actor
-    UpdateStats(false, false);
+    UpdateStats(false);
     ACTORPOOL_LOG(Warning, TEXT("无法获取Actor: %s"), *ActorClass->GetName());
     return nullptr;
 }
@@ -193,34 +154,17 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
     }
 
     ++TotalRequests;
-
     AActor* ResultActor = nullptr;
 
     {
         FWriteScopeLock WriteLock(PoolLock);
-
-        // 定期清理无效引用
-        if (TotalRequests % CLEANUP_FREQUENCY == 0)
-        {
-            CleanupInvalidActors();
-        }
-
-        // 优先从可用列表取出一个实例（不激活）
-        for (int32 i = AvailableActors.Num() - 1; i >= 0; --i)
-        {
-            if (AvailableActors[i].IsValid())
-            {
-                ResultActor = AvailableActors[i].Get();
-                AvailableActors.RemoveAtSwap(i);
-                break;
-            }
-        }
+        PeriodicCleanup_RequiresLock();
+        ResultActor = TakeFromAvailable_RequiresLock();
     }
 
     if (ResultActor)
     {
-        // 仅取出，不激活；交由 FinalizeDeferred 处理
-        UpdateStats(true, false);
+        UpdateStats(true);
         return ResultActor;
     }
 
@@ -230,12 +174,12 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
         AActor* NewActor = CreateNewActor(World);
         if (NewActor)
         {
-            UpdateStats(false, true);
-            return NewActor; // 延迟构造状态，等待Finalize
+            UpdateStats(false);
+            return NewActor;
         }
     }
 
-    UpdateStats(false, false);
+    UpdateStats(false);
     ACTORPOOL_LOG(Warning, TEXT("AcquireDeferred: 无可用Actor且创建失败: %s"), *ActorClass->GetName());
     return nullptr;
 }
@@ -604,38 +548,6 @@ bool FActorPool::ValidateActor(AActor* Actor) const
     return true;
 }
 
-void FActorPool::Clear()
-{
-    // 获取写锁
-    FWriteScopeLock WriteLock(PoolLock);
-    
-    // 销毁所有活跃的Actor
-    for (const TWeakObjectPtr<AActor>& ActorPtr : ActiveActors)
-    {
-        if (AActor* Actor = ActorPtr.Get())
-        {
-            Actor->Destroy();
-        }
-    }
-    
-    // 销毁所有可用的Actor
-    for (const TWeakObjectPtr<AActor>& ActorPtr : AvailableActors)
-    {
-        if (AActor* Actor = ActorPtr.Get())
-        {
-            Actor->Destroy();
-        }
-    }
-    
-    // 清空容器
-    ActiveActors.Empty();
-    AvailableActors.Empty();
-    
-    // 重置统计 - 注意：需要通过GetStats()方法或其他方式重置
-    // 暂时移除直接赋值，避免编译错误
-    // TODO: 实现正确的统计重置逻辑
-}
-
 int64 FActorPool::CalculateMemoryUsage() const
 {
     // 获取读锁
@@ -680,17 +592,36 @@ void FActorPool::CleanupInvalidActors()
     ACTORPOOL_DEBUG(TEXT("清理无效引用完成: %s"), *ActorClass->GetName());
 }
 
-void FActorPool::UpdateStats(bool bWasPoolHit, bool bActorCreated)
+void FActorPool::UpdateStats(bool bWasPoolHit)
 {
-    // 注意：这个方法可能在锁内或锁外调用，所以要小心
-
     if (bWasPoolHit)
     {
         ++PoolHits;
     }
+}
 
-    // TotalCreated 在 CreateNewActor 中更新
-    // TotalRequests 在 GetActor 开始时更新
+AActor* FActorPool::TakeFromAvailable_RequiresLock()
+{
+    // 注意：调用者必须持有写锁
+    for (int32 i = AvailableActors.Num() - 1; i >= 0; --i)
+    {
+        if (AvailableActors[i].IsValid())
+        {
+            AActor* Actor = AvailableActors[i].Get();
+            AvailableActors.RemoveAtSwap(i);
+            return Actor;
+        }
+    }
+    return nullptr;
+}
+
+void FActorPool::PeriodicCleanup_RequiresLock()
+{
+    // 注意：调用者必须持有写锁
+    if (TotalRequests % CLEANUP_FREQUENCY == 0)
+    {
+        CleanupInvalidActors();
+    }
 }
 
 bool FActorPool::CanCreateMoreActors() const

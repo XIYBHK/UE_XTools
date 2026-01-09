@@ -15,6 +15,8 @@
 //  对象池模块依赖
 #include "ObjectPool.h"
 #include "ObjectPoolSubsystem.h"
+#include "ObjectPoolInterface.h"
+#include "ObjectPoolUtils.h"
 
 #define LOCTEXT_NAMESPACE "ObjectPoolLibrary"
 

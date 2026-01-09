@@ -369,12 +369,11 @@ bool FX_CollisionManager::AddConvexCollisionToMesh(UStaticMesh* StaticMesh)
 
 bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, ECollisionTraceFlag TraceFlag)
 {
-    if (!StaticMesh || !StaticMesh->GetBodySetup())
+    if (!StaticMesh)
     {
         return false;
     }
 
-    //  使用UE错误处理模式，不使用异常
     UBodySetup* BodySetup = StaticMesh->GetBodySetup();
     if (!BodySetup)
     {

@@ -64,7 +64,11 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
-				"Win64"
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android",
+				"iOS"
 			]
 		},
 		{
@@ -102,7 +106,11 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [
-				"Win64"
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android",
+				"iOS"
 			]
 		},
 		{

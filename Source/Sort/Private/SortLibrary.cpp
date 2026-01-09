@@ -636,6 +636,30 @@ namespace SortLibrary_Private
             }
         }
     }
+
+    /**
+     * 通用按值筛选模板函数
+     */
+    template<typename ElementType, typename ValueType, typename ProjectionFunc>
+    void GenericSliceByValue(const TArray<ElementType>& InArray, ValueType MinValue, ValueType MaxValue, 
+                             TArray<ElementType>& OutArray, TArray<int32>& Indices, 
+                             TArray<ValueType>* OutValues, ProjectionFunc Projection)
+    {
+        OutArray.Empty();
+        Indices.Empty();
+        if (OutValues) OutValues->Empty();
+
+        for (int32 i = 0; i < InArray.Num(); ++i)
+        {
+            const ValueType Value = Projection(InArray[i]);
+            if (Value >= MinValue && Value <= MaxValue)
+            {
+                OutArray.Add(InArray[i]);
+                Indices.Add(i);
+                if (OutValues) OutValues->Add(Value);
+            }
+        }
+    }
 } // namespace SortLibrary_Private
 
 //~ 数组截取函数
@@ -663,72 +687,30 @@ void USortLibrary::SliceVectorArrayByIndices(const TArray<FVector>& InArray, int
 
 void USortLibrary::SliceFloatArrayByValue(const TArray<float>& InArray, float MinValue, float MaxValue, TArray<float>& OutArray, TArray<int32>& Indices)
 {
-    OutArray.Empty();
-    Indices.Empty();
-    for (int32 i = 0; i < InArray.Num(); ++i)
-    {
-        const float& Value = InArray[i];
-        if (Value >= MinValue && Value <= MaxValue)
-        {
-            OutArray.Add(Value);
-            Indices.Add(i);
-        }
-    }
+    SortLibrary_Private::GenericSliceByValue(InArray, MinValue, MaxValue, OutArray, Indices, (TArray<float>*)nullptr, [](float V){ return V; });
 }
 
 void USortLibrary::SliceIntegerArrayByValue(const TArray<int32>& InArray, int32 MinValue, int32 MaxValue, TArray<int32>& OutArray, TArray<int32>& Indices)
 {
-    OutArray.Empty();
-    Indices.Empty();
-    for (int32 i = 0; i < InArray.Num(); ++i)
-    {
-        const int32& Value = InArray[i];
-        if (Value >= MinValue && Value <= MaxValue)
-        {
-            OutArray.Add(Value);
-            Indices.Add(i);
-        }
-    }
+    SortLibrary_Private::GenericSliceByValue(InArray, MinValue, MaxValue, OutArray, Indices, (TArray<int32>*)nullptr, [](int32 V){ return V; });
 }
 
 void USortLibrary::SliceVectorArrayByLength(const TArray<FVector>& InArray, float MinLength, float MaxLength, TArray<FVector>& OutArray, TArray<int32>& Indices, TArray<float>& Lengths)
 {
-    OutArray.Empty();
-    Indices.Empty();
-    Lengths.Empty();
-    for (int32 i = 0; i < InArray.Num(); ++i)
-    {
-        const float Length = InArray[i].Size();
-        if (Length >= MinLength && Length <= MaxLength)
-        {
-            OutArray.Add(InArray[i]);
-            Indices.Add(i);
-            Lengths.Add(Length);
-        }
-    }
+    SortLibrary_Private::GenericSliceByValue(InArray, MinLength, MaxLength, OutArray, Indices, &Lengths, [](const FVector& V){ return (float)V.Size(); });
 }
 
 void USortLibrary::SliceVectorArrayByComponent(const TArray<FVector>& InArray, ECoordinateAxis Axis, float MinValue, float MaxValue, TArray<FVector>& OutArray, TArray<int32>& Indices, TArray<float>& AxisValues)
 {
-    OutArray.Empty();
-    Indices.Empty();
-    AxisValues.Empty();
-    for (int32 i = 0; i < InArray.Num(); ++i)
-    {
-        float Value = 0.0f;
+    SortLibrary_Private::GenericSliceByValue(InArray, MinValue, MaxValue, OutArray, Indices, &AxisValues, [Axis](const FVector& V) {
         switch(Axis)
         {
-            case ECoordinateAxis::X: Value = InArray[i].X; break;
-            case ECoordinateAxis::Y: Value = InArray[i].Y; break;
-            case ECoordinateAxis::Z: Value = InArray[i].Z; break;
+            case ECoordinateAxis::X: return (float)V.X;
+            case ECoordinateAxis::Y: return (float)V.Y;
+            case ECoordinateAxis::Z: return (float)V.Z;
+            default: return 0.0f;
         }
-        if (Value >= MinValue && Value <= MaxValue)
-        {
-            OutArray.Add(InArray[i]);
-            Indices.Add(i);
-            AxisValues.Add(Value);
-        }
-    }
+    });
 }
 
 

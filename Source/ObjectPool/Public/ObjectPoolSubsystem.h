@@ -7,22 +7,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Stats/Stats.h"
 #include "Subsystems/WorldSubsystem.h"
-#include "Engine/World.h"
-#include "GameFramework/Actor.h"
-#include "Containers/Map.h"
 #include "Templates/SharedPointer.h"
-#include "Engine/Engine.h"
-
-//  对象池模块依赖
 #include "ObjectPoolTypes.h"
-#include "ActorPool.h"
+#include "ObjectPoolUtils.h"
 #include "ObjectPoolConfigManager.h"
 #include "ObjectPoolManager.h"
 
 #include "ObjectPoolSubsystem.generated.h"
 
 // 前向声明
+class FActorPool;
 class FObjectPoolMonitor;
 
 /**
@@ -222,13 +218,11 @@ private:
     bool bIsInitialized;
 
     //  UE官方垃圾回收系统集成
-    
+
     /** GC回调：垃圾回收前的清理 */
-    UFUNCTION()
     void OnPreGarbageCollect();
-    
-    /** GC回调：垃圾回收后的清理 */  
-    UFUNCTION()
+
+    /** GC回调：垃圾回收后的清理 */
     void OnPostGarbageCollect();
 
     //  独立工具类（组合模式，基于UE智能指针）

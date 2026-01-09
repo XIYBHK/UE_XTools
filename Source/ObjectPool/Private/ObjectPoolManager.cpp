@@ -302,7 +302,7 @@ int32 FObjectPoolManager::PerformSmartPreallocation(UClass* ActorClass, FActorPo
     //  智能预分配机制 - 组件自动激活问题已解决
     Pool.PrewarmPool(World, PreallocCount);
 
-            POOL_MANAGER_LOG(Log, TEXT("预分配完成: %s, 预分配数量=%d"), 
+    POOL_MANAGER_LOG(Log, TEXT("预分配完成: %s, 预分配数量=%d"), 
         *ActorClass->GetName(), PreallocCount);
 
     return PreallocCount;

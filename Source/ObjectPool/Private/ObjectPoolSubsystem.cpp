@@ -6,17 +6,15 @@
 
 #include "ObjectPoolSubsystem.h"
 #include "ObjectPool.h"
-
-//  独立工具类
+#include "ActorPool.h"
 #include "ObjectPoolConfigManager.h"
 #include "ObjectPoolManager.h"
-
-//  生命周期接口
+#include "ObjectPoolUtils.h"
 #include "ObjectPoolInterface.h"
-// #include "ObjectPoolMonitor.h" // 暂时移除，后续实现
 
 //  UE核心依赖
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
 #include "UObject/UObjectGlobals.h"
 #include "TimerManager.h"
@@ -25,6 +23,7 @@
 DEFINE_LOG_CATEGORY(LogObjectPoolSubsystem);
 
 #if STATS
+// 定义统计项（STATGROUP 已在 ObjectPoolUtils.h 中定义）
 DEFINE_STAT(STAT_ObjectPoolSubsystem_SpawnActor);
 DEFINE_STAT(STAT_ObjectPoolSubsystem_ReturnActor);
 DEFINE_STAT(STAT_ObjectPoolSubsystem_GetOrCreatePool);

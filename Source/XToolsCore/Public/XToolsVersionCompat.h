@@ -77,14 +77,8 @@ namespace XToolsVersionCompat
 	template<typename T>
 	FORCEINLINE T AtomicLoad(const TAtomic<T>& AtomicVar)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
-		// UE 5.3-5.7+: 支持直接读取
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
+		// UE 5.3+: 支持直接读取
 		return AtomicVar;
-#else
-		// UE 5.0-5.2: 使用load()
-		return AtomicVar.load();
-#endif
 	}
 
 	/**
@@ -93,14 +87,8 @@ namespace XToolsVersionCompat
 	template<typename T>
 	FORCEINLINE void AtomicStore(TAtomic<T>& AtomicVar, T Value)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
-		// UE 5.3-5.7+: 支持直接赋值
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
+		// UE 5.3+: 支持直接赋值
 		AtomicVar = Value;
-#else
-		// UE 5.0-5.2: 使用store()
-		AtomicVar.store(Value);
-#endif
 	}
 
 	/**
@@ -109,14 +97,8 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicIncrement(TAtomic<int32>& AtomicVar)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
 		// UE 5.3+: 直接递增
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
 		return ++AtomicVar;
-#else
-		// UE 5.0-5.2: 使用fetch_add()
-		return AtomicVar.fetch_add(1) + 1;
-#endif
 	}
 
 	/**
@@ -125,14 +107,8 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicDecrement(TAtomic<int32>& AtomicVar)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
 		// UE 5.3+: 直接递减
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
 		return --AtomicVar;
-#else
-		// UE 5.0-5.2: 使用fetch_sub()
-		return AtomicVar.fetch_sub(1) - 1;
-#endif
 	}
 
 	/**
@@ -142,15 +118,9 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicAdd(TAtomic<int32>& AtomicVar, int32 Value)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
 		// UE 5.3+: 直接加法
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
 		AtomicVar += Value;
 		return AtomicVar;
-#else
-		// UE 5.0-5.2: 使用fetch_add()
-		return AtomicVar.fetch_add(Value) + Value;
-#endif
 	}
 
 	/**
@@ -160,15 +130,9 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicSub(TAtomic<int32>& AtomicVar, int32 Value)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
 		// UE 5.3+: 直接减法
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
 		AtomicVar -= Value;
 		return AtomicVar;
-#else
-		// UE 5.0-5.2: 使用fetch_sub()
-		return AtomicVar.fetch_sub(Value) - Value;
-#endif
 	}
 
 	/**
@@ -179,16 +143,10 @@ namespace XToolsVersionCompat
 	template<typename T>
 	FORCEINLINE T AtomicExchange(TAtomic<T>& AtomicVar, T Value)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
 		// UE 5.3+: 直接交换
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
 		T OldValue = AtomicVar;
 		AtomicVar = Value;
 		return OldValue;
-#else
-		// UE 5.0-5.2: 使用exchange()
-		return AtomicVar.exchange(Value);
-#endif
 	}
 
 	/**
@@ -200,9 +158,7 @@ namespace XToolsVersionCompat
 	template<typename T>
 	FORCEINLINE bool AtomicCompareExchange(TAtomic<T>& AtomicVar, T& Expected, T Desired)
 	{
-#if (defined(ENGINE_MAJOR_VERSION) && ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3) || !defined(ENGINE_MAJOR_VERSION)
 		// UE 5.3+: 直接比较并交换
-		// 如果ENGINE_MAJOR_VERSION未定义，假设是5.3+（当前编译环境）
 		T CurrentValue = AtomicVar;
 		if (CurrentValue == Expected)
 		{
@@ -214,10 +170,6 @@ namespace XToolsVersionCompat
 			Expected = CurrentValue;
 			return false;
 		}
-#else
-		// UE 5.0-5.2: 使用compare_exchange_weak()
-		return AtomicVar.compare_exchange_weak(Expected, Desired);
-#endif
 	}
 }
 
