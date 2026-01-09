@@ -618,13 +618,13 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
     // 构建详细的操作结果信息
     static FString LastOperationDetails;
     LastOperationDetails.Empty();
-    LastOperationDetails.Append(FString::Printf(TEXT("Asset name normalization details (%s)\n\n"), *FDateTime::Now().ToString()));
-    LastOperationDetails.Append(LOCTEXT("NormalizationHeader", "==================== Normalization Completed ====================\n").ToString());
-    LastOperationDetails.Append(LOCTEXT("SummaryLabel", "Summary:\n").ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("TotalLabel", "- Total: {0}\n"), FText::AsNumber(TotalCount)).ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("RenamedLabel", "- Renamed: {0}\n"), FText::AsNumber(Result.SuccessCount)).ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("AlreadyOkLabel", "- Already OK: {0}\n"), FText::AsNumber(Result.SkippedCount)).ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("FailedLabel", "- Failed: {0}\n"), FText::AsNumber(Result.FailedCount)).ToString());
+    LastOperationDetails.Append(FString::Printf(TEXT("资产名称规范化详情 (%s)\n\n"), *FDateTime::Now().ToString()));
+    LastOperationDetails.Append(LOCTEXT("NormalizationHeader", "==================== 规范化操作完成 ====================\n").ToString());
+    LastOperationDetails.Append(LOCTEXT("SummaryLabel", "概览：\n").ToString());
+    LastOperationDetails.Append(FText::Format(LOCTEXT("TotalLabel", "- 总计：{0}\n"), FText::AsNumber(TotalCount)).ToString());
+    LastOperationDetails.Append(FText::Format(LOCTEXT("RenamedLabel", "- 已重命名：{0}\n"), FText::AsNumber(Result.SuccessCount)).ToString());
+    LastOperationDetails.Append(FText::Format(LOCTEXT("AlreadyOkLabel", "- 无需处理：{0}\n"), FText::AsNumber(Result.SkippedCount)).ToString());
+    LastOperationDetails.Append(FText::Format(LOCTEXT("FailedLabel", "- 失败：{0}\n"), FText::AsNumber(Result.FailedCount)).ToString());
     LastOperationDetails.Append(LOCTEXT("SeparatorLine", "====================================================\n").ToString());
 
     // 添加提示信息
@@ -634,15 +634,15 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
         if (Settings && (Settings->bAutoRenameOnImport || Settings->bAutoRenameOnCreate))
         {
             LastOperationDetails.Append(TEXT("\n"));
-            LastOperationDetails.Append(LOCTEXT("AutoRenameNote", "Note: Some assets may have been skipped because they no longer exist.\n").ToString());
-            LastOperationDetails.Append(LOCTEXT("AutoRenameHint", "This can happen when 'Auto-Rename on Create/Import' is enabled and\n").ToString());
-            LastOperationDetails.Append(LOCTEXT("AutoRenameHint2", "assets were already automatically renamed. Check the Output Log for details.\n").ToString());
+            LastOperationDetails.Append(LOCTEXT("AutoRenameNote", "注意：部分资产已被跳过，可能因为它们已不存在。\n").ToString());
+            LastOperationDetails.Append(LOCTEXT("AutoRenameHint", "当开启了“创建/导入时自动重命名”且资产已经被自动重命名时，\n").ToString());
+            LastOperationDetails.Append(LOCTEXT("AutoRenameHint2", "可能会发生这种情况。请查看输出日志了解详情。\n").ToString());
         }
     }
 
     // 显示可点击的通知
     FNotificationInfo Info(FText::Format(
-        NSLOCTEXT("X_AssetNaming", "AssetRenameNotification", "Asset name normalization completed\nTotal: {0} | Renamed: {1} | Already OK: {2} | Failed: {3}\nClick to view details"),
+        NSLOCTEXT("X_AssetNaming", "AssetRenameNotification", "资产名称规范化已完成\n总计: {0} | 已重命名: {1} | 无需处理: {2} | 失败: {3}\n点击查看详情"),
         FText::AsNumber(TotalCount),
         FText::AsNumber(Result.SuccessCount),
         FText::AsNumber(Result.SkippedCount),
@@ -663,9 +663,9 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
     {
         FMessageDialog::Open(EAppMsgType::Ok,
             FText::FromString(LastOperationDetails),
-            NSLOCTEXT("X_AssetNaming", "ViewDetailsHyperlink", "View Details"));
+            NSLOCTEXT("X_AssetNaming", "ViewDetailsHyperlink", "查看详情"));
     });
-    Info.HyperlinkText = NSLOCTEXT("X_AssetNaming", "ViewDetailsHyperlink", "View Details");
+    Info.HyperlinkText = NSLOCTEXT("X_AssetNaming", "ViewDetailsHyperlink", "查看详情");
 
     // 显示通知
     TSharedPtr<SNotificationItem> NotificationItem = FSlateNotificationManager::Get().AddNotification(Info);
@@ -687,7 +687,7 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
     {
         FMessageDialog::Open(EAppMsgType::Ok,
             FText::FromString(LastOperationDetails),
-            NSLOCTEXT("X_AssetNaming", "AssetRenameDetails", "Asset Name Normalization Details"));
+            NSLOCTEXT("X_AssetNaming", "AssetRenameDetails", "资产名称规范化详情"));
     }
 
     UE_LOG(LogX_AssetNaming, Log, TEXT("Asset renaming finished: Renamed %d, Skipped %d, Failed %d"),

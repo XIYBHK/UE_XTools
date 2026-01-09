@@ -57,21 +57,17 @@ public:
 	bool IsActive() const { return bIsActive; }
 
 	/**
-	 * 检查指定包路径是否是最近手动重命名的资产
-	 */
-	bool IsRecentlyManuallyRenamed(const FString& PackagePath) const;
-
-	/**
-	 * 检查指定资产是否与最近手动重命名的资产相似
-	 */
-	bool IsSimilarToRecentlyRenamed(const FAssetData& AssetData) const;
-
-	/**
 	 * 设置是否正在处理资产（用于区分系统触发的重命名）
 	 */
 	void SetProcessingAsset(bool bProcessing) { bIsProcessingAsset = bProcessing; }
 
 private:
+	/** 判定为 Factory 创建资产的时间窗口 (秒)
+	 * 放宽到 10.0s 以容纳用户交互时间（如选取父类弹窗）
+	 * 安全性由 Factory 触发机制和类型匹配共同保证
+	 */
+	static constexpr double FactoryCreationWindow = 10.0;
+
 	/** 单例实例 */
 	static TUniquePtr<FX_AssetNamingDelegates> Instance;
 
@@ -84,7 +80,7 @@ private:
 	/** 委托句柄 */
 	FDelegateHandle OnAssetAddedHandle;
 	FDelegateHandle OnAssetPostImportHandle;
-	FDelegateHandle OnAssetRenamedHandle;
+	FDelegateHandle OnNewAssetCreatedHandle;
 	FDelegateHandle OnFilesLoadedHandle;
 	FDelegateHandle OnEditorModeChangedHandle;
 
@@ -97,17 +93,14 @@ private:
 	/** AssetRegistry 是否已加载完成 */
 	bool bIsAssetRegistryReady = false;
 
-	/** 重入保护标志（防止递归重命名导致崩溃）
-	 * 因为所有操作都在 GameThread 上同步执行，使用简单的布尔标志即可
-	 * 当 OnAssetAdded 正在处理时，阻止嵌套调用
-	 */
+	/** 重入保护标志（防止递归重命名导致崩溃） */
 	bool bIsProcessingAsset = false;
 
-	/** 最近手动重命名的资产缓存（包路径 -> 时间戳）
-	 * 用于防止手动重命名后的保存操作触发自动重命名
-	 * 缓存时间为5秒，足够覆盖保存操作的时间窗口
-	 */
-	TMap<FString, double> RecentManualRenames;
+	/** 最后一次工厂创建资产的时间戳 */
+	double LastFactoryCreationTime = 0.0;
+
+	/** 最后一次工厂支持的资产类（用于类型校验，防止误伤） */
+	TWeakObjectPtr<UClass> LastFactorySupportedClass;
 
 	/**
 	 * 当资产添加到 AssetRegistry 时调用（新建或导入资产）
@@ -116,18 +109,17 @@ private:
 	void OnAssetAdded(const FAssetData& AssetData);
 
 	/**
-	 * 当资产重命名完成后调用（用于手动重命名的二次检查）
-	 * @param AssetData - 重命名后的资产数据
-	 * @param OldObjectPath - 原始对象路径
+	 * 当通过工厂创建新资产时调用
+	 * @param Factory - 用于创建资产的工厂
 	 */
-	void OnAssetRenamed(const FAssetData& AssetData, const FString& OldObjectPath);
+	void OnNewAssetCreated(class UFactory* Factory);
 
 	/**
 	 * 资产导入或重新导入后调用
 	 * @param Factory - 用于导入的工厂
 	 * @param CreatedObject - 导入的对象
 	 */
-	void OnAssetPostImport(UFactory* Factory, UObject* CreatedObject);
+	void OnAssetPostImport(class UFactory* Factory, class UObject* CreatedObject);
 
 	/**
 	 * 验证资产是否应该被处理以进行重命名
