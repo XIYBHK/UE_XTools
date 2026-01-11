@@ -234,13 +234,6 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
         // 生命周期事件由 FObjectPoolUtils 统一触发
         OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("从池获取Actor成功: %s"), *Actor->GetName());
     }
-    
-    // 暂时禁用监控器功能
-    // if (Actor && Monitor.IsValid())
-    // {
-    //     // 通知监控器
-    //     Monitor->OnActorSpawned(ActorClass, Actor);
-    // }
 
     return Actor;
 }
@@ -315,18 +308,11 @@ bool UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
     // 生命周期事件由 FObjectPoolUtils 统一触发
 
     OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("归还Actor到池: %s"), *Actor->GetName());
-    
+
     // 归还到池
     bool bSuccess = Pool->ReturnActor(Actor);
-    
-    // 暂时禁用监控器功能
-    // if (bSuccess && Monitor.IsValid())
-    // {
-    //     // 通知监控器
-    //     Monitor->OnActorReturned(ActorClass, Actor);
-    // }
 
-    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("归还Actor到池: %s, 结果=%s"), 
+    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("归还Actor到池: %s, 结果=%s"),
         *Actor->GetName(), bSuccess ? TEXT("成功") : TEXT("失败"));
 
     return bSuccess;
@@ -588,13 +574,7 @@ void UObjectPoolSubsystem::PerformMaintenance()
         PoolManager->PerformMaintenance(ActorPools);
     }
 
-    // 更新监控器（暂时禁用）
-    // if (Monitor.IsValid())
-    // {
-    //     Monitor->UpdateGlobalStats(ActorPools);
-    // }
-
-    //  更新维护时间
+    // 更新维护时间
     SubsystemStats.LastMaintenanceTime = FPlatformTime::Seconds();
 
     OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("执行定期维护"));
@@ -609,8 +589,6 @@ FObjectPoolSubsystemStats UObjectPoolSubsystem::GetSubsystemStats() const
 }
 
 //  UE官方垃圾回收系统集成实现
-
-//  GC集成现在通过委托处理，不需要手动AddReferencedObjects
 
 void UObjectPoolSubsystem::OnPreGarbageCollect()
 {
@@ -628,8 +606,7 @@ void UObjectPoolSubsystem::OnPreGarbageCollect()
         }
         else if (PoolPair.Value.IsValid())
         {
-            // 通知池准备GC
-            // PoolPair.Value->PrepareForGarbageCollection();
+            // 池将在 CleanupInvalidActors 中自动清理无效引用
         }
     }
     
@@ -652,8 +629,7 @@ void UObjectPoolSubsystem::OnPostGarbageCollect()
     {
         if (PoolPair.Value.IsValid() && IsValid(PoolPair.Key))
         {
-            // 让池清理内部的无效Actor引用
-            // PoolPair.Value->PostGarbageCollectCleanup();
+            // 池会在内部自动清理无效引用
         }
     }
 }

@@ -255,10 +255,3 @@ private:    //  内部辅助方法
      */
     void PeriodicCleanup_RequiresLock();
 };
-
-/**
- * 日志宏
- */
-#undef ACTORPOOL_LOG
-#define ACTORPOOL_LOG(Verbosity, Format, ...) \
-    UE_LOG(LogActorPool, Verbosity, Format, ##__VA_ARGS__)

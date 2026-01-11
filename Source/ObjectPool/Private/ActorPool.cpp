@@ -22,6 +22,11 @@
 //  日志和统计
 DEFINE_LOG_CATEGORY(LogActorPool);
 
+// 日志宏（定义在 .cpp 中，避免头文件依赖）
+#undef ACTORPOOL_LOG
+#define ACTORPOOL_LOG(Verbosity, Format, ...) \
+    UE_LOG(LogActorPool, Verbosity, Format, ##__VA_ARGS__)
+
 #if STATS
 DEFINE_STAT(STAT_ActorPool_GetActor);
 DEFINE_STAT(STAT_ActorPool_ReturnActor);
