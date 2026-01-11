@@ -417,12 +417,13 @@ namespace RandomShuffles
 TMap<FName, int32> URandomShuffleArrayLibrary::PRDStateMap;
 FCriticalSection URandomShuffleArrayLibrary::PRDStateLock;
 FPRDPerformanceStats URandomShuffleArrayLibrary::PerformanceStats;
+FCriticalSection URandomShuffleArrayLibrary::PerformanceStatsLock;
 
 // 简单版本 - 自动状态管理
 bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, FString StateID)
 {
     // 输入验证
-    BaseChance = FMath::Clamp(BaseChance, RandomShufflesConfig::MinValidChance, RandomShufflesConfig::MaxValidChance);
+    BaseChance = FMath::Clamp(BaseChance, RandomShuffles::Config::MinValidChance, RandomShuffles::Config::MaxValidChance);
 
     int32& FailureCount = GetOrCreatePRDState(StateID);
     float ActualChance = 0.0f;
@@ -464,33 +465,39 @@ int32& URandomShuffleArrayLibrary::GetOrCreatePRDState(const FString& StateID)
 {
     FScopeLock Lock(&PRDStateLock);
 
+    const FName StateKey(*StateID);
+
+    // 如果已存在，直接返回
+    if (PRDStateMap.Contains(StateKey))
+    {
+        return PRDStateMap[StateKey];
+    }
+
     // 首次使用时预分配内存
     if (PRDStateMap.Num() == 0)
     {
-        PRDStateMap.Reserve(RandomShufflesConfig::DefaultStateMapReserve);
+        PRDStateMap.Reserve(RandomShuffles::Config::DefaultStateMapReserve);
     }
 
-    const FName StateKey(*StateID);
-    if (!PRDStateMap.Contains(StateKey))
+    // 检查状态映射大小限制
+    if (PRDStateMap.Num() >= RandomShuffles::Config::MaxStateMapSize)
     {
-        // 检查状态映射大小限制
-        if (PRDStateMap.Num() >= RandomShufflesConfig::MaxStateMapSize)
+        // 使用 Error 级别日志确保可见性
+        UE_LOG(LogRandomShuffle, Error,
+            TEXT("PRD状态映射已达到最大大小限制 (%d)，新状态 '%s' 将使用默认状态"),
+            RandomShuffles::Config::MaxStateMapSize, *StateID);
+
+        // 返回默认状态（使用"Default"键）
+        const FName DefaultKey(TEXT("Default"));
+        if (!PRDStateMap.Contains(DefaultKey))
         {
-            UE_LOG(LogRandomShuffle, Warning,
-                TEXT("PRD状态映射已达到最大大小限制 (%d)，无法添加新状态: %s"),
-                RandomShufflesConfig::MaxStateMapSize, *StateID);
-
-            // 返回默认状态（使用"Default"键）
-            const FName DefaultKey(TEXT("Default"));
-            if (!PRDStateMap.Contains(DefaultKey))
-            {
-                PRDStateMap.Add(DefaultKey, 0);
-            }
-            return PRDStateMap[DefaultKey];
+            PRDStateMap.Add(DefaultKey, 0);
         }
-
-        PRDStateMap.Add(StateKey, 0);
+        return PRDStateMap[DefaultKey];
     }
+
+    // 添加新状态
+    PRDStateMap.Add(StateKey, 0);
     return PRDStateMap[StateKey];
 }
 
@@ -503,17 +510,23 @@ void URandomShuffleArrayLibrary::ClearPRDState(FString StateID)
 
 void URandomShuffleArrayLibrary::ClearAllPRDStates()
 {
-    FScopeLock Lock(&PRDStateLock);
-    PRDStateMap.Empty();
+    // 清空 PRD 状态映射
+    {
+        FScopeLock Lock(&PRDStateLock);
+        PRDStateMap.Empty();
+    }
 
-    // 重置性能统计
-    PerformanceStats = FPRDPerformanceStats();
+    // 重置性能统计（使用独立的锁）
+    {
+        FScopeLock Lock(&PerformanceStatsLock);
+        PerformanceStats = FPRDPerformanceStats();
+    }
 }
 
 // 性能统计实现
 FPRDPerformanceStats URandomShuffleArrayLibrary::GetPRDPerformanceStats()
 {
-    FScopeLock Lock(&PRDStateLock);
+    FScopeLock Lock(&PerformanceStatsLock);
 
     // 更新当前状态映射大小
     PerformanceStats.StateMapSize = PRDStateMap.Num();
@@ -523,13 +536,15 @@ FPRDPerformanceStats URandomShuffleArrayLibrary::GetPRDPerformanceStats()
 
 void URandomShuffleArrayLibrary::ResetPRDPerformanceStats()
 {
-    FScopeLock Lock(&PRDStateLock);
+    FScopeLock Lock(&PerformanceStatsLock);
     PerformanceStats = FPRDPerformanceStats();
 }
 
 void URandomShuffleArrayLibrary::UpdatePerformanceStats(int32 FailureCount)
 {
-    // 注意：此函数假设已经在锁保护下调用
+    // 性能统计使用独立的锁保护，确保线程安全
+    FScopeLock Lock(&PerformanceStatsLock);
+    
     PerformanceStats.TotalCalls++;
     PerformanceStats.MaxFailureCount = FMath::Max(PerformanceStats.MaxFailureCount, FailureCount);
 

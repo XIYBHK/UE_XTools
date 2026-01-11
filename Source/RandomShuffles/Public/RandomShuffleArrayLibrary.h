@@ -14,16 +14,19 @@
  * RandomShuffles 模块配置常量
  * 集中管理性能参数和配置选项
  */
-namespace RandomShufflesConfig
+namespace RandomShuffles
 {
-    // PRD 算法配置
-    constexpr float MinValidChance = 0.0001f;      // 最小有效概率
-    constexpr float MaxValidChance = 1.0f;         // 最大有效概率
-    constexpr int32 MaxFailureCount = 10000;      // 最大失败次数限制
+    namespace Config
+    {
+        // PRD 算法配置
+        constexpr float MinValidChance = 0.0001f;      // 最小有效概率
+        constexpr float MaxValidChance = 1.0f;         // 最大有效概率
+        constexpr int32 MaxFailureCount = 10000;      // 最大失败次数限制
 
-    // 性能配置
-    constexpr int32 DefaultStateMapReserve = 64;  // 默认状态映射预分配大小
-    constexpr int32 MaxStateMapSize = 1000;       // 状态映射最大大小
+        // 性能配置
+        constexpr int32 DefaultStateMapReserve = 64;  // 默认状态映射预分配大小
+        constexpr int32 MaxStateMapSize = 1000;       // 状态映射最大大小
+    }
 }
 
 /**
@@ -581,17 +584,18 @@ public:
 		ToolTip = "重置PRD算法的性能统计计数器"))
 	static void ResetPRDPerformanceStats();
 
-private:
+ private:
 	// PRD状态管理 - 线程安全的状态管理系统
 	static TMap<FName, int32> PRDStateMap;
 	static FCriticalSection PRDStateLock;
 
-	// 性能统计
+	// 性能统计 - 独立的线程安全锁
 	static FPRDPerformanceStats PerformanceStats;
+	static FCriticalSection PerformanceStatsLock;
 
 	// 获取或创建PRD状态 - 线程安全版本
 	static int32& GetOrCreatePRDState(const FString& StateID);
 
-	// 更新性能统计
+	// 更新性能统计 - 线程安全版本
 	static void UpdatePerformanceStats(int32 FailureCount);
 };
