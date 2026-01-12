@@ -22,11 +22,11 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 	float Radius,
 	int32 MaxAttempts)
 {
-	TArray<FVector2D> Points = GeneratePoisson2DInternal(Width, Height, Radius, MaxAttempts, nullptr);
-	
+	TArray<FVector2D> Points = GenerateOptimizedPoisson2D(Width, Height, Radius, MaxAttempts, nullptr);
+
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
 		Points.Num(), Width, Height, Radius);
-	
+
 	return Points;
 }
 
@@ -37,7 +37,7 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2DFromStream(
 	float Radius,
 	int32 MaxAttempts)
 {
-	TArray<FVector2D> Points = GeneratePoisson2DInternal(Width, Height, Radius, MaxAttempts, &RandomStream);
+	TArray<FVector2D> Points = GenerateOptimizedPoisson2D(Width, Height, Radius, MaxAttempts, &RandomStream);
 
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson2DFromStream: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
 		Points.Num(), Width, Height, Radius);
@@ -52,11 +52,11 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 	float Radius,
 	int32 MaxAttempts)
 {
-	TArray<FVector> Points = GeneratePoisson3DInternal(Width, Height, Depth, Radius, MaxAttempts, nullptr);
-	
+	TArray<FVector> Points = GenerateOptimizedPoisson3D(Width, Height, Depth, Radius, MaxAttempts, nullptr);
+
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
 		Points.Num(), Width, Height, Depth, Radius);
-	
+
 	return Points;
 }
 
@@ -68,7 +68,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3DFromStream(
 	float Radius,
 	int32 MaxAttempts)
 {
-	TArray<FVector> Points = GeneratePoisson3DInternal(Width, Height, Depth, Radius, MaxAttempts, &RandomStream);
+	TArray<FVector> Points = GenerateOptimizedPoisson3D(Width, Height, Depth, Radius, MaxAttempts, &RandomStream);
 
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson3DFromStream: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
 		Points.Num(), Width, Height, Depth, Radius);

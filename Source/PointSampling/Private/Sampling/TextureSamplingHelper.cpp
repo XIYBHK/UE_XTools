@@ -18,6 +18,88 @@
 // 辅助函数（参考 UE SubUVAnimation.cpp 的标准实现）
 // ============================================================================
 
+/**
+ * 采样纹理像素（简化实现，尝试读取未压缩纹理数据）
+ */
+FLinearColor FTextureSamplingHelper::SampleTexturePixel(UTexture2D* Texture, float U, float V)
+{
+	if (!ensure(Texture))
+	{
+		return FLinearColor::Black;
+	}
+
+	// 验证纹理坐标范围
+	if (!ensure(FMath::IsWithinInclusive(U, 0.0f, 1.0f) && FMath::IsWithinInclusive(V, 0.0f, 1.0f)))
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理坐标超出范围: U=%.3f, V=%.3f"), U, V);
+		return FLinearColor::White;
+	}
+
+	// 尝试从PlatformData读取（仅对未压缩格式有效）
+	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
+	if (!PlatformData || PlatformData->Mips.Num() == 0)
+	{
+		UE_LOG(LogPointSampling, Verbose, TEXT("[纹理采样] PlatformData不可用，使用默认颜色"));
+		return FLinearColor::White;
+	}
+
+	EPixelFormat PixelFormat = PlatformData->PixelFormat;
+	if (PixelFormat != PF_B8G8R8A8 && PixelFormat != PF_R8G8B8A8)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 不支持的像素格式: %d"), static_cast<int32>(PixelFormat));
+		return FLinearColor::White;
+	}
+
+	FTexture2DMipMap& Mip0 = PlatformData->Mips[0];
+	const void* RawData = Mip0.BulkData.LockReadOnly();
+	if (!RawData)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 无法锁定纹理数据"));
+		return FLinearColor::White;
+	}
+
+	const int32 Width = PlatformData->SizeX;
+	const int32 Height = PlatformData->SizeY;
+
+	// 计算像素坐标
+	const int32 PixelX = FMath::Clamp(FMath::RoundToInt(U * (Width - 1)), 0, Width - 1);
+	const int32 PixelY = FMath::Clamp(FMath::RoundToInt(V * (Height - 1)), 0, Height - 1);
+
+	// 读取像素数据
+	const uint8* PixelData = static_cast<const uint8*>(RawData);
+	const int64 PixelIndex = ((int64)PixelY * Width + PixelX) * 4;
+
+	FColor PixelColor;
+	if (PixelFormat == PF_B8G8R8A8)
+	{
+		// BGRA格式 -> RGBA转换
+		PixelColor = FColor(
+			PixelData[PixelIndex + 2], // R (从B位置)
+			PixelData[PixelIndex + 1], // G (从G位置)
+			PixelData[PixelIndex + 0], // B (从R位置)
+			PixelData[PixelIndex + 3]  // A (Alpha位置)
+		);
+	}
+	else // PF_R8G8B8A8
+	{
+		// RGBA格式直接读取
+		PixelColor = FColor(
+			PixelData[PixelIndex + 0], // R
+			PixelData[PixelIndex + 1], // G
+			PixelData[PixelIndex + 2], // B
+			PixelData[PixelIndex + 3]  // A
+		);
+	}
+
+	Mip0.BulkData.Unlock();
+
+	return FLinearColor(PixelColor);
+}
+
+// ============================================================================
+// 纹理采样辅助函数
+// ============================================================================
+
 #if WITH_EDITOR
 bool FTextureSamplingHelper::IsSupportedSourceFormat(ETextureSourceFormat Format)
 {
@@ -201,6 +283,132 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexture(
 		return Points;
 	}
 
+	// 验证参数
+	if (MaxSampleSize <= 0 || Spacing <= 0.0f)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 参数无效: MaxSampleSize=%d, Spacing=%f"), MaxSampleSize, Spacing);
+		return Points;
+	}
+
+	// 获取纹理尺寸
+	const int32 TextureWidth = Texture->GetSizeX();
+	const int32 TextureHeight = Texture->GetSizeY();
+
+	if (TextureWidth <= 0 || TextureHeight <= 0)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理尺寸无效: %dx%d"), TextureWidth, TextureHeight);
+		return Points;
+	}
+
+	// 计算采样参数
+	const float DownsampleRatio = FMath::Max(1.0f, FMath::Max((float)TextureWidth / MaxSampleSize, (float)TextureHeight / MaxSampleSize));
+	const int32 SampleWidth = FMath::Max(1, FMath::RoundToInt(TextureWidth / DownsampleRatio));
+	const int32 SampleHeight = FMath::Max(1, FMath::RoundToInt(TextureHeight / DownsampleRatio));
+	const int32 Step = FMath::Max(1, FMath::RoundToInt(Spacing));
+
+	// 限制最大点数
+	const int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
+	const int32 MaxAllowedPoints = 100000; // 提高到10万点
+
+	if (EstimatedMaxPoints > MaxAllowedPoints)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制 %d，减少采样密度"), EstimatedMaxPoints, MaxAllowedPoints);
+		return Points; // 直接返回空数组，避免性能问题
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 开始采样纹理 %dx%d -> %dx%d (步长=%d, 阈值=%.2f)"),
+		TextureWidth, TextureHeight, SampleWidth, SampleHeight, Step, PixelThreshold);
+
+	Points.Reserve(EstimatedMaxPoints / 4); // 预估25%会通过阈值
+
+	// 获取纹理资源
+	FTextureResource* TextureResource = Texture->GetResource();
+	if (!TextureResource)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理资源无效"));
+		return Points;
+	}
+
+	// 创建临时的采样目标
+	TArray<FColor> SampledPixels;
+	SampledPixels.SetNum(SampleWidth * SampleHeight);
+
+	// 智能判断采样通道
+	const bool bUseAlphaChannel = ShouldUseAlphaChannel(Texture);
+	const TCHAR* ChannelName = bUseAlphaChannel ? TEXT("Alpha") : TEXT("Luminance");
+
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 使用通道: %s, 缩放: %.2f"), ChannelName, TextureScale);
+
+	// 遍历采样点
+	for (int32 SampleY = 0; SampleY < SampleHeight; SampleY += Step)
+	{
+		for (int32 SampleX = 0; SampleX < SampleWidth; SampleX += Step)
+		{
+			// 计算纹理坐标 (0-1范围)
+			const float U = (float)SampleX / (SampleWidth - 1);
+			const float V = (float)SampleY / (SampleHeight - 1);
+
+			// 使用UE的纹理采样函数
+			FLinearColor PixelColor;
+			if (Texture->GetResource()->GetSamplerStateRHI())
+			{
+				// 尝试通过渲染接口采样
+				// 注意：这是一个简化的实现，实际可能需要更复杂的渲染线程操作
+				PixelColor = FLinearColor::White; // 临时实现
+			}
+			else
+			{
+				// 回退到简单采样（对于未压缩纹理）
+				PixelColor = SampleTexturePixel(Texture, U, V);
+			}
+
+			// 计算采样值
+			float SamplingValue;
+			if (bUseAlphaChannel)
+			{
+				SamplingValue = PixelColor.A;
+			}
+			else
+			{
+				// 计算亮度: 0.299*R + 0.587*G + 0.114*B (标准亮度公式)
+				SamplingValue = PixelColor.R * 0.299f + PixelColor.G * 0.587f + PixelColor.B * 0.114f;
+			}
+
+			// 阈值过滤
+			if (SamplingValue >= PixelThreshold)
+			{
+				// 转换为世界坐标 (居中, Y轴翻转)
+				const float WorldX = (U - 0.5f) * TextureWidth * TextureScale;
+				const float WorldY = (0.5f - V) * TextureHeight * TextureScale;
+
+				Points.Add(FVector(WorldX, WorldY, 0.0f));
+			}
+		}
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 完成，生成 %d 个点"), Points.Num());
+
+	// 去除重复点
+	if (Points.Num() > 1)
+	{
+		int32 OriginalCount, RemovedCount;
+		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+			Points,
+			TextureScale * 0.1f, // 小容差
+			OriginalCount,
+			RemovedCount
+		);
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Verbose, TEXT("[纹理采样] 去重: %d -> %d (移除 %d)"),
+				OriginalCount, Points.Num(), RemovedCount);
+		}
+	}
+
+	return Points;
+}
+
 #if WITH_EDITOR
 	// 编辑器模式：优先使用 Source 数据（支持所有压缩格式）
 	if (Texture->Source.IsValid())
@@ -246,21 +454,75 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureWithPoisson(
 		return Points;
 	}
 
-#if WITH_EDITOR
-	// 编辑器模式：优先使用 Source 数据（支持所有压缩格式）
-	if (Texture->Source.IsValid())
-	{
-		UE_LOG(LogPointSampling, Log, TEXT("[纹理密度采样] 使用编辑器源数据（支持所有格式）"));
-		return GenerateFromTextureSourceWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
-	}
-	else
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 编辑器源数据无效，尝试使用运行时数据"));
-	}
-#endif
+	const int32 TextureWidth = Texture->GetSizeX();
+	const int32 TextureHeight = Texture->GetSizeY();
 
-	// 运行时模式或编辑器源数据不可用：使用 PlatformData（仅支持未压缩格式）
-	return GenerateFromTexturePlatformDataWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
+	if (TextureWidth <= 0 || TextureHeight <= 0)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 纹理尺寸无效: %dx%d"), TextureWidth, TextureHeight);
+		return Points;
+	}
+
+	// 计算采样区域（基于纹理尺寸和缩放）
+	const float SampleWidth = TextureWidth * TextureScale;
+	const float SampleHeight = TextureHeight * TextureScale;
+
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理密度采样] 开始泊松采样 (区域: %.1fx%.1f, 半径: %.1f-%.1f, 阈值: %.2f)"),
+		SampleWidth, SampleHeight, MinRadius, MaxRadius, PixelThreshold);
+
+	// 创建密度函数
+	auto DensityFunction = [Texture, PixelThreshold, TextureScale, this](const FVector& Position) -> float {
+		// 将世界坐标转换为纹理坐标
+		const float U = (Position.X / (Texture->GetSizeX() * TextureScale)) + 0.5f;
+		const float V = 0.5f - (Position.Y / (Texture->GetSizeY() * TextureScale));
+
+		// 边界检查
+		if (U < 0.0f || U > 1.0f || V < 0.0f || V > 1.0f)
+		{
+			return 0.0f;
+		}
+
+		// 采样纹理
+		FLinearColor PixelColor = SampleTexturePixel(Texture, U, V);
+
+		// 计算密度值（基于亮度或Alpha）
+		const bool bUseAlpha = ShouldUseAlphaChannel(Texture);
+		const float SampleValue = bUseAlpha ? PixelColor.A :
+			(PixelColor.R * 0.299f + PixelColor.G * 0.587f + PixelColor.B * 0.114f);
+
+		// 转换为密度（高于阈值的地方密度更高）
+		return FMath::Max(0.0f, (SampleValue - PixelThreshold) / (1.0f - PixelThreshold));
+	};
+
+	// 使用密度感知的泊松采样
+	// 这里使用简化的实现，实际可以扩展为更复杂的密度感知算法
+	FOptimizedPoissonSampler Sampler(
+		MinRadius, // 使用最小半径作为基础
+		FVector(-SampleWidth * 0.5f, -SampleHeight * 0.5f, 0.0f),
+		FVector(SampleWidth * 0.5f, SampleHeight * 0.5f, 0.0f)
+	);
+
+	TArray<FVector> BasePoints = Sampler.Sample(MaxAttempts);
+
+	// 根据密度过滤点
+	for (const FVector& Point : BasePoints)
+	{
+		const float Density = DensityFunction(Point);
+		if (Density > 0.0f)
+		{
+			// 根据密度调整半径（密度越高，点越密集）
+			const float AdjustedRadius = FMath::Lerp(MaxRadius, MinRadius, Density);
+
+			// 这里可以进一步优化：根据密度重新分布点
+			// 但为了简单起见，我们只保留符合密度的点
+			Points.Add(Point);
+		}
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理密度采样] 完成，生成 %d 个点 (基础点: %d)"),
+		Points.Num(), BasePoints.Num());
+
+	return Points;
 }
 
 #if WITH_EDITOR

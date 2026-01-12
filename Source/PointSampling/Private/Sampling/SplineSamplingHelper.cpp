@@ -34,68 +34,37 @@ TArray<FVector> FSplineSamplingHelper::GenerateAlongSpline(
 		return Points;
 	}
 
-	// 使用 Catmull-Rom 样条插值
-	int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);
+	UE_LOG(LogPointSampling, Log, TEXT("[样条线采样] 开始等距采样: %d 个控制点, %d 个目标点, %s"),
+		ControlPoints.Num(), PointCount, bClosedSpline ? TEXT("闭合") : TEXT("开放"));
 
-	// 计算每段应该分配的点数（按段长度比例分配）
-	TArray<int32> PointsPerSegment;
-	PointsPerSegment.SetNum(NumSegments);
+	// 计算总弧长（用于等距采样）
+	const float TotalArcLength = CalculateSplineArcLength(ControlPoints, bClosedSpline);
 
-	int32 PointsPerSegmentBase = FMath::Max(1, PointCount / NumSegments);
-	int32 RemainingPoints = PointCount - (PointsPerSegmentBase * NumSegments);
-
-	for (int32 i = 0; i < NumSegments; ++i)
+	if (TotalArcLength <= 0.0f)
 	{
-		PointsPerSegment[i] = PointsPerSegmentBase;
-		if (i < RemainingPoints)
-		{
-			++PointsPerSegment[i];
-		}
+		UE_LOG(LogPointSampling, Warning, TEXT("[样条线采样] 样条线总长度为0"));
+		return Points;
 	}
 
-	// 生成各段的点
-	int32 GeneratedCount = 0;
-	for (int32 SegmentIndex = 0; SegmentIndex < NumSegments && GeneratedCount < PointCount; ++SegmentIndex)
+	// 等距采样：按弧长均匀分布点
+	const float ArcStep = TotalArcLength / (PointCount - 1);
+
+	for (int32 i = 0; i < PointCount; ++i)
 	{
-		// 获取当前段的四个控制点（P0, P1, P2, P3）
-		int32 Idx0 = (SegmentIndex - 1 + ControlPoints.Num()) % ControlPoints.Num();
-		int32 Idx1 = SegmentIndex % ControlPoints.Num();
-		int32 Idx2 = (SegmentIndex + 1) % ControlPoints.Num();
-		int32 Idx3 = (SegmentIndex + 2) % ControlPoints.Num();
+		const float TargetArcLength = i * ArcStep;
 
-		// 对于开放样条线，边界处理
-		if (!bClosedSpline)
-		{
-			if (SegmentIndex == 0)
-			{
-				Idx0 = 0; // 起始段：P0=P1
-			}
-			if (SegmentIndex == NumSegments - 1)
-			{
-				Idx3 = ControlPoints.Num() - 1; // 结束段：P3=P2
-			}
-		}
+		// 找到对应的参数T值
+		float ParameterT = FindParameterByArcLength(ControlPoints, TargetArcLength, bClosedSpline, TotalArcLength);
 
-		const FVector& P0 = ControlPoints[Idx0];
-		const FVector& P1 = ControlPoints[Idx1];
-		const FVector& P2 = ControlPoints[Idx2];
-		const FVector& P3 = ControlPoints[Idx3];
-
-		int32 SegmentPoints = PointsPerSegment[SegmentIndex];
-
-		// 生成这一段的点（最后一段包含终点，其他段不包含终点以避免重复）
-		int32 EndExclusive = (SegmentIndex == NumSegments - 1) ? SegmentPoints : (SegmentPoints - 1);
-		for (int32 i = 0; i < EndExclusive && GeneratedCount < PointCount; ++i)
-		{
-			float T = (SegmentPoints > 1) ? (static_cast<float>(i) / (SegmentPoints - 1)) : 0.5f;
-			FVector Point = CatmullRomInterpolate(P0, P1, P2, P3, T);
-			Points.Add(Point);
-			++GeneratedCount;
-		}
+		// 计算样条点
+		FVector Point = EvaluateSplineAtParameter(ControlPoints, ParameterT, bClosedSpline);
+		Points.Add(Point);
 	}
 
-	// 去除重复/重叠点位（样条线段连接处可能产生重复点）
-	if (Points.Num() > 0)
+	UE_LOG(LogPointSampling, Log, TEXT("[样条线采样] 完成等距采样，总弧长: %.2f"), TotalArcLength);
+
+	// 去除重复点（容差设为很小）
+	if (Points.Num() > 1)
 	{
 		int32 OriginalCount, RemovedCount;
 		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
@@ -181,27 +150,205 @@ float FSplineSamplingHelper::CalculateSplineLength(
 		}
 	}
 
+		return TotalLength;
+	}
+
 	return TotalLength;
 }
 
-// ============================================================================
-// 样条线边界泊松采样（使用Bridson算法）
-// ============================================================================
-
-TArray<FVector> FSplineSamplingHelper::GenerateWithinBoundary(
-	int32 TargetPointCount,
+/**
+ * 计算样条线的总弧长
+ */
+float FSplineSamplingHelper::CalculateSplineArcLength(
 	const TArray<FVector>& ControlPoints,
-	float MinDistance,
-	FRandomStream& RandomStream)
+	bool bClosedSpline)
 {
-	TArray<FVector> Points;
-
-	// 验证输入
-	if (ControlPoints.Num() < 3)
+	if (ControlPoints.Num() < 2)
 	{
-		// 至少需要3个点才能形成闭合区域
-		return Points;
+		return 0.0f;
 	}
+
+	float TotalLength = 0.0f;
+	const int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);
+	const int32 SamplesPerSegment = 10; // 每段采样10个点用于近似弧长
+
+	for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; ++SegmentIndex)
+	{
+		// 获取控制点
+		int32 Idx0 = (SegmentIndex - 1 + ControlPoints.Num()) % ControlPoints.Num();
+		int32 Idx1 = SegmentIndex % ControlPoints.Num();
+		int32 Idx2 = (SegmentIndex + 1) % ControlPoints.Num();
+		int32 Idx3 = (SegmentIndex + 2) % ControlPoints.Num();
+
+		if (!bClosedSpline)
+		{
+			if (SegmentIndex == 0) Idx0 = 0;
+			if (SegmentIndex == NumSegments - 1) Idx3 = ControlPoints.Num() - 1;
+		}
+
+		const FVector& P0 = ControlPoints[Idx0];
+		const FVector& P1 = ControlPoints[Idx1];
+		const FVector& P2 = ControlPoints[Idx2];
+		const FVector& P3 = ControlPoints[Idx3];
+
+		// 数值积分计算弧长
+		FVector PrevPoint = P1;
+		for (int32 i = 1; i <= SamplesPerSegment; ++i)
+		{
+			float T = static_cast<float>(i) / SamplesPerSegment;
+			FVector CurrentPoint = CatmullRomInterpolate(P0, P1, P2, P3, T);
+			TotalLength += FVector::Dist(PrevPoint, CurrentPoint);
+			PrevPoint = CurrentPoint;
+		}
+	}
+
+	return TotalLength;
+}
+
+/**
+ * 根据弧长找到对应的参数T值（二分查找）
+ */
+float FSplineSamplingHelper::FindParameterByArcLength(
+	const TArray<FVector>& ControlPoints,
+	float TargetArcLength,
+	bool bClosedSpline,
+	float TotalArcLength)
+{
+	if (TargetArcLength <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	if (TargetArcLength >= TotalArcLength)
+	{
+		return bClosedSpline ? 1.0f : static_cast<float>(ControlPoints.Num() - 1);
+	}
+
+	const int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);
+	float AccumulatedLength = 0.0f;
+
+	// 找到目标弧长所在的段
+	for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; ++SegmentIndex)
+	{
+		int32 Idx0 = (SegmentIndex - 1 + ControlPoints.Num()) % ControlPoints.Num();
+		int32 Idx1 = SegmentIndex % ControlPoints.Num();
+		int32 Idx2 = (SegmentIndex + 1) % ControlPoints.Num();
+		int32 Idx3 = (SegmentIndex + 2) % ControlPoints.Num();
+
+		if (!bClosedSpline)
+		{
+			if (SegmentIndex == 0) Idx0 = 0;
+			if (SegmentIndex == NumSegments - 1) Idx3 = ControlPoints.Num() - 1;
+		}
+
+		const FVector& P0 = ControlPoints[Idx0];
+		const FVector& P1 = ControlPoints[Idx1];
+		const FVector& P2 = ControlPoints[Idx2];
+		const FVector& P3 = ControlPoints[Idx3];
+
+		// 计算这一段的弧长
+		float SegmentLength = 0.0f;
+		FVector PrevPoint = P1;
+		const int32 SamplesPerSegment = 20;
+
+		for (int32 i = 1; i <= SamplesPerSegment; ++i)
+		{
+			float T = static_cast<float>(i) / SamplesPerSegment;
+			FVector CurrentPoint = CatmullRomInterpolate(P0, P1, P2, P3, T);
+			SegmentLength += FVector::Dist(PrevPoint, CurrentPoint);
+			PrevPoint = CurrentPoint;
+		}
+
+		// 检查目标弧长是否在这一段内
+		if (AccumulatedLength + SegmentLength >= TargetArcLength)
+		{
+			// 在这一段内，使用二分查找找到精确的T值
+			float RemainingLength = TargetArcLength - AccumulatedLength;
+			float SegmentT = FindTByArcLengthInSegment(P0, P1, P2, P3, RemainingLength, SegmentLength);
+			return SegmentIndex + SegmentT;
+		}
+
+		AccumulatedLength += SegmentLength;
+	}
+
+	// 理论上不会到达这里
+	return bClosedSpline ? 1.0f : static_cast<float>(ControlPoints.Num() - 1);
+}
+
+/**
+ * 在单个段内根据弧长找到T值
+ */
+float FSplineSamplingHelper::FindTByArcLengthInSegment(
+	const FVector& P0, const FVector& P1, const FVector& P2, const FVector& P3,
+	float TargetLength, float SegmentLength)
+{
+	// 二分查找
+	float Low = 0.0f;
+	float High = 1.0f;
+	const int32 MaxIterations = 20;
+
+	for (int32 Iter = 0; Iter < MaxIterations; ++Iter)
+	{
+		float Mid = (Low + High) * 0.5f;
+		FVector MidPoint = CatmullRomInterpolate(P0, P1, P2, P3, Mid);
+
+		// 计算从起点到Mid的弧长
+		float ArcLengthToMid = 0.0f;
+		FVector PrevPoint = P1;
+		const int32 Samples = 10;
+
+		for (int32 i = 1; i <= Samples; ++i)
+		{
+			float T = Mid * i / Samples;
+			FVector CurrentPoint = CatmullRomInterpolate(P0, P1, P2, P3, T);
+			ArcLengthToMid += FVector::Dist(PrevPoint, CurrentPoint);
+			PrevPoint = CurrentPoint;
+		}
+
+		if (ArcLengthToMid < TargetLength)
+		{
+			Low = Mid;
+		}
+		else
+		{
+			High = Mid;
+		}
+	}
+
+	return (Low + High) * 0.5f;
+}
+
+/**
+ * 在给定的参数T处计算样条点
+ */
+FVector FSplineSamplingHelper::EvaluateSplineAtParameter(
+	const TArray<FVector>& ControlPoints,
+	float ParameterT,
+	bool bClosedSpline)
+{
+	const int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);
+	const int32 SegmentIndex = FMath::FloorToInt(ParameterT);
+	const float LocalT = ParameterT - SegmentIndex;
+
+	// 获取控制点
+	int32 Idx0 = (SegmentIndex - 1 + ControlPoints.Num()) % ControlPoints.Num();
+	int32 Idx1 = SegmentIndex % ControlPoints.Num();
+	int32 Idx2 = (SegmentIndex + 1) % ControlPoints.Num();
+	int32 Idx3 = (SegmentIndex + 2) % ControlPoints.Num();
+
+	if (!bClosedSpline)
+	{
+		if (SegmentIndex == 0) Idx0 = 0;
+		if (SegmentIndex >= NumSegments - 1) Idx3 = ControlPoints.Num() - 1;
+	}
+
+	const FVector& P0 = ControlPoints[Idx0];
+	const FVector& P1 = ControlPoints[Idx1];
+	const FVector& P2 = ControlPoints[Idx2];
+	const FVector& P3 = ControlPoints[Idx3];
+
+	return CatmullRomInterpolate(P0, P1, P2, P3, LocalT);
+}
 
 	// 1. 计算边界框（AABB - Bridson算法需要矩形输入区域）
 	FVector BoundsMin, BoundsMax;

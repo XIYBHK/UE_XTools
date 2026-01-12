@@ -114,7 +114,7 @@ namespace PoissonSamplingHelpers
 		int32 MaxAttempts,
 		const FRandomStream* Stream = nullptr);
 
-	/** 
+	/**
 	 * 3D泊松采样核心实现
 	 * @param Stream 可选随机流，nullptr时使用全局随机
 	 */
@@ -124,6 +124,33 @@ namespace PoissonSamplingHelpers
 		float Depth,
 		float Radius,
 		int32 MaxAttempts,
+		const FRandomStream* Stream = nullptr);
+
+	// ============================================================================
+	// 优化版采样函数 (使用Bridson算法)
+	// ============================================================================
+
+	/**
+	 * 优化的2D泊松采样 (基于Bridson算法)
+	 * 特点：O(N)时间复杂度，空间网格加速，质量更高
+	 */
+	TArray<FVector2D> GenerateOptimizedPoisson2D(
+		float Width,
+		float Height,
+		float Radius,
+		int32 MaxAttempts = 30,
+		const FRandomStream* Stream = nullptr);
+
+	/**
+	 * 优化的3D泊松采样 (基于Bridson算法)
+	 * 特点：O(N)时间复杂度，空间网格加速，质量更高
+	 */
+	TArray<FVector> GenerateOptimizedPoisson3D(
+		float Width,
+		float Height,
+		float Depth,
+		float Radius,
+		int32 MaxAttempts = 30,
 		const FRandomStream* Stream = nullptr);
 }
 

@@ -100,7 +100,54 @@ enum class EPointSamplingMode : uint8
 	SkeletalSockets     UMETA(DisplayName = "骨骼插槽"),
 
 	/** 图片像素阵型 */
-	TexturePixels       UMETA(DisplayName = "图片像素")
+	TexturePixels       UMETA(DisplayName = "图片像素"),
+
+	// ============================================================================
+	// 军事阵型 (基于军事战术实践)
+	// ============================================================================
+
+	/** 楔形阵型 (V形，适用于突破) */
+	Wedge               UMETA(DisplayName = "楔形阵"),
+
+	/** 纵队阵型 (单列，适用于通过狭窄地形) */
+	Column              UMETA(DisplayName = "纵队阵"),
+
+	/** 横队阵型 (单排，适用于火力覆盖) */
+	Line                UMETA(DisplayName = "横队阵"),
+
+	/** V形阵型 (反转楔形，适用于防御) */
+	Vee                 UMETA(DisplayName = "V形阵"),
+
+	/** 梯形阵型 (阶梯形，适用于侧翼攻击) */
+	Echelon             UMETA(DisplayName = "梯形阵"),
+
+	/** 左梯形阵型 */
+	EchelonLeft         UMETA(DisplayName = "左梯形阵"),
+
+	/** 右梯形阵型 */
+	EchelonRight        UMETA(DisplayName = "右梯形阵"),
+
+	// ============================================================================
+	// 几何阵型 (基于数学几何)
+	// ============================================================================
+
+	/** 蜂巢阵型 (六边形网格，最紧凑的2D填充) */
+	HexagonalGrid       UMETA(DisplayName = "蜂巢阵"),
+
+	/** 星形阵型 (五角星，适用于特殊视觉效果) */
+	Star                UMETA(DisplayName = "星形阵"),
+
+	/** 阿基米德螺旋阵型 (等距螺旋线) */
+	ArchimedeanSpiral   UMETA(DisplayName = "阿基米德螺旋"),
+
+	/** 对数螺旋阵型 (斐波那契螺旋，自然生长模式) */
+	LogarithmicSpiral   UMETA(DisplayName = "对数螺旋"),
+
+	/** 心脏形阵型 (心形曲线，适用于浪漫效果) */
+	Heart               UMETA(DisplayName = "心脏阵"),
+
+	/** 花瓣阵型 (花朵形状，参数化花瓣数量) */
+	Flower              UMETA(DisplayName = "花瓣阵")
 };
 
 /**

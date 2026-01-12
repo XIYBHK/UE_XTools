@@ -82,6 +82,57 @@ private:
 	);
 
 	/**
+	 * 计算样条线的总弧长
+	 * @param ControlPoints 控制点数组
+	 * @param bClosedSpline 是否闭合
+	 * @return 精确的总弧长
+	 */
+	static float CalculateSplineArcLength(
+		const TArray<FVector>& ControlPoints,
+		bool bClosedSpline
+	);
+
+	/**
+	 * 根据弧长找到对应的参数T值
+	 * @param ControlPoints 控制点数组
+	 * @param TargetArcLength 目标弧长
+	 * @param bClosedSpline 是否闭合
+	 * @param TotalArcLength 总弧长
+	 * @return 对应的参数T值
+	 */
+	static float FindParameterByArcLength(
+		const TArray<FVector>& ControlPoints,
+		float TargetArcLength,
+		bool bClosedSpline,
+		float TotalArcLength
+	);
+
+	/**
+	 * 在单个段内根据弧长找到T值
+	 * @param P0-P3 控制点
+	 * @param TargetLength 目标弧长
+	 * @param SegmentLength 段总长度
+	 * @return 对应的T值
+	 */
+	static float FindTByArcLengthInSegment(
+		const FVector& P0, const FVector& P1, const FVector& P2, const FVector& P3,
+		float TargetLength, float SegmentLength
+	);
+
+	/**
+	 * 在给定的参数T处计算样条点
+	 * @param ControlPoints 控制点数组
+	 * @param ParameterT 参数T
+	 * @param bClosedSpline 是否闭合
+	 * @return 样条点位置
+	 */
+	static FVector EvaluateSplineAtParameter(
+		const TArray<FVector>& ControlPoints,
+		float ParameterT,
+		bool bClosedSpline
+	);
+
+	/**
 	 * 判断点是否在多边形内部（射线法）
 	 * @param Point 待测试点（XY平面）
 	 * @param Polygon 多边形顶点数组

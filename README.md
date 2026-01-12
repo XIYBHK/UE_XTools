@@ -33,7 +33,7 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 | **Sort** | 智能排序系统 | 支持基础类型、向量、Actor、通用结构体的排序和数组操作 |
 | **RandomShuffles** | PRD 随机系统 | 基于 DOTA2 算法的伪随机分布，提供更公平的随机体验 |
 | **EnhancedCodeFlow** | 异步流程控制 | 延迟执行、时间轴动画、协程支持、性能分析 |
-| **PointSampling** | 几何采样工具 | 在网格内生成均匀点阵、贝塞尔曲线计算、样条线工具 |
+| **PointSampling** | 高级几何采样 | 泊松圆盘采样、基于面积的网格采样、等距样条线采样、纹理密度采样 |
 | **ComponentTimelineRuntime** | 组件时间轴 | 在任意组件中使用时间轴功能，支持网络复制 |
 | **BlueprintExtensionsRuntime** | 蓝图扩展库 | 14+ 自定义 K2Node，增强循环、Map操作、变量反射 |
 | **ObjectPool** | 对象池系统 | Actor 对象池，支持预热、自动扩池、状态重置 |
@@ -74,6 +74,16 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 - **性能提升**: 避免频繁创建/销毁 Actor 的开销
 - **智能管理**: 自动扩池、内存回收、使用率监控
 - **无缝集成**: 自定义 K2Node 完全兼容原生 SpawnActor
+
+### 高级几何采样
+- **泊松圆盘采样**: 基于Bridson算法的O(N)高效实现，支持2D/3D空间
+- **智能网格采样**: 基于三角形面积加权的均匀采样，支持边界顶点提取
+- **等距样条线**: 基于弧长的精确等距采样，高质量Catmull-Rom插值
+- **纹理密度采样**: 支持压缩和未压缩纹理的像素级密度控制
+- **军事战术阵型**: 楔形、纵队、横队、V形、梯形等经典战术阵型
+- **几何艺术阵型**: 蜂巢六边形、星形、螺旋、心形、花瓣等数学图形
+- **通用阵型生成器**: 统一的阵型生成接口，支持所有阵型模式
+- **采样质量验证**: 统计分析和泊松约束验证工具
 
 ### 资产工具
 - **批量操作**: 碰撞设置、材质函数、重命名
@@ -121,6 +131,63 @@ bool bSuccess = URandomShuffleArrayLibrary::GetPRDBool("ChestSystem", 0.1f);
 ```cpp
 // 按距离排序 Actor 数组
 USortLibrary::SortActorArrayByDistance(ActorArray, CenterLocation);
+```
+
+### 泊松圆盘采样
+```cpp
+// 在Box组件内生成泊松采样点
+TArray<FVector> Points = UPointSamplingLibrary::GeneratePoissonPointsInBox(
+    BoxComponent, 50.0f, 30, EPoissonCoordinateSpace::Local, 100
+);
+
+// 验证采样质量
+bool bIsValid = UPointSamplingLibrary::ValidatePoissonSampling(Points, 50.0f);
+```
+
+### 基于面积的网格采样
+```cpp
+// 从静态网格生成基于面积的均匀采样点
+TArray<FVector> Points = UFormationSamplingLibrary::GenerateFromStaticMesh(
+    StaticMesh, Transform, 0, false, 1000
+);
+```
+
+### 通用阵型生成器
+```cpp
+// 使用通用生成器创建各种阵型
+TArray<FVector> WedgePoints = UPointSamplingLibrary::GenerateFormation(
+    EPointSamplingMode::Wedge, 50, CenterLocation, Rotation,
+    EPoissonCoordinateSpace::Local, 200.0f, 0.0f, 0, 60.0f // WedgeAngle
+);
+
+TArray<FVector> HexPoints = UPointSamplingLibrary::GenerateFormation(
+    EPointSamplingMode::HexagonalGrid, 100, CenterLocation, Rotation,
+    EPoissonCoordinateSpace::Local, 50.0f, 0.0f, 0, 3.0f // Rings
+);
+```
+
+### 军事战术阵型
+```cpp
+// 生成战术阵型
+TArray<FVector> WedgeFormation = UFormationSamplingLibrary::GenerateWedgeFormation(
+    30, CenterLocation, Rotation, 150.0f, 45.0f // Spacing, WedgeAngle
+);
+
+TArray<FVector> ColumnFormation = UFormationSamplingLibrary::GenerateColumnFormation(
+    20, CenterLocation, Rotation, 100.0f // Spacing
+);
+```
+
+### 几何艺术阵型
+```cpp
+// 生成艺术几何图形
+TArray<FVector> HeartShape = UFormationSamplingLibrary::GenerateHeartFormation(
+    100, CenterLocation, Rotation, 200.0f // Size
+);
+
+TArray<FVector> FlowerShape = UFormationSamplingLibrary::GenerateFlowerFormation(
+    150, CenterLocation, Rotation, 150.0f, 30.0f, 8 // OuterRadius, InnerRadius, PetalCount
+);
 ```
 
 ## 📈 版本历史

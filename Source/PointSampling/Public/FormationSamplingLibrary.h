@@ -217,6 +217,201 @@ public:
 	);
 
 	// ============================================================================
+	// 军事阵型采样
+	// ============================================================================
+
+	/**
+	 * 生成楔形阵型 (适用于突破战术)
+	 * 特点：尖端向前，形成V形，便于集中火力突破防线
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|军事阵型",
+		meta = (DisplayName = "生成楔形阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateWedgeFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 200.0f,
+		float WedgeAngle = 60.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成纵队阵型 (适用于通过狭窄地形)
+	 * 特点：单列纵队，最小横向宽度，适用于通过桥梁、走廊等狭窄区域
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|军事阵型",
+		meta = (DisplayName = "生成纵队阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateColumnFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 150.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成横队阵型 (适用于火力覆盖)
+	 * 特点：单排横队，最大横向火力覆盖，适用于阵地防御或火力压制
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|军事阵型",
+		meta = (DisplayName = "生成横队阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateLineFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 200.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成V形阵型 (适用于防御战术)
+	 * 特点：尖端向后，形成倒V形，便于两翼包抄和后方防御
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|军事阵型",
+		meta = (DisplayName = "生成V形阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateVeeFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 200.0f,
+		float VeeAngle = 45.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成梯形阵型 (适用于侧翼攻击)
+	 * @param Direction 梯形方向 (-1=左梯形, 1=右梯形)
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|军事阵型",
+		meta = (DisplayName = "生成梯形阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateEchelonFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 200.0f,
+		int32 Direction = 1,
+		float EchelonAngle = 30.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	// ============================================================================
+	// 几何阵型采样
+	// ============================================================================
+
+	/**
+	 * 生成蜂巢阵型 (六边形网格)
+	 * 特点：最紧凑的2D填充模式，自然界中最优的点分布
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|几何阵型",
+		meta = (DisplayName = "生成蜂巢阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateHexagonalGrid(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 100.0f,
+		int32 Rings = 3,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成星形阵型 (五角星)
+	 * @param PointsCount 星角数量 (5=五角星, 6=六角星等)
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|几何阵型",
+		meta = (DisplayName = "生成星形阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateStarFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float OuterRadius = 200.0f,
+		float InnerRadius = 100.0f,
+		int32 PointsCount = 5,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成阿基米德螺旋阵型
+	 * 特点：等距螺旋线，适用于自然生长、漩涡效果
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|几何阵型",
+		meta = (DisplayName = "生成阿基米德螺旋", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateArchimedeanSpiral(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Spacing = 20.0f,
+		float Turns = 3.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成对数螺旋阵型 (黄金螺旋)
+	 * 特点：斐波那契螺旋，自然界中最常见的螺旋形态
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|几何阵型",
+		meta = (DisplayName = "生成对数螺旋", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateLogarithmicSpiral(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float GrowthFactor = 1.1f,
+		float AngleStep = 20.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成心脏形阵型
+	 * 特点：心形曲线，适用于浪漫、爱心等视觉效果
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|几何阵型",
+		meta = (DisplayName = "生成心脏阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateHeartFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float Size = 200.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	/**
+	 * 生成花瓣阵型
+	 * @param PetalCount 花瓣数量
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|几何阵型",
+		meta = (DisplayName = "生成花瓣阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateFlowerFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float OuterRadius = 200.0f,
+		float InnerRadius = 50.0f,
+		int32 PetalCount = 6,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
+	);
+
+	// ============================================================================
 	// 样条线采样
 	// ============================================================================
 

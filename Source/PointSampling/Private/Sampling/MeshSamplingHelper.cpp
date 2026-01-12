@@ -38,59 +38,216 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
 	}
 
 	FStaticMeshLODResources& LOD = RenderData->LODResources[LODLevel];
+
+	// 如果只需要边界顶点，使用拓扑分析方法
+	if (bBoundaryVerticesOnly)
+	{
+		return GenerateBoundaryVertices(LOD, Transform, MaxPoints);
+	}
+
+	// 否则使用基于三角形面积的加权采样
+	return GenerateFromMeshTriangles(LOD, Transform, MaxPoints);
+}
+
+/**
+ * 从网格三角形生成基于面积加权的采样点
+ */
+TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
+	const FStaticMeshLODResources& LOD,
+	const FTransform& Transform,
+	int32 MaxPoints)
+{
+	TArray<FVector> Points;
+
 	const FPositionVertexBuffer& VertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
 
-	// 获取所有顶点位置
-	uint32 NumVertices = VertexBuffer.GetNumVertices();
-
-	// 智能降采样：使用用户指定的 MaxPoints，如果未指定则使用防御性限制（10万）
-	const uint32 MaxVertices = (MaxPoints > 0) ? static_cast<uint32>(MaxPoints) : 100000;
-	uint32 Step = 1;
-
-	if (NumVertices > MaxVertices)
+	if (VertexBuffer.GetNumVertices() == 0 || IndexBuffer.GetNumIndices() == 0)
 	{
-		// 计算采样步长以达到目标点数（采样前降采样，保持形状分布）
-		Step = FMath::CeilToInt((float)NumVertices / MaxVertices);
-
-		UE_LOG(LogPointSampling, Log,
-			TEXT("[静态网格采样] 顶点数 %d 超过目标 %d，每隔 %d 个顶点采样一次（预期采样 ~%d 个点）"),
-			NumVertices, MaxVertices, Step, NumVertices / Step);
+		return Points;
 	}
 
-	Points.Reserve(FMath::Min(NumVertices, MaxVertices));
+	// 计算所有三角形的面积和总面积
+	TArray<float> TriangleAreas;
+	float TotalArea = 0.0f;
 
-	for (uint32 i = 0; i < NumVertices; i += Step)
+	const int32 NumTriangles = IndexBuffer.GetNumIndices() / 3;
+	TriangleAreas.Reserve(NumTriangles);
+
+	for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles; ++TriangleIndex)
 	{
-		// 获取顶点位置（局部坐标）
-		FVector VertexPosition = FVector(VertexBuffer.VertexPosition(i));
+		const int32 Index0 = IndexBuffer.GetIndex(TriangleIndex * 3 + 0);
+		const int32 Index1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
+		const int32 Index2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
 
-		// 应用变换
-		FVector WorldPosition = Transform.TransformPosition(VertexPosition);
-		Points.Add(WorldPosition);
+		const FVector V0 = FVector(VertexBuffer.VertexPosition(Index0));
+		const FVector V1 = FVector(VertexBuffer.VertexPosition(Index1));
+		const FVector V2 = FVector(VertexBuffer.VertexPosition(Index2));
+
+		// 计算三角形面积（叉积的一半）
+		const FVector Cross = FVector::CrossProduct(V1 - V0, V2 - V0);
+		const float Area = Cross.Size() * 0.5f;
+
+		TriangleAreas.Add(Area);
+		TotalArea += Area;
 	}
 
-	// TODO: 边界顶点过滤（bBoundaryVerticesOnly）
-	// 这需要分析网格拓扑，找出只被一个三角形使用的顶点
-	// 由于实现复杂度较高，暂时保留所有顶点
+	if (TotalArea <= 0.0f || TriangleAreas.Num() == 0)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[网格采样] 网格总面积为0或没有三角形"));
+		return Points;
+	}
 
-	// 去除重复/重叠点位（静态模型通常有大量重复顶点）
-	if (Points.Num() > 0)
+	// 计算目标采样点数
+	const int32 TargetPoints = (MaxPoints > 0) ? MaxPoints : FMath::Min(10000, NumTriangles * 2);
+	Points.Reserve(TargetPoints);
+
+	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 开始基于面积的采样: %d 个三角形, 总面积 %.2f, 目标点数 %d"),
+		NumTriangles, TotalArea, TargetPoints);
+
+	// 基于面积加权采样
+	float AccumulatedArea = 0.0f;
+	FRandomStream RandomStream(FMath::Rand());
+
+	for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles && Points.Num() < TargetPoints; ++TriangleIndex)
+	{
+		const float TriangleArea = TriangleAreas[TriangleIndex];
+		if (TriangleArea <= 0.0f) continue;
+
+		// 计算该三角形的采样点数（基于面积比例）
+		const float AreaRatio = TriangleArea / TotalArea;
+		const int32 PointsForThisTriangle = FMath::Max(1, FMath::RoundToInt(AreaRatio * TargetPoints));
+
+		AccumulatedArea += TriangleArea;
+
+		// 在三角形内生成采样点
+		for (int32 PointIndex = 0; PointIndex < PointsForThisTriangle && Points.Num() < TargetPoints; ++PointIndex)
+		{
+			// 在三角形内生成随机点（重心坐标）
+			const float S = RandomStream.FRand();
+			const float T = RandomStream.FRand();
+
+			// 确保点在三角形内 (重心坐标约束)
+			const float U = FMath::Clamp(S + T, 0.0f, 1.0f);
+			const float V = FMath::Clamp(T, 0.0f, 1.0f - U);
+			const float W = 1.0f - U - V;
+
+			const int32 Index0 = IndexBuffer.GetIndex(TriangleIndex * 3 + 0);
+			const int32 Index1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
+			const int32 Index2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
+
+			const FVector V0 = FVector(VertexBuffer.VertexPosition(Index0));
+			const FVector V1 = FVector(VertexBuffer.VertexPosition(Index1));
+			const FVector V2 = FVector(VertexBuffer.VertexPosition(Index2));
+
+			// 重心插值
+			FVector LocalPoint = V0 * U + V1 * V + V2 * W;
+
+			// 应用变换
+			FVector WorldPoint = Transform.TransformPosition(LocalPoint);
+			Points.Add(WorldPoint);
+		}
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 完成，生成 %d 个点"), Points.Num());
+
+	// 去除重复点（容差设为很小，因为是精确采样）
+	if (Points.Num() > 1)
 	{
 		int32 OriginalCount, RemovedCount;
 		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
 			Points,
-			1.0f,  // 容差：1cm（UE单位）
+			0.1f,  // 小容差
 			OriginalCount,
 			RemovedCount
 		);
 
 		if (RemovedCount > 0)
 		{
-			UE_LOG(LogPointSampling, Log,
-				TEXT("[静态网格采样] 去重：原始 %d 个点 -> 去除 %d 个重复点 -> 剩余 %d 个点"),
-				OriginalCount, RemovedCount, Points.Num());
+			UE_LOG(LogPointSampling, Verbose, TEXT("[网格采样] 去重: %d -> %d (移除 %d)"),
+				OriginalCount, Points.Num(), RemovedCount);
 		}
 	}
+
+	return Points;
+}
+
+/**
+ * 生成网格边界顶点
+ */
+TArray<FVector> FMeshSamplingHelper::GenerateBoundaryVertices(
+	const FStaticMeshLODResources& LOD,
+	const FTransform& Transform,
+	int32 MaxPoints)
+{
+	TArray<FVector> Points;
+
+	const FPositionVertexBuffer& VertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
+
+	if (VertexBuffer.GetNumVertices() == 0 || IndexBuffer.GetNumIndices() == 0)
+	{
+		return Points;
+	}
+
+	const int32 NumVertices = VertexBuffer.GetNumVertices();
+	const int32 NumTriangles = IndexBuffer.GetNumIndices() / 3;
+
+	// 使用边计数来识别边界边
+	TMap<TPair<int32, int32>, int32> EdgeUsageCount;
+
+	// 遍历所有三角形，统计每条边的使用次数
+	for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles; ++TriangleIndex)
+	{
+		const int32 I0 = IndexBuffer.GetIndex(TriangleIndex * 3 + 0);
+		const int32 I1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
+		const int32 I2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
+
+		// 三条边（使用排序的顶点索引作为键）
+		TArray<TPair<int32, int32>> Edges = {
+			TPair<int32, int32>(FMath::Min(I0, I1), FMath::Max(I0, I1)),
+			TPair<int32, int32>(FMath::Min(I1, I2), FMath::Max(I1, I2)),
+			TPair<int32, int32>(FMath::Min(I2, I0), FMath::Max(I2, I0))
+		};
+
+		for (const auto& Edge : Edges)
+		{
+			EdgeUsageCount.FindOrAdd(Edge)++;
+		}
+	}
+
+	// 找出边界顶点（连接到边界边的顶点）
+	TSet<int32> BoundaryVertexIndices;
+
+	for (const auto& EdgeCount : EdgeUsageCount)
+	{
+		if (EdgeCount.Value == 1) // 边界边只被一个三角形使用
+		{
+			BoundaryVertexIndices.Add(EdgeCount.Key.Key);
+			BoundaryVertexIndices.Add(EdgeCount.Value);
+		}
+	}
+
+	// 采样边界顶点
+	const int32 MaxBoundaryPoints = (MaxPoints > 0) ? MaxPoints : BoundaryVertexIndices.Num();
+	Points.Reserve(MaxBoundaryPoints);
+
+	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 找到 %d 个边界顶点，采样 %d 个"),
+		BoundaryVertexIndices.Num(), MaxBoundaryPoints);
+
+	// 简单采样：均匀采样边界顶点
+	TArray<int32> BoundaryVertices(BoundaryVertexIndices.Array());
+	const int32 Step = FMath::Max(1, BoundaryVertices.Num() / MaxBoundaryPoints);
+
+	for (int32 i = 0; i < BoundaryVertices.Num() && Points.Num() < MaxBoundaryPoints; i += Step)
+	{
+		const int32 VertexIndex = BoundaryVertices[i];
+		const FVector LocalPoint = FVector(VertexBuffer.VertexPosition(VertexIndex));
+		const FVector WorldPoint = Transform.TransformPosition(LocalPoint);
+		Points.Add(WorldPoint);
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 生成 %d 个边界顶点"), Points.Num());
 
 	return Points;
 }
