@@ -939,3 +939,84 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFlowerFormation(
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
+
+// ============================================================================
+// 高级圆形阵型实现
+// ============================================================================
+
+TArray<FVector> UFormationSamplingLibrary::GenerateGoldenSpiralFormation(
+	int32 PointCount,
+	FVector CenterLocation,
+	FRotator Rotation,
+	float MaxRadius,
+	EPoissonCoordinateSpace CoordinateSpace,
+	float JitterStrength,
+	int32 RandomSeed)
+{
+	FRandomStream RandomStream(RandomSeed);
+
+	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateGoldenSpiral(
+		PointCount, MaxRadius, JitterStrength, RandomStream
+	);
+
+	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}
+
+TArray<FVector> UFormationSamplingLibrary::GenerateCircularGridFormation(
+	int32 PointCount,
+	FVector CenterLocation,
+	FRotator Rotation,
+	float MaxRadius,
+	int32 RadialDivisions,
+	int32 AngularDivisions,
+	EPoissonCoordinateSpace CoordinateSpace,
+	float JitterStrength,
+	int32 RandomSeed)
+{
+	FRandomStream RandomStream(RandomSeed);
+
+	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateCircularGrid(
+		PointCount, MaxRadius, RadialDivisions, AngularDivisions, JitterStrength, RandomStream
+	);
+
+	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}
+
+TArray<FVector> UFormationSamplingLibrary::GenerateRoseCurveFormation(
+	int32 PointCount,
+	FVector CenterLocation,
+	FRotator Rotation,
+	float MaxRadius,
+	int32 Petals,
+	EPoissonCoordinateSpace CoordinateSpace,
+	float JitterStrength,
+	int32 RandomSeed)
+{
+	FRandomStream RandomStream(RandomSeed);
+
+	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateRoseCurve(
+		PointCount, MaxRadius, Petals, JitterStrength, RandomStream
+	);
+
+	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}
+
+TArray<FVector> UFormationSamplingLibrary::GenerateConcentricRingsFormation(
+	int32 PointCount,
+	FVector CenterLocation,
+	FRotator Rotation,
+	float MaxRadius,
+	int32 RingCount,
+	const TArray<int32>& PointsPerRing,
+	EPoissonCoordinateSpace CoordinateSpace,
+	float JitterStrength,
+	int32 RandomSeed)
+{
+	FRandomStream RandomStream(RandomSeed);
+
+	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateConcentricRings(
+		PointCount, MaxRadius, RingCount, PointsPerRing, JitterStrength, RandomStream
+	);
+
+	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}

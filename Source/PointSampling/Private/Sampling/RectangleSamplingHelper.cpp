@@ -247,3 +247,168 @@ void FRectangleSamplingHelper::ApplyJitter(
 		Point.Y += RandomStream.FRandRange(-MaxJitter, MaxJitter);
 	}
 }
+
+// ============================================================================
+// 新增阵型实现（基于GitHub优秀实践）
+// ============================================================================
+
+TArray<FVector> FRectangleSamplingHelper::GenerateHexagonalGrid(
+	int32 PointCount,
+	float Spacing,
+	int32 Rings,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || Rings < 0)
+	{
+		return Points;
+	}
+
+	// 六边形网格的六个方向向量（基于立方坐标系）
+	const TArray<FVector> HexDirections = {
+		FVector(Spacing, 0.0f, 0.0f),                                    // 右
+		FVector(Spacing * 0.5f, Spacing * FMath::Sqrt(3.0f) * 0.5f, 0.0f), // 右上
+		FVector(-Spacing * 0.5f, Spacing * FMath::Sqrt(3.0f) * 0.5f, 0.0f), // 左上
+		FVector(-Spacing, 0.0f, 0.0f),                                   // 左
+		FVector(-Spacing * 0.5f, -Spacing * FMath::Sqrt(3.0f) * 0.5f, 0.0f), // 左下
+		FVector(Spacing * 0.5f, -Spacing * FMath::Sqrt(3.0f) * 0.5f, 0.0f)   // 右下
+	};
+
+	Points.Reserve(PointCount);
+
+	// 中心点
+	if (Points.Num() < PointCount)
+	{
+		Points.Add(FVector::ZeroVector);
+	}
+
+	// 生成环形结构（立方坐标系）
+	for (int32 Ring = 1; Ring <= Rings && Points.Num() < PointCount; ++Ring)
+	{
+		// 每个环的起始位置：移动到右上方向的Ring步
+		FVector RingStart = HexDirections[1] * Ring;
+
+		// 遍历六条边
+		for (int32 Direction = 0; Direction < 6 && Points.Num() < PointCount; ++Direction)
+		{
+			for (int32 Step = 0; Step < Ring && Points.Num() < PointCount; ++Step)
+			{
+				FVector Position = RingStart + HexDirections[Direction] * Step;
+				Points.Add(Position);
+
+				// 限制点数
+				if (Points.Num() >= PointCount)
+				{
+					break;
+				}
+			}
+		}
+	}
+
+	return Points;
+}
+
+TArray<FVector> FRectangleSamplingHelper::GenerateDiagonalFormation(
+	int32 PointCount,
+	float Spacing,
+	int32 Direction,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || Spacing <= 0.0f)
+	{
+		return Points;
+	}
+
+	Points.Reserve(PointCount);
+
+	// 计算最佳行列数
+	int32 Rows, Cols;
+	CalculateOptimalRowsCols(PointCount, Rows, Cols);
+
+	// 对角线阵型：按对角线方向排列
+	const float DirSign = (Direction >= 0) ? 1.0f : -1.0f;
+	const float StartOffset = -(FMath::Max(Rows, Cols) - 1) * Spacing * 0.5f;
+
+	int32 GeneratedCount = 0;
+	for (int32 Diagonal = 0; Diagonal < (Rows + Cols - 1) && GeneratedCount < PointCount; ++Diagonal)
+	{
+		// 计算对角线上的起始点
+		int32 StartRow = (DirSign > 0) ? FMath::Max(0, Diagonal - Cols + 1) : FMath::Min(Diagonal, Rows - 1);
+		int32 StartCol = (DirSign > 0) ? FMath::Min(Diagonal, Cols - 1) : FMath::Max(0, Diagonal - Rows + 1);
+
+		// 沿对角线遍历
+		int32 Row = StartRow;
+		int32 Col = StartCol;
+
+		while (Row >= 0 && Row < Rows && Col >= 0 && Col < Cols && GeneratedCount < PointCount)
+		{
+			FVector Point(
+				StartOffset + Col * Spacing,
+				StartOffset + Row * Spacing,
+				0.0f
+			);
+			Points.Add(Point);
+			GeneratedCount++;
+
+			// 移动到下一个对角线位置
+			if (DirSign > 0)
+			{
+				Row++;
+				Col--;
+			}
+			else
+			{
+				Row--;
+				Col++;
+			}
+		}
+	}
+
+	return Points;
+}
+
+TArray<FVector> FRectangleSamplingHelper::GenerateCheckerboardFormation(
+	int32 PointCount,
+	float Spacing,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || Spacing <= 0.0f)
+	{
+		return Points;
+	}
+
+	Points.Reserve(PointCount);
+
+	// 计算网格尺寸
+	int32 Rows, Cols;
+	CalculateOptimalRowsCols(PointCount, Rows, Cols);
+
+	const float StartOffset = -(FMath::Max(Rows, Cols) - 1) * Spacing * 0.5f;
+
+	// 棋盘阵型：只在黑格或白格上放置点
+	bool bStartWithBlack = true; // 可以随机选择起始颜色
+
+	int32 GeneratedCount = 0;
+	for (int32 Row = 0; Row < Rows && GeneratedCount < PointCount; ++Row)
+	{
+		for (int32 Col = 0; Col < Cols && GeneratedCount < PointCount; ++Col)
+		{
+			// 检查是否为目标颜色（黑或白）
+			bool bIsBlackSquare = ((Row + Col) % 2 == 0);
+			if (bIsBlackSquare == bStartWithBlack)
+			{
+				FVector Point(
+					StartOffset + Col * Spacing,
+					StartOffset + Row * Spacing,
+					0.0f
+				);
+				Points.Add(Point);
+				GeneratedCount++;
+			}
+		}
+	}
+
+	return Points;
+}

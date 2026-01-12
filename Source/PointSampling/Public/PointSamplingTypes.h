@@ -147,7 +147,19 @@ enum class EPointSamplingMode : uint8
 	Heart               UMETA(DisplayName = "心脏阵"),
 
 	/** 花瓣阵型 (花朵形状，参数化花瓣数量) */
-	Flower              UMETA(DisplayName = "花瓣阵")
+	Flower              UMETA(DisplayName = "花瓣阵"),
+
+	/** 黄金螺旋阵型 (最自然的螺旋分布) */
+	GoldenSpiral        UMETA(DisplayName = "黄金螺旋"),
+
+	/** 圆形网格阵型 (极坐标规则网格) */
+	CircularGrid        UMETA(DisplayName = "圆形网格"),
+
+	/** 玫瑰曲线阵型 (数学艺术曲线) */
+	RoseCurve           UMETA(DisplayName = "玫瑰曲线"),
+
+	/** 同心圆环阵型 (多层圆环分布) */
+	ConcentricRings     UMETA(DisplayName = "同心圆环")
 };
 
 /**

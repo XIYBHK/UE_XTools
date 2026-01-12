@@ -82,6 +82,7 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 - **纹理密度采样**: 支持压缩和未压缩纹理的像素级密度控制
 - **军事战术阵型**: 楔形、纵队、横队、V形、梯形等经典战术阵型
 - **几何艺术阵型**: 蜂巢六边形、星形、螺旋、心形、花瓣等数学图形
+- **高级阵型算法**: 黄金螺旋、圆形网格、玫瑰曲线、同心圆环等专业算法
 - **通用阵型生成器**: 统一的阵型生成接口，支持所有阵型模式
 - **采样质量验证**: 统计分析和泊松约束验证工具
 
@@ -187,6 +188,30 @@ TArray<FVector> HeartShape = UFormationSamplingLibrary::GenerateHeartFormation(
 
 TArray<FVector> FlowerShape = UFormationSamplingLibrary::GenerateFlowerFormation(
     150, CenterLocation, Rotation, 150.0f, 30.0f, 8 // OuterRadius, InnerRadius, PetalCount
+);
+```
+
+### 高级阵型算法
+```cpp
+// 生成黄金螺旋（最自然的螺旋分布）
+TArray<FVector> GoldenSpiral = UFormationSamplingLibrary::GenerateGoldenSpiralFormation(
+    200, CenterLocation, Rotation, 300.0f // MaxRadius
+);
+
+// 生成玫瑰曲线（数学艺术曲线）
+TArray<FVector> RoseCurve = UFormationSamplingLibrary::GenerateRoseCurveFormation(
+    150, CenterLocation, Rotation, 200.0f, 5 // MaxRadius, Petals
+);
+
+// 生成圆形网格（极坐标规则网格）
+TArray<FVector> CircularGrid = UFormationSamplingLibrary::GenerateCircularGridFormation(
+    100, CenterLocation, Rotation, 250.0f, 4, 8 // MaxRadius, RadialDivisions, AngularDivisions
+);
+
+// 生成同心圆环（多层圆环分布）
+TArray<int32> PointsPerRing = {8, 16, 24, 32};
+TArray<FVector> ConcentricRings = UFormationSamplingLibrary::GenerateConcentricRingsFormation(
+    200, CenterLocation, Rotation, 300.0f, 4, PointsPerRing // MaxRadius, RingCount, PointsPerRing
 );
 ```
 

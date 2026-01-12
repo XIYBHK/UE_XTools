@@ -414,6 +414,40 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
 				FMath::Clamp(Param3, 3, 12), // PetalCount
 				CoordinateSpace, JitterStrength, RandomSeed);
 
+		// 高级圆形阵型
+		case EPointSamplingMode::GoldenSpiral:
+			return UFormationSamplingLibrary::GenerateGoldenSpiralFormation(
+				PointCount, CenterLocation, Rotation,
+				FMath::Max(50.0f, Spacing), // MaxRadius
+				CoordinateSpace, JitterStrength, RandomSeed);
+
+		case EPointSamplingMode::CircularGrid:
+			return UFormationSamplingLibrary::GenerateCircularGridFormation(
+				PointCount, CenterLocation, Rotation,
+				FMath::Max(50.0f, Spacing), // MaxRadius
+				FMath::Max(1, static_cast<int32>(Param1)), // RadialDivisions
+				FMath::Max(1, static_cast<int32>(Param2)), // AngularDivisions
+				CoordinateSpace, JitterStrength, RandomSeed);
+
+		case EPointSamplingMode::RoseCurve:
+			return UFormationSamplingLibrary::GenerateRoseCurveFormation(
+				PointCount, CenterLocation, Rotation,
+				FMath::Max(50.0f, Spacing), // MaxRadius
+				FMath::Clamp(Param3, 1, 12), // Petals
+				CoordinateSpace, JitterStrength, RandomSeed);
+
+		case EPointSamplingMode::ConcentricRings:
+			{
+				// 使用默认的每环点数配置
+				TArray<int32> DefaultPointsPerRing = { 6, 12, 18, 24 };
+				return UFormationSamplingLibrary::GenerateConcentricRingsFormation(
+					PointCount, CenterLocation, Rotation,
+					FMath::Max(50.0f, Spacing), // MaxRadius
+					FMath::Max(1, static_cast<int32>(Param1)), // RingCount
+					DefaultPointsPerRing, // PointsPerRing
+					CoordinateSpace, JitterStrength, RandomSeed);
+			}
+
 		// 不支持的模式
 		default:
 			UE_LOG(LogPointSampling, Warning, TEXT("[通用阵型生成器] 不支持的阵型模式: %d"),

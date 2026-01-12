@@ -551,3 +551,208 @@ TArray<FVector> FCircleSamplingHelper::GeneratePoisson(
 
 	return Points;
 }
+
+// ============================================================================
+// 新增阵型实现（基于GitHub优秀实践）
+// ============================================================================
+
+TArray<FVector> FCircleSamplingHelper::GenerateGoldenSpiral(
+	int32 PointCount,
+	float MaxRadius,
+	float JitterStrength,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || MaxRadius <= 0.0f)
+	{
+		return Points;
+	}
+
+	Points.Reserve(PointCount);
+
+	// 黄金角（弧度）
+	const float GoldenAngleRad = GOLDEN_ANGLE * PI / 180.0f;
+
+	for (int32 i = 0; i < PointCount; ++i)
+	{
+		// 计算角度（黄金角累积）
+		float Angle = i * GoldenAngleRad;
+
+		// 计算半径（线性增长，但可以通过参数调整）
+		float Radius = (static_cast<float>(i) / (PointCount - 1)) * MaxRadius;
+
+		// 极坐标转换为笛卡尔坐标
+		FVector Point(
+			FMath::Cos(Angle) * Radius,
+			FMath::Sin(Angle) * Radius,
+			0.0f
+		);
+
+		Points.Add(Point);
+	}
+
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, MaxRadius, RandomStream);
+	}
+
+	return Points;
+}
+
+TArray<FVector> FCircleSamplingHelper::GenerateCircularGrid(
+	int32 PointCount,
+	float MaxRadius,
+	int32 RadialDivisions,
+	int32 AngularDivisions,
+	float JitterStrength,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || MaxRadius <= 0.0f || RadialDivisions <= 0 || AngularDivisions <= 0)
+	{
+		return Points;
+	}
+
+	Points.Reserve(PointCount);
+
+	// 计算每层的半径步长
+	const float RadialStep = MaxRadius / RadialDivisions;
+	const float AngularStep = 360.0f / AngularDivisions;
+
+	int32 GeneratedCount = 0;
+
+	// 生成极坐标网格
+	for (int32 Radial = 0; Radial < RadialDivisions && GeneratedCount < PointCount; ++Radial)
+	{
+		float Radius = (Radial + 1) * RadialStep; // 从内向外
+
+		for (int32 Angular = 0; Angular < AngularDivisions && GeneratedCount < PointCount; ++Angular)
+		{
+			float Angle = Angular * AngularStep;
+
+			// 极坐标转换为笛卡尔坐标
+			FVector Point(
+				FMath::Cos(FMath::DegreesToRadians(Angle)) * Radius,
+				FMath::Sin(FMath::DegreesToRadians(Angle)) * Radius,
+				0.0f
+			);
+
+			Points.Add(Point);
+			GeneratedCount++;
+		}
+	}
+
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, MaxRadius, RandomStream);
+	}
+
+	return Points;
+}
+
+TArray<FVector> FCircleSamplingHelper::GenerateRoseCurve(
+	int32 PointCount,
+	float MaxRadius,
+	int32 Petals,
+	float JitterStrength,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || MaxRadius <= 0.0f || Petals <= 0)
+	{
+		return Points;
+	}
+
+	Points.Reserve(PointCount);
+
+	// 玫瑰曲线：r = a * cos(k * θ)
+	// k = 花瓣数，a = 最大半径
+	const float K = static_cast<float>(Petals);
+	const float A = MaxRadius;
+
+	// 生成玫瑰曲线上的点
+	for (int32 i = 0; i < PointCount; ++i)
+	{
+		// 参数t从0到2π
+		float T = (static_cast<float>(i) / (PointCount - 1)) * 2.0f * PI;
+
+		// 计算半径
+		float Radius = A * FMath::Cos(K * T);
+
+		// 极坐标转换为笛卡尔坐标
+		FVector Point(
+			Radius * FMath::Cos(T),
+			Radius * FMath::Sin(T),
+			0.0f
+		);
+
+		Points.Add(Point);
+	}
+
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, MaxRadius, RandomStream);
+	}
+
+	return Points;
+}
+
+TArray<FVector> FCircleSamplingHelper::GenerateConcentricRings(
+	int32 PointCount,
+	float MaxRadius,
+	int32 RingCount,
+	const TArray<int32>& PointsPerRing,
+	float JitterStrength,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+	if (PointCount <= 0 || MaxRadius <= 0.0f || RingCount <= 0)
+	{
+		return Points;
+	}
+
+	Points.Reserve(PointCount);
+
+	// 计算每层的半径
+	const float RadialStep = MaxRadius / RingCount;
+
+	int32 GeneratedCount = 0;
+
+	for (int32 Ring = 0; Ring < RingCount && GeneratedCount < PointCount; ++Ring)
+	{
+		float Radius = (Ring + 1) * RadialStep;
+
+		// 获取该层的点数
+		int32 PointsInRing = (Ring < PointsPerRing.Num()) ? PointsPerRing[Ring] : 8; // 默认8个点
+
+		// 确保至少有点
+		PointsInRing = FMath::Max(1, PointsInRing);
+
+		for (int32 Point = 0; Point < PointsInRing && GeneratedCount < PointCount; ++Point)
+		{
+			// 计算角度
+			float Angle = (360.0f * Point) / PointsInRing;
+
+			// 极坐标转换为笛卡尔坐标
+			FVector Position(
+				Radius * FMath::Cos(FMath::DegreesToRadians(Angle)),
+				Radius * FMath::Sin(FMath::DegreesToRadians(Angle)),
+				0.0f
+			);
+
+			Points.Add(Position);
+			GeneratedCount++;
+		}
+	}
+
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, MaxRadius, RandomStream);
+	}
+
+	return Points;
+}

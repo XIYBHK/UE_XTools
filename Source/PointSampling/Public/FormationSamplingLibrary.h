@@ -403,12 +403,85 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
-		float OuterRadius = 200.0f,
-		float InnerRadius = 50.0f,
-		int32 PetalCount = 6,
-		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
-		float JitterStrength = 0.0f,
-		int32 RandomSeed = 0
+		float OuterRadius,
+		float InnerRadius,
+		int32 PetalCount,
+		EPoissonCoordinateSpace CoordinateSpace,
+		float JitterStrength,
+		int32 RandomSeed
+	);
+
+	// ============================================================================
+	// 高级圆形阵型 (基于数学几何)
+	// ============================================================================
+
+	/**
+	 * 生成黄金螺旋阵型（最自然的螺旋分布）
+	 * 特点：斐波那契数列相关的黄金角，产生最均匀的螺旋分布
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|高级圆形",
+		meta = (DisplayName = "生成黄金螺旋阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateGoldenSpiralFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float MaxRadius,
+		EPoissonCoordinateSpace CoordinateSpace,
+		float JitterStrength,
+		int32 RandomSeed
+	);
+
+	/**
+	 * 生成圆形网格阵型（极坐标网格）
+	 * 特点：基于角度和半径的规则网格，便于控制密度
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|高级圆形",
+		meta = (DisplayName = "生成圆形网格阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateCircularGridFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float MaxRadius,
+		int32 RadialDivisions,
+		int32 AngularDivisions,
+		EPoissonCoordinateSpace CoordinateSpace,
+		float JitterStrength,
+		int32 RandomSeed
+	);
+
+	/**
+	 * 生成玫瑰曲线阵型（数学艺术曲线）
+	 * @param Petals 花瓣数量（决定曲线复杂度）
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|高级圆形",
+		meta = (DisplayName = "生成玫瑰曲线阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateRoseCurveFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float MaxRadius,
+		int32 Petals,
+		EPoissonCoordinateSpace CoordinateSpace,
+		float JitterStrength,
+		int32 RandomSeed
+	);
+
+	/**
+	 * 生成同心圆环阵型（多层圆环分布）
+	 * @param PointsPerRing 每层的点数数组
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|高级圆形",
+		meta = (DisplayName = "生成同心圆环阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))
+	static TArray<FVector> GenerateConcentricRingsFormation(
+		int32 PointCount,
+		FVector CenterLocation,
+		FRotator Rotation,
+		float MaxRadius,
+		int32 RingCount,
+		const TArray<int32>& PointsPerRing,
+		EPoissonCoordinateSpace CoordinateSpace,
+		float JitterStrength,
+		int32 RandomSeed
 	);
 
 	// ============================================================================

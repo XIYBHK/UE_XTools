@@ -55,6 +55,41 @@ public:
 		FRandomStream& RandomStream
 	);
 
+	/**
+	 * 生成六边形网格阵型（蜂巢布局）
+	 * 特点：最紧凑的2D填充，自然界最优分布模式
+	 */
+	static TArray<FVector> GenerateHexagonalGrid(
+		int32 PointCount,
+		float Spacing,
+		int32 Rings,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
+	/**
+	 * 生成对角线阵型（斜线排列）
+	 * @param Direction -1=左下到右上, 1=右下到左上
+	 */
+	static TArray<FVector> GenerateDiagonalFormation(
+		int32 PointCount,
+		float Spacing,
+		int32 Direction,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
+	/**
+	 * 生成棋盘阵型（间隔排列）
+	 * 特点：类似于国际象棋的黑白格子分布
+	 */
+	static TArray<FVector> GenerateCheckerboardFormation(
+		int32 PointCount,
+		float Spacing,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
 private:
 	/**
 	 * 计算最佳行列数

@@ -86,6 +86,55 @@ public:
 		FRandomStream& RandomStream
 	);
 
+	/**
+	 * 生成黄金角螺旋阵型（最自然的螺旋分布）
+	 * 特点：斐波那契数列相关的黄金角，产生最均匀的螺旋分布
+	 */
+	static TArray<FVector> GenerateGoldenSpiral(
+		int32 PointCount,
+		float MaxRadius,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
+	/**
+	 * 生成圆形网格阵型（极坐标网格）
+	 * 特点：基于角度和半径的规则网格，便于控制密度
+	 */
+	static TArray<FVector> GenerateCircularGrid(
+		int32 PointCount,
+		float MaxRadius,
+		int32 RadialDivisions,
+		int32 AngularDivisions,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
+	/**
+	 * 生成玫瑰曲线阵型（数学艺术曲线）
+	 * @param Petals 花瓣数量（决定曲线复杂度）
+	 */
+	static TArray<FVector> GenerateRoseCurve(
+		int32 PointCount,
+		float MaxRadius,
+		int32 Petals,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
+	/**
+	 * 生成同心圆环阵型（多层圆环分布）
+	 * 特点：每层圆环上的点数可配置，便于创建波浪效果
+	 */
+	static TArray<FVector> GenerateConcentricRings(
+		int32 PointCount,
+		float MaxRadius,
+		int32 RingCount,
+		const TArray<int32>& PointsPerRing,
+		float JitterStrength,
+		FRandomStream& RandomStream
+	);
+
 private:
 	/**
 	 * 生成均匀分布的圆形/球体点位
