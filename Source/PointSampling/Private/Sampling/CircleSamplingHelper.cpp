@@ -314,6 +314,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 		GenerateArcPoints(Points, PointCount, Radius, StartAngle, EndAngle, bClockwise);
 	}
 
+	return Points;
+}
+
 TArray<FVector> FCircleSamplingHelper::GenerateFibonacci(
 	int32 PointCount,
 	float Radius,

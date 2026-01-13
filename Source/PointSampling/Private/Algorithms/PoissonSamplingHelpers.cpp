@@ -16,6 +16,36 @@
 
 namespace PoissonSamplingHelpers
 {
+    // ============================================================================
+    // 随机数生成辅助函数（统一随机源）
+    // ============================================================================
+
+    /**
+     * 生成随机浮点数 [0, 1)
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    FORCEINLINE float GetRandomFloat(const FRandomStream* Stream)
+    {
+        return Stream ? Stream->FRand() : FMath::FRand();
+    }
+
+    /**
+     * 生成随机整数 [Min, Max]
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    FORCEINLINE int32 GetRandomInt(int32 Min, int32 Max, const FRandomStream* Stream)
+    {
+        return Stream ? Stream->RandRange(Min, Max) : FMath::RandRange(Min, Max);
+    }
+
+    /**
+     * 生成范围随机浮点数 [Min, Max]
+     * @param Stream 可选的随机流，nullptr时使用全局随机
+     */
+    FORCEINLINE float GetRandomRange(float Min, float Max, const FRandomStream* Stream)
+    {
+        return Stream ? Stream->FRandRange(Min, Max) : FMath::FRandRange(Min, Max);
+    }
     /**
      * 根据目标点数计算合适的Radius (优化版)
      *
@@ -112,7 +142,7 @@ namespace PoissonSamplingHelpers
             while (!ActiveList.IsEmpty())
             {
                 // 随机选择活跃点
-                const int32 RandomIndex = RandomInt(ActiveList.Num());
+                const int32 RandomIndex = GetRandomInt(0, ActiveList.Num() - 1, RandomStream);
                 const FVector ActivePoint = ActiveList[RandomIndex];
 
                 bool bFound = false;
@@ -158,11 +188,11 @@ namespace PoissonSamplingHelpers
         FVector GenerateRandomPoint() const
         {
             FVector Point;
-            Point.X = BoundsMin.X + RandomFloat() * (BoundsMax.X - BoundsMin.X);
-            Point.Y = BoundsMin.Y + RandomFloat() * (BoundsMax.Y - BoundsMin.Y);
+            Point.X = BoundsMin.X + GetRandomFloat(RandomStream) * (BoundsMax.X - BoundsMin.X);
+            Point.Y = BoundsMin.Y + GetRandomFloat(RandomStream) * (BoundsMax.Y - BoundsMin.Y);
             if (BoundsMax.Z > BoundsMin.Z)
             {
-                Point.Z = BoundsMin.Z + RandomFloat() * (BoundsMax.Z - BoundsMin.Z);
+                Point.Z = BoundsMin.Z + GetRandomFloat(RandomStream) * (BoundsMax.Z - BoundsMin.Z);
             }
             else
             {
@@ -177,9 +207,9 @@ namespace PoissonSamplingHelpers
         FVector GenerateCandidatePoint(const FVector& Center) const
         {
             // 在[Radius, 2*Radius]范围内随机生成点
-            const float Distance = Radius + RandomFloat() * Radius;
-            const float Angle1 = RandomFloat() * 2.0f * PI;
-            const float Angle2 = (BoundsMax.Z > BoundsMin.Z) ? RandomFloat() * 2.0f * PI : 0.0f;
+            const float Distance = Radius + GetRandomFloat(RandomStream) * Radius;
+            const float Angle1 = GetRandomFloat(RandomStream) * 2.0f * PI;
+            const float Angle2 = (BoundsMax.Z > BoundsMin.Z) ? GetRandomFloat(RandomStream) * 2.0f * PI : 0.0f;
 
             FVector Offset;
             Offset.X = Distance * FMath::Cos(Angle1);
@@ -262,22 +292,6 @@ namespace PoissonSamplingHelpers
         int32 GetGridIndex(int32 X, int32 Y, int32 Z) const
         {
             return X + Y * GridSize.X + Z * GridSize.X * GridSize.Y;
-        }
-
-        /**
-         * 生成随机浮点数 [0, 1)
-         */
-        float RandomFloat() const
-        {
-            return RandomStream ? RandomStream->FRand() : FMath::FRand();
-        }
-
-        /**
-         * 生成随机整数 [0, Max)
-         */
-        int32 RandomInt(int32 Max) const
-        {
-            return RandomStream ? RandomStream->RandRange(0, Max - 1) : FMath::RandRange(0, Max - 1);
         }
     };
     
@@ -495,39 +509,24 @@ namespace PoissonSamplingHelpers
             const int32 x = i % GridSize;
             const int32 y = (i / GridSize) % GridSize;
             const int32 z = bIs2D ? 0 : (i / (GridSize * GridSize)) % GridSize;
-            
+
             // 在网格单元内随机位置
-            FVector CellMin = FVector(x, y, z) * CellSize;
-            
-            float RandX, RandY, RandZ;
-            if (Stream)
-            {
-                RandX = Stream->FRand();
-                RandY = Stream->FRand();
-                RandZ = bIs2D ? 0.0f : Stream->FRand();
-            }
-            else
-            {
-                RandX = FMath::FRand();
-                RandY = FMath::FRand();
-                RandZ = bIs2D ? 0.0f : FMath::FRand();
-            }
-            
-            FVector NewPoint = CellMin + FVector(
-                RandX * CellSize.X,
-                RandY * CellSize.Y,
-                RandZ * CellSize.Z
+            const FVector CellMin = FVector(x, y, z) * CellSize;
+            const FVector NewPoint = CellMin + FVector(
+                GetRandomFloat(Stream) * CellSize.X,
+                GetRandomFloat(Stream) * CellSize.Y,
+                bIs2D ? 0.0f : GetRandomFloat(Stream) * CellSize.Z
             );
-            
+
             // 转换到局部空间（中心对齐）
-            NewPoint -= BoxSize * 0.5f;
-            if (bIs2D) NewPoint.Z = 0.0f;
-            
+            FVector LocalPoint = NewPoint - BoxSize * 0.5f;
+            if (bIs2D) LocalPoint.Z = 0.0f;
+
             // 使用空间哈希检查有效性（O(1)而非O(N)）
-            if (IsValidAgainstHash(NewPoint, SpatialHash))
+            if (IsValidAgainstHash(LocalPoint, SpatialHash))
             {
-                CandidatePoints.Add(NewPoint);
-                SpatialHash.FindOrAdd(GetHashKey(NewPoint)).Add(NewPoint);
+                CandidatePoints.Add(LocalPoint);
+                SpatialHash.FindOrAdd(GetHashKey(LocalPoint)).Add(LocalPoint);
             }
         }
         
@@ -568,24 +567,12 @@ namespace PoissonSamplingHelpers
             
             for (int32 i = 0; i < Needed * 2 && CandidatePoints.Num() < Needed; ++i)
             {
-                FVector RandomPoint;
-                if (Stream)
-                {
-                    RandomPoint = FVector(
-                        Stream->FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
-                        Stream->FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
-                        bIs2D ? 0.0f : Stream->FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
-                    );
-                }
-                else
-                {
-                    RandomPoint = FVector(
-                        FMath::FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
-                        FMath::FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
-                        bIs2D ? 0.0f : FMath::FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
-                    );
-                }
-                
+                const FVector RandomPoint = FVector(
+                    GetRandomRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f, Stream),
+                    GetRandomRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f, Stream),
+                    bIs2D ? 0.0f : GetRandomRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f, Stream)
+                );
+
                 if (IsValidWithRelaxedDistance(RandomPoint, RelaxedMinDistSq))
                 {
                     CandidatePoints.Add(RandomPoint);
@@ -633,26 +620,14 @@ namespace PoissonSamplingHelpers
             
             while (CandidatePoints.Num() < Needed && Attempts < MaxAttempts)
             {
-                Attempts++;
-                
-                FVector RandomPoint;
-                if (Stream)
-                {
-                    RandomPoint = FVector(
-                        Stream->FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
-                        Stream->FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
-                        bIs2D ? 0.0f : Stream->FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
-                    );
-                }
-                else
-                {
-                    RandomPoint = FVector(
-                        FMath::FRandRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f),
-                        FMath::FRandRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f),
-                        bIs2D ? 0.0f : FMath::FRandRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f)
-                    );
-                }
-                
+                ++Attempts;
+
+                const FVector RandomPoint = FVector(
+                    GetRandomRange(-BoxSize.X * 0.5f, BoxSize.X * 0.5f, Stream),
+                    GetRandomRange(-BoxSize.Y * 0.5f, BoxSize.Y * 0.5f, Stream),
+                    bIs2D ? 0.0f : GetRandomRange(-BoxSize.Z * 0.5f, BoxSize.Z * 0.5f, Stream)
+                );
+
                 if (IsValidWithMinimalDistance(RandomPoint))
                 {
                     CandidatePoints.Add(RandomPoint);
@@ -670,25 +645,13 @@ namespace PoissonSamplingHelpers
         }
         
         // 随机选择需要的点数追加到原数组
-        if (Stream)
+        // Fisher-Yates洗牌
+        for (int32 i = CandidatePoints.Num() - 1; i > 0; --i)
         {
-            // 使用流进行Fisher-Yates洗牌
-            for (int32 i = CandidatePoints.Num() - 1; i > 0; --i)
-            {
-                const int32 j = Stream->RandRange(0, i);
-                CandidatePoints.Swap(i, j);
-            }
+            const int32 j = GetRandomInt(0, i, Stream);
+            CandidatePoints.Swap(i, j);
         }
-        else
-        {
-            // 使用FMath进行Fisher-Yates洗牌
-            for (int32 i = CandidatePoints.Num() - 1; i > 0; --i)
-            {
-                const int32 j = FMath::RandRange(0, i);
-                CandidatePoints.Swap(i, j);
-            }
-        }
-        
+
         // 追加到原数组
         for (int32 i = 0; i < Needed && i < CandidatePoints.Num(); ++i)
         {
@@ -757,29 +720,17 @@ namespace PoissonSamplingHelpers
         {
             return;
         }
-        
+
         // 扰动范围：最大为半径的50%，由强度控制
         const float MaxJitter = Radius * FMath::Clamp(JitterStrength, 0.0f, 1.0f) * 0.5f;
-        
+
         for (FVector& Point : Points)
         {
-            if (Stream)
+            Point.X += GetRandomRange(-MaxJitter, MaxJitter, Stream);
+            Point.Y += GetRandomRange(-MaxJitter, MaxJitter, Stream);
+            if (!bIs2D)
             {
-                Point.X += Stream->FRandRange(-MaxJitter, MaxJitter);
-                Point.Y += Stream->FRandRange(-MaxJitter, MaxJitter);
-                if (!bIs2D)
-                {
-                    Point.Z += Stream->FRandRange(-MaxJitter, MaxJitter);
-                }
-            }
-            else
-            {
-                Point.X += FMath::FRandRange(-MaxJitter, MaxJitter);
-                Point.Y += FMath::FRandRange(-MaxJitter, MaxJitter);
-                if (!bIs2D)
-                {
-                    Point.Z += FMath::FRandRange(-MaxJitter, MaxJitter);
-                }
+                Point.Z += GetRandomRange(-MaxJitter, MaxJitter, Stream);
             }
         }
     }
@@ -850,8 +801,8 @@ namespace PoissonSamplingHelpers
      */
     FVector2D GenerateRandomPointAround2D(const FVector2D& Point, float MinDist, float MaxDist, const FRandomStream* Stream)
     {
-        const float Angle = Stream ? Stream->FRandRange(0.0f, 2.0f * PI) : FMath::FRandRange(0.0f, 2.0f * PI);
-        const float Distance = Stream ? Stream->FRandRange(MinDist, MaxDist) : FMath::FRandRange(MinDist, MaxDist);
+        const float Angle = GetRandomRange(0.0f, 2.0f * PI, Stream);
+        const float Distance = GetRandomRange(MinDist, MaxDist, Stream);
         return FVector2D(
             Point.X + Distance * FMath::Cos(Angle),
             Point.Y + Distance * FMath::Sin(Angle)
@@ -866,10 +817,10 @@ namespace PoissonSamplingHelpers
     FVector GenerateRandomPointAround3D(const FVector& Point, float MinDist, float MaxDist, const FRandomStream* Stream)
     {
         // 在球面上均匀采样
-        const float Theta = Stream ? Stream->FRandRange(0.0f, 2.0f * PI) : FMath::FRandRange(0.0f, 2.0f * PI);
-        const float Phi = FMath::Acos(Stream ? Stream->FRandRange(-1.0f, 1.0f) : FMath::FRandRange(-1.0f, 1.0f));
-        const float Distance = Stream ? Stream->FRandRange(MinDist, MaxDist) : FMath::FRandRange(MinDist, MaxDist);
-        
+        const float Theta = GetRandomRange(0.0f, 2.0f * PI, Stream);
+        const float Phi = FMath::Acos(GetRandomRange(-1.0f, 1.0f, Stream));
+        const float Distance = GetRandomRange(MinDist, MaxDist, Stream);
+
         return FVector(
             Point.X + Distance * FMath::Sin(Phi) * FMath::Cos(Theta),
             Point.Y + Distance * FMath::Sin(Phi) * FMath::Sin(Theta),
@@ -1032,8 +983,8 @@ namespace PoissonSamplingHelpers
 
         // 生成初始点
         const FVector2D InitialPoint(
-            Stream ? Stream->FRandRange(0.0f, Width) : FMath::FRandRange(0.0f, Width),
-            Stream ? Stream->FRandRange(0.0f, Height) : FMath::FRandRange(0.0f, Height)
+            GetRandomRange(0.0f, Width, Stream),
+            GetRandomRange(0.0f, Height, Stream)
         );
         ActivePoints.Add(InitialPoint);
         Points.Add(InitialPoint);
@@ -1045,7 +996,7 @@ namespace PoissonSamplingHelpers
         while (ActivePoints.Num() > 0)
         {
             // 从活跃列表中随机选择一个点
-            const int32 Index = Stream ? Stream->RandRange(0, ActivePoints.Num() - 1) : FMath::RandRange(0, ActivePoints.Num() - 1);
+            const int32 Index = GetRandomInt(0, ActivePoints.Num() - 1, Stream);
             const FVector2D Point = ActivePoints[Index];
             bool bFound = false;
 
@@ -1117,9 +1068,9 @@ namespace PoissonSamplingHelpers
 
         // 生成初始点
         const FVector InitialPoint(
-            Stream ? Stream->FRandRange(0.0f, Width) : FMath::FRandRange(0.0f, Width),
-            Stream ? Stream->FRandRange(0.0f, Height) : FMath::FRandRange(0.0f, Height),
-            Stream ? Stream->FRandRange(0.0f, Depth) : FMath::FRandRange(0.0f, Depth)
+            GetRandomRange(0.0f, Width, Stream),
+            GetRandomRange(0.0f, Height, Stream),
+            GetRandomRange(0.0f, Depth, Stream)
         );
         ActivePoints.Add(InitialPoint);
         Points.Add(InitialPoint);
@@ -1132,7 +1083,7 @@ namespace PoissonSamplingHelpers
         while (ActivePoints.Num() > 0)
         {
             // 从活跃列表中随机选择一个点
-            const int32 Index = Stream ? Stream->RandRange(0, ActivePoints.Num() - 1) : FMath::RandRange(0, ActivePoints.Num() - 1);
+            const int32 Index = GetRandomInt(0, ActivePoints.Num() - 1, Stream);
             const FVector Point = ActivePoints[Index];
             bool bFound = false;
 

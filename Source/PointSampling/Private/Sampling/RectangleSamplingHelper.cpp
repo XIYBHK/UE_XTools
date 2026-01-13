@@ -16,10 +16,11 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSolidRectangle(
 {
 	TArray<FVector> Points;
 	if (Spacing <= 0.0f)
-tPoints.Reserve(PointCount);
 	{
 		return Points;
 	}
+
+	Points.Reserve(PointCount);
 
 	// 计算行列数
 	int32 Rows = RowCount;
@@ -80,11 +81,12 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
-tPoints.Reserve(PointCount);
 	if (Spacing <= 0.0f)
 	{
 		return Points;
 	}
+
+	Points.Reserve(PointCount);
 
 	// 计算行列数
 	int32 Rows = RowCount;
@@ -163,7 +165,6 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSpiralRectangle(
 	float JitterStrength,
 	FRandomStream& RandomStream)
 {
-tPoints.Reserve(PointCount);
 	TArray<FVector> Points;
 	if (Spacing <= 0.0f)
 	{
@@ -261,7 +262,6 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHexagonalGrid(
 	int32 Rings,
 	float JitterStrength,
 	FRandomStream& RandomStream)
-tPoints.Reserve(PointCount);
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0 || Rings < 0)
@@ -324,7 +324,6 @@ TArray<FVector> FRectangleSamplingHelper::GenerateDiagonalFormation(
 	float Spacing,
 	int32 Direction,
 	float JitterStrength,
-tPoints.Reserve(PointCount);
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
@@ -390,7 +389,6 @@ tPoints.Reserve(PointCount);
 TArray<FVector> FRectangleSamplingHelper::GenerateCheckerboardFormation(
 	int32 PointCount,
 	float Spacing,
-tPoints.Reserve(PointCount);
 	float JitterStrength,
 	FRandomStream& RandomStream)
 {

@@ -6,6 +6,33 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(MapExtensionsLibrary)
 
+// ============================================================================
+// 辅助函数：减少重复代码
+// ============================================================================
+
+/**
+ * 在结构体中查找第一个指定类型的属性
+ * @return 找到的属性指针，未找到返回 nullptr
+ */
+template<typename TPropertyType>
+TPropertyType* FindFirstProperty(const UScriptStruct* Struct)
+{
+	if (!Struct)
+	{
+		return nullptr;
+	}
+
+	for (TFieldIterator<FProperty> PropIt(Struct); PropIt; ++PropIt)
+	{
+		if (TPropertyType* Prop = CastField<TPropertyType>(*PropIt))
+		{
+			return Prop;
+		}
+	}
+
+	return nullptr;
+}
+
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #pragma region GetKey
@@ -853,7 +880,7 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         }
 
         FScriptMapHelper MapHelper(MapProperty, TargetMap);
-        
+
         // 获取Map的Value类型（应该是个Struct）
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
         if (!StructProp)
@@ -861,57 +888,42 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             return;
         }
 
+        // 获取结构体中的Array属性
+        FArrayProperty* ArrayProp = FindFirstProperty<FArrayProperty>(StructProp->Struct);
+        if (!ArrayProp)
+        {
+            return;
+        }
+
         // 检查Map中是否已存在此Key
         void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
-        
+
         if (ExistingValuePtr)
         {
-            // 情况2：Map中已存在此Key
-            // 获取结构体中的Array属性
-            FArrayProperty* ArrayProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                if (FArrayProperty* Prop = CastField<FArrayProperty>(*PropIt))
-                {
-                    ArrayProp = Prop;
-                    break;
-                }
-            }
+            // 情况1：Map中已存在此Key，向Array添加元素
+            void* ExistingArrayPtr = static_cast<uint8*>(ExistingValuePtr) + ArrayProp->GetOffset_ForInternal();
+            FScriptArrayHelper ArrayHelper(ArrayProp, ExistingArrayPtr);
 
-            if (ArrayProp)
+            // 检查是否已存在相同的值
+            const bool bValueExists = Algo::AnyOf(ArrayHelper, [&](int32 Index) {
+                return ArrayProp->Inner->Identical(ArrayHelper.GetRawPtr(Index), ValuePtr);
+            }, FRange().Start(0).End(ArrayHelper.Num()));
+
+            // 如果值不存在，则添加
+            if (!bValueExists)
             {
-                // 获取已存在结构体中Array成员的指针
-                void* ExistingArrayPtr = static_cast<uint8*>(ExistingValuePtr) + ArrayProp->GetOffset_ForInternal();
-                
-                // 创建Array助手
-                FScriptArrayHelper ArrayHelper(ArrayProp, ExistingArrayPtr);
-                
-                // 检查是否已存在相同的值
-                bool bValueExists = false;
-                for (int32 i = 0; i < ArrayHelper.Num(); ++i)
-                {
-                    if (ArrayProp->Inner->Identical(ArrayHelper.GetRawPtr(i), ValuePtr))
-                    {
-                        bValueExists = true;
-                        break;
-                    }
-                }
-                
-                // 如果值不存在，则添加
-                if (!bValueExists)
-                {
-                    const int32 NewIndex = ArrayHelper.AddValue();
-                    ArrayProp->Inner->CopyCompleteValue(ArrayHelper.GetRawPtr(NewIndex), ValuePtr);
-                }
+                const int32 NewIndex = ArrayHelper.AddValue();
+                ArrayProp->Inner->CopyCompleteValue(ArrayHelper.GetRawPtr(NewIndex), ValuePtr);
             }
         }
         else
         {
-            // 情况1：Map中没有此Key
+            // 情况2：Map中没有此Key，创建新的结构体
             if (MapHelper.Num() >= MaxSupportedMapSize)
             {
-                FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Attempted add to map '%s' beyond the maximum supported capacity!"), 
-                    *MapProperty->GetName()), ELogVerbosity::Warning, 
+                FFrame::KismetExecutionMessage(
+                    *FString::Printf(TEXT("Attempted add to map '%s' beyond the maximum supported capacity!"), *MapProperty->GetName()),
+                    ELogVerbosity::Warning,
                     UKismetArrayLibrary::ReachedMaximumContainerSizeWarning);
                 return;
             }
@@ -920,30 +932,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             void* ValueStructure = FMemory::Malloc(StructProp->GetSize(), StructProp->GetMinAlignment());
             StructProp->InitializeValue(ValueStructure);
 
-            // 获取结构体中的Array属性
-            FArrayProperty* ArrayProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                if (FArrayProperty* Prop = CastField<FArrayProperty>(*PropIt))
-                {
-                    ArrayProp = Prop;
-                    break;
-                }
-            }
+            // 获取Array在结构体中的偏移并添加元素
+            void* ArrayPtr = static_cast<uint8*>(ValueStructure) + ArrayProp->GetOffset_ForInternal();
+            FScriptArrayHelper ArrayHelper(ArrayProp, ArrayPtr);
+            const int32 NewIndex = ArrayHelper.AddValue();
+            ArrayProp->Inner->CopyCompleteValue(ArrayHelper.GetRawPtr(NewIndex), ValuePtr);
 
-            if (ArrayProp)
-            {
-                // 获取Array在结构体中的偏移
-                void* ArrayPtr = static_cast<uint8*>(ValueStructure) + ArrayProp->GetOffset_ForInternal();
-                
-                // 初始化Array并添加ValuePtr指向的元素
-                FScriptArrayHelper ArrayHelper(ArrayProp, ArrayPtr);
-                const int32 NewIndex = ArrayHelper.AddValue();
-                ArrayProp->Inner->CopyCompleteValue(ArrayHelper.GetRawPtr(NewIndex), ValuePtr);
-
-                // 将构建好的结构体添加到Map中
-                MapHelper.AddPair(KeyPtr, ValueStructure);
-            }
+            // 将构建好的结构体添加到Map中
+            MapHelper.AddPair(KeyPtr, ValueStructure);
 
             // 清理临时结构体
             StructProp->DestroyValue(ValueStructure);
@@ -959,7 +955,7 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         }
 
         FScriptMapHelper MapHelper(MapProperty, TargetMap);
-        
+
         // 获取Map的Value类型（应该是个Struct）
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
         if (!StructProp)
@@ -967,39 +963,30 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             return;
         }
 
+        // 获取结构体中的Array属性
+        FArrayProperty* ArrayProp = FindFirstProperty<FArrayProperty>(StructProp->Struct);
+        if (!ArrayProp)
+        {
+            return;
+        }
+
         // 检查Map中是否已存在此Key
         void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
-        
-        if (ExistingValuePtr)
+        if (!ExistingValuePtr)
         {
-            // 情况2：Map中已存在此Key
-            // 获取结构体中的Array属性
-            FArrayProperty* ArrayProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
+            return;
+        }
+
+        // 获取已存在结构体中Array成员的指针
+        void* ExistingArrayPtr = static_cast<uint8*>(ExistingValuePtr) + ArrayProp->GetOffset_ForInternal();
+        FScriptArrayHelper ArrayHelper(ArrayProp, ExistingArrayPtr);
+
+        // 查找并移除匹配的元素（从后向前遍历，安全删除）
+        for (int32 i = ArrayHelper.Num() - 1; i >= 0; --i)
+        {
+            if (ArrayProp->Inner->Identical(ArrayHelper.GetRawPtr(i), ValuePtr))
             {
-                if (FArrayProperty* Prop = CastField<FArrayProperty>(*PropIt))
-                {
-                    ArrayProp = Prop;
-                    break;
-                }
-            }
-
-            if (ArrayProp)
-            {
-                // 获取已存在结构体中Array成员的指针
-                void* ExistingArrayPtr = static_cast<uint8*>(ExistingValuePtr) + ArrayProp->GetOffset_ForInternal();
-
-                // 创建Array助手
-                FScriptArrayHelper ArrayHelper(ArrayProp, ExistingArrayPtr);
-
-                // 查找并移除匹配的元素
-                for (int32 i = ArrayHelper.Num() - 1; i >= 0; --i)
-                {
-                    if (ArrayProp->Inner->Identical(ArrayHelper.GetRawPtr(i), ValuePtr))
-                    {
-                        ArrayHelper.RemoveValues(i, 1);
-                    }
-                }
+                ArrayHelper.RemoveValues(i, 1);
             }
         }
     }
@@ -1018,7 +1005,7 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         }
 
         FScriptMapHelper MapHelper(MapProperty, TargetMap);
-        
+
         // 获取Map的Value类型（应该是个Struct）
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
         if (!StructProp)
@@ -1026,42 +1013,31 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             return;
         }
 
+        // 获取结构体中的Set属性
+        FSetProperty* SetProp = FindFirstProperty<FSetProperty>(StructProp->Struct);
+        if (!SetProp)
+        {
+            return;
+        }
+
         // 检查Map中是否已存在此Key
         void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
-        
+
         if (ExistingValuePtr)
         {
-            // 情况2：Map中已存在此Key
-            // 获取结构体中的Set属性
-            FSetProperty* SetProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                if (FSetProperty* Prop = CastField<FSetProperty>(*PropIt))
-                {
-                    SetProp = Prop;
-                    break;
-                }
-            }
-
-            if (SetProp)
-            {
-                // 获取已存在结构体中Set成员的指针
-                void* ExistingSetPtr = static_cast<uint8*>(ExistingValuePtr) + SetProp->GetOffset_ForInternal();
-        
-                // 创建Set助手
-                FScriptSetHelper SetHelper(SetProp, ExistingSetPtr);
-        
-                // 直接添加到Set中(Set会自动处理重复元素)
-                SetHelper.AddElement(ValuePtr);
-            }
+            // 情况1：Map中已存在此Key，向Set添加元素
+            void* ExistingSetPtr = static_cast<uint8*>(ExistingValuePtr) + SetProp->GetOffset_ForInternal();
+            FScriptSetHelper SetHelper(SetProp, ExistingSetPtr);
+            SetHelper.AddElement(ValuePtr); // Set会自动处理重复元素
         }
         else
         {
-            // 情况1：Map中没有此Key
+            // 情况2：Map中没有此Key，创建新的结构体
             if (MapHelper.Num() >= MaxSupportedMapSize)
             {
-                FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Attempted add to map '%s' beyond the maximum supported capacity!"), 
-                    *MapProperty->GetName()), ELogVerbosity::Warning, 
+                FFrame::KismetExecutionMessage(
+                    *FString::Printf(TEXT("Attempted add to map '%s' beyond the maximum supported capacity!"), *MapProperty->GetName()),
+                    ELogVerbosity::Warning,
                     UKismetArrayLibrary::ReachedMaximumContainerSizeWarning);
                 return;
             }
@@ -1070,29 +1046,13 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             void* ValueStructure = FMemory::Malloc(StructProp->GetSize(), StructProp->GetMinAlignment());
             StructProp->InitializeValue(ValueStructure);
 
-            // 获取结构体中的Set属性
-            FSetProperty* SetProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                if (FSetProperty* Prop = CastField<FSetProperty>(*PropIt))
-                {
-                    SetProp = Prop;
-                    break;
-                }
-            }
+            // 获取Set在结构体中的偏移并添加元素
+            void* SetPtr = static_cast<uint8*>(ValueStructure) + SetProp->GetOffset_ForInternal();
+            FScriptSetHelper SetHelper(SetProp, SetPtr);
+            SetHelper.AddElement(ValuePtr);
 
-            if (SetProp)
-            {
-                // 获取Set在结构体中的偏移
-                void* SetPtr = static_cast<uint8*>(ValueStructure) + SetProp->GetOffset_ForInternal();
-        
-                // 初始化Set并添加元素
-                FScriptSetHelper SetHelper(SetProp, SetPtr);
-                SetHelper.AddElement(ValuePtr);
-
-                // 将构建好的结构体添加到Map中
-                MapHelper.AddPair(KeyPtr, ValueStructure);
-            }
+            // 将构建好的结构体添加到Map中
+            MapHelper.AddPair(KeyPtr, ValueStructure);
 
             // 清理临时结构体
             StructProp->DestroyValue(ValueStructure);
@@ -1108,7 +1068,7 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         }
 
         FScriptMapHelper MapHelper(MapProperty, TargetMap);
-        
+
         // 获取Map的Value类型（应该是个Struct）
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
         if (!StructProp)
@@ -1116,35 +1076,24 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             return;
         }
 
+        // 获取结构体中的Set属性
+        FSetProperty* SetProp = FindFirstProperty<FSetProperty>(StructProp->Struct);
+        if (!SetProp)
+        {
+            return;
+        }
+
         // 检查Map中是否已存在此Key
         void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
-        
-        if (ExistingValuePtr)
+        if (!ExistingValuePtr)
         {
-            // 情况2：Map中已存在此Key
-            // 获取结构体中的Set属性
-            FSetProperty* SetProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                if (FSetProperty* Prop = CastField<FSetProperty>(*PropIt))
-                {
-                    SetProp = Prop;
-                    break;
-                }
-            }
-
-            if (SetProp)
-            {
-                // 获取已存在结构体中Set成员的指针
-                void* ExistingSetPtr = static_cast<uint8*>(ExistingValuePtr) + SetProp->GetOffset_ForInternal();
-
-                // 创建Set助手
-                FScriptSetHelper SetHelper(SetProp, ExistingSetPtr);
-
-                // 从Set中移除元素
-                SetHelper.RemoveElement(ValuePtr);
-            }
+            return;
         }
+
+        // 获取已存在结构体中Set成员的指针并移除元素
+        void* ExistingSetPtr = static_cast<uint8*>(ExistingValuePtr) + SetProp->GetOffset_ForInternal();
+        FScriptSetHelper SetHelper(SetProp, ExistingSetPtr);
+        SetHelper.RemoveElement(ValuePtr);
     }
 
 #pragma endregion
@@ -1155,92 +1104,40 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 
     void UMapExtensionsLibrary::GenericMap_AddMapItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* SubKeyPtr, const void* ValuePtr)
     {
-        // 1. 增加全面的参数检查
+        // 参数验证
         if (!TargetMap || !MapProperty || !KeyPtr || !SubKeyPtr || !ValuePtr)
         {
             FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的参数"), TEXT("GenericMap_AddMapItem"));
             return;
         }
 
-        // 2. 确保Map属性有效
-        if (!MapProperty->IsValidLowLevel())
-        {
-            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: MapProperty无效"), TEXT("GenericMap_AddMapItem"));
-            return;
-        }
-        
         FScriptMapHelper MapHelper(MapProperty, TargetMap);
-        
-        // 4. 获取并检查Value类型
+
+        // 获取并检查Value类型
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
-        if (!StructProp || !StructProp->IsValidLowLevel())
+        if (!StructProp)
         {
             FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: Value类型无效"), TEXT("GenericMap_AddMapItem"));
             return;
         }
 
-        // 5. 使用RAII方式管理临时结构体
-        struct FScopedValueStructure
+        // 获取结构体中的Map属性
+        FMapProperty* InnerMapProp = FindFirstProperty<FMapProperty>(StructProp->Struct);
+        if (!InnerMapProp)
         {
-            void* ValuePtr;
-            const FStructProperty* Prop;
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"), TEXT("GenericMap_AddMapItem"));
+            return;
+        }
 
-            FScopedValueStructure(const FStructProperty* InProp)
-                : ValuePtr(nullptr)
-                , Prop(InProp)
-            {
-                if (Prop)
-                {
-                    ValuePtr = FMemory::Malloc(Prop->GetSize(), Prop->GetMinAlignment());
-                    if (ValuePtr)
-                    {
-                        Prop->InitializeValue(ValuePtr);
-                    }
-                }
-            }
-
-            ~FScopedValueStructure()
-            {
-                if (ValuePtr && Prop)
-                {
-                    Prop->DestroyValue(ValuePtr);
-                    FMemory::Free(ValuePtr);
-                }
-            }
-
-            void* Get() const { return ValuePtr; }
-        };
-
-        // 6. 检查现有值
+        // 检查是否已存在此Key
         void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
-        
+
         if (ExistingValuePtr)
         {
-            // 处理已存在的Key
-            FMapProperty* InnerMapProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                InnerMapProp = CastField<FMapProperty>(*PropIt);
-                if (InnerMapProp && InnerMapProp->IsValidLowLevel())
-                {
-                    break;
-                }
-            }
-
-            if (!InnerMapProp)
-            {
-                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"), TEXT("GenericMap_AddMapItem"));
-                return;
-            }
-
+            // 情况1：Map中已存在此Key，向内部Map添加元素
             void* ExistingMapPtr = static_cast<uint8*>(ExistingValuePtr) + InnerMapProp->GetOffset_ForInternal();
-            if (!ExistingMapPtr)
-            {
-                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的内部Map指针"), TEXT("GenericMap_AddMapItem"));
-                return;
-            }
-
             FScriptMapHelper InnerMapHelper(InnerMapProp, ExistingMapPtr);
+
             if (InnerMapHelper.Num() < MaxSupportedMapSize)
             {
                 InnerMapHelper.AddPair(SubKeyPtr, ValuePtr);
@@ -1248,12 +1145,44 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         }
         else
         {
-            // 处理新Key
+            // 情况2：Map中没有此Key，创建新的结构体
             if (MapHelper.Num() >= MaxSupportedMapSize)
             {
                 FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 超出最大容量"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
+
+            // RAII方式管理临时结构体
+            struct FScopedValueStructure
+            {
+                void* ValuePtr;
+                const FStructProperty* Prop;
+
+                explicit FScopedValueStructure(const FStructProperty* InProp)
+                    : ValuePtr(nullptr)
+                    , Prop(InProp)
+                {
+                    if (Prop)
+                    {
+                        ValuePtr = FMemory::Malloc(Prop->GetSize(), Prop->GetMinAlignment());
+                        if (ValuePtr)
+                        {
+                            Prop->InitializeValue(ValuePtr);
+                        }
+                    }
+                }
+
+                ~FScopedValueStructure()
+                {
+                    if (ValuePtr && Prop)
+                    {
+                        Prop->DestroyValue(ValuePtr);
+                        FMemory::Free(ValuePtr);
+                    }
+                }
+
+                void* Get() const { return ValuePtr; }
+            };
 
             FScopedValueStructure ScopedValue(StructProp);
             if (!ScopedValue.Get())
@@ -1262,94 +1191,54 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
                 return;
             }
 
-            FMapProperty* InnerMapProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                InnerMapProp = CastField<FMapProperty>(*PropIt);
-                if (InnerMapProp && InnerMapProp->IsValidLowLevel())
-                {
-                    break;
-                }
-            }
-
-            if (!InnerMapProp)
-            {
-                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"), TEXT("GenericMap_AddMapItem"));
-                return;
-            }
-
+            // 获取内部Map指针并添加元素
             void* InnerMapPtr = static_cast<uint8*>(ScopedValue.Get()) + InnerMapProp->GetOffset_ForInternal();
-            if (!InnerMapPtr)
-            {
-                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的内部Map指针"), TEXT("GenericMap_AddMapItem"));
-                return;
-            }
-
             FScriptMapHelper InnerMapHelper(InnerMapProp, InnerMapPtr);
             InnerMapHelper.AddPair(SubKeyPtr, ValuePtr);
 
+            // 将构建好的结构体添加到Map中
             MapHelper.AddPair(KeyPtr, ScopedValue.Get());
         }
     }
 
     void UMapExtensionsLibrary::GenericMap_RemoveMapItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* SubKeyPtr)
     {
-        // 1. 增加全面的参数检查
+        // 参数验证
         if (!TargetMap || !MapProperty || !KeyPtr || !SubKeyPtr)
         {
-            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的参数"), TEXT("GenericMap_AddMapItem"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: 无效的参数"), TEXT("GenericMap_RemoveMapItem"));
             return;
         }
 
-        // 2. 确保Map属性有效
-        if (!MapProperty->IsValidLowLevel())
-        {
-            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: MapProperty无效"), TEXT("GenericMap_AddMapItem"));
-            return;
-        }
-        
         FScriptMapHelper MapHelper(MapProperty, TargetMap);
-        
-        // 4. 获取并检查Value类型
+
+        // 获取并检查Value类型
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
-        if (!StructProp || !StructProp->IsValidLowLevel())
+        if (!StructProp)
         {
-            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: Value类型无效"), TEXT("GenericMap_AddMapItem"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: Value类型无效"), TEXT("GenericMap_RemoveMapItem"));
             return;
         }
-        
-        // 6. 检查现有值
-        void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
-        
-        if (ExistingValuePtr)
+
+        // 获取结构体中的Map属性
+        FMapProperty* InnerMapProp = FindFirstProperty<FMapProperty>(StructProp->Struct);
+        if (!InnerMapProp)
         {
-            // 处理已存在的Key
-            FMapProperty* InnerMapProp = nullptr;
-            for (TFieldIterator<FProperty> PropIt(StructProp->Struct); PropIt; ++PropIt)
-            {
-                InnerMapProp = CastField<FMapProperty>(*PropIt);
-                if (InnerMapProp && InnerMapProp->IsValidLowLevel())
-                {
-                    break;
-                }
-            }
-
-            if (!InnerMapProp)
-            {
-                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: 找不到内部Map属性"), TEXT("GenericMap_RemoveMapItem"));
-                return;
-            }
-
-            void* ExistingMapPtr = static_cast<uint8*>(ExistingValuePtr) + InnerMapProp->GetOffset_ForInternal();
-            if (!ExistingMapPtr)
-            {
-                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: 无效的内部Map指针"), TEXT("GenericMap_RemoveMapItem"));
-                return;
-            }
-
-            FScriptMapHelper InnerMapHelper(InnerMapProp, ExistingMapPtr);
-            InnerMapHelper.RemovePair(SubKeyPtr);
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: 找不到内部Map属性"), TEXT("GenericMap_RemoveMapItem"));
+            return;
         }
+
+        // 检查是否已存在此Key
+        void* ExistingValuePtr = MapHelper.FindValueFromHash(KeyPtr);
+        if (!ExistingValuePtr)
+        {
+            return;
+        }
+
+        // 获取内部Map指针并移除元素
+        void* ExistingMapPtr = static_cast<uint8*>(ExistingValuePtr) + InnerMapProp->GetOffset_ForInternal();
+        FScriptMapHelper InnerMapHelper(InnerMapProp, ExistingMapPtr);
+        InnerMapHelper.RemovePair(SubKeyPtr);
     }
 
 #pragma endregion
