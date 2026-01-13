@@ -27,6 +27,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 		return Points;
 	}
 
+		Points.Reserve(PointCount);
 	// 根据分布模式生成点位
 	switch (DistributionMode)
 	{
@@ -302,36 +303,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 
 	if (bIs3D)
 	{
-		// 3D球体 - 使用经纬度网格（有极点聚集问题，但简单直观）
-		int32 LatitudeCount = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(PointCount) / 2.0f));
-		int32 LongitudeCount = FMath::CeilToInt(static_cast<float>(PointCount) / LatitudeCount);
-
-		int32 GeneratedCount = 0;
-		for (int32 i = 0; i < LatitudeCount && GeneratedCount < PointCount; ++i)
-		{
-			// 纬度：从-90°到90°
-			float Lat = -90.0f + (180.0f * i / (LatitudeCount - 1));
-			float LatRad = FMath::DegreesToRadians(Lat);
-			float RadiusAtLat = FMath::Cos(LatRad);
-
-			int32 PointsInRing = (i == 0 || i == LatitudeCount - 1) ? 1 : LongitudeCount;
-
-			for (int32 j = 0; j < PointsInRing && GeneratedCount < PointCount; ++j)
-			{
-				// 经度：从0°到360°
-				float Lon = 360.0f * j / PointsInRing;
-				float LonRad = FMath::DegreesToRadians(Lon);
-
-				FVector Point(
-					FMath::Cos(LonRad) * RadiusAtLat * Radius,
-					FMath::Sin(LatRad) * Radius,
-					FMath::Sin(LonRad) * RadiusAtLat * Radius
-				);
-
-				Points.Add(Point);
-				++GeneratedCount;
-			}
-		}
+		// 3D球体 - 使用 Fibonacci 球面采样（GitHub 最佳实践，无极点聚集问题）
+		// 参考：gptoolbox/fibonacci_sphere_sampling.m, bestjunh/Fibonacci-sphere
+		return GenerateFibonacci(PointCount, Radius, true);
 	}
 	else
 	{
@@ -339,9 +313,6 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 		float EndAngle = StartAngle + 360.0f;
 		GenerateArcPoints(Points, PointCount, Radius, StartAngle, EndAngle, bClockwise);
 	}
-
-	return Points;
-}
 
 TArray<FVector> FCircleSamplingHelper::GenerateFibonacci(
 	int32 PointCount,
