@@ -1158,14 +1158,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         // 1. 增加全面的参数检查
         if (!TargetMap || !MapProperty || !KeyPtr || !SubKeyPtr || !ValuePtr)
         {
-            UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 无效的参数"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的参数"), TEXT("GenericMap_AddMapItem"));
             return;
         }
 
         // 2. 确保Map属性有效
         if (!MapProperty->IsValidLowLevel())
         {
-            UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: MapProperty无效"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: MapProperty无效"), TEXT("GenericMap_AddMapItem"));
             return;
         }
         
@@ -1175,7 +1175,7 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
         if (!StructProp || !StructProp->IsValidLowLevel())
         {
-            UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: Value类型无效"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: Value类型无效"), TEXT("GenericMap_AddMapItem"));
             return;
         }
 
@@ -1229,14 +1229,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 
             if (!InnerMapProp)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
 
             void* ExistingMapPtr = static_cast<uint8*>(ExistingValuePtr) + InnerMapProp->GetOffset_ForInternal();
             if (!ExistingMapPtr)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 无效的内部Map指针"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的内部Map指针"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
 
@@ -1251,14 +1251,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             // 处理新Key
             if (MapHelper.Num() >= MaxSupportedMapSize)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 超出最大容量"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 超出最大容量"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
 
             FScopedValueStructure ScopedValue(StructProp);
             if (!ScopedValue.Get())
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 无法创建临��结构体"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无法创建临时结构体"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
 
@@ -1274,14 +1274,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 
             if (!InnerMapProp)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 找不到内部Map属性"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
 
             void* InnerMapPtr = static_cast<uint8*>(ScopedValue.Get()) + InnerMapProp->GetOffset_ForInternal();
             if (!InnerMapPtr)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 无效的内部Map指针"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的内部Map指针"), TEXT("GenericMap_AddMapItem"));
                 return;
             }
 
@@ -1297,14 +1297,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         // 1. 增加全面的参数检查
         if (!TargetMap || !MapProperty || !KeyPtr || !SubKeyPtr)
         {
-            UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: 无效的参数"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: 无效的参数"), TEXT("GenericMap_AddMapItem"));
             return;
         }
 
         // 2. 确保Map属性有效
         if (!MapProperty->IsValidLowLevel())
         {
-            UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: MapProperty无效"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: MapProperty无效"), TEXT("GenericMap_AddMapItem"));
             return;
         }
         
@@ -1314,7 +1314,7 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
         const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
         if (!StructProp || !StructProp->IsValidLowLevel())
         {
-            UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_AddMapItem: Value类型无效"));
+            FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_AddMapItem: Value类型无效"), TEXT("GenericMap_AddMapItem"));
             return;
         }
         
@@ -1336,14 +1336,14 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 
             if (!InnerMapProp)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_RemoveMapItem: 找不到内部Map属性"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: 找不到内部Map属性"), TEXT("GenericMap_RemoveMapItem"));
                 return;
             }
 
             void* ExistingMapPtr = static_cast<uint8*>(ExistingValuePtr) + InnerMapProp->GetOffset_ForInternal();
             if (!ExistingMapPtr)
             {
-                UE_LOG(LogBlueprintExtensionsRuntime, Warning, TEXT("GenericMap_RemoveMapItem: 无效的内部Map指针"));
+                FXToolsErrorReporter::Warning(LogBlueprintExtensionsRuntime, TEXT("GenericMap_RemoveMapItem: 无效的内部Map指针"), TEXT("GenericMap_RemoveMapItem"));
                 return;
             }
 
