@@ -5,6 +5,7 @@
 
 
 #include "PointSamplingLibrary.h"
+#include "FormationSamplingLibrary.h"
 #include "Algorithms/PoissonDiskSampling.h"
 
 // ============================================================================

@@ -3,8 +3,8 @@
 * Licensed under UE_XTools License
 */
 
-#include "TextureSamplingHelper.h"
-#include "PointDeduplicationHelper.h"
+#include "Sampling/TextureSamplingHelper.h"
+#include "Sampling/PointDeduplicationHelper.h"
 #include "PointSamplingTypes.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureDefines.h"
@@ -46,7 +46,8 @@ FLinearColor FTextureSamplingHelper::SampleTexturePixel(UTexture2D* Texture, flo
 	EPixelFormat PixelFormat = PlatformData->PixelFormat;
 	if (PixelFormat != PF_B8G8R8A8 && PixelFormat != PF_R8G8B8A8)
 	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 不支持的像素格式: %d"), static_cast<int32>(PixelFormat));
+		// 仅在Verbose时警告，避免刷屏（因为某些压缩格式确实无法直接读取）
+		UE_LOG(LogPointSampling, Verbose, TEXT("[纹理采样] 不支持直接读取的像素格式: %d"), static_cast<int32>(PixelFormat));
 		return FLinearColor::White;
 	}
 
@@ -264,6 +265,18 @@ float FTextureSamplingHelper::CalculatePixelSamplingValue(const FColor& Color, b
 	}
 }
 
+float FTextureSamplingHelper::CalculateRadiusFromDensity(float Density, float MinRadius, float MaxRadius)
+{
+	// 确保密度在有效范围内
+	Density = FMath::Clamp(Density, 0.0f, 1.0f);
+
+	// 密度越高，半径越小（采样越密集）
+	// 使用平滑的曲线映射，确保过渡自然
+	float Radius = MaxRadius - (Density * (MaxRadius - MinRadius));
+
+	return FMath::Max(MinRadius, Radius);
+}
+
 // ============================================================================
 // 主入口函数
 // ============================================================================
@@ -274,161 +287,15 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexture(
 	float PixelThreshold,
 	float TextureScale)
 {
-	TArray<FVector> Points;
-
-	// 验证纹理有效性
-	if (!Texture)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理指针为空"));
-		return Points;
-	}
-
-	// 验证参数
-	if (MaxSampleSize <= 0 || Spacing <= 0.0f)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 参数无效: MaxSampleSize=%d, Spacing=%f"), MaxSampleSize, Spacing);
-		return Points;
-	}
-
-	// 获取纹理尺寸
-	const int32 TextureWidth = Texture->GetSizeX();
-	const int32 TextureHeight = Texture->GetSizeY();
-
-	if (TextureWidth <= 0 || TextureHeight <= 0)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理尺寸无效: %dx%d"), TextureWidth, TextureHeight);
-		return Points;
-	}
-
-	// 计算采样参数
-	const float DownsampleRatio = FMath::Max(1.0f, FMath::Max((float)TextureWidth / MaxSampleSize, (float)TextureHeight / MaxSampleSize));
-	const int32 SampleWidth = FMath::Max(1, FMath::RoundToInt(TextureWidth / DownsampleRatio));
-	const int32 SampleHeight = FMath::Max(1, FMath::RoundToInt(TextureHeight / DownsampleRatio));
-	const int32 Step = FMath::Max(1, FMath::RoundToInt(Spacing));
-
-	// 限制最大点数
-	const int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
-	const int32 MaxAllowedPoints = 100000; // 提高到10万点
-
-	if (EstimatedMaxPoints > MaxAllowedPoints)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制 %d，减少采样密度"), EstimatedMaxPoints, MaxAllowedPoints);
-		return Points; // 直接返回空数组，避免性能问题
-	}
-
-	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 开始采样纹理 %dx%d -> %dx%d (步长=%d, 阈值=%.2f)"),
-		TextureWidth, TextureHeight, SampleWidth, SampleHeight, Step, PixelThreshold);
-
-	Points.Reserve(EstimatedMaxPoints / 4); // 预估25%会通过阈值
-
-	// 获取纹理资源
-	FTextureResource* TextureResource = Texture->GetResource();
-	if (!TextureResource)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理资源无效"));
-		return Points;
-	}
-
-	// 创建临时的采样目标
-	TArray<FColor> SampledPixels;
-	SampledPixels.SetNum(SampleWidth * SampleHeight);
-
-	// 智能判断采样通道
-	const bool bUseAlphaChannel = ShouldUseAlphaChannel(Texture);
-	const TCHAR* ChannelName = bUseAlphaChannel ? TEXT("Alpha") : TEXT("Luminance");
-
-	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 使用通道: %s, 缩放: %.2f"), ChannelName, TextureScale);
-
-	// 遍历采样点
-	for (int32 SampleY = 0; SampleY < SampleHeight; SampleY += Step)
-	{
-		for (int32 SampleX = 0; SampleX < SampleWidth; SampleX += Step)
-		{
-			// 计算纹理坐标 (0-1范围)
-			const float U = (float)SampleX / (SampleWidth - 1);
-			const float V = (float)SampleY / (SampleHeight - 1);
-
-			// 使用UE的纹理采样函数
-			FLinearColor PixelColor;
-			if (Texture->GetResource()->GetSamplerStateRHI())
-			{
-				// 尝试通过渲染接口采样
-				// 注意：这是一个简化的实现，实际可能需要更复杂的渲染线程操作
-				PixelColor = FLinearColor::White; // 临时实现
-			}
-			else
-			{
-				// 回退到简单采样（对于未压缩纹理）
-				PixelColor = SampleTexturePixel(Texture, U, V);
-			}
-
-			// 计算采样值
-			float SamplingValue;
-			if (bUseAlphaChannel)
-			{
-				SamplingValue = PixelColor.A;
-			}
-			else
-			{
-				// 计算亮度: 0.299*R + 0.587*G + 0.114*B (标准亮度公式)
-				SamplingValue = PixelColor.R * 0.299f + PixelColor.G * 0.587f + PixelColor.B * 0.114f;
-			}
-
-			// 阈值过滤
-			if (SamplingValue >= PixelThreshold)
-			{
-				// 转换为世界坐标 (居中, Y轴翻转)
-				const float WorldX = (U - 0.5f) * TextureWidth * TextureScale;
-				const float WorldY = (0.5f - V) * TextureHeight * TextureScale;
-
-				Points.Add(FVector(WorldX, WorldY, 0.0f));
-			}
-		}
-	}
-
-	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 完成，生成 %d 个点"), Points.Num());
-
-	// 去除重复点
-	if (Points.Num() > 1)
-	{
-		int32 OriginalCount, RemovedCount;
-		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
-			Points,
-			TextureScale * 0.1f, // 小容差
-			OriginalCount,
-			RemovedCount
-		);
-
-		if (RemovedCount > 0)
-		{
-			UE_LOG(LogPointSampling, Verbose, TEXT("[纹理采样] 去重: %d -> %d (移除 %d)"),
-				OriginalCount, Points.Num(), RemovedCount);
-		}
-	}
-
-	return Points;
-}
-
 #if WITH_EDITOR
-	// 编辑器模式：优先使用 Source 数据（支持所有压缩格式）
-	if (Texture->Source.IsValid())
-	{
-		UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 使用编辑器源数据（支持所有格式）"));
-		return GenerateFromTextureSource(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
-	}
-	else
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 编辑器源数据无效，尝试使用运行时数据"));
-	}
-#endif
-
-	// 运行时模式或编辑器源数据不可用：使用 PlatformData（仅支持未压缩格式）
+	// 编辑器模式优先使用源码数据
+	return GenerateFromTextureSource(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
+#else
+	// 运行时模式使用平台数据
 	return GenerateFromTexturePlatformData(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
+#endif
 }
 
-// ============================================================================
-// 基于泊松圆盘采样的纹理密度采样（改进算法）
-// ============================================================================
 TArray<FVector> FTextureSamplingHelper::GenerateFromTextureWithPoisson(
 	UTexture2D* Texture,
 	int32 MaxSampleSize,
@@ -438,94 +305,76 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureWithPoisson(
 	float TextureScale,
 	int32 MaxAttempts)
 {
-	TArray<FVector> Points;
-
-	// 验证纹理有效性
-	if (!Texture)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 纹理指针为空"));
-		return Points;
-	}
-
-	// 验证参数
-	if (MinRadius <= 0.0f || MaxRadius < MinRadius || MaxAttempts <= 0)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 参数无效: MinRadius=%.2f, MaxRadius=%.2f, MaxAttempts=%d"), MinRadius, MaxRadius, MaxAttempts);
-		return Points;
-	}
-
-	const int32 TextureWidth = Texture->GetSizeX();
-	const int32 TextureHeight = Texture->GetSizeY();
-
-	if (TextureWidth <= 0 || TextureHeight <= 0)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 纹理尺寸无效: %dx%d"), TextureWidth, TextureHeight);
-		return Points;
-	}
-
-	// 计算采样区域（基于纹理尺寸和缩放）
-	const float SampleWidth = TextureWidth * TextureScale;
-	const float SampleHeight = TextureHeight * TextureScale;
-
-	UE_LOG(LogPointSampling, Log, TEXT("[纹理密度采样] 开始泊松采样 (区域: %.1fx%.1f, 半径: %.1f-%.1f, 阈值: %.2f)"),
-		SampleWidth, SampleHeight, MinRadius, MaxRadius, PixelThreshold);
-
-	// 创建密度函数
-	auto DensityFunction = [Texture, PixelThreshold, TextureScale, this](const FVector& Position) -> float {
-		// 将世界坐标转换为纹理坐标
-		const float U = (Position.X / (Texture->GetSizeX() * TextureScale)) + 0.5f;
-		const float V = 0.5f - (Position.Y / (Texture->GetSizeY() * TextureScale));
-
-		// 边界检查
-		if (U < 0.0f || U > 1.0f || V < 0.0f || V > 1.0f)
-		{
-			return 0.0f;
-		}
-
-		// 采样纹理
-		FLinearColor PixelColor = SampleTexturePixel(Texture, U, V);
-
-		// 计算密度值（基于亮度或Alpha）
-		const bool bUseAlpha = ShouldUseAlphaChannel(Texture);
-		const float SampleValue = bUseAlpha ? PixelColor.A :
-			(PixelColor.R * 0.299f + PixelColor.G * 0.587f + PixelColor.B * 0.114f);
-
-		// 转换为密度（高于阈值的地方密度更高）
-		return FMath::Max(0.0f, (SampleValue - PixelThreshold) / (1.0f - PixelThreshold));
-	};
-
-	// 使用密度感知的泊松采样
-	// 这里使用简化的实现，实际可以扩展为更复杂的密度感知算法
-	FOptimizedPoissonSampler Sampler(
-		MinRadius, // 使用最小半径作为基础
-		FVector(-SampleWidth * 0.5f, -SampleHeight * 0.5f, 0.0f),
-		FVector(SampleWidth * 0.5f, SampleHeight * 0.5f, 0.0f)
-	);
-
-	TArray<FVector> BasePoints = Sampler.Sample(MaxAttempts);
-
-	// 根据密度过滤点
-	for (const FVector& Point : BasePoints)
-	{
-		const float Density = DensityFunction(Point);
-		if (Density > 0.0f)
-		{
-			// 根据密度调整半径（密度越高，点越密集）
-			const float AdjustedRadius = FMath::Lerp(MaxRadius, MinRadius, Density);
-
-			// 这里可以进一步优化：根据密度重新分布点
-			// 但为了简单起见，我们只保留符合密度的点
-			Points.Add(Point);
-		}
-	}
-
-	UE_LOG(LogPointSampling, Log, TEXT("[纹理密度采样] 完成，生成 %d 个点 (基础点: %d)"),
-		Points.Num(), BasePoints.Num());
-
-	return Points;
+#if WITH_EDITOR
+	return GenerateFromTextureSourceWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
+#else
+	return GenerateFromTexturePlatformDataWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
+#endif
 }
 
+// ============================================================================
+// 编辑器版本实现
+// ============================================================================
+
 #if WITH_EDITOR
+
+float FTextureSamplingHelper::GetTextureDensityAtCoordinate(
+	UTexture2D* Texture,
+	const FVector2D& Coordinate,
+	bool bUseAlphaChannel,
+	ETextureSourceFormat SourceFormat,
+	const uint8* SourceData,
+	int32 OriginalWidth,
+	int32 OriginalHeight,
+	uint32 BytesPerPixel)
+{
+	// 将归一化坐标转换为像素坐标
+	int32 PixelX = FMath::Clamp(FMath::RoundToInt(Coordinate.X * (OriginalWidth - 1)), 0, OriginalWidth - 1);
+	int32 PixelY = FMath::Clamp(FMath::RoundToInt(Coordinate.Y * (OriginalHeight - 1)), 0, OriginalHeight - 1);
+
+	int64 PixelIndex = ((int64)PixelY * OriginalWidth + PixelX) * BytesPerPixel;
+
+	float SamplingValue = 0.0f;
+
+	if (SourceFormat == TSF_G8)
+	{
+		// 灰度 8 位：直接使用灰度值
+		SamplingValue = SourceData[PixelIndex] / 255.0f;
+	}
+	else if (SourceFormat == TSF_BGRA8)
+	{
+		// BGRA8 格式（通道顺序：B, G, R, A）
+		uint8 B = SourceData[PixelIndex + 0];
+		uint8 G = SourceData[PixelIndex + 1];
+		uint8 R = SourceData[PixelIndex + 2];
+		uint8 A = SourceData[PixelIndex + 3];
+		FColor Color(R, G, B, A);
+		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
+	}
+	else if (SourceFormat == TSF_RGBA16)
+	{
+		// RGBA16 格式（16位/通道）
+		uint16 R = *((uint16*)(&SourceData[PixelIndex + 0]));
+		uint16 G = *((uint16*)(&SourceData[PixelIndex + 2]));
+		uint16 B = *((uint16*)(&SourceData[PixelIndex + 4]));
+		uint16 A = *((uint16*)(&SourceData[PixelIndex + 6]));
+		FColor Color(FMath::RoundToInt(R / 257.0f), FMath::RoundToInt(G / 257.0f), FMath::RoundToInt(B / 257.0f), FMath::RoundToInt(A / 257.0f));
+		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
+	}
+	else if (SourceFormat == TSF_RGBA16F)
+	{
+		// RGBA16F 格式（半浮点/通道）
+		FFloat16 R = *((FFloat16*)(&SourceData[PixelIndex + 0]));
+		FFloat16 G = *((FFloat16*)(&SourceData[PixelIndex + 2]));
+		FFloat16 B = *((FFloat16*)(&SourceData[PixelIndex + 4]));
+		FFloat16 A = *((FFloat16*)(&SourceData[PixelIndex + 6]));
+		FColor Color(FMath::RoundToInt(R.GetFloat() * 255.0f), FMath::RoundToInt(G.GetFloat() * 255.0f), FMath::RoundToInt(B.GetFloat() * 255.0f), FMath::RoundToInt(A.GetFloat() * 255.0f));
+		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
+	}
+
+	return SamplingValue;
+}
+
 TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSource(
 	UTexture2D* Texture,
 	int32 MaxSampleSize,
@@ -568,6 +417,8 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSource(
 		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 无法获取源纹理 Mip 数据"));
 		return Points;
 	}
+	const uint8* SourceData = RawData.GetData();
+	uint32 BytesPerPixel = GetBytesPerPixel(SourceFormat);
 
 	// 智能判断使用哪个通道采样
 	bool bUseAlphaChannel = ShouldUseAlphaChannel(Texture);
@@ -585,115 +436,80 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSource(
 	}
 
 	// 计算降采样比率
-	float DownsampleRatio = 1.0f;
-	if (OriginalWidth > MaxSampleSize || OriginalHeight > MaxSampleSize)
-	{
-		DownsampleRatio = FMath::Max((float)OriginalWidth / MaxSampleSize, (float)OriginalHeight / MaxSampleSize);
-	}
-
-	int32 SampleWidth = FMath::Max(1, FMath::RoundToInt(OriginalWidth / DownsampleRatio));
-	int32 SampleHeight = FMath::Max(1, FMath::RoundToInt(OriginalHeight / DownsampleRatio));
-	int32 Step = FMath::Max(1, FMath::RoundToInt(Spacing));
+	const float DownsampleRatio = FMath::Max(1.0f, FMath::Max((float)OriginalWidth / MaxSampleSize, (float)OriginalHeight / MaxSampleSize));
+	const int32 SampleWidth = FMath::Max(1, FMath::RoundToInt(OriginalWidth / DownsampleRatio));
+	const int32 SampleHeight = FMath::Max(1, FMath::RoundToInt(OriginalHeight / DownsampleRatio));
+	const int32 Step = FMath::Max(1, FMath::RoundToInt(Spacing));
 
 	// 限制最大点数
-	int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
-	const int32 MaxAllowedPoints = 50000;
+	const int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
+	const int32 MaxAllowedPoints = 100000; // 提高到10万点
 
 	if (EstimatedMaxPoints > MaxAllowedPoints)
 	{
-		int32 RequiredStep = FMath::CeilToInt(FMath::Sqrt((float)(SampleWidth * SampleHeight) / MaxAllowedPoints));
-		Step = FMath::Max(Step, RequiredStep);
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制，调整 Spacing 到 %d"), EstimatedMaxPoints, Step);
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制 %d，减少采样密度"), EstimatedMaxPoints, MaxAllowedPoints);
+		return Points; // 直接返回空数组，避免性能问题
 	}
 
-	Points.Reserve((SampleWidth / Step) * (SampleHeight / Step) / 2);
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 开始采样纹理 %dx%d -> %dx%d (步长=%d, 阈值=%.2f)"),
+		OriginalWidth, OriginalHeight, SampleWidth, SampleHeight, Step, PixelThreshold);
 
-	// 获取每像素字节数
-	uint32 BytesPerPixel = GetBytesPerPixel(SourceFormat);
+	Points.Reserve(EstimatedMaxPoints / 4); // 预估25%会通过阈值
 
 	// 遍历采样点
 	for (int32 SampleY = 0; SampleY < SampleHeight; SampleY += Step)
 	{
 		for (int32 SampleX = 0; SampleX < SampleWidth; SampleX += Step)
 		{
+			// 映射回原始纹理坐标
 			int32 OriginalX = FMath::RoundToInt(SampleX * DownsampleRatio);
 			int32 OriginalY = FMath::RoundToInt(SampleY * DownsampleRatio);
+			
+			// 边界检查
+			OriginalX = FMath::Clamp(OriginalX, 0, OriginalWidth - 1);
+			OriginalY = FMath::Clamp(OriginalY, 0, OriginalHeight - 1);
 
-			if (OriginalX >= OriginalWidth || OriginalY >= OriginalHeight)
-				continue;
+			// 获取归一化坐标
+			FVector2D Coord((float)OriginalX / (OriginalWidth - 1), (float)OriginalY / (OriginalHeight - 1));
 
-			int64 PixelIndex = ((int64)OriginalY * OriginalWidth + OriginalX) * BytesPerPixel;
-			if (PixelIndex + BytesPerPixel > RawData.Num())
-				continue;
-
-			// 解析像素值
-			float SamplingValue = 0.0f;
-
-			if (SourceFormat == TSF_G8)
-			{
-				// 灰度 8 位：直接使用灰度值
-				SamplingValue = RawData[PixelIndex] / 255.0f;
-			}
-			else if (SourceFormat == TSF_BGRA8)
-			{
-				// BGRA8 格式（通道顺序：B, G, R, A）
-				uint8 B = RawData[PixelIndex + 0];
-				uint8 G = RawData[PixelIndex + 1];
-				uint8 R = RawData[PixelIndex + 2];
-				uint8 A = RawData[PixelIndex + 3];
-				FColor Color(R, G, B, A);
-				SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
-			}
-			else
-			{
-				// TSF_RGBA16 和 TSF_RGBA16F 暂不支持（需要额外的浮点转换，不常用）
-				continue;
-			}
+			// 获取密度
+			float SamplingValue = GetTextureDensityAtCoordinate(Texture, Coord, bUseAlphaChannel, SourceFormat, SourceData, OriginalWidth, OriginalHeight, BytesPerPixel);
 
 			// 阈值过滤
 			if (SamplingValue >= PixelThreshold)
 			{
-				// 坐标转换（Y 轴翻转）
-				float NormalizedX = (OriginalX / (float)OriginalWidth) - 0.5f;
-				float NormalizedY = 0.5f - (OriginalY / (float)OriginalHeight);
+				// 转换为世界坐标 (居中, Y轴翻转)
+				const float WorldX = (Coord.X - 0.5f) * OriginalWidth * TextureScale;
+				const float WorldY = (0.5f - Coord.Y) * OriginalHeight * TextureScale;
 
-				FVector Point(
-					NormalizedX * OriginalWidth * TextureScale,
-					NormalizedY * OriginalHeight * TextureScale,
-					0.0f
-				);
-
-				Points.Add(Point);
+				Points.Add(FVector(WorldX, WorldY, 0.0f));
 			}
 		}
 	}
 
-	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 从源纹理生成 %d 个点（尺寸=%dx%d, 格式=%d, 通道=%s）"),
-		Points.Num(), OriginalWidth, OriginalHeight, (int32)SourceFormat, ChannelName);
+	UE_LOG(LogPointSampling, Log, TEXT("[纹理采样] 完成，生成 %d 个点"), Points.Num());
 
-	// 去除重复/重叠点位（纹理降采样可能产生重复点）
-	if (Points.Num() > 0)
+	// 去除重复点
+	if (Points.Num() > 1)
 	{
 		int32 OriginalCount, RemovedCount;
 		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
 			Points,
-			TextureScale * 0.5f,  // 容差：纹理缩放的一半
+			TextureScale * 0.1f, // 小容差
 			OriginalCount,
 			RemovedCount
 		);
 
 		if (RemovedCount > 0)
 		{
-			UE_LOG(LogPointSampling, Log,
-				TEXT("[纹理采样] 去重：原始 %d 个点 -> 去除 %d 个重复点 -> 剩余 %d 个点"),
-				OriginalCount, RemovedCount, Points.Num());
+			UE_LOG(LogPointSampling, Verbose, TEXT("[纹理采样] 去重: %d -> %d (移除 %d)"),
+				OriginalCount, Points.Num(), RemovedCount);
 		}
 	}
 
 	return Points;
 }
 
-// 基于纹理密度的泊松圆盘采样（编辑器源数据版本）
 TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSourceWithPoisson(
 	UTexture2D* Texture,
 	int32 MaxSampleSize,
@@ -817,6 +633,100 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSourceWithPoisson(
 }
 #endif // WITH_EDITOR
 
+// ============================================================================
+// 平台数据版本实现（运行时）
+// ============================================================================
+
+float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
+	UTexture2D* Texture,
+	const FVector2D& Coordinate,
+	bool bUseAlphaChannel,
+	EPixelFormat PixelFormat,
+	const uint8* PixelData,
+	int32 OriginalWidth,
+	int32 OriginalHeight,
+	uint32 BytesPerPixel)
+{
+	// 将归一化坐标转换为像素坐标
+	int32 PixelX = FMath::Clamp(FMath::RoundToInt(Coordinate.X * (OriginalWidth - 1)), 0, OriginalWidth - 1);
+	int32 PixelY = FMath::Clamp(FMath::RoundToInt(Coordinate.Y * (OriginalHeight - 1)), 0, OriginalHeight - 1);
+
+	int64 PixelIndex = ((int64)PixelY * OriginalWidth + PixelX) * BytesPerPixel;
+
+	float SamplingValue = 0.0f;
+
+	// 处理不同的像素格式
+	if (PixelFormat == PF_B8G8R8A8 || PixelFormat == PF_R8G8B8A8 || PixelFormat == PF_A8R8G8B8)
+	{
+		// BGRA8 或 RGBA8 格式
+		uint8 B, G, R, A;
+
+		if (PixelFormat == PF_B8G8R8A8)
+		{
+			// BGRA8 格式（通道顺序：B, G, R, A）
+			B = PixelData[PixelIndex + 0];
+			G = PixelData[PixelIndex + 1];
+			R = PixelData[PixelIndex + 2];
+			A = PixelData[PixelIndex + 3];
+		}
+		else if (PixelFormat == PF_R8G8B8A8)
+		{
+			// RGBA8 格式（通道顺序：R, G, B, A）
+			R = PixelData[PixelIndex + 0];
+			G = PixelData[PixelIndex + 1];
+			B = PixelData[PixelIndex + 2];
+			A = PixelData[PixelIndex + 3];
+		}
+		else // PF_A8R8G8B8
+		{
+			// ARGB8 格式（通道顺序：A, R, G, B）
+			A = PixelData[PixelIndex + 0];
+			R = PixelData[PixelIndex + 1];
+			G = PixelData[PixelIndex + 2];
+			B = PixelData[PixelIndex + 3];
+		}
+
+		FColor Color(R, G, B, A);
+		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
+	}
+	else if (PixelFormat == PF_FloatRGBA)
+	{
+		// FloatRGBA：不同平台可能是 FP32x4（16字节）或 FP16x4（8字节）
+		float R = 0.0f, G = 0.0f, B = 0.0f, A = 0.0f;
+
+		if (BytesPerPixel == 16)
+		{
+			const float* FloatData = reinterpret_cast<const float*>(PixelData + PixelIndex);
+			R = FloatData[0];
+			G = FloatData[1];
+			B = FloatData[2];
+			A = FloatData[3];
+		}
+		else if (BytesPerPixel == 8)
+		{
+			const FFloat16* HalfData = reinterpret_cast<const FFloat16*>(PixelData + PixelIndex);
+			R = HalfData[0].GetFloat();
+			G = HalfData[1].GetFloat();
+			B = HalfData[2].GetFloat();
+			A = HalfData[3].GetFloat();
+		}
+		else
+		{
+			return 0.0f;
+		}
+
+		FColor Color(
+			FMath::Clamp(FMath::RoundToInt(R * 255.0f), 0, 255),
+			FMath::Clamp(FMath::RoundToInt(G * 255.0f), 0, 255),
+			FMath::Clamp(FMath::RoundToInt(B * 255.0f), 0, 255),
+			FMath::Clamp(FMath::RoundToInt(A * 255.0f), 0, 255)
+		);
+		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
+	}
+
+	return SamplingValue;
+}
+
 TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 	UTexture2D* Texture,
 	int32 MaxSampleSize,
@@ -862,9 +772,9 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 
 	// 支持的格式：BGRA8, RGBA8, FloatRGBA
 	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
-	                          (PixelFormat == PF_R8G8B8A8) ||
-	                          (PixelFormat == PF_A8R8G8B8) ||
-	                          (PixelFormat == PF_FloatRGBA);
+		(PixelFormat == PF_R8G8B8A8) ||
+		(PixelFormat == PF_A8R8G8B8) ||
+		(PixelFormat == PF_FloatRGBA);
 
 	if (!bIsSupportedFormat)
 	{
@@ -881,6 +791,14 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 		return Points;
 	}
 
+	// 获取纹理资源
+	FTextureResource* TextureResource = Texture->GetResource();
+	if (!TextureResource)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 纹理资源无效"));
+		return Points;
+	}
+
 	// 获取 Mip 0 数据（最高分辨率）
 	FTexture2DMipMap& Mip0 = PlatformData->Mips[0];
 	const void* RawData = Mip0.BulkData.LockReadOnly();
@@ -890,8 +808,11 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 		return Points;
 	}
 
-	int32 BytesPerPixel = 4; // BGRA8 或 RGBA8 格式
-	int64 DataSize = Mip0.BulkData.GetBulkDataSize();
+	// 计算BytesPerPixel
+	const int64 PixelCount64 = (int64)OriginalWidth * (int64)OriginalHeight;
+	const int64 DataSize64 = (int64)Mip0.BulkData.GetBulkDataSize();
+	uint32 BytesPerPixel = (uint32)(DataSize64 / PixelCount64);
+
 	const uint8* PixelData = static_cast<const uint8*>(RawData);
 
 	// 计算降采样比率（保持纵横比）
@@ -953,32 +874,18 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 				continue;
 			}
 
-			// 读取像素（BGRA8 格式）
-			int64 PixelIndex = ((int64)OriginalY * OriginalWidth + OriginalX) * BytesPerPixel;
-			if (PixelIndex + BytesPerPixel > DataSize)
-			{
-				continue;
-			}
+			// 获取归一化坐标
+			FVector2D Coord((float)OriginalX / (OriginalWidth - 1), (float)OriginalY / (OriginalHeight - 1));
 
-			// 解析 BGRA8 格式像素（注意通道顺序）
-			uint8 B = PixelData[PixelIndex + 0];
-			uint8 G = PixelData[PixelIndex + 1];
-			uint8 R = PixelData[PixelIndex + 2];
-			uint8 A = PixelData[PixelIndex + 3];
-
-			FColor PixelColor(R, G, B, A);
-
-			// 计算采样值（智能选择 Alpha 或亮度）
-			float SamplingValue = CalculatePixelSamplingValue(PixelColor, bUseAlphaChannel);
+			// 获取密度
+			float SamplingValue = GetTextureDensityAtCoordinatePlatform(Texture, Coord, bUseAlphaChannel, PixelFormat, PixelData, OriginalWidth, OriginalHeight, BytesPerPixel);
 
 			// 如果采样值高于阈值，创建点位
 			if (SamplingValue >= PixelThreshold)
 			{
 				// 将像素坐标转换为局部坐标（居中，Y 轴翻转以匹配纹理坐标系）
-				// 纹理坐标系：左上角为 (0,0)，右下角为 (width, height)
-				// 世界坐标系：居中于原点，X 向右，Y 向前（需翻转纹理 Y 轴）
-				float NormalizedX = (OriginalX / (float)OriginalWidth) - 0.5f;  // [-0.5, 0.5]
-				float NormalizedY = 0.5f - (OriginalY / (float)OriginalHeight); // Y 轴翻转
+				const float NormalizedX = (OriginalX / (float)OriginalWidth) - 0.5f;  // [-0.5, 0.5]
+				const float NormalizedY = 0.5f - (OriginalY / (float)OriginalHeight); // Y 轴翻转
 
 				FVector Point(
 					NormalizedX * OriginalWidth * TextureScale,  // 使用原始尺寸保持纹理比例
@@ -1019,175 +926,6 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 	return Points;
 }
 
-// ============================================================================
-// 辅助函数实现
-// ============================================================================
-
-// 根据纹理密度计算采样半径（非编辑器专用）
-float FTextureSamplingHelper::CalculateRadiusFromDensity(float Density, float MinRadius, float MaxRadius)
-{
-	// 确保密度在有效范围内
-	Density = FMath::Clamp(Density, 0.0f, 1.0f);
-	
-	// 密度越高，半径越小（采样越密集）
-	// 使用平滑的曲线映射，确保过渡自然
-	float Radius = MaxRadius - (Density * (MaxRadius - MinRadius));
-	
-	return FMath::Max(MinRadius, Radius);
-}
-
-#if WITH_EDITOR
-// 获取指定坐标的纹理密度值（源数据版本）
-float FTextureSamplingHelper::GetTextureDensityAtCoordinate(
-	UTexture2D* Texture,
-	const FVector2D& Coordinate,
-	bool bUseAlphaChannel,
-	ETextureSourceFormat SourceFormat,
-	const uint8* SourceData,
-	int32 OriginalWidth,
-	int32 OriginalHeight,
-	uint32 BytesPerPixel)
-{
-	// 将归一化坐标转换为像素坐标
-	int32 PixelX = FMath::Clamp(FMath::RoundToInt(Coordinate.X * (OriginalWidth - 1)), 0, OriginalWidth - 1);
-	int32 PixelY = FMath::Clamp(FMath::RoundToInt(Coordinate.Y * (OriginalHeight - 1)), 0, OriginalHeight - 1);
-	
-	int64 PixelIndex = ((int64)PixelY * OriginalWidth + PixelX) * BytesPerPixel;
-	
-	float SamplingValue = 0.0f;
-	
-	if (SourceFormat == TSF_G8)
-	{
-		// 灰度 8 位：直接使用灰度值
-		SamplingValue = SourceData[PixelIndex] / 255.0f;
-	}
-	else if (SourceFormat == TSF_BGRA8)
-	{
-		// BGRA8 格式（通道顺序：B, G, R, A）
-		uint8 B = SourceData[PixelIndex + 0];
-		uint8 G = SourceData[PixelIndex + 1];
-		uint8 R = SourceData[PixelIndex + 2];
-		uint8 A = SourceData[PixelIndex + 3];
-		FColor Color(R, G, B, A);
-		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
-	}
-	else if (SourceFormat == TSF_RGBA16)
-	{
-		// RGBA16 格式（16位/通道）
-		uint16 R = *((uint16*)(&SourceData[PixelIndex + 0]));
-		uint16 G = *((uint16*)(&SourceData[PixelIndex + 2]));
-		uint16 B = *((uint16*)(&SourceData[PixelIndex + 4]));
-		uint16 A = *((uint16*)(&SourceData[PixelIndex + 6]));
-		FColor Color(FMath::RoundToInt(R / 257.0f), FMath::RoundToInt(G / 257.0f), FMath::RoundToInt(B / 257.0f), FMath::RoundToInt(A / 257.0f));
-		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
-	}
-	else if (SourceFormat == TSF_RGBA16F)
-	{
-		// RGBA16F 格式（半浮点/通道）
-		FFloat16 R = *((FFloat16*)(&SourceData[PixelIndex + 0]));
-		FFloat16 G = *((FFloat16*)(&SourceData[PixelIndex + 2]));
-		FFloat16 B = *((FFloat16*)(&SourceData[PixelIndex + 4]));
-		FFloat16 A = *((FFloat16*)(&SourceData[PixelIndex + 6]));
-		FColor Color(FMath::RoundToInt(R.GetFloat() * 255.0f), FMath::RoundToInt(G.GetFloat() * 255.0f), FMath::RoundToInt(B.GetFloat() * 255.0f), FMath::RoundToInt(A.GetFloat() * 255.0f));
-		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
-	}
-	
-	return SamplingValue;
-}
-#endif // WITH_EDITOR
-
-// 获取指定坐标的纹理密度值（平台数据版本，运行时可用）
-float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
-	UTexture2D* Texture,
-	const FVector2D& Coordinate,
-	bool bUseAlphaChannel,
-	EPixelFormat PixelFormat,
-	const uint8* PixelData,
-	int32 OriginalWidth,
-	int32 OriginalHeight,
-	uint32 BytesPerPixel)
-{
-	// 将归一化坐标转换为像素坐标
-	int32 PixelX = FMath::Clamp(FMath::RoundToInt(Coordinate.X * (OriginalWidth - 1)), 0, OriginalWidth - 1);
-	int32 PixelY = FMath::Clamp(FMath::RoundToInt(Coordinate.Y * (OriginalHeight - 1)), 0, OriginalHeight - 1);
-	
-	int64 PixelIndex = ((int64)PixelY * OriginalWidth + PixelX) * BytesPerPixel;
-	
-	float SamplingValue = 0.0f;
-	
-	// 处理不同的像素格式
-	if (PixelFormat == PF_B8G8R8A8 || PixelFormat == PF_R8G8B8A8 || PixelFormat == PF_A8R8G8B8)
-	{
-		// BGRA8 或 RGBA8 格式
-		uint8 B, G, R, A;
-		
-		if (PixelFormat == PF_B8G8R8A8)
-		{
-			// BGRA8 格式（通道顺序：B, G, R, A）
-			B = PixelData[PixelIndex + 0];
-			G = PixelData[PixelIndex + 1];
-			R = PixelData[PixelIndex + 2];
-			A = PixelData[PixelIndex + 3];
-		}
-		else if (PixelFormat == PF_R8G8B8A8)
-		{
-			// RGBA8 格式（通道顺序：R, G, B, A）
-			R = PixelData[PixelIndex + 0];
-			G = PixelData[PixelIndex + 1];
-			B = PixelData[PixelIndex + 2];
-			A = PixelData[PixelIndex + 3];
-		}
-		else // PF_A8R8G8B8
-		{
-			// ARGB8 格式（通道顺序：A, R, G, B）
-			A = PixelData[PixelIndex + 0];
-			R = PixelData[PixelIndex + 1];
-			G = PixelData[PixelIndex + 2];
-			B = PixelData[PixelIndex + 3];
-		}
-		
-		FColor Color(R, G, B, A);
-		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
-	}
-	else if (PixelFormat == PF_FloatRGBA)
-	{
-		// FloatRGBA：不同平台可能是 FP32x4（16字节）或 FP16x4（8字节）
-		float R = 0.0f, G = 0.0f, B = 0.0f, A = 0.0f;
-
-		if (BytesPerPixel == 16)
-		{
-			const float* FloatData = reinterpret_cast<const float*>(PixelData + PixelIndex);
-			R = FloatData[0];
-			G = FloatData[1];
-			B = FloatData[2];
-			A = FloatData[3];
-		}
-		else if (BytesPerPixel == 8)
-		{
-			const FFloat16* HalfData = reinterpret_cast<const FFloat16*>(PixelData + PixelIndex);
-			R = HalfData[0].GetFloat();
-			G = HalfData[1].GetFloat();
-			B = HalfData[2].GetFloat();
-			A = HalfData[3].GetFloat();
-		}
-		else
-		{
-			return 0.0f;
-		}
-
-		FColor Color(
-			FMath::Clamp(FMath::RoundToInt(R * 255.0f), 0, 255),
-			FMath::Clamp(FMath::RoundToInt(G * 255.0f), 0, 255),
-			FMath::Clamp(FMath::RoundToInt(B * 255.0f), 0, 255),
-			FMath::Clamp(FMath::RoundToInt(A * 255.0f), 0, 255)
-		);
-		SamplingValue = CalculatePixelSamplingValue(Color, bUseAlphaChannel);
-	}
-	
-	return SamplingValue;
-}
-
-// 基于纹理密度的泊松圆盘采样（运行时平台数据版本）
 TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoisson(
 	UTexture2D* Texture,
 	int32 MaxSampleSize,
@@ -1222,9 +960,9 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoiss
 
 	// 支持的格式：BGRA8, RGBA8, FloatRGBA
 	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
-		                      (PixelFormat == PF_R8G8B8A8) ||
-		                      (PixelFormat == PF_A8R8G8B8) ||
-		                      (PixelFormat == PF_FloatRGBA);
+		(PixelFormat == PF_R8G8B8A8) ||
+		(PixelFormat == PF_A8R8G8B8) ||
+		(PixelFormat == PF_FloatRGBA);
 
 	if (!bIsSupportedFormat)
 	{

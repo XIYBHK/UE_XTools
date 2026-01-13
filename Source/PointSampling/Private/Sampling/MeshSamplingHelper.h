@@ -38,7 +38,21 @@ public:
 		int32 MaxPoints = 0
 	);
 
+	/**
+	 * 从骨骼网格体插槽生成点阵
+	 * @param SkeletalMesh 骨骼网格体引用
+	 * @param Transform 变换矩阵
+	 * @param SocketNamePrefix 插槽名称前缀过滤（空字符串表示所有插槽）
+	 * @return 插槽位置数组
+	 */
+	static TArray<FVector> GenerateFromSkeletalSockets(
+		USkeletalMesh* SkeletalMesh,
+		const FTransform& Transform,
+		const FString& SocketNamePrefix
+	);
+
 private:
+
 	/**
 	 * 从网格三角形生成基于面积加权的采样点
 	 */
@@ -57,16 +71,5 @@ private:
 		int32 MaxPoints
 	);
 
-	/**
-	 * 从骨骼网格体插槽生成点阵
-	 * @param SkeletalMesh 骨骼网格体引用
-	 * @param Transform 变换矩阵
-	 * @param SocketNamePrefix 插槽名称前缀过滤（空字符串表示所有插槽）
-	 * @return 插槽位置数组
-	 */
-	static TArray<FVector> GenerateFromSkeletalSockets(
-		USkeletalMesh* SkeletalMesh,
-		const FTransform& Transform,
-		const FString& SocketNamePrefix
-	);
+private:
 };

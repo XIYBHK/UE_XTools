@@ -150,9 +150,6 @@ float FSplineSamplingHelper::CalculateSplineLength(
 		}
 	}
 
-		return TotalLength;
-	}
-
 	return TotalLength;
 }
 
@@ -349,6 +346,23 @@ FVector FSplineSamplingHelper::EvaluateSplineAtParameter(
 
 	return CatmullRomInterpolate(P0, P1, P2, P3, LocalT);
 }
+
+// ============================================================================
+// 样条线边界采样实现
+// ============================================================================
+
+TArray<FVector> FSplineSamplingHelper::GenerateWithinBoundary(
+	int32 TargetPointCount,
+	const TArray<FVector>& ControlPoints,
+	float MinDistance,
+	FRandomStream& RandomStream)
+{
+	TArray<FVector> Points;
+
+	if (ControlPoints.Num() < 3 || TargetPointCount <= 0)
+	{
+		return Points;
+	}
 
 	// 1. 计算边界框（AABB - Bridson算法需要矩形输入区域）
 	FVector BoundsMin, BoundsMax;

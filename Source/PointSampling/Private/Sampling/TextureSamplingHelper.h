@@ -87,6 +87,15 @@ private:
 	static float CalculatePixelSamplingValue(const FColor& Color, bool bUseAlpha);
 
 	/**
+	 * 采样纹理像素（简化实现，尝试读取未压缩纹理数据）
+	 * @param Texture 纹理对象
+	 * @param U U坐标 (0-1)
+	 * @param V V坐标 (0-1)
+	 * @return 像素颜色
+	 */
+	static FLinearColor SampleTexturePixel(UTexture2D* Texture, float U, float V);
+
+	/**
 	 * 根据纹理密度计算采样半径
 	 * @param Density 纹理密度 (0-1)
 	 * @param MinRadius 最小半径

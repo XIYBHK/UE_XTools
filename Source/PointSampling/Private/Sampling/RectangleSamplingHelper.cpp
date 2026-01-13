@@ -256,6 +256,7 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHexagonalGrid(
 	int32 PointCount,
 	float Spacing,
 	int32 Rings,
+	float JitterStrength,
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
@@ -305,6 +306,12 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHexagonalGrid(
 		}
 	}
 
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, Spacing, RandomStream);
+	}
+
 	return Points;
 }
 
@@ -312,6 +319,7 @@ TArray<FVector> FRectangleSamplingHelper::GenerateDiagonalFormation(
 	int32 PointCount,
 	float Spacing,
 	int32 Direction,
+	float JitterStrength,
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
@@ -365,12 +373,19 @@ TArray<FVector> FRectangleSamplingHelper::GenerateDiagonalFormation(
 		}
 	}
 
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, Spacing, RandomStream);
+	}
+
 	return Points;
 }
 
 TArray<FVector> FRectangleSamplingHelper::GenerateCheckerboardFormation(
 	int32 PointCount,
 	float Spacing,
+	float JitterStrength,
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
@@ -408,6 +423,12 @@ TArray<FVector> FRectangleSamplingHelper::GenerateCheckerboardFormation(
 				GeneratedCount++;
 			}
 		}
+	}
+
+	// 应用扰动
+	if (JitterStrength > 0.0f)
+	{
+		ApplyJitter(Points, JitterStrength, Spacing, RandomStream);
 	}
 
 	return Points;
