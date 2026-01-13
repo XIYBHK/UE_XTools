@@ -110,6 +110,11 @@
 - **优化** 移除 Artifact 上传前的手动压缩，直接使用 upload-artifact@v4 自动压缩
 - **优化** Release zip 仅在 tag push 时创建（非 tag 构建不再双重压缩）
 - **清理** 从仓库移除误提交的 ci 日志目录
+- **新增** build-plugin-optimized.yml 支持 workflow_dispatch 事件触发发布包准备
+- **新增** build-plugin-optimized.yml 移除仅限 tag push 的限制，提高灵活性
+- **新增** update-release-assets.yml 优化输出变量处理逻辑
+- **新增** update-release-assets.yml 修复 fallback 机制的输出时机问题
+- **新增** update-release-assets.yml 改进本地文件检测的日志提示
 
 ---
 
