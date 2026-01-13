@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "Math/UnrealMathUtility.h"
+#include "Math/RandomStream.h"
 
 /**
  * 军事阵型采样辅助类

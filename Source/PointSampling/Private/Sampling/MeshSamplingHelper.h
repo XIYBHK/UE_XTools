@@ -10,6 +10,7 @@
 
 class UStaticMesh;
 class USkeletalMesh;
+struct FStaticMeshLODResources;
 
 /**
  * 网格采样算法辅助类
