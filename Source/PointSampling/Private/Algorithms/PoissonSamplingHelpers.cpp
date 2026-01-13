@@ -94,12 +94,20 @@ namespace PoissonSamplingHelpers
         {
             TArray<FVector> Samples;
             TArray<FVector> ActiveList;
+		// 预估最大样本数量并预分配内存
+			const float BoundsVolume = (BoundsMax.X - BoundsMin.X) *
+									  (BoundsMax.Y - BoundsMin.Y) *
+									  FMath::Max(BoundsMax.Z - BoundsMin.Z, 1.0f);
+			const int32 EstimatedMaxSamples = FMath::CeilToInt(BoundsVolume / (Radius * Radius * Radius) * 2.0f);
+
+			Samples.Reserve(FMath::Min(EstimatedMaxSamples, 10000));
+			ActiveList.Reserve(FMath::Min(EstimatedMaxSamples, 1000));
 
             // 生成第一个样本
             FVector FirstSample = GenerateRandomPoint();
             Samples.Add(FirstSample);
             ActiveList.Add(FirstSample);
-            InsertIntoGrid(FirstSample);
+            InsertIntoGrid(FirstSample, 0);
 
             while (!ActiveList.IsEmpty())
             {
@@ -118,7 +126,8 @@ namespace PoissonSamplingHelpers
                     {
                         Samples.Add(Candidate);
                         ActiveList.Add(Candidate);
-                        InsertIntoGrid(Candidate);
+                        const int32 NewSampleIndex = Samples.Num() - 1;
+						InsertIntoGrid(Candidate, NewSampleIndex);
                         bFound = true;
                         break;
                     }
@@ -227,11 +236,11 @@ namespace PoissonSamplingHelpers
         /**
          * 将点插入网格
          */
-        void InsertIntoGrid(const FVector& Point)
+        void InsertIntoGrid(const FVector& Point, int32 SampleIndex)
         {
             const FIntVector GridCoord = PointToGridCoord(Point);
             const int32 GridIndex = GetGridIndex(GridCoord.X, GridCoord.Y, GridCoord.Z);
-            Grid[GridIndex] = 0; // 暂时设为0，后续可扩展为样本索引
+            Grid[GridIndex] = SampleIndex;
         }
 
         /**
