@@ -970,8 +970,11 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
 
     if (!TargetArray || !ArrayProp)
     {
-        UE_LOG(LogSort, Error, TEXT("GenericSortArrayByProperty: 参数无效 - TargetArray=%p, ArrayProp=%p"),
-            TargetArray, ArrayProp);
+        FXToolsErrorReporter::Error(
+            LogSort,
+            FString::Printf(TEXT("GenericSortArrayByProperty: 参数无效 - TargetArray=%p, ArrayProp=%p"),
+                TargetArray, ArrayProp),
+            TEXT("GenericSortArrayByProperty"));
         OriginalIndices.Empty();
         return;
     }
@@ -1011,7 +1014,10 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
 
     if (!SortProp)
     {
-        UE_LOG(LogSort, Warning, TEXT("无法找到属性: %s"), *PropertyName.ToString());
+        FXToolsErrorReporter::Warning(
+            LogSort,
+            FString::Printf(TEXT("无法找到属性: %s"), *PropertyName.ToString()),
+            TEXT("GenericSortArrayByProperty"));
         // 返回原始索引顺序
         OriginalIndices.SetNum(ArrayHelper.Num());
         for (int32 i = 0; i < ArrayHelper.Num(); ++i)
