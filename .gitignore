@@ -86,3 +86,6 @@ Docs/UE5.3_Source/*
 .kiro/steering/xiybhk.md
 /.gemini-clipboard
 /Docs/cc_plugins
+
+# Claude Code 临时文件
+tmpclaude-*
