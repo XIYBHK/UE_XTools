@@ -140,6 +140,10 @@ jobs:
           # Create assets directory
           New-Item -ItemType Directory -Path $new_assets_dir -Force | Out-Null
 
+          # Initialize outputs
+          $source_output = "download"
+          $success_output = "false"
+
           # Try local first
           if (Test-Path $local_temp_dir) {
             $local_files = Get-ChildItem -Path $local_temp_dir -Filter "*.zip" -ErrorAction SilentlyContinue
@@ -152,14 +156,18 @@ jobs:
                 Copy-Item $file.FullName -Destination $new_assets_dir -Force
               }
 
-              "source=local" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-              "success=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-              exit 0
+              $source_output = "local"
+              $success_output = "true"
+            } else {
+              Write-Host "[Fallback] Local temp directory exists but no files, will download from Artifacts" -ForegroundColor Yellow
             }
+          } else {
+            Write-Host "[Fallback] Local temp directory not found, will download from Artifacts" -ForegroundColor Yellow
           }
 
-          Write-Host "[Fallback] Local files not found, will download from Artifacts" -ForegroundColor Yellow
-          "source=download" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          # Write outputs at the end
+          "source=$source_output" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "success=$success_output" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Download from Artifacts (fallback)
         if: steps.target.outputs.skip != 'true' && steps.get_local.outputs.source == 'download'

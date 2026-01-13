@@ -442,13 +442,12 @@ jobs:
         Write-Host ""
         Write-Host "[OK] Validation passed" -ForegroundColor Green
 
-    - name: Prepare Release Package (for GitHub Release only)
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Prepare Release Package
+      if: success() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       shell: powershell -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "==> Prepare Release Package for GitHub Release" -ForegroundColor Cyan
+        Write-Host "==> Prepare Release Package" -ForegroundColor Cyan
 
-        # 仅为 GitHub Release 创建 zip（tag push 时）
         $zip_name = "${{ env.ARTIFACT_NAME }}.zip"
         $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
 
