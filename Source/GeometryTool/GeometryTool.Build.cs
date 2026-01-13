@@ -11,18 +11,16 @@ public class GeometryTool : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        PublicDependencyModuleNames.AddRange(new string[] 
-        { 
-            "Core", 
-            "CoreUObject", 
+        PublicDependencyModuleNames.AddRange(new string[]
+        {
+            "Core",
+            "CoreUObject",
             "Engine",
             "XToolsCore"
         });
 
-        PrivateDependencyModuleNames.AddRange(new string[] 
-        { 
-            "Kismet"
-        });
+        // KismetMathLibrary 在 Engine 模块中，无需额外依赖 Kismet
+        // PrivateDependencyModuleNames.AddRange(new string[] { });
 
         // 支持的平台（与 PointSampling 保持一致）
         if (Target.Platform == UnrealTargetPlatform.Win64)
