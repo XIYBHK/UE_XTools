@@ -19,6 +19,9 @@
 // 功能库
 #include "Libraries/MapExtensionsLibrary.h"
 
+// 辅助类
+#include "K2NodePinTypeHelpers.h"
+
 #define LOCTEXT_NAMESPACE "XTools_K2Node_MapRemoveArrayItem"
 
 //——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -484,36 +487,9 @@ void UK2Node_MapRemoveArrayItem::PropagatePinType()
     else
     {
         // 重置为Wildcard类型
-        if (MapPin)
-        {
-            MapPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            MapPin->PinType.ContainerType = EPinContainerType::Map;
-            
-            // 重要：重置Map的键值类型
-            FEdGraphTerminalType WildcardTerminal;
-            WildcardTerminal.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-            MapPin->PinType.PinValueType = WildcardTerminal;
-            
-            // 清除可能残留的类型信息
-            MapPin->PinType.PinSubCategoryObject = nullptr;
-            MapPin->PinType.PinSubCategory = NAME_None;
-        }
-        
-        if (KeyPin)
-        {
-            KeyPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            KeyPin->PinType.ContainerType = EPinContainerType::None;
-            KeyPin->PinType.PinSubCategoryObject = nullptr;
-            KeyPin->PinType.PinSubCategory = NAME_None;
-        }
-    	
-        if (ItemPin)
-        {
-            ItemPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            ItemPin->PinType.ContainerType = EPinContainerType::None;
-            ItemPin->PinType.PinSubCategoryObject = nullptr;
-            ItemPin->PinType.PinSubCategory = NAME_None;
-        }
+        FK2NodePinTypeHelpers::ResetMapPinToWildcard(MapPin);
+        FK2NodePinTypeHelpers::ResetPinToWildcard(KeyPin);
+        FK2NodePinTypeHelpers::ResetPinToWildcard(ItemPin);
     }
 
     GetGraph()->NotifyGraphChanged();

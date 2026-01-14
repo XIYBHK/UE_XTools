@@ -19,6 +19,9 @@
 // 功能库
 #include "Libraries/MapExtensionsLibrary.h"
 
+// 辅助类
+#include "K2NodePinTypeHelpers.h"
+
 #define LOCTEXT_NAMESPACE "XTools_K2Node_MapAddMapItem"
 
 //——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -289,31 +292,16 @@ bool UK2Node_MapAddMapItem::IsConnectionDisallowed(const UEdGraphPin* MyPin, con
         }
 
         // Value 类型检查
-        if (OtherPin->PinType.PinValueType.TerminalCategory != UEdGraphSchema_K2::PC_Struct)
+        if (!FK2NodePinTypeHelpers::ValidateMapValueIsStruct(OtherPin, &OutReason))
         {
-            OutReason = TEXT("Map的Value必须是结构体类型");
             return true;
         }
 
         // 结构体成员检查
         if (const UScriptStruct* StructType = Cast<UScriptStruct>(OtherPin->PinType.PinValueType.TerminalSubCategoryObject.Get()))
         {
-            FProperty* FirstProperty = StructType->PropertyLink;
-            if (!FirstProperty)
+            if (!FK2NodePinTypeHelpers::ValidateStructHasSinglePropertyOfType(StructType, FMapProperty::StaticClass(), &OutReason))
             {
-                OutReason = TEXT("结构体必须包含一个成员变量");
-                return true;
-            }
-
-            if (FirstProperty->Next != nullptr)
-            {
-                OutReason = TEXT("结构体只能包含一个成员变量");
-                return true;
-            }
-
-            if (!FirstProperty->IsA<FMapProperty>())
-            {
-                OutReason = TEXT("结构体的成员必须是Map类型");
                 return true;
             }
         }
@@ -416,23 +404,10 @@ FEdGraphPinType UK2Node_MapAddMapItem::GetKeyPinType() const
 {
     FEdGraphPinType PinType;
     PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-    
-    // 获取Map引脚
+
     UEdGraphPin* MapPin = GetInputMapPin();
-    if (MapPin && MapPin->LinkedTo.Num() > 0)
-    {
-        // 从连接的Map引脚获取类型信息
-        const FEdGraphPinType& MapPinType = MapPin->LinkedTo[0]->PinType;
-        if (MapPinType.ContainerType == EPinContainerType::Map)
-        {
-            // 直接使用Map的���类型（KeyPinType）来设置
-            PinType.PinCategory = MapPinType.PinCategory;
-            PinType.PinSubCategory = MapPinType.PinSubCategory;
-            PinType.PinSubCategoryObject = MapPinType.PinSubCategoryObject;
-            PinType.ContainerType = EPinContainerType::None;
-        }
-    }
-    
+    FK2NodePinTypeHelpers::GetMapKeyType(MapPin, PinType);
+
     return PinType;
 }
 
@@ -441,43 +416,17 @@ FEdGraphPinType UK2Node_MapAddMapItem::GetSubKeyPinType() const
     FEdGraphPinType PinType;
     PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
 
-    // 获取Map引脚
     UEdGraphPin* MapPin = GetInputMapPin();
     if (MapPin && MapPin->LinkedTo.Num() > 0)
     {
-        // 从连接的Map引脚获取类型信息
         const FEdGraphPinType& MapPinType = MapPin->LinkedTo[0]->PinType;
-        if (MapPinType.ContainerType == EPinContainerType::Map)
+        if (MapPinType.ContainerType == EPinContainerType::Map &&
+            MapPinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Struct)
         {
-            // 如Item是结构体类型
-            if (MapPinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Struct)
+            if (const UScriptStruct* StructType = Cast<UScriptStruct>(MapPinType.PinValueType.TerminalSubCategoryObject.Get()))
             {
-                // 获取结构体类型
-                if (const UScriptStruct* StructType = Cast<UScriptStruct>(MapPinType.PinValueType.TerminalSubCategoryObject.Get()))
-                {
-                    // 遍历结构体属性
-                    for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
-                    {
-                        if (FProperty* Property = *PropIt)
-                        {
-                            // 确保是Map属性
-                            if (FMapProperty* MapProperty = CastField<FMapProperty>(Property))
-                            {
-                                // 获取Map的Value类型
-                                const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
-                                Schema->ConvertPropertyToPinType(MapProperty->KeyProp, PinType);
-                            }
-                            break; // 只取第一个属性
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // 非结构体类型，使用原始类型
-                PinType.PinCategory = MapPinType.PinValueType.TerminalCategory;
-                PinType.PinSubCategoryObject = MapPinType.PinValueType.TerminalSubCategoryObject;
-                PinType.ContainerType = EPinContainerType::None;
+                const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+                FK2NodePinTypeHelpers::GetMapKeyTypeFromStructProperty(StructType, PinType, Schema);
             }
         }
     }
@@ -490,43 +439,17 @@ FEdGraphPinType UK2Node_MapAddMapItem::GetItemPinType() const
     FEdGraphPinType PinType;
     PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
 
-    // 获取Map引脚
     UEdGraphPin* MapPin = GetInputMapPin();
     if (MapPin && MapPin->LinkedTo.Num() > 0)
     {
-        // 从连接的Map引脚获取类型信息
         const FEdGraphPinType& MapPinType = MapPin->LinkedTo[0]->PinType;
-        if (MapPinType.ContainerType == EPinContainerType::Map)
+        if (MapPinType.ContainerType == EPinContainerType::Map &&
+            MapPinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Struct)
         {
-            // 如Item是结构体类型
-            if (MapPinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Struct)
+            if (const UScriptStruct* StructType = Cast<UScriptStruct>(MapPinType.PinValueType.TerminalSubCategoryObject.Get()))
             {
-                // 获取结构体类型
-                if (const UScriptStruct* StructType = Cast<UScriptStruct>(MapPinType.PinValueType.TerminalSubCategoryObject.Get()))
-                {
-                    // 遍历结构体属性
-                    for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
-                    {
-                        if (FProperty* Property = *PropIt)
-                        {
-                            // 确保是Map属性
-                            if (FMapProperty* MapProperty = CastField<FMapProperty>(Property))
-                            {
-                                // 获取Map的Value类型
-                                const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
-                                Schema->ConvertPropertyToPinType(MapProperty->ValueProp, PinType);
-                            }
-                            break; // 只取第一个属性
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // 非结构体类型，使用原始类型
-                PinType.PinCategory = MapPinType.PinValueType.TerminalCategory;
-                PinType.PinSubCategoryObject = MapPinType.PinValueType.TerminalSubCategoryObject;
-                PinType.ContainerType = EPinContainerType::None;
+                const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+                FK2NodePinTypeHelpers::GetMapValueTypeFromStructProperty(StructType, PinType, Schema);
             }
         }
     }
@@ -574,44 +497,10 @@ void UK2Node_MapAddMapItem::PropagatePinType()
     else
     {
         // 重置为Wildcard类型
-        if (MapPin)
-        {
-            MapPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            MapPin->PinType.ContainerType = EPinContainerType::Map;
-            
-            // 重要：重置Map的键值类型
-            FEdGraphTerminalType WildcardTerminal;
-            WildcardTerminal.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-            MapPin->PinType.PinValueType = WildcardTerminal;
-            
-            // 清除可能残留的类型信息
-            MapPin->PinType.PinSubCategoryObject = nullptr;
-            MapPin->PinType.PinSubCategory = NAME_None;
-        }
-        
-        if (KeyPin)
-        {
-            KeyPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            KeyPin->PinType.ContainerType = EPinContainerType::None;
-            KeyPin->PinType.PinSubCategoryObject = nullptr;
-            KeyPin->PinType.PinSubCategory = NAME_None;
-        }
-
-        if (SubKeyPin)
-        {
-            SubKeyPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            SubKeyPin->PinType.ContainerType = EPinContainerType::None;
-            SubKeyPin->PinType.PinSubCategoryObject = nullptr;
-            SubKeyPin->PinType.PinSubCategory = NAME_None;
-        }
-        
-        if (ItemPin)
-        {
-            ItemPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-            ItemPin->PinType.ContainerType = EPinContainerType::None;
-            ItemPin->PinType.PinSubCategoryObject = nullptr;
-            ItemPin->PinType.PinSubCategory = NAME_None;
-        }
+        FK2NodePinTypeHelpers::ResetMapPinToWildcard(MapPin);
+        FK2NodePinTypeHelpers::ResetPinToWildcard(KeyPin);
+        FK2NodePinTypeHelpers::ResetPinToWildcard(SubKeyPin);
+        FK2NodePinTypeHelpers::ResetPinToWildcard(ItemPin);
     }
 
     GetGraph()->NotifyGraphChanged();

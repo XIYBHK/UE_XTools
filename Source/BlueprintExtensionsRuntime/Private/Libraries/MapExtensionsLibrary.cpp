@@ -905,9 +905,15 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
             FScriptArrayHelper ArrayHelper(ArrayProp, ExistingArrayPtr);
 
             // 检查是否已存在相同的值
-            const bool bValueExists = Algo::AnyOf(ArrayHelper, [&](int32 Index) {
-                return ArrayProp->Inner->Identical(ArrayHelper.GetRawPtr(Index), ValuePtr);
-            }, FRange().Start(0).End(ArrayHelper.Num()));
+            bool bValueExists = false;
+            for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+            {
+                if (ArrayProp->Inner->Identical(ArrayHelper.GetRawPtr(i), ValuePtr))
+                {
+                    bValueExists = true;
+                    break;
+                }
+            }
 
             // 如果值不存在，则添加
             if (!bValueExists)

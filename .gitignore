@@ -89,3 +89,4 @@ Docs/UE5.3_Source/*
 
 # Claude Code 临时文件
 tmpclaude-*
+/Source/BlueprintExtensions/Private/K2Nodes/Backup
