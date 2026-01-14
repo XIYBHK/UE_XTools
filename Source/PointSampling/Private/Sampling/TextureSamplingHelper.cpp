@@ -8,11 +8,16 @@
 #include "PointSamplingTypes.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureDefines.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/Canvas.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Math/UnrealMathUtility.h"
 #include "Math/Float16.h"
 #include "TextureResource.h"
 #include "PixelFormat.h"
 #include "Algorithms/PoissonDiskSampling.h"
+#include "Kismet/KismetRenderingLibrary.h"
 
 // ============================================================================
 // 辅助函数（参考 UE SubUVAnimation.cpp 的标准实现）
@@ -1085,6 +1090,679 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoiss
 				TEXT("[纹理密度采样] 去重：原始 %d 个点 -> 去除 %d 个重复点 -> 剩余 %d 个点"),
 				OriginalCount, RemovedCount, Points.Num());
 		}
+	}
+
+	return Points;
+}
+
+// ============================================================================
+// 新增：根据通道选择计算像素采样值
+// ============================================================================
+
+float FTextureSamplingHelper::CalculatePixelSamplingValueByChannel(const FLinearColor& Color, ETextureSamplingChannel Channel)
+{
+	switch (Channel)
+	{
+	case ETextureSamplingChannel::Alpha:
+		return Color.A;
+
+	case ETextureSamplingChannel::Red:
+		return Color.R;
+
+	case ETextureSamplingChannel::Green:
+		return Color.G;
+
+	case ETextureSamplingChannel::Blue:
+		return Color.B;
+
+	case ETextureSamplingChannel::Luminance:
+		// 感知亮度公式（ITU-R BT.601）
+		return 0.299f * Color.R + 0.587f * Color.G + 0.114f * Color.B;
+
+	case ETextureSamplingChannel::Auto:
+	default:
+		// 自动模式：优先使用Alpha，如果Alpha接近1.0则使用亮度
+		if (FMath::Abs(Color.A - 1.0f) > 0.01f)
+		{
+			return Color.A;
+		}
+		else
+		{
+			return 0.299f * Color.R + 0.587f * Color.G + 0.114f * Color.B;
+		}
+	}
+}
+
+// ============================================================================
+// Material Instance 采样实现
+// ============================================================================
+
+UTextureRenderTarget2D* FTextureSamplingHelper::CreateTemporaryRenderTarget(int32 Size)
+{
+	// 创建临时RenderTarget（RGBA8格式，不带Mipmap）
+	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>();
+	if (!RenderTarget)
+	{
+		return nullptr;
+	}
+
+	RenderTarget->RenderTargetFormat = RTF_RGBA8;
+	RenderTarget->InitAutoFormat(Size, Size);
+	RenderTarget->UpdateResourceImmediate(true);
+
+	return RenderTarget;
+}
+
+bool FTextureSamplingHelper::RenderMaterialToTarget(UMaterialInterface* Material, UTextureRenderTarget2D* RenderTarget)
+{
+	if (!Material || !RenderTarget)
+	{
+		return false;
+	}
+
+	// 使用KismetRenderingLibrary绘制材质到RenderTarget
+	UKismetRenderingLibrary::DrawMaterialToRenderTarget(
+		Material->GetWorld(),
+		RenderTarget,
+		Material
+	);
+
+	return true;
+}
+
+TArray<FVector> FTextureSamplingHelper::GeneratePointsFromRenderTarget(
+	UTextureRenderTarget2D* RenderTarget,
+	int32 MaxSampleSize,
+	float Spacing,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel)
+{
+	TArray<FVector> Points;
+
+	if (!RenderTarget)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] RenderTarget无效"));
+		return Points;
+	}
+
+	// 读取RenderTarget像素数据
+	TArray<FColor> PixelData;
+	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+	if (!RTResource)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] 无法获取RenderTarget资源"));
+		return Points;
+	}
+
+	FReadSurfaceDataFlags ReadFlags(RCM_UNorm);
+	ReadFlags.SetLinearToGamma(false);
+
+	if (!RTResource->ReadPixels(PixelData, ReadFlags))
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] 无法读取RenderTarget像素"));
+		return Points;
+	}
+
+	const int32 OriginalWidth = RenderTarget->SizeX;
+	const int32 OriginalHeight = RenderTarget->SizeY;
+
+	if (PixelData.Num() != OriginalWidth * OriginalHeight)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[Material采样] 像素数量不匹配: 期望%dx%d=%d, 实际%d"),
+			OriginalWidth, OriginalHeight, OriginalWidth * OriginalHeight, PixelData.Num());
+		return Points;
+	}
+
+	// 计算降采样比率
+	const float DownsampleRatio = FMath::Max(1.0f, FMath::Max((float)OriginalWidth / MaxSampleSize, (float)OriginalHeight / MaxSampleSize));
+	const int32 SampleWidth = FMath::Max(1, FMath::RoundToInt(OriginalWidth / DownsampleRatio));
+	const int32 SampleHeight = FMath::Max(1, FMath::RoundToInt(OriginalHeight / DownsampleRatio));
+	const int32 Step = FMath::Max(1, FMath::RoundToInt(Spacing));
+
+	// 限制最大点数
+	const int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
+	const int32 MaxAllowedPoints = 100000;
+
+	if (EstimatedMaxPoints > MaxAllowedPoints)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] 预期点数 %d 超过限制 %d"), EstimatedMaxPoints, MaxAllowedPoints);
+		return Points;
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[Material采样] 开始采样 %dx%d -> %dx%d (步长=%d, 阈值=%.2f, 通道=%d)"),
+		OriginalWidth, OriginalHeight, SampleWidth, SampleHeight, Step, PixelThreshold, (int32)SamplingChannel);
+
+	Points.Reserve(EstimatedMaxPoints / 4);
+
+	// 遍历采样点
+	for (int32 SampleY = 0; SampleY < SampleHeight; SampleY += Step)
+	{
+		for (int32 SampleX = 0; SampleX < SampleWidth; SampleX += Step)
+		{
+			// 映射回原始纹理坐标
+			int32 OriginalX = FMath::RoundToInt(SampleX * DownsampleRatio);
+			int32 OriginalY = FMath::RoundToInt(SampleY * DownsampleRatio);
+
+			OriginalX = FMath::Clamp(OriginalX, 0, OriginalWidth - 1);
+			OriginalY = FMath::Clamp(OriginalY, 0, OriginalHeight - 1);
+
+			// 获取像素颜色
+			const int32 PixelIndex = OriginalY * OriginalWidth + OriginalX;
+			const FColor& PixelColor = PixelData[PixelIndex];
+			const FLinearColor LinearColor = FLinearColor(PixelColor);
+
+			// 根据通道选择计算采样值
+			float SamplingValue = CalculatePixelSamplingValueByChannel(LinearColor, SamplingChannel);
+
+			// 阈值过滤
+			if (SamplingValue >= PixelThreshold)
+			{
+				// 转换为世界坐标（居中，Y轴翻转）
+				const float NormalizedX = (float)OriginalX / (OriginalWidth - 1);
+				const float NormalizedY = (float)OriginalY / (OriginalHeight - 1);
+
+				const float WorldX = (NormalizedX - 0.5f) * OriginalWidth * TextureScale;
+				const float WorldY = (0.5f - NormalizedY) * OriginalHeight * TextureScale;
+
+				Points.Add(FVector(WorldX, WorldY, 0.0f));
+			}
+		}
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[Material采样] 完成，生成 %d 个点"), Points.Num());
+
+	// 去重
+	if (Points.Num() > 1)
+	{
+		int32 OriginalCount, RemovedCount;
+		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+			Points,
+			TextureScale * 0.1f,
+			OriginalCount,
+			RemovedCount
+		);
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Verbose, TEXT("[Material采样] 去重: %d -> %d (移除 %d)"),
+				OriginalCount, Points.Num(), RemovedCount);
+		}
+	}
+
+	return Points;
+}
+
+TArray<FVector> FTextureSamplingHelper::GeneratePointsFromRenderTargetWithPoisson(
+	UTextureRenderTarget2D* RenderTarget,
+	int32 MaxSampleSize,
+	float MinRadius,
+	float MaxRadius,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel,
+	int32 MaxAttempts)
+{
+	TArray<FVector> Points;
+
+	if (!RenderTarget)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material泊松采样] RenderTarget无效"));
+		return Points;
+	}
+
+	// 读取RenderTarget像素数据
+	TArray<FColor> PixelData;
+	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+	if (!RTResource)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material泊松采样] 无法获取RenderTarget资源"));
+		return Points;
+	}
+
+	FReadSurfaceDataFlags ReadFlags(RCM_UNorm);
+	ReadFlags.SetLinearToGamma(false);
+
+	if (!RTResource->ReadPixels(PixelData, ReadFlags))
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material泊松采样] 无法读取RenderTarget像素"));
+		return Points;
+	}
+
+	const int32 OriginalWidth = RenderTarget->SizeX;
+	const int32 OriginalHeight = RenderTarget->SizeY;
+
+	// 使用泊松圆盘采样生成初始点集
+	float Width = OriginalWidth * TextureScale;
+	float Height = OriginalHeight * TextureScale;
+
+	TArray<FVector2D> PoissonPoints = FPoissonDiskSampling::GeneratePoisson2D(Width, Height, MinRadius, MaxAttempts);
+	UE_LOG(LogPointSampling, Log, TEXT("[Material泊松采样] 生成初始泊松点集: %d 个点"), PoissonPoints.Num());
+
+	// 遍历泊松点，根据纹理密度筛选
+	for (const FVector2D& PoissonPoint : PoissonPoints)
+	{
+		// 转换为纹理坐标
+		FVector2D NormalizedCoords;
+		NormalizedCoords.X = FMath::Clamp(PoissonPoint.X / Width, 0.0f, 1.0f);
+		NormalizedCoords.Y = FMath::Clamp(PoissonPoint.Y / Height, 0.0f, 1.0f);
+
+		// 获取像素索引
+		int32 PixelX = FMath::Clamp(FMath::RoundToInt(NormalizedCoords.X * (OriginalWidth - 1)), 0, OriginalWidth - 1);
+		int32 PixelY = FMath::Clamp(FMath::RoundToInt(NormalizedCoords.Y * (OriginalHeight - 1)), 0, OriginalHeight - 1);
+		int32 PixelIndex = PixelY * OriginalWidth + PixelX;
+
+		// 获取密度值
+		const FColor& PixelColor = PixelData[PixelIndex];
+		const FLinearColor LinearColor = FLinearColor(PixelColor);
+		float Density = CalculatePixelSamplingValueByChannel(LinearColor, SamplingChannel);
+
+		// 密度过滤
+		if (Density < PixelThreshold)
+		{
+			continue;
+		}
+
+		// 添加点（局部坐标，居中，Y轴翻转）
+		const float LocalX = PoissonPoint.X - Width * 0.5f;
+		const float LocalY = Height * 0.5f - PoissonPoint.Y;
+		Points.Add(FVector(LocalX, LocalY, 0.0f));
+	}
+
+	UE_LOG(LogPointSampling, Log, TEXT("[Material泊松采样] 筛选后剩余 %d 个点"), Points.Num());
+
+	// 去重
+	if (Points.Num() > 0)
+	{
+		int32 OriginalCount, RemovedCount;
+		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+			Points,
+			MinRadius * 0.1f,
+			OriginalCount,
+			RemovedCount
+		);
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Log, TEXT("[Material泊松采样] 去重: %d -> %d (移除 %d)"),
+				OriginalCount, RemovedCount, Points.Num());
+		}
+	}
+
+	return Points;
+}
+
+TArray<FVector> FTextureSamplingHelper::GenerateFromMaterial(
+	UMaterialInterface* Material,
+	int32 MaxSampleSize,
+	float Spacing,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel)
+{
+	TArray<FVector> Points;
+
+	if (!Material)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] 材质无效"));
+		return Points;
+	}
+
+	// 创建临时RenderTarget
+	UTextureRenderTarget2D* RenderTarget = CreateTemporaryRenderTarget(MaxSampleSize);
+	if (!RenderTarget)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[Material采样] 无法创建RenderTarget"));
+		return Points;
+	}
+
+	// 渲染材质到RenderTarget
+	if (!RenderMaterialToTarget(Material, RenderTarget))
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[Material采样] 材质渲染失败"));
+		return Points;
+	}
+
+	// 从RenderTarget生成点阵
+	Points = GeneratePointsFromRenderTarget(RenderTarget, MaxSampleSize, Spacing, PixelThreshold, TextureScale, SamplingChannel);
+
+	// 清理临时RenderTarget
+	RenderTarget->ConditionalBeginDestroy();
+
+	return Points;
+}
+
+TArray<FVector> FTextureSamplingHelper::GenerateFromMaterialWithPoisson(
+	UMaterialInterface* Material,
+	int32 MaxSampleSize,
+	float MinRadius,
+	float MaxRadius,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel,
+	int32 MaxAttempts)
+{
+	TArray<FVector> Points;
+
+	if (!Material)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[Material泊松采样] 材质无效"));
+		return Points;
+	}
+
+	// 创建临时RenderTarget
+	UTextureRenderTarget2D* RenderTarget = CreateTemporaryRenderTarget(MaxSampleSize);
+	if (!RenderTarget)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[Material泊松采样] 无法创建RenderTarget"));
+		return Points;
+	}
+
+	// 渲染材质到RenderTarget
+	if (!RenderMaterialToTarget(Material, RenderTarget))
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[Material泊松采样] 材质渲染失败"));
+		return Points;
+	}
+
+	// 从RenderTarget生成泊松采样点阵
+	Points = GeneratePointsFromRenderTargetWithPoisson(
+		RenderTarget,
+		MaxSampleSize,
+		MinRadius,
+		MaxRadius,
+		PixelThreshold,
+		TextureScale,
+		SamplingChannel,
+		MaxAttempts
+	);
+
+	// 清理临时RenderTarget
+	RenderTarget->ConditionalBeginDestroy();
+
+	return Points;
+}
+
+// ============================================================================
+// 智能统一接口实现
+// ============================================================================
+
+bool FTextureSamplingHelper::IsTextureFormatDirectReadable(UTexture2D* Texture)
+{
+	if (!Texture)
+	{
+		return false;
+	}
+
+	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
+	if (!PlatformData || PlatformData->Mips.Num() == 0)
+	{
+		return false;
+	}
+
+	EPixelFormat PixelFormat = PlatformData->PixelFormat;
+
+	// 只有未压缩的8位格式可以直接读取
+	bool bIsDirectReadable = (PixelFormat == PF_B8G8R8A8) ||
+							 (PixelFormat == PF_R8G8B8A8) ||
+							 (PixelFormat == PF_A8R8G8B8) ||
+							 (PixelFormat == PF_FloatRGBA);
+
+	return bIsDirectReadable;
+}
+
+UMaterialInstanceDynamic* FTextureSamplingHelper::CreateTemporaryMaterialForTexture(UTexture2D* Texture, UWorld* World)
+{
+	if (!Texture || !World)
+	{
+		return nullptr;
+	}
+
+	// 创建简单的材质：Texture Sample -> Emissive Color
+	// 注意：这里我们使用运行时创建的材质实例
+	// 需要一个基础材质作为模板
+
+	// 方案1：尝试使用引擎内置的简单材质
+	UMaterial* BaseMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"));
+	if (!BaseMaterial)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[智能采样] 无法加载基础材质"));
+		return nullptr;
+	}
+
+	// 创建动态材质实例
+	UMaterialInstanceDynamic* MatInst = UMaterialInstanceDynamic::Create(BaseMaterial, World);
+	if (!MatInst)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[智能采样] 无法创建材质实例"));
+		return nullptr;
+	}
+
+	// 设置纹理参数（如果基础材质支持）
+	MatInst->SetTextureParameterValue(FName("Texture"), Texture);
+
+	return MatInst;
+}
+
+TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAuto(
+	UTexture2D* Texture,
+	int32 MaxSampleSize,
+	float Spacing,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel)
+{
+	TArray<FVector> Points;
+
+	if (!Texture)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[智能采样] 纹理无效"));
+		return Points;
+	}
+
+	// 检查是否可以直接读取
+	bool bCanDirectRead = IsTextureFormatDirectReadable(Texture);
+
+	if (bCanDirectRead)
+	{
+		UE_LOG(LogPointSampling, Log, TEXT("[智能采样] 检测到未压缩格式，使用直接读取方法"));
+
+		// 使用原有的高效方法
+#if WITH_EDITOR
+		Points = GenerateFromTextureSource(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
+#else
+		Points = GenerateFromTexturePlatformData(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
+#endif
+	}
+	else
+	{
+		UE_LOG(LogPointSampling, Log, TEXT("[智能采样] 检测到压缩格式，使用Material渲染方法"));
+
+		// 使用Material渲染方法
+		// 简化方案：直接渲染纹理到RenderTarget，不创建Material
+		// 因为UKismetRenderingLibrary::DrawMaterialToRenderTarget需要Material参数
+
+		// 创建临时RenderTarget
+		UTextureRenderTarget2D* RenderTarget = CreateTemporaryRenderTarget(MaxSampleSize);
+		if (!RenderTarget)
+		{
+			UE_LOG(LogPointSampling, Error, TEXT("[智能采样] 无法创建RenderTarget"));
+			return Points;
+		}
+
+		// 使用Canvas直接绘制纹理到RenderTarget
+		UWorld* World = GEngine->GetWorldFromContextObject(Texture, EGetWorldErrorMode::LogAndReturnNull);
+		if (!World)
+		{
+			// 尝试从纹理获取Outer的World
+			UObject* Outer = Texture->GetOuter();
+			while (Outer && !World)
+			{
+				World = Outer->GetWorld();
+				Outer = Outer->GetOuter();
+			}
+		}
+
+		if (World)
+		{
+			// 使用KismetRenderingLibrary绘制纹理
+			FCanvas Canvas(
+				RenderTarget->GameThread_GetRenderTargetResource(),
+				nullptr,
+				World,
+				World->GetFeatureLevel()
+			);
+
+			Canvas.Clear(FLinearColor::Black);
+
+			FCanvasTileItem TileItem(
+				FVector2D(0, 0),
+				Texture->GetResource(),
+				FVector2D(RenderTarget->SizeX, RenderTarget->SizeY),
+				FLinearColor::White
+			);
+			TileItem.BlendMode = SE_BLEND_Opaque;
+			Canvas.DrawItem(TileItem);
+
+			Canvas.Flush_GameThread();
+			RenderTarget->UpdateResourceImmediate(false);
+		}
+		else
+		{
+			UE_LOG(LogPointSampling, Warning, TEXT("[智能采样] 无法获取World Context，尝试备用方案"));
+
+			// 备用方案：尝试使用编辑器Source数据
+#if WITH_EDITOR
+			Points = GenerateFromTextureSource(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
+			RenderTarget->ConditionalBeginDestroy();
+			return Points;
+#else
+			RenderTarget->ConditionalBeginDestroy();
+			UE_LOG(LogPointSampling, Error, TEXT("[智能采样] 运行时无法处理压缩格式且无World Context"));
+			return Points;
+#endif
+		}
+
+		// 从RenderTarget生成点阵
+		Points = GeneratePointsFromRenderTarget(RenderTarget, MaxSampleSize, Spacing, PixelThreshold, TextureScale, SamplingChannel);
+
+		// 清理临时RenderTarget
+		RenderTarget->ConditionalBeginDestroy();
+	}
+
+	return Points;
+}
+
+TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
+	UTexture2D* Texture,
+	int32 MaxSampleSize,
+	float MinRadius,
+	float MaxRadius,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel,
+	int32 MaxAttempts)
+{
+	TArray<FVector> Points;
+
+	if (!Texture)
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("[智能泊松采样] 纹理无效"));
+		return Points;
+	}
+
+	// 检查是否可以直接读取
+	bool bCanDirectRead = IsTextureFormatDirectReadable(Texture);
+
+	if (bCanDirectRead)
+	{
+		UE_LOG(LogPointSampling, Log, TEXT("[智能泊松采样] 检测到未压缩格式，使用直接读取方法"));
+
+		// 使用原有的高效方法
+#if WITH_EDITOR
+		Points = GenerateFromTextureSourceWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
+#else
+		Points = GenerateFromTexturePlatformDataWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
+#endif
+	}
+	else
+	{
+		UE_LOG(LogPointSampling, Log, TEXT("[智能泊松采样] 检测到压缩格式，使用Material渲染方法"));
+
+		// 创建临时RenderTarget
+		UTextureRenderTarget2D* RenderTarget = CreateTemporaryRenderTarget(MaxSampleSize);
+		if (!RenderTarget)
+		{
+			UE_LOG(LogPointSampling, Error, TEXT("[智能泊松采样] 无法创建RenderTarget"));
+			return Points;
+		}
+
+		// 获取World Context
+		UWorld* World = GEngine->GetWorldFromContextObject(Texture, EGetWorldErrorMode::LogAndReturnNull);
+		if (!World)
+		{
+			UObject* Outer = Texture->GetOuter();
+			while (Outer && !World)
+			{
+				World = Outer->GetWorld();
+				Outer = Outer->GetOuter();
+			}
+		}
+
+		if (World)
+		{
+			// 使用Canvas绘制纹理
+			FCanvas Canvas(
+				RenderTarget->GameThread_GetRenderTargetResource(),
+				nullptr,
+				World,
+				World->GetFeatureLevel()
+			);
+
+			Canvas.Clear(FLinearColor::Black);
+
+			FCanvasTileItem TileItem(
+				FVector2D(0, 0),
+				Texture->GetResource(),
+				FVector2D(RenderTarget->SizeX, RenderTarget->SizeY),
+				FLinearColor::White
+			);
+			TileItem.BlendMode = SE_BLEND_Opaque;
+			Canvas.DrawItem(TileItem);
+
+			Canvas.Flush_GameThread();
+			RenderTarget->UpdateResourceImmediate(false);
+		}
+		else
+		{
+			UE_LOG(LogPointSampling, Warning, TEXT("[智能泊松采样] 无法获取World Context，尝试备用方案"));
+
+			// 备用方案：使用编辑器Source数据
+#if WITH_EDITOR
+			Points = GenerateFromTextureSourceWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
+			RenderTarget->ConditionalBeginDestroy();
+			return Points;
+#else
+			RenderTarget->ConditionalBeginDestroy();
+			UE_LOG(LogPointSampling, Error, TEXT("[智能泊松采样] 运行时无法处理压缩格式且无World Context"));
+			return Points;
+#endif
+		}
+
+		// 从RenderTarget生成泊松采样点阵
+		Points = GeneratePointsFromRenderTargetWithPoisson(
+			RenderTarget,
+			MaxSampleSize,
+			MinRadius,
+			MaxRadius,
+			PixelThreshold,
+			TextureScale,
+			SamplingChannel,
+			MaxAttempts
+		);
+
+		// 清理临时RenderTarget
+		RenderTarget->ConditionalBeginDestroy();
 	}
 
 	return Points;

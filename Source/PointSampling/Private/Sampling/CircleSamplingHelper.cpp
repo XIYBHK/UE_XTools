@@ -27,7 +27,6 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 		return Points;
 	}
 
-		Points.Reserve(PointCount);
 	// 根据分布模式生成点位
 	switch (DistributionMode)
 	{

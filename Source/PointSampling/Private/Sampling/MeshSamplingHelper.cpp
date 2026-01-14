@@ -124,12 +124,18 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 		for (int32 PointIndex = 0; PointIndex < PointsForThisTriangle && Points.Num() < TargetPoints; ++PointIndex)
 		{
 			// 在三角形内生成随机点（重心坐标）
-			const float S = RandomStream.FRand();
-			const float T = RandomStream.FRand();
+			// 使用正确的均匀分布算法
+			float U = RandomStream.FRand();
+			float V = RandomStream.FRand();
 
-			// 确保点在三角形内 (重心坐标约束)
-			const float U = FMath::Clamp(S + T, 0.0f, 1.0f);
-			const float V = FMath::Clamp(T, 0.0f, 1.0f - U);
+			// 如果点在三角形外（上半部分），翻转到下半部分
+			// 这样保证点均匀分布在整个三角形内
+			if (U + V > 1.0f)
+			{
+				U = 1.0f - U;
+				V = 1.0f - V;
+			}
+
 			const float W = 1.0f - U - V;
 
 			const int32 Index0 = IndexBuffer.GetIndex(TriangleIndex * 3 + 0);
@@ -140,8 +146,8 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 			const FVector V1 = FVector(VertexBuffer.VertexPosition(Index1));
 			const FVector V2 = FVector(VertexBuffer.VertexPosition(Index2));
 
-			// 重心插值
-			FVector LocalPoint = V0 * U + V1 * V + V2 * W;
+			// 重心插值：Point = W * V0 + U * V1 + V * V2
+			FVector LocalPoint = V0 * W + V1 * U + V2 * V;
 
 			// 应用变换
 			FVector WorldPoint = Transform.TransformPosition(LocalPoint);
@@ -223,8 +229,9 @@ TArray<FVector> FMeshSamplingHelper::GenerateBoundaryVertices(
 	{
 		if (EdgeCount.Value == 1) // 边界边只被一个三角形使用
 		{
-			BoundaryVertexIndices.Add(EdgeCount.Key.Key);
-			BoundaryVertexIndices.Add(EdgeCount.Value);
+			// EdgeCount.Key 是 TPair<int32, int32>，包含边的两个顶点索引
+			BoundaryVertexIndices.Add(EdgeCount.Key.Key);   // 第一个顶点索引
+			BoundaryVertexIndices.Add(EdgeCount.Key.Value); // 第二个顶点索引
 		}
 	}
 

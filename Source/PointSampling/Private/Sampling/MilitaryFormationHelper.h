@@ -7,7 +7,6 @@
 
 #include "CoreMinimal.h"
 #include "Math/UnrealMathUtility.h"
-#include "Math/RandomStream.h"
 
 /**
  * 军事阵型采样辅助类
@@ -29,8 +28,7 @@ public:
 	static TArray<FVector> GenerateWedgeFormation(
 		int32 PointCount,
 		float Spacing,
-		float WedgeAngle,
-		FRandomStream& RandomStream
+		float WedgeAngle
 	);
 
 	/**
@@ -39,8 +37,7 @@ public:
 	 */
 	static TArray<FVector> GenerateColumnFormation(
 		int32 PointCount,
-		float Spacing,
-		FRandomStream& RandomStream
+		float Spacing
 	);
 
 	/**
@@ -49,8 +46,7 @@ public:
 	 */
 	static TArray<FVector> GenerateLineFormation(
 		int32 PointCount,
-		float Spacing,
-		FRandomStream& RandomStream
+		float Spacing
 	);
 
 	/**
@@ -60,8 +56,7 @@ public:
 	static TArray<FVector> GenerateVeeFormation(
 		int32 PointCount,
 		float Spacing,
-		float VeeAngle,
-		FRandomStream& RandomStream
+		float VeeAngle
 	);
 
 	/**
@@ -72,7 +67,6 @@ public:
 		int32 PointCount,
 		float Spacing,
 		int32 Direction,
-		float EchelonAngle,
-		FRandomStream& RandomStream
+		float EchelonAngle
 	);
 };

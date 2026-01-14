@@ -179,6 +179,31 @@ enum class ECircleDistributionMode : uint8
 };
 
 /**
+ * 纹理采样通道选择
+ */
+UENUM(BlueprintType)
+enum class ETextureSamplingChannel : uint8
+{
+	/** 自动判断：智能检测Alpha通道是否有效，无效则使用亮度 */
+	Auto        UMETA(DisplayName = "自动"),
+
+	/** 使用Alpha通道（透明度）*/
+	Alpha       UMETA(DisplayName = "Alpha通道"),
+
+	/** 使用感知亮度（Luminance = 0.299*R + 0.587*G + 0.114*B）*/
+	Luminance   UMETA(DisplayName = "亮度"),
+
+	/** 使用红色通道 */
+	Red         UMETA(DisplayName = "红色通道"),
+
+	/** 使用绿色通道 */
+	Green       UMETA(DisplayName = "绿色通道"),
+
+	/** 使用蓝色通道 */
+	Blue        UMETA(DisplayName = "蓝色通道")
+};
+
+/**
  * 泊松采样配置结构体
  */
 USTRUCT(BlueprintType)

@@ -7,7 +7,6 @@
 
 #include "CoreMinimal.h"
 #include "Math/UnrealMathUtility.h"
-#include "Math/RandomStream.h"
 
 /**
  * 几何阵型采样辅助类
@@ -29,8 +28,7 @@ public:
 	static TArray<FVector> GenerateHexagonalGrid(
 		int32 PointCount,
 		float Spacing,
-		int32 Rings,
-		FRandomStream& RandomStream
+		int32 Rings
 	);
 
 	/**
@@ -41,8 +39,7 @@ public:
 		int32 PointCount,
 		float OuterRadius,
 		float InnerRadius,
-		int32 PointsCount,
-		FRandomStream& RandomStream
+		int32 PointsCount
 	);
 
 	/**
@@ -52,8 +49,7 @@ public:
 	static TArray<FVector> GenerateArchimedeanSpiral(
 		int32 PointCount,
 		float Spacing,
-		float Turns,
-		FRandomStream& RandomStream
+		float Turns
 	);
 
 	/**
@@ -63,8 +59,7 @@ public:
 	static TArray<FVector> GenerateLogarithmicSpiral(
 		int32 PointCount,
 		float GrowthFactor,
-		float AngleStep,
-		FRandomStream& RandomStream
+		float AngleStep
 	);
 
 	/**
@@ -73,8 +68,7 @@ public:
 	 */
 	static TArray<FVector> GenerateHeartFormation(
 		int32 PointCount,
-		float Size,
-		FRandomStream& RandomStream
+		float Size
 	);
 
 	/**
@@ -85,8 +79,7 @@ public:
 		int32 PointCount,
 		float OuterRadius,
 		float InnerRadius,
-		int32 PetalCount,
-		FRandomStream& RandomStream
+		int32 PetalCount
 	);
 
 private:

@@ -8,8 +8,8 @@
 TArray<FVector> FMilitaryFormationHelper::GenerateWedgeFormation(
 	int32 PointCount,
 	float Spacing,
-	float WedgeAngle,
-	FRandomStream& RandomStream)
+	float WedgeAngle)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -67,8 +67,8 @@ TArray<FVector> FMilitaryFormationHelper::GenerateWedgeFormation(
 
 TArray<FVector> FMilitaryFormationHelper::GenerateColumnFormation(
 	int32 PointCount,
-	float Spacing,
-	FRandomStream& RandomStream)
+	float Spacing)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -90,8 +90,8 @@ TArray<FVector> FMilitaryFormationHelper::GenerateColumnFormation(
 
 TArray<FVector> FMilitaryFormationHelper::GenerateLineFormation(
 	int32 PointCount,
-	float Spacing,
-	FRandomStream& RandomStream)
+	float Spacing)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -117,8 +117,8 @@ TArray<FVector> FMilitaryFormationHelper::GenerateLineFormation(
 TArray<FVector> FMilitaryFormationHelper::GenerateVeeFormation(
 	int32 PointCount,
 	float Spacing,
-	float VeeAngle,
-	FRandomStream& RandomStream)
+	float VeeAngle)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -170,8 +170,8 @@ TArray<FVector> FMilitaryFormationHelper::GenerateEchelonFormation(
 	int32 PointCount,
 	float Spacing,
 	int32 Direction,
-	float EchelonAngle,
-	FRandomStream& RandomStream)
+	float EchelonAngle)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)

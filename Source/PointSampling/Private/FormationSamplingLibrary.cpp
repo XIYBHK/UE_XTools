@@ -61,6 +61,30 @@ namespace FormationSamplingInternal
 
 		return TransformedPoints;
 	}
+
+	/**
+	 * 应用位置扰动
+	 * @param Points 点位数组（会被修改）
+	 * @param JitterStrength 扰动强度 (0-1)
+	 * @param Scale 扰动缩放系数（通常是Spacing或Radius）
+	 * @param RandomStream 随机流
+	 */
+	static void ApplyJitter(
+		TArray<FVector>& Points,
+		float JitterStrength,
+		float Scale,
+		FRandomStream& RandomStream)
+	{
+		if (JitterStrength > 0.0f && Points.Num() > 0)
+		{
+			const float JitterRange = JitterStrength * Scale;
+			for (FVector& Point : Points)
+			{
+				Point.X += RandomStream.FRandRange(-JitterRange, JitterRange);
+				Point.Y += RandomStream.FRandRange(-JitterRange, JitterRange);
+			}
+		}
+	}
 }
 
 // ============================================================================
@@ -630,18 +654,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateWedgeFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FMilitaryFormationHelper::GenerateWedgeFormation(
-		PointCount, Spacing, WedgeAngle, RandomStream
+		PointCount, Spacing, WedgeAngle
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -658,18 +674,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateColumnFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FMilitaryFormationHelper::GenerateColumnFormation(
-		PointCount, Spacing, RandomStream
+		PointCount, Spacing
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -686,18 +694,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateLineFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FMilitaryFormationHelper::GenerateLineFormation(
-		PointCount, Spacing, RandomStream
+		PointCount, Spacing
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -715,18 +715,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateVeeFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FMilitaryFormationHelper::GenerateVeeFormation(
-		PointCount, Spacing, VeeAngle, RandomStream
+		PointCount, Spacing, VeeAngle
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -745,18 +737,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateEchelonFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FMilitaryFormationHelper::GenerateEchelonFormation(
-		PointCount, Spacing, Direction, EchelonAngle, RandomStream
+		PointCount, Spacing, Direction, EchelonAngle
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -778,18 +762,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHexagonalGrid(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FGeometricFormationHelper::GenerateHexagonalGrid(
-		PointCount, Spacing, Rings, RandomStream
+		PointCount, Spacing, Rings
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -808,18 +784,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateStarFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FGeometricFormationHelper::GenerateStarFormation(
-		PointCount, OuterRadius, InnerRadius, PointsCount, RandomStream
+		PointCount, OuterRadius, InnerRadius, PointsCount
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * OuterRadius * 0.1f;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * OuterRadius * 0.1f;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, OuterRadius * 0.1f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -837,18 +805,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateArchimedeanSpiral(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FGeometricFormationHelper::GenerateArchimedeanSpiral(
-		PointCount, Spacing, Turns, RandomStream
+		PointCount, Spacing, Turns
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Spacing;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -866,18 +826,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateLogarithmicSpiral(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FGeometricFormationHelper::GenerateLogarithmicSpiral(
-		PointCount, GrowthFactor, AngleStep, RandomStream
+		PointCount, GrowthFactor, AngleStep
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * 10.0f;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * 10.0f;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, 10.0f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -894,18 +846,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHeartFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FGeometricFormationHelper::GenerateHeartFormation(
-		PointCount, Size, RandomStream
+		PointCount, Size
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Size * 0.1f;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * Size * 0.1f;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Size * 0.1f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -924,18 +868,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFlowerFormation(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FGeometricFormationHelper::GenerateFlowerFormation(
-		PointCount, OuterRadius, InnerRadius, PetalCount, RandomStream
+		PointCount, OuterRadius, InnerRadius, PetalCount
 	);
 
-	// 应用扰动
-	if (JitterStrength > 0.0f && LocalPoints.Num() > 0)
-	{
-		for (FVector& Point : LocalPoints)
-		{
-			Point.X += RandomStream.FRandRange(-JitterStrength, JitterStrength) * OuterRadius * 0.1f;
-			Point.Y += RandomStream.FRandRange(-JitterStrength, JitterStrength) * OuterRadius * 0.1f;
-		}
-	}
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, OuterRadius * 0.1f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }

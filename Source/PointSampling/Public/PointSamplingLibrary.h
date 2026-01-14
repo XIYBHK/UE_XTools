@@ -154,6 +154,70 @@ public:
 	static float CalculateDistributionUniformity(const TArray<FVector>& Points);
 
 	// ============================================================================
+	// 纹理采样（智能统一接口）
+	// ============================================================================
+
+	/**
+	 * 从纹理生成点阵（智能模式，支持所有格式）
+	 *
+	 * 自动检测纹理格式并选择最优方法：
+	 * - 未压缩格式（BGRA8/RGBA8）：直接读取（更快）
+	 * - 压缩格式（DXT/BC等）：自动渲染（通用）
+	 *
+	 * @param Texture 纹理对象（支持所有UE格式，包括DXT/BC压缩）
+	 * @param MaxSampleSize 最大采样尺寸（纹理会被降采样到此尺寸）
+	 * @param Spacing 像素步长（值越大点越稀疏）
+	 * @param PixelThreshold 像素阈值 (0-1)，只采样高于此值的像素
+	 * @param TextureScale 纹理缩放（影响生成点位的物理尺寸）
+	 * @param SamplingChannel 采样通道（自动/Alpha/亮度/红/绿/蓝）
+	 * @return 点位数组（局部坐标，居中）
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
+		meta = (DisplayName = "从纹理生成点阵",
+			ToolTip = "智能纹理采样，自动支持所有格式（DXT/BC压缩等）。\n\n参数:\nTexture - 纹理对象\nMaxSampleSize - 最大采样尺寸\nSpacing - 像素步长\nPixelThreshold - 像素阈值(0-1)\nTextureScale - 纹理缩放\nSamplingChannel - 采样通道\n\n返回值:\n点位数组（局部坐标，居中）",
+			Keywords = "纹理,texture,图片,image,采样,点阵,pattern",
+			AdvancedDisplay = "SamplingChannel"))
+	static TArray<FVector> GeneratePointsFromTexture(
+		UTexture2D* Texture,
+		int32 MaxSampleSize = 512,
+		float Spacing = 1.0f,
+		float PixelThreshold = 0.5f,
+		float TextureScale = 1.0f,
+		ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto
+	);
+
+	/**
+	 * 从纹理生成点阵（泊松圆盘采样）
+	 *
+	 * 基于纹理密度的泊松圆盘采样，分布更均匀
+	 *
+	 * @param Texture 纹理对象
+	 * @param MaxSampleSize 最大采样尺寸
+	 * @param MinRadius 最小采样半径（密集区域）
+	 * @param MaxRadius 最大采样半径（稀疏区域）
+	 * @param PixelThreshold 像素阈值 (0-1)
+	 * @param TextureScale 纹理缩放
+	 * @param SamplingChannel 采样通道
+	 * @param MaxAttempts 最大尝试次数
+	 * @return 基于纹理密度的泊松采样点位数组
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
+		meta = (DisplayName = "从纹理生成点阵（泊松采样）",
+			ToolTip = "基于纹理密度的泊松圆盘采样，分布更均匀。\n\n参数:\nTexture - 纹理对象\nMaxSampleSize - 最大采样尺寸\nMinRadius - 最小半径\nMaxRadius - 最大半径\nPixelThreshold - 像素阈值\nTextureScale - 纹理缩放\nSamplingChannel - 采样通道\nMaxAttempts - 最大尝试次数",
+			Keywords = "纹理,texture,图片,泊松,poisson,采样,点阵",
+			AdvancedDisplay = "SamplingChannel,MaxAttempts"))
+	static TArray<FVector> GeneratePointsFromTextureWithPoisson(
+		UTexture2D* Texture,
+		int32 MaxSampleSize = 512,
+		float MinRadius = 10.0f,
+		float MaxRadius = 50.0f,
+		float PixelThreshold = 0.5f,
+		float TextureScale = 1.0f,
+		ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto,
+		int32 MaxAttempts = 30
+	);
+
+	// ============================================================================
 	// 通用阵型生成器 (基于模式选择)
 	// ============================================================================
 

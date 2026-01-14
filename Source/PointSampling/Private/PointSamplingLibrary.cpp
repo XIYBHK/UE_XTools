@@ -7,6 +7,7 @@
 #include "PointSamplingLibrary.h"
 #include "FormationSamplingLibrary.h"
 #include "Algorithms/PoissonDiskSampling.h"
+#include "Sampling/TextureSamplingHelper.h"
 
 // ============================================================================
 // 基础2D/3D采样
@@ -501,4 +502,48 @@ float UPointSamplingLibrary::CalculateDistributionUniformity(const TArray<FVecto
 	float UniformityScore = 1.0f - FMath::Clamp(StdDev / MaxExpectedStdDev, 0.0f, 1.0f);
 
 	return UniformityScore;
+}
+
+// ============================================================================
+// 纹理采样（智能统一接口）
+// ============================================================================
+
+TArray<FVector> UPointSamplingLibrary::GeneratePointsFromTexture(
+	UTexture2D* Texture,
+	int32 MaxSampleSize,
+	float Spacing,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel)
+{
+	return FTextureSamplingHelper::GenerateFromTextureAuto(
+		Texture,
+		MaxSampleSize,
+		Spacing,
+		PixelThreshold,
+		TextureScale,
+		SamplingChannel
+	);
+}
+
+TArray<FVector> UPointSamplingLibrary::GeneratePointsFromTextureWithPoisson(
+	UTexture2D* Texture,
+	int32 MaxSampleSize,
+	float MinRadius,
+	float MaxRadius,
+	float PixelThreshold,
+	float TextureScale,
+	ETextureSamplingChannel SamplingChannel,
+	int32 MaxAttempts)
+{
+	return FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
+		Texture,
+		MaxSampleSize,
+		MinRadius,
+		MaxRadius,
+		PixelThreshold,
+		TextureScale,
+		SamplingChannel,
+		MaxAttempts
+	);
 }

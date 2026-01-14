@@ -8,8 +8,8 @@
 TArray<FVector> FGeometricFormationHelper::GenerateHexagonalGrid(
 	int32 PointCount,
 	float Spacing,
-	int32 Rings,
-	FRandomStream& RandomStream)
+	int32 Rings)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0 || Rings < 0)
@@ -58,8 +58,8 @@ TArray<FVector> FGeometricFormationHelper::GenerateStarFormation(
 	int32 PointCount,
 	float OuterRadius,
 	float InnerRadius,
-	int32 PointsCount,
-	FRandomStream& RandomStream)
+	int32 PointsCount)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0 || PointsCount < 3)
@@ -95,8 +95,8 @@ TArray<FVector> FGeometricFormationHelper::GenerateStarFormation(
 TArray<FVector> FGeometricFormationHelper::GenerateArchimedeanSpiral(
 	int32 PointCount,
 	float Spacing,
-	float Turns,
-	FRandomStream& RandomStream)
+	float Turns)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -130,8 +130,8 @@ TArray<FVector> FGeometricFormationHelper::GenerateArchimedeanSpiral(
 TArray<FVector> FGeometricFormationHelper::GenerateLogarithmicSpiral(
 	int32 PointCount,
 	float GrowthFactor,
-	float AngleStep,
-	FRandomStream& RandomStream)
+	float AngleStep)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -164,8 +164,8 @@ TArray<FVector> FGeometricFormationHelper::GenerateLogarithmicSpiral(
 
 TArray<FVector> FGeometricFormationHelper::GenerateHeartFormation(
 	int32 PointCount,
-	float Size,
-	FRandomStream& RandomStream)
+	float Size)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0)
@@ -192,8 +192,8 @@ TArray<FVector> FGeometricFormationHelper::GenerateFlowerFormation(
 	int32 PointCount,
 	float OuterRadius,
 	float InnerRadius,
-	int32 PetalCount,
-	FRandomStream& RandomStream)
+	int32 PetalCount)
+
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0 || PetalCount <= 0)

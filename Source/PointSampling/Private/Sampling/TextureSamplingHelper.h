@@ -10,6 +10,8 @@
 #include "PointSamplingTypes.h"
 
 class UTexture2D;
+class UMaterialInterface;
+class UTextureRenderTarget2D;
 
 /**
  * 纹理采样算法辅助类
@@ -17,10 +19,97 @@ class UTexture2D;
  * 职责：实现从纹理像素生成点位的算法
  * - 基于像素亮度/Alpha 值采样
  * - 支持纹理缩放和阈值过滤
+ * - 支持Material Instance采样（所有压缩格式）
  */
 class FTextureSamplingHelper
 {
 public:
+	// ============================================================================
+	// 智能统一接口（推荐使用，自动处理所有格式）
+	// ============================================================================
+
+	/**
+	 * 智能纹理采样（自动选择最优方法）
+	 *
+	 * 自动检测纹理格式：
+	 * - 未压缩格式（BGRA8/RGBA8）：直接读取（更快）
+	 * - 压缩格式（DXT/BC等）：自动创建Material并渲染（通用）
+	 *
+	 * @param Texture 纹理对象（支持所有UE格式）
+	 * @param MaxSampleSize 最大采样尺寸
+	 * @param Spacing 像素步长
+	 * @param PixelThreshold 像素采样阈值 (0-1)
+	 * @param TextureScale 纹理缩放
+	 * @param SamplingChannel 采样通道选择
+	 * @return 基于像素的点位数组（局部坐标，居中）
+	 */
+	static TArray<FVector> GenerateFromTextureAuto(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float Spacing,
+		float PixelThreshold,
+		float TextureScale,
+		ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto
+	);
+
+	/**
+	 * 智能纹理采样（泊松圆盘，自动选择最优方法）
+	 */
+	static TArray<FVector> GenerateFromTextureAutoWithPoisson(
+		UTexture2D* Texture,
+		int32 MaxSampleSize,
+		float MinRadius,
+		float MaxRadius,
+		float PixelThreshold,
+		float TextureScale,
+		ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto,
+		int32 MaxAttempts = 30
+	);
+
+	// ============================================================================
+	// Material Instance 采样（高级用法）
+	// ============================================================================
+
+	/**
+	 * 从材质实例采样生成点阵（支持所有纹理压缩格式）
+	 *
+	 * 原理：将Material渲染到RenderTarget，然后从RenderTarget读取像素
+	 * 优点：支持所有UE纹理格式（DXT/BC压缩等）、支持材质节点处理
+	 *
+	 * @param Material 材质实例（应包含要采样的纹理）
+	 * @param MaxSampleSize 最大采样尺寸
+	 * @param Spacing 像素步长
+	 * @param PixelThreshold 像素采样阈值 (0-1)
+	 * @param TextureScale 纹理缩放
+	 * @param SamplingChannel 采样通道选择
+	 * @return 基于像素的点位数组（局部坐标，居中）
+	 */
+	static TArray<FVector> GenerateFromMaterial(
+		UMaterialInterface* Material,
+		int32 MaxSampleSize,
+		float Spacing,
+		float PixelThreshold,
+		float TextureScale,
+		ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto
+	);
+
+	/**
+	 * 从材质实例采样生成点阵（基于泊松圆盘）
+	 */
+	static TArray<FVector> GenerateFromMaterialWithPoisson(
+		UMaterialInterface* Material,
+		int32 MaxSampleSize,
+		float MinRadius,
+		float MaxRadius,
+		float PixelThreshold,
+		float TextureScale,
+		ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto,
+		int32 MaxAttempts = 30
+	);
+
+	// ============================================================================
+	// 原有纹理采样函数（保持向后兼容）
+	// ============================================================================
 	/**
 	 * 从纹理像素生成点阵（智能降采样方法）
 	 * @param Texture 纹理引用
@@ -85,6 +174,14 @@ private:
 	 * @return 采样值 (0-1)
 	 */
 	static float CalculatePixelSamplingValue(const FColor& Color, bool bUseAlpha);
+
+	/**
+	 * 根据通道选择计算像素采样值（新增）
+	 * @param Color 像素颜色
+	 * @param Channel 通道选择
+	 * @return 采样值 (0-1)
+	 */
+	static float CalculatePixelSamplingValueByChannel(const FLinearColor& Color, ETextureSamplingChannel Channel);
 
 	/**
 	 * 采样纹理像素（简化实现，尝试读取未压缩纹理数据）
@@ -180,5 +277,72 @@ private:
 		int32 OriginalWidth,
 		int32 OriginalHeight,
 		uint32 BytesPerPixel
+	);
+
+	// ============================================================================
+	// Material Instance 采样私有辅助函数
+	// ============================================================================
+
+	/**
+	 * 检查纹理格式是否支持直接读取（未压缩格式）
+	 * @param Texture 纹理对象
+	 * @return true=可以直接读取，false=需要使用Material方法
+	 */
+	static bool IsTextureFormatDirectReadable(UTexture2D* Texture);
+
+	/**
+	 * 创建临时材质用于纹理渲染
+	 * @param Texture 源纹理
+	 * @param World World Context（用于创建MaterialInstanceDynamic）
+	 * @return 创建的材质实例
+	 */
+	static UMaterialInstanceDynamic* CreateTemporaryMaterialForTexture(UTexture2D* Texture, UWorld* World);
+
+	/**
+	 * 创建临时RenderTarget用于材质渲染
+	 * @param Size RenderTarget尺寸
+	 * @return 创建的RenderTarget对象
+	 */
+	static UTextureRenderTarget2D* CreateTemporaryRenderTarget(int32 Size);
+
+	/**
+	 * 将材质渲染到RenderTarget
+	 * @param Material 要渲染的材质
+	 * @param RenderTarget 目标RenderTarget
+	 * @return 是否渲染成功
+	 */
+	static bool RenderMaterialToTarget(UMaterialInterface* Material, UTextureRenderTarget2D* RenderTarget);
+
+	/**
+	 * 从RenderTarget读取像素数据并生成点阵
+	 * @param RenderTarget 源RenderTarget
+	 * @param MaxSampleSize 最大采样尺寸
+	 * @param Spacing 像素步长
+	 * @param PixelThreshold 像素阈值
+	 * @param TextureScale 纹理缩放
+	 * @param SamplingChannel 采样通道
+	 * @return 生成的点位数组
+	 */
+	static TArray<FVector> GeneratePointsFromRenderTarget(
+		UTextureRenderTarget2D* RenderTarget,
+		int32 MaxSampleSize,
+		float Spacing,
+		float PixelThreshold,
+		float TextureScale,
+		ETextureSamplingChannel SamplingChannel
+	);
+
+	/**
+	 * 从RenderTarget读取像素数据并生成泊松采样点阵
+	 */
+	static TArray<FVector> GeneratePointsFromRenderTargetWithPoisson(
+		UTextureRenderTarget2D* RenderTarget,
+		int32 MaxSampleSize,
+		float MinRadius,
+		float MaxRadius,
+		float PixelThreshold,
+		float TextureScale,
+		ETextureSamplingChannel SamplingChannel,
+		int32 MaxAttempts
 	);
 };
