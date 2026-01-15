@@ -46,8 +46,7 @@ FReply SGraphNodeCasePairedPinsNode::OnAddPin()
 {
 	UK2Node_CasePairedPinsNode* CasePairedPinsNode = CastChecked<UK2Node_CasePairedPinsNode>(GraphNode);
 
-	// TODO: Use NSLOCTEXT macro
-	const FScopedTransaction Transaction(FText::AsCultureInvariant("Add Execution Pin"));
+	const FScopedTransaction Transaction(NSLOCTEXT("BlueprintExtensions", "AddExecutionPin", "添加执行引脚"));
 	CasePairedPinsNode->Modify();
 
 	CasePairedPinsNode->AddCasePinLast();

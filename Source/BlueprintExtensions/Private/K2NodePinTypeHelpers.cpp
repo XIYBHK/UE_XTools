@@ -7,6 +7,34 @@
 #include "EdGraphSchema_K2.h"
 #include "K2Node.h"
 
+namespace
+{
+	/**
+	 * 查找结构体中第一个指定类型的属性
+	 * @tparam TPropertyType 属性类型（如 FMapProperty、FArrayProperty、FSetProperty）
+	 * @param StructType 结构体类型
+	 * @return 找到的属性指针，未找到返回 nullptr
+	 */
+	template<typename TPropertyType>
+	TPropertyType* FindFirstPropertyOfType(const UScriptStruct* StructType)
+	{
+		if (!StructType)
+		{
+			return nullptr;
+		}
+
+		for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
+		{
+			if (TPropertyType* TypedProperty = CastField<TPropertyType>(*PropIt))
+			{
+				return TypedProperty;
+			}
+		}
+
+		return nullptr;
+	}
+}
+
 void FK2NodePinTypeHelpers::ResetPinToWildcard(UEdGraphPin* Pin, EPinContainerType ContainerType)
 {
 	if (!Pin)
@@ -80,18 +108,15 @@ bool FK2NodePinTypeHelpers::GetMapKeyTypeFromStructProperty(
 	FEdGraphPinType& OutKeyType,
 	const UEdGraphSchema_K2* Schema)
 {
-	if (!StructType || !Schema)
+	if (!Schema)
 	{
 		return false;
 	}
 
-	for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
+	if (FMapProperty* MapProperty = FindFirstPropertyOfType<FMapProperty>(StructType))
 	{
-		if (FMapProperty* MapProperty = CastField<FMapProperty>(*PropIt))
-		{
-			Schema->ConvertPropertyToPinType(MapProperty->KeyProp, OutKeyType);
-			return true;
-		}
+		Schema->ConvertPropertyToPinType(MapProperty->KeyProp, OutKeyType);
+		return true;
 	}
 
 	return false;
@@ -102,18 +127,15 @@ bool FK2NodePinTypeHelpers::GetMapValueTypeFromStructProperty(
 	FEdGraphPinType& OutValueType,
 	const UEdGraphSchema_K2* Schema)
 {
-	if (!StructType || !Schema)
+	if (!Schema)
 	{
 		return false;
 	}
 
-	for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
+	if (FMapProperty* MapProperty = FindFirstPropertyOfType<FMapProperty>(StructType))
 	{
-		if (FMapProperty* MapProperty = CastField<FMapProperty>(*PropIt))
-		{
-			Schema->ConvertPropertyToPinType(MapProperty->ValueProp, OutValueType);
-			return true;
-		}
+		Schema->ConvertPropertyToPinType(MapProperty->ValueProp, OutValueType);
+		return true;
 	}
 
 	return false;
@@ -124,18 +146,15 @@ bool FK2NodePinTypeHelpers::GetArrayElementTypeFromStructProperty(
 	FEdGraphPinType& OutElementType,
 	const UEdGraphSchema_K2* Schema)
 {
-	if (!StructType || !Schema)
+	if (!Schema)
 	{
 		return false;
 	}
 
-	for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
+	if (FArrayProperty* ArrayProperty = FindFirstPropertyOfType<FArrayProperty>(StructType))
 	{
-		if (FArrayProperty* ArrayProperty = CastField<FArrayProperty>(*PropIt))
-		{
-			Schema->ConvertPropertyToPinType(ArrayProperty->Inner, OutElementType);
-			return true;
-		}
+		Schema->ConvertPropertyToPinType(ArrayProperty->Inner, OutElementType);
+		return true;
 	}
 
 	return false;
@@ -146,18 +165,15 @@ bool FK2NodePinTypeHelpers::GetSetElementTypeFromStructProperty(
 	FEdGraphPinType& OutElementType,
 	const UEdGraphSchema_K2* Schema)
 {
-	if (!StructType || !Schema)
+	if (!Schema)
 	{
 		return false;
 	}
 
-	for (TFieldIterator<FProperty> PropIt(StructType); PropIt; ++PropIt)
+	if (FSetProperty* SetProperty = FindFirstPropertyOfType<FSetProperty>(StructType))
 	{
-		if (FSetProperty* SetProperty = CastField<FSetProperty>(*PropIt))
-		{
-			Schema->ConvertPropertyToPinType(SetProperty->ElementProp, OutElementType);
-			return true;
-		}
+		Schema->ConvertPropertyToPinType(SetProperty->ElementProp, OutElementType);
+		return true;
 	}
 
 	return false;

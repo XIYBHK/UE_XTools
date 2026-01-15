@@ -334,19 +334,16 @@ void UK2Node_CasePairedPinsNode::RemoveCasePinAt(int32 CaseIndex)
 
 int32 UK2Node_CasePairedPinsNode::GetCasePinCount() const
 {
-	// TODO: need to optimize.
-	for (int32 Index = Pins.Num(); Index >= 0; --Index)
+	// 优化：直接遍历 Pins 统计 CaseValuePin 数量，O(n) 复杂度
+	int32 Count = 0;
+	for (const UEdGraphPin* Pin : Pins)
 	{
-		UEdGraphPin* CaseKeyPinIndex = GetCaseKeyPinFromCaseIndex(Index);
-		UEdGraphPin* CaseValuePinIndex = GetCaseValuePinFromCaseIndex(Index);
-
-		if ((CaseKeyPinIndex != nullptr) && (CaseValuePinIndex != nullptr))
+		if (IsCaseValuePin(Pin))
 		{
-			return Index + 1;
+			++Count;
 		}
 	}
-
-	return 0;
+	return Count;
 }
 
 TArray<CasePinPair> UK2Node_CasePairedPinsNode::GetCasePinPairs() const

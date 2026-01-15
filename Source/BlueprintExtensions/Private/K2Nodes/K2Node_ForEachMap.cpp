@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_ForEachMap.h"
+#include "K2NodePinTypeHelpers.h"
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
@@ -30,47 +31,39 @@
 
 #pragma region Helper
 
-struct ForEachMapExpandNodeHelper
-{
-	UEdGraphPin* StartLoopExecInPin;
-	UEdGraphPin* InsideLoopExecOutPin;
-	UEdGraphPin* LoopCompleteOutExecPin;
-
-	UEdGraphPin* ArrayIndexOutPin;
-	UEdGraphPin* LoopCounterOutPin;
-	// for(LoopCounter = 0; LoopCounter < LoopCounterLimit; ++LoopCounter)
-	UEdGraphPin* LoopCounterLimitInPin;
-
-	ForEachMapExpandNodeHelper()
-		: StartLoopExecInPin(nullptr)
-		, InsideLoopExecOutPin(nullptr)
-		, LoopCompleteOutExecPin(nullptr)
-		, ArrayIndexOutPin(nullptr)
-		, LoopCounterOutPin(nullptr)
-		, LoopCounterLimitInPin(nullptr)
-	{ }
-
-	bool BuildLoop(UK2Node* Node, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
-	{
-		const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
-		check(Node && SourceGraph && Schema);
-
-		bool bResult = true;
-    
-		// TODO: 实现循环构建逻辑
-    
-		return bResult;
-	}
-};
-
 namespace ForEachMapHelper
 {
 	const FName LoopBodyPinName = FName("Loop Body") ;
-	const FName BreakPinName = FName("Loop Body") ;
+	const FName BreakPinName = FName("Break");
 	const FName MapPinName = FName("Map");
 	const FName KeyPinName = FName("Key");
 	const FName ValuePinName = FName("Value");
 	const FName IndexPinName = FName("Index");
+
+	/** 从源引脚复制类型到目标引脚（基础类型） */
+	void CopyPinType(UEdGraphPin* DestPin, const UEdGraphPin* SourcePin)
+	{
+		DestPin->PinType.PinCategory = SourcePin->PinType.PinCategory;
+		DestPin->PinType.PinSubCategory = SourcePin->PinType.PinSubCategory;
+		DestPin->PinType.PinSubCategoryObject = SourcePin->PinType.PinSubCategoryObject;
+	}
+
+	/** 从源引脚复制 Key 类型到 Map 引脚 */
+	void CopyKeyTypeToMapPin(UEdGraphPin* MapPin, const UEdGraphPin* SourcePin)
+	{
+		MapPin->PinType.PinCategory = SourcePin->PinType.PinCategory;
+		MapPin->PinType.PinSubCategory = SourcePin->PinType.PinSubCategory;
+		MapPin->PinType.PinSubCategoryObject = SourcePin->PinType.PinSubCategoryObject;
+	}
+
+	/** 从源引脚复制 Value 类型到 Map 引脚的 PinValueType */
+	void CopyValueTypeToMapPin(UEdGraphPin* MapPin, const UEdGraphPin* SourcePin)
+	{
+		MapPin->PinType.PinValueType.TerminalCategory = SourcePin->PinType.PinCategory;
+		MapPin->PinType.PinValueType.TerminalSubCategory = SourcePin->PinType.PinSubCategory;
+		MapPin->PinType.PinValueType.TerminalSubCategoryObject = SourcePin->PinType.PinSubCategoryObject;
+	}
+
 }
 
 #pragma endregion
@@ -471,7 +464,7 @@ void UK2Node_ForEachMap::PropagatePinType() const
 	{
 		// 检查Key和Value引脚是否都无连接
 		bool bAllPinsDisconnected = (KeyPin->LinkedTo.Num() == 0 && ValuePin->LinkedTo.Num() == 0);
-		
+
 		if (bAllPinsDisconnected)
 		{
 			// 检查是否已有确定的类型（从序列化数据恢复）
@@ -479,70 +472,53 @@ void UK2Node_ForEachMap::PropagatePinType() const
 			bool bMapValueIsWildcard = (MapPin->PinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Wildcard);
 			bool bKeyIsWildcard = (KeyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard);
 			bool bValueIsWildcard = (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard);
-			
+
 			if (!bMapKeyIsWildcard || !bMapValueIsWildcard || !bKeyIsWildcard || !bValueIsWildcard)
 			{
 				// 引脚已有确定的类型（从序列化数据恢复），保留它
-				// 这样重启编辑器后不会丢失类型信息
 				return;
 			}
 		}
-		
+
 		// 初始化 Map 引脚为 Wildcard
-		MapPin->PinType.ContainerType = EPinContainerType::Map;
-		MapPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-		MapPin->PinType.PinSubCategory = NAME_None;
-		MapPin->PinType.PinSubCategoryObject = nullptr;
-		MapPin->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-		MapPin->PinType.PinValueType.TerminalSubCategory = NAME_None;
-		MapPin->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+		FK2NodePinTypeHelpers::ResetMapPinToWildcard(MapPin);
 
 		// 处理 Key 引脚
 		if (KeyPin->LinkedTo.Num() > 0)
 		{
 			const UEdGraphPin* ConnectedKeyPin = KeyPin->LinkedTo[0];
-			MapPin->PinType.PinCategory = ConnectedKeyPin->PinType.PinCategory;
-			MapPin->PinType.PinSubCategory = ConnectedKeyPin->PinType.PinSubCategory;
-			MapPin->PinType.PinSubCategoryObject = ConnectedKeyPin->PinType.PinSubCategoryObject;
+			ForEachMapHelper::CopyKeyTypeToMapPin(MapPin, ConnectedKeyPin);
 			KeyPin->PinType = ConnectedKeyPin->PinType;
 		}
 		else
 		{
-			// 重置未连接的 Key 引脚
-			KeyPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-			KeyPin->PinType.PinSubCategory = NAME_None;
-			KeyPin->PinType.PinSubCategoryObject = nullptr;
+			FK2NodePinTypeHelpers::ResetPinToWildcard(KeyPin);
 		}
 
 		// 处理 Value 引脚
 		if (ValuePin->LinkedTo.Num() > 0)
 		{
 			const UEdGraphPin* ConnectedValuePin = ValuePin->LinkedTo[0];
-			MapPin->PinType.PinValueType.TerminalCategory = ConnectedValuePin->PinType.PinCategory;
-			MapPin->PinType.PinValueType.TerminalSubCategory = ConnectedValuePin->PinType.PinSubCategory;
-			MapPin->PinType.PinValueType.TerminalSubCategoryObject = ConnectedValuePin->PinType.PinSubCategoryObject;
+			ForEachMapHelper::CopyValueTypeToMapPin(MapPin, ConnectedValuePin);
 			ValuePin->PinType = ConnectedValuePin->PinType;
 		}
 		else
 		{
-			// 重置未连接的 Value 引脚
-			ValuePin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-			ValuePin->PinType.PinSubCategory = NAME_None;
-			ValuePin->PinType.PinSubCategoryObject = nullptr;
+			FK2NodePinTypeHelpers::ResetPinToWildcard(ValuePin);
 		}
 
 		bNotifyGraphChanged = true;
 	}
-	
+
 	// 第二种情况：Map引脚有连接且需要更新类型
 	else if (MapPin->LinkedTo.Num() > 0)
 	{
 	    const UEdGraphPin* ConnectedPin = MapPin->LinkedTo[0];
-	    
+
 	    if (ConnectedPin->PinType.ContainerType == EPinContainerType::Map)
 	    {
 	        bool bShouldUpdate = false;
-	        
+
 	        // 更新 Map 引脚的容器类型
 	        if (MapPin->PinType.ContainerType != EPinContainerType::Map)
 	        {
@@ -553,41 +529,28 @@ void UK2Node_ForEachMap::PropagatePinType() const
 	        // 处理 Key 类型
 	        if (KeyPin->LinkedTo.Num() > 0 && KeyPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 	        {
-	            // 使用已连接的 Key 引脚类型
 	            const UEdGraphPin* ConnectedKeyPin = KeyPin->LinkedTo[0];
-	            MapPin->PinType.PinCategory = ConnectedKeyPin->PinType.PinCategory;
-	            MapPin->PinType.PinSubCategory = ConnectedKeyPin->PinType.PinSubCategory;
-	            MapPin->PinType.PinSubCategoryObject = ConnectedKeyPin->PinType.PinSubCategoryObject;
+	            ForEachMapHelper::CopyKeyTypeToMapPin(MapPin, ConnectedKeyPin);
 	            KeyPin->PinType = ConnectedKeyPin->PinType;
 	            bShouldUpdate = true;
 	        }
 	        else if (ConnectedPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 	        {
-	        	// 使用外部 Map 的 Key 类型（而不是整个 Map 的类型）
-	        	MapPin->PinType.PinCategory = ConnectedPin->PinType.PinCategory;
-	        	MapPin->PinType.PinSubCategory = ConnectedPin->PinType.PinSubCategory;
-	        	MapPin->PinType.PinSubCategoryObject = ConnectedPin->PinType.PinSubCategoryObject;
-    
-	        	KeyPin->PinType.PinCategory = ConnectedPin->PinType.PinCategory;
-	        	KeyPin->PinType.PinSubCategory = ConnectedPin->PinType.PinSubCategory;
-	        	KeyPin->PinType.PinSubCategoryObject = ConnectedPin->PinType.PinSubCategoryObject;
+	        	ForEachMapHelper::CopyKeyTypeToMapPin(MapPin, ConnectedPin);
+	        	ForEachMapHelper::CopyPinType(KeyPin, ConnectedPin);
 	        	bShouldUpdate = true;
 	        }
 
 	        // 处理 Value 类型
 	        if (ValuePin->LinkedTo.Num() > 0 && ValuePin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 	        {
-	            // 使用已连接的 Value 引脚类型
 	            const UEdGraphPin* ConnectedValuePin = ValuePin->LinkedTo[0];
-	            MapPin->PinType.PinValueType.TerminalCategory = ConnectedValuePin->PinType.PinCategory;
-	            MapPin->PinType.PinValueType.TerminalSubCategory = ConnectedValuePin->PinType.PinSubCategory;
-	            MapPin->PinType.PinValueType.TerminalSubCategoryObject = ConnectedValuePin->PinType.PinSubCategoryObject;
+	            ForEachMapHelper::CopyValueTypeToMapPin(MapPin, ConnectedValuePin);
 	            ValuePin->PinType = ConnectedValuePin->PinType;
 	            bShouldUpdate = true;
 	        }
 	        else if (ConnectedPin->PinType.PinValueType.TerminalCategory != UEdGraphSchema_K2::PC_Wildcard)
 	        {
-	            // 使用外部 Map 的 Value 类型
 	            const FEdGraphPinType ValuePinType = FEdGraphPinType::GetPinTypeForTerminalType(ConnectedPin->PinType.PinValueType);
 	            MapPin->PinType.PinValueType = ConnectedPin->PinType.PinValueType;
 	            ValuePin->PinType = ValuePinType;

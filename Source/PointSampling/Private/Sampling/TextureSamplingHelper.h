@@ -291,6 +291,14 @@ private:
 	static bool IsTextureFormatDirectReadable(UTexture2D* Texture);
 
 	/**
+	 * 验证平台数据纹理格式是否支持，并输出错误日志
+	 * @param PixelFormat 像素格式
+	 * @param FunctionName 调用函数名（用于日志）
+	 * @return true=格式支持，false=格式不支持
+	 */
+	static bool ValidateAndLogPlatformTextureFormat(EPixelFormat PixelFormat, const TCHAR* FunctionName);
+
+	/**
 	 * 创建临时材质用于纹理渲染
 	 * @param Texture 源纹理
 	 * @param World World Context（用于创建MaterialInstanceDynamic）

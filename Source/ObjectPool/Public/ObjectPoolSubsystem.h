@@ -191,6 +191,23 @@ public:
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池|查询")
     bool IsActorPooled(const AActor* Actor) const;
 
+    /**
+     * 获取所有池的统计信息（用于调试显示）
+     * @return 所有池的统计信息数组
+     */
+    TArray<FObjectPoolStats> GetAllPoolStats() const;
+
+    /**
+     * 获取子系统统计信息（公开接口）
+     * @return 子系统级别的统计信息
+     */
+    const FObjectPoolSubsystemStats& GetStats() const { return SubsystemStats; }
+
+    /**
+     * 获取当前池数量
+     */
+    int32 GetPoolCount() const;
+
 
 
 private:

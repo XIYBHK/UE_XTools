@@ -588,6 +588,30 @@ FObjectPoolSubsystemStats UObjectPoolSubsystem::GetSubsystemStats() const
     return SubsystemStats;
 }
 
+TArray<FObjectPoolStats> UObjectPoolSubsystem::GetAllPoolStats() const
+{
+    TArray<FObjectPoolStats> AllStats;
+
+    FReadScopeLock ReadLock(PoolsRWLock);
+    AllStats.Reserve(ActorPools.Num());
+
+    for (const auto& PoolPair : ActorPools)
+    {
+        if (PoolPair.Value.IsValid() && IsValid(PoolPair.Key))
+        {
+            AllStats.Add(PoolPair.Value->GetStats());
+        }
+    }
+
+    return AllStats;
+}
+
+int32 UObjectPoolSubsystem::GetPoolCount() const
+{
+    FReadScopeLock ReadLock(PoolsRWLock);
+    return ActorPools.Num();
+}
+
 //  UE官方垃圾回收系统集成实现
 
 void UObjectPoolSubsystem::OnPreGarbageCollect()

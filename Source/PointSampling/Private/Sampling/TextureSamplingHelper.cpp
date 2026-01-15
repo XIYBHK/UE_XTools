@@ -20,6 +20,21 @@
 #include "Kismet/KismetRenderingLibrary.h"
 
 // ============================================================================
+// 纹理采样常量定义
+// ============================================================================
+namespace TextureSamplingConstants
+{
+	/** 编辑器模式下最大允许采样点数 */
+	constexpr int32 MaxAllowedPointsEditor = 100000;
+
+	/** 运行时模式下最大允许采样点数 */
+	constexpr int32 MaxAllowedPointsRuntime = 50000;
+
+	/** Alpha 通道方差检测阈值（低于此值认为 Alpha 无效） */
+	constexpr float AlphaStdDevThreshold = 10.0f;
+}
+
+// ============================================================================
 // 辅助函数（参考 UE SubUVAnimation.cpp 的标准实现）
 // ============================================================================
 
@@ -74,6 +89,15 @@ FLinearColor FTextureSamplingHelper::SampleTexturePixel(UTexture2D* Texture, flo
 	// 读取像素数据
 	const uint8* PixelData = static_cast<const uint8*>(RawData);
 	const int64 PixelIndex = ((int64)PixelY * Width + PixelX) * 4;
+	const int64 DataSize = Mip0.BulkData.GetBulkDataSize();
+
+	// 边界检查：确保访问不会越界
+	if (PixelIndex + 3 >= DataSize)
+	{
+		Mip0.BulkData.Unlock();
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 像素索引越界: Index=%lld, DataSize=%lld"), PixelIndex, DataSize);
+		return FLinearColor::White;
+	}
 
 	FColor PixelColor;
 	if (PixelFormat == PF_B8G8R8A8)
@@ -227,10 +251,8 @@ bool FTextureSamplingHelper::ShouldUseAlphaChannel(UTexture2D* Texture)
 					// 计算标准差
 					float StdDev = FMath::Sqrt(Variance);
 
-					// 判断阈值：标准差小于10说明Alpha通道几乎是常数（例如全255或全0）
-					const float MinStdDevThreshold = 10.0f;
-
-					if (StdDev < MinStdDevThreshold)
+					// 判断阈值：标准差小于阈值说明Alpha通道几乎是常数（例如全255或全0）
+					if (StdDev < TextureSamplingConstants::AlphaStdDevThreshold)
 					{
 						// Alpha通道没有有效信息，使用Luminance
 						UE_LOG(LogPointSampling, Log,
@@ -448,11 +470,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSource(
 
 	// 限制最大点数
 	const int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
-	const int32 MaxAllowedPoints = 100000; // 提高到10万点
 
-	if (EstimatedMaxPoints > MaxAllowedPoints)
+	if (EstimatedMaxPoints > TextureSamplingConstants::MaxAllowedPointsEditor)
 	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制 %d，减少采样密度"), EstimatedMaxPoints, MaxAllowedPoints);
+		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制 %d，减少采样密度"), EstimatedMaxPoints, TextureSamplingConstants::MaxAllowedPointsEditor);
 		return Points; // 直接返回空数组，避免性能问题
 	}
 
@@ -775,24 +796,8 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 	// 检查纹理格式是否支持
 	EPixelFormat PixelFormat = PlatformData->PixelFormat;
 
-	// 支持的格式：BGRA8, RGBA8, FloatRGBA
-	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
-		(PixelFormat == PF_R8G8B8A8) ||
-		(PixelFormat == PF_A8R8G8B8) ||
-		(PixelFormat == PF_FloatRGBA);
-
-	if (!bIsSupportedFormat)
+	if (!ValidateAndLogPlatformTextureFormat(PixelFormat, TEXT("纹理采样")))
 	{
-		UE_LOG(LogPointSampling, Error, TEXT("[纹理采样] 纹理格式不支持！当前格式: %d (%s)"),
-			(int32)PixelFormat,
-			GetPixelFormatString(PixelFormat));
-
-		UE_LOG(LogPointSampling, Error, TEXT("[纹理采样] 请在纹理设置中修改："));
-		UE_LOG(LogPointSampling, Error, TEXT("  1. Compression Settings -> VectorDisplacementmap (RGBA8)"));
-		UE_LOG(LogPointSampling, Error, TEXT("  2. Mip Gen Settings -> NoMipmaps"));
-		UE_LOG(LogPointSampling, Error, TEXT("  3. sRGB -> 取消勾选"));
-		UE_LOG(LogPointSampling, Error, TEXT("  4. 点击 'Save' 保存并重新导入纹理"));
-
 		return Points;
 	}
 
@@ -846,16 +851,15 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
 
 	// 计算预期最大点数（防止卡死）
 	int32 EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
-	const int32 MaxAllowedPoints = 50000; // 最大允许 5 万个点
 
-	if (EstimatedMaxPoints > MaxAllowedPoints)
+	if (EstimatedMaxPoints > TextureSamplingConstants::MaxAllowedPointsRuntime)
 	{
 		// 自动调整 Step 以限制点数
-		int32 RequiredStep = FMath::CeilToInt(FMath::Sqrt((float)(SampleWidth * SampleHeight) / MaxAllowedPoints));
+		int32 RequiredStep = FMath::CeilToInt(FMath::Sqrt((float)(SampleWidth * SampleHeight) / TextureSamplingConstants::MaxAllowedPointsRuntime));
 		Step = FMath::Max(Step, RequiredStep);
 
 		UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 预期点数 %d 超过限制 %d，自动调整 Spacing 从 %.1f 到 %d"),
-			EstimatedMaxPoints, MaxAllowedPoints, Spacing, Step);
+			EstimatedMaxPoints, TextureSamplingConstants::MaxAllowedPointsRuntime, Spacing, Step);
 
 		EstimatedMaxPoints = (SampleWidth / Step) * (SampleHeight / Step);
 	}
@@ -963,24 +967,8 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoiss
 	// 检查纹理格式是否支持
 	EPixelFormat PixelFormat = PlatformData->PixelFormat;
 
-	// 支持的格式：BGRA8, RGBA8, FloatRGBA
-	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
-		(PixelFormat == PF_R8G8B8A8) ||
-		(PixelFormat == PF_A8R8G8B8) ||
-		(PixelFormat == PF_FloatRGBA);
-
-	if (!bIsSupportedFormat)
+	if (!ValidateAndLogPlatformTextureFormat(PixelFormat, TEXT("纹理密度采样")))
 	{
-		UE_LOG(LogPointSampling, Error, TEXT("[纹理密度采样] 纹理格式不支持！当前格式: %d (%s)"),
-			(int32)PixelFormat,
-			GetPixelFormatString(PixelFormat));
-
-		UE_LOG(LogPointSampling, Error, TEXT("[纹理密度采样] 请在纹理设置中修改："));
-		UE_LOG(LogPointSampling, Error, TEXT("  1. Compression Settings -> VectorDisplacementmap (RGBA8)"));
-		UE_LOG(LogPointSampling, Error, TEXT("  2. Mip Gen Settings -> NoMipmaps"));
-		UE_LOG(LogPointSampling, Error, TEXT("  3. sRGB -> 取消勾选"));
-		UE_LOG(LogPointSampling, Error, TEXT("  4. 点击 'Save' 保存并重新导入纹理"));
-
 		return Points;
 	}
 
@@ -1509,6 +1497,31 @@ bool FTextureSamplingHelper::IsTextureFormatDirectReadable(UTexture2D* Texture)
 							 (PixelFormat == PF_FloatRGBA);
 
 	return bIsDirectReadable;
+}
+
+bool FTextureSamplingHelper::ValidateAndLogPlatformTextureFormat(EPixelFormat PixelFormat, const TCHAR* FunctionName)
+{
+	// 支持的格式：BGRA8, RGBA8, FloatRGBA
+	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
+		(PixelFormat == PF_R8G8B8A8) ||
+		(PixelFormat == PF_A8R8G8B8) ||
+		(PixelFormat == PF_FloatRGBA);
+
+	if (!bIsSupportedFormat)
+	{
+		UE_LOG(LogPointSampling, Error, TEXT("[%s] 纹理格式不支持！当前格式: %d (%s)"),
+			FunctionName,
+			(int32)PixelFormat,
+			GetPixelFormatString(PixelFormat));
+
+		UE_LOG(LogPointSampling, Error, TEXT("[%s] 请在纹理设置中修改："), FunctionName);
+		UE_LOG(LogPointSampling, Error, TEXT("  1. Compression Settings -> VectorDisplacementmap (RGBA8)"));
+		UE_LOG(LogPointSampling, Error, TEXT("  2. Mip Gen Settings -> NoMipmaps"));
+		UE_LOG(LogPointSampling, Error, TEXT("  3. sRGB -> 取消勾选"));
+		UE_LOG(LogPointSampling, Error, TEXT("  4. 点击 'Save' 保存并重新导入纹理"));
+	}
+
+	return bIsSupportedFormat;
 }
 
 UMaterialInstanceDynamic* FTextureSamplingHelper::CreateTemporaryMaterialForTexture(UTexture2D* Texture, UWorld* World)

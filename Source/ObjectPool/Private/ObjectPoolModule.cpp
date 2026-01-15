@@ -6,15 +6,118 @@
 
 //  遵循IWYU原则的头文件包含
 #include "ObjectPool.h"
+#include "ObjectPoolSubsystem.h"
+#include "ActorPool.h"
 
 //  UE核心依赖
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/Engine.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 
 //  定义日志类别
 DEFINE_LOG_CATEGORY(LogObjectPool);
+
+namespace
+{
+    /**
+     * 在屏幕左上角显示对象池统计信息
+     */
+    void DisplayPoolStats()
+    {
+        if (!GEngine)
+        {
+            OBJECTPOOL_LOG(Warning, TEXT("GEngine不可用"));
+            return;
+        }
+
+        // 获取当前游戏世界
+        UWorld* World = nullptr;
+        for (const FWorldContext& Context : GEngine->GetWorldContexts())
+        {
+            if (Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE)
+            {
+                World = Context.World();
+                break;
+            }
+        }
+
+        if (!World)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[ObjectPool] 未找到游戏世界"));
+            return;
+        }
+
+        // 获取对象池子系统
+        UObjectPoolSubsystem* Subsystem = World->GetSubsystem<UObjectPoolSubsystem>();
+        if (!Subsystem)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, TEXT("[ObjectPool] 子系统未启用"));
+            return;
+        }
+
+        // 显示配置
+        const float DisplayTime = 8.0f;
+        int32 Key = -1; // 使用负数key让消息自动堆叠
+
+        // 获取子系统统计
+        const FObjectPoolSubsystemStats& SysStats = Subsystem->GetStats();
+        const int32 PoolCount = Subsystem->GetPoolCount();
+
+        // 显示标题
+        GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, FColor::Cyan,
+            TEXT("============ ObjectPool Stats ============"));
+
+        // 显示子系统级别统计
+        GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, FColor::Yellow,
+            FString::Printf(TEXT("Pools: %d | Spawns: %d | Returns: %d"),
+                PoolCount, SysStats.TotalSpawnCalls, SysStats.TotalReturnCalls));
+
+        // 计算命中率
+        const float HitRate = SysStats.TotalSpawnCalls > 0
+            ? (float)SysStats.TotalPoolHits / SysStats.TotalSpawnCalls * 100.0f
+            : 0.0f;
+
+        GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, FColor::Yellow,
+            FString::Printf(TEXT("PoolHits: %d | Fallbacks: %d | HitRate: %.1f%%"),
+                SysStats.TotalPoolHits, SysStats.TotalFallbackSpawns, HitRate));
+
+        // 获取并显示每个池的统计
+        TArray<FObjectPoolStats> AllPoolStats = Subsystem->GetAllPoolStats();
+
+        if (AllPoolStats.Num() == 0)
+        {
+            GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, FColor::White,
+                TEXT("  (No pools registered)"));
+        }
+        else
+        {
+            GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, FColor::White,
+                TEXT("------------------------------------------"));
+
+            for (const FObjectPoolStats& Stats : AllPoolStats)
+            {
+                // 格式: ClassName: Active/Available/Total (HitRate%)
+                const FColor StatColor = Stats.CurrentAvailable > 0 ? FColor::Green : FColor::Orange;
+
+                GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, StatColor,
+                    FString::Printf(TEXT("  %s: %d/%d/%d (%.0f%%)"),
+                        *Stats.ActorClassName,
+                        Stats.CurrentActive,
+                        Stats.CurrentAvailable,
+                        Stats.TotalCreated,
+                        Stats.HitRate * 100.0f));
+            }
+        }
+
+        GEngine->AddOnScreenDebugMessage(Key--, DisplayTime, FColor::Cyan,
+            TEXT("=========================================="));
+
+        OBJECTPOOL_LOG(Log, TEXT("对象池统计: %d个池, %d次生成, %.1f%%命中率"),
+            PoolCount, SysStats.TotalSpawnCalls, HitRate);
+    }
+}
 
 void FObjectPoolModule::StartupModule()
 {
@@ -73,11 +176,10 @@ void FObjectPoolModule::RegisterConsoleCommands()
     // 显示对象池统计信息
     ConsoleCommands.Add(IConsoleManager::Get().RegisterConsoleCommand(
         TEXT("objectpool.stats"),
-        TEXT("显示所有对象池的统计信息"),
+        TEXT("显示所有对象池的统计信息（屏幕左上角）"),
         FConsoleCommandDelegate::CreateLambda([]()
         {
-            OBJECTPOOL_LOG(Warning, TEXT("对象池统计功能尚未实现"));
-            // TODO: 实现统计信息显示
+            DisplayPoolStats();
         }),
         ECVF_Default
     ));

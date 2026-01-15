@@ -5,6 +5,21 @@
 
 ---
 
+## ObjectPool
+
+- **新增** `objectpool.stats` 控制台命令，在屏幕左上角显示对象池统计信息
+- **新增** `GetAllPoolStats()` 和 `GetPoolCount()` 公开接口
+
+---
+
+## BlueprintExtensions
+
+- **修复** `SGraphNodeCasePairedPinsNode` 使用 NSLOCTEXT 宏支持本地化
+- **优化** `GetCasePinCount()` 从 O(n²) 优化为 O(n) 复杂度
+- **重构** `K2Node_ForEachMap` 复用 `FK2NodePinTypeHelpers` 辅助类，减少重复代码
+
+---
+
 ## GeometryTool
 
 - **新增** 基于形状组件的点阵生成功能
