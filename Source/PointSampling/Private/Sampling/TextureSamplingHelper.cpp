@@ -10,6 +10,10 @@
 #include "Engine/TextureDefines.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/Canvas.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "CanvasItem.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Math/UnrealMathUtility.h"
@@ -1149,10 +1153,11 @@ bool FTextureSamplingHelper::RenderMaterialToTarget(UMaterialInterface* Material
 	}
 
 	// 使用KismetRenderingLibrary绘制材质到RenderTarget
+	// 注意：使用Material作为WorldContextObject，因为Material->GetWorld()可能返回nullptr
 	UKismetRenderingLibrary::DrawMaterialToRenderTarget(
-		Material->GetWorld(),
+		const_cast<UMaterialInterface*>(Material),
 		RenderTarget,
-		Material
+		const_cast<UMaterialInterface*>(Material)
 	);
 
 	return true;
@@ -1544,7 +1549,7 @@ UMaterialInstanceDynamic* FTextureSamplingHelper::CreateTemporaryMaterialForText
 	}
 
 	// 创建动态材质实例
-	UMaterialInstanceDynamic* MatInst = UMaterialInstanceDynamic::Create(BaseMaterial, World);
+	UMaterialInstanceDynamic* MatInst = UMaterialInstanceDynamic::Create(Cast<UMaterialInterface>(BaseMaterial), World);
 	if (!MatInst)
 	{
 		UE_LOG(LogPointSampling, Error, TEXT("[智能采样] 无法创建材质实例"));

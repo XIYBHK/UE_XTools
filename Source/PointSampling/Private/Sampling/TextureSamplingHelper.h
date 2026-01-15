@@ -11,6 +11,7 @@
 
 class UTexture2D;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class UTextureRenderTarget2D;
 
 /**
