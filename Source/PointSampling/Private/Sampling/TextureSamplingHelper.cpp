@@ -1594,13 +1594,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAuto(
 	}
 	else
 	{
-		UE_LOG(LogPointSampling, Log, TEXT("[智能采样] 检测到压缩格式，使用Material渲染方法"));
+		// 压缩格式处理：仅在编辑器中支持Canvas渲染方式
+#if WITH_EDITOR
+		UE_LOG(LogPointSampling, Log, TEXT("[智能采样] 检测到压缩格式，使用Canvas渲染方法"));
 
-		// 使用Material渲染方法
-		// 简化方案：直接渲染纹理到RenderTarget，不创建Material
-		// 因为UKismetRenderingLibrary::DrawMaterialToRenderTarget需要Material参数
-
-		// 创建临时RenderTarget
 		UTextureRenderTarget2D* RenderTarget = CreateTemporaryRenderTarget(MaxSampleSize);
 		if (!RenderTarget)
 		{
@@ -1608,11 +1605,9 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAuto(
 			return Points;
 		}
 
-		// 使用Canvas直接绘制纹理到RenderTarget
 		UWorld* World = GEngine->GetWorldFromContextObject(Texture, EGetWorldErrorMode::LogAndReturnNull);
 		if (!World)
 		{
-			// 尝试从纹理获取Outer的World
 			UObject* Outer = Texture->GetOuter();
 			while (Outer && !World)
 			{
@@ -1623,14 +1618,12 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAuto(
 
 		if (World)
 		{
-			// 使用KismetRenderingLibrary绘制纹理
 			FCanvas Canvas(
 				RenderTarget->GameThread_GetRenderTargetResource(),
 				nullptr,
 				World,
 				World->GetFeatureLevel()
 			);
-
 			Canvas.Clear(FLinearColor::Black);
 
 			FCanvasTileItem TileItem(
@@ -1641,31 +1634,20 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAuto(
 			);
 			TileItem.BlendMode = SE_BLEND_Opaque;
 			Canvas.DrawItem(TileItem);
-
 			Canvas.Flush_GameThread();
 			RenderTarget->UpdateResourceImmediate(false);
+
+			Points = GeneratePointsFromRenderTarget(RenderTarget, MaxSampleSize, Spacing, PixelThreshold, TextureScale, SamplingChannel);
 		}
 		else
 		{
-			UE_LOG(LogPointSampling, Warning, TEXT("[智能采样] 无法获取World Context，尝试备用方案"));
-
-			// 备用方案：尝试使用编辑器Source数据
-#if WITH_EDITOR
 			Points = GenerateFromTextureSource(Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale);
-			RenderTarget->ConditionalBeginDestroy();
-			return Points;
-#else
-			RenderTarget->ConditionalBeginDestroy();
-			UE_LOG(LogPointSampling, Error, TEXT("[智能采样] 运行时无法处理压缩格式且无World Context"));
-			return Points;
-#endif
 		}
-
-		// 从RenderTarget生成点阵
-		Points = GeneratePointsFromRenderTarget(RenderTarget, MaxSampleSize, Spacing, PixelThreshold, TextureScale, SamplingChannel);
-
-		// 清理临时RenderTarget
 		RenderTarget->ConditionalBeginDestroy();
+#else
+		// 运行时不支持压缩格式的Canvas渲染
+		UE_LOG(LogPointSampling, Warning, TEXT("[智能采样] 运行时不支持压缩纹理格式，请使用未压缩格式(BGRA8/RGBA8)"));
+#endif
 	}
 
 	return Points;
@@ -1705,9 +1687,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
 	}
 	else
 	{
-		UE_LOG(LogPointSampling, Log, TEXT("[智能泊松采样] 检测到压缩格式，使用Material渲染方法"));
+		// 压缩格式处理：仅在编辑器中支持Canvas渲染方式
+#if WITH_EDITOR
+		UE_LOG(LogPointSampling, Log, TEXT("[智能泊松采样] 检测到压缩格式，使用Canvas渲染方法"));
 
-		// 创建临时RenderTarget
 		UTextureRenderTarget2D* RenderTarget = CreateTemporaryRenderTarget(MaxSampleSize);
 		if (!RenderTarget)
 		{
@@ -1715,7 +1698,6 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
 			return Points;
 		}
 
-		// 获取World Context
 		UWorld* World = GEngine->GetWorldFromContextObject(Texture, EGetWorldErrorMode::LogAndReturnNull);
 		if (!World)
 		{
@@ -1729,14 +1711,12 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
 
 		if (World)
 		{
-			// 使用Canvas绘制纹理
 			FCanvas Canvas(
 				RenderTarget->GameThread_GetRenderTargetResource(),
 				nullptr,
 				World,
 				World->GetFeatureLevel()
 			);
-
 			Canvas.Clear(FLinearColor::Black);
 
 			FCanvasTileItem TileItem(
@@ -1747,40 +1727,23 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
 			);
 			TileItem.BlendMode = SE_BLEND_Opaque;
 			Canvas.DrawItem(TileItem);
-
 			Canvas.Flush_GameThread();
 			RenderTarget->UpdateResourceImmediate(false);
+
+			Points = GeneratePointsFromRenderTargetWithPoisson(
+				RenderTarget, MaxSampleSize, MinRadius, MaxRadius,
+				PixelThreshold, TextureScale, SamplingChannel, MaxAttempts
+			);
 		}
 		else
 		{
-			UE_LOG(LogPointSampling, Warning, TEXT("[智能泊松采样] 无法获取World Context，尝试备用方案"));
-
-			// 备用方案：使用编辑器Source数据
-#if WITH_EDITOR
 			Points = GenerateFromTextureSourceWithPoisson(Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts);
-			RenderTarget->ConditionalBeginDestroy();
-			return Points;
-#else
-			RenderTarget->ConditionalBeginDestroy();
-			UE_LOG(LogPointSampling, Error, TEXT("[智能泊松采样] 运行时无法处理压缩格式且无World Context"));
-			return Points;
-#endif
 		}
-
-		// 从RenderTarget生成泊松采样点阵
-		Points = GeneratePointsFromRenderTargetWithPoisson(
-			RenderTarget,
-			MaxSampleSize,
-			MinRadius,
-			MaxRadius,
-			PixelThreshold,
-			TextureScale,
-			SamplingChannel,
-			MaxAttempts
-		);
-
-		// 清理临时RenderTarget
 		RenderTarget->ConditionalBeginDestroy();
+#else
+		// 运行时不支持压缩格式的Canvas渲染
+		UE_LOG(LogPointSampling, Warning, TEXT("[智能泊松采样] 运行时不支持压缩纹理格式，请使用未压缩格式(BGRA8/RGBA8)"));
+#endif
 	}
 
 	return Points;
