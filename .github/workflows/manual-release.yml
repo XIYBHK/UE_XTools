@@ -40,7 +40,7 @@ jobs:
 
       - name: Validate inputs
         id: validate
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           $TAG_NAME = "${{ inputs.tag_name }}"
           $RELEASE_NAME = $TAG_NAME
@@ -59,7 +59,7 @@ jobs:
 
       - name: Extract changelog
         id: changelog
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           $VERSION = "${{ steps.validate.outputs.tag_name }}"
           $changelog_path = "Docs\版本变更\CHANGELOG.md"
@@ -105,7 +105,7 @@ jobs:
 
       - name: Get artifacts (local first, fallback to download)
         id: get_artifacts
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           Write-Host "==> Get Release Assets" -ForegroundColor Cyan
 
@@ -199,7 +199,7 @@ jobs:
                 // 解压外层 ZIP，提取内部的原始 ZIP 文件
                 try {
                   const extractedDir = path.join(tempDir, artifact.name);
-                  execSync(`powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractedDir}' -Force"`, { stdio: 'inherit' });
+                  execSync(`pwsh -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractedDir}' -Force"`, { stdio: 'inherit' });
 
                   // 查找内部的 .zip 文件
                   const innerZips = fs.readdirSync(extractedDir).filter(f => f.endsWith('.zip'));
@@ -228,7 +228,7 @@ jobs:
             console.log(`\n✓ Downloaded and extracted ${downloadCount} files`);
 
       - name: List release assets
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           if (Test-Path "release-assets") {
             "### 📦 Release Assets" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -246,7 +246,7 @@ jobs:
 
       - name: Create tag if not exists
         if: steps.validate.outputs.tag_exists == 'false'
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           $TAG_NAME = "${{ steps.validate.outputs.tag_name }}"
           git config user.name "github-actions[bot]"
@@ -293,7 +293,7 @@ jobs:
           # 如果 Release 已存在，softprops/action-gh-release 会自动更新
 
       - name: Summary
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           if ("${{ steps.check_release.outputs.exists }}" -eq "true") {
             "### ✅ Release Updated Successfully" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

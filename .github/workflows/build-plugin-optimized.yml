@@ -29,7 +29,7 @@ jobs:
     runs-on: self-hosted
     steps:
     - name: Verify MSVC Toolchain Installation
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Verify MSVC Toolchain for UE 5.3-5.7" -ForegroundColor Cyan
 
@@ -225,7 +225,7 @@ jobs:
         fetch-tags: true
       
     - name: Setup UE Environment
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Setup UE ${{ matrix.ue_version }} Environment" -ForegroundColor Cyan
         
@@ -266,7 +266,7 @@ jobs:
         echo "PLUGIN_FILE=$plugin_file" >> $env:GITHUB_ENV
 
     - name: Build Plugin with BuildPlugin Command
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Build Plugin for UE ${{ env.UE_VERSION }}" -ForegroundColor Cyan
         $build_start = Get-Date
@@ -326,7 +326,7 @@ jobs:
         echo "BUILD_DURATION=$duration_str" >> $env:GITHUB_ENV
 
     - name: Post-Process and Optimize Package
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Post-Process and Optimize Package" -ForegroundColor Cyan
         
@@ -399,7 +399,7 @@ jobs:
         }
 
     - name: Prepare Artifact Name and Validate
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Prepare Artifact and Validate" -ForegroundColor Cyan
 
@@ -444,7 +444,7 @@ jobs:
 
     - name: Prepare Release Package
       if: success() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Prepare Release Package" -ForegroundColor Cyan
 
@@ -477,7 +477,7 @@ jobs:
 
     - name: Generate Job Summary
       if: always()
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         $trigger_info = ""
         if ("${{ github.event_name }}" -eq "workflow_dispatch") {
@@ -519,7 +519,7 @@ jobs:
 
     - name: Cleanup Temporary Files
       if: always()
-      shell: powershell -ExecutionPolicy Bypass -File {0}
+      shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
         Write-Host "==> Cleanup Temporary Files" -ForegroundColor Cyan
         
@@ -555,7 +555,7 @@ jobs:
       
       - name: Get tag and version info
         id: version
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           $tag_name = "${{ github.ref }}".Replace("refs/tags/", "")
           $version = $tag_name.Replace("v", "")
@@ -566,7 +566,7 @@ jobs:
       
       - name: Extract changelog for this version
         id: changelog
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           $version = "${{ steps.version.outputs.tag_name }}"
           $changelog_path = "Docs\版本变更\CHANGELOG.md"
@@ -615,7 +615,7 @@ jobs:
       
       - name: Prepare release assets from local temp
         id: assets
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           # 发行版临时目录
           $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
@@ -664,7 +664,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Release summary
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           "## ✅ Release Created Successfully" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -674,7 +674,7 @@ jobs:
 
       - name: Clean release temp files
         if: always()
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           # 清理临时目录中的文件（发布完成后）
           $release_temp_dir = "C:\GitHubActions\ReleaseTemp"

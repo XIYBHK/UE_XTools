@@ -121,7 +121,7 @@ jobs:
 
       - name: Check if should skip
         if: steps.target.outputs.skip == 'true'
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           "### ⏭️ Skipping Update" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "No release to update or release not found." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -130,7 +130,7 @@ jobs:
       - name: Get build artifacts (local first)
         if: steps.target.outputs.skip != 'true'
         id: get_local
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           Write-Host "==> Get Build Artifacts" -ForegroundColor Cyan
 
@@ -244,7 +244,7 @@ jobs:
                 // 解压外层 ZIP，提取内部的原始 ZIP 文件
                 try {
                   const extractedDir = path.join(tempDir, artifact.name);
-                  execSync(`powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractedDir}' -Force"`, { stdio: 'inherit' });
+                  execSync(`pwsh -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractedDir}' -Force"`, { stdio: 'inherit' });
 
                   // 查找内部的 .zip 文件
                   const innerZips = fs.readdirSync(extractedDir).filter(f => f.endsWith('.zip'));
@@ -365,7 +365,7 @@ jobs:
 
       - name: Create summary
         if: steps.target.outputs.skip != 'true'
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           "### 📦 Release Assets Update Report" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -388,7 +388,7 @@ jobs:
 
       - name: Clean up
         if: always()
-        shell: powershell -ExecutionPolicy Bypass -File {0}
+        shell: pwsh -ExecutionPolicy Bypass -File {0}
         run: |
           if (Test-Path "new-assets") {
             Remove-Item -Recurse -Force "new-assets" -ErrorAction SilentlyContinue
