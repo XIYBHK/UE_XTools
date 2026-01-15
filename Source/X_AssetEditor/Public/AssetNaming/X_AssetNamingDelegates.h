@@ -8,6 +8,7 @@
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
 #include "EditorModes.h"
+#include "Misc/SharedPtr.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNamingDelegates, Log, All);
 
@@ -26,8 +27,10 @@ class IAssetRegistry;
  * - 绑定/解绑引擎委托
  * - 验证委托触发条件
  * - 调用重命名回调
+ *
+ * 线程安全：使用 TSharedPtr/TWeakPtr 确保异步回调的安全性
  */
-class X_ASSETEDITOR_API FX_AssetNamingDelegates
+class X_ASSETEDITOR_API FX_AssetNamingDelegates : public TSharedFromThis<FX_AssetNamingDelegates>
 {
 public:
 	/**
@@ -37,8 +40,8 @@ public:
 	 */
 	DECLARE_DELEGATE_RetVal_OneParam(bool, FOnAssetNeedsRename, const FAssetData& /* AssetData */);
 
-	/** 获取单例实例 */
-	static FX_AssetNamingDelegates& Get();
+	/** 获取单例实例（返回共享指针） */
+	static TSharedPtr<FX_AssetNamingDelegates> Get();
 
 	/**
 	 * 初始化委托绑定
@@ -62,14 +65,8 @@ public:
 	void SetProcessingAsset(bool bProcessing) { bIsProcessingAsset = bProcessing; }
 
 private:
-	/** 判定为 Factory 创建资产的时间窗口 (秒)
-	 * 放宽到 10.0s 以容纳用户交互时间（如选取父类弹窗）
-	 * 安全性由 Factory 触发机制和类型匹配共同保证
-	 */
-	static constexpr double FactoryCreationWindow = 10.0;
-
-	/** 单例实例 */
-	static TUniquePtr<FX_AssetNamingDelegates> Instance;
+	/** 单例实例（使用共享指针以支持弱引用） */
+	static TSharedPtr<FX_AssetNamingDelegates> Instance;
 
 	/** 私有构造函数 */
 	FX_AssetNamingDelegates() = default;

@@ -5,6 +5,19 @@
 
 ---
 
+## X_AssetEditor
+
+- **优化** 彻底修复 Ticker Lambda 悬空指针风险（使用 TSharedPtr/TWeakPtr）
+- **新增** 实现变体命名支持功能（FAssetNamingPattern 结构体）
+- **新增** 实现重命名后的重名冲突自动处理
+- **重构** 提取公共辅助函数，消除代码重复
+- **优化** 配置化硬编码常量（FactoryCreationTimeWindow、StartupActivationDelay）
+- **优化** 静态缓存正则表达式模式，避免重复编译
+- **优化** 批量重命名性能：预缓存文件夹资产名称（O(n²)→O(n)）
+- **移除** 删除 90 行未实现的命名冲突检测代码
+
+---
+
 ## 📋 日志格式说明
 
 ### 模块分类

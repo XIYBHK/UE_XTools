@@ -30,15 +30,15 @@ static const TArray<FEditorModeID> GSpecialEditorModes = {
 	TEXT("EM_MeshPaint"),                 // 网格体绘制模式
 };
 
-TUniquePtr<FX_AssetNamingDelegates> FX_AssetNamingDelegates::Instance = nullptr;
+TSharedPtr<FX_AssetNamingDelegates> FX_AssetNamingDelegates::Instance = nullptr;
 
-FX_AssetNamingDelegates& FX_AssetNamingDelegates::Get()
+TSharedPtr<FX_AssetNamingDelegates> FX_AssetNamingDelegates::Get()
 {
 	if (!Instance.IsValid())
 	{
-		Instance = TUniquePtr<FX_AssetNamingDelegates>(new FX_AssetNamingDelegates());
+		Instance = MakeShared<FX_AssetNamingDelegates>();
 	}
-	return *Instance;
+	return Instance;
 }
 
 void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
@@ -184,7 +184,7 @@ void FX_AssetNamingDelegates::Shutdown()
 void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 {
 	// ========== 【诊断】添加详细日志 ==========
-	UE_LOG(LogX_AssetNamingDelegates, Verbose, 
+	UE_LOG(LogX_AssetNamingDelegates, Verbose,
 		TEXT("OnAssetAdded 触发 - 资产: %s, 类型: %s, 包路径: %s, 包名: %s"),
 		*AssetData.AssetName.ToString(),
 		*AssetData.AssetClassPath.ToString(),
@@ -193,8 +193,8 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 
 	if (!bIsActive || !RenameCallback.IsBound())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose, 
-			TEXT("检测到新资产但委托未激活 - bIsActive=%d, CallbackBound=%d: %s"), 
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
+			TEXT("检测到新资产但委托未激活 - bIsActive=%d, CallbackBound=%d: %s"),
 			bIsActive, RenameCallback.IsBound(), *AssetData.AssetName.ToString());
 		return;
 	}
@@ -202,8 +202,8 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	// ========== 【关键修复】防止递归重命名导致崩溃 ==========
 	if (bIsProcessingAsset)
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log, 
-			TEXT("检测到重入调用，跳过以防止递归: %s"), 
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("检测到重入调用，跳过以防止递归: %s"),
 			*AssetData.AssetName.ToString());
 		return;
 	}
@@ -212,8 +212,8 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
 	if (!Settings || !Settings->bAutoRenameOnCreate)
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose, 
-			TEXT("检测到新资产但创建时自动重命名已关闭 - Settings=%p, bAutoRenameOnCreate=%d: %s"), 
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
+			TEXT("检测到新资产但创建时自动重命名已关闭 - Settings=%p, bAutoRenameOnCreate=%d: %s"),
 			Settings, Settings ? Settings->bAutoRenameOnCreate : false, *AssetData.AssetName.ToString());
 		return;
 	}
@@ -229,7 +229,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	// 验证资产是否需要处理
 	if (!ShouldProcessAsset(AssetData))
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose, 
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
 			TEXT("资产未通过 ShouldProcessAsset 检查: %s"), *AssetData.AssetName.ToString());
 		return;
 	}
@@ -238,7 +238,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	// 避免在自动化流程（如复制粘贴、蓝图编译、插件生成）中误触发重命名
 	if (!DetectUserOperationContext())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log, 
+		UE_LOG(LogX_AssetNamingDelegates, Log,
 			TEXT("检测到非用户操作上下文，跳过自动重命名: %s"), *AssetData.AssetName.ToString());
 		return;
 	}
@@ -246,7 +246,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	// ========== 【优化】启动时跳过已存在的资产 ==========
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-	
+
 	if (!bIsAssetRegistryReady || AssetRegistry.IsLoadingAssets())
 	{
 		UE_LOG(LogX_AssetNamingDelegates, Verbose,
@@ -254,44 +254,52 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			*AssetData.AssetName.ToString());
 		return;
 	}
-	
+
 	UE_LOG(LogX_AssetNamingDelegates, Log,
 		TEXT("检测到潜在新资产: %s（类型: %s）"),
 		*AssetData.AssetName.ToString(), *AssetData.AssetClassPath.ToString());
-	
+
 	// ========== 【最优方案】Factory 时间窗 + 类型匹配机制 ==========
-	// 只有当资产添加事件发生在 FEditorDelegates::OnNewAssetCreated 触发后的短时间内（FactoryCreationWindow），
+	// 只有当资产添加事件发生在 FEditorDelegates::OnNewAssetCreated 触发后的短时间内，
 	// 且资产类型与 Factory 支持的类型兼容时，我们才认定这是真正的"新建"或"导入"操作。
 	// 复制、移动、从磁盘加载等操作不会触发 OnNewAssetCreated，因此会被自然排除。
 	// 即使时间窗内发生了移动操作，类型检查也能提供第二道防线。
-	
+
+	// 获取配置的时间窗口
+	const float FactoryTimeWindow = Settings ? Settings->FactoryCreationTimeWindow : 5.0f;
+
+	// ========== 【关键修复】使用弱指针确保 Lambda 安全性 ==========
+	// 创建弱引用副本，避免在 Lambda 中直接捕获 this 指针
+	TWeakPtr<FX_AssetNamingDelegates> WeakThis = AsShared();
+
 	// 使用 NextTick 延迟执行，确保 Factory 事件已经触发并更新了 LastFactoryCreationTime
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this, AssetData](float DeltaTime) -> bool
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis, AssetData, FactoryTimeWindow](float DeltaTime) -> bool
 	{
-		// ========== 【安全检查】防止在 Shutdown 后执行 ==========
-		if (!bIsActive || !RenameCallback.IsBound())
+		// ========== 【安全检查】尝试提升弱指针为强指针 ==========
+		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakThis.Pin();
+		if (!SharedThis.IsValid() || !SharedThis->bIsActive || !SharedThis->RenameCallback.IsBound())
 		{
 			return false;
 		}
 
-		// 1. 检查时间窗 (放宽到 10.0s 以容纳用户交互)
+		// 1. 检查时间窗 (使用配置的时间窗口)
 		double CurrentTime = FPlatformTime::Seconds();
-		double TimeSinceLastFactory = CurrentTime - LastFactoryCreationTime;
+		double TimeSinceLastFactory = CurrentTime - SharedThis->LastFactoryCreationTime;
 
-		if (TimeSinceLastFactory > FactoryCreationWindow)
+		if (TimeSinceLastFactory > FactoryTimeWindow)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
-				TEXT("跳过自动重命名：非 Factory 创建流程 (TimeSinceLastFactory: %.3f s) - %s"),
-				TimeSinceLastFactory, *AssetData.AssetName.ToString());
+				TEXT("跳过自动重命名：非 Factory 创建流程 (TimeSinceLastFactory: %.3f s, Window: %.1f s) - %s"),
+				TimeSinceLastFactory, FactoryTimeWindow, *AssetData.AssetName.ToString());
 			return false;
 		}
 
 		// 2. 检查类型匹配 (防止在新建后的短时间内移动其他类型文件导致误判)
-		if (LastFactorySupportedClass.IsValid())
+		if (SharedThis->LastFactorySupportedClass.IsValid())
 		{
-			UClass* FactoryClass = LastFactorySupportedClass.Get();
+			UClass* FactoryClass = SharedThis->LastFactorySupportedClass.Get();
 			UClass* AssetClass = AssetData.GetClass();
-			
+
 			// 如果 AssetData 没解析出类，尝试加载资产
 			if (!AssetClass)
 			{
@@ -312,17 +320,17 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		}
 
 		UE_LOG(LogX_AssetNamingDelegates, Log,
-			TEXT("确认 Factory 创建流程 (Time: %.3fs, TypeMatch: Yes)，执行自动重命名: %s"), 
+			TEXT("确认 Factory 创建流程 (Time: %.3fs, TypeMatch: Yes)，执行自动重命名: %s"),
 			TimeSinceLastFactory, *AssetData.AssetName.ToString());
 
 		// 设置重入保护标志
-		bIsProcessingAsset = true;
+		SharedThis->bIsProcessingAsset = true;
 
 		// 触发重命名回调
-		RenameCallback.Execute(AssetData);
+		SharedThis->RenameCallback.Execute(AssetData);
 
 		// 清除重入保护标志
-		bIsProcessingAsset = false;
+		SharedThis->bIsProcessingAsset = false;
 
 		return false;
 	}), 0.1f);
@@ -503,16 +511,24 @@ bool FX_AssetNamingDelegates::ShouldProcessAsset(const FAssetData& AssetData) co
 
 void FX_AssetNamingDelegates::OnFilesLoaded()
 {
-	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，延迟 60 秒后开始处理新创建的资产"));
+	const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+	const float ActivationDelay = Settings ? Settings->StartupActivationDelay : 30.0f;
+
+	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("AssetRegistry 文件加载完成，延迟 %.0f 秒后开始处理新创建的资产"), ActivationDelay);
 
 	// ========== 【关键修复】延迟激活，避免启动时的资产操作被误处理 ==========
 	// OnFilesLoaded 只表示初始文件扫描完成，但引擎可能仍在加载资产并触发各种事件
-	// 延迟 60 秒确保所有启动时的资产加载、内部重命名操作和编辑器初始化都已完成
+	// 延迟激活确保所有启动时的资产加载、内部重命名操作和编辑器初始化都已完成
 	// 这是一个保守的延迟时间，避免在启动阶段的任何资产操作被误认为用户操作
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float DeltaTime) -> bool
+
+	// ========== 【关键修复】使用弱指针确保 Lambda 安全性 ==========
+	TWeakPtr<FX_AssetNamingDelegates> WeakThis = AsShared();
+
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis, ActivationDelay](float DeltaTime) -> bool
 	{
-		// ========== 【安全检查】防止在 Shutdown 后执行 ==========
-		if (!bIsActive)
+		// ========== 【安全检查】尝试提升弱指针为强指针 ==========
+		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakThis.Pin();
+		if (!SharedThis.IsValid() || !SharedThis->bIsActive)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("延迟激活 Lambda 执行时委托已失效，跳过"));
@@ -525,33 +541,35 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 
 		if (AssetRegistry.IsLoadingAssets())
 		{
-			// 如果 60 秒后 AssetRegistry 仍在加载，再延迟 10 秒
+			// 如果延迟后 AssetRegistry 仍在加载，再延迟 10 秒
 			UE_LOG(LogX_AssetNamingDelegates, Warning,
 				TEXT("延迟激活超时但 AssetRegistry 仍在加载，再延迟 10 秒"));
 
-			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float DT) -> bool
+			// 再次使用弱指针确保安全性
+			TWeakPtr<FX_AssetNamingDelegates> WeakThis2 = WeakThis;
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis2](float DT) -> bool
 			{
-				// ========== 【安全检查】防止在 Shutdown 后执行 ==========
-				if (!bIsActive)
+				TSharedPtr<FX_AssetNamingDelegates> SharedThis2 = WeakThis2.Pin();
+				if (!SharedThis2.IsValid())
 				{
 					UE_LOG(LogX_AssetNamingDelegates, Verbose,
 						TEXT("二次延迟激活 Lambda 执行时委托已失效，跳过"));
 					return false;
 				}
 
-				bIsAssetRegistryReady = true;
+				SharedThis2->bIsAssetRegistryReady = true;
 				UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("延迟激活完成（强制），现在开始处理新创建的资产"));
 				return false;
 			}), 10.0f);
 		}
 		else
 		{
-			bIsAssetRegistryReady = true;
+			SharedThis->bIsAssetRegistryReady = true;
 			UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("延迟激活完成，现在开始处理新创建的资产"));
 		}
 
 		return false; // 只执行一次
-	}), 60.0f);
+	}), ActivationDelay);
 }
 
 bool FX_AssetNamingDelegates::DetectUserOperationContext() const

@@ -16,6 +16,9 @@ UX_AssetEditorSettings::UX_AssetEditorSettings()
 	, bAutoRenameOnImport(true)
 	, bAutoRenameOnCreate(true)
 	, bAutoFixupRedirectors(true)
+	// 高级设置默认值
+	, FactoryCreationTimeWindow(5.0f)
+	, StartupActivationDelay(30.0f)
 	// 子系统开关默认值
 	, bEnableObjectPoolSubsystem(false)
 	, bEnableEnhancedCodeFlowSubsystem(true)

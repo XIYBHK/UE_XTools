@@ -23,6 +23,9 @@
 
 DEFINE_LOG_CATEGORY(LogX_AssetNaming);
 
+// 初始化静态正则表达式模式缓存
+FRegexPattern FX_AssetNamingManager::NumericSuffixPattern(TEXT("_([0-9]+)$"));
+
 #define LOCTEXT_NAMESPACE "X_AssetNaming"
 
 // Internal helper to remove a fixed-length suffix without duplicating engine-version conditionals
@@ -345,7 +348,7 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
     if (AssetRegistry.IsLoadingAssets())
     {
         UE_LOG(LogX_AssetNaming, Error, TEXT("Cannot rename assets while AssetRegistry is still loading. Please wait."));
-        FMessageDialog::Open(EAppMsgType::Ok, 
+        FMessageDialog::Open(EAppMsgType::Ok,
             NSLOCTEXT("X_AssetNaming", "AssetRegistryLoading", "Cannot rename assets while the editor is still discovering assets. Please wait and try again."));
         return Result;
     }
@@ -353,6 +356,28 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
     // 获取AssetTools模块
     FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
     IAssetTools& AssetTools = AssetToolsModule.Get();
+
+    // ========== 【性能优化】预加载所有文件夹的资产名称缓存 ==========
+    // 避免在循环中重复扫描同一个文件夹
+    TMap<FString, TSet<FString>> FolderNameCache;
+    for (const FAssetData& AssetData : SelectedAssets)
+    {
+        FString PackagePath = FPackageName::GetLongPackagePath(AssetData.PackageName.ToString());
+        if (!FolderNameCache.Contains(PackagePath))
+        {
+            TArray<FAssetData> AssetsInFolder;
+            AssetRegistry.GetAssetsByPath(FName(*PackagePath), AssetsInFolder, false);
+
+            TSet<FString>& Names = FolderNameCache.Add(PackagePath);
+            for (const FAssetData& Asset : AssetsInFolder)
+            {
+                Names.Add(Asset.AssetName.ToString());
+            }
+
+            UE_LOG(LogX_AssetNaming, Verbose, TEXT("缓存文件夹 %s 的 %d 个资产名称"),
+                *PackagePath, Names.Num());
+        }
+    }
 
     // 开始资产重命名操作
     FScopedTransaction Transaction(NSLOCTEXT("X_AssetNaming", "RenameAssets", "Rename Assets"));
@@ -377,7 +402,7 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
             break;
         }
 
-        ProcessSingleAssetRename(AssetData, Result, AssetRegistry, AssetTools);
+        ProcessSingleAssetRename(AssetData, Result, AssetRegistry, AssetTools, FolderNameCache);
     }
 
     // 显示操作结果
@@ -389,7 +414,8 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
 void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData,
     FX_RenameOperationResult& Result,
     IAssetRegistry& AssetRegistry,
-    IAssetTools& AssetTools)
+    IAssetTools& AssetTools,
+    const TMap<FString, TSet<FString>>& FolderNameCache)
 {
     if (!AssetData.IsValid())
     {
@@ -532,7 +558,7 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     FString FinalNewName = NewName;
     int32 SuffixCounter = 1;
 
-    // ========== 【关键修复】在调用 GetAssetsByPath 前再次检查 AssetRegistry 状态 ==========
+    // ========== 【关键修复】在调用前再次检查 AssetRegistry 状态 ==========
     // 防止在检查后、调用前状态发生变化导致崩溃
     if (AssetRegistry.IsLoadingAssets())
     {
@@ -542,19 +568,19 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
         return;
     }
 
-    // 性能优化：缓存资产名称避免重复磁盘查询
-    TArray<FAssetData> AllAssetsInFolder;
-    AssetRegistry.GetAssetsByPath(FName(*PackagePath), AllAssetsInFolder, false);
-
-    TSet<FString> ExistingNames;
-    for (const FAssetData& Asset : AllAssetsInFolder)
+    // ========== 【性能优化】使用预缓存的文件夹名称集合 ==========
+    const TSet<FString>* ExistingNamesPtr = FolderNameCache.Find(PackagePath);
+    if (!ExistingNamesPtr)
     {
-        // 排除当前资产自己，避免自己与自己冲突
-        if (Asset.PackageName != AssetData.PackageName)
-        {
-            ExistingNames.Add(Asset.AssetName.ToString());
-        }
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Folder cache missing for path: %s"), *PackagePath);
+        Result.FailedCount++;
+        Result.FailedRenames.Add(CurrentName);
+        return;
     }
+
+    // 复制缓存并排除当前资产
+    TSet<FString> ExistingNames = *ExistingNamesPtr;
+    ExistingNames.Remove(CurrentName);
 
     // 命名冲突解决：自动添加数字后缀
     while (ExistingNames.Contains(FinalNewName))
@@ -1079,26 +1105,292 @@ void FX_AssetNamingManager::OutputUnknownAssetDiagnostics(const FAssetData& Asse
 
 FString FX_AssetNamingManager::NormalizeNumericSuffix(const FString& AssetName)
 {
-    // 使用正则表达式匹配末尾的数字后缀（如 _1, _5, _12）
-    FRegexPattern Pattern(TEXT("_([0-9]+)$"));
-    FRegexMatcher Matcher(Pattern, AssetName);
-    
+    // 使用静态缓存的正则表达式模式，避免重复编译
+    FRegexMatcher Matcher(NumericSuffixPattern, AssetName);
+
     if (Matcher.FindNext())
     {
         // 提取数字部分
         FString NumericStr = Matcher.GetCaptureGroup(1);
         int32 Number = FCString::Atoi(*NumericStr);
-        
+
         // 格式化为两位数（如 01, 05, 12）
         FString NormalizedSuffix = FString::Printf(TEXT("_%02d"), Number);
-        
+
         // 替换原来的后缀
         int32 MatchStart = Matcher.GetMatchBeginning();
         return AssetName.Left(MatchStart) + NormalizedSuffix;
     }
-    
+
     // 如果没有匹配到数字后缀，返回原名称
     return AssetName;
+}
+
+// ========== FAssetNamingPattern 实现 ==========
+
+FString FAssetNamingPattern::GenerateFullName() const
+{
+    FString Result = Prefix + BaseAssetName;
+
+    // 添加变体名称（如果有）
+    if (!Variant.IsEmpty())
+    {
+        Result += TEXT("_") + Variant;
+    }
+
+    // 添加后缀（如果有）
+    if (!Suffix.IsEmpty())
+    {
+        Result += TEXT("_") + Suffix;
+    }
+
+    // 添加数字后缀（如果有）
+    if (NumericSuffix > 0)
+    {
+        Result += FString::Printf(TEXT("_%02d"), NumericSuffix);
+    }
+
+    return Result;
+}
+
+FAssetNamingPattern FAssetNamingPattern::ParseFromName(const FString& AssetName, const FString& KnownPrefix)
+{
+    FAssetNamingPattern Pattern;
+    FString RemainingName = AssetName;
+
+    // 1. 移除前缀
+    if (!KnownPrefix.IsEmpty() && RemainingName.StartsWith(KnownPrefix))
+    {
+        Pattern.Prefix = KnownPrefix;
+        RemainingName.RightChopInline(KnownPrefix.Len(), EAllowShrinking::No);
+    }
+    else
+    {
+        // 尝试从配置中查找前缀
+        const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+        if (Settings)
+        {
+            for (const auto& Pair : Settings->AssetPrefixMappings)
+            {
+                const FString& TestPrefix = Pair.Value;
+                if (!TestPrefix.IsEmpty() && RemainingName.StartsWith(TestPrefix))
+                {
+                    Pattern.Prefix = TestPrefix;
+                    RemainingName.RightChopInline(TestPrefix.Len(), EAllowShrinking::No);
+                    break;
+                }
+            }
+        }
+    }
+
+    // 2. 提取数字后缀（如果存在）
+    FRegexPattern NumericPattern(TEXT("_([0-9]+)$"));
+    FRegexMatcher NumericMatcher(NumericPattern, RemainingName);
+    if (NumericMatcher.FindNext())
+    {
+        FString NumericStr = NumericMatcher.GetCaptureGroup(1);
+        Pattern.NumericSuffix = FCString::Atoi(*NumericStr);
+        int32 MatchStart = NumericMatcher.GetMatchBeginning();
+        RemainingName.LeftChopInline(RemainingName.Len() - MatchStart, EAllowShrinking::No);
+    }
+
+    // 3. 解析剩余部分（基础名称、变体、后缀）
+    TArray<FString> Parts;
+    RemainingName.ParseIntoArray(Parts, TEXT("_"));
+
+    if (Parts.Num() > 0)
+    {
+        Pattern.BaseAssetName = Parts[0];
+
+        // 如果有多个部分，最后一个可能是后缀，中间的是变体
+        if (Parts.Num() > 1)
+        {
+            // 检查最后一部分是否为常见的后缀（如 LOD, SK, UI 等）
+            static const TArray<FString> CommonSuffixes = {
+                TEXT("LOD"), TEXT("SK"), TEXT("UI"), TEXT("VFX"), TEXT("SFX"),
+                TEXT("DM"), TEXT("NM"), TEXT("R"), TEXT("L"), TEXT("M"), TEXT("H")
+            };
+
+            FString LastPart = Parts.Last();
+            bool bIsSuffix = false;
+
+            for (const FString& Suffix : CommonSuffixes)
+            {
+                if (LastPart == Suffix || LastPart.StartsWith(Suffix))
+                {
+                    Pattern.Suffix = LastPart;
+                    bIsSuffix = true;
+                    break;
+                }
+            }
+
+            // 如果不是后缀，则作为变体
+            if (!bIsSuffix)
+            {
+                // 中间的部分都是变体
+                for (int32 i = 1; i < Parts.Num(); ++i)
+                {
+                    if (!Pattern.Variant.IsEmpty())
+                    {
+                        Pattern.Variant += TEXT("_");
+                    }
+                    Pattern.Variant += Parts[i];
+                }
+            }
+            else if (Parts.Num() > 2)
+            {
+                // 有后缀，中间部分作为变体
+                for (int32 i = 1; i < Parts.Num() - 1; ++i)
+                {
+                    if (!Pattern.Variant.IsEmpty())
+                    {
+                        Pattern.Variant += TEXT("_");
+                    }
+                    Pattern.Variant += Parts[i];
+                }
+            }
+        }
+    }
+
+    return Pattern;
+}
+
+// ========== 变体命名和重名冲突处理实现 ==========
+
+bool FX_AssetNamingManager::DetectNamingConflict(
+    const FString& ProposedName,
+    const FString& PackagePath,
+    IAssetRegistry& AssetRegistry,
+    const FString& ExcludePackageName) const
+{
+    TArray<FAssetData> AssetsInFolder;
+    AssetRegistry.GetAssetsByPath(FName(*PackagePath), AssetsInFolder, false);
+
+    for (const FAssetData& Asset : AssetsInFolder)
+    {
+        if (Asset.PackageName.ToString() != ExcludePackageName &&
+            Asset.AssetName.ToString() == ProposedName)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+FString FX_AssetNamingManager::GenerateUniqueAssetName(
+    const FString& BaseName,
+    const FString& PackagePath,
+    IAssetRegistry& AssetRegistry,
+    const FString& ExcludePackageName) const
+{
+    // 先尝试直接使用基础名称
+    if (!DetectNamingConflict(BaseName, PackagePath, AssetRegistry, ExcludePackageName))
+    {
+        return BaseName;
+    }
+
+    // 存在冲突，添加数字后缀
+    int32 Suffix = 1;
+    FString CandidateName;
+    do
+    {
+        CandidateName = FString::Printf(TEXT("%s_%02d"), *BaseName, Suffix++);
+    } while (DetectNamingConflict(CandidateName, PackagePath, AssetRegistry, ExcludePackageName));
+
+    return CandidateName;
+}
+
+FString FX_AssetNamingManager::ApplyVariantNaming(const FAssetData& AssetData, const FAssetNamingPattern& Pattern) const
+{
+    // 解析当前资产名称的模式
+    FString CurrentName = AssetData.AssetName.ToString();
+    FString SimpleClassName = GetSimpleClassName(AssetData);
+    FString CorrectPrefix = GetCorrectPrefix(AssetData, SimpleClassName);
+
+    FAssetNamingPattern CurrentPattern = FAssetNamingPattern::ParseFromName(CurrentName, CorrectPrefix);
+
+    // 使用提供的模式生成新名称
+    FAssetNamingPattern NewPattern = Pattern;
+
+    // 如果模式中的基础名称为空，使用当前的基础名称
+    if (NewPattern.BaseAssetName.IsEmpty())
+    {
+        NewPattern.BaseAssetName = CurrentPattern.BaseAssetName;
+    }
+
+    // 如果前缀为空，使用正确的类前缀
+    if (NewPattern.Prefix.IsEmpty())
+    {
+        NewPattern.Prefix = CorrectPrefix;
+    }
+
+    return NewPattern.GenerateFullName();
+}
+
+// ========== 重构：公共辅助函数实现 ==========
+
+FX_AssetNamingManager::FAssetRenameContext FX_AssetNamingManager::BuildRenameContext(const FAssetData& AssetData) const
+{
+    FAssetRenameContext Context;
+    Context.CurrentName = AssetData.AssetName.ToString();
+    Context.PackageName = AssetData.PackageName.ToString();
+    Context.PackagePath = FPackageName::GetLongPackagePath(Context.PackageName);
+    Context.SimpleClassName = GetSimpleClassName(AssetData);
+    Context.CorrectPrefix = GetCorrectPrefix(AssetData, Context.SimpleClassName);
+    Context.AssetObject = AssetData.GetAsset();
+    return Context;
+}
+
+FString FX_AssetNamingManager::ComputeNewAssetName(const FAssetRenameContext& Context) const
+{
+    // 检查前缀是否正确
+    if (Context.CurrentName.StartsWith(Context.CorrectPrefix))
+    {
+        // 前缀正确，返回当前名称（或规范化数字后缀）
+        FString NormalizedName = NormalizeNumericSuffix(Context.CurrentName);
+        return NormalizedName;
+    }
+
+    // 移除错误的前缀，添加正确的前缀
+    FString BaseName = StripIncorrectPrefix(Context.CurrentName, Context.CorrectPrefix);
+    return Context.CorrectPrefix + BaseName;
+}
+
+FString FX_AssetNamingManager::StripIncorrectPrefix(const FString& CurrentName, const FString& CorrectPrefix)
+{
+    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+    if (!Settings)
+    {
+        return CurrentName;
+    }
+
+    const TMap<FString, FString>& AssetPrefixes = Settings->AssetPrefixMappings;
+    for (const auto& Pair : AssetPrefixes)
+    {
+        const FString& ExistingPrefix = Pair.Value;
+        if (!ExistingPrefix.IsEmpty() &&
+            ExistingPrefix != CorrectPrefix &&
+            CurrentName.StartsWith(ExistingPrefix))
+        {
+            return CurrentName.RightChop(ExistingPrefix.Len());
+        }
+    }
+
+    return CurrentName;
+}
+
+FString FX_AssetNamingManager::ExtractBaseAssetName(const FString& AssetName, const FString& Prefix)
+{
+    // 移除前缀
+    FString BaseName = AssetName;
+    if (!Prefix.IsEmpty() && BaseName.StartsWith(Prefix))
+    {
+        BaseName.RightChopInline(Prefix.Len(), EAllowShrinking::No);
+    }
+
+    // 使用 FAssetNamingPattern 解析
+    FAssetNamingPattern Pattern = FAssetNamingPattern::ParseFromName(BaseName);
+    return Pattern.BaseAssetName;
 }
 
 #undef LOCTEXT_NAMESPACE

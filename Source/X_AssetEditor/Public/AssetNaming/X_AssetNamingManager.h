@@ -23,6 +23,48 @@ struct FX_RenameOperationResult
 };
 
 /**
+ * 资产命名模式结构体（支持变体命名）
+ * 用于解析和生成符合变体命名规范的资产名称
+ * 格式示例: BP_PlayerCharacter_Combat_01
+ *          ^前缀^   ^基础名称^    ^变体^   ^后缀^
+ */
+struct X_ASSETEDITOR_API FAssetNamingPattern
+{
+	/** 前缀（如 BP_, SM_, M_） */
+	FString Prefix;
+
+	/** 基础资产名称（如 PlayerCharacter, WoodFloor） */
+	FString BaseAssetName;
+
+	/** 变体名称（如 Combat, Damaged, Red - 可选） */
+	FString Variant;
+
+	/** 后缀（非数字部分，可选） */
+	FString Suffix;
+
+	/** 数字后缀（自动格式化为两位数） */
+	int32 NumericSuffix;
+
+	FAssetNamingPattern()
+		: NumericSuffix(0)
+	{}
+
+	/**
+	 * 生成完整的资产名称
+	 * 格式: Prefix + BaseAssetName + [Variant] + [Suffix] + _NumericSuffix
+	 */
+	FString GenerateFullName() const;
+
+	/**
+	 * 从现有名称解析命名模式
+	 * @param AssetName 资产名称
+	 * @param KnownPrefix 已知的前缀（如果有）
+	 * @return 解析后的命名模式
+	 */
+	static FAssetNamingPattern ParseFromName(const FString& AssetName, const FString& KnownPrefix = TEXT(""));
+};
+
+/**
  * 资产命名规范化管理器
  * 负责处理资产的命名规范化操作
  */
@@ -105,6 +147,9 @@ private:
     /** 单例实例 */
     static TUniquePtr<FX_AssetNamingManager> Instance;
 
+    /** 数字后缀正则表达式模式缓存（避免重复编译） */
+    static FRegexPattern NumericSuffixPattern;
+
     /** 私有构造函数 */
     FX_AssetNamingManager() = default;
 
@@ -141,7 +186,8 @@ private:
     void ProcessSingleAssetRename(const FAssetData& AssetData,
         FX_RenameOperationResult& Result,
         class IAssetRegistry& AssetRegistry,
-        class IAssetTools& AssetTools);
+        class IAssetTools& AssetTools,
+        const TMap<FString, TSet<FString>>& FolderNameCache);
 
     /**
      * 重命名后修复重定向器
@@ -156,95 +202,91 @@ private:
      */
     bool OnAssetNeedsRename(const FAssetData& AssetData);
 
-    // ========== 【新增】命名冲突检测和变体命名支持 ==========
+    // ========== 变体命名和重名冲突处理 ==========
 
     /**
-     * 命名冲突信息结构体
-     */
-    struct FNamingConflictInfo
-    {
-        /** 冲突的名称 */
-        FString ConflictingName;
-        
-        /** 现有的冲突资产 */
-        TArray<FAssetData> ExistingAssets;
-        
-        /** 建议的新名称 */
-        FString SuggestedName;
-        
-        /** 冲突类型 */
-        enum class EConflictType
-        {
-            SameName,           // 完全相同的名称
-            SimilarName,        // 相似的名称
-            InvalidCharacters   // 包含无效字符
-        } ConflictType;
-
-        FNamingConflictInfo()
-            : ConflictType(EConflictType::SameName)
-        {}
-    };
-
-    /**
-     * 资产命名模式结构体（支持变体命名）
-     */
-    struct FAssetNamingPattern
-    {
-        /** 前缀 */
-        FString Prefix;
-        
-        /** 基础资产名称 */
-        FString BaseAssetName;
-        
-        /** 变体名称（可选） */
-        FString Variant;
-        
-        /** 后缀 */
-        FString Suffix;
-        
-        /** 数字后缀（自动格式化为两位数） */
-        int32 NumericSuffix;
-
-        FAssetNamingPattern()
-            : NumericSuffix(0)
-        {}
-
-        /** 生成完整的资产名称 */
-        FString GenerateFullName() const;
-        
-        /** 从现有名称解析命名模式 */
-        static FAssetNamingPattern ParseFromName(const FString& AssetName);
-    };
-
-    /**
-     * 检测命名冲突
+     * 检测重命名后的命名冲突
      * @param ProposedName 建议的新名称
-     * @param AssetPath 资产路径
-     * @param OutConflictInfo 输出冲突信息
+     * @param PackagePath 包路径
+     * @param AssetRegistry 资产注册表
+     * @param ExcludePackageName 要排除的包名（当前资产）
      * @return true 如果存在冲突
      */
-    bool DetectNamingConflict(const FString& ProposedName, const FString& AssetPath, FNamingConflictInfo& OutConflictInfo);
+    bool DetectNamingConflict(
+        const FString& ProposedName,
+        const FString& PackagePath,
+        class IAssetRegistry& AssetRegistry,
+        const FString& ExcludePackageName) const;
 
     /**
-     * 解决命名冲突
-     * @param ConflictInfo 冲突信息
-     * @return 解决冲突后的名称
-     */
-    FString ResolveNamingConflict(const FNamingConflictInfo& ConflictInfo);
-
-    /**
-     * 生成符合变体命名规范的名称
-     * @param AssetData 资产数据
-     * @param Pattern 命名模式
-     * @return 规范化的名称
-     */
-    FString GenerateVariantCompliantName(const FAssetData& AssetData, const FAssetNamingPattern& Pattern);
-
-    /**
-     * 生成唯一的资产名称（避免冲突）
+     * 生成唯一的资产名称（处理重名冲突）
      * @param BaseName 基础名称
      * @param PackagePath 包路径
+     * @param AssetRegistry 资产注册表
+     * @param ExcludePackageName 要排除的包名（当前资产）
      * @return 唯一的资产名称
      */
-    FString GenerateUniqueAssetName(const FString& BaseName, const FString& PackagePath);
+    FString GenerateUniqueAssetName(
+        const FString& BaseName,
+        const FString& PackagePath,
+        class IAssetRegistry& AssetRegistry,
+        const FString& ExcludePackageName) const;
+
+    /**
+     * 应用变体命名规范
+     * @param AssetData 资产数据
+     * @param Pattern 命名模式
+     * @return 符合规范的名称
+     */
+    FString ApplyVariantNaming(const FAssetData& AssetData, const FAssetNamingPattern& Pattern) const;
+
+    // ========== 重构：公共辅助函数 ==========
+
+    /**
+     * 资产重命名上下文（用于传递重命名所需的所有信息）
+     */
+    struct FAssetRenameContext
+    {
+        FString CurrentName;
+        FString PackagePath;
+        FString PackageName;
+        FString SimpleClassName;
+        FString CorrectPrefix;
+        UObject* AssetObject = nullptr;
+
+        bool IsValid() const
+        {
+            return !CurrentName.IsEmpty() && !PackagePath.IsEmpty() && !SimpleClassName.IsEmpty();
+        }
+    };
+
+    /**
+     * 构建资产重命名上下文
+     * @param AssetData 资产数据
+     * @return 重命名上下文
+     */
+    FAssetRenameContext BuildRenameContext(const FAssetData& AssetData) const;
+
+    /**
+     * 计算新的资产名称（不处理冲突）
+     * @param Context 重命名上下文
+     * @return 建议的新名称
+     */
+    FString ComputeNewAssetName(const FAssetRenameContext& Context) const;
+
+    /**
+     * 解析资产名称并移除错误前缀
+     * @param CurrentName 当前名称
+     * @param CorrectPrefix 正确的前缀
+     * @return 处理后的基础名称
+     */
+    static FString StripIncorrectPrefix(const FString& CurrentName, const FString& CorrectPrefix);
+
+    /**
+     * 解析资产名称并提取基础名称（移除前缀、变体、后缀、数字）
+     * @param AssetName 资产名称
+     * @param Prefix 已知的前缀
+     * @return 基础名称
+     */
+    static FString ExtractBaseAssetName(const FString& AssetName, const FString& Prefix);
 };
