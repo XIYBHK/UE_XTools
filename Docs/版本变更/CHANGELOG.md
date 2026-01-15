@@ -1,5 +1,145 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.4 (2026-01-15)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 新增功能
+- **ObjectPool**: 控制台命令 `objectpool.stats` 显示对象池统计信息
+- **ObjectPool**: `GetAllPoolStats()` 和 `GetPoolCount()` 公开接口
+- **GeometryTool**: 基于形状组件的点阵生成（球体/立方体表面）
+- **GeometryTool**: 随机旋转、缩放、噪声参数和朝向原点控制
+- **GeometryTool**: 自定义矩形区域和圆形多层次点阵生成
+- **PointSampling**: 军事战术阵列型和几何艺术阵列型生成
+- **FieldSystemExtensions**: TMap/TSet 版本缓存支持智能去重
+- **SortEditor**: 排序模式引脚连接状态检测和变化监听
+
+### 重要修复
+- **PointSampling**: 泊松缓存键哈希/相等性契约、随机种子失效、坐标归一化等多处问题
+- **SortEditor**: K2Node_SmartSort 提升枚举引脚消失、排序模式无效、标题显示错误
+- **BlueprintExtensions**: SGraphNodeCasePairedPinsNode 本地化支持
+- **BlueprintExtensionsRuntime**: 除零/空指针/WorldContext 崩溃修复
+- **X_AssetEditor**: 自动化流程误触发资产重命名
+
+### 性能优化
+- **BlueprintExtensions**: GetCasePinCount() 从 O(n²) 优化为 O(n)
+- **FieldSystemExtensions**: Map+Set 组合提升查找性能
+- **PointSampling**: 矩形和圆形阵列型采样算法优化
+
+</details>
+
+<details>
+<summary><strong>ObjectPool 模块</strong></summary>
+
+- **新增** `objectpool.stats` 控制台命令，在屏幕左上角显示对象池统计信息
+- **新增** `GetAllPoolStats()` 和 `GetPoolCount()` 公开接口
+- **优化** 代码结构与清理冗余注释
+
+</details>
+
+<details>
+<summary><strong>BlueprintExtensions 模块</strong></summary>
+
+- **修复** `SGraphNodeCasePairedPinsNode` 使用 NSLOCTEXT 宏支持本地化
+- **优化** `GetCasePinCount()` 从 O(n²) 优化为 O(n) 复杂度
+- **重构** `K2Node_ForEachMap` 复用 `FK2NodePinTypeHelpers` 辅助类，减少重复代码
+
+</details>
+
+<details>
+<summary><strong>GeometryTool 模块</strong></summary>
+
+- **新增** 基于形状组件的点阵生成功能
+- **新增** 支持球体和立方体表面点阵生成
+- **新增** 支持随机旋转、缩放和噪声参数
+- **新增** 支持朝向原点的变换控制
+- **新增** 自定义矩形区域点阵生成
+- **新增** 圆形多层次点阵生成
+- **本地化** 完整的蓝图节点中文参数名
+
+</details>
+
+<details>
+<summary><strong>PointSampling 模块</strong></summary>
+
+- **修复** 泊松缓存键哈希/相等性契约不一致（改用强比较）
+- **修复** 泊松缓存键缺少 Scale 和 MaxAttempts 字段
+- **修复** ApplyTransform 中除零风险（SafeScale 检查）
+- **修复** 随机种子参数失效（新增 GeneratePoisson2D/3DFromStream）
+- **修复** 理想采样坐标归一化错误（[0..W] 误当 [-W/2..W/2]）
+- **修复** FloatRGBA 格式 FP16/FP32 平台差异（动态判断字节数）
+- **修复** 理想采样数据越界风险（添加大小验证和范围 Clamp）
+- **优化** 泊松采样日志级别从 Log 降为 Verbose（减少刷屏）
+- **优化** EPoissonCoordinateSpace 枚举文档（详细说明 World/Local/Raw 差异）
+- **优化** 矩形和圆形阵列型采样算法
+- **优化** 采样辅助模块核心逻辑为内部函数，统一随机源处理
+- **优化** 重构为 Runtime 和 Editor 模块，优化构建配置
+- **调整** RenderCore 从 Public 依赖移至 Private（符合 IWYU 原则）
+- **调整** 新增 RHI 模块依赖（用于 EPixelFormat 定义）
+- **移除** MeshSamplingHelper 中未使用的 SocketRotation 和 SocketTransform 变量
+- **新增** 基于泊松圆盘采样的纹理点阵生成功能
+- **新增** 多种点阵生成算法（圆形/矩形/三角形/样条线/网格）
+- **新增** 3D 矩形点阵生成支持
+- **新增** 军事战术阵列型和几何艺术阵列型生成功能
+
+</details>
+
+<details>
+<summary><strong>SortEditor 模块</strong></summary>
+
+- **修复** K2Node_SmartSort 提升枚举引脚为变量时第二个引脚消失
+- **修复** 提升为变量后排序模式无效（始终使用默认值）
+- **修复** Vector 数组连接后标题错误显示为"结构体属性排序"
+- **重构** 使用统一入口函数替代 Switch 分支（SortVectorsUnified/SortActorsUnified）
+- **优化** 提升为变量时使用 AdvancedView 叠加不常用引脚
+- **优化** 动态引脚 Tooltip 更新（描述各引脚适用场景）
+- **新增** 排序模式引脚连接状态检测（连接时显示所有可能引脚）
+- **新增** 排序模式引脚连接变化监听（PinConnectionListChanged）
+
+</details>
+
+<details>
+<summary><strong>其他模块更新</strong></summary>
+
+### RandomShuffles
+- **修复** 性能统计线程安全漏洞和代码规范问题
+
+### X_AssetEditor
+- **重构** 资产重命名触发逻辑
+- **修复** 自动化流程误触发资产重命名（增强上下文检测）
+- **优化** 资产重命名触发逻辑，采用 Factory 时间窗 + 资产类型双重匹配机制
+- **重构** 移除冗余的手动重命名检测逻辑，简化委托绑定
+
+### FieldSystemExtensions
+- **修复** GC 缓存去重、IsValid 替代、日志降噪、UTF-8 编译参数
+- **新增** TMap 版本的 FFieldSystemCacheMap 支持智能缓存键去重
+- **新增** TSet 版本的 FFieldSystemCacheSet 用于快速查询
+- **重构** 统一使用 Map+Set 组合替代单一 Map，提升查找性能
+- **重构** 替代所有 IsValid 检查，统一使用 SafePointer 模板
+- **优化** 日志级别优化（非关键日志降级为 Verbose）
+- **新增** UTF-8 编译参数支持（兼容跨平台源文件）
+
+### BlueprintExtensionsRuntime
+- **修复** 除零/空指针/WorldContext 崩溃，Transform 按值返回
+
+### XTools_EnhancedCodeFlow
+- **修复** 时间轴回调和精度问题，增加循环功能
+
+### XTools
+- **修复** 移除 try/catch、缓存键 Hash/Equals 简约、IWYU 安全、日志降噪、UTF-8 编译参数
+
+### CI/CD
+- **优化** 移除 Artifact 上传前的手动压缩，直接使用 upload-artifact@v4 自动压缩
+- **优化** Release zip 仅在 tag push 时创建（非 tag 构建不再双重压缩）
+- **清理** 从仓库移除误提交的 ci 日志目录
+- **新增** build-plugin-optimized.yml 支持 workflow_dispatch 事件触发发布包准备
+- **新增** update-release-assets.yml 优化输出变量处理逻辑
+
+</details>
+
+---
+
 ## 版本 v1.9.3 (2025-12-15)
 
 <details>
