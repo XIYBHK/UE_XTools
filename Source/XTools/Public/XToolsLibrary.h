@@ -306,8 +306,8 @@ public:
     );
 
 private:
-    // 计算曲线上某点的位置（基于参数t）
-    static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints);
+    // 计算曲线上某点的位置（基于参数）
+    static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float Parameter, TArray<FVector>& OutWorkPoints);
     static FVector EvaluateBezierConstantSpeed(
         UWorld* World,
         const TArray<FVector>& Points,

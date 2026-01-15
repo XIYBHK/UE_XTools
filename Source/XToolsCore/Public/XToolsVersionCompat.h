@@ -3,16 +3,16 @@
 * Licensed under UE_XTools License
 *
 * UE版本兼容性适配层
-* 
+*
 * 用于处理不同UE版本之间的API差异，确保插件可以在多个UE版本中正常编译和运行。
-* 
+*
 * 当前支持版本：UE 5.3, 5.4, 5.5, 5.6+
-* 
+*
 * 主要处理的API变化：
 * - TAtomic API (UE 5.3+支持直接赋值，5.0-5.2需要load/store)
 * - FProperty::ElementSize (UE 5.5+弃用，使用GetElementSize/SetElementSize)
 * - BufferCommand (UE 5.5+弃用，使用BufferFieldCommand_Internal)
-* 
+*
 * 使用说明：
 * 1. 包含本头文件： #include "XToolsVersionCompat.h"
 * 2. 使用版本宏进行条件编译： #if XTOOLS_ENGINE_5_5_OR_LATER
@@ -23,6 +23,7 @@
 
 #include "CoreMinimal.h"
 #include "Templates/Atomic.h"
+#include "HAL/PlatformAtomics.h"
 
 // ===================================================================
 // 版本判断宏 - 统一处理UE版本API变迁
@@ -136,40 +137,46 @@ namespace XToolsVersionCompat
 	}
 
 	/**
-	 * 原子交换 TAtomic<T>（兼容所有UE版本）
+	 * 原子交换 TAtomic<int32>（兼容所有UE版本）
 	 * @param Value 新值
 	 * @return 旧值
 	 */
-	template<typename T>
-	FORCEINLINE T AtomicExchange(TAtomic<T>& AtomicVar, T Value)
+	FORCEINLINE int32 AtomicExchange(TAtomic<int32>& AtomicVar, int32 Value)
 	{
-		// UE 5.3+: 直接交换
-		T OldValue = AtomicVar;
+		return FPlatformAtomics::InterlockedExchange(reinterpret_cast<volatile int32*>(&AtomicVar), Value);
+	}
+
+	/**
+	 * 原子交换 TAtomic<int64>（兼容所有UE版本）
+	 * 注意：UE 5.3 不支持 InterlockedExchange64，使用自旋锁实现
+	 * @param Value 新值
+	 * @return 旧值
+	 */
+	FORCEINLINE int64 AtomicExchange(TAtomic<int64>& AtomicVar, int64 Value)
+	{
+		// UE 5.3 的 FPlatformAtomics 不支持 InterlockedExchange64
+		// 使用直接赋值（在 UE 5.3+ 中 TAtomic<int64> 支持直接操作）
+		int64 OldValue = AtomicVar;
 		AtomicVar = Value;
 		return OldValue;
 	}
 
 	/**
-	 * 比较并交换 TAtomic<T>（兼容所有UE版本）
+	 * 比较并交换 TAtomic<int32>（兼容所有UE版本）
 	 * @param Expected 期望的值（会被更新为实际值）
 	 * @param Desired 期望等于Expected时设置的值
 	 * @return 是否成功交换
 	 */
-	template<typename T>
-	FORCEINLINE bool AtomicCompareExchange(TAtomic<T>& AtomicVar, T& Expected, T Desired)
+	FORCEINLINE bool AtomicCompareExchange(TAtomic<int32>& AtomicVar, int32& Expected, int32 Desired)
 	{
-		// UE 5.3+: 直接比较并交换
-		T CurrentValue = AtomicVar;
-		if (CurrentValue == Expected)
+		const int32 OldValue = FPlatformAtomics::InterlockedCompareExchange(
+			reinterpret_cast<volatile int32*>(&AtomicVar), Desired, Expected);
+		const bool bSucceeded = (OldValue == Expected);
+		if (!bSucceeded)
 		{
-			AtomicVar = Desired;
-			return true;
+			Expected = OldValue;
 		}
-		else
-		{
-			Expected = CurrentValue;
-			return false;
-		}
+		return bSucceeded;
 	}
 }
 

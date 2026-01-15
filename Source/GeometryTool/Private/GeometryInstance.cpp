@@ -8,7 +8,6 @@
 #include "Components/SphereComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/KismetMathLibrary.h"
-#include "XToolsErrorReporter.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGeometryTool, Log, All);
 DEFINE_LOG_CATEGORY(LogGeometryTool);

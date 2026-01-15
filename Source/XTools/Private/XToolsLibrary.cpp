@@ -10,9 +10,9 @@
 //  插件模块依赖
 #include "XToolsModule.h"
 #include "XToolsErrorReporter.h"
+#include "XToolsDefines.h"
 
 // Parent finder settings
-static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
 #include "RandomShuffleArrayLibrary.h"
 #include "FormationSystem.h"
 #include "FormationLibrary.h"
@@ -504,13 +504,22 @@ void UXToolsLibrary::DrawBezierDebug(
         const int32 LevelPoints = PointCount - Level;
         for (int32 I = 0; I < LevelPoints; ++I)
         {
-            const FVector& P1 = WorkPoints[CurrentIndex - LevelPoints - 1];
-            const FVector& P2 = WorkPoints[CurrentIndex - LevelPoints];
+            // 修复数组越界风险：使用临时变量存储索引
+            const int32 PrevLevelStartIndex = CurrentIndex - LevelPoints - 1;
+            const int32 CurrLevelStartIndex = CurrentIndex - LevelPoints;
 
-            DrawDebugPoint(World, WorkPoints[CurrentIndex], 4.0f,
-                DebugColors.IntermediatePointColor.ToFColor(true), false, Duration);
-            DrawDebugLine(World, P1, P2,
-                DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+            if (PrevLevelStartIndex >= 0 && CurrLevelStartIndex >= 0 &&
+                PrevLevelStartIndex < WorkPoints.Num() && CurrLevelStartIndex < WorkPoints.Num() &&
+                CurrentIndex < WorkPoints.Num())
+            {
+                const FVector& P1 = WorkPoints[PrevLevelStartIndex];
+                const FVector& P2 = WorkPoints[CurrLevelStartIndex];
+
+                DrawDebugPoint(World, WorkPoints[CurrentIndex], 4.0f,
+                    DebugColors.IntermediatePointColor.ToFColor(true), false, Duration);
+                DrawDebugLine(World, P1, P2,
+                    DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+            }
 
             CurrentIndex++;
         }
@@ -567,7 +576,7 @@ FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray
     return ResultPoint;
 }
 
-FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points, float t, TArray<FVector>& OutWorkPoints)
+FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points, float Parameter, TArray<FVector>& OutWorkPoints)
 {
     const int32 PointCount = Points.Num();
 
@@ -576,15 +585,15 @@ FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points,
     {
         OutWorkPoints.Reset(6);
         OutWorkPoints.Append(Points);
-        
-        const FVector P01 = FMath::Lerp(Points[0], Points[1], t);
-        const FVector P12 = FMath::Lerp(Points[1], Points[2], t);
-        const FVector Result = FMath::Lerp(P01, P12, t);
+
+        const FVector P01 = FMath::Lerp(Points[0], Points[1], Parameter);
+        const FVector P12 = FMath::Lerp(Points[1], Points[2], Parameter);
+        const FVector Result = FMath::Lerp(P01, P12, Parameter);
 
         OutWorkPoints.Add(P01);
         OutWorkPoints.Add(P12);
         OutWorkPoints.Add(Result);
-        
+
         return Result;
     }
     if (PointCount == 4) // 三阶 (Cubic)
@@ -592,12 +601,12 @@ FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points,
         OutWorkPoints.Reset(10);
         OutWorkPoints.Append(Points);
 
-        const FVector P01 = FMath::Lerp(Points[0], Points[1], t);
-        const FVector P12 = FMath::Lerp(Points[1], Points[2], t);
-        const FVector P23 = FMath::Lerp(Points[2], Points[3], t);
-        const FVector P012 = FMath::Lerp(P01, P12, t);
-        const FVector P123 = FMath::Lerp(P12, P23, t);
-        const FVector Result = FMath::Lerp(P012, P123, t);
+        const FVector P01 = FMath::Lerp(Points[0], Points[1], Parameter);
+        const FVector P12 = FMath::Lerp(Points[1], Points[2], Parameter);
+        const FVector P23 = FMath::Lerp(Points[2], Points[3], Parameter);
+        const FVector P012 = FMath::Lerp(P01, P12, Parameter);
+        const FVector P123 = FMath::Lerp(P12, P23, Parameter);
+        const FVector Result = FMath::Lerp(P012, P123, Parameter);
 
         OutWorkPoints.Add(P01);
         OutWorkPoints.Add(P12);
@@ -616,10 +625,8 @@ FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points,
     OutWorkPoints.Reset(TotalPoints);
     OutWorkPoints.Append(Points);
 
-    for (int32 i = PointCount; i < TotalPoints; ++i)
-    {
-        OutWorkPoints.Add(FVector::ZeroVector);
-    }
+    // 预分配剩余空间，避免动态扩容
+    OutWorkPoints.SetNumZeroed(TotalPoints);
 
     int32 CurrentIndex = PointCount;
     for (int32 Level = 1; Level <= TotalLevels; ++Level)
@@ -629,7 +636,7 @@ FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points,
         {
             const FVector& P1 = OutWorkPoints[CurrentIndex - LevelPoints - 1];
             const FVector& P2 = OutWorkPoints[CurrentIndex - LevelPoints];
-            OutWorkPoints[CurrentIndex++] = FMath::Lerp(P1, P2, t);
+            OutWorkPoints[CurrentIndex++] = FMath::Lerp(P1, P2, Parameter);
         }
     }
 

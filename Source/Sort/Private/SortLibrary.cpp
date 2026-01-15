@@ -12,6 +12,7 @@
 #include "Algo/Reverse.h"
 #include "SortAPI.h"
 #include "XToolsErrorReporter.h"
+#include "XToolsVersionCompat.h"
 
 /**
  * 自然排序比较器，用于处理字符串中的数字和中文
@@ -1043,7 +1044,7 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
 
     // 根据排序后的索引重新排列数组
     TArray<uint8> TempStorage;
-    const int32 ElementSize = ArrayProp->Inner->GetSize();
+    const int32 ElementSize = XTOOLS_GET_ELEMENT_SIZE(ArrayProp->Inner);
     TempStorage.SetNumUninitialized(ElementSize * ArrayHelper.Num());
 
     // 复制排序后的元素到临时存储
