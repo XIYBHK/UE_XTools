@@ -1,0 +1,51 @@
+# clangd 配置文件 - XTools UE 插件
+CompileFlags:
+  # 使用 UE 引擎的 compile_commands.json
+  CompilationDatabase: D:\UE\UE_5.3
+
+  # 从编译数据库移除的标志（避免冲突）
+  Remove: [-m*]
+
+  # 额外添加的标志
+  Add:
+    - -ferror-limit=0
+    - -fspell-checking
+    - -Wno-unknown-warning-option
+    - -Wno-unused-macros
+    - -Wno-non-virtual-dtor
+    - -Wno-missing-declarations
+    - -Wno-strict-aliasing
+    - -Wno-invalid-pp-token
+    - -Wno-ignored-attributes
+    - -fms-compatibility
+    - -fms-compatibility-version=19.33
+    - -fms-extensions
+
+# 索引选项
+Index:
+  # 后台索引
+  Background: Build
+
+# 诊断选项
+Diagnostics:
+  # 未使用的包含文件
+  UnusedIncludes: Strict
+  # 缺少包含提示
+  MissingIncludes: Strict
+
+# 补全选项
+Completion:
+  # 启用代码片段占位符
+  EnableSnippets: true
+
+# 悬停选项
+Hover:
+  # 显示类型定义
+  ShowAKA: Yes
+
+# Inlay hints 选项
+InlayHints:
+  # 启用参数名提示
+  EnableParameterNames: true
+  # 启用类型提示
+  Enabled: Yes
