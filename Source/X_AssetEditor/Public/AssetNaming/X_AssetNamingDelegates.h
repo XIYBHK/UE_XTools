@@ -8,7 +8,6 @@
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
 #include "EditorModes.h"
-#include "Misc/SharedPtr.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNamingDelegates, Log, All);
 

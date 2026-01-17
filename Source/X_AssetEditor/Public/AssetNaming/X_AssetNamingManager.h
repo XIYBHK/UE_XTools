@@ -141,7 +141,7 @@ public:
      * @param AssetName 资产名称
      * @return 规范化后的名称
      */
-    FString NormalizeNumericSuffix(const FString& AssetName);
+    FString NormalizeNumericSuffix(const FString& AssetName) const;
 
 private:
     /** 单例实例 */

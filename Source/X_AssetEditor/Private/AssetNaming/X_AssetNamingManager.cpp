@@ -67,7 +67,7 @@ bool FX_AssetNamingManager::Initialize()
 
     if (Settings->bAutoRenameOnImport || Settings->bAutoRenameOnCreate)
     {
-        FX_AssetNamingDelegates::Get().Initialize(
+        FX_AssetNamingDelegates::Get()->Initialize(
             FX_AssetNamingDelegates::FOnAssetNeedsRename::CreateRaw(this, &FX_AssetNamingManager::OnAssetNeedsRename)
         );
     }
@@ -92,7 +92,7 @@ bool FX_AssetNamingManager::Initialize()
 bool FX_AssetNamingManager::Shutdown()
 {
     // Shutdown delegates
-    FX_AssetNamingDelegates::Get().Shutdown();
+    FX_AssetNamingDelegates::Get()->Shutdown();
 
     UE_LOG(LogX_AssetNaming, Log, TEXT("Asset Naming Manager shut down"));
 
@@ -108,12 +108,12 @@ void FX_AssetNamingManager::RefreshDelegateBindings()
     }
 
     // 先关闭现有委托
-    FX_AssetNamingDelegates::Get().Shutdown();
+    FX_AssetNamingDelegates::Get()->Shutdown();
 
     // 根据设置重新绑定
     if (Settings->bAutoRenameOnImport || Settings->bAutoRenameOnCreate)
     {
-        FX_AssetNamingDelegates::Get().Initialize(
+        FX_AssetNamingDelegates::Get()->Initialize(
             FX_AssetNamingDelegates::FOnAssetNeedsRename::CreateRaw(this, &FX_AssetNamingManager::OnAssetNeedsRename)
         );
         UE_LOG(LogX_AssetNaming, Log, TEXT("Delegate bindings refreshed: Import=%d, Create=%d"),
@@ -1103,7 +1103,7 @@ void FX_AssetNamingManager::OutputUnknownAssetDiagnostics(const FAssetData& Asse
     UE_LOG(LogX_AssetNaming, Warning, TEXT("================================================"));
 }
 
-FString FX_AssetNamingManager::NormalizeNumericSuffix(const FString& AssetName)
+FString FX_AssetNamingManager::NormalizeNumericSuffix(const FString& AssetName) const
 {
     // 使用静态缓存的正则表达式模式，避免重复编译
     FRegexMatcher Matcher(NumericSuffixPattern, AssetName);
@@ -1162,7 +1162,11 @@ FAssetNamingPattern FAssetNamingPattern::ParseFromName(const FString& AssetName,
     if (!KnownPrefix.IsEmpty() && RemainingName.StartsWith(KnownPrefix))
     {
         Pattern.Prefix = KnownPrefix;
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
         RemainingName.RightChopInline(KnownPrefix.Len(), EAllowShrinking::No);
+#else
+        RemainingName.RightChopInline(KnownPrefix.Len(), false);
+#endif
     }
     else
     {
@@ -1176,7 +1180,11 @@ FAssetNamingPattern FAssetNamingPattern::ParseFromName(const FString& AssetName,
                 if (!TestPrefix.IsEmpty() && RemainingName.StartsWith(TestPrefix))
                 {
                     Pattern.Prefix = TestPrefix;
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
                     RemainingName.RightChopInline(TestPrefix.Len(), EAllowShrinking::No);
+#else
+                    RemainingName.RightChopInline(TestPrefix.Len(), false);
+#endif
                     break;
                 }
             }
@@ -1191,7 +1199,11 @@ FAssetNamingPattern FAssetNamingPattern::ParseFromName(const FString& AssetName,
         FString NumericStr = NumericMatcher.GetCaptureGroup(1);
         Pattern.NumericSuffix = FCString::Atoi(*NumericStr);
         int32 MatchStart = NumericMatcher.GetMatchBeginning();
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
         RemainingName.LeftChopInline(RemainingName.Len() - MatchStart, EAllowShrinking::No);
+#else
+        RemainingName.LeftChopInline(RemainingName.Len() - MatchStart, false);
+#endif
     }
 
     // 3. 解析剩余部分（基础名称、变体、后缀）
@@ -1385,7 +1397,11 @@ FString FX_AssetNamingManager::ExtractBaseAssetName(const FString& AssetName, co
     FString BaseName = AssetName;
     if (!Prefix.IsEmpty() && BaseName.StartsWith(Prefix))
     {
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
         BaseName.RightChopInline(Prefix.Len(), EAllowShrinking::No);
+#else
+        BaseName.RightChopInline(Prefix.Len(), false);
+#endif
     }
 
     // 使用 FAssetNamingPattern 解析

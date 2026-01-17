@@ -36,7 +36,7 @@ TSharedPtr<FX_AssetNamingDelegates> FX_AssetNamingDelegates::Get()
 {
 	if (!Instance.IsValid())
 	{
-		Instance = MakeShared<FX_AssetNamingDelegates>();
+		Instance = TSharedPtr<FX_AssetNamingDelegates>(new FX_AssetNamingDelegates());
 	}
 	return Instance;
 }
@@ -270,13 +270,13 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 
 	// ========== 【关键修复】使用弱指针确保 Lambda 安全性 ==========
 	// 创建弱引用副本，避免在 Lambda 中直接捕获 this 指针
-	TWeakPtr<FX_AssetNamingDelegates> WeakThis = AsShared();
+	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
 
 	// 使用 NextTick 延迟执行，确保 Factory 事件已经触发并更新了 LastFactoryCreationTime
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis, AssetData, FactoryTimeWindow](float DeltaTime) -> bool
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, AssetData, FactoryTimeWindow](float DeltaTime) -> bool
 	{
 		// ========== 【安全检查】尝试提升弱指针为强指针 ==========
-		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakThis.Pin();
+		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
 		if (!SharedThis.IsValid() || !SharedThis->bIsActive || !SharedThis->RenameCallback.IsBound())
 		{
 			return false;
@@ -522,12 +522,12 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 	// 这是一个保守的延迟时间，避免在启动阶段的任何资产操作被误认为用户操作
 
 	// ========== 【关键修复】使用弱指针确保 Lambda 安全性 ==========
-	TWeakPtr<FX_AssetNamingDelegates> WeakThis = AsShared();
+	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
 
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis, ActivationDelay](float DeltaTime) -> bool
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, ActivationDelay](float DeltaTime) -> bool
 	{
 		// ========== 【安全检查】尝试提升弱指针为强指针 ==========
-		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakThis.Pin();
+		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
 		if (!SharedThis.IsValid() || !SharedThis->bIsActive)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
@@ -546,7 +546,7 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 				TEXT("延迟激活超时但 AssetRegistry 仍在加载，再延迟 10 秒"));
 
 			// 再次使用弱指针确保安全性
-			TWeakPtr<FX_AssetNamingDelegates> WeakThis2 = WeakThis;
+			TWeakPtr<FX_AssetNamingDelegates> WeakThis2 = SharedThis->AsShared();
 			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis2](float DT) -> bool
 			{
 				TSharedPtr<FX_AssetNamingDelegates> SharedThis2 = WeakThis2.Pin();
