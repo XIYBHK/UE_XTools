@@ -90,3 +90,18 @@ Docs/UE5.3_Source/*
 # Claude Code 临时文件
 tmpclaude-*
 /Source/BlueprintExtensions/Private/K2Nodes/Backup
+
+# VSCode 配置文件（团队共享）
+# 以下文件应提交到 Git：
+# - .vscode/tasks.json - 构建任务
+# - .vscode/launch.json - 调试配置
+# - .vscode/extensions.json - 推荐扩展
+# - .vscode/c_cpp_properties.json - IntelliSense 配置
+
+# VSCode 个人设置（不提交）
+.vscode/settings.json
+
+# 自动生成的文件（不提交）
+compile_commands.json
+.vscode/opencode.json
+nul

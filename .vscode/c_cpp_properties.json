@@ -1,0 +1,42 @@
+{
+  "configurations": [
+    {
+      "name": "Win64",
+      "compileCommands": "F:/Unreal Projects/XTools/Plugins/UE_XTools/compile_commands.json",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "F:/Epic Games/UE_5.3/Engine/Source/**",
+        "F:/Epic Games/UE_5.3/Engine/Plugins/**",
+        "F:/Epic Games/UE_5.3/Engine/Intermediate/Build/Win64/UnrealEditor/Inc/**",
+        "F:/Unreal Projects/XTools/Source/**",
+        "F:/Unreal Projects/XTools/Plugins/**",
+        "F:/Epic Games/UE_5.3/Engine/Source"
+      ],
+      "defines": [
+        "WITH_EDITOR=1",
+        "UE_BUILD_DEVELOPMENT=1",
+        "UE_EDITOR=1",
+        "PLATFORM_WINDOWS=1",
+        "PLATFORM_MICROSOFT=1",
+        "WIN64=1",
+        "UBT_COMPILED_PLATFORM=Win64",
+        "UNICODE=1",
+        "_UNICODE=1"
+      ],
+      "compilerPath": "E:/VisualStudio/2022/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe",
+      "cppStandard": "c++20",
+      "cStandard": "c17",
+      "intelliSenseMode": "windows-msvc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/Source",
+          "F:/Unreal Projects/XTools/Source",
+        
+          "F:/Epic Games/UE_5.3/Engine/Source"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ],
+  "version": 4
+}

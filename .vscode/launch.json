@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug UE Editor",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "F:/Epic Games/UE_5.3/Engine/Binaries/Win64/UnrealEditor.exe",
+      "args": ["\"F:/Unreal Projects/XTools/XToolsDev.uproject\"", "-debug"],
+      "stopAtEntry": false,
+      "cwd": "F:/Epic Games/UE_5.3/Engine/Binaries/Win64",
+      "environment": [],
+      "console": "externalTerminal",
+      "preLaunchTask": "Compile Plugin in Project (快速编译)"
+    },
+    {
+      "name": "Attach to UE Editor",
+      "type": "cppvsdbg",
+      "request": "attach",
+      "processId": "${command:pickProcess}"
+    }
+  ]
+}
