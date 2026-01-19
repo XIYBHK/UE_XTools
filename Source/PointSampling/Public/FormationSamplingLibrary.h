@@ -476,7 +476,7 @@ public:
 		FRotator Rotation,
 		float MaxRadius = 200.0f,
 		int32 RingCount = 3,
-		const TArray<int32>& PointsPerRing = TArray<int32>(),
+		const TArray<int32>& PointsPerRing,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
 		int32 RandomSeed = 0

@@ -822,8 +822,13 @@ TArray<FVector> UFormationSamplingLibrary::GenerateConcentricRingsFormation(
 {
 	FRandomStream RandomStream(RandomSeed);
 
+	// 如果 PointsPerRing 为空，使用默认值 {6, 12, 18, 24}
+	const TArray<int32>& ActualPointsPerRing = PointsPerRing.Num() > 0
+		? PointsPerRing
+		: TArray<int32>{6, 12, 18, 24};
+
 	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateConcentricRings(
-		PointCount, MaxRadius, RingCount, PointsPerRing, JitterStrength, RandomStream
+		PointCount, MaxRadius, RingCount, ActualPointsPerRing, JitterStrength, RandomStream
 	);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
