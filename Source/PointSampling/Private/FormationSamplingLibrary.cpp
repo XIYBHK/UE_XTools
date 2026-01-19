@@ -14,6 +14,7 @@
 #include "Sampling/GeometricFormationHelper.h"
 #include "Sampling/PointDeduplicationHelper.h"
 #include "Components/SplineComponent.h"
+#include "Algo/AnyOf.h"
 
 // ============================================================================
 // 辅助函数：坐标变换
@@ -33,12 +34,11 @@ namespace FormationSamplingInternal
 		TArray<FVector> TransformedPoints;
 		TransformedPoints.Reserve(LocalPoints.Num());
 
-		FTransform Transform(Rotation, CenterLocation);
+		const FTransform Transform(Rotation, CenterLocation);
 
 		switch (CoordinateSpace)
 		{
 		case EPoissonCoordinateSpace::World:
-			// 世界空间：应用位置和旋转
 			for (const FVector& LocalPoint : LocalPoints)
 			{
 				TransformedPoints.Add(Transform.TransformPosition(LocalPoint));
@@ -46,7 +46,6 @@ namespace FormationSamplingInternal
 			break;
 
 		case EPoissonCoordinateSpace::Local:
-			// 局部空间：仅应用位置偏移，不旋转
 			for (const FVector& LocalPoint : LocalPoints)
 			{
 				TransformedPoints.Add(LocalPoint + CenterLocation);
@@ -55,7 +54,6 @@ namespace FormationSamplingInternal
 
 		case EPoissonCoordinateSpace::Raw:
 		default:
-			// 原始空间：直接返回局部坐标
 			TransformedPoints = LocalPoints;
 			break;
 		}
@@ -65,10 +63,6 @@ namespace FormationSamplingInternal
 
 	/**
 	 * 应用位置扰动
-	 * @param Points 点位数组（会被修改）
-	 * @param JitterStrength 扰动强度 (0-1)
-	 * @param Scale 扰动缩放系数（通常是Spacing或Radius）
-	 * @param RandomStream 随机流
 	 */
 	static void ApplyJitter(
 		TArray<FVector>& Points,
@@ -76,14 +70,111 @@ namespace FormationSamplingInternal
 		float Scale,
 		FRandomStream& RandomStream)
 	{
-		if (JitterStrength > 0.0f && Points.Num() > 0)
+		if (JitterStrength <= 0.0f || Points.Num() == 0)
 		{
-			const float JitterRange = JitterStrength * Scale;
+			return;
+		}
+
+		const float JitterRange = JitterStrength * Scale;
+		for (FVector& Point : Points)
+		{
+			Point.X += RandomStream.FRandRange(-JitterRange, JitterRange);
+			Point.Y += RandomStream.FRandRange(-JitterRange, JitterRange);
+		}
+	}
+
+	/**
+	 * 应用高度参数（在Z轴上分布）
+	 */
+	static void ApplyHeightDistribution(
+		TArray<FVector>& Points,
+		float Height,
+		FRandomStream& RandomStream)
+	{
+		if (Height <= 1.0f || Points.Num() == 0)
+		{
+			return;
+		}
+
+		const float HalfHeight = Height * 0.5f;
+		for (FVector& Point : Points)
+		{
+			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
+		}
+	}
+
+	/**
+	 * 从样条组件提取控制点（世界坐标）
+	 */
+	static bool ExtractSplineControlPoints(
+		USplineComponent* SplineComponent,
+		TArray<FVector>& OutControlPoints,
+		int32 MinRequiredPoints,
+		const FString& ContextName)
+	{
+		if (!SplineComponent)
+		{
+			UE_LOG(LogPointSampling, Warning, TEXT("[%s] 样条组件指针为空"), *ContextName);
+			return false;
+		}
+
+		const int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
+		if (NumPoints < MinRequiredPoints)
+		{
+			UE_LOG(LogPointSampling, Warning, TEXT("[%s] 样条组件至少需要%d个控制点"), *ContextName, MinRequiredPoints);
+			return false;
+		}
+
+		OutControlPoints.Reserve(NumPoints);
+		for (int32 i = 0; i < NumPoints; ++i)
+		{
+			OutControlPoints.Add(SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World));
+		}
+
+		return true;
+	}
+
+	/**
+	 * 根据坐标空间转换点位（用于样条线和网格采样）
+	 */
+	static void ConvertPointsToCoordinateSpace(
+		TArray<FVector>& Points,
+		EPoissonCoordinateSpace CoordinateSpace,
+		const FVector& OriginOffset = FVector::ZeroVector)
+	{
+		if (Points.Num() == 0)
+		{
+			return;
+		}
+
+		switch (CoordinateSpace)
+		{
+		case EPoissonCoordinateSpace::Raw:
 			for (FVector& Point : Points)
 			{
-				Point.X += RandomStream.FRandRange(-JitterRange, JitterRange);
-				Point.Y += RandomStream.FRandRange(-JitterRange, JitterRange);
+				Point -= OriginOffset;
 			}
+			break;
+
+		case EPoissonCoordinateSpace::Local:
+			{
+				FVector Centroid = FVector::ZeroVector;
+				for (const FVector& Point : Points)
+				{
+					Centroid += Point;
+				}
+				Centroid /= Points.Num();
+
+				for (FVector& Point : Points)
+				{
+					Point -= Centroid;
+				}
+			}
+			break;
+
+		case EPoissonCoordinateSpace::World:
+		default:
+			break;
 		}
 	}
 }
@@ -104,26 +195,14 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSolidRectangle(
 	float JitterStrength,
 	int32 RandomSeed)
 {
-	// 创建随机流
 	FRandomStream RandomStream(RandomSeed);
 
-	// 生成局部坐标点
 	TArray<FVector> LocalPoints = FRectangleSamplingHelper::GenerateSolidRectangle(
 		PointCount, Spacing, RowCount, ColumnCount, JitterStrength, RandomStream
 	);
 
-	// 应用高度参数（在Z轴上分布）
-	if (Height > 1.0f && LocalPoints.Num() > 0)
-	{
-		float HalfHeight = Height * 0.5f;
-		for (FVector& Point : LocalPoints)
-		{
-			// 在[-HalfHeight, HalfHeight]范围内随机分布Z坐标
-			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
-		}
-	}
+	FormationSamplingInternal::ApplyHeightDistribution(LocalPoints, Height, RandomStream);
 
-	// 转换到目标坐标空间
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
 
@@ -145,16 +224,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHollowRectangle(
 		PointCount, Spacing, RowCount, ColumnCount, JitterStrength, RandomStream
 	);
 
-	// 应用高度参数（在Z轴上分布）
-	if (Height > 1.0f && LocalPoints.Num() > 0)
-	{
-		float HalfHeight = Height * 0.5f;
-		for (FVector& Point : LocalPoints)
-		{
-			// 在[-HalfHeight, HalfHeight]范围内随机分布Z坐标
-			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
-		}
-	}
+	FormationSamplingInternal::ApplyHeightDistribution(LocalPoints, Height, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -176,16 +246,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSpiralRectangle(
 		PointCount, Spacing, SpiralTurns, JitterStrength, RandomStream
 	);
 
-	// 应用高度参数（在Z轴上分布）
-	if (Height > 1.0f && LocalPoints.Num() > 0)
-	{
-		float HalfHeight = Height * 0.5f;
-		for (FVector& Point : LocalPoints)
-		{
-			// 在[-HalfHeight, HalfHeight]范围内随机分布Z坐标
-			Point.Z = RandomStream.FRandRange(-HalfHeight, HalfHeight);
-		}
-	}
+	FormationSamplingInternal::ApplyHeightDistribution(LocalPoints, Height, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -313,65 +374,16 @@ TArray<FVector> UFormationSamplingLibrary::GenerateAlongSpline(
 	EPoissonCoordinateSpace CoordinateSpace)
 {
 	TArray<FVector> Points;
-
-	// 验证样条组件有效性
-	if (!SplineComponent)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[样条线采样] 样条组件指针为空"));
-		return Points;
-	}
-
-	// 从样条组件提取控制点（世界坐标）
 	TArray<FVector> SplineControlPoints;
-	int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
-	SplineControlPoints.Reserve(NumPoints);
 
-	for (int32 i = 0; i < NumPoints; ++i)
+	if (!FormationSamplingInternal::ExtractSplineControlPoints(SplineComponent, SplineControlPoints, 2, TEXT("样条线采样")))
 	{
-		SplineControlPoints.Add(SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World));
-	}
-
-	if (SplineControlPoints.Num() < 2)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[样条线采样] 样条组件至少需要2个控制点"));
 		return Points;
 	}
 
-	// 样条线采样：控制点已经是世界坐标
-	Points = FSplineSamplingHelper::GenerateAlongSpline(
-		PointCount, SplineControlPoints, bClosedSpline
-	);
+	Points = FSplineSamplingHelper::GenerateAlongSpline(PointCount, SplineControlPoints, bClosedSpline);
 
-	// 根据坐标空间类型处理
-	// 由于样条线控制点通常已经是世界坐标，这里主要处理 Raw 和 Local 的情况
-	if (CoordinateSpace == EPoissonCoordinateSpace::Raw && Points.Num() > 0)
-	{
-		// Raw 空间：将点位转换为相对于第一个控制点的局部坐标
-		if (SplineControlPoints.Num() > 0)
-		{
-			FVector Origin = SplineControlPoints[0];
-			for (FVector& Point : Points)
-			{
-				Point -= Origin;
-			}
-		}
-	}
-	else if (CoordinateSpace == EPoissonCoordinateSpace::Local && Points.Num() > 0)
-	{
-		// Local 空间：保持相对关系，转换为相对于质心的坐标
-		FVector Centroid = FVector::ZeroVector;
-		for (const FVector& Point : Points)
-		{
-			Centroid += Point;
-		}
-		Centroid /= Points.Num();
-
-		for (FVector& Point : Points)
-		{
-			Point -= Centroid;
-		}
-	}
-	// World 空间：直接返回原始点位
+	FormationSamplingInternal::ConvertPointsToCoordinateSpace(Points, CoordinateSpace, SplineControlPoints[0]);
 
 	return Points;
 }
@@ -384,67 +396,19 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSplineBoundary(
 	int32 RandomSeed)
 {
 	TArray<FVector> Points;
-
-	// 验证样条组件有效性
-	if (!SplineComponent)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[样条线边界采样] 样条组件指针为空"));
-		return Points;
-	}
-
-	// 从样条组件提取控制点（世界坐标）
 	TArray<FVector> SplineControlPoints;
-	int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
-	SplineControlPoints.Reserve(NumPoints);
 
-	for (int32 i = 0; i < NumPoints; ++i)
+	if (!FormationSamplingInternal::ExtractSplineControlPoints(SplineComponent, SplineControlPoints, 3, TEXT("样条线边界采样")))
 	{
-		SplineControlPoints.Add(SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::World));
-	}
-
-	if (SplineControlPoints.Num() < 3)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[样条线边界采样] 样条组件至少需要3个控制点形成封闭区域"));
 		return Points;
 	}
 
-	FRandomStream RandomStream(RandomSeed);
-
-	// 调用helper生成边界内的泊松采样点
+	const FRandomStream RandomStream(RandomSeed);
 	Points = FSplineSamplingHelper::GenerateWithinBoundary(
 		TargetPointCount, SplineControlPoints, MinDistance, RandomStream
 	);
 
-	// 根据坐标空间类型处理
-	// 样条线控制点通常已经是世界坐标
-	if (CoordinateSpace == EPoissonCoordinateSpace::Raw && Points.Num() > 0)
-	{
-		// Raw 空间：相对于第一个控制点
-		if (SplineControlPoints.Num() > 0)
-		{
-			FVector Origin = SplineControlPoints[0];
-			for (FVector& Point : Points)
-			{
-				Point -= Origin;
-			}
-		}
-	}
-	else if (CoordinateSpace == EPoissonCoordinateSpace::Local && Points.Num() > 0)
-	{
-		// Local 空间：相对于质心
-		FVector Centroid = FVector::ZeroVector;
-		for (const FVector& Point : Points)
-		{
-			Centroid += Point;
-		}
-		Centroid /= Points.Num();
-
-		for (FVector& Point : Points)
-		{
-			Point -= Centroid;
-		}
-	}
-	// World 空间：直接返回
+	FormationSamplingInternal::ConvertPointsToCoordinateSpace(Points, CoordinateSpace, SplineControlPoints[0]);
 
 	return Points;
 }
@@ -463,25 +427,21 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromStaticMesh(
 	bool bGridAlignedDedup,
 	EPoissonCoordinateSpace CoordinateSpace)
 {
-	// 从静态网格体提取顶点（不进行内置去重）
 	TArray<FVector> Points = FMeshSamplingHelper::GenerateFromStaticMesh(
 		StaticMesh, Transform, LODLevel, bBoundaryVerticesOnly, MaxPoints
 	);
 
-	// 用户指定去重半径时，在最终输出前进行去重（参考纹理采样的去重逻辑）
 	if (DeduplicationRadius > 0.0f && Points.Num() > 1)
 	{
 		int32 OriginalCount, RemovedCount;
 
 		if (bGridAlignedDedup)
 		{
-			// 网格对齐模式：点位对齐到规则网格，保持整齐排列
 			FPointDeduplicationHelper::RemoveDuplicatePointsGridAligned(
 				Points, DeduplicationRadius, OriginalCount, RemovedCount);
 		}
 		else
 		{
-			// 距离过滤模式：保留原始位置，仅移除过近的点
 			FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
 				Points, DeduplicationRadius, OriginalCount, RemovedCount);
 		}
@@ -495,32 +455,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromStaticMesh(
 		}
 	}
 
-	// 根据坐标空间类型处理
-	if (CoordinateSpace == EPoissonCoordinateSpace::Raw && Points.Num() > 0)
-	{
-		// Raw 空间：转换为相对于变换原点的坐标
-		FVector Origin = Transform.GetLocation();
-		for (FVector& Point : Points)
-		{
-			Point -= Origin;
-		}
-	}
-	else if (CoordinateSpace == EPoissonCoordinateSpace::Local && Points.Num() > 0)
-	{
-		// Local 空间：转换为相对于质心的坐标
-		FVector Centroid = FVector::ZeroVector;
-		for (const FVector& Point : Points)
-		{
-			Centroid += Point;
-		}
-		Centroid /= Points.Num();
-
-		for (FVector& Point : Points)
-		{
-			Point -= Centroid;
-		}
-	}
-	// World 空间：保持原始坐标
+	FormationSamplingInternal::ConvertPointsToCoordinateSpace(Points, CoordinateSpace, Transform.GetLocation());
 
 	return Points;
 }
@@ -534,7 +469,6 @@ bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 		return false;
 	}
 
-	// 检查平台数据
 	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
 	if (!PlatformData || PlatformData->Mips.Num() == 0)
 	{
@@ -542,26 +476,19 @@ bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 		return false;
 	}
 
-	// 获取纹理信息
-	int32 Width = Texture->GetSizeX();
-	int32 Height = Texture->GetSizeY();
-	EPixelFormat PixelFormat = PlatformData->PixelFormat;
+	const int32 Width = Texture->GetSizeX();
+	const int32 Height = Texture->GetSizeY();
+	const EPixelFormat PixelFormat = PlatformData->PixelFormat;
 
 	UE_LOG(LogPointSampling, Display, TEXT("========================================"));
 	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 纹理: %s"), *Texture->GetName());
 	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 尺寸: %dx%d"), Width, Height);
-	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 像素格式: %s (%d)"), GetPixelFormatString(PixelFormat), (int32)PixelFormat);
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 像素格式: %s (%d)"), GetPixelFormatString(PixelFormat), static_cast<int32>(PixelFormat));
 	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] Mip 级别数: %d"), PlatformData->Mips.Num());
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 压缩设置: %d"), static_cast<int32>(Texture->CompressionSettings));
 
-	// 检查纹理压缩设置
-	TextureCompressionSettings CompressionSettings = Texture->CompressionSettings;
-	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 压缩设置: %d"), (int32)CompressionSettings);
-
-	// 检查是否为支持的格式
-	bool bIsSupportedFormat = (PixelFormat == PF_B8G8R8A8) ||
-	                          (PixelFormat == PF_R8G8B8A8) ||
-	                          (PixelFormat == PF_A8R8G8B8) ||
-	                          (PixelFormat == PF_FloatRGBA);
+	constexpr EPixelFormat SupportedFormats[] = { PF_B8G8R8A8, PF_R8G8B8A8, PF_A8R8G8B8, PF_FloatRGBA };
+	const bool bIsSupportedFormat = Algo::AnyOf(SupportedFormats, [&](EPixelFormat Format) { return PixelFormat == Format; });
 
 	if (!bIsSupportedFormat)
 	{

@@ -10,9 +10,7 @@
 #include "PointSamplingTypes.h"
 #include "FormationSamplingLibrary.generated.h"
 
-class USplineComponent;
 class UStaticMesh;
-class USkeletalMesh;
 class UTexture2D;
 
 /**
@@ -403,12 +401,12 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
-		float OuterRadius,
-		float InnerRadius,
-		int32 PetalCount,
-		EPoissonCoordinateSpace CoordinateSpace,
-		float JitterStrength,
-		int32 RandomSeed
+		float OuterRadius = 200.0f,
+		float InnerRadius = 100.0f,
+		int32 PetalCount = 5,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
 	);
 
 	// ============================================================================
@@ -425,10 +423,10 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
-		float MaxRadius,
-		EPoissonCoordinateSpace CoordinateSpace,
-		float JitterStrength,
-		int32 RandomSeed
+		float MaxRadius = 200.0f,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
 	);
 
 	/**
@@ -441,12 +439,12 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
-		float MaxRadius,
-		int32 RadialDivisions,
-		int32 AngularDivisions,
-		EPoissonCoordinateSpace CoordinateSpace,
-		float JitterStrength,
-		int32 RandomSeed
+		float MaxRadius = 200.0f,
+		int32 RadialDivisions = 5,
+		int32 AngularDivisions = 12,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
 	);
 
 	/**
@@ -459,11 +457,11 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
-		float MaxRadius,
-		int32 Petals,
-		EPoissonCoordinateSpace CoordinateSpace,
-		float JitterStrength,
-		int32 RandomSeed
+		float MaxRadius = 200.0f,
+		int32 Petals = 5,
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
 	);
 
 	/**
@@ -476,12 +474,12 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
-		float MaxRadius,
-		int32 RingCount,
-		const TArray<int32>& PointsPerRing,
-		EPoissonCoordinateSpace CoordinateSpace,
-		float JitterStrength,
-		int32 RandomSeed
+		float MaxRadius = 200.0f,
+		int32 RingCount = 3,
+		const TArray<int32>& PointsPerRing = TArray<int32>(),
+		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
+		float JitterStrength = 0.0f,
+		int32 RandomSeed = 0
 	);
 
 	// ============================================================================
