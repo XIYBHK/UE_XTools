@@ -403,7 +403,7 @@ TArray<FVector> UFormationSamplingLibrary::GenerateSplineBoundary(
 		return Points;
 	}
 
-	const FRandomStream RandomStream(RandomSeed);
+	FRandomStream RandomStream(RandomSeed);
 	Points = FSplineSamplingHelper::GenerateWithinBoundary(
 		TargetPointCount, SplineControlPoints, MinDistance, RandomStream
 	);
@@ -815,10 +815,10 @@ TArray<FVector> UFormationSamplingLibrary::GenerateConcentricRingsFormation(
 	FRotator Rotation,
 	float MaxRadius,
 	int32 RingCount,
-	const TArray<int32>& PointsPerRing,
 	EPoissonCoordinateSpace CoordinateSpace,
 	float JitterStrength,
-	int32 RandomSeed)
+	int32 RandomSeed,
+	const TArray<int32>& PointsPerRing)
 {
 	FRandomStream RandomStream(RandomSeed);
 

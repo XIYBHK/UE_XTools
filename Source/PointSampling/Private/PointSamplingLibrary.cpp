@@ -370,8 +370,9 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
         PointCount, CenterLocation, Rotation,
         FMath::Max(50.0f, Spacing),                // MaxRadius
         FMath::Max(1, static_cast<int32>(Param1)), // RingCount
-        DefaultPointsPerRing,                      // PointsPerRing
-        CoordinateSpace, JitterStrength, RandomSeed);
+        CoordinateSpace, JitterStrength, RandomSeed,
+        DefaultPointsPerRing                       // PointsPerRing
+    );
   }
 
   // 不支持的模式
