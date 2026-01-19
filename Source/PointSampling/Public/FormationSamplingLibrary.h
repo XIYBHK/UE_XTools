@@ -544,18 +544,6 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
 	);
 
-	/**
-	 * 从骨骼网格体插槽生成点阵
-	 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|网格",
-		meta = (DisplayName = "从骨骼插槽生成点阵"))
-	static TArray<FVector> GenerateFromSkeletalSockets(
-		USkeletalMesh* SkeletalMesh,
-		FTransform Transform,
-		const FString& SocketNamePrefix = TEXT(""),
-		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
-	);
-
 #if WITH_EDITOR
 	/**
 	 * 验证纹理是否设置为未压缩格式（用于调试，仅编辑器可用）

@@ -9,7 +9,6 @@
 #include "PointSamplingTypes.h"
 
 class UStaticMesh;
-class USkeletalMesh;
 struct FStaticMeshLODResources;
 
 /**
@@ -17,7 +16,6 @@ struct FStaticMeshLODResources;
  *
  * 职责：实现从网格体获取点位的算法
  * - 静态网格体顶点采样
- * - 骨骼网格体插槽采样
  */
 class FMeshSamplingHelper
 {
@@ -37,19 +35,6 @@ public:
 		int32 LODLevel,
 		bool bBoundaryVerticesOnly,
 		int32 MaxPoints = 0
-	);
-
-	/**
-	 * 从骨骼网格体插槽生成点阵
-	 * @param SkeletalMesh 骨骼网格体引用
-	 * @param Transform 变换矩阵
-	 * @param SocketNamePrefix 插槽名称前缀过滤（空字符串表示所有插槽）
-	 * @return 插槽位置数组
-	 */
-	static TArray<FVector> GenerateFromSkeletalSockets(
-		USkeletalMesh* SkeletalMesh,
-		const FTransform& Transform,
-		const FString& SocketNamePrefix
 	);
 
 private:

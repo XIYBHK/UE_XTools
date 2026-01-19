@@ -495,47 +495,6 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromStaticMesh(
 	return Points;
 }
 
-TArray<FVector> UFormationSamplingLibrary::GenerateFromSkeletalSockets(
-	USkeletalMesh* SkeletalMesh,
-	FTransform Transform,
-	const FString& SocketNamePrefix,
-	EPoissonCoordinateSpace CoordinateSpace)
-{
-	// 从骨骼网格体提取插槽位置
-	TArray<FVector> Points = FMeshSamplingHelper::GenerateFromSkeletalSockets(
-		SkeletalMesh, Transform, SocketNamePrefix
-	);
-
-	// 根据坐标空间类型处理
-	if (CoordinateSpace == EPoissonCoordinateSpace::Raw && Points.Num() > 0)
-	{
-		// Raw 空间：转换为相对于变换原点的坐标
-		FVector Origin = Transform.GetLocation();
-		for (FVector& Point : Points)
-		{
-			Point -= Origin;
-		}
-	}
-	else if (CoordinateSpace == EPoissonCoordinateSpace::Local && Points.Num() > 0)
-	{
-		// Local 空间：转换为相对于质心的坐标
-		FVector Centroid = FVector::ZeroVector;
-		for (const FVector& Point : Points)
-		{
-			Centroid += Point;
-		}
-		Centroid /= Points.Num();
-
-		for (FVector& Point : Points)
-		{
-			Point -= Centroid;
-		}
-	}
-	// World 空间：保持原始坐标
-
-	return Points;
-}
-
 #if WITH_EDITOR
 bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 {

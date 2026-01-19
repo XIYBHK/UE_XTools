@@ -7,8 +7,6 @@
 #include "PointDeduplicationHelper.h"
 #include "PointSamplingTypes.h"
 #include "Engine/StaticMesh.h"
-#include "Engine/SkeletalMesh.h"
-#include "Engine/SkeletalMeshSocket.h"
 #include "StaticMeshResources.h"
 
 TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
@@ -255,47 +253,6 @@ TArray<FVector> FMeshSamplingHelper::GenerateBoundaryVertices(
 	}
 
 	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 生成 %d 个边界顶点"), Points.Num());
-
-	return Points;
-}
-
-TArray<FVector> FMeshSamplingHelper::GenerateFromSkeletalSockets(
-	USkeletalMesh* SkeletalMesh,
-	const FTransform& Transform,
-	const FString& SocketNamePrefix)
-{
-	TArray<FVector> Points;
-
-	if (!SkeletalMesh)
-	{
-		return Points;
-	}
-
-	// 获取所有插槽
-	const TArray<USkeletalMeshSocket*>& Sockets = SkeletalMesh->GetMeshOnlySocketList();
-
-	for (USkeletalMeshSocket* Socket : Sockets)
-	{
-		if (!Socket)
-		{
-			continue;
-		}
-
-		// 如果指定了前缀，检查插槽名称是否匹配
-		if (!SocketNamePrefix.IsEmpty())
-		{
-			if (!Socket->SocketName.ToString().StartsWith(SocketNamePrefix))
-			{
-				continue;
-			}
-		}
-
-		// 获取插槽的相对位置和旋转
-		FVector SocketLocation = Socket->RelativeLocation;
-		FVector WorldPosition = Transform.TransformPosition(SocketLocation);
-
-		Points.Add(WorldPosition);
-	}
 
 	return Points;
 }

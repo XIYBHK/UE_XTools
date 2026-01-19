@@ -96,9 +96,6 @@ enum class EPointSamplingMode : uint8
 	/** 静态网格体顶点阵型 */
 	StaticMeshVertices  UMETA(DisplayName = "静态模型顶点"),
 
-	/** 骨骼插槽阵型 */
-	SkeletalSockets     UMETA(DisplayName = "骨骼插槽"),
-
 	/** 图片像素阵型 */
 	TexturePixels       UMETA(DisplayName = "图片像素"),
 
