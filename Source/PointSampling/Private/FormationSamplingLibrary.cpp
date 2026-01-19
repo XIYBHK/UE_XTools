@@ -12,9 +12,7 @@
 #include "Sampling/TextureSamplingHelper.h"
 #include "Sampling/MilitaryFormationHelper.h"
 #include "Sampling/GeometricFormationHelper.h"
-#include "Sampling/SkeletalMeshSamplingHelper.h"
 #include "Components/SplineComponent.h"
-#include "Engine/SkeletalMesh.h"
 
 // ============================================================================
 // 辅助函数：坐标变换
@@ -913,84 +911,4 @@ TArray<FVector> UFormationSamplingLibrary::GenerateConcentricRingsFormation(
 	);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
-}
-
-// ============================================================================
-// 骨骼网格体骨骼采样实现
-// ============================================================================
-
-TArray<FBoneTransformData> UFormationSamplingLibrary::GenerateFromSkeletalBones(
-	USkeletalMesh* SkeletalMesh,
-	FTransform Transform,
-	FSkeletalBoneSamplingConfig Config,
-	EPoissonCoordinateSpace CoordinateSpace)
-{
-	// 验证输入
-	if (!SkeletalMesh)
-	{
-		UE_LOG(LogPointSampling, Error, TEXT("[骨骼采样] 骨骼网格体为空"));
-		return TArray<FBoneTransformData>();
-	}
-
-	// 调用算法层生成骨骼变换数据
-	TArray<FBoneTransformData> BoneTransforms = FSkeletalMeshSamplingHelper::GenerateFromSkeletalBones(
-		SkeletalMesh, Transform, Config
-	);
-
-	// 根据坐标空间类型处理骨骼变换
-	if (CoordinateSpace == EPoissonCoordinateSpace::Raw && BoneTransforms.Num() > 0)
-	{
-		// Raw 空间：转换为相对于变换原点的坐标
-		FVector Origin = Transform.GetLocation();
-		for (FBoneTransformData& BoneData : BoneTransforms)
-		{
-			BoneData.Transform.AddToTranslation(-Origin);
-		}
-	}
-	else if (CoordinateSpace == EPoissonCoordinateSpace::Local && BoneTransforms.Num() > 0)
-	{
-		// Local 空间：转换为相对于质心的坐标
-		FVector Centroid = FVector::ZeroVector;
-		for (const FBoneTransformData& BoneData : BoneTransforms)
-		{
-			Centroid += BoneData.Transform.GetLocation();
-		}
-		Centroid /= BoneTransforms.Num();
-
-		for (FBoneTransformData& BoneData : BoneTransforms)
-		{
-			BoneData.Transform.AddToTranslation(-Centroid);
-		}
-	}
-	// World 空间：保持原始坐标
-
-	return BoneTransforms;
-}
-
-TArray<FVector> UFormationSamplingLibrary::GenerateFromSkeletalBones_Simple(
-	USkeletalMesh* SkeletalMesh,
-	FTransform Transform,
-	EPoissonCoordinateSpace CoordinateSpace)
-{
-	// 使用默认配置
-	FSkeletalBoneSamplingConfig DefaultConfig;
-	DefaultConfig.SamplingMode = ESkeletalBoneSamplingMode::AllBones;
-	DefaultConfig.bIncludeRotation = false;
-	DefaultConfig.bIncludeBoneName = true;
-	DefaultConfig.bApplyRefPoseTransform = true;
-
-	// 调用完整版本获取骨骼变换数据
-	TArray<FBoneTransformData> BoneTransforms = GenerateFromSkeletalBones(
-		SkeletalMesh, Transform, DefaultConfig, CoordinateSpace
-	);
-
-	// 提取位置信息
-	TArray<FVector> Positions;
-	Positions.Reserve(BoneTransforms.Num());
-	for (const FBoneTransformData& BoneData : BoneTransforms)
-	{
-		Positions.Add(BoneData.Transform.GetLocation());
-	}
-
-	return Positions;
 }

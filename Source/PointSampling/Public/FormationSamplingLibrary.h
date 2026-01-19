@@ -556,42 +556,6 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
 	);
 
-	/**
-	 * 从骨骼网格体骨骼生成点阵（完整版）
-	 *
-	 * @param SkeletalMesh 骨骼网格体资产
-	 * @param Transform 应用到每个骨骼的变换
-	 * @param Config 骨骼采样配置
-	 * @param CoordinateSpace 坐标空间
-	 * @return 骨骼变换数据数组（包含位置、旋转、骨骼名称等完整信息）
-	 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|网格",
-		meta = (DisplayName = "从骨骼网格体骨骼生成点阵"))
-	static TArray<FBoneTransformData> GenerateFromSkeletalBones(
-		USkeletalMesh* SkeletalMesh,
-		FTransform Transform,
-		FSkeletalBoneSamplingConfig Config,
-		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
-	);
-
-	/**
-	 * 从骨骼网格体骨骼生成点阵（便捷版）
-	 *
-	 * 简化版本，返回纯位置数组，适用于快速获取骨骼位置
-	 *
-	 * @param SkeletalMesh 骨骼网格体资产
-	 * @param Transform 应用到每个骨骼的变换
-	 * @param CoordinateSpace 坐标空间
-	 * @return 骨骼位置数组
-	 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|网格",
-		meta = (DisplayName = "从骨骼网格体骨骼生成位置点阵（便捷）"))
-	static TArray<FVector> GenerateFromSkeletalBones_Simple(
-		USkeletalMesh* SkeletalMesh,
-		FTransform Transform,
-		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
-	);
-
 #if WITH_EDITOR
 	/**
 	 * 验证纹理是否设置为未压缩格式（用于调试，仅编辑器可用）

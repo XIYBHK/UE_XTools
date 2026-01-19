@@ -99,9 +99,6 @@ enum class EPointSamplingMode : uint8
 	/** 骨骼插槽阵型 */
 	SkeletalSockets     UMETA(DisplayName = "骨骼插槽"),
 
-	/** 骨骼模型骨骼阵型 */
-	SkeletalMeshBones   UMETA(DisplayName = "骨骼模型骨骼"),
-
 	/** 图片像素阵型 */
 	TexturePixels       UMETA(DisplayName = "图片像素"),
 
@@ -258,104 +255,6 @@ struct POINTSAMPLING_API FPoissonSamplingConfig
 		, CoordinateSpace(EPoissonCoordinateSpace::Local)
 		, JitterStrength(0.0f)
 		, bUseCache(true)
-	{
-	}
-};
-
-// ============================================================================
-// 骨骼网格体采样类型定义
-// ============================================================================
-
-/**
- * 骨骼采样模式枚举
- * 定义从骨骼网格体提取骨骼的不同策略
- */
-UENUM(BlueprintType)
-enum class ESkeletalBoneSamplingMode : uint8
-{
-	/** 所有骨骼 - 包含骨骼树中的所有骨骼 */
-	AllBones        UMETA(DisplayName = "所有骨骼"),
-
-	/** 主要骨骼 - 仅包含根骨骼和直接子骨骼 */
-	MajorBones      UMETA(DisplayName = "主要骨骼"),
-
-	/** 末端骨骼 - 仅包含没有子骨骼的叶子节点 */
-	LeafBones       UMETA(DisplayName = "末端骨骼"),
-
-	/** 按深度过滤 - 只包含指定深度内的骨骼 */
-	ByDepth         UMETA(DisplayName = "按深度过滤"),
-
-	/** 按名称前缀过滤 - 只包含名称匹配指定前缀的骨骼 */
-	ByNamePrefix    UMETA(DisplayName = "按名称前缀"),
-
-	/** 自定义列表 - 使用用户提供的骨骼名称列表 */
-	CustomList      UMETA(DisplayName = "自定义列表")
-};
-
-/**
- * 骨骼采样配置结构体
- * 控制从骨骼网格体提取骨骼的方式
- */
-USTRUCT(BlueprintType)
-struct POINTSAMPLING_API FSkeletalBoneSamplingConfig
-{
-	GENERATED_BODY()
-
-	/** 采样模式 - 选择骨骼过滤策略 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	ESkeletalBoneSamplingMode SamplingMode = ESkeletalBoneSamplingMode::AllBones;
-
-	/** 骨骼名称前缀 - 用于 ByNamePrefix 模式 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	FString BoneNamePrefix;
-
-	/** 最大深度 - 用于 ByDepth 模式（0=仅根骨骼） */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	int32 MaxDepth = 2;
-
-	/** 自定义骨骼名称列表 - 用于 CustomList 模式 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	TArray<FName> CustomBoneNames;
-
-	/** 是否包含旋转信息 - 如果为false，旋转将设为单位四元数 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	bool bIncludeRotation = false;
-
-	/** 是否包含骨骼名称 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	bool bIncludeBoneName = true;
-
-	/** 是否应用参考姿态变换 - 如果为true，使用参考姿态的变换 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "骨骼采样")
-	bool bApplyRefPoseTransform = true;
-};
-
-/**
- * 骨骼变换数据结构体
- * 包含单个骨骼的完整变换信息
- */
-USTRUCT(BlueprintType)
-struct POINTSAMPLING_API FBoneTransformData
-{
-	GENERATED_BODY()
-
-	/** 骨骼的变换（位置、旋转、缩放） */
-	UPROPERTY(BlueprintReadOnly, Category = "骨骼采样")
-	FTransform Transform;
-
-	/** 骨骼名称 */
-	UPROPERTY(BlueprintReadOnly, Category = "骨骼采样")
-	FName BoneName;
-
-	/** 骨骼索引 */
-	UPROPERTY(BlueprintReadOnly, Category = "骨骼采样")
-	int32 BoneIndex;
-
-	/** 默认构造函数 */
-	FBoneTransformData()
-		: Transform(FTransform::Identity)
-		, BoneName(NAME_None)
-		, BoneIndex(INDEX_NONE)
 	{
 	}
 };
