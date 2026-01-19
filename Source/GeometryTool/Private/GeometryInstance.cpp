@@ -12,6 +12,27 @@
 DECLARE_LOG_CATEGORY_EXTERN(LogGeometryTool, Log, All);
 DEFINE_LOG_CATEGORY(LogGeometryTool);
 
+// ============================================================================
+// 内部辅助函数
+// ============================================================================
+
+namespace GeometryToolInternal
+{
+	/**
+	 * 在指定平面上根据角度和半径计算偏移量（极坐标转笛卡尔坐标）
+	 * @param AngleDeg 角度（度）
+	 * @param Radius 半径
+	 * @param AxisX X轴方向向量
+	 * @param AxisY Y轴方向向量
+	 * @return 偏移向量
+	 */
+	FVector PolarToCartesianOnPlane(float AngleDeg, float Radius, const FVector& AxisX, const FVector& AxisY)
+	{
+		return AxisX * UKismetMathLibrary::DegCos(AngleDeg) * Radius +
+		       AxisY * UKismetMathLibrary::DegSin(AngleDeg) * Radius;
+	}
+}
+
 UGeometryInstance::UGeometryInstance()
 {
 }
@@ -110,28 +131,20 @@ void UGeometryInstance::GetPointsByCustomRect(
                         - Distance3D.Y * (Counts3D.Y - 1) * 0.5 * RightVector
                         - Distance3D.Z * (Counts3D.Z - 1) * 0.5 * UpVector;
 
-                    FRotator Rotator = OriginTransform.GetRotation().Rotator();
-                    FVector Size = OriginTransform.GetScale3D();
-
-                    if (bIsUseRandomRotation)
-                    {
-                        Rotator = FRotator(
-                            FMath::RandRange(Rotator_A.Pitch, Rotator_B.Pitch),
-                            FMath::RandRange(Rotator_A.Yaw, Rotator_B.Yaw),
-                            FMath::RandRange(Rotator_A.Roll, Rotator_B.Roll));
-                    }
-
-                    if (bIsUseRandomSize)
-                    {
-                        Size = FVector(
-                            FMath::RandRange(Size_A.X, Size_B.X),
-                            FMath::RandRange(Size_A.Y, Size_B.Y),
-                            FMath::RandRange(Size_A.Z, Size_B.Z));
-                    }
-
                     InstanceTransform.SetLocation(Location);
-                    InstanceTransform.SetRotation(Rotator.Quaternion());
-                    InstanceTransform.SetScale3D(Size);
+                    InstanceTransform.SetRotation(OriginTransform.GetRotation());
+                    InstanceTransform.SetScale3D(OriginTransform.GetScale3D());
+
+                    ApplyTransformParameters(
+                        InstanceTransform,
+                        false,  // bIsUseLookAtOrigin
+                        bIsUseRandomRotation,
+                        bIsUseRandomSize,
+                        Rotator_A, Rotator_B, Size_A, Size_B,
+                        FRotator::ZeroRotator,  // Rotator_Delta
+                        FVector::ZeroVector,    // Origin
+                        Location                 // PointLocation
+                    );
 
                     AddInstance(InstanceTransform, bIsUseWorldSpace);
                 }
@@ -171,10 +184,8 @@ TArray<FTransform> UGeometryInstance::GetPointsByCircle(
         {
             CurtAngle = InitAngle + (360.f / CurtCount) * count;
 
-            FVector Point_X = FVector(1, 0, 0) * UKismetMathLibrary::DegCos(CurtAngle) * CurtRadius;
-            FVector Point_Y = FVector(0, 1, 0) * UKismetMathLibrary::DegSin(CurtAngle) * CurtRadius;
             FVector Point = GetOwner() ? GetOwner()->GetActorLocation() : FVector(0, 0, 0);
-            Point += Point_X + Point_Y;
+            Point += GeometryToolInternal::PolarToCartesianOnPlane(CurtAngle, CurtRadius, FVector(1, 0, 0), FVector(0, 1, 0));
 
             FTransform CurtTransform;
             CurtTransform.SetLocation(Point);
@@ -228,9 +239,10 @@ TArray<FTransform> UGeometryInstance::GenerateSpherePoints(
             float AngleNoise = FMath::Clamp(360.f / FMath::Floor(SphereRound / Noise), 0.f, 360.f);
             float Lantitude_A = Lantitude + FMath::RandRange(0.f, AngleNoise);
 
-            FVector Point_X = CurtRotator.Quaternion().GetForwardVector() * UKismetMathLibrary::DegCos(Lantitude_A) * Radius;
-            FVector Point_Y = CurtRotator.Quaternion().GetUpVector() * UKismetMathLibrary::DegSin(Lantitude_A) * Radius;
-            FVector Point = Origin + Point_X + Point_Y;
+            FVector Point = Origin + GeometryToolInternal::PolarToCartesianOnPlane(
+                Lantitude_A, Radius,
+                CurtRotator.Quaternion().GetForwardVector(),
+                CurtRotator.Quaternion().GetUpVector());
 
             FTransform InstanceTransform;
             InstanceTransform.SetLocation(Point);
