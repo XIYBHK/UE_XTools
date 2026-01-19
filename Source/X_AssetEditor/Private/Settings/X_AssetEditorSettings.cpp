@@ -17,7 +17,9 @@ UX_AssetEditorSettings::UX_AssetEditorSettings()
 	, bAutoRenameOnCreate(true)
 	, bAutoFixupRedirectors(true)
 	// 高级设置默认值
-	, FactoryCreationTimeWindow(5.0f)
+	// 时间窗口需要覆盖：右键菜单(1-3s) + 选择父类(2-5s) + 输入名称(3-10s) = 6-18s
+	// 设为 15 秒可覆盖大部分正常操作，同时避免误判复制操作
+	, FactoryCreationTimeWindow(15.0f)
 	, StartupActivationDelay(30.0f)
 	// 子系统开关默认值
 	, bEnableObjectPoolSubsystem(false)
