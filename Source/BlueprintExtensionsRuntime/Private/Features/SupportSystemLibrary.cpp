@@ -1,4 +1,5 @@
 ﻿#include "Features/SupportSystemLibrary.h"
+#include "XToolsBlueprintHelpers.h"
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Actor.h"
 #include "DrawDebugHelpers.h"
@@ -68,7 +69,7 @@ void USupportSystemLibrary::StabilizeHeight(
     const float Mass = TargetComponent->GetMass() / WorldFulcrumTransform.Num();
 
     // 获取世界对象（蓝图工具函数：避免使用 Checked 版本导致开发期断言崩溃）
-    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+    UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
     if (!World)
     {
         AveragePressureFactor = 0.0f;

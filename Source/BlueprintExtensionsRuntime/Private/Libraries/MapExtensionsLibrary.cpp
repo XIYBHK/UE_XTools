@@ -1,4 +1,5 @@
 #include "Libraries/MapExtensionsLibrary.h"
+#include "XToolsBlueprintHelpers.h"
 #include "Kismet/KismetArrayLibrary.h"
 #include "XToolsErrorReporter.h"
 #include "XToolsVersionCompat.h"

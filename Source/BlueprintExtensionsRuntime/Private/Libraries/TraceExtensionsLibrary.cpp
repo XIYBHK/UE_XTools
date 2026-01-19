@@ -1,4 +1,5 @@
 ﻿#include "Libraries/TraceExtensionsLibrary.h"
+#include "XToolsBlueprintHelpers.h"
 
 #include "Engine/World.h"
 #include "Engine/HitResult.h"       // FHitResult完整定义（UE 5.4+ IWYU必需）
@@ -17,76 +18,17 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
 
     TArray<FName> UTraceExtensionsLibrary::GetTraceTypeQueryNames()
     {
-        TArray<FName> Keys;
-        UEnum* EnumPtr = StaticEnum<ETraceTypeQuery>();
-        if (EnumPtr)
-        {
-            for (int32 i = 0; i < EnumPtr->NumEnums(); ++i)
-            {
-                FString DisplayName = EnumPtr->GetDisplayNameTextByIndex(i).ToString();
-                FString EnumName = EnumPtr->GetNameStringByIndex(i);
-
-                // 移除DisplayName和EnumName中的空格和下划线
-                FString DisplayNameCleaned = DisplayName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-                FString EnumNameCleaned = EnumName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-
-                // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
-                if (DisplayNameCleaned != EnumNameCleaned)
-                {
-                    Keys.Add(FName(*DisplayName)); // 使用原版参数
-                }
-            }
-        }
-        return Keys;
+        return XToolsBlueprintHelpers::GetEnumDisplayNames(StaticEnum<ETraceTypeQuery>());
     }
 
     TArray<FName> UTraceExtensionsLibrary::GetObjectTypeQueryNames()
     {
-        TArray<FName> Keys;
-        UEnum* EnumPtr = StaticEnum<EObjectTypeQuery>();
-        if (EnumPtr)
-        {
-            for (int32 i = 0; i < EnumPtr->NumEnums(); ++i)
-            {
-                FString DisplayName = EnumPtr->GetDisplayNameTextByIndex(i).ToString();
-                FString EnumName = EnumPtr->GetNameStringByIndex(i);
-
-                // 移除DisplayName和EnumName中的空格和下划线
-                FString DisplayNameCleaned = DisplayName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-                FString EnumNameCleaned = EnumName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-
-                // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
-                if (DisplayNameCleaned != EnumNameCleaned)
-                {
-                    Keys.Add(FName(*DisplayName)); // 使用原版参数
-                }
-            }
-        }
-        return Keys;
+        return XToolsBlueprintHelpers::GetEnumDisplayNames(StaticEnum<EObjectTypeQuery>());
     }
 
     void UTraceExtensionsLibrary::TraceChannelType(FName InputName, FString& OutString)
     {
-        TMap<FName, FString> TraceTypeQueryMap;
-        UEnum* EnumPtr = StaticEnum<ETraceTypeQuery>();
-        if (EnumPtr)
-        {
-            for (int32 i = 0; i < EnumPtr->NumEnums(); ++i)
-            {
-                FString DisplayName = EnumPtr->GetDisplayNameTextByIndex(i).ToString();
-                FString EnumName = EnumPtr->GetNameStringByIndex(i);
-
-                // 移除DisplayName和EnumName中的空格和下划线
-                FString DisplayNameCleaned = DisplayName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-                FString EnumNameCleaned = EnumName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-
-                // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
-                if (DisplayNameCleaned != EnumNameCleaned)
-                {
-                    TraceTypeQueryMap.Add(FName(*DisplayName), EnumName); // 使用原版参数
-                }
-            }
-        }
+        const TMap<FName, FString> TraceTypeQueryMap = XToolsBlueprintHelpers::BuildEnumNameMap(StaticEnum<ETraceTypeQuery>());
 
         if (TraceTypeQueryMap.Contains(InputName))
         {
@@ -100,26 +42,7 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
 
     void UTraceExtensionsLibrary::TraceObjectType(FName InputName, FString& OutString)
     {
-        TMap<FName, FString> ObjectTypeQueryMap;
-        UEnum* EnumPtr = StaticEnum<EObjectTypeQuery>();
-        if (EnumPtr)
-        {
-            for (int32 i = 0; i < EnumPtr->NumEnums(); ++i)
-            {
-                FString DisplayName = EnumPtr->GetDisplayNameTextByIndex(i).ToString();
-                FString EnumName = EnumPtr->GetNameStringByIndex(i);
-
-                // 移除DisplayName和EnumName中的空格和下划线
-                FString DisplayNameCleaned = DisplayName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-                FString EnumNameCleaned = EnumName.Replace(TEXT(" "), TEXT("")).Replace(TEXT("_"), TEXT(""));
-
-                // 如果DisplayNameCleaned和EnumNameCleaned相等，则跳过
-                if (DisplayNameCleaned != EnumNameCleaned)
-                {
-                    ObjectTypeQueryMap.Add(FName(*DisplayName), EnumName); // 使用原版参数
-                }
-            }
-        }
+        const TMap<FName, FString> ObjectTypeQueryMap = XToolsBlueprintHelpers::BuildEnumNameMap(StaticEnum<EObjectTypeQuery>());
 
         if (ObjectTypeQueryMap.Contains(InputName))
         {
@@ -153,9 +76,7 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         float DrawTime
     )
     {
-        if (!WorldContextObject) return;
-
-        UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+        UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
         if (!World) return;
 
         // 设置碰撞查询参数
@@ -164,17 +85,8 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         Params.AddIgnoredActors(ActorsToIgnore);
 
         // Use Cache for TraceChannelType -> Enum
-        ETraceTypeQuery TraceChannelEnum;
-        if (const ETraceTypeQuery* CachedEnum = CachedTraceChannels.Find(TraceChannelType))
-        {
-            TraceChannelEnum = *CachedEnum;
-        }
-        else
-        {
-            int64 EnumValue = StaticEnum<ETraceTypeQuery>()->GetValueByName(FName(*TraceChannelType));
-            TraceChannelEnum = static_cast<ETraceTypeQuery>(EnumValue);
-            CachedTraceChannels.Add(TraceChannelType, TraceChannelEnum);
-        }
+        const ETraceTypeQuery TraceChannelEnum = XToolsBlueprintHelpers::GetCachedEnum<ETraceTypeQuery>(
+            CachedTraceChannels, TraceChannelType, StaticEnum<ETraceTypeQuery>());
 
         // 执行射线检测
         bool bHit = World->LineTraceSingleByChannel(OutHit, Start, End, UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum), Params);
@@ -288,9 +200,7 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         float DrawTime
     )
     {
-        if (!WorldContextObject) return;
-
-        UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+        UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
         if (!World) return;
 
         // 设置碰撞查询参数
@@ -301,17 +211,8 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         FCollisionObjectQueryParams ObjectParams;
         for (const FString& TraceChannel : TraceObjectType)
         {
-            EObjectTypeQuery ObjectTypeEnum;
-            if (const EObjectTypeQuery* CachedEnum = CachedObjectTypes.Find(TraceChannel))
-            {
-                ObjectTypeEnum = *CachedEnum;
-            }
-            else
-            {
-                int64 EnumValue = StaticEnum<EObjectTypeQuery>()->GetValueByName(FName(*TraceChannel));
-                ObjectTypeEnum = static_cast<EObjectTypeQuery>(EnumValue);
-                CachedObjectTypes.Add(TraceChannel, ObjectTypeEnum);
-            }
+            const EObjectTypeQuery ObjectTypeEnum = XToolsBlueprintHelpers::GetCachedEnum<EObjectTypeQuery>(
+                CachedObjectTypes, TraceChannel, StaticEnum<EObjectTypeQuery>());
 
             ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum));
         }
