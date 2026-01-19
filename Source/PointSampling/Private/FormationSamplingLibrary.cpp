@@ -13,6 +13,7 @@
 #include "Sampling/MilitaryFormationHelper.h"
 #include "Sampling/GeometricFormationHelper.h"
 #include "Sampling/PointDeduplicationHelper.h"
+#include "Sampling/FormationSamplingInternal.h"
 #include "Components/SplineComponent.h"
 #include "Algo/AnyOf.h"
 
@@ -22,10 +23,7 @@
 
 namespace FormationSamplingInternal
 {
-	/**
-	 * 将局部坐标转换到目标坐标空间
-	 */
-	static TArray<FVector> TransformPoints(
+	TArray<FVector> TransformPoints(
 		const TArray<FVector>& LocalPoints,
 		const FVector& CenterLocation,
 		const FRotator& Rotation,
@@ -61,10 +59,7 @@ namespace FormationSamplingInternal
 		return TransformedPoints;
 	}
 
-	/**
-	 * 应用位置扰动
-	 */
-	static void ApplyJitter(
+	void ApplyJitter(
 		TArray<FVector>& Points,
 		float JitterStrength,
 		float Scale,
@@ -83,10 +78,7 @@ namespace FormationSamplingInternal
 		}
 	}
 
-	/**
-	 * 应用高度参数（在Z轴上分布）
-	 */
-	static void ApplyHeightDistribution(
+	void ApplyHeightDistribution(
 		TArray<FVector>& Points,
 		float Height,
 		FRandomStream& RandomStream)
@@ -103,10 +95,7 @@ namespace FormationSamplingInternal
 		}
 	}
 
-	/**
-	 * 从样条组件提取控制点（世界坐标）
-	 */
-	static bool ExtractSplineControlPoints(
+	bool ExtractSplineControlPoints(
 		USplineComponent* SplineComponent,
 		TArray<FVector>& OutControlPoints,
 		int32 MinRequiredPoints,
@@ -134,10 +123,7 @@ namespace FormationSamplingInternal
 		return true;
 	}
 
-	/**
-	 * 根据坐标空间转换点位（用于样条线和网格采样）
-	 */
-	static void ConvertPointsToCoordinateSpace(
+	void ConvertPointsToCoordinateSpace(
 		TArray<FVector>& Points,
 		EPoissonCoordinateSpace CoordinateSpace,
 		const FVector& OriginOffset = FVector::ZeroVector)
@@ -158,13 +144,7 @@ namespace FormationSamplingInternal
 
 		case EPoissonCoordinateSpace::Local:
 			{
-				FVector Centroid = FVector::ZeroVector;
-				for (const FVector& Point : Points)
-				{
-					Centroid += Point;
-				}
-				Centroid /= Points.Num();
-
+				const FVector Centroid = FormationSamplingInternal::CalculateCentroid(Points);
 				for (FVector& Point : Points)
 				{
 					Point -= Centroid;
@@ -175,6 +155,45 @@ namespace FormationSamplingInternal
 		case EPoissonCoordinateSpace::World:
 		default:
 			break;
+		}
+	}
+
+	FVector CalculateCentroid(const TArray<FVector>& Points)
+	{
+		if (Points.Num() == 0)
+		{
+			return FVector::ZeroVector;
+		}
+
+		FVector Centroid = FVector::ZeroVector;
+		for (const FVector& Point : Points)
+		{
+			Centroid += Point;
+		}
+		return Centroid / Points.Num();
+	}
+
+	FVector PolarToCartesian(float Radius, float AngleRad, float Z)
+	{
+		return FVector(FMath::Cos(AngleRad) * Radius, FMath::Sin(AngleRad) * Radius, Z);
+	}
+
+	void ApplyJitter2D(
+		TArray<FVector>& Points,
+		float JitterStrength,
+		float Scale,
+		FRandomStream& RandomStream)
+	{
+		if (JitterStrength <= 0.0f || Points.Num() == 0)
+		{
+			return;
+		}
+
+		const float JitterRange = JitterStrength * Scale;
+		for (FVector& Point : Points)
+		{
+			Point.X += RandomStream.FRandRange(-JitterRange, JitterRange);
+			Point.Y += RandomStream.FRandRange(-JitterRange, JitterRange);
 		}
 	}
 }

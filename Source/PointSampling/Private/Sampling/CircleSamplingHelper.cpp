@@ -4,6 +4,7 @@
 */
 
 #include "CircleSamplingHelper.h"
+#include "FormationSamplingInternal.h"
 #include "Math/UnrealMathUtility.h"
 #include "Algorithms/PoissonDiskSampling.h"
 
@@ -254,13 +255,7 @@ void FCircleSamplingHelper::GenerateArcPoints(
 		float CurrentAngle = StartAngleRad + T * AngleSpan;
 
 		// 计算圆周上的点位（UE使用Y轴向前，X轴向右的左手坐标系）
-		FVector Point(
-			FMath::Cos(CurrentAngle) * Radius,  // X
-			FMath::Sin(CurrentAngle) * Radius,  // Y
-			0.0f                                 // Z
-		);
-
-		OutPoints.Add(Point);
+		OutPoints.Add(FormationSamplingInternal::PolarToCartesian(Radius, CurrentAngle));
 	}
 }
 
@@ -270,20 +265,10 @@ void FCircleSamplingHelper::ApplyJitter(
 	float BaseRadius,
 	FRandomStream& RandomStream)
 {
-	if (JitterStrength <= 0.0f || Points.Num() == 0)
-	{
-		return;
-	}
-
-	// 扰动范围基于半径的比例
-	float MaxJitter = BaseRadius * 0.1f * FMath::Clamp(JitterStrength, 0.0f, 1.0f);
-
-	for (FVector& Point : Points)
-	{
-		// 在XY平面上应用随机扰动
-		Point.X += RandomStream.FRandRange(-MaxJitter, MaxJitter);
-		Point.Y += RandomStream.FRandRange(-MaxJitter, MaxJitter);
-	}
+	// 保持原有功能：Scale = BaseRadius * 0.1f，JitterStrength 需要 Clamp
+	const float ClampedStrength = FMath::Clamp(JitterStrength, 0.0f, 1.0f);
+	const float Scale = BaseRadius * 0.1f * ClampedStrength;
+	FormationSamplingInternal::ApplyJitter2D(Points, ClampedStrength, Scale, RandomStream);
 }
 
 // ============================================================================
@@ -356,15 +341,8 @@ TArray<FVector> FCircleSamplingHelper::GenerateFibonacci(
 			float Angle = i * GOLDEN_ANGLE * PI / 180.0f;
 
 			// 半径按sqrt分布，使点密度均匀
-			float R = Radius * FMath::Sqrt(i / static_cast<float>(PointCount));
-
-			FVector Point(
-				FMath::Cos(Angle) * R,
-				FMath::Sin(Angle) * R,
-				0.0f
-			);
-
-			Points.Add(Point);
+			const float R = Radius * FMath::Sqrt(i / static_cast<float>(PointCount));
+			Points.Add(FormationSamplingInternal::PolarToCartesian(R, Angle));
 		}
 	}
 
@@ -490,13 +468,9 @@ TArray<FVector> FCircleSamplingHelper::GeneratePoisson(
 			else
 			{
 				// 在圆形内随机生成点
-				float R = FMath::Sqrt(RandomStream.FRand()) * Radius;
-				float Theta = RandomStream.FRand() * 2.0f * PI;
-				Candidate = FVector(
-					FMath::Cos(Theta) * R,
-					FMath::Sin(Theta) * R,
-					0.0f
-				);
+				const float R = FMath::Sqrt(RandomStream.FRand()) * Radius;
+				const float Theta = RandomStream.FRand() * 2.0f * PI;
+				Candidate = FormationSamplingInternal::PolarToCartesian(R, Theta);
 			}
 			
 			// 检查是否与现有点保持最小距离
@@ -602,16 +576,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircularGrid(
 
 		for (int32 Angular = 0; Angular < AngularDivisions && GeneratedCount < PointCount; ++Angular)
 		{
-			float Angle = Angular * AngularStep;
-
+			const float Angle = Angular * AngularStep;
 			// 极坐标转换为笛卡尔坐标
-			FVector Point(
-				FMath::Cos(FMath::DegreesToRadians(Angle)) * Radius,
-				FMath::Sin(FMath::DegreesToRadians(Angle)) * Radius,
-				0.0f
-			);
-
-			Points.Add(Point);
+			Points.Add(FormationSamplingInternal::PolarToCartesian(Radius, FMath::DegreesToRadians(Angle)));
 			GeneratedCount++;
 		}
 	}
@@ -655,11 +622,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateRoseCurve(
 		float Radius = A * FMath::Cos(K * T);
 
 		// 极坐标转换为笛卡尔坐标
-		FVector Point(
-			Radius * FMath::Cos(T),
-			Radius * FMath::Sin(T),
-			0.0f
-		);
+		FVector Point = FormationSamplingInternal::PolarToCartesian(Radius, T);
 
 		Points.Add(Point);
 	}
@@ -710,11 +673,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateConcentricRings(
 			float Angle = (360.0f * Point) / PointsInRing;
 
 			// 极坐标转换为笛卡尔坐标
-			FVector Position(
-				Radius * FMath::Cos(FMath::DegreesToRadians(Angle)),
-				Radius * FMath::Sin(FMath::DegreesToRadians(Angle)),
-				0.0f
-			);
+			FVector Position = FormationSamplingInternal::PolarToCartesian(Radius, FMath::DegreesToRadians(Angle));
 
 			Points.Add(Position);
 			GeneratedCount++;

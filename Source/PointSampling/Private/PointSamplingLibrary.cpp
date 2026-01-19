@@ -6,6 +6,7 @@
 #include "PointSamplingLibrary.h"
 #include "Algorithms/PoissonDiskSampling.h"
 #include "FormationSamplingLibrary.h"
+#include "Sampling/FormationSamplingInternal.h"
 #include "Sampling/PointDeduplicationHelper.h"
 #include "Sampling/TextureSamplingHelper.h"
 
@@ -112,10 +113,7 @@ void UPointSamplingLibrary::AnalyzeSamplingStats(const TArray<FVector> &Points,
   }
 
   // 计算质心
-  for (const FVector &Point : Points) {
-    OutCentroid += Point;
-  }
-  OutCentroid /= static_cast<float>(NumPoints);
+  OutCentroid = FormationSamplingInternal::CalculateCentroid(Points);
 
   // 计算所有点对之间的距离统计
   int32 DistanceCount = 0;
@@ -391,11 +389,7 @@ float UPointSamplingLibrary::CalculateDistributionUniformity(
   }
 
   // 计算质心
-  FVector Centroid = FVector::ZeroVector;
-  for (const FVector &Point : Points) {
-    Centroid += Point;
-  }
-  Centroid /= Points.Num();
+  const FVector Centroid = FormationSamplingInternal::CalculateCentroid(Points);
 
   // 计算每个点到质心的距离
   TArray<float> DistancesToCentroid;

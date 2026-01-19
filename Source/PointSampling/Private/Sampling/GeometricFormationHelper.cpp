@@ -4,6 +4,7 @@
 */
 
 #include "GeometricFormationHelper.h"
+#include "FormationSamplingInternal.h"
 
 TArray<FVector> FGeometricFormationHelper::GenerateHexagonalGrid(
 	int32 PointCount,
@@ -80,11 +81,7 @@ TArray<FVector> FGeometricFormationHelper::GenerateStarFormation(
 		float Angle = PointIndex * AngleStep;
 		float Radius = bOuterPoint ? OuterRadius : InnerRadius;
 
-		FVector Position(
-			Radius * FMath::Cos(Angle),
-			Radius * FMath::Sin(Angle),
-			0.0f
-		);
+		FVector Position = FormationSamplingInternal::PolarToCartesian(Radius, Angle);
 
 		Points.Add(Position);
 	}
@@ -115,11 +112,7 @@ TArray<FVector> FGeometricFormationHelper::GenerateArchimedeanSpiral(
 		float Angle = i * AngleStep;
 		float Radius = GrowthRate * Angle;
 
-		FVector Position(
-			Radius * FMath::Cos(Angle),
-			Radius * FMath::Sin(Angle),
-			0.0f
-		);
+		FVector Position = FormationSamplingInternal::PolarToCartesian(Radius, Angle);
 
 		Points.Add(Position);
 	}
@@ -150,11 +143,7 @@ TArray<FVector> FGeometricFormationHelper::GenerateLogarithmicSpiral(
 		float Angle = i * AngleIncrement;
 		float Radius = FMath::Exp(B * Angle);
 
-		FVector Position(
-			Radius * FMath::Cos(Angle),
-			Radius * FMath::Sin(Angle),
-			0.0f
-		);
+		FVector Position = FormationSamplingInternal::PolarToCartesian(Radius, Angle);
 
 		Points.Add(Position);
 	}
@@ -238,8 +227,5 @@ FVector FGeometricFormationHelper::FlowerPetalPoint(float t, int32 PetalIndex, i
 	float LocalAngle = t;
 	float Radius = InnerRadius + (OuterRadius - InnerRadius) * FMath::Abs(FMath::Cos(LocalAngle));
 
-	float x = Radius * FMath::Cos(LocalAngle + PetalAngle);
-	float y = Radius * FMath::Sin(LocalAngle + PetalAngle);
-
-	return FVector(x, y, 0.0f);
+	return FormationSamplingInternal::PolarToCartesian(Radius, LocalAngle + PetalAngle);
 }

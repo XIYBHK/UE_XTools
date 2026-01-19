@@ -4,6 +4,7 @@
 */
 
 #include "TriangleSamplingHelper.h"
+#include "FormationSamplingInternal.h"
 #include "Math/UnrealMathUtility.h"
 
 TArray<FVector> FTriangleSamplingHelper::GenerateSolidTriangle(
@@ -173,17 +174,8 @@ void FTriangleSamplingHelper::ApplyJitter(
 	float Spacing,
 	FRandomStream& RandomStream)
 {
-	if (JitterStrength <= 0.0f || Points.Num() == 0)
-	{
-		return;
-	}
-
-	// 扰动范围是间距的一半
-	float MaxJitter = Spacing * 0.5f * FMath::Clamp(JitterStrength, 0.0f, 1.0f);
-
-	for (FVector& Point : Points)
-	{
-		Point.X += RandomStream.FRandRange(-MaxJitter, MaxJitter);
-		Point.Y += RandomStream.FRandRange(-MaxJitter, MaxJitter);
-	}
+	// 保持原有功能：Scale = Spacing * 0.5f，JitterStrength 需要 Clamp
+	const float ClampedStrength = FMath::Clamp(JitterStrength, 0.0f, 1.0f);
+	const float Scale = Spacing * 0.5f * ClampedStrength;
+	FormationSamplingInternal::ApplyJitter2D(Points, ClampedStrength, Scale, RandomStream);
 }
