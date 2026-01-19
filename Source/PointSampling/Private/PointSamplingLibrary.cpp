@@ -368,10 +368,10 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
     TArray<int32> DefaultPointsPerRing = {6, 12, 18, 24};
     return UFormationSamplingLibrary::GenerateConcentricRingsFormation(
         PointCount, CenterLocation, Rotation,
+        DefaultPointsPerRing,                      // PointsPerRing
         FMath::Max(50.0f, Spacing),                // MaxRadius
         FMath::Max(1, static_cast<int32>(Param1)), // RingCount
-        CoordinateSpace, JitterStrength, RandomSeed,
-        DefaultPointsPerRing                       // PointsPerRing
+        CoordinateSpace, JitterStrength, RandomSeed
     );
   }
 

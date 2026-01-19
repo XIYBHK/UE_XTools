@@ -813,12 +813,12 @@ TArray<FVector> UFormationSamplingLibrary::GenerateConcentricRingsFormation(
 	int32 PointCount,
 	FVector CenterLocation,
 	FRotator Rotation,
+	const TArray<int32>& PointsPerRing,
 	float MaxRadius,
 	int32 RingCount,
 	EPoissonCoordinateSpace CoordinateSpace,
 	float JitterStrength,
-	int32 RandomSeed,
-	const TArray<int32>& PointsPerRing)
+	int32 RandomSeed)
 {
 	FRandomStream RandomStream(RandomSeed);
 

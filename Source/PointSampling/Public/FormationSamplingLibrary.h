@@ -474,12 +474,12 @@ public:
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
+		const TArray<int32>& PointsPerRing,
 		float MaxRadius = 200.0f,
 		int32 RingCount = 3,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
-		int32 RandomSeed = 0,
-		const TArray<int32>& PointsPerRing
+		int32 RandomSeed = 0
 	);
 
 	// ============================================================================
