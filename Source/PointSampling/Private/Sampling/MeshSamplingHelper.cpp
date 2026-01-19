@@ -4,7 +4,6 @@
 */
 
 #include "MeshSamplingHelper.h"
-#include "PointDeduplicationHelper.h"
 #include "PointSamplingTypes.h"
 #include "Engine/StaticMesh.h"
 #include "StaticMeshResources.h"
@@ -154,24 +153,6 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 	}
 
 	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 完成，生成 %d 个点"), Points.Num());
-
-	// 去除重复点（容差设为很小，因为是精确采样）
-	if (Points.Num() > 1)
-	{
-		int32 OriginalCount, RemovedCount;
-		FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
-			Points,
-			0.1f,  // 小容差
-			OriginalCount,
-			RemovedCount
-		);
-
-		if (RemovedCount > 0)
-		{
-			UE_LOG(LogPointSampling, Verbose, TEXT("[网格采样] 去重: %d -> %d (移除 %d)"),
-				OriginalCount, Points.Num(), RemovedCount);
-		}
-	}
 
 	return Points;
 }

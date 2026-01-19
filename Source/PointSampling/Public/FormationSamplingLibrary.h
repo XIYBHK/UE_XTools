@@ -525,22 +525,27 @@ public:
 	 * @param MaxPoints 最大点数（0=不限制，>0=智能降采样到目标数量）
 	 * @param LODLevel LOD 级别（0=最高精度）
 	 * @param bBoundaryVerticesOnly 仅边界顶点（暂未实现）
+	 * @param DeduplicationRadius 去重半径（0=不去重，>0=移除距离小于此值的点）
+	 * @param bGridAlignedDedup 网格对齐去重（true=对齐到规则网格，false=保留原始位置）
 	 * @param CoordinateSpace 坐标空间
 	 *
 	 * 推荐设置：
 	 * - 快速预览：MaxPoints = 500-1000
 	 * - 普通使用：MaxPoints = 1000-5000
 	 * - 高精度：MaxPoints = 10000+
+	 * - 去重建议：DeduplicationRadius = 1.0-10.0（根据模型尺度调整）
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|网格",
 		meta = (DisplayName = "从静态网格体生成点阵",
-			AdvancedDisplay = "LODLevel,bBoundaryVerticesOnly"))
+			AdvancedDisplay = "LODLevel,bBoundaryVerticesOnly,DeduplicationRadius,bGridAlignedDedup"))
 	static TArray<FVector> GenerateFromStaticMesh(
 		UStaticMesh* StaticMesh,
 		FTransform Transform,
 		int32 MaxPoints = 1000,
 		int32 LODLevel = 0,
 		bool bBoundaryVerticesOnly = false,
+		float DeduplicationRadius = 0.0f,
+		bool bGridAlignedDedup = false,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
 	);
 

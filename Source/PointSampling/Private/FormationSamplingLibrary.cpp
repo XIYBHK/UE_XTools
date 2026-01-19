@@ -12,6 +12,7 @@
 #include "Sampling/TextureSamplingHelper.h"
 #include "Sampling/MilitaryFormationHelper.h"
 #include "Sampling/GeometricFormationHelper.h"
+#include "Sampling/PointDeduplicationHelper.h"
 #include "Components/SplineComponent.h"
 
 // ============================================================================
@@ -458,12 +459,41 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromStaticMesh(
 	int32 MaxPoints,
 	int32 LODLevel,
 	bool bBoundaryVerticesOnly,
+	float DeduplicationRadius,
+	bool bGridAlignedDedup,
 	EPoissonCoordinateSpace CoordinateSpace)
 {
-	// 从静态网格体提取顶点
+	// 从静态网格体提取顶点（不进行内置去重）
 	TArray<FVector> Points = FMeshSamplingHelper::GenerateFromStaticMesh(
 		StaticMesh, Transform, LODLevel, bBoundaryVerticesOnly, MaxPoints
 	);
+
+	// 用户指定去重半径时，在最终输出前进行去重（参考纹理采样的去重逻辑）
+	if (DeduplicationRadius > 0.0f && Points.Num() > 1)
+	{
+		int32 OriginalCount, RemovedCount;
+
+		if (bGridAlignedDedup)
+		{
+			// 网格对齐模式：点位对齐到规则网格，保持整齐排列
+			FPointDeduplicationHelper::RemoveDuplicatePointsGridAligned(
+				Points, DeduplicationRadius, OriginalCount, RemovedCount);
+		}
+		else
+		{
+			// 距离过滤模式：保留原始位置，仅移除过近的点
+			FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+				Points, DeduplicationRadius, OriginalCount, RemovedCount);
+		}
+
+		if (RemovedCount > 0)
+		{
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[网格采样] 去重(%s): %d -> %d (移除 %d, 半径=%.1f)"),
+				bGridAlignedDedup ? TEXT("网格对齐") : TEXT("距离过滤"),
+				OriginalCount, Points.Num(), RemovedCount, DeduplicationRadius);
+		}
+	}
 
 	// 根据坐标空间类型处理
 	if (CoordinateSpace == EPoissonCoordinateSpace::Raw && Points.Num() > 0)
