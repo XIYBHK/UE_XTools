@@ -200,7 +200,13 @@ enum class ETextureSamplingChannel : uint8
 	Green       UMETA(DisplayName = "绿色通道"),
 
 	/** 使用蓝色通道 */
-	Blue        UMETA(DisplayName = "蓝色通道")
+	Blue        UMETA(DisplayName = "蓝色通道"),
+
+	/** 反转亮度（1.0 - Luminance），适用于深色图案在浅色背景上的图片 */
+	LuminanceInverted   UMETA(DisplayName = "亮度(反转)"),
+
+	/** 反转Alpha（1.0 - Alpha），适用于需要采样透明区域 */
+	AlphaInverted       UMETA(DisplayName = "Alpha(反转)")
 };
 
 /**
