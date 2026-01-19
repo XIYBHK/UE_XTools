@@ -536,29 +536,6 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromSkeletalSockets(
 	return Points;
 }
 
-// ============================================================================
-// 纹理采样实现（占位符）
-// ============================================================================
-
-TArray<FVector> UFormationSamplingLibrary::GenerateFromTexture(
-	UTexture2D* Texture,
-	FVector CenterLocation,
-	FRotator Rotation,
-	int32 MaxSampleSize,
-	float Spacing,
-	float PixelThreshold,
-	float TextureScale,
-	EPoissonCoordinateSpace CoordinateSpace)
-{
-	// 从纹理提取像素点（局部坐标，居中，智能降采样）
-	TArray<FVector> LocalPoints = FTextureSamplingHelper::GenerateFromTexture(
-		Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale
-	);
-
-	// 转换到目标坐标空间
-	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
-}
-
 #if WITH_EDITOR
 bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 {
@@ -599,7 +576,7 @@ bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 
 	if (!bIsSupportedFormat)
 	{
-		UE_LOG(LogPointSampling, Error, TEXT("[纹理验证] ❌ 纹理格式不支持！"));
+		UE_LOG(LogPointSampling, Error, TEXT("[纹理验证] 纹理格式不支持！"));
 		UE_LOG(LogPointSampling, Error, TEXT("========================================"));
 		UE_LOG(LogPointSampling, Error, TEXT("请在纹理资产中进行以下设置："));
 		UE_LOG(LogPointSampling, Error, TEXT("  1. Compression Settings -> VectorDisplacementmap (RGBA8)"));
@@ -610,32 +587,11 @@ bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 		return false;
 	}
 
-	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] ✓ 纹理设置正确，可以用于点采样"));
+	UE_LOG(LogPointSampling, Display, TEXT("[纹理验证] 纹理设置正确，可以用于点采样"));
 	UE_LOG(LogPointSampling, Display, TEXT("========================================"));
 	return true;
 }
 #endif // WITH_EDITOR
-
-TArray<FVector> UFormationSamplingLibrary::GenerateFromTextureWithPoisson(
-	UTexture2D* Texture,
-	FVector CenterLocation,
-	FRotator Rotation,
-	int32 MaxSampleSize,
-	float MinRadius,
-	float MaxRadius,
-	float PixelThreshold,
-	float TextureScale,
-	int32 MaxAttempts,
-	EPoissonCoordinateSpace CoordinateSpace)
-{
-	// 从纹理提取像素点（局部坐标，居中，基于泊松圆盘采样的改进算法）
-	TArray<FVector> LocalPoints = FTextureSamplingHelper::GenerateFromTextureWithPoisson(
-		Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold, TextureScale, MaxAttempts
-	);
-
-	// 转换到目标坐标空间
-	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
-}
 
 // ============================================================================
 // 军事阵型实现

@@ -109,7 +109,7 @@ public:
   UFUNCTION(
       BlueprintCallable, Category = "XTools|点采样|分析",
       meta = (DisplayName = "分析采样点统计",
-              ToolTip = "计算点集的距离统计信息，包括最小距离、最大距离、平均距离和质心位置。",
+              ToolTip = "计算点集的距离统计信息，包括最小距离、最大距离、平均距离和质心位置。\n\n参数:\nPoints - 要分析的点集\nOutMinDistance - 输出最小点间距\nOutMaxDistance - 输出最大点间距\nOutAvgDistance - 输出平均点间距\nOutCentroid - 输出点集质心位置",
               Keywords = "统计,分析,距离,质心"))
   static void AnalyzeSamplingStats(const TArray<FVector> &Points,
                                    float &OutMinDistance, float &OutMaxDistance,
@@ -118,7 +118,7 @@ public:
   UFUNCTION(
       BlueprintCallable, Category = "XTools|点采样|分析",
       meta = (DisplayName = "验证泊松采样质量",
-              ToolTip = "验证泊松采样结果是否满足最小距离约束。",
+              ToolTip = "验证泊松采样结果是否满足最小距离约束。\n\n参数:\nPoints - 要验证的点集\nExpectedMinDistance - 期望的最小距离\nTolerance - 容差范围 (0.0-1.0)\n\n返回值:\n如果所有点对距离都大于等于 (ExpectedMinDistance * (1-Tolerance)) 则返回true",
               Keywords = "验证,质量,泊松,约束"))
   static bool ValidatePoissonSampling(const TArray<FVector> &Points,
                                       float ExpectedMinDistance,
@@ -144,18 +144,21 @@ public:
    * @param Spacing 像素步长（值越大点越稀疏）
    * @param PixelThreshold 像素阈值 (0-1)，只采样高于此值的像素
    * @param TextureScale 纹理缩放（影响生成点位的物理尺寸）
+   * @param DeduplicationRadius 去重半径（小于此距离的点会被合并，0表示不去重）
+   * @param bGridAlignedDedup 网格对齐去重（true=规则排列，false=保留原始位置）
    * @param SamplingChannel 采样通道（自动/Alpha/亮度/红/绿/蓝）
    * @return 点位数组（局部坐标，居中）
    */
   UFUNCTION(
       BlueprintCallable, Category = "XTools|点采样|纹理",
       meta = (DisplayName = "从纹理生成点阵",
-              ToolTip = "智能纹理采样，自动支持所有格式（DXT/BC压缩等）。",
+              ToolTip = "智能纹理采样，自动支持所有格式（DXT/BC压缩等）。\n\n参数:\nTexture - 纹理对象\nMaxSampleSize - 最大采样尺寸\nSpacing - 像素步长\nPixelThreshold - 像素阈值(0-1)\nTextureScale - 纹理缩放\nDeduplicationRadius - 去重半径(0=不去重)\nbGridAlignedDedup - 网格对齐去重(true=规则排列)\nSamplingChannel - 采样通道\n\n返回值:\n点位数组（局部坐标，居中）",
               Keywords = "纹理,texture,图片,image,采样,点阵,pattern",
-              AdvancedDisplay = "SamplingChannel"))
+              AdvancedDisplay = "DeduplicationRadius,bGridAlignedDedup,SamplingChannel"))
   static TArray<FVector> GeneratePointsFromTexture(
       UTexture2D *Texture, int32 MaxSampleSize = 512, float Spacing = 10.0f,
       float PixelThreshold = 0.5f, float TextureScale = 1.0f,
+      float DeduplicationRadius = 0.0f, bool bGridAlignedDedup = true,
       ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto);
 
   /**
@@ -169,6 +172,8 @@ public:
    * @param MaxRadius 最大采样半径（稀疏区域）
    * @param PixelThreshold 像素阈值 (0-1)
    * @param TextureScale 纹理缩放
+   * @param DeduplicationRadius 去重半径（小于此距离的点会被合并，0表示不去重）
+   * @param bGridAlignedDedup 网格对齐去重（true=规则排列，false=保留原始位置）
    * @param SamplingChannel 采样通道
    * @param MaxAttempts 最大尝试次数
    * @return 基于纹理密度的泊松采样点位数组
@@ -176,13 +181,14 @@ public:
   UFUNCTION(
       BlueprintCallable, Category = "XTools|点采样|纹理",
       meta = (DisplayName = "从纹理生成点阵（泊松采样）",
-              ToolTip = "基于纹理密度的泊松圆盘采样，分布更均匀。",
+              ToolTip = "基于纹理密度的泊松圆盘采样，分布更均匀。\n\n参数:\nTexture - 纹理对象\nMaxSampleSize - 最大采样尺寸\nMinRadius - 最小半径\nMaxRadius - 最大半径\nPixelThreshold - 像素阈值\nTextureScale - 纹理缩放\nDeduplicationRadius - 去重半径(0=不去重)\nbGridAlignedDedup - 网格对齐去重(true=规则排列)\nSamplingChannel - 采样通道\nMaxAttempts - 最大尝试次数",
               Keywords = "纹理,texture,图片,泊松,poisson,采样,点阵",
-              AdvancedDisplay = "SamplingChannel,MaxAttempts"))
+              AdvancedDisplay = "DeduplicationRadius,bGridAlignedDedup,SamplingChannel,MaxAttempts"))
   static TArray<FVector> GeneratePointsFromTextureWithPoisson(
       UTexture2D *Texture, int32 MaxSampleSize = 512, float MinRadius = 10.0f,
       float MaxRadius = 50.0f, float PixelThreshold = 0.5f,
-      float TextureScale = 1.0f,
+      float TextureScale = 1.0f, float DeduplicationRadius = 0.0f,
+      bool bGridAlignedDedup = true,
       ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto,
       int32 MaxAttempts = 30);
 

@@ -558,9 +558,11 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSource(
   // 去除重复点
   if (Points.Num() > 1) {
     int32 OriginalCount, RemovedCount;
+    // 使用 Spacing 的一半作为去重容差，确保相邻采样点不会被误判为重复
+    float DeduplicationTolerance = FMath::Max(Spacing * TextureScale * 0.5f, 1.0f);
     FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
         Points,
-        TextureScale * 0.1f, // 小容差
+        DeduplicationTolerance,
         OriginalCount, RemovedCount);
 
     if (RemovedCount > 0) {

@@ -556,43 +556,6 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
 	);
 
-	// ============================================================================
-	// 纹理采样
-	// ============================================================================
-
-	/**
-	 * 从纹理像素生成点阵（智能降采样方法）
-	 *
-	 * @param Texture 纹理资产（必须设置为未压缩格式，见下方说明）
-	 * @param CenterLocation 中心位置
-	 * @param Rotation 旋转角度
-	 * @param MaxSampleSize 最大采样尺寸（纹理会降采样到此尺寸）
-	 * @param Spacing 像素采样间隔（值越大点越稀疏）
-	 * @param PixelThreshold 像素阈值（0-1，只采样 Alpha/亮度高于此值的像素）
-	 * @param TextureScale 纹理物理尺寸缩放
-	 * @param CoordinateSpace 坐标空间（局部/世界）
-	 *
-	 * 重要：纹理必须设置为未压缩格式，否则无法读取像素数据！
-	 * 在纹理资产中设置：
-	 * 1. Compression Settings -> VectorDisplacementmap (RGBA8)
-	 * 2. Mip Gen Settings -> NoMipmaps
-	 * 3. sRGB -> 取消勾选
-	 * 4. 保存并重新导入纹理
-	 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
-		meta = (DisplayName = "从纹理像素生成点阵",
-			ToolTip = "从纹理像素生成点阵（基于 Alpha 通道或亮度）。\n重要：纹理必须设置为未压缩格式（VectorDisplacementmap）！"))
-	static TArray<FVector> GenerateFromTexture(
-		UTexture2D* Texture,
-		FVector CenterLocation,
-		FRotator Rotation,
-		int32 MaxSampleSize = 512,
-		float Spacing = 1.0f,
-		float PixelThreshold = 0.5f,
-		float TextureScale = 1.0f,
-		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
-	);
-
 #if WITH_EDITOR
 	/**
 	 * 验证纹理是否设置为未压缩格式（用于调试，仅编辑器可用）
@@ -606,41 +569,4 @@ public:
 			DevelopmentOnly))
 	static bool ValidateTextureForSampling(UTexture2D* Texture);
 #endif
-
-	/**
-	 * 从纹理像素生成点阵（基于泊松圆盘采样的改进算法）
-	 *
-	 * @param Texture 纹理资产（必须设置为未压缩格式，见下方说明）
-	 * @param CenterLocation 中心位置
-	 * @param Rotation 旋转角度
-	 * @param MaxSampleSize 最大采样尺寸（纹理会降采样到此尺寸）
-	 * @param MinRadius 最小采样半径（密集区域）
-	 * @param MaxRadius 最大采样半径（稀疏区域）
-	 * @param PixelThreshold 像素阈值（0-1，只采样 Alpha/亮度高于此值的像素）
-	 * @param TextureScale 纹理物理尺寸缩放
-	 * @param MaxAttempts 最大尝试次数（泊松采样参数）
-	 * @param CoordinateSpace 坐标空间（局部/世界）
-	 *
-	 * 重要：纹理必须设置为未压缩格式，否则无法读取像素数据！
-	 * 在纹理资产中设置：
-	 * 1. Compression Settings -> VectorDisplacementmap (RGBA8)
-	 * 2. Mip Gen Settings -> NoMipmaps
-	 * 3. sRGB -> 取消勾选
-	 * 4. 保存并重新导入纹理
-	 */
-	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|纹理",
-		meta = (DisplayName = "从纹理像素生成点阵（泊松采样）",
-			ToolTip = "从纹理像素生成点阵（基于泊松圆盘采样的改进算法）。重要：纹理必须设置为未压缩格式（VectorDisplacementmap）！"))
-	static TArray<FVector> GenerateFromTextureWithPoisson(
-		UTexture2D* Texture,
-		FVector CenterLocation,
-		FRotator Rotation,
-		int32 MaxSampleSize = 512,
-		float MinRadius = 5.0f,
-		float MaxRadius = 20.0f,
-		float PixelThreshold = 0.5f,
-		float TextureScale = 1.0f,
-		int32 MaxAttempts = 30,
-		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
-	);
 };

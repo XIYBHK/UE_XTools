@@ -104,6 +104,54 @@ void FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
 	OutRemovedCount = OutOriginalCount - FinalCount;
 }
 
+void FPointDeduplicationHelper::RemoveDuplicatePointsGridAligned(
+	TArray<FVector>& Points,
+	float GridSpacing,
+	int32& OutOriginalCount,
+	int32& OutRemovedCount)
+{
+	OutOriginalCount = Points.Num();
+
+	if (Points.Num() == 0 || GridSpacing <= 0.0f)
+	{
+		OutRemovedCount = 0;
+		return;
+	}
+
+	// 使用 TSet 记录已占用的网格单元
+	TSet<FIntVector> OccupiedCells;
+	OccupiedCells.Reserve(Points.Num());
+
+	// 去重后的点列表（对齐到网格中心）
+	TArray<FVector> AlignedPoints;
+	AlignedPoints.Reserve(Points.Num());
+
+	for (const FVector& Point : Points)
+	{
+		// 计算点所在的网格单元索引
+		FIntVector CellIndex = GetCellIndex(Point, GridSpacing);
+
+		// 如果该单元尚未占用，则添加
+		if (!OccupiedCells.Contains(CellIndex))
+		{
+			OccupiedCells.Add(CellIndex);
+
+			// 将点对齐到网格中心，保持规则排列
+			FVector AlignedPoint(
+				(CellIndex.X + 0.5f) * GridSpacing,
+				(CellIndex.Y + 0.5f) * GridSpacing,
+				(CellIndex.Z + 0.5f) * GridSpacing
+			);
+
+			AlignedPoints.Add(AlignedPoint);
+		}
+	}
+
+	// 替换原数组
+	Points = MoveTemp(AlignedPoints);
+	OutRemovedCount = OutOriginalCount - Points.Num();
+}
+
 FIntVector FPointDeduplicationHelper::GetCellIndex(const FVector& Point, float CellSize)
 {
 	// 将坐标映射到整数网格

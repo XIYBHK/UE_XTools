@@ -48,6 +48,24 @@ public:
 		int32& OutRemovedCount
 	);
 
+	/**
+	 * 基于网格对齐的去重（保持规则排列）
+	 *
+	 * 将所有点对齐到指定间距的网格上，每个网格单元只保留一个点。
+	 * 结果点位呈规则的网格排列。
+	 *
+	 * @param Points 输入点位数组（会被修改）
+	 * @param GridSpacing 网格间距（点位将对齐到此间距的网格）
+	 * @param OutOriginalCount 原始点数
+	 * @param OutRemovedCount 移除的重复点数
+	 */
+	static void RemoveDuplicatePointsGridAligned(
+		TArray<FVector>& Points,
+		float GridSpacing,
+		int32& OutOriginalCount,
+		int32& OutRemovedCount
+	);
+
 private:
 	/**
 	 * 将 3D 坐标映射到体素网格单元索引

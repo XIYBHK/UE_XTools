@@ -6,6 +6,7 @@
 #include "PointSamplingLibrary.h"
 #include "Algorithms/PoissonDiskSampling.h"
 #include "FormationSamplingLibrary.h"
+#include "Sampling/PointDeduplicationHelper.h"
 #include "Sampling/TextureSamplingHelper.h"
 
 // ============================================================================
@@ -431,19 +432,69 @@ float UPointSamplingLibrary::CalculateDistributionUniformity(
 
 TArray<FVector> UPointSamplingLibrary::GeneratePointsFromTexture(
     UTexture2D *Texture, int32 MaxSampleSize, float Spacing,
-    float PixelThreshold, float TextureScale,
-    ETextureSamplingChannel SamplingChannel) {
+    float PixelThreshold, float TextureScale, float DeduplicationRadius,
+    bool bGridAlignedDedup, ETextureSamplingChannel SamplingChannel) {
   // 智能纹理采样（Grid算法）
-  return FTextureSamplingHelper::GenerateFromTextureAuto(
+  TArray<FVector> Points = FTextureSamplingHelper::GenerateFromTextureAuto(
       Texture, MaxSampleSize, Spacing, PixelThreshold, TextureScale,
       SamplingChannel);
+
+  // 用户指定去重半径时，在最终输出前进行去重
+  if (DeduplicationRadius > 0.0f && Points.Num() > 1) {
+    int32 OriginalCount, RemovedCount;
+
+    if (bGridAlignedDedup) {
+      // 网格对齐模式：点位对齐到规则网格，保持整齐排列
+      FPointDeduplicationHelper::RemoveDuplicatePointsGridAligned(
+          Points, DeduplicationRadius, OriginalCount, RemovedCount);
+    } else {
+      // 距离过滤模式：保留原始位置，仅移除过近的点
+      FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+          Points, DeduplicationRadius, OriginalCount, RemovedCount);
+    }
+
+    if (RemovedCount > 0) {
+      UE_LOG(LogPointSampling, Log,
+             TEXT("[纹理采样] 去重(%s): %d -> %d (移除 %d, 半径=%.1f)"),
+             bGridAlignedDedup ? TEXT("网格对齐") : TEXT("距离过滤"),
+             OriginalCount, Points.Num(), RemovedCount, DeduplicationRadius);
+    }
+  }
+
+  return Points;
 }
 
 TArray<FVector> UPointSamplingLibrary::GeneratePointsFromTextureWithPoisson(
     UTexture2D *Texture, int32 MaxSampleSize, float MinRadius, float MaxRadius,
-    float PixelThreshold, float TextureScale,
-    ETextureSamplingChannel SamplingChannel, int32 MaxAttempts) {
-  return FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
-      Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold,
-      TextureScale, SamplingChannel, MaxAttempts);
+    float PixelThreshold, float TextureScale, float DeduplicationRadius,
+    bool bGridAlignedDedup, ETextureSamplingChannel SamplingChannel,
+    int32 MaxAttempts) {
+  TArray<FVector> Points =
+      FTextureSamplingHelper::GenerateFromTextureAutoWithPoisson(
+          Texture, MaxSampleSize, MinRadius, MaxRadius, PixelThreshold,
+          TextureScale, SamplingChannel, MaxAttempts);
+
+  // 用户指定去重半径时，在最终输出前进行去重
+  if (DeduplicationRadius > 0.0f && Points.Num() > 1) {
+    int32 OriginalCount, RemovedCount;
+
+    if (bGridAlignedDedup) {
+      // 网格对齐模式：点位对齐到规则网格，保持整齐排列
+      FPointDeduplicationHelper::RemoveDuplicatePointsGridAligned(
+          Points, DeduplicationRadius, OriginalCount, RemovedCount);
+    } else {
+      // 距离过滤模式：保留原始位置，仅移除过近的点
+      FPointDeduplicationHelper::RemoveDuplicatePointsWithStats(
+          Points, DeduplicationRadius, OriginalCount, RemovedCount);
+    }
+
+    if (RemovedCount > 0) {
+      UE_LOG(LogPointSampling, Log,
+             TEXT("[泊松采样] 去重(%s): %d -> %d (移除 %d, 半径=%.1f)"),
+             bGridAlignedDedup ? TEXT("网格对齐") : TEXT("距离过滤"),
+             OriginalCount, Points.Num(), RemovedCount, DeduplicationRadius);
+    }
+  }
+
+  return Points;
 }
