@@ -7,6 +7,7 @@
  */
 
 #include "K2Nodes/K2Node_MultiBranch.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 #include "BlueprintNodeSpawner.h"
 #include "EdGraphSchema_K2.h"
@@ -184,14 +185,7 @@ class FNodeHandlingFunctor* UK2Node_MultiBranch::CreateNodeHandler(class FKismet
 
 void UK2Node_MultiBranch::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	UClass* ActionKey = GetClass();
-	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-	{
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-	}
+	K2NodeHelpers::RegisterNode<UK2Node_MultiBranch>(ActionRegistrar);
 }
 
 FText UK2Node_MultiBranch::GetMenuCategory() const

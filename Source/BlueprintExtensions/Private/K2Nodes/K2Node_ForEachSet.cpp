@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_ForEachSet.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
@@ -216,15 +217,7 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 
 void UK2Node_ForEachSet::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	const UClass* Action = GetClass();
-
-	if (ActionRegistrar.IsOpenForRegistration(Action))
-	{
-		UBlueprintNodeSpawner* Spawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(Spawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(Action, Spawner);
-	}
+	K2NodeHelpers::RegisterNode<UK2Node_ForEachSet>(ActionRegistrar);
 }
 
 void UK2Node_ForEachSet::PostReconstructNode()

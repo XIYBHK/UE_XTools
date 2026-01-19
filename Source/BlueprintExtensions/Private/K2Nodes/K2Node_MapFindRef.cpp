@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_MapFindRef.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器功能
 #include "EdGraphSchema_K2.h"
@@ -176,15 +177,7 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 
 	void UK2Node_MapFindRef::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 	{
-
-		UClass* ActionKey = GetClass();
-
-		if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-		{
-			UBlueprintNodeSpawner* RetRefNodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-			check(RetRefNodeSpawner != nullptr);
-			ActionRegistrar.AddBlueprintAction(ActionKey, RetRefNodeSpawner);
-		}
+		K2NodeHelpers::RegisterNode<UK2Node_MapFindRef>(ActionRegistrar);
 	}
 
 	void UK2Node_MapFindRef::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const

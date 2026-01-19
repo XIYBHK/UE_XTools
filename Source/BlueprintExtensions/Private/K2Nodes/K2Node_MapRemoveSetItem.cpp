@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_MapRemoveSetItem.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器功能
 #include "EdGraphSchema_K2.h"
@@ -150,14 +151,7 @@ class FNodeHandlingFunctor* UK2Node_MapRemoveSetItem::CreateNodeHandler(class FK
 
 void UK2Node_MapRemoveSetItem::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-    UClass* ActionKey = GetClass();
-    if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-    {
-        UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-        check(NodeSpawner != nullptr);
-
-        ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-    }
+    K2NodeHelpers::RegisterNode<UK2Node_MapRemoveSetItem>(ActionRegistrar);
 }
 
 void UK2Node_MapRemoveSetItem::PostReconstructNode()

@@ -1,4 +1,5 @@
 #include "K2Nodes/K2Node_ForLoopWithDelay.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
@@ -233,13 +234,7 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
 
 void UK2Node_ForLoopWithDelay::GetMenuActions(
     FBlueprintActionDatabaseRegistrar &ActionRegistrar) const {
-  UClass *ActionKey = GetClass();
-  if (ActionRegistrar.IsOpenForRegistration(ActionKey)) {
-    UBlueprintNodeSpawner *NodeSpawner =
-        UBlueprintNodeSpawner::Create(GetClass());
-    check(NodeSpawner != nullptr);
-    ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-  }
+  K2NodeHelpers::RegisterNode<UK2Node_ForLoopWithDelay>(ActionRegistrar);
 }
 
 void UK2Node_ForLoopWithDelay::PostReconstructNode() {
@@ -248,11 +243,7 @@ void UK2Node_ForLoopWithDelay::PostReconstructNode() {
 
 bool UK2Node_ForLoopWithDelay::IsCompatibleWithGraph(
     const UEdGraph *TargetGraph) const {
-  // Delay 节点需要支持 Latent 操作的图
-  const UBlueprint *Blueprint =
-      FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
-  return Blueprint &&
-         FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint) &&
+  return K2NodeHelpers::IsEventGraphCompatible(TargetGraph) &&
          Super::IsCompatibleWithGraph(TargetGraph);
 }
 

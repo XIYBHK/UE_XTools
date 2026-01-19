@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_MapAddSetItem.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器功能
 #include "EdGraphSchema_K2.h"
@@ -155,14 +156,7 @@ class FNodeHandlingFunctor* UK2Node_MapAddSetItem::CreateNodeHandler(class FKism
 
 void UK2Node_MapAddSetItem::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-    UClass* ActionKey = GetClass();
-    if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-    {
-        UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-        check(NodeSpawner != nullptr);
-
-        ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-    }
+    K2NodeHelpers::RegisterNode<UK2Node_MapAddSetItem>(ActionRegistrar);
 }
 
 void UK2Node_MapAddSetItem::PostReconstructNode()

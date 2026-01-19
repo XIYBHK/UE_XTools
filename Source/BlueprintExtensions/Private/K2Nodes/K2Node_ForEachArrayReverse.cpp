@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_ForEachArrayReverse.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
@@ -294,14 +295,7 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
 
 void UK2Node_ForEachArrayReverse::GetMenuActions(
     FBlueprintActionDatabaseRegistrar &ActionRegistrar) const {
-  const UClass *Action = GetClass();
-
-  if (ActionRegistrar.IsOpenForRegistration(Action)) {
-    UBlueprintNodeSpawner *Spawner = UBlueprintNodeSpawner::Create(GetClass());
-    check(Spawner != nullptr);
-
-    ActionRegistrar.AddBlueprintAction(Action, Spawner);
-  }
+  K2NodeHelpers::RegisterNode<UK2Node_ForEachArrayReverse>(ActionRegistrar);
 }
 
 void UK2Node_ForEachArrayReverse::PostReconstructNode() {
@@ -344,11 +338,7 @@ void UK2Node_ForEachArrayReverse::NotifyPinConnectionListChanged(
 
 bool UK2Node_ForEachArrayReverse::IsCompatibleWithGraph(
     const UEdGraph *TargetGraph) const {
-  // Delay 节点需要支持 Latent 操作的图
-  const UBlueprint *Blueprint =
-      FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
-  return Blueprint &&
-         FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint) &&
+  return K2NodeHelpers::IsEventGraphCompatible(TargetGraph) &&
          Super::IsCompatibleWithGraph(TargetGraph);
 }
 

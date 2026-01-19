@@ -7,6 +7,7 @@
  */
 
 #include "K2Nodes/K2Node_MultiConditionalSelect.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 #include "BlueprintNodeSpawner.h"
 #include "EditorCategoryUtils.h"
@@ -161,14 +162,7 @@ void UK2Node_MultiConditionalSelect::ReallocatePinsDuringReconstruction(TArray<U
 
 void UK2Node_MultiConditionalSelect::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	UClass* ActionKey = GetClass();
-	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-	{
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-	}
+	K2NodeHelpers::RegisterNode<UK2Node_MultiConditionalSelect>(ActionRegistrar);
 }
 
 FText UK2Node_MultiConditionalSelect::GetMenuCategory() const

@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_Assign.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器功能
 #include "EdGraphSchema_K2.h"
@@ -197,15 +198,7 @@ FNodeHandlingFunctor* UK2Node_Assign::CreateNodeHandler(FKismetCompilerContext& 
 
 void UK2Node_Assign::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	UClass* ActionKey = GetClass();
-
-	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-	{
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-	}
+	K2NodeHelpers::RegisterNode<UK2Node_Assign>(ActionRegistrar);
 }
 
 bool UK2Node_Assign::IsActionFilteredOut(class FBlueprintActionFilter const& Filter)

@@ -7,6 +7,7 @@
  */
 
 #include "K2Nodes/K2Node_ConditionalSequence.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintNodeSpawner.h"
@@ -115,14 +116,7 @@ void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerCon
 
 void UK2Node_ConditionalSequence::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	UClass* ActionKey = GetClass();
-	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
-	{
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
-	}
+	K2NodeHelpers::RegisterNode<UK2Node_ConditionalSequence>(ActionRegistrar);
 }
 
 FText UK2Node_ConditionalSequence::GetMenuCategory() const

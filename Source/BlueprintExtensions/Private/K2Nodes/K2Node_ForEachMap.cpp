@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_ForEachMap.h"
+#include "K2Nodes/K2NodeHelpers.h"
 #include "K2NodePinTypeHelpers.h"
 
 // 编辑器
@@ -254,15 +255,7 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 
 void UK2Node_ForEachMap::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	const UClass* Action = GetClass();
-
-	if (ActionRegistrar.IsOpenForRegistration(Action))
-	{
-		UBlueprintNodeSpawner* Spawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(Spawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(Action, Spawner);
-	}	
+	K2NodeHelpers::RegisterNode<UK2Node_ForEachMap>(ActionRegistrar);
 }
 
 void UK2Node_ForEachMap::PostReconstructNode()

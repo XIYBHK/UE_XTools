@@ -7,6 +7,7 @@
  */
 
 #include "K2Nodes/K2Node_CasePairedPinsNode.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 #include "Internationalization/Regex.h"
 #include "Kismet2/BlueprintEditorUtils.h"

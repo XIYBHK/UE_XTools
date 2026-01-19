@@ -1,4 +1,5 @@
 ﻿#include "K2Nodes/K2Node_MapIdentical.h"
+#include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器
 #include "EdGraphSchema_K2.h"
@@ -150,15 +151,7 @@ void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, U
 
 void UK2Node_MapIdentical::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	const UClass* Action = GetClass();
-
-	if (ActionRegistrar.IsOpenForRegistration(Action))
-	{
-		UBlueprintNodeSpawner* Spawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(Spawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(Action, Spawner);
-	}	
+	K2NodeHelpers::RegisterNode<UK2Node_MapIdentical>(ActionRegistrar);
 }
 
 void UK2Node_MapIdentical::PostReconstructNode()
