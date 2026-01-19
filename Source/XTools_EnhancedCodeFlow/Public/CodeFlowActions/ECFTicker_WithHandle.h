@@ -8,76 +8,72 @@
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
 UCLASS()
-class XTOOLS_ENHANCEDCODEFLOW_API UECFTicker_WithHandle : public UECFActionBase
-{
-	GENERATED_BODY()
+class XTOOLS_ENHANCEDCODEFLOW_API UECFTicker_WithHandle
+    : public UECFActionBase {
+  GENERATED_BODY()
 
-	friend class UECFSubsystem;
+  friend class UECFSubsystem;
 
 protected:
+  TUniqueFunction<void(float, FECFHandle)> TickFunc;
+  TUniqueFunction<void(bool)> CallbackFunc;
+  TUniqueFunction<void()> CallbackFunc_NoStopped;
+  float TickingTime = 0.f;
+  float CurrentTime = 0.f;
 
-	TUniqueFunction<void(float, FECFHandle)> TickFunc;
-	TUniqueFunction<void(bool)> CallbackFunc;
-	TUniqueFunction<void()> CallbackFunc_NoStopped;
-	float TickingTime = 0.f;
-	float CurrentTime = 0.f;
+  bool Setup(float InTickingTime,
+             TUniqueFunction<void(float, FECFHandle)> &&InTickFunc,
+             TUniqueFunction<void(bool)> &&InCallbackFunc = nullptr) {
+    TickingTime = InTickingTime;
+    TickFunc = MoveTemp(InTickFunc);
+    CallbackFunc = MoveTemp(InCallbackFunc);
 
-	bool Setup(float InTickingTime, TUniqueFunction<void(float, FECFHandle)>&& InTickFunc, TUniqueFunction<void(bool)>&& InCallbackFunc = nullptr)
-	{
-		TickingTime = InTickingTime;
-		TickFunc = MoveTemp(InTickFunc);
-		CallbackFunc = MoveTemp(InCallbackFunc);
+    if (TickFunc && (TickingTime > 0.f || TickingTime == -1.f)) {
+      if (TickingTime > 0.f) {
+        SetMaxActionTime(TickingTime);
+      }
 
-		if (TickFunc && (TickingTime > 0.f || TickingTime == -1.f))
-		{
-			if (TickingTime > 0.f)
-			{
-				SetMaxActionTime(TickingTime);
-			}
+      CurrentTime = 0.f;
+      return true;
+    } else {
+      ensureMsgf(false,
+                 TEXT("ECF - Ticker(2) failed to start. Are you sure the "
+                      "Ticking time and Ticking Function are set properly?"));
+      return false;
+    }
+  }
 
-			CurrentTime = 0.f;
-			return true;
-		}
-		else
-		{
-			ensureMsgf(false, TEXT("ECF - Ticker(2) failed to start. Are you sure the Ticking time and Ticking Function are set properly?"));
-			return false;
-		}
-	}
+  bool Setup(float InTickingTime,
+             TUniqueFunction<void(float, FECFHandle)> &&InTickFunc,
+             TUniqueFunction<void()> &&InCallbackFunc = nullptr) {
+    CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
+    return Setup(InTickingTime, MoveTemp(InTickFunc), [this](bool bStopped) {
+      if (CallbackFunc_NoStopped) {
+        CallbackFunc_NoStopped();
+      }
+    });
+  }
 
-	bool Setup(float InTickingTime, TUniqueFunction<void(float, FECFHandle)>&& InTickFunc, TUniqueFunction<void()>&& InCallbackFunc = nullptr)
-	{
-		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
-		return Setup(InTickingTime, MoveTemp(InTickFunc), [this](bool bStopped)
-		{
-			if (CallbackFunc_NoStopped)
-			{
-				CallbackFunc_NoStopped();
-			}
-		});
-	}
-
-	void Tick(float DeltaTime) override
-	{
+  void Tick(float DeltaTime) override {
 #if STATS
-		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Ticker - Tick"), STAT_ECFDETAILS_TICKER, STATGROUP_ECFDETAILS);
+    DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Ticker - Tick"), STAT_ECFDETAILS_TICKER,
+                                STATGROUP_ECFDETAILS);
 #endif
-		TickFunc(DeltaTime, HandleId);
-		CurrentTime += DeltaTime;
-		if (TickingTime > 0.f && CurrentTime >= TickingTime)
-		{
-			Complete(false);
-			MarkAsFinished();
-		}
-	}
+    TickFunc(DeltaTime, HandleId);
+    CurrentTime += DeltaTime;
+    if (TickingTime > 0.f && CurrentTime >= TickingTime) {
+      Complete(false);
+      MarkAsFinished();
+    }
+  }
 
-	void Complete(bool bStopped) override
-	{
-		if (CallbackFunc)
-		{
-			CallbackFunc(bStopped);
-		}
-	}
+  void Complete(bool bStopped) override {
+    // 【防御性编程】：确保 Owner 仍然有效
+    if (HasValidOwner() && CallbackFunc) {
+      CallbackFunc(bStopped);
+    }
+    // 注：Owner 已销毁时静默跳过回调，避免崩溃
+  }
 };
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION

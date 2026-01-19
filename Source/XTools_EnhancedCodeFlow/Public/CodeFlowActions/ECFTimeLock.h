@@ -8,52 +8,50 @@
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
 UCLASS()
-class XTOOLS_ENHANCEDCODEFLOW_API UECFTimeLock : public UECFActionBase
-{
-	GENERATED_BODY()
+class XTOOLS_ENHANCEDCODEFLOW_API UECFTimeLock : public UECFActionBase {
+  GENERATED_BODY()
 
-	friend class UECFSubsystem;
+  friend class UECFSubsystem;
 
 protected:
+  TUniqueFunction<void()> ExecFunc;
+  float LockTime = 0.f;
+  float CurrentTime = 0.f;
 
-	TUniqueFunction<void()> ExecFunc;
-	float LockTime = 0.f;
-	float CurrentTime = 0.f;
+  bool Setup(float InLockTime, TUniqueFunction<void()> &&InExecFunc) {
+    LockTime = InLockTime;
+    ExecFunc = MoveTemp(InExecFunc);
 
-	bool Setup(float InLockTime, TUniqueFunction<void()>&& InExecFunc)
-	{
-		LockTime = InLockTime;
-		ExecFunc = MoveTemp(InExecFunc);
+    if (ExecFunc && LockTime > 0) {
+      SetMaxActionTime(LockTime);
+      return true;
+    } else {
+      ensureMsgf(
+          false,
+          TEXT("ECF - Timelock failed to start. Are you sure the Lock time is "
+               "greater than 0 and the Exec Function is set properly?"));
+      return false;
+    }
+  }
 
-		if (ExecFunc && LockTime > 0)
-		{
-			SetMaxActionTime(LockTime);
-			return true;
-		}
-		else
-		{
-			ensureMsgf(false, TEXT("ECF - Timelock failed to start. Are you sure the Lock time is greater than 0 and the Exec Function is set properly?"));
-			return false;
-		}
-	}
+  void Init() override {
+    CurrentTime = 0;
+    // 【防御性编程】：确保 Owner 仍然有效
+    if (HasValidOwner() && ExecFunc) {
+      ExecFunc();
+    }
+  }
 
-	void Init() override
-	{
-		CurrentTime = 0;
-		ExecFunc();
-	}
-
-	void Tick(float DeltaTime) override
-	{
+  void Tick(float DeltaTime) override {
 #if STATS
-		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("TimeLock - Tick"), STAT_ECFDETAILS_TIMELOCK, STATGROUP_ECFDETAILS);
+    DECLARE_SCOPE_CYCLE_COUNTER(TEXT("TimeLock - Tick"),
+                                STAT_ECFDETAILS_TIMELOCK, STATGROUP_ECFDETAILS);
 #endif
-		CurrentTime += DeltaTime;
-		if (CurrentTime >= LockTime)
-		{
-			MarkAsFinished();
-		}
-	}
+    CurrentTime += DeltaTime;
+    if (CurrentTime >= LockTime) {
+      MarkAsFinished();
+    }
+  }
 };
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION
