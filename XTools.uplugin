@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.9.4",
+	"VersionName": "1.9.5",
 	"FriendlyName": "XTools",
 	"Description": "集成了部分第三方插件,仅供内部使用,请勿传播.",
 	"Category": "Tools",

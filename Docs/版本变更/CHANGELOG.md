@@ -1,5 +1,43 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.5 (2026-01-31)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### BlueprintExtensions 模块
+- **修复** 修复带延迟循环节点初次延迟问题（首次迭代立即执行）
+- **修复** 修复 ForEach 循环节点 Break 执行流中断问题（Break 后继续到 Completed）
+- **修复** 修复 ForEachArrayReverse 引脚重复创建问题（移除 Super 调用）
+- **完善** 完善 ForEachArrayReverse 类型验证逻辑
+- **修复** 修复 Map 随机访问空 Map 边界问题（RandomItem/RandomItemFromStream）
+
+### X_AssetEditor 模块
+- **优化** 彻底修复 Ticker Lambda 悬空指针风险（使用 TSharedPtr/TWeakPtr）
+- **新增** 实现变体命名支持功能（FAssetNamingPattern 结构体）
+- **新增** 实现重命名后的重名冲突自动处理
+- **重构** 提取公共辅助函数，消除代码重复
+- **优化** 配置化硬编码常量（FactoryCreationTimeWindow、StartupActivationDelay）
+- **优化** 静态缓存正则表达式模式，避免重复编译
+- **优化** 批量重命名性能：预缓存文件夹资产名称（O(n²)→O(n)）
+- **移除** 删除 90 行未实现的命名冲突检测代码
+- **调整** FactoryCreationTimeWindow 默认值改为 15 秒
+
+### PointSampling 模块
+- **修复** 修复白底纹理采样异常问题
+- **新增** 新增自动亮度反转功能（智能识别背景色）
+- **新增** 新增反转采样模式（LuminanceInverted、AlphaInverted）
+- **调整** 采样核心函数增加 bInvert 参数
+- **优化** 增加采样过程中的详细日志输出
+- **修复** 修复压缩纹理采样时尺寸缩放和纵横比错误的问题
+- **优化** 增强纹理采样自动对齐逻辑，确保点位整齐且不重叠
+- **修复** 修复压缩纹理在渲染模式下无法自动反转采样的问题
+- **优化** 修复UHT解析错误（ToolTip多行字符串合并为单行）
+
+</details>
+
+---
+
 ## 版本 v1.9.4 (2026-01-15)
 
 <details>
