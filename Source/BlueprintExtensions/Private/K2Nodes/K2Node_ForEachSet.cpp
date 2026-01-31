@@ -163,6 +163,8 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
     LoopCounterBreak->AllocateDefaultPins();
     CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetVariablePin(), LoopCounterPin);
     CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetValuePin(), BreakLength->GetReturnValuePin());
+    // 【修复】连接 Break 的 Then 引脚到 Branch 的 Else，使 Break 后执行流继续到 Completed
+    CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
 
     // 8. 创建执行序列（循环体 -> 递增）
     UK2Node_ExecutionSequence* Sequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);

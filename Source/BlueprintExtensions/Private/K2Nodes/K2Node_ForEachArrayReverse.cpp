@@ -202,8 +202,20 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   LoopCounterBreak->GetValuePin()->DefaultValue = TEXT("-1");
   CompilerContext.GetSchema()->TryCreateConnection(
       LoopCounterPin, LoopCounterBreak->GetVariablePin());
+  // 【修复】连接 Break 的 Then 引脚到 Branch 的 Else，使 Break 后执行流继续到 Completed
+  CompilerContext.GetSchema()->TryCreateConnection(
+      LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
 
-  // 10. 创建延迟节点
+  // 10. 创建执行序列（循环体 -> 延迟路径）
+  // 【修复】先执行循环体，再延迟，避免初次进入时延迟
+  UK2Node_ExecutionSequence *Sequence =
+      CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
+          this, SourceGraph);
+  Sequence->AllocateDefaultPins();
+  CompilerContext.GetSchema()->TryCreateConnection(Branch->GetThenPin(),
+                                                   Sequence->GetExecPin());
+
+  // 11. 创建延迟节点
   UK2Node_CallFunction *DelayNode =
       CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this,
                                                                   SourceGraph);
@@ -211,16 +223,9 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       UKismetSystemLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetSystemLibrary, Delay)));
   DelayNode->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(Branch->GetThenPin(),
-                                                   DelayNode->GetExecPin());
-
-  // 11. 创建执行序列（循环体 -> 递减）
-  UK2Node_ExecutionSequence *Sequence =
-      CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
-          this, SourceGraph);
-  Sequence->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(DelayNode->GetThenPin(),
-                                                   Sequence->GetExecPin());
+  // 【修复】延迟节点连接到 Sequence 的第二个输出，先执行循环体再延迟
+  CompilerContext.GetSchema()->TryCreateConnection(
+      Sequence->GetThenPinGivenIndex(1), DelayNode->GetExecPin());
 
   // 12. 创建递减节点
   UK2Node_CallFunction *Increment =
@@ -239,8 +244,9 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(
           this, SourceGraph);
   LoopCounterAssign->AllocateDefaultPins();
+  // 【修复】递减逻辑连接到 Delay->Then，确保顺序为：循环体 → 延迟 → 递减
   CompilerContext.GetSchema()->TryCreateConnection(
-      LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
+      LoopCounterAssign->GetExecPin(), DelayNode->GetThenPin());
   CompilerContext.GetSchema()->TryCreateConnection(
       LoopCounterAssign->GetVariablePin(), LoopCounterPin);
   CompilerContext.GetSchema()->TryCreateConnection(
@@ -349,12 +355,14 @@ bool UK2Node_ForEachArrayReverse::IsCompatibleWithGraph(
 #pragma region PinManagement
 
 void UK2Node_ForEachArrayReverse::AllocateDefaultPins() {
-  Super::AllocateDefaultPins();
+  // 【修复】移除 Super::AllocateDefaultPins() 调用，避免引脚重复创建
+  // 参考 ForEachLoopWithDelay.cpp 的正确实现
 
   // Execute
   CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec,
             UEdGraphSchema_K2::PN_Execute);
-  // Map
+
+  // Array
   UEdGraphNode::FCreatePinParams PinParams;
   PinParams.ContainerType = EPinContainerType::Array;
   PinParams.ValueTerminalType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
@@ -398,6 +406,16 @@ void UK2Node_ForEachArrayReverse::AllocateDefaultPins() {
 bool UK2Node_ForEachArrayReverse::IsConnectionDisallowed(
     const UEdGraphPin *MyPin, const UEdGraphPin *OtherPin,
     FString &OutReason) const {
+  // 【修复】添加数组连接验证，参考 ForEachLoopWithDelay.cpp 实现
+  if (MyPin == GetArrayPin() &&
+      MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard) {
+    if (OtherPin->PinType.ContainerType != EPinContainerType::Array) {
+      OutReason =
+          LOCTEXT("MustConnectArray", "Must connect to an array").ToString();
+      return true;
+    }
+  }
+
   return Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
 }
 

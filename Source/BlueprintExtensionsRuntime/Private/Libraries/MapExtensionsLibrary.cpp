@@ -691,13 +691,16 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItem)
 
 void UMapExtensionsLibrary::GenericMap_RandomItem(const void* MapAddr, const FMapProperty* MapProperty, void* OutKeyPtr, void* OutValuePtr)
 {
+	// 【边界检查】空 Map 时直接返回，避免 RandRange(0, -1) 未定义行为
 	if(MapAddr)
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
-		const int32 Index = FMath::RandRange(0, MapHelper.Num() - 1);
-		
-		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
-		MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+		if (MapHelper.Num() > 0)
+		{
+			const int32 Index = FMath::RandRange(0, MapHelper.Num() - 1);
+			MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
+			MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+		}
 	}
 }
 #pragma endregion
@@ -779,13 +782,16 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItemFromStream)
 
 void UMapExtensionsLibrary::GenericMap_RandomItemFromStream(const void* MapAddr, const FMapProperty* MapProperty, FRandomStream* RandomStream, void* OutKeyPtr, void* OutValuePtr)
 {
+	// 【边界检查】空 Map 时直接返回，避免 RandRange(0, -1) 未定义行为
 	if(MapAddr)
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
-		const int32 Index = RandomStream->RandRange(0, MapHelper.Num() - 1);
-		
-		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
-		MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+		if (MapHelper.Num() > 0)
+		{
+			const int32 Index = RandomStream->RandRange(0, MapHelper.Num() - 1);
+			MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
+			MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+		}
 	}
 }
 #pragma endregion

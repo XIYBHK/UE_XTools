@@ -160,7 +160,16 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
                                              *LengthTargetArrayPin);
   Length->PostReconstructNode();
 
-  // 6. 创建延迟节点
+  // 6. 创建执行序列（循环体 -> 延迟路径）
+  // 【修复】先执行循环体，再延迟，避免初次进入时延迟
+  UK2Node_ExecutionSequence *Sequence =
+      CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
+          this, SourceGraph);
+  Sequence->AllocateDefaultPins();
+  CompilerContext.GetSchema()->TryCreateConnection(Branch->GetThenPin(),
+                                                   Sequence->GetExecPin());
+
+  // 7. 创建延迟节点
   UK2Node_CallFunction *DelayNode =
       CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this,
                                                                   SourceGraph);
@@ -168,16 +177,9 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
       UKismetSystemLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetSystemLibrary, Delay)));
   DelayNode->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(Branch->GetThenPin(),
-                                                   DelayNode->GetExecPin());
-
-  // 7. 创建执行序列（循环体 -> 递增）
-  UK2Node_ExecutionSequence *Sequence =
-      CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
-          this, SourceGraph);
-  Sequence->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(DelayNode->GetThenPin(),
-                                                   Sequence->GetExecPin());
+  // 【修复】延迟节点连接到 Sequence 的第二个输出，先执行循环体再延迟
+  CompilerContext.GetSchema()->TryCreateConnection(
+      Sequence->GetThenPinGivenIndex(1), DelayNode->GetExecPin());
 
   // 8. 创建递增节点
   UK2Node_CallFunction *Increment =
@@ -196,8 +198,9 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(
           this, SourceGraph);
   LoopCounterAssign->AllocateDefaultPins();
+  // 【修复】递增逻辑连接到 Delay->Then，确保顺序为：循环体 → 延迟 → 递增
   CompilerContext.GetSchema()->TryCreateConnection(
-      LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
+      LoopCounterAssign->GetExecPin(), DelayNode->GetThenPin());
   CompilerContext.GetSchema()->TryCreateConnection(
       LoopCounterAssign->GetVariablePin(), LoopCounterPin);
   CompilerContext.GetSchema()->TryCreateConnection(
@@ -230,6 +233,10 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
       LoopCounterBreak->GetVariablePin(), LoopCounterPin);
   CompilerContext.GetSchema()->TryCreateConnection(
       LoopCounterBreak->GetValuePin(), BreakLength->GetReturnValuePin());
+  // 【修复】连接 Break 的 Then 引脚到 Branch 的 Else，使 Break 后执行流继续到 Completed
+  // 参考 ForLoopWithDelay.cpp 的正确实现
+  CompilerContext.GetSchema()->TryCreateConnection(
+      LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
 
   // 11. 获取数组元素
   UK2Node_CallFunction *GetElement =
