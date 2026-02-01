@@ -85,6 +85,11 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
         FTransforms = GenerateCapsulePoints(Capsule, Distance, Noise, bIsUseLookAtOrigin,
             Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta);
     }
+    else
+    {
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 不支持的形状类型: %s"),
+            *Shape->GetClass()->GetName());
+    }
 
     if (bIsAddInstance)
     {

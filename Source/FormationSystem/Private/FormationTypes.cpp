@@ -20,8 +20,6 @@ TArray<FVector> FFormationData::GetWorldPositions() const
 
 FBox FFormationData::GetAABB() const
 {
-    ensure(Positions.Num() > 0);
-    
     if (Positions.Num() == 0)
     {
         UE_LOG(LogFormationSystem, Warning, TEXT("尝试获取空阵型的包围盒"));
