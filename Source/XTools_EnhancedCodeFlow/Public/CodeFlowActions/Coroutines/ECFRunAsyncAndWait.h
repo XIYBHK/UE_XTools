@@ -101,7 +101,14 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		CoroutineHandle.resume();
+		// 修复：异步任务可能在 Owner 销毁后完成，需安全跳过
+		if (HasValidOwner())
+		{
+			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
+			{
+				CoroutineHandle.resume();
+			}
+		}
 	}
 };
 

@@ -214,15 +214,14 @@ private:
 			{
 				// If we have specified tick intervals accumulate time until it won't reach the desired interval.
 				// Tick with the given interval, otherwise do a simple tick.
-				// Clear accumulated time (no subtract the interval) as we are interested in ticks 
-				// that happens the exact time after the previous one.
+				// 修复：减去间隔而不是清零，避免长时间运行时的时间漂移
 				if (Settings.TickInterval > 0.f)
 				{
 					AccumulatedTime += DeltaTime;
 					if (AccumulatedTime >= Settings.TickInterval)
 					{
 						Tick(Settings.TickInterval);
-						AccumulatedTime = 0;
+						AccumulatedTime -= Settings.TickInterval;
 					}
 				}
 				else

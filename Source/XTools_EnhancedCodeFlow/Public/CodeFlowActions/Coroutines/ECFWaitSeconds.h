@@ -58,7 +58,14 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		CoroutineHandle.resume();
+		// 修复：协程恢复前检查 Owner 有效性
+		if (HasValidOwner())
+		{
+			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
+			{
+				CoroutineHandle.resume();
+			}
+		}
 	}
 };
 

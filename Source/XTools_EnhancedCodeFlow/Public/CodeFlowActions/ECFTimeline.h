@@ -118,17 +118,20 @@ protected:
 		{
 			if (Settings.bLoop)
 			{
-				// 参考UE原生FTimeline::TickTimeline的Loop实现
-				// 1. 先触发精确的终点值
+				// 修复：循环模式下的双重Tick问题
+				// 1. 先触发精确的终点值（只触发一次）
 				CurrentValue = StopValue;
 				TickFunc(StopValue, Time);
-				
-				// 2. 处理溢出时间，计算新位置
+
+				// 2. 处理溢出时间，重置到下一周期起点
 				while (CurrentTime > Time)
 				{
 					CurrentTime -= Time;
 				}
-				// CurrentTime现在是新周期的位置
+
+				// 3. 重置到起点状态，避免在下一帧重复触发终点
+				CurrentValue = StartValue;
+				// 注意：不在这里再次调用 TickFunc，因为下一帧会从起点开始
 			}
 			else
 			{

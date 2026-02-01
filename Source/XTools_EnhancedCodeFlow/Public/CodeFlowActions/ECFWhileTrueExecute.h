@@ -21,6 +21,7 @@ protected:
   TUniqueFunction<void()> CompleteFunc_NoTimeOut_NoStopped;
 
   float TimeOut = 0.f;
+  float CurrentTime = 0.f;  // 修复：添加累加时间跟踪，与Delay等Action保持一致
   bool bWithTimeOut = false;
   bool bTimedOut = false;
 
@@ -91,9 +92,10 @@ protected:
                                 STAT_ECFDETAILS_WHILETRUEEXECUTE,
                                 STATGROUP_ECFDETAILS);
 #endif
+    // 修复：使用累加方式代替递减，与其他Action保持一致
     if (bWithTimeOut) {
-      TimeOut -= DeltaTime;
-      if (TimeOut <= 0.f) {
+      CurrentTime += DeltaTime;
+      if (CurrentTime >= TimeOut) {
         bTimedOut = true;
         Complete(false);
         MarkAsFinished();

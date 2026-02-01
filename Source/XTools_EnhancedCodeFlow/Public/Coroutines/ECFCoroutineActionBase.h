@@ -26,12 +26,24 @@ protected:
 
 	void BeginDestroy() override
 	{
-		// Handling a case when the owner has beed destroyed before the coroutine has been fully finished.
-		// In such case the handle must be explicitly destroyed.
-		if (bHasCoroutineHandle && (HasValidOwner() == false) && (CoroutineHandle.promise().bHasFinished == false))
+		// 修复：处理协程句柄生命周期管理
+		// 当Owner在协程完成前被销毁时，需要安全地标记协程为已完成但不立即销毁句柄
+		if (bHasCoroutineHandle)
 		{
-			CoroutineHandle.promise().bHasFinished = true;
-			CoroutineHandle.destroy();
+			// 先检查协程是否已完成
+			if (CoroutineHandle.promise().bHasFinished == false)
+			{
+				// 如果协程仍在运行（可能有异步任务在后台），标记为已完成
+				// 不立即销毁句柄，让异步任务自然结束
+				CoroutineHandle.promise().bHasFinished = true;
+				// 注意：不调用 destroy()，避免在异步任务可能仍在访问时销毁句柄
+			}
+			else
+			{
+				// 协程已完成，可以安全销毁句柄
+				CoroutineHandle.destroy();
+				bHasCoroutineHandle = false;
+			}
 		}
 		Super::BeginDestroy();
 	}
