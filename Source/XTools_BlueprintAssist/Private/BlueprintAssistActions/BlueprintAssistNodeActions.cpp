@@ -1313,8 +1313,19 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		TArray<UEdGraphPin*> ExecLinks = FBAUtils::GetLinkedPins(SelectedNode, Direction).FilterByPredicate(FBAUtils::IsExecPin);
 		for (UEdGraphPin* Pin : ExecLinks)
 		{
+			// 修复：添加边界检查，避免空数组访问
+			if (Pin->LinkedTo.Num() == 0)
+			{
+				continue;
+			}
+
 			// should this be checking execution in the graph direction? (can you even have looping nodes on a non-bp graph?)
 			UEdGraphPin* LinkedTo = Pin->LinkedTo[0];
+			if (!LinkedTo)
+			{
+				continue;
+			}
+
 			bool bNewLoopingState = FBAUtils::DoesNodeHaveExecutionTo(LinkedTo->GetOwningNode(), Pin->GetOwningNode(), EGPD_Output);
 			InitialLoopingState.Add(FBANodePinHandle(Pin), bNewLoopingState);
 		}
@@ -1371,7 +1382,17 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		TArray<UEdGraphPin*> NodeA_LinkedPins = FBAUtils::GetLinkedPins(NodeA, PinA->Direction).FilterByPredicate(FBAUtils::IsExecPin);
 		for (UEdGraphPin* Pin : NodeA_LinkedPins)
 		{
+			// 修复：添加边界检查
+			if (Pin->LinkedTo.Num() == 0)
+			{
+				continue;
+			}
+
 			UEdGraphPin* LinkedPin = Pin->LinkedTo[0];
+			if (!LinkedPin)
+			{
+				continue;
+			}
 
 			// should this be checking execution in the graph direction? (can you even have looping nodes on a non-bp graph?)
 			bool bNewLoopingState = FBAUtils::DoesNodeHaveExecutionTo(LinkedPin->GetOwningNode(), Pin->GetOwningNode(), EGPD_Output);

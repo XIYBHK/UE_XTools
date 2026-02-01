@@ -277,6 +277,14 @@ void FBATidyTree::SecondPass_ApplyMods(FTidyNodePtr TidyNode, float ModSum) cons
 		return;
 	}
 
+	// 修复：添加Layers边界检查
+	if (!Layers.IsValidIndex(TidyNode->Depth))
+	{
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("Invalid depth %d for node %s"),
+			TidyNode->Depth, *FBAUtils::GetNodeName(TidyNode->GraphNode));
+		return;
+	}
+
 	// final x position is the RelativeX plus the sum of all its ancestors' modifiers
 	TidyNode->GraphNode->Modify();
 	TidyNode->GraphNode->NodePosX = TidyNode->RelativeX + ModSum;
@@ -297,5 +305,9 @@ TSharedPtr<FBATidyNode> FBATidyNode::GetLeftSibling() const
 	}
 
 	const int32 MyIndex = Parent->Children.IndexOfByKey(SharedThis(this));
+	if (MyIndex == INDEX_NONE || MyIndex == 0)
+	{
+		return nullptr;
+	}
 	return Parent->Children[MyIndex - 1];
 }
