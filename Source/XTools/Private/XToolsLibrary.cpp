@@ -674,8 +674,11 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     //  获取线程安全的 PRD 测试器
     FThreadSafePRDTester& PRDTester = FThreadSafePRDTester::Get();
 
+    // 修复：添加最大测试次数限制，防止极小概率导致无限循环
+    const int32 MaxTotalTests = PRD_TARGET_SUCCESSES * 100; // 最多 100 万次测试
+
     //  优化的测试循环 - 使用配置常量和线程安全
-    while (TotalSuccesses < PRD_TARGET_SUCCESSES)
+    while (TotalSuccesses < PRD_TARGET_SUCCESSES && TotalTests < MaxTotalTests)
     {
         ++TotalTests;
 
@@ -700,6 +703,16 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
         }
 
         CurrentFailureCount = NextFailureCount;
+
+        //  检查是否达到最大测试次数
+        if (TotalTests >= MaxTotalTests)
+        {
+            FXToolsErrorReporter::Warning(LogXTools,
+                FString::Printf(TEXT("TestPRDDistribution: 达到最大测试次数限制 (%d)，停止测试。成功次数: %d/%d"),
+                    MaxTotalTests, TotalSuccesses, PRD_TARGET_SUCCESSES),
+                TEXT("TestPRDDistribution"));
+            break;
+        }
     }
 
     //  优化的日志输出 - 减少字符串操作

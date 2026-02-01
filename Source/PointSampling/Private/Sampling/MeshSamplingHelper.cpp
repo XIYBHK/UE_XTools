@@ -74,6 +74,15 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 		const int32 Index1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
 		const int32 Index2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
 
+		// 修复：添加索引边界检查
+		const int32 MaxVertexIndex = VertexBuffer.GetNumVertices() - 1;
+		if (Index0 > MaxVertexIndex || Index1 > MaxVertexIndex || Index2 > MaxVertexIndex)
+		{
+			UE_LOG(LogPointSampling, Warning, TEXT("[网格采样] 三角形 %d 包含无效顶点索引: %d, %d, %d (最大: %d)"),
+				TriangleIndex, Index0, Index1, Index2, MaxVertexIndex);
+			continue;
+		}
+
 		const FVector V0(VertexBuffer.VertexPosition(Index0));
 		const FVector V1(VertexBuffer.VertexPosition(Index1));
 		const FVector V2(VertexBuffer.VertexPosition(Index2));

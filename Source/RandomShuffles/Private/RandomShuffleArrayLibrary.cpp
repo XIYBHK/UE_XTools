@@ -285,8 +285,8 @@ namespace RandomShuffles {
 }
 
 void URandomShuffleArrayLibrary::GenericArray_RandomSample(
-    void* TargetArray, const FArrayProperty* ArrayProp, 
-    void* Weights, const FArrayProperty* WeightsProp, 
+    void* TargetArray, const FArrayProperty* ArrayProp,
+    void* Weights, const FArrayProperty* WeightsProp,
     int32 Count, FRandomStream* Stream,
     void* OutputArray, FArrayProperty* OutputProp)
 {
@@ -300,14 +300,23 @@ void URandomShuffleArrayLibrary::GenericArray_RandomSample(
     if (ArrayHelper.Num() < 1) {
         return;
     }
-    
+
     if (Count < 0) {
         Count = ArrayHelper.Num();
     }
 
+    // 修复：先验证权重数组长度，再调整输出大小
+    if (WeightsProp) {
+        FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
+        if (WeightsHelper.Num() < ArrayHelper.Num()) {
+            ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
+            return;
+        }
+    }
+
     FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
     OutputHelper.Resize(Count);
-    
+
     auto randFunc = RandomShuffles::FRand{ Stream };
     auto begin = ScriptArrayInputIterator<uint8*>(TargetArray, ArrayProp);
     auto end = ScriptArrayInputIterator<uint8*>(TargetArray, ArrayProp, ArrayHelper.Num());
@@ -315,11 +324,6 @@ void URandomShuffleArrayLibrary::GenericArray_RandomSample(
 
     if (WeightsProp) {
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
-        if (WeightsHelper.Num() < ArrayHelper.Num()) {
-            ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
-            return;
-        }
-
         auto wbegin = ScriptArrayInputIterator<float>(Weights, WeightsProp);
         RandomSample(begin, end, wbegin, out, Count, randFunc);
     }
@@ -484,16 +488,13 @@ int32& URandomShuffleArrayLibrary::GetOrCreatePRDState(const FString& StateID)
     {
         // 使用 Error 级别日志确保可见性
         UE_LOG(LogRandomShuffle, Error,
-            TEXT("PRD状态映射已达到最大大小限制 (%d)，新状态 '%s' 将使用默认状态"),
+            TEXT("PRD状态映射已达到最大大小限制 (%d)。新状态 '%s' 无法创建，将返回临时状态。"),
             RandomShuffles::Config::MaxStateMapSize, *StateID);
 
-        // 返回默认状态（使用"Default"键）
-        const FName DefaultKey(TEXT("Default"));
-        if (!PRDStateMap.Contains(DefaultKey))
-        {
-            PRDStateMap.Add(DefaultKey, 0);
-        }
-        return PRDStateMap[DefaultKey];
+        // 修复：返回线程局部的临时状态，避免多个系统共享同一个默认状态
+        // 使用 thread_local 确保每个线程有独立的临时状态
+        static thread_local int32 TemporaryState = 0;
+        return TemporaryState;
     }
 
     // 添加新状态
