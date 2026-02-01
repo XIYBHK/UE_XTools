@@ -239,6 +239,16 @@ UEnum* UK2Node_SmartSort::GetSortModeEnumForType(const FEdGraphPinType& ArrayTyp
 
 void UK2Node_SmartSort::RebuildDynamicPins()
 {
+	// 修复：添加递归调用保护，避免在 PinConnectionListChanged 中多次调用导致问题
+#if WITH_EDITORONLY_DATA
+	static bool bIsRebuilding = false;
+	if (bIsRebuilding)
+	{
+		return;
+	}
+	bIsRebuilding = true;
+#endif
+
 	// 移除所有动态引脚（保留基础引脚）
 	// 优化：使用反向迭代避免索引问题，并使用常量引用
 	static const TArray<FName> DynamicPinNames = {
@@ -258,6 +268,10 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 			}
 		}
 	}
+
+#if WITH_EDITORONLY_DATA
+	bIsRebuilding = false;
+#endif
 
 	// 获取当前连接的数组类型
 	FEdGraphPinType ConnectedType = this->GetResolvedArrayType();
