@@ -3,10 +3,13 @@
 TArray<FString> UVariableReflectionLibrary::GetVariableNames(UClass* Class, bool bIncludeSuper)
 {
 	TArray<FString> VariableName;
-	if (Class)
+	if (!Class)
 	{
-		ensureAlwaysMsgf(Class, TEXT("Class is Null on UVariableReflectionLibrary::GetVariableNames"));
-		EFieldIteratorFlags::SuperClassFlags IteratorFlags = bIncludeSuper ? EFieldIteratorFlags::IncludeSuper : EFieldIteratorFlags::ExcludeSuper;
+		ensureAlwaysMsgf(false, TEXT("Class is Null on UVariableReflectionLibrary::GetVariableNames"));
+		return VariableName;
+	}
+
+	EFieldIteratorFlags::SuperClassFlags IteratorFlags = bIncludeSuper ? EFieldIteratorFlags::IncludeSuper : EFieldIteratorFlags::ExcludeSuper;
 		for (TFieldIterator<FProperty> PropertyIt(Class, IteratorFlags); PropertyIt; ++PropertyIt)
 		{
 			FProperty* Property = *PropertyIt;

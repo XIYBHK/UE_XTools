@@ -705,7 +705,9 @@ FPathConflictInfo UFormationManagerComponent::DetectPathConflicts(
                 // 计算冲突严重程度（基于路径长度和交叉角度）
                 FVector Dir1 = (End1 - Start1).GetSafeNormal();
                 FVector Dir2 = (End2 - Start2).GetSafeNormal();
-                float CrossAngle = FMath::Acos(FVector::DotProduct(Dir1, Dir2));
+                // 将点积钳位到有效范围，避免浮点精度问题导致 Acos 返回 NaN
+                float DotProduct = FMath::Clamp(FVector::DotProduct(Dir1, Dir2), -1.0f, 1.0f);
+                float CrossAngle = FMath::Acos(DotProduct);
                 
                 // 垂直交叉的冲突最严重
                 float AngleSeverity = FMath::Sin(CrossAngle);
