@@ -5,8 +5,6 @@
 
 ---
 
-## 🎯 版本 1.9.6 之后
-
 ### BlueprintExtensionsRuntime
 - 修复 Map 函数边界检查和循环逻辑
 - 优化 Map_Identical 算法性能（嵌套循环优化）
