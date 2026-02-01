@@ -98,12 +98,16 @@ bool UFormationManagerComponent::IsFormationTranslation(
     UE_LOG(LogFormationSystem, Log, TEXT("IsFormationTranslation: ToAABB Size=(%s)"), *ToSize.ToString());
 
     // 相同阵型检测：尺寸相近则认为是相同阵型的平移
-    // 使用较小的容差值，确保精确检测
-    const float SizeTolerance = 10.0f;
-    bool bIsSameFormation = 
-        FMath::Abs(FromSize.X - ToSize.X) < SizeTolerance &&
-        FMath::Abs(FromSize.Y - ToSize.Y) < SizeTolerance &&
-        FMath::Abs(FromSize.Z - ToSize.Z) < SizeTolerance;
+    // 修复：使用相对容差替代硬编码容差值，适配不同规模的阵型
+    const float RelativeTolerance = 0.1f; // 10% 相对容差
+    const float SizeToleranceX = FMath::Max(FromSize.X, ToSize.X) * RelativeTolerance + 1.0f;
+    const float SizeToleranceY = FMath::Max(FromSize.Y, ToSize.Y) * RelativeTolerance + 1.0f;
+    const float SizeToleranceZ = FMath::Max(FromSize.Z, ToSize.Z) * RelativeTolerance + 1.0f;
+
+    bool bIsSameFormation =
+        FMath::Abs(FromSize.X - ToSize.X) < SizeToleranceX &&
+        FMath::Abs(FromSize.Y - ToSize.Y) < SizeToleranceY &&
+        FMath::Abs(FromSize.Z - ToSize.Z) < SizeToleranceZ;
 
     UE_LOG(LogFormationSystem, Log, TEXT("IsFormationTranslation: 检测结果=%s"), 
         bIsSameFormation ? TEXT("相同阵型") : TEXT("不同阵型"));

@@ -423,9 +423,14 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
     FVector ToSize = ToAABB.GetSize();
 
     // 相同阵型检测：尺寸相近则认为是相同阵型的平移
-    const float SizeTolerance = 10.0f;
-    bool bIsSameFormation = FMath::IsNearlyEqual(FromSize.X, ToSize.X, SizeTolerance) &&
-                           FMath::IsNearlyEqual(FromSize.Y, ToSize.Y, SizeTolerance);
+    // 修复：使用相对容差替代硬编码容差值，适配不同规模的阵型
+    // 注意：这里只检查 X 和 Y 维度，因为 2D/3D 平移通常只关心水平尺寸
+    const float RelativeTolerance = 0.1f; // 10% 相对容差
+    const float SizeToleranceX = FMath::Max(FromSize.X, ToSize.X) * RelativeTolerance + 1.0f;
+    const float SizeToleranceY = FMath::Max(FromSize.Y, ToSize.Y) * RelativeTolerance + 1.0f;
+
+    bool bIsSameFormation = FMath::IsNearlyEqual(FromSize.X, ToSize.X, SizeToleranceX) &&
+                           FMath::IsNearlyEqual(FromSize.Y, ToSize.Y, SizeToleranceY);
 
     // 输出更详细的调试信息
     UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: FromAABB Size=(%s)"), *FromSize.ToString());
