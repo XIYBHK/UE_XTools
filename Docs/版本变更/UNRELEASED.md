@@ -5,7 +5,60 @@
 
 ---
 
-## 📋 日志格式说明
+## 🎯 版本 1.9.6 之后
+
+### BlueprintExtensionsRuntime
+- 修复 Map 函数边界检查和循环逻辑
+- 优化 Map_Identical 算法性能（嵌套循环优化）
+- 修复变量反射 API 逻辑错误（ensureAlwaysMsgf）
+
+### EnhancedCodeFlow
+- 修复协程生命周期管理（异步任务崩溃）
+- 修复时间处理逻辑（累加方式跟踪超时）
+- 修复循环模式双重 Tick 问题
+- 添加 Owner 有效性检查
+
+### ObjectPool
+- 增强统计信息管理（新增 TotalReturned 字段）
+- 修复生命周期管理（OnReturnToPool 事件调用）
+- 优化 ContainsActor 性能（先检查小容器）
+- 移除多余头文件包含（Engine.h）
+
+### SortEditor
+- 添加 RebuildDynamicPins 递归调用保护
+
+### FormationSystem
+- 优化阵型尺寸比较容差计算（相对容差替代硬编码）
+- 添加 Z 维度尺寸检查
+- 修复浮点精度问题（Acos/DotProduct Clamp 钳位）
+- 移除冗余 ensure() 调用
+
+### PointSampling
+- 修复纹理采样缓冲区越界风险（RGBA16/RGBA16F 边界检查）
+
+### RandomShuffles
+- 修复通用数组随机采样输出状态不一致
+- 使用 thread_local 避免 PRD 状态共享污染
+
+### XTools
+- 添加 PRD 测试最大循环次数限制
+
+### FieldSystemExtensions
+- 修复空指针二次调用竞态条件（lambda 存储 GetOwner）
+
+### GeometryTool
+- 添加不支持的形状类型警告
+
+### X_AssetEditor
+- 优化 GenerateUniqueAssetName 性能（O(N²) → O(N)）
+
+### BlueprintAssist
+- 修复数组访问边界检查（GetLeftSibling 索引越界）
+
+### BlueprintScreenshotTool
+- 修复 RenderTarget 空指针检查
+
+---## 📋 日志格式说明
 
 ### 模块分类
 按模块名称分为独立章节，每个章节内使用简洁的列表格式记录变更
