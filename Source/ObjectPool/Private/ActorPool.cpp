@@ -124,7 +124,29 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
             ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
             return ResultActor;
         }
-        ResultActor = nullptr;
+
+        // 修复：激活失败时的处理
+        // Actor 已从 AvailableActors 移除，但激活失败
+        // 选择：重新放回池中（如果可能）或销毁
+        {
+            FWriteScopeLock WriteLock(PoolLock);
+            if (IsValid(ResultActor))
+            {
+                // 尝试重置状态后放回池中
+                if (FObjectPoolUtils::ResetActorForPooling(ResultActor))
+                {
+                    AvailableActors.Add(ResultActor);
+                    ACTORPOOL_LOG(Warning, TEXT("Actor激活失败，已重置并放回池: %s"), *ResultActor->GetName());
+                }
+                else
+                {
+                    // 无法重置，销毁
+                    ResultActor->Destroy();
+                    ACTORPOOL_LOG(Warning, TEXT("Actor激活失败且无法重置，已销毁: %s"), *ResultActor->GetName());
+                }
+            }
+            ResultActor = nullptr;
+        }
     }
 
     // 池中没有可用Actor，尝试创建新的
@@ -397,19 +419,44 @@ bool FActorPool::ContainsActor(const AActor* Actor) const
 
     FReadScopeLock ReadLock(PoolLock);
 
-    for (const TWeakObjectPtr<AActor>& Ptr : ActiveActors)
+    // 优化：首先检查较小的数组（通常是 AvailableActors）
+    // 这可以提高命中率，因为大多数检查的对象可能在可用列表中
+    if (AvailableActors.Num() < ActiveActors.Num())
     {
-        if (Ptr.Get() == Actor)
+        // 先检查 AvailableActors
+        for (const TWeakObjectPtr<AActor>& Ptr : AvailableActors)
         {
-            return true;
+            if (Ptr.Get() == Actor)
+            {
+                return true;
+            }
+        }
+        // 再检查 ActiveActors
+        for (const TWeakObjectPtr<AActor>& Ptr : ActiveActors)
+        {
+            if (Ptr.Get() == Actor)
+            {
+                return true;
+            }
         }
     }
-
-    for (const TWeakObjectPtr<AActor>& Ptr : AvailableActors)
+    else
     {
-        if (Ptr.Get() == Actor)
+        // 先检查 ActiveActors
+        for (const TWeakObjectPtr<AActor>& Ptr : ActiveActors)
         {
-            return true;
+            if (Ptr.Get() == Actor)
+            {
+                return true;
+            }
+        }
+        // 再检查 AvailableActors
+        for (const TWeakObjectPtr<AActor>& Ptr : AvailableActors)
+        {
+            if (Ptr.Get() == Actor)
+            {
+                return true;
+            }
         }
     }
 
@@ -427,22 +474,33 @@ void FActorPool::ClearPool()
 
     FWriteScopeLock WriteLock(PoolLock);
 
-    // 销毁所有可用Actor
+    // 修复：销毁前调用生命周期事件，让Actor有机会进行清理
+    // 处理可用Actor
     for (const TWeakObjectPtr<AActor>& ActorPtr : AvailableActors)
     {
-        if (ActorPtr.IsValid())
+        if (AActor* Actor = ActorPtr.Get())
         {
-            ActorPtr->Destroy();
+            // 调用归还到池的生命周期事件
+            if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+            {
+                IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+            }
+            Actor->Destroy();
         }
     }
     AvailableActors.Empty();
 
-    // 销毁所有活跃Actor
+    // 处理活跃Actor
     for (const TWeakObjectPtr<AActor>& ActorPtr : ActiveActors)
     {
-        if (ActorPtr.IsValid())
+        if (AActor* Actor = ActorPtr.Get())
         {
-            ActorPtr->Destroy();
+            // 调用归还到池的生命周期事件
+            if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+            {
+                IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+            }
+            Actor->Destroy();
         }
     }
     ActiveActors.Empty();
