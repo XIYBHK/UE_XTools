@@ -89,13 +89,20 @@ bool UMapExtensionsLibrary::GenericMap_GetKey(const void* TargetMap, const FMapP
 	if(TargetMap)
 	{
 		FScriptMapHelper MapHelper(MapProperty, TargetMap);
-		if(Index < 0 || Index > MapHelper.Num()-1) return false;
+		// 修复：空Map时Num()-1会导致整数下溢，应使用>=检查
+		if(Index < 0 || Index >= MapHelper.Num()) return false;
 
-		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
-		
+		const int32 InternalIndex = MapHelper.FindInternalIndex(Index);
+		if (InternalIndex == INDEX_NONE)
+		{
+			return false;
+		}
+
+		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(InternalIndex));
+
 		return true;
 	}
-	
+
 	return false;
 }
 #pragma endregion 
@@ -156,12 +163,19 @@ bool UMapExtensionsLibrary::GenericMap_GetValue(const void* TargetMap, const FMa
 	if(TargetMap)
 	{
 		FScriptMapHelper MapHelper(MapProperty, TargetMap);
-		if(Index < 0 || Index > MapHelper.Num()-1) return false;
-			
-		MapHelper.ValueProp->CopySingleValueToScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+		// 修复：空Map时Num()-1会导致整数下溢，应使用>=检查
+		if(Index < 0 || Index >= MapHelper.Num()) return false;
+
+		const int32 InternalIndex = MapHelper.FindInternalIndex(Index);
+		if (InternalIndex == INDEX_NONE)
+		{
+			return false;
+		}
+
+		MapHelper.ValueProp->CopySingleValueToScriptVM(OutValuePtr, MapHelper.GetValuePtr(InternalIndex));
 		return true;
 	}
-	
+
 	return false;
 }
 #pragma endregion 
@@ -207,14 +221,14 @@ void UMapExtensionsLibrary::GenericMap_Keys(const void* MapAddr, const FMapPrope
 
 		const FProperty* InnerProp = ArrayProperty->Inner;
 
-		int32 Size = MapHelper.Num();
-		for( int32 I = 0; Size; ++I )
+		// 修复：使用GetMaxIndex()作为循环上限，避免潜在的无限循环
+		const int32 MaxIndex = MapHelper.GetMaxIndex();
+		for( int32 I = 0; I < MaxIndex; ++I )
 		{
 			if(MapHelper.IsValidIndex(I))
 			{
 				const int32 LastIndex = ArrayHelper.AddValue();
 				InnerProp->CopySingleValueToScriptVM(ArrayHelper.GetRawPtr(LastIndex), MapHelper.GetKeyPtr(I));
-				--Size;
 			}
 		}
 	}
@@ -261,15 +275,15 @@ void UMapExtensionsLibrary::GenericMap_Values(const void* MapAddr, const FMapPro
 		ArrayHelper.EmptyValues();
 
 		const FProperty* InnerProp = ArrayProperty->Inner;
-		
-		int32 Size = MapHelper.Num();
-		for( int32 I = 0; Size; ++I )
+
+		// 修复：使用GetMaxIndex()作为循环上限，避免潜在的无限循环
+		const int32 MaxIndex = MapHelper.GetMaxIndex();
+		for( int32 I = 0; I < MaxIndex; ++I )
 		{
 			if(MapHelper.IsValidIndex(I))
 			{
 				const int32 LastIndex = ArrayHelper.AddValue();
 				InnerProp->CopySingleValueToScriptVM(ArrayHelper.GetRawPtr(LastIndex), MapHelper.GetValuePtr(I));
-				--Size;
 			}
 		}
 	}
