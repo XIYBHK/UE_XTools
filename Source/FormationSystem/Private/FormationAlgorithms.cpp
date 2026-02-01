@@ -435,12 +435,12 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
     // 输出更详细的调试信息
     UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: FromAABB Size=(%s)"), *FromSize.ToString());
     UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: ToAABB Size=(%s)"), *ToSize.ToString());
-    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 尺寸差异=(X:%.2f, Y:%.2f, Z:%.2f)"), 
+    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 尺寸差异=(X:%.2f, Y:%.2f, Z:%.2f)"),
            FMath::Abs(FromSize.X - ToSize.X),
            FMath::Abs(FromSize.Y - ToSize.Y),
            FMath::Abs(FromSize.Z - ToSize.Z));
-    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 容差=%.2f, 检测结果=%s"), 
-           SizeTolerance, bIsSameFormation ? TEXT("相同阵型") : TEXT("不同阵型"));
+    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 容差=(X:%.2f, Y:%.2f), 检测结果=%s"),
+           SizeToleranceX, SizeToleranceY, bIsSameFormation ? TEXT("相同阵型") : TEXT("不同阵型"));
     
     // 计算两个阵型的中心点
     FVector FromCenter = FromAABB.GetCenter();

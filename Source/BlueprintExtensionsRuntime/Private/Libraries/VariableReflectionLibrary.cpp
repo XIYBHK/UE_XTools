@@ -10,14 +10,13 @@ TArray<FString> UVariableReflectionLibrary::GetVariableNames(UClass* Class, bool
 	}
 
 	EFieldIteratorFlags::SuperClassFlags IteratorFlags = bIncludeSuper ? EFieldIteratorFlags::IncludeSuper : EFieldIteratorFlags::ExcludeSuper;
-		for (TFieldIterator<FProperty> PropertyIt(Class, IteratorFlags); PropertyIt; ++PropertyIt)
-		{
-			FProperty* Property = *PropertyIt;
+	for (TFieldIterator<FProperty> PropertyIt(Class, IteratorFlags); PropertyIt; ++PropertyIt)
+	{
+		FProperty* Property = *PropertyIt;
 
-			if ((!Property->HasAnyPropertyFlags(CPF_Parm) && Property->HasAllPropertyFlags(CPF_BlueprintVisible)))
-			{
-				VariableName.Add(Property->GetName());
-			}
+		if ((!Property->HasAnyPropertyFlags(CPF_Parm) && Property->HasAllPropertyFlags(CPF_BlueprintVisible)))
+		{
+			VariableName.Add(Property->GetName());
 		}
 	}
 	return VariableName;
