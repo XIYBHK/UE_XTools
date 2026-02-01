@@ -322,8 +322,16 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 			continue;
 		}
 
-		// 初始化Field命令
-		const FName OwnerName = GC->GetOwner() ? FName(*GC->GetOwner()->GetName()) : NAME_None;
+		// 修复：先存储 GetOwner() 结果，避免两次调用可能的竞态条件
+		const FName OwnerName = [GC]() -> FName
+		{
+			if (AActor* OwnerActor = GC->GetOwner())
+			{
+				return FName(*OwnerActor->GetName());
+			}
+			return NAME_None;
+		}();
+
 		FFieldSystemCommand LocalCommand = Command;
 		LocalCommand.InitFieldNodes(Solver->GetSolverTime(), OwnerName);
 
@@ -435,8 +443,16 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 				continue;
 			}
 
-			// 初始化Field命令（需要拷贝，因为InitFieldNodes会修改）
-			const FName OwnerName = GC->GetOwner() ? FName(*GC->GetOwner()->GetName()) : NAME_None;
+			// 修复：先存储 GetOwner() 结果，避免两次调用可能的竞态条件
+			const FName OwnerName = [GC]() -> FName
+			{
+				if (AActor* OwnerActor = GC->GetOwner())
+				{
+					return FName(*OwnerActor->GetName());
+				}
+				return NAME_None;
+			}();
+
 			FFieldSystemCommand LocalCommand = Command;
 			LocalCommand.InitFieldNodes(Solver->GetSolverTime(), OwnerName);
 
