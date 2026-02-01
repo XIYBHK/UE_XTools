@@ -43,6 +43,7 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
     , TotalRequests(0)
     , PoolHits(0)
     , TotalCreated(0)
+    , TotalReturned(0)
 {
     //  验证输入参数
     if (!IsValid(ActorClass))
@@ -293,6 +294,9 @@ bool FActorPool::ReturnActor(AActor* Actor)
     //  添加到可用列表
     AvailableActors.Add(Actor);
 
+    // 修复：更新归还统计信息
+    ++TotalReturned;
+
     ACTORPOOL_DEBUG(TEXT("Actor归还到池: %s"), *Actor->GetName());
     return true;
 }
@@ -364,6 +368,10 @@ FObjectPoolStats FActorPool::GetStats() const
     Stats.CurrentAvailable = AvailableActors.Num();
     Stats.PoolSize = Stats.CurrentActive + Stats.CurrentAvailable;
     Stats.ActorClassName = ActorClass ? ActorClass->GetName() : TEXT("Unknown");
+
+    // 修复：填充获取和归还统计信息
+    Stats.TotalAcquired = TotalRequests;
+    Stats.TotalReleased = TotalReturned;
 
     // 计算命中率
     if (TotalRequests > 0)

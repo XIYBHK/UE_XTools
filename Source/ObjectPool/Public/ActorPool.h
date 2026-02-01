@@ -193,12 +193,15 @@ private:
 
     /** 总请求次数 */
     int64 TotalRequests;
-    
+
     /** 池命中次数 */
     int32 PoolHits;
 
     /** 总创建的Actor数量 */
     int32 TotalCreated;
+
+    /** 总归还次数（用于平衡统计信息） */
+    int32 TotalReturned;
 
     /** 统计数据(缓存) */
     mutable FObjectPoolStats PoolStats; 
