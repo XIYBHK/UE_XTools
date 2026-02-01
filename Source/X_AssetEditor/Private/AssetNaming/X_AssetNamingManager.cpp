@@ -1299,8 +1299,24 @@ FString FX_AssetNamingManager::GenerateUniqueAssetName(
     IAssetRegistry& AssetRegistry,
     const FString& ExcludePackageName) const
 {
+    // 修复：一次性加载文件夹中的所有资产名称，避免 O(N²) 性能问题
+    TArray<FAssetData> AssetsInFolder;
+    AssetRegistry.GetAssetsByPath(FName(*PackagePath), AssetsInFolder, false);
+
+    // 使用 TSet 进行 O(1) 查找
+    TSet<FString> ExistingAssetNames;
+    ExistingAssetNames.Reserve(AssetsInFolder.Num());
+
+    for (const FAssetData& Asset : AssetsInFolder)
+    {
+        if (Asset.PackageName.ToString() != ExcludePackageName)
+        {
+            ExistingAssetNames.Add(Asset.AssetName.ToString());
+        }
+    }
+
     // 先尝试直接使用基础名称
-    if (!DetectNamingConflict(BaseName, PackagePath, AssetRegistry, ExcludePackageName))
+    if (!ExistingAssetNames.Contains(BaseName))
     {
         return BaseName;
     }
@@ -1311,7 +1327,7 @@ FString FX_AssetNamingManager::GenerateUniqueAssetName(
     do
     {
         CandidateName = FString::Printf(TEXT("%s_%02d"), *BaseName, Suffix++);
-    } while (DetectNamingConflict(CandidateName, PackagePath, AssetRegistry, ExcludePackageName));
+    } while (ExistingAssetNames.Contains(CandidateName));
 
     return CandidateName;
 }
