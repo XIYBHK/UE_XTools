@@ -333,6 +333,13 @@ FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPt
 	FPlatformProcess::Sleep(0.05f);
 
 	const auto RenderTarget = TStrongObjectPtr<UTextureRenderTarget2D>(DrawGraphEditor(InGraphEditor, WindowSizeVector2D));
+	if (!RenderTarget.IsValid())
+	{
+		UE_LOG(LogBlueprintScreenshotTool, Error, TEXT("Failed to create render target for screenshot"));
+		RestoreNodeSelection(InGraphEditor, SelectedNodes);
+		InGraphEditor->SetViewLocation(CachedViewLocation, CachedZoomAmount);
+		return FBSTScreenshotData();
+	}
 	FlushRenderingCommands();
 
 	FBSTScreenshotData ScreenshotData;
