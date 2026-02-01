@@ -863,28 +863,32 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 
 		if(MapHelper.Num() == KeysBHelper.Num() && MapHelper.Num() == ValuesBHelper.Num())
 		{
+			const FProperty* KeyProperty = MapHelper.GetKeyProperty();
+			const FProperty* ValueProperty = MapHelper.GetValueProperty();
+
+			// 修复：优化 O(N²) 算法，找到匹配后立即跳出内层循环
 			for(int32 MapIndex = 0; MapIndex < MapHelper.Num(); MapIndex++)
 			{
-				bool bFound = false;
-				const FProperty* KeyProperty = MapHelper.GetKeyProperty();
-				const FProperty* ValueProperty = MapHelper.GetValueProperty();
 				const int32 InternalIndex = MapHelper.FindInternalIndex(MapIndex);
+				bool bFound = false;
+
 				for(int32 KeyIndex = 0; KeyIndex < KeysBHelper.Num(); KeyIndex++)
 				{
 					if(KeyProperty->Identical(MapHelper.GetKeyPtr(InternalIndex), KeysBHelper.GetRawPtr(KeyIndex)) &&
 						ValueProperty->Identical(MapHelper.GetValuePtr(InternalIndex), ValuesBHelper.GetRawPtr(KeyIndex)))
 					{
 						bFound = true;
+						break; // 找到匹配后立即跳出
 					}
 				}
 
 				if(!bFound) return false;
 			}
-			
+
 			return true;
 		}
 	}
-	
+
 	return false;
 }
 #pragma endregion
