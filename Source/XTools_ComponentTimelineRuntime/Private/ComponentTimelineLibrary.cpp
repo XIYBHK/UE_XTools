@@ -53,8 +53,13 @@ namespace
 		// 创建唯一的时间轴组件名称
 		FName Name = MakeUniqueObjectName(ActorOwner,  UTimelineComponent::StaticClass(), *FString::Printf(TEXT("%s_%s"), *BlueprintOwner->GetName(), *TimelineTemplate->GetVariableName().ToString()));
 		UTimelineComponent* NewTimeline = NewObject<UTimelineComponent>(ActorOwner, Name);
-		NewTimeline->CreationMethod = EComponentCreationMethod::UserConstructionScript; // 标记为蓝图创建，以便在重新运行构造脚本时清理
-		ActorOwner->BlueprintCreatedComponents.Add(NewTimeline); // 添加到数组以便保存
+
+		// 修复：更改为Instance模式，防止Construction Script重新运行时被销毁
+		// 因为InitializeComponentTimelines是在BeginPlay中调用的，一旦组件被销毁将无法重建
+		NewTimeline->CreationMethod = EComponentCreationMethod::Instance;
+		// NewTimeline->CreationMethod = EComponentCreationMethod::UserConstructionScript; // 标记为蓝图创建，以便在重新运行构造脚本时清理
+		// ActorOwner->BlueprintCreatedComponents.Add(NewTimeline); // 添加到数组以便保存
+
 		NewTimeline->SetNetAddressable();	// 设置组件具有可用于复制的稳定名称
 
 		// 设置时间轴的基本属性
