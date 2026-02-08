@@ -48,6 +48,11 @@
 - 添加不支持的形状类型警告
 
 ### X_AssetEditor
+- **诊断** 自动规范命名功能在部分导入场景下不触发
+  - 问题：拖拽导入、批量导入等场景不触发 OnAssetPostImport
+  - 原因：Factory 时间窗机制依赖 OnNewAssetCreated，部分场景不触发该委托
+  - 方案：降低 Factory 时间窗权重，添加文件时间戳备用检测
+  - 参考资料：`Docs/开发文档/自动规范命名_导入检测问题分析.md`
 - 优化 GenerateUniqueAssetName 性能（O(N²) → O(N)）
 
 ### BlueprintAssist
