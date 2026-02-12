@@ -54,13 +54,10 @@
 - 禁用组件不必要的 Tick（降低 CPU 开销）
 
 ### X_AssetEditor
-- **诊断** 自动规范命名功能在部分导入场景下不触发
-  - 问题：拖拽导入、批量导入等场景不触发 OnAssetPostImport
-  - 原因：Factory 时间窗机制依赖 OnNewAssetCreated，部分场景不触发该委托
-  - 方案：降低 Factory 时间窗权重，添加文件时间戳备用检测
-  - 参考资料：`Docs/开发文档/自动规范命名_导入检测问题分析.md`
 - 优化 GenerateUniqueAssetName 性能（O(N²) → O(N)）
 - 修复 Lambda 捕获悬空指针风险（弱引用模式）
+- 改进自动规范命名导入检测（添加文件时间戳备用通道）
+- 简化用户操作上下文检测逻辑
 
 ### BlueprintAssist
 - 修复数组访问边界检查（GetLeftSibling 索引越界）

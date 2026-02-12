@@ -18,6 +18,7 @@
 #include "Internationalization/Regex.h"
 #include "EditorModeManager.h"
 #include "EditorModes.h"
+#include "Misc/PackageName.h"
 
 DEFINE_LOG_CATEGORY(LogX_AssetNamingDelegates);
 
@@ -183,153 +184,131 @@ void FX_AssetNamingDelegates::Shutdown()
 
 void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 {
-	// ========== 【诊断】添加详细日志 ==========
 	UE_LOG(LogX_AssetNamingDelegates, Verbose,
-		TEXT("OnAssetAdded 触发 - 资产: %s, 类型: %s, 包路径: %s, 包名: %s"),
+		TEXT("OnAssetAdded 触发 - 资产: %s, 类型: %s, 包路径: %s"),
 		*AssetData.AssetName.ToString(),
 		*AssetData.AssetClassPath.ToString(),
-		*AssetData.PackagePath.ToString(),
-		*AssetData.PackageName.ToString());
+		*AssetData.PackagePath.ToString());
 
 	if (!bIsActive || !RenameCallback.IsBound())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("检测到新资产但委托未激活 - bIsActive=%d, CallbackBound=%d: %s"),
-			bIsActive, RenameCallback.IsBound(), *AssetData.AssetName.ToString());
 		return;
 	}
 
-	// ========== 【关键修复】防止递归重命名导致崩溃 ==========
+	// 防止递归重命名
 	if (bIsProcessingAsset)
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log,
-			TEXT("检测到重入调用，跳过以防止递归: %s"),
-			*AssetData.AssetName.ToString());
 		return;
 	}
 
-	// 检查是否启用了"创建时自动重命名"
 	const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
 	if (!Settings || !Settings->bAutoRenameOnCreate)
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("检测到新资产但创建时自动重命名已关闭 - Settings=%p, bAutoRenameOnCreate=%d: %s"),
-			Settings, Settings ? Settings->bAutoRenameOnCreate : false, *AssetData.AssetName.ToString());
 		return;
 	}
 
-	// 检查是否处于特殊编辑模式（破碎模式、建模模式等）
+	// 跳过特殊编辑模式
 	if (IsInSpecialEditorMode())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("处于特殊编辑模式，跳过自动重命名: %s"), *AssetData.AssetName.ToString());
 		return;
 	}
 
-	// 验证资产是否需要处理
+	// 验证资产
 	if (!ShouldProcessAsset(AssetData))
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("资产未通过 ShouldProcessAsset 检查: %s"), *AssetData.AssetName.ToString());
 		return;
 	}
 
-	// ========== 【新增】检测是否为用户主动操作 ==========
-	// 避免在自动化流程（如复制粘贴、蓝图编译、插件生成）中误触发重命名
+	// 跳过非用户操作
 	if (!DetectUserOperationContext())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Log,
-			TEXT("检测到非用户操作上下文，跳过自动重命名: %s"), *AssetData.AssetName.ToString());
 		return;
 	}
 
-	// ========== 【优化】启动时跳过已存在的资产 ==========
+	// 跳过启动时的资产
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
 	if (!bIsAssetRegistryReady || AssetRegistry.IsLoadingAssets())
 	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose,
-			TEXT("AssetRegistry 加载中，跳过已存在资产: %s"),
-			*AssetData.AssetName.ToString());
 		return;
 	}
 
-	UE_LOG(LogX_AssetNamingDelegates, Log,
-		TEXT("检测到潜在新资产: %s（类型: %s）"),
-		*AssetData.AssetName.ToString(), *AssetData.AssetClassPath.ToString());
-
-	// ========== 【最优方案】Factory 时间窗 + 类型匹配机制 ==========
-	// 只有当资产添加事件发生在 FEditorDelegates::OnNewAssetCreated 触发后的短时间内，
-	// 且资产类型与 Factory 支持的类型兼容时，我们才认定这是真正的"新建"或"导入"操作。
-	// 复制、移动、从磁盘加载等操作不会触发 OnNewAssetCreated，因此会被自然排除。
-	// 即使时间窗内发生了移动操作，类型检查也能提供第二道防线。
-
-	// 获取配置的时间窗口
 	const float FactoryTimeWindow = Settings ? Settings->FactoryCreationTimeWindow : 5.0f;
 
-	// ========== 【关键修复】使用弱指针确保 Lambda 安全性 ==========
-	// 创建弱引用副本，避免在 Lambda 中直接捕获 this 指针
 	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
 
-	// 使用 NextTick 延迟执行，确保 Factory 事件已经触发并更新了 LastFactoryCreationTime
 	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, AssetData, FactoryTimeWindow](float DeltaTime) -> bool
 	{
-		// ========== 【安全检查】尝试提升弱指针为强指针 ==========
 		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
 		if (!SharedThis.IsValid() || !SharedThis->bIsActive || !SharedThis->RenameCallback.IsBound())
 		{
 			return false;
 		}
 
-		// 1. 检查时间窗 (使用配置的时间窗口)
+		bool bIsUserAction = false;
 		double CurrentTime = FPlatformTime::Seconds();
 		double TimeSinceLastFactory = CurrentTime - SharedThis->LastFactoryCreationTime;
 
-		if (TimeSinceLastFactory > FactoryTimeWindow)
+		// 通道 1: Factory 时间窗检测
+		if (TimeSinceLastFactory <= FactoryTimeWindow)
+		{
+			// 类型匹配检查
+			if (SharedThis->LastFactorySupportedClass.IsValid())
+			{
+				UClass* FactoryClass = SharedThis->LastFactorySupportedClass.Get();
+				UClass* AssetClass = AssetData.GetClass();
+				if (!AssetClass)
+				{
+					if (UObject* Asset = AssetData.GetAsset())
+					{
+						AssetClass = Asset->GetClass();
+					}
+				}
+				if (AssetClass && !AssetClass->IsChildOf(FactoryClass))
+				{
+					UE_LOG(LogX_AssetNamingDelegates, Verbose,
+						TEXT("类型不匹配，跳过: %s"), *AssetData.AssetName.ToString());
+					return false;
+				}
+			}
+			bIsUserAction = true;
+			UE_LOG(LogX_AssetNamingDelegates, Log,
+				TEXT("Factory 时间窗命中 (%.2fs): %s"), TimeSinceLastFactory, *AssetData.AssetName.ToString());
+		}
+
+		// 通道 2: 文件时间戳检测（备用，捕获拖拽导入等场景）
+		if (!bIsUserAction)
+		{
+			FString PackagePath = AssetData.PackagePath.ToString();
+			FString DiskPath = FPackageName::LongPackageNameToFilename(PackagePath, TEXT(".uasset"));
+			IPlatformFile& PlatformFile = IPlatformFile::GetPlatformPhysical();
+
+			if (PlatformFile.FileExists(*DiskPath))
+			{
+				FDateTime CreationTime = PlatformFile.GetCreationTime(*DiskPath);
+				FTimespan Age = FDateTime::Now() - CreationTime;
+
+				// 文件在 10 秒内创建
+				if (Age.GetTotalSeconds() <= 10.0)
+				{
+					bIsUserAction = true;
+					UE_LOG(LogX_AssetNamingDelegates, Log,
+						TEXT("文件时间戳命中 (%.1fs): %s"), Age.GetTotalSeconds(), *AssetData.AssetName.ToString());
+				}
+			}
+		}
+
+		if (!bIsUserAction)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
-				TEXT("跳过自动重命名：非 Factory 创建流程 (TimeSinceLastFactory: %.3f s, Window: %.1f s) - %s"),
-				TimeSinceLastFactory, FactoryTimeWindow, *AssetData.AssetName.ToString());
+				TEXT("所有检测通道未命中，跳过: %s"), *AssetData.AssetName.ToString());
 			return false;
 		}
 
-		// 2. 检查类型匹配 (防止在新建后的短时间内移动其他类型文件导致误判)
-		if (SharedThis->LastFactorySupportedClass.IsValid())
-		{
-			UClass* FactoryClass = SharedThis->LastFactorySupportedClass.Get();
-			UClass* AssetClass = AssetData.GetClass();
-
-			// 如果 AssetData 没解析出类，尝试加载资产
-			if (!AssetClass)
-			{
-				if (UObject* Asset = AssetData.GetAsset())
-				{
-					AssetClass = Asset->GetClass();
-				}
-			}
-
-			// 验证类型继承关系
-			if (AssetClass && !AssetClass->IsChildOf(FactoryClass))
-			{
-				UE_LOG(LogX_AssetNamingDelegates, Log,
-					TEXT("跳过自动重命名：资产类型不匹配 (Asset: %s, Factory: %s) - %s"),
-					*AssetClass->GetName(), *FactoryClass->GetName(), *AssetData.AssetName.ToString());
-				return false;
-			}
-		}
-
-		UE_LOG(LogX_AssetNamingDelegates, Log,
-			TEXT("确认 Factory 创建流程 (Time: %.3fs, TypeMatch: Yes)，执行自动重命名: %s"),
-			TimeSinceLastFactory, *AssetData.AssetName.ToString());
-
-		// 设置重入保护标志
+		// 执行重命名
 		SharedThis->bIsProcessingAsset = true;
-
-		// 触发重命名回调
 		SharedThis->RenameCallback.Execute(AssetData);
-
-		// 清除重入保护标志
 		SharedThis->bIsProcessingAsset = false;
 
 		return false;
@@ -574,94 +553,47 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 
 bool FX_AssetNamingDelegates::DetectUserOperationContext() const
 {
-	// ========== 【用户操作上下文检测】遵循UE最佳实践 ==========
-	
-	// 1. 基础环境检查
+	// 基础环境检查
 	if (!GIsEditor || IsRunningCommandlet())
 	{
 		return false;
 	}
 
-	// 2. 检查编辑器状态
 	if (!GEditor)
 	{
 		return false;
 	}
 
-	// 排除自动化测试模式
+	// 排除自动化测试
 	if (GIsAutomationTesting)
 	{
 		return false;
 	}
 
-	// 排除 Cooker 加载包的过程
+	// 排除 Cooker
 	if (GIsCookerLoadingPackage)
 	{
 		return false;
 	}
 
-	// 检查是否在 PIE/SIE 模式
-	bool bInValidEditorMode = !GEditor->IsPlayingSessionInEditor() &&
-							 !GEditor->GetPIEWorldContext() &&
-							 !GEditor->IsSimulatingInEditor();
-
-	if (!bInValidEditorMode)
+	// 排除 PIE/SIE 模式
+	if (GEditor->IsPlayingSessionInEditor() ||
+		GEditor->GetPIEWorldContext() ||
+		GEditor->IsSimulatingInEditor())
 	{
 		return false;
 	}
 
-	// 3. 检查ContentBrowser模块可用性
-	if (!FModuleManager::Get().IsModuleLoaded("ContentBrowser"))
+	// 检查 Slate 应用是否就绪（用户交互环境）
+	if (!FSlateApplication::IsInitialized())
 	{
 		return false;
 	}
 
-	// 4. 用户交互检测 (Slate)
-	// 这是区分"用户手动操作"与"脚本/自动化操作"最可靠的方法
-	bool bHasUserInteraction = false;
-	
-	if (IsInGameThread() && FSlateApplication::IsInitialized())
+	// 检查是否有活动窗口（用户正在使用编辑器）
+	const FSlateApplication& SlateApp = FSlateApplication::Get();
+	if (!SlateApp.GetActiveTopLevelWindow().IsValid())
 	{
-		const FSlateApplication& SlateApp = FSlateApplication::Get();
-		
-		// 检查 1: 是否有鼠标捕获（例如拖拽、点击）
-		if (SlateApp.HasAnyMouseCaptor())
-		{
-			bHasUserInteraction = true;
-		}
-		
-		// 检查 2: 是否有获得焦点的 Widget
-		// 只要用户在编辑器中操作，通常都会有一个 Widget 获得焦点（如内容浏览器、菜单）
-		// 如果是纯脚本后台运行，通常没有 Widget 获得焦点
-		if (!bHasUserInteraction)
-		{
-			// 使用 GetUserFocusedWidget(0) 检查是否有获得焦点的 Widget
-			// 0 是默认用户索引，在编辑器中通常适用
-			TSharedPtr<SWidget> FocusedWidget = SlateApp.GetUserFocusedWidget(0);
-			if (FocusedWidget.IsValid())
-			{
-				bHasUserInteraction = true;
-			}
-		}
-
-		// 检查 3: 检查鼠标是否在应用程序窗口内 (宽松条件)
-		// 如果是脚本运行，鼠标可能根本不在 UE 窗口内
-		if (!bHasUserInteraction)
-		{
-			// 如果鼠标就在窗口上方，我们也认为是潜在的用户交互
-			// 这可以捕获一些边缘情况（如快捷键操作但焦点丢失）
-			if (SlateApp.GetActiveTopLevelWindow().IsValid())
-			{
-				// 这里我们假设有活动窗口就是有交互的一个弱信号
-				// 但为了严谨，我们主要依赖前两个检查
-			}
-		}
-	}
-
-	// 如果没有检测到任何交互信号，且不是特殊情况，则认为是自动化操作
-	if (!bHasUserInteraction)
-	{
-		UE_LOG(LogX_AssetNamingDelegates, Verbose, TEXT("DetectUserOperationContext: 无用户交互信号 (无鼠标捕获/无焦点)"));
 		return false;
 	}
 
