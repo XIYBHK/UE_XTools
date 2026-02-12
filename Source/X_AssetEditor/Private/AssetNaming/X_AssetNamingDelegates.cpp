@@ -287,10 +287,14 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			if (PlatformFile.FileExists(*DiskPath))
 			{
 				FDateTime CreationTime = PlatformFile.GetCreationTime(*DiskPath);
+				FDateTime ModifiedTime = PlatformFile.GetTimeStamp(*DiskPath);
 				FTimespan Age = FDateTime::Now() - CreationTime;
 
-				// 文件在 10 秒内创建
-				if (Age.GetTotalSeconds() <= 10.0)
+				// 检查条件：
+				// 1. 文件在 10 秒内创建
+				// 2. 创建时间等于修改时间（新创建的文件，排除复制操作）
+				//    复制的文件通常会有不同的创建和修改时间
+				if (Age.GetTotalSeconds() <= 10.0 && CreationTime == ModifiedTime)
 				{
 					bIsUserAction = true;
 					UE_LOG(LogX_AssetNamingDelegates, Log,
