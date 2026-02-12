@@ -10,16 +10,21 @@
 - 优化 Map_Identical 算法性能（嵌套循环优化）
 - 修复变量反射 API 逻辑错误（ensureAlwaysMsgf）
 
+### ComponentTimeline
+- 修复时间轴组件生命周期（Construction Script 重建问题）
+
 ### EnhancedCodeFlow
 - 修复协程生命周期管理（异步任务崩溃）
 - 修复时间处理逻辑（累加方式跟踪超时）
 - 修复循环模式双重 Tick 问题
 - 添加 Owner 有效性检查
+- 添加协程异常处理和错误标记
 
 ### ObjectPool
 - 增强统计信息管理（新增 TotalReturned 字段）
 - 修复生命周期管理（OnReturnToPool 事件调用）
-- 优化 ContainsActor 性能（先检查小容器）
+- 优化 ContainsActor 性能（O(n)→O(1)，TSet 索引）
+- 实现 ClearTimersAndEvents 状态重置
 - 移除多余头文件包含（Engine.h）
 
 ### SortEditor
@@ -46,6 +51,7 @@
 
 ### GeometryTool
 - 添加不支持的形状类型警告
+- 禁用组件不必要的 Tick（降低 CPU 开销）
 
 ### X_AssetEditor
 - **诊断** 自动规范命名功能在部分导入场景下不触发
@@ -54,6 +60,7 @@
   - 方案：降低 Factory 时间窗权重，添加文件时间戳备用检测
   - 参考资料：`Docs/开发文档/自动规范命名_导入检测问题分析.md`
 - 优化 GenerateUniqueAssetName 性能（O(N²) → O(N)）
+- 修复 Lambda 捕获悬空指针风险（弱引用模式）
 
 ### BlueprintAssist
 - 修复数组访问边界检查（GetLeftSibling 索引越界）

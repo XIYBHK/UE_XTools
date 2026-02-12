@@ -212,6 +212,9 @@ private:
     /** 活跃的Actor列表 */
     TArray<TWeakObjectPtr<AActor>> ActiveActors;
 
+    /** 快速查找索引（用于ContainsActor O(1)查找） */
+    TSet<TWeakObjectPtr<AActor>> AllActorsSet;
+
     /** 读写锁，优化并发访问 */
     mutable FRWLock PoolLock;
 

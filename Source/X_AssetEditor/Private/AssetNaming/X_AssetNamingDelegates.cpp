@@ -703,9 +703,17 @@ void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
 	}
 
 	// 延迟绑定，确保 GLevelEditorModeTools 已初始化
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float) -> bool
+	// 使用弱引用避免模块卸载时的悬空指针
+	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf](float) -> bool
 	{
-		if (!bIsActive)
+		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
+		if (!SharedThis.IsValid())
+		{
+			return false; // 对象已销毁，停止 Ticker
+		}
+
+		if (!SharedThis->bIsActive)
 		{
 			return false;
 		}
@@ -716,8 +724,8 @@ void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
 		}
 
 		FEditorModeTools& ModeTools = GLevelEditorModeTools();
-		OnEditorModeChangedHandle = ModeTools.OnEditorModeIDChanged().AddRaw(
-			this, &FX_AssetNamingDelegates::OnEditorModeChanged
+		SharedThis->OnEditorModeChangedHandle = ModeTools.OnEditorModeIDChanged().AddRaw(
+			SharedThis.Get(), &FX_AssetNamingDelegates::OnEditorModeChanged
 		);
 
 		// 检查当前是否已在特殊模式中
@@ -725,7 +733,7 @@ void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
 		{
 			if (ModeTools.IsModeActive(ModeID))
 			{
-				bIsInSpecialMode = true;
+				SharedThis->bIsInSpecialMode = true;
 				UE_LOG(LogX_AssetNamingDelegates, Log,
 					TEXT("检测到当前已在特殊模式 %s 中，自动重命名已禁用"), *ModeID.ToString());
 				break;

@@ -24,8 +24,16 @@ struct FECFCoroutinePromise
 	std::suspend_never initial_suspend() noexcept { return {}; }
 	std::suspend_never final_suspend() noexcept { return {}; }
 	void return_void() { bHasFinished = true; }
-	void unhandled_exception() {}
+	void unhandled_exception()
+	{
+		// 标记协程已结束，避免悬空引用
+		bHasFinished = true;
+		bHasError = true;
+		// 注意：UE 默认禁用异常，此方法通常不会被调用
+		// 但为了防御性编程，仍然设置完成标志
+	}
 	bool bHasFinished = false;
+	bool bHasError = false;
 };
 
 #else

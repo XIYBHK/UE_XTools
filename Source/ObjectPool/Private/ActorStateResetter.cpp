@@ -395,9 +395,34 @@ void FActorStateResetter::ResetProjectileMovementComponent(UProjectileMovementCo
 }
 
 //  简化的实现，后续可以扩展
-void FActorStateResetter::ClearTimersAndEvents(AActor* Actor) {}
-void FActorStateResetter::ResetAIState(AActor* Actor) {}
-void FActorStateResetter::ResetAnimationState(AActor* Actor) {}
+void FActorStateResetter::ClearTimersAndEvents(AActor* Actor)
+{
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    // 清除 Actor 上的所有定时器
+    if (UWorld* World = Actor->GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(Actor);
+    }
+
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("清除定时器: %s"), *Actor->GetName());
+}
+
+void FActorStateResetter::ResetAIState(AActor* Actor)
+{
+    // AI 状态重置需要访问 AIController，暂不实现
+    // 用户可通过 IObjectPoolInterface 自定义实现
+}
+
+void FActorStateResetter::ResetAnimationState(AActor* Actor)
+{
+    // 动画状态重置需要访问 AnimInstance，暂不实现
+    // 用户可通过 IObjectPoolInterface 自定义实现
+}
+
 void FActorStateResetter::ResetAudioState(AActor* Actor) {}
 void FActorStateResetter::ResetParticleState(AActor* Actor) {}
 void FActorStateResetter::ResetNetworkState(AActor* Actor) {}

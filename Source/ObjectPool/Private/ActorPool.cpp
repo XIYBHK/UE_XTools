@@ -121,6 +121,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         {
             FWriteScopeLock WriteLock(PoolLock);
             ActiveActors.Add(ResultActor);
+            // Actor 已在 AllActorsSet 中（从 AvailableActors 移动），无需重复添加
             UpdateStats(true);
             ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
             return ResultActor;
@@ -137,11 +138,13 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
                 if (FObjectPoolUtils::ResetActorForPooling(ResultActor))
                 {
                     AvailableActors.Add(ResultActor);
+                    // Actor 已在 AllActorsSet 中，无需重复添加
                     ACTORPOOL_LOG(Warning, TEXT("Actor激活失败，已重置并放回池: %s"), *ResultActor->GetName());
                 }
                 else
                 {
-                    // 无法重置，销毁
+                    // 无法重置，销毁并从索引中移除
+                    AllActorsSet.Remove(ResultActor);
                     ResultActor->Destroy();
                     ACTORPOOL_LOG(Warning, TEXT("Actor激活失败且无法重置，已销毁: %s"), *ResultActor->GetName());
                 }
@@ -158,6 +161,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         {
             FWriteScopeLock WriteLock(PoolLock);
             ActiveActors.Add(NewActor);
+            AllActorsSet.Add(NewActor);
             UpdateStats(false);
             ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
             return NewActor;
@@ -286,6 +290,7 @@ bool FActorPool::ReturnActor(AActor* Actor)
         ACTORPOOL_DEBUG(TEXT("池已满，销毁Actor: %s"), *Actor->GetName());
         if (IsValid(Actor))
         {
+            AllActorsSet.Remove(Actor);
             Actor->Destroy();
         }
         return true; // 仍然算作成功归还
@@ -343,8 +348,9 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
             
             // 移动到池外位置
             NewActor->SetActorLocation(FVector(0.0f, 0.0f, -100000.0f), false, nullptr, ETeleportType::ResetPhysics);
-            
+
             AvailableActors.Add(NewActor);
+            AllActorsSet.Add(NewActor);
         }
         else
         {
@@ -427,48 +433,8 @@ bool FActorPool::ContainsActor(const AActor* Actor) const
 
     FReadScopeLock ReadLock(PoolLock);
 
-    // 优化：首先检查较小的数组（通常是 AvailableActors）
-    // 这可以提高命中率，因为大多数检查的对象可能在可用列表中
-    if (AvailableActors.Num() < ActiveActors.Num())
-    {
-        // 先检查 AvailableActors
-        for (const TWeakObjectPtr<AActor>& Ptr : AvailableActors)
-        {
-            if (Ptr.Get() == Actor)
-            {
-                return true;
-            }
-        }
-        // 再检查 ActiveActors
-        for (const TWeakObjectPtr<AActor>& Ptr : ActiveActors)
-        {
-            if (Ptr.Get() == Actor)
-            {
-                return true;
-            }
-        }
-    }
-    else
-    {
-        // 先检查 ActiveActors
-        for (const TWeakObjectPtr<AActor>& Ptr : ActiveActors)
-        {
-            if (Ptr.Get() == Actor)
-            {
-                return true;
-            }
-        }
-        // 再检查 AvailableActors
-        for (const TWeakObjectPtr<AActor>& Ptr : AvailableActors)
-        {
-            if (Ptr.Get() == Actor)
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
+    // 使用 TSet 实现 O(1) 查找
+    return AllActorsSet.Contains(Actor);
 }
 
 //  管理功能实现
@@ -512,6 +478,7 @@ void FActorPool::ClearPool()
         }
     }
     ActiveActors.Empty();
+    AllActorsSet.Empty();
 
     // 重置统计
     TotalRequests = 0;
@@ -547,6 +514,7 @@ void FActorPool::SetMaxSize(int32 NewMaxSize)
             TWeakObjectPtr<AActor> ActorPtr = AvailableActors.Pop();
             if (ActorPtr.IsValid())
             {
+                AllActorsSet.Remove(ActorPtr);
                 ActorPtr->Destroy();
             }
             --ExcessCount;
@@ -647,6 +615,7 @@ void FActorPool::CleanupInvalidActors()
     {
         if (!AvailableActors[i].IsValid())
         {
+            AllActorsSet.Remove(AvailableActors[i]);
             AvailableActors.RemoveAtSwap(i);
         }
     }
@@ -656,6 +625,7 @@ void FActorPool::CleanupInvalidActors()
     {
         if (!ActiveActors[i].IsValid())
         {
+            AllActorsSet.Remove(ActiveActors[i]);
             ActiveActors.RemoveAtSwap(i);
         }
     }

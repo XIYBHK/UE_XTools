@@ -35,6 +35,8 @@ namespace GeometryToolInternal
 
 UGeometryInstance::UGeometryInstance()
 {
+    // 禁用Tick，此组件不需要每帧更新
+    PrimaryComponentTick.bCanEverTick = false;
 }
 
 void UGeometryInstance::BeginPlay()
