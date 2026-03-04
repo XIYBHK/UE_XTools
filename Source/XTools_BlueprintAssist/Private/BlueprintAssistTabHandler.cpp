@@ -48,9 +48,9 @@ void FBATabHandler::Tick(const float DeltaTime)
 
 	CheckWindowFocusChanged();
 
-	if (ActiveGraphHandler.IsValid())
+	if (const TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin())
 	{
-		ActiveGraphHandler.Pin()->Tick(DeltaTime);
+		ActiveGH->Tick(DeltaTime);
 	}
 }
 
@@ -140,9 +140,9 @@ void FBATabHandler::CheckWindowFocusChanged()
 	{
 		LastActiveWindow = ActiveWindow;
 
-		if (ActiveGraphHandler.IsValid())
+		if (const TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin())
 		{
-			TSharedPtr<SWindow> GraphHandlerWindow = ActiveGraphHandler.Pin()->GetWindow();
+			TSharedPtr<SWindow> GraphHandlerWindow = ActiveGH->GetWindow();
 
 			bool bDifferentWindow = ActiveWindow != GraphHandlerWindow;
 
@@ -187,6 +187,11 @@ void FBATabHandler::SetGraphHandler(TSharedPtr<SDockTab> Tab, TSharedPtr<SGraphE
 	if (ActiveGraphHandler.IsValid())
 	{
 		TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin();
+		if (!ActiveGH.IsValid())
+		{
+			ActiveGraphHandler.Reset();
+			return;
+		}
 		if ((ActiveGH->GetGraphEditor() == GraphEditor) && (ActiveGH->GetTab() == Tab))
 		{
 			return;
@@ -199,7 +204,10 @@ void FBATabHandler::SetGraphHandler(TSharedPtr<SDockTab> Tab, TSharedPtr<SGraphE
 	{
 		ActiveGraphHandler = GraphHandlerMap[Tab];
 		check(ActiveGraphHandler.IsValid());
-		ActiveGraphHandler.Pin()->OnGainFocus();
+		if (const TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin())
+		{
+			ActiveGH->OnGainFocus();
+		}
 	}
 	else
 	{
@@ -327,9 +335,9 @@ void FBATabHandler::ProcessTabs()
 
 void FBATabHandler::ClearActiveGraphHandler()
 {
-	if (ActiveGraphHandler.IsValid())
+	if (const TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin())
 	{
-		ActiveGraphHandler.Pin()->OnLoseFocus();
+		ActiveGH->OnLoseFocus();
 	}
 
 	ActiveGraphHandler.Reset();
@@ -415,7 +423,14 @@ bool FBATabHandler::ProcessTabInternal(TSharedPtr<SDockTab> Tab)
 	// set our active graph handler to null
 	if (ActiveGraphHandler.IsValid())
 	{
-		const bool bDifferentWindow = FBAUtils::GetParentWindow(Tab) != ActiveGraphHandler.Pin()->GetWindow();
+		const TSharedPtr<FBAGraphHandler> ActiveGH = ActiveGraphHandler.Pin();
+		if (!ActiveGH.IsValid())
+		{
+			ActiveGraphHandler.Reset();
+			return false;
+		}
+
+		const bool bDifferentWindow = FBAUtils::GetParentWindow(Tab) != ActiveGH->GetWindow();
 
 		if (bDifferentWindow || Tab->GetTabRole() != PanelTab)
 		{
