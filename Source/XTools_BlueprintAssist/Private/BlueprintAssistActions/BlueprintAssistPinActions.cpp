@@ -224,7 +224,11 @@ void FBAPinActions::OpenPinLinkMenu()
 	}
 
 	UEdGraphPin* Pin = GraphHandler->GetSelectedPin();
-	check(Pin != nullptr)
+	if (Pin == nullptr)
+	{
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("OpenPinLinkMenu: Selected pin is null, skip opening menu."));
+		return;
+	}
 
 	TSharedRef<SBALinkPinMenu> Widget =
 		SNew(SBALinkPinMenu)
