@@ -158,7 +158,10 @@ void FElectronicNodesModule::ShutdownModule()
 
 void FElectronicNodesModule::ToggleMasterActivation() const
 {
-	ElectronicNodesSettings->ToggleMasterActivation();
+	if (ElectronicNodesSettings)
+	{
+		ElectronicNodesSettings->ToggleMasterActivation();
+	}
 }
 
 #undef LOCTEXT_NAMESPACE
