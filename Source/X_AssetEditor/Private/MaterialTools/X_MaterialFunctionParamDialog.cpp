@@ -111,9 +111,9 @@ void SX_MaterialFunctionParamDialog::Construct(const FArguments& InArgs, TWeakPt
 					.ContentPadding(FMargin(6, 2))
 					.OnClicked_Lambda([this, InParentWindow]()
 					{
-						if(InParentWindow.IsValid())
+						if (TSharedPtr<SWindow> ParentWindow = InParentWindow.Pin())
 						{
-							InParentWindow.Pin()->RequestDestroyWindow();
+							ParentWindow->RequestDestroyWindow();
 						}
 						bOKPressed = true;
 						return FReply::Handled(); 
@@ -135,9 +135,9 @@ void SX_MaterialFunctionParamDialog::Construct(const FArguments& InArgs, TWeakPt
 					.ContentPadding(FMargin(6, 2))
 					.OnClicked_Lambda([InParentWindow]()
 					{ 
-						if(InParentWindow.IsValid())
+						if (TSharedPtr<SWindow> ParentWindow = InParentWindow.Pin())
 						{
-							InParentWindow.Pin()->RequestDestroyWindow();
+							ParentWindow->RequestDestroyWindow();
 						}
 						return FReply::Handled(); 
 					})
