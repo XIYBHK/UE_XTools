@@ -101,7 +101,8 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 	if (!AssetRegistry.IsLoadingAssets())
 	{
 		UE_LOG(LogX_AssetNamingDelegates, Log,
-			TEXT("AssetRegistry 已加载完成，但仍将通过 OnFilesLoaded 延迟激活以确保安全"));
+			TEXT("AssetRegistry 已加载完成，立即进入延迟激活流程"));
+		OnFilesLoaded();
 	}
 	else
 	{
@@ -122,6 +123,10 @@ void FX_AssetNamingDelegates::Shutdown()
 	{
 		return;
 	}
+
+	// 必须最先置为 false，阻止并发/延迟回调继续执行
+	bIsActive = false;
+	bIsProcessingAsset = false;
 
 	// 1. 解绑 OnAssetPostImport
 	if (OnAssetPostImportHandle.IsValid() && GEditor)
@@ -167,13 +172,7 @@ void FX_AssetNamingDelegates::Shutdown()
 	// 5. 解绑编辑模式切换回调
 	UnbindEditorModeChangedDelegate();
 
-	// ========== 【关键修复】先禁用标志，阻止新的 Lambda 执行 ==========
-	// 必须在 Unbind 回调之前设置 bIsActive = false，避免竞态条件
-	// 时间窗口：Lambda 检查 bIsActive 后 → Unbind 前 → Execute 时崩溃
-	bIsActive = false;
-
 	// 清空重入标志和缓存
-	bIsProcessingAsset = false;
 	bIsAssetRegistryReady = false;
 	bIsInSpecialMode = false;
 
