@@ -270,7 +270,11 @@ void UK2Node_BaseTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
+		if (NodeSpawner == nullptr)
+		{
+			UE_LOG(LogTemp, Error, TEXT("UK2Node_BaseTimeline::GetMenuActions: failed to create node spawner"));
+			return;
+		}
 
 		// 自定义时间轴节点的Lambda函数
 		auto CustomizeTimelineNodeLambda = [](UEdGraphNode* NewNode, bool bIsTemplateNode)
@@ -293,6 +297,6 @@ void UK2Node_BaseTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 		};
 
 		NodeSpawner->CustomizeNodeDelegate = UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateStatic(CustomizeTimelineNodeLambda);
-			ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
 	}
 }

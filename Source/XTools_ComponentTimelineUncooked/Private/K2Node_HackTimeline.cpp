@@ -610,7 +610,11 @@ void UK2Node_HackTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
+		if (NodeSpawner == nullptr)
+		{
+			UE_LOG(LogTemp, Error, TEXT("UK2Node_HackTimeline::GetMenuActions: failed to create node spawner"));
+			return;
+		}
 
 		auto CustomizeTimelineNodeLambda = [](UEdGraphNode* NewNode, bool bIsTemplateNode)
 		{

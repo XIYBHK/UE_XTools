@@ -41,7 +41,10 @@ FText UK2Node_ComponentTimeline::GetNodeTitle(ENodeTitleType::Type TitleType) co
 	FText Title = FText::FromName(TimelineName);
 
 	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint != nullptr);
+	if (Blueprint == nullptr)
+	{
+		return LOCTEXT("NoTimelineTitle", "添加组件时间轴...");
+	}
 
 	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
 	// 如果该节点还没有生成时间轴，则使用描述性标题
