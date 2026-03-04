@@ -1272,7 +1272,10 @@ void FBAGraphHandler::AutoAddParentNode(UEdGraphNode* NewNode)
 			int32 NodeSizeY = 15;
 			if (UK2Node* Node = Cast<UK2Node>(NewNode))
 			{
-				NodeSizeY += Node->DEPRECATED_NodeWidget.IsValid() ? static_cast<int32>(Node->DEPRECATED_NodeWidget.Pin()->GetDesiredSize().Y) : 0;
+				if (TSharedPtr<SGraphNode> NodeWidget = Node->DEPRECATED_NodeWidget.Pin())
+				{
+					NodeSizeY += static_cast<int32>(NodeWidget->GetDesiredSize().Y);
+				}
 			}
 			ParentFunctionNode->NodePosX = FunctionFromNode.Node->NodePosX;
 			ParentFunctionNode->NodePosY = FunctionFromNode.Node->NodePosY + NodeSizeY;
@@ -1358,26 +1361,28 @@ void FBAGraphHandler::ShowSizeTimeoutNotification()
 	));
 
 	SizeTimeoutNotification = FSlateNotificationManager::Get().AddNotification(Info);
-	SizeTimeoutNotification.Pin()->SetCompletionState(SNotificationItem::CS_Pending);
-
-	SizeTimeoutNotification.Pin()->SetText(
-		TAttribute<FText>::Create(TAttribute<FText>::FGetter::CreateRaw(this, &FBAGraphHandler::GetSizeTimeoutMessage))
-	);
+	if (TSharedPtr<SNotificationItem> Notification = SizeTimeoutNotification.Pin())
+	{
+		Notification->SetCompletionState(SNotificationItem::CS_Pending);
+		Notification->SetText(
+			TAttribute<FText>::Create(TAttribute<FText>::FGetter::CreateRaw(this, &FBAGraphHandler::GetSizeTimeoutMessage))
+		);
+	}
 }
 
 void FBAGraphHandler::CancelSizeTimeoutNotification(bool bSaveFocusedNodeSize)
 {
-	if (SizeTimeoutNotification.IsValid())
+	if (TSharedPtr<SNotificationItem> Notification = SizeTimeoutNotification.Pin())
 	{
 		const FString NotificationMsg = FString::Printf(
 					TEXT("Using inaccurate node size for \"%s\""),
 					*FBAUtils::GetNodeName(FocusedNode.Get()));
 
-		SizeTimeoutNotification.Pin()->SetExpireDuration(0.5f);
-		SizeTimeoutNotification.Pin()->SetFadeOutDuration(0.5f);
-		SizeTimeoutNotification.Pin()->SetText(FText::FromString(NotificationMsg));
-		SizeTimeoutNotification.Pin()->SetCompletionState(SNotificationItem::CS_Fail);
-		SizeTimeoutNotification.Pin()->ExpireAndFadeout();
+		Notification->SetExpireDuration(0.5f);
+		Notification->SetFadeOutDuration(0.5f);
+		Notification->SetText(FText::FromString(NotificationMsg));
+		Notification->SetCompletionState(SNotificationItem::CS_Fail);
+		Notification->ExpireAndFadeout();
 		SizeTimeoutNotification.Reset();
 	}
 
@@ -1590,9 +1595,9 @@ void FBAGraphHandler::RunSavePostFormatting()
 
 TSharedPtr<SGraphEditor> FBAGraphHandler::AssignNewGraphEditorFromTab()
 {
-	if (CachedTab.IsValid())
+	if (TSharedPtr<SDockTab> PinnedTab = CachedTab.Pin())
 	{
-		const TSharedRef<SWidget> TabContent = CachedTab.Pin()->GetContent();
+		const TSharedRef<SWidget> TabContent = PinnedTab->GetContent();
 
 		// grab the graph editor from the tab
 		TSharedPtr<SGraphEditor> TabContentAsGraphEditor = FBAUtils::GetChildWidgetByTypesCasted<SGraphEditor>(TabContent, UBASettings::Get().SupportedGraphEditors);
@@ -1999,9 +2004,9 @@ void FBAGraphHandler::PostFormatComments(const TArray<TSharedPtr<FFormatterInter
 
 			const auto UpdateGraphPanel = [](TWeakPtr<SGraphPanel> LocalPanel)
 			{
-				if (LocalPanel.IsValid())
+				if (TSharedPtr<SGraphPanel> Panel = LocalPanel.Pin())
 				{
-					LocalPanel.Pin()->Update();
+					Panel->Update();
 				}
 			};
 
@@ -2662,9 +2667,12 @@ void FBAGraphHandler::UpdateCachedNodeSize(float DeltaTime)
 			// Complete the size timeout notification
 			if (SizeTimeoutNotification.IsValid())
 			{
-				SizeTimeoutNotification.Pin()->SetText(FText::FromString("Successfully calculated size"));
-				SizeTimeoutNotification.Pin()->ExpireAndFadeout();
-				SizeTimeoutNotification.Pin()->SetCompletionState(SNotificationItem::CS_Success);
+				if (TSharedPtr<SNotificationItem> Notification = SizeTimeoutNotification.Pin())
+				{
+					Notification->SetText(FText::FromString("Successfully calculated size"));
+					Notification->ExpireAndFadeout();
+					Notification->SetCompletionState(SNotificationItem::CS_Success);
+				}
 			}
 		}
 	}
