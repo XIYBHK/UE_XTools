@@ -19,6 +19,7 @@ void FBlueprintScreenshotToolCommandManager::UnregisterCommands()
 {
 	UnregisterToolbarExtension();
 	FBlueprintScreenshotToolCommands::Unregister();
+	CommandList.Reset();
 }
 
 void FBlueprintScreenshotToolCommandManager::OnTakeScreenshot()
@@ -45,7 +46,11 @@ void FBlueprintScreenshotToolCommandManager::MapCommands()
 void FBlueprintScreenshotToolCommandManager::RegisterToolbarExtension()
 {
 	auto ExtensibilityManager = FAssetEditorToolkit::GetSharedToolBarExtensibilityManager();
-	checkf(ExtensibilityManager.IsValid(), TEXT("ToolBarExtensibilityManager is not valid"));
+	if (!ExtensibilityManager.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("XTools_BlueprintScreenshotTool: ToolBarExtensibilityManager is invalid, skip toolbar extension registration."));
+		return;
+	}
 	
 	ToolbarExtension = MakeShareable(new FExtender());
 	ToolbarExtension->AddToolBarExtension("Asset", EExtensionHook::After, CommandList, FToolBarExtensionDelegate::CreateStatic(&FBlueprintScreenshotToolCommandManager::AddToolbarExtension));
@@ -54,11 +59,18 @@ void FBlueprintScreenshotToolCommandManager::RegisterToolbarExtension()
 
 void FBlueprintScreenshotToolCommandManager::UnregisterToolbarExtension()
 {
+	if (!ToolbarExtension.IsValid())
+	{
+		return;
+	}
+
 	const auto ExtensibilityManager = FAssetEditorToolkit::GetSharedToolBarExtensibilityManager();
 	if (ExtensibilityManager.IsValid())
 	{
 		ExtensibilityManager->RemoveExtender(ToolbarExtension);
 	}
+
+	ToolbarExtension.Reset();
 }
 
 void FBlueprintScreenshotToolCommandManager::AddToolbarExtension(FToolBarBuilder& ToolBarBuilder)

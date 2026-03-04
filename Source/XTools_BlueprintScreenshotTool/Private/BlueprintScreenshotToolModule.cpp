@@ -85,8 +85,11 @@ void FBlueprintScreenshotToolModule::UnregisterStyle()
 
 void FBlueprintScreenshotToolModule::UnregisterCommands()
 {
-	CommandManager->UnregisterCommands();
-	CommandManager.Reset();
+	if (CommandManager.IsValid())
+	{
+		CommandManager->UnregisterCommands();
+		CommandManager.Reset();
+	}
 }
 
 void FBlueprintScreenshotToolModule::UnregisterSettings()
