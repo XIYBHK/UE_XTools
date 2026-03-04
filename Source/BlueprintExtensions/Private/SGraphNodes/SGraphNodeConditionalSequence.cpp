@@ -48,7 +48,11 @@ void SGraphNodeConditionalSequence::CreatePinWidgets()
 		if ((!Pin->bHidden) && (Pin != DefaultPin))
 		{
 			TSharedPtr<SGraphPin> NewPin = FNodeFactory::CreatePinWidget(Pin);
-			check(NewPin.IsValid());
+			if (!NewPin.IsValid())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("SGraphNodeConditionalSequence: Failed to create pin widget for pin %s"), *Pin->GetName());
+				continue;
+			}
 
 			this->AddPin(NewPin.ToSharedRef());
 		}
