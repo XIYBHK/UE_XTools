@@ -383,6 +383,21 @@ void FBAGraphActions::SaveAndFormat()
 	});
 }
 
+void FBAGraphActions::Cleanup()
+{
+	if (!SaveAndFormatHandle.IsValid())
+	{
+		return;
+	}
+
+	if (TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler())
+	{
+		GraphHandler->OnPostFormatting.Remove(SaveAndFormatHandle);
+	}
+
+	SaveAndFormatHandle.Reset();
+}
+
 void FBAGraphActions::FocusGraphPanel()
 {
 	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();

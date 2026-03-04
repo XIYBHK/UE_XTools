@@ -28,6 +28,7 @@ public:
 	void OnOpenContextMenu();
 	void CreateRerouteNode();
 	void SaveAndFormat();
+	void Cleanup();
 
 	// Graph read only commands
 	TSharedPtr<FUICommandList> GraphReadOnlyCommands;

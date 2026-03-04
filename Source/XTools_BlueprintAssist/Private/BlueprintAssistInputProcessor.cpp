@@ -74,6 +74,8 @@ FBAInputProcessor::~FBAInputProcessor() {}
 
 void FBAInputProcessor::Cleanup()
 {
+	GraphActions.Cleanup();
+
 	if (FSlateApplication::IsInitialized())
 	{
 		if (AppActivationStateDelegateHandle.IsValid())
