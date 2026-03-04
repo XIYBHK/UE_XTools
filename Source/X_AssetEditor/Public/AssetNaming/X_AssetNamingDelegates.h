@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
+#include "Containers/Ticker.h"
 #include "EditorModes.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNamingDelegates, Log, All);
@@ -79,6 +80,9 @@ private:
 	FDelegateHandle OnNewAssetCreatedHandle;
 	FDelegateHandle OnFilesLoadedHandle;
 	FDelegateHandle OnEditorModeChangedHandle;
+	FTSTicker::FDelegateHandle DelayedActivationTickerHandle;
+	FTSTicker::FDelegateHandle SecondaryActivationTickerHandle;
+	FTSTicker::FDelegateHandle ModeBindingTickerHandle;
 
 	/** 激活状态 */
 	bool bIsActive = false;

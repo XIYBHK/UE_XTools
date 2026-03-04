@@ -96,6 +96,7 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnNewAssetCreated 委托"));
 
 	// ========== 【关键修复】无论 AssetRegistry 是否已加载，都延迟激活 ==========
+	bIsActive = true;
 	bIsAssetRegistryReady = false;
 
 	if (!AssetRegistry.IsLoadingAssets())
@@ -112,8 +113,6 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 
 	// 5. 绑定编辑模式切换回调
 	BindEditorModeChangedDelegate();
-
-	bIsActive = true;
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("资产命名委托已初始化"));
 }
 
@@ -171,6 +170,24 @@ void FX_AssetNamingDelegates::Shutdown()
 
 	// 5. 解绑编辑模式切换回调
 	UnbindEditorModeChangedDelegate();
+
+	// 6. 移除所有挂起的 Ticker，避免关闭后回调继续运行
+	FTSTicker& CoreTicker = FTSTicker::GetCoreTicker();
+	if (DelayedActivationTickerHandle.IsValid())
+	{
+		CoreTicker.RemoveTicker(DelayedActivationTickerHandle);
+		DelayedActivationTickerHandle.Reset();
+	}
+	if (SecondaryActivationTickerHandle.IsValid())
+	{
+		CoreTicker.RemoveTicker(SecondaryActivationTickerHandle);
+		SecondaryActivationTickerHandle.Reset();
+	}
+	if (ModeBindingTickerHandle.IsValid())
+	{
+		CoreTicker.RemoveTicker(ModeBindingTickerHandle);
+		ModeBindingTickerHandle.Reset();
+	}
 
 	// 清空重入标志和缓存
 	bIsAssetRegistryReady = false;
@@ -507,7 +524,18 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 	// ========== 【关键修复】使用弱指针确保 Lambda 安全性 ==========
 	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
 
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, ActivationDelay](float DeltaTime) -> bool
+	if (DelayedActivationTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(DelayedActivationTickerHandle);
+		DelayedActivationTickerHandle.Reset();
+	}
+	if (SecondaryActivationTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(SecondaryActivationTickerHandle);
+		SecondaryActivationTickerHandle.Reset();
+	}
+
+	DelayedActivationTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, ActivationDelay](float DeltaTime) -> bool
 	{
 		// ========== 【安全检查】尝试提升弱指针为强指针 ==========
 		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
@@ -530,7 +558,13 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 
 			// 再次使用弱指针确保安全性
 			TWeakPtr<FX_AssetNamingDelegates> WeakThis2 = SharedThis->AsShared();
-			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis2](float DT) -> bool
+			if (SharedThis->SecondaryActivationTickerHandle.IsValid())
+			{
+				FTSTicker::GetCoreTicker().RemoveTicker(SharedThis->SecondaryActivationTickerHandle);
+				SharedThis->SecondaryActivationTickerHandle.Reset();
+			}
+
+			SharedThis->SecondaryActivationTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis2](float DT) -> bool
 			{
 				TSharedPtr<FX_AssetNamingDelegates> SharedThis2 = WeakThis2.Pin();
 				if (!SharedThis2.IsValid())
@@ -540,6 +574,7 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 					return false;
 				}
 
+				SharedThis2->SecondaryActivationTickerHandle.Reset();
 				SharedThis2->bIsAssetRegistryReady = true;
 				UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("延迟激活完成（强制），现在开始处理新创建的资产"));
 				return false;
@@ -551,6 +586,7 @@ void FX_AssetNamingDelegates::OnFilesLoaded()
 			UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("延迟激活完成，现在开始处理新创建的资产"));
 		}
 
+		SharedThis->DelayedActivationTickerHandle.Reset();
 		return false; // 只执行一次
 	}), ActivationDelay);
 }
@@ -633,7 +669,7 @@ void FX_AssetNamingDelegates::OnEditorModeChanged(const FEditorModeID& ModeID, b
 
 void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
 {
-	if (OnEditorModeChangedHandle.IsValid())
+	if (OnEditorModeChangedHandle.IsValid() || ModeBindingTickerHandle.IsValid())
 	{
 		return;
 	}
@@ -641,7 +677,7 @@ void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
 	// 延迟绑定，确保 GLevelEditorModeTools 已初始化
 	// 使用弱引用避免模块卸载时的悬空指针
 	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf](float) -> bool
+	ModeBindingTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf](float) -> bool
 	{
 		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
 		if (!SharedThis.IsValid())
@@ -677,12 +713,19 @@ void FX_AssetNamingDelegates::BindEditorModeChangedDelegate()
 		}
 
 		UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnEditorModeIDChanged 委托"));
+		SharedThis->ModeBindingTickerHandle.Reset();
 		return false;
 	}), 0.1f);
 }
 
 void FX_AssetNamingDelegates::UnbindEditorModeChangedDelegate()
 {
+	if (ModeBindingTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(ModeBindingTickerHandle);
+		ModeBindingTickerHandle.Reset();
+	}
+
 	if (!OnEditorModeChangedHandle.IsValid())
 	{
 		return;
