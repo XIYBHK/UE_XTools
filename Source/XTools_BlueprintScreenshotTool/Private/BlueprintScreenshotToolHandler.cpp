@@ -397,7 +397,11 @@ bool UBlueprintScreenshotToolHandler::HasAnySelectedNodes(const TSet<TSharedPtr<
 
 void UBlueprintScreenshotToolHandler::ShowNotification(const TArray<FString>& InPaths)
 {
-	checkf(InPaths.Num() > 0, TEXT("InPaths must not be empty"));
+	if (InPaths.Num() == 0)
+	{
+		UE_LOG(LogBlueprintScreenshotTool, Warning, TEXT("ShowNotification called with empty paths, skip notification."));
+		return;
+	}
 
 	FFormatNamedArguments Arguments;
 	Arguments.Add(TEXT("Count"), InPaths.Num());
