@@ -59,7 +59,10 @@ TSharedRef<ITableRow> SBACreateAssetMenu::CreateItemWidget(TSharedPtr<FBACreateA
 	FLinearColor AssetColor = FLinearColor::White;
 	if (AssetTypeActions.IsValid())
 	{
-		AssetColor = AssetTypeActions.Pin()->GetTypeColor();
+		if (TSharedPtr<IAssetTypeActions> PinnedAssetTypeActions = AssetTypeActions.Pin())
+		{
+			AssetColor = PinnedAssetTypeActions->GetTypeColor();
+		}
 	}
 
 	if (ClassThumbnailBrushOverride.IsNone())
