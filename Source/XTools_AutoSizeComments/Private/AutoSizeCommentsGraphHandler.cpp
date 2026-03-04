@@ -341,13 +341,20 @@ void FAutoSizeCommentGraphHandler::RefreshGraphVisualRefresh(TWeakPtr<SGraphPane
 		return;
 	}
 
-	GraphPanel.Pin()->PurgeVisualRepresentation();
+	if (TSharedPtr<SGraphPanel> PinnedGraphPanel = GraphPanel.Pin())
+	{
+		PinnedGraphPanel->PurgeVisualRepresentation();
+	}
+	else
+	{
+		return;
+	}
 
 	const auto UpdateGraphPanel = [](TWeakPtr<SGraphPanel> LocalPanel)
 	{
-		if (LocalPanel.IsValid())
+		if (TSharedPtr<SGraphPanel> PinnedLocalPanel = LocalPanel.Pin())
 		{
-			LocalPanel.Pin()->Update();
+			PinnedLocalPanel->Update();
 		}
 	};
 

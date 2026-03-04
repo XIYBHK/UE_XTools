@@ -779,9 +779,9 @@ void SAutoSizeCommentsGraphNode::SetOwner(const TSharedRef<SGraphPanel>& OwnerPa
 	// since the graph node is created twice, we need to delay initialization so the correct graph node gets initialized
 	const auto InitNode = [](TWeakPtr<SAutoSizeCommentsGraphNode> NodePtr, const TArray<TWeakObjectPtr<UObject>>& SelectedNodes)
 	{
-		if (NodePtr.IsValid())
+		if (TSharedPtr<SAutoSizeCommentsGraphNode> PinnedNode = NodePtr.Pin())
 		{
-			NodePtr.Pin()->InitializeASCNode(SelectedNodes);
+			PinnedNode->InitializeASCNode(SelectedNodes);
 		}
 	};
 
@@ -2008,10 +2008,13 @@ EASCAnchorPoint SAutoSizeCommentsGraphNode::GetAnchorPoint(const FGeometry& MyGe
 	float AnchorSizeScale = 1.0f;
 	if (OwnerGraphPanelPtr.IsValid())
 	{
-		const float GraphZoom = OwnerGraphPanelPtr.Pin()->GetZoomAmount();
-		if (GraphZoom > 0.0f)
+		if (TSharedPtr<SGraphPanel> OwnerGraphPanel = OwnerGraphPanelPtr.Pin())
 		{
-			AnchorSizeScale = FMath::Clamp(1.0f / GraphZoom, 1.0f, 4.0f);
+			const float GraphZoom = OwnerGraphPanel->GetZoomAmount();
+			if (GraphZoom > 0.0f)
+			{
+				AnchorSizeScale = FMath::Clamp(1.0f / GraphZoom, 1.0f, 4.0f);
+			}
 		}
 	}
 
