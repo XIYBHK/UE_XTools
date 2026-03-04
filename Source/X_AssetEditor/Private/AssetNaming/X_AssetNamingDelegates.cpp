@@ -286,8 +286,9 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 
 			if (PlatformFile.FileExists(*DiskPath))
 			{
-				FDateTime CreationTime = PlatformFile.GetCreationTime(*DiskPath);
-				FDateTime ModifiedTime = PlatformFile.GetTimeStamp(*DiskPath);
+				const FFileStatData FileStat = PlatformFile.GetStatData(*DiskPath);
+				const FDateTime CreationTime = FileStat.CreationTime;
+				const FDateTime ModifiedTime = FileStat.ModificationTime;
 				FTimespan Age = FDateTime::Now() - CreationTime;
 
 				// 检查条件：

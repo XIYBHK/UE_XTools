@@ -126,17 +126,20 @@ void FX_AssetEditorModule::RegisterMenusWhenReady()
     }
     else
     {
-        // 使用简化的回调注册
         UToolMenus::RegisterStartupCallback(
-            FSimpleMulticastDelegate::FDelegate::CreateStatic([]()
-            {
-                if (FX_AssetEditorModule::IsAvailable())
-                {
-                    FX_MenuExtensionManager::Get().RegisterMenus();
-                }
-            })
+            FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FX_AssetEditorModule::OnToolMenusStartupReady)
         );
     }
+}
+
+void FX_AssetEditorModule::OnToolMenusStartupReady()
+{
+    if (!bIsInitialized || bIsShuttingDown)
+    {
+        return;
+    }
+
+    FX_MenuExtensionManager::Get().RegisterMenus();
 }
 
 void FX_AssetEditorModule::CleanupManagers()
@@ -157,9 +160,12 @@ void FX_AssetEditorModule::CleanupManagers()
     // 2. 清理模块注册
     FX_ModuleRegistrationManager::Get().UnregisterAll();
 
-    // 3. UToolMenus 会在模块卸载时自动清理，无需显式调用 UnregisterOwner
-    // 参考：BlueprintAssist 和 AutoSizeComments 等成熟插件都不手动清理 UToolMenus
-    // 在编辑器退出时调用可能导致访问已卸载的模块，引发误报 Ensure
+    // 3. 显式清理 ToolMenus 回调，避免热重载/重复加载时残留回调
+    if (UToolMenus::IsToolMenuUIEnabled())
+    {
+        UToolMenus::UnRegisterStartupCallback(this);
+        UToolMenus::UnregisterOwner(this);
+    }
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("X_AssetEditor 管理器清理完成"));
 }

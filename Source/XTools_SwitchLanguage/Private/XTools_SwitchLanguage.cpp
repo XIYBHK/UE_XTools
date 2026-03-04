@@ -11,6 +11,8 @@
 #include "Interfaces/IMainFrameModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Interfaces/IPluginManager.h"
+#include "Editor.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FXTools_SwitchLanguageModule"
 
@@ -40,24 +42,42 @@ void FXTools_SwitchLanguageModule::StartupModule()
 	// 绑定到主窗口
 	IMainFrameModule& MainFrame = FModuleManager::GetModuleChecked<IMainFrameModule>("MainFrame");
 #if ENGINE_MAJOR_VERSION >= 5
-	TSharedPtr<FUICommandList> MainFrameCommands = MainFrame.GetMainFrameCommandBindings();
+	TSharedPtr<FUICommandList> MainFrameCommandsLocal = MainFrame.GetMainFrameCommandBindings();
 #else
-	TSharedRef<FUICommandList> MainFrameCommands = MainFrame.GetMainFrameCommands();
+	TSharedRef<FUICommandList> MainFrameCommandsLocal = MainFrame.GetMainFrameCommands();
 #endif
-	MainFrameCommands->Append(PluginCommands.ToSharedRef());
+	MainFrameCommandsLocal->Append(PluginCommands.ToSharedRef());
+	MainFrameCommands = MainFrameCommandsLocal;
 
 	// 注册工具栏菜单
 	UToolMenus::RegisterStartupCallback(
 		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FXTools_SwitchLanguageModule::RegisterMenus));
+
+	bInitialized = true;
 }
 
 void FXTools_SwitchLanguageModule::ShutdownModule()
 {
+	if (!bInitialized)
+	{
+		return;
+	}
+
+	if (const TSharedPtr<FUICommandList> MainFrameCommandList = MainFrameCommands.Pin())
+	{
+		MainFrameCommandList->UnmapAction(FXTools_SwitchLanguageCommands::Get().PluginAction);
+	}
+
+	MainFrameCommands.Reset();
+	PluginCommands.Reset();
+
 	// 模块关闭
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
 	FXTools_SwitchLanguageStyle::Shutdown();
 	FXTools_SwitchLanguageCommands::Unregister();
+
+	bInitialized = false;
 }
 
 void FXTools_SwitchLanguageModule::PluginButtonClicked()
@@ -84,7 +104,17 @@ void FXTools_SwitchLanguageModule::PluginButtonClicked()
 
 void FXTools_SwitchLanguageModule::RefreshBlueprints()
 {
+	if (!GEditor)
+	{
+		return;
+	}
+
 	UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+	if (!AssetEditorSubsystem)
+	{
+		return;
+	}
+
 	TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
 
 	if (EditedAssets.Num() > 0)

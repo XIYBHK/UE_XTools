@@ -9,6 +9,9 @@
 #include "ElectronicNodesSettings.h"
 #include "Modules/ModuleInterface.h"
 
+struct FENConnectionDrawingPolicyFactory;
+class FUICommandList;
+
 class FElectronicNodesModule : public IModuleInterface
 {
 public:
@@ -22,6 +25,9 @@ public:
 private:
 	UElectronicNodesSettings* ElectronicNodesSettings = nullptr;
 	FString GlobalSettingsFile;
+	TSharedPtr<FENConnectionDrawingPolicyFactory> ENConnectionFactory;
+	TWeakPtr<FUICommandList> MainFrameCommandBindings;
+	bool bInitialized = false;
 
 	void ReloadConfiguration(UObject* Object, struct FPropertyChangedEvent& Property);
 };

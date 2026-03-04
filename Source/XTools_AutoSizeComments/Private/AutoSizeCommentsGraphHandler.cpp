@@ -919,7 +919,7 @@ void FAutoSizeCommentGraphHandler::OnNodeDeleted(const FEdGraphEditAction& Actio
 		const UEdGraphNode_Comment* Comment = Cast<UEdGraphNode_Comment>(Node);
 		if (!Comment)
 		{
-			return;
+			continue;
 		}
 
 		if (Action.Graph)

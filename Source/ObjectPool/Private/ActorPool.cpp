@@ -130,6 +130,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         // 修复：激活失败时的处理
         // Actor 已从 AvailableActors 移除，但激活失败
         // 选择：重新放回池中（如果可能）或销毁
+        bool bShouldDestroyFailedActor = false;
         {
             FWriteScopeLock WriteLock(PoolLock);
             if (IsValid(ResultActor))
@@ -143,14 +144,19 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
                 }
                 else
                 {
-                    // 无法重置，销毁并从索引中移除
+                    // 无法重置，从索引中移除并在锁外销毁，避免锁内重操作
                     AllActorsSet.Remove(ResultActor);
-                    ResultActor->Destroy();
-                    ACTORPOOL_LOG(Warning, TEXT("Actor激活失败且无法重置，已销毁: %s"), *ResultActor->GetName());
+                    bShouldDestroyFailedActor = true;
                 }
             }
-            ResultActor = nullptr;
         }
+
+        if (bShouldDestroyFailedActor && IsValid(ResultActor))
+        {
+            ACTORPOOL_LOG(Warning, TEXT("Actor激活失败且无法重置，已销毁: %s"), *ResultActor->GetName());
+            ResultActor->Destroy();
+        }
+        ResultActor = nullptr;
     }
 
     // 池中没有可用Actor，尝试创建新的
@@ -315,17 +321,20 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
 
     ACTORPOOL_LOG(Log, TEXT("预热池: %s, 数量=%d"), *ActorClass->GetName(), Count);
 
-    FWriteScopeLock WriteLock(PoolLock);
-
-    //  直接计算池大小，避免调用GetPoolSize()导致的嵌套锁死锁
-    int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
-    int32 ActualCount = FMath::Min(Count, MaxPoolSize - CurrentPoolSize);
+    int32 ActualCount = 0;
+    {
+        FReadScopeLock ReadLock(PoolLock);
+        //  直接计算池大小，避免调用GetPoolSize()导致的嵌套锁死锁
+        const int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
+        ActualCount = FMath::Min(Count, MaxPoolSize - CurrentPoolSize);
+    }
 
     if (ActualCount <= 0)
     {
         return;
     }
 
+    int32 CreatedCount = 0;
     for (int32 i = 0; i < ActualCount; ++i)
     {
         AActor* NewActor = CreateNewActor(World);
@@ -349,8 +358,28 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
             // 移动到池外位置
             NewActor->SetActorLocation(FVector(0.0f, 0.0f, -100000.0f), false, nullptr, ETeleportType::ResetPhysics);
 
-            AvailableActors.Add(NewActor);
-            AllActorsSet.Add(NewActor);
+            bool bAddedToPool = false;
+            {
+                FWriteScopeLock WriteLock(PoolLock);
+                const int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
+                if (CurrentPoolSize < MaxPoolSize)
+                {
+                    AvailableActors.Add(NewActor);
+                    AllActorsSet.Add(NewActor);
+                    bAddedToPool = true;
+                }
+            }
+
+            if (bAddedToPool)
+            {
+                ++CreatedCount;
+            }
+            else
+            {
+                // 在锁外销毁，避免重入导致锁竞争
+                NewActor->Destroy();
+                break;
+            }
         }
         else
         {
@@ -359,7 +388,7 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
         }
     }
 
-    ACTORPOOL_LOG(Log, TEXT("预热完成: %s, 实际创建=%d"), *ActorClass->GetName(), AvailableActors.Num());
+    ACTORPOOL_LOG(Log, TEXT("预热完成: %s, 实际创建=%d"), *ActorClass->GetName(), CreatedCount);
 }
 
 //  状态查询功能实现
@@ -446,44 +475,51 @@ void FActorPool::ClearPool()
         return;
     }
 
-    FWriteScopeLock WriteLock(PoolLock);
-
-    // 修复：销毁前调用生命周期事件，让Actor有机会进行清理
-    // 处理可用Actor
-    for (const TWeakObjectPtr<AActor>& ActorPtr : AvailableActors)
+    TArray<AActor*> ActorsToDestroy;
     {
-        if (AActor* Actor = ActorPtr.Get())
-        {
-            // 调用归还到池的生命周期事件
-            if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
-            {
-                IObjectPoolInterface::Execute_OnReturnToPool(Actor);
-            }
-            Actor->Destroy();
-        }
-    }
-    AvailableActors.Empty();
+        FWriteScopeLock WriteLock(PoolLock);
 
-    // 处理活跃Actor
-    for (const TWeakObjectPtr<AActor>& ActorPtr : ActiveActors)
+        // 先收集，后在锁外执行销毁和生命周期事件，避免锁内重操作
+        for (const TWeakObjectPtr<AActor>& ActorPtr : AvailableActors)
+        {
+            if (AActor* Actor = ActorPtr.Get())
+            {
+                ActorsToDestroy.Add(Actor);
+            }
+        }
+
+        for (const TWeakObjectPtr<AActor>& ActorPtr : ActiveActors)
+        {
+            if (AActor* Actor = ActorPtr.Get())
+            {
+                ActorsToDestroy.Add(Actor);
+            }
+        }
+
+        AvailableActors.Empty();
+        ActiveActors.Empty();
+        AllActorsSet.Empty();
+
+        // 重置统计
+        TotalRequests = 0;
+        PoolHits = 0;
+        TotalCreated = 0;
+    }
+
+    // 锁外执行销毁，降低回调重入风险
+    for (AActor* Actor : ActorsToDestroy)
     {
-        if (AActor* Actor = ActorPtr.Get())
+        if (!IsValid(Actor))
         {
-            // 调用归还到池的生命周期事件
-            if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
-            {
-                IObjectPoolInterface::Execute_OnReturnToPool(Actor);
-            }
-            Actor->Destroy();
+            continue;
         }
-    }
-    ActiveActors.Empty();
-    AllActorsSet.Empty();
 
-    // 重置统计
-    TotalRequests = 0;
-    PoolHits = 0;
-    TotalCreated = 0;
+        if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+        {
+            IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+        }
+        Actor->Destroy();
+    }
 
     ACTORPOOL_LOG(Log, TEXT("清空池: %s"), ActorClass ? *ActorClass->GetName() : TEXT("Unknown"));
 }
@@ -495,34 +531,47 @@ void FActorPool::SetMaxSize(int32 NewMaxSize)
         return;
     }
 
-    FWriteScopeLock WriteLock(PoolLock);
-
-    int32 OldMaxSize = MaxPoolSize;
-    MaxPoolSize = NewMaxSize;
-
-    //  直接计算池大小，避免嵌套锁调用
-    int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
-    
-    // 如果新大小小于当前池大小，需要移除多余的Actor
-    if (NewMaxSize < CurrentPoolSize)
+    TArray<AActor*> ActorsToDestroy;
+    int32 OldMaxSize = 0;
     {
-        int32 ExcessCount = CurrentPoolSize - NewMaxSize;
+        FWriteScopeLock WriteLock(PoolLock);
 
-        // 优先移除可用的Actor
-        while (ExcessCount > 0 && AvailableActors.Num() > 0)
+        OldMaxSize = MaxPoolSize;
+        MaxPoolSize = NewMaxSize;
+
+        //  直接计算池大小，避免嵌套锁调用
+        int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
+    
+        // 如果新大小小于当前池大小，需要移除多余的Actor
+        if (NewMaxSize < CurrentPoolSize)
         {
-            TWeakObjectPtr<AActor> ActorPtr = AvailableActors.Pop();
-            if (ActorPtr.IsValid())
+            int32 ExcessCount = CurrentPoolSize - NewMaxSize;
+
+            // 优先移除可用的Actor
+            while (ExcessCount > 0 && AvailableActors.Num() > 0)
             {
-                AllActorsSet.Remove(ActorPtr);
-                ActorPtr->Destroy();
+                TWeakObjectPtr<AActor> ActorPtr = AvailableActors.Pop();
+                if (ActorPtr.IsValid())
+                {
+                    AllActorsSet.Remove(ActorPtr);
+                    ActorsToDestroy.Add(ActorPtr.Get());
+                }
+                --ExcessCount;
             }
-            --ExcessCount;
         }
+
+        ACTORPOOL_LOG(Log, TEXT("设置池最大大小: %s, %d -> %d"),
+            ActorClass ? *ActorClass->GetName() : TEXT("Unknown"), OldMaxSize, NewMaxSize);
     }
 
-    ACTORPOOL_LOG(Log, TEXT("设置池最大大小: %s, %d -> %d"),
-        ActorClass ? *ActorClass->GetName() : TEXT("Unknown"), OldMaxSize, NewMaxSize);
+    // 锁外销毁，避免重入导致锁竞争
+    for (AActor* Actor : ActorsToDestroy)
+    {
+        if (IsValid(Actor))
+        {
+            Actor->Destroy();
+        }
+    }
 }
 
 //  内部辅助方法实现

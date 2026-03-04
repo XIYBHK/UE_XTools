@@ -36,4 +36,6 @@ private:
 private:
 	/** 插件命令列表 */
 	TSharedPtr<class FUICommandList> PluginCommands;
+	TWeakPtr<class FUICommandList> MainFrameCommands;
+	bool bInitialized = false;
 };

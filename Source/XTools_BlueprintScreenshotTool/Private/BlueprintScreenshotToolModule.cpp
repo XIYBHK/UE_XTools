@@ -14,8 +14,6 @@
 
 void FBlueprintScreenshotToolModule::StartupModule()
 {
-	RegisterSettings();
-
 	// 如果项目中已启用 Marketplace 版本的 BlueprintScreenshotTool 插件，则集成版保持空载，避免重复初始化和工具栏冲突
 	if (const TSharedPtr<IPlugin> ExternalBSTPlugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintScreenshotTool")))
 	{
@@ -25,6 +23,8 @@ void FBlueprintScreenshotToolModule::StartupModule()
 			return;
 		}
 	}
+
+	RegisterSettings();
 
 	// Check if plugin is enabled via settings
 	const UBlueprintScreenshotToolSettings* Settings = GetDefault<UBlueprintScreenshotToolSettings>();

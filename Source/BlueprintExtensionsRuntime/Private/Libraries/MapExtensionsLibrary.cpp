@@ -461,8 +461,6 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RemoveEntries)
 	P_NATIVE_BEGIN;
 	*(bool*)RESULT_PARAM = GenericMap_RemoveEntries(MapAddr, MapProperty, ArrayAddr, ArrayProperty);
 	P_NATIVE_END
-
-	ArrayProperty->DestroyValue(ArrayAddr);
 }
 
 bool UMapExtensionsLibrary::GenericMap_RemoveEntries(const void* MapAddr, const FMapProperty* MapProperty, const void* ArrayAddr, const FArrayProperty* ArrayProperty)
@@ -615,7 +613,7 @@ bool UMapExtensionsLibrary::GenericMap_SetValueAt(const void* MapAddr, const FMa
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
 		
-		if(Index < 0 || Index > MapHelper.Num()-1) return false;
+		if (Index < 0 || Index >= MapHelper.Num()) return false;
 		
 		const FProperty* KeyProperty = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProperty) * KeyProperty->ArrayDim;

@@ -64,6 +64,11 @@ private:
 	 */
 	void RegisterMenusWhenReady();
 
+	/**
+	 * ToolMenus 启动完成后的回调
+	 */
+	void OnToolMenusStartupReady();
+
     /**
      * 验证模块状态 - 用于测试和调试
      */

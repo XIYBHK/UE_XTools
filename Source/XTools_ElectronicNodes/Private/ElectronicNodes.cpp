@@ -12,6 +12,7 @@
 #include "Patch/NodeFactoryPatch.h"
 #include "Popup/ENUpdatePopup.h"
 #include "ISettingsEditorModule.h"
+#include "EdGraphUtilities.h"
 
 #define LOCTEXT_NAMESPACE "FElectronicNodesModule"
 
@@ -27,12 +28,12 @@ void FElectronicNodesModule::StartupModule()
 		}
 	}
 
-	const TSharedPtr<FENConnectionDrawingPolicyFactory> ENConnectionFactory = MakeShareable(
-		new FENConnectionDrawingPolicyFactory);
+	ENConnectionFactory = MakeShareable(new FENConnectionDrawingPolicyFactory);
 	FEdGraphUtilities::RegisterVisualPinConnectionFactory(ENConnectionFactory);
 
 	auto const CommandBindings = FModuleManager::LoadModuleChecked<IMainFrameModule>("MainFrame").
 		GetMainFrameCommandBindings();
+	MainFrameCommandBindings = CommandBindings;
 	ENCommands::Register();
 
 	CommandBindings->MapAction(
@@ -40,9 +41,16 @@ void FElectronicNodesModule::StartupModule()
 		FExecuteAction::CreateRaw(this, &FElectronicNodesModule::ToggleMasterActivation)
 	);
 
-	FString GlobalSettingsPath = IPluginManager::Get().FindPlugin(TEXT("XTools"))->GetBaseDir();
-	GlobalSettingsPath /= "Settings.ini";
-	GlobalSettingsFile = FConfigCacheIni::NormalizeConfigIniPath(GlobalSettingsPath);
+	if (const TSharedPtr<IPlugin> XToolsPlugin = IPluginManager::Get().FindPlugin(TEXT("XTools")))
+	{
+		FString GlobalSettingsPath = XToolsPlugin->GetBaseDir();
+		GlobalSettingsPath /= "Settings.ini";
+		GlobalSettingsFile = FConfigCacheIni::NormalizeConfigIniPath(GlobalSettingsPath);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("XTools_ElectronicNodes: XTools plugin descriptor not found, using default settings only."));
+	}
 
 	ElectronicNodesSettings = GetMutableDefault<UElectronicNodesSettings>();
 	ElectronicNodesSettings->OnSettingChanged().AddRaw(this, &FElectronicNodesModule::ReloadConfiguration);
@@ -66,6 +74,8 @@ void FElectronicNodesModule::StartupModule()
 	{
 		ENUpdatePopup::Register();
 	}
+
+	bInitialized = true;
 }
 
 
@@ -117,6 +127,31 @@ void FElectronicNodesModule::ReloadConfiguration(UObject* Object, struct FProper
 
 void FElectronicNodesModule::ShutdownModule()
 {
+	if (!bInitialized)
+	{
+		return;
+	}
+
+	if (ElectronicNodesSettings)
+	{
+		ElectronicNodesSettings->OnSettingChanged().RemoveAll(this);
+	}
+
+	if (const TSharedPtr<FUICommandList> CommandBindings = MainFrameCommandBindings.Pin())
+	{
+		CommandBindings->UnmapAction(ENCommands::Get().ToggleMasterActivation);
+	}
+	MainFrameCommandBindings.Reset();
+
+	if (ENConnectionFactory.IsValid())
+	{
+		FEdGraphUtilities::UnregisterVisualPinConnectionFactory(ENConnectionFactory);
+		ENConnectionFactory.Reset();
+	}
+
+	ENCommands::Unregister();
+	ElectronicNodesSettings = nullptr;
+	bInitialized = false;
 }
 
 void FElectronicNodesModule::ToggleMasterActivation() const
