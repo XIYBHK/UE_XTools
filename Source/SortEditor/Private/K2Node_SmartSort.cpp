@@ -1133,7 +1133,11 @@ void UK2Node_SmartSort::GetMenuActions(FBlueprintActionDatabaseRegistrar& Action
 	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
+		if (NodeSpawner == nullptr)
+		{
+			UE_LOG(LogTemp, Error, TEXT("UK2Node_SmartSort::GetMenuActions: failed to create node spawner"));
+			return;
+		}
 		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
 	}
 }
