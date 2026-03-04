@@ -97,8 +97,6 @@ void FAutoSizeCommentsModule::ShutdownModule()
 		ASCNodeFactory.Reset();
 	}
 
-	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
-
 	FAutoSizeCommentGraphHandler::Get().UnbindDelegates();
 	FAutoSizeCommentGraphHandler::TearDown();
 

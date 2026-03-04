@@ -6,6 +6,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
 #include "Misc/Paths.h"
+#include "Misc/CoreDelegates.h"
 
 // UE 5.0+ EditorStyleSet.h 已废弃，使用 Styling/AppStyle.h
 #if ENGINE_MAJOR_VERSION >= 5
@@ -13,6 +14,11 @@
 #else
 #include "EditorStyleSet.h"
 #endif
+
+namespace
+{
+	FDelegateHandle GPostEngineInitPopupHandle;
+}
 
 void ENUpdatePopup::OnBrowserLinkClicked(const FSlateHyperlinkRun::FMetadata& Metadata)
 {
@@ -52,10 +58,19 @@ void ENUpdatePopup::Register()
 		ENUpdatePopupConfig->PluginVersionUpdate = CurrentPluginVersion;
 		ENUpdatePopupConfig->SaveConfig(CPF_Config, *UpdateConfigFile);
 
-		FCoreDelegates::OnPostEngineInit.AddLambda([]()
+		if (!GPostEngineInitPopupHandle.IsValid())
 		{
-			Open();
-		});
+			GPostEngineInitPopupHandle = FCoreDelegates::OnPostEngineInit.AddStatic(&ENUpdatePopup::Open);
+		}
+	}
+}
+
+void ENUpdatePopup::Unregister()
+{
+	if (GPostEngineInitPopupHandle.IsValid())
+	{
+		FCoreDelegates::OnPostEngineInit.Remove(GPostEngineInitPopupHandle);
+		GPostEngineInitPopupHandle.Reset();
 	}
 }
 

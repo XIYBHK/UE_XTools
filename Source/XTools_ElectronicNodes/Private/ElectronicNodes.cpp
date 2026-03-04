@@ -127,6 +127,8 @@ void FElectronicNodesModule::ReloadConfiguration(UObject* Object, struct FProper
 
 void FElectronicNodesModule::ShutdownModule()
 {
+	ENUpdatePopup::Unregister();
+
 	if (!bInitialized)
 	{
 		return;

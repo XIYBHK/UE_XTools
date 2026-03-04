@@ -5,6 +5,7 @@ class ENUpdatePopup
 {
 public:
 	static void Register();
+	static void Unregister();
 	static void Open();
 	static void OnBrowserLinkClicked(const FSlateHyperlinkRun::FMetadata& Metadata);
 };
