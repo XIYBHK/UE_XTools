@@ -71,6 +71,21 @@ TArray<UMaterialFunctionInterface*> FX_MaterialFunctionCore::GetAllMaterialFunct
 UMaterialFunctionInterface* FX_MaterialFunctionCore::GetFresnelFunction()
 {
     UMaterialFunctionInterface* FresnelFunction = nullptr;
+
+    auto TryLoadFresnelAtPath = [](const FString& BasePath) -> UMaterialFunctionInterface*
+    {
+        // 优先尝试标准对象路径：/Mount/Path/Asset.Asset
+        const FString ObjectPath = BasePath + TEXT(".MF_SM_Fresnel");
+        if (UMaterialFunctionInterface* Loaded = Cast<UMaterialFunctionInterface>(
+            StaticLoadObject(UMaterialFunctionInterface::StaticClass(), nullptr, *ObjectPath)))
+        {
+            return Loaded;
+        }
+
+        // 兼容旧写法：/Mount/Path/Asset
+        return Cast<UMaterialFunctionInterface>(
+            StaticLoadObject(UMaterialFunctionInterface::StaticClass(), nullptr, *BasePath));
+    };
     
     // 动态获取插件名称并构建材质函数路径
     TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(FApp::GetProjectName());
@@ -103,18 +118,20 @@ UMaterialFunctionInterface* FX_MaterialFunctionCore::GetFresnelFunction()
         
         UE_LOG(LogX_AssetEditor, Log, TEXT("尝试从插件 %s 加载菲涅尔函数: %s"), *PluginName, *FresnelPath);
         
-        // 加载材质函数
-        FresnelFunction = Cast<UMaterialFunctionInterface>(StaticLoadObject(UMaterialFunctionInterface::StaticClass(), nullptr, *FresnelPath));
+        FresnelFunction = TryLoadFresnelAtPath(FresnelPath);
     }
-    
+
     // 如果未找到，尝试硬编码路径作为备选
     if (!FresnelFunction)
     {
         UE_LOG(LogX_AssetEditor, Warning, TEXT("无法通过插件动态路径加载菲涅尔函数，尝试使用硬编码路径"));
-        
-        // 尝试硬编码路径
-        const FString HardcodedPath = TEXT("/X_AssetEditor/MaterialFunctions/MF_SM_Fresnel");
-        FresnelFunction = Cast<UMaterialFunctionInterface>(StaticLoadObject(UMaterialFunctionInterface::StaticClass(), nullptr, *HardcodedPath));
+
+        // 优先尝试常见的 XTools 挂载点，再兼容旧的模块挂载点
+        FresnelFunction = TryLoadFresnelAtPath(TEXT("/XTools/MaterialFunctions/MF_SM_Fresnel"));
+        if (!FresnelFunction)
+        {
+            FresnelFunction = TryLoadFresnelAtPath(TEXT("/X_AssetEditor/MaterialFunctions/MF_SM_Fresnel"));
+        }
     }
     
     // 如果仍未找到，尝试引擎默认的菲涅尔函数

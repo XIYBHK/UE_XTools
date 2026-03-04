@@ -100,6 +100,10 @@ void UPointSamplingLibrary::AnalyzeSamplingStats(const TArray<FVector> &Points,
 
   const int32 NumPoints = Points.Num();
   if (NumPoints < 2) {
+    OutMinDistance = 0.0f;
+    OutMaxDistance = 0.0f;
+    OutAvgDistance = 0.0f;
+    OutCentroid = NumPoints == 1 ? Points[0] : FVector::ZeroVector;
     return;
   }
 
