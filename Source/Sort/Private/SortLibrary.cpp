@@ -920,8 +920,9 @@ void USortLibrary::FindDuplicateVectors(const TArray<FVector>& InArray, TArray<i
 
 void USortLibrary::SortArrayByPropertyInPlace(TArray<int32>& TargetArray, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
 {
-    // 这个函数永远不会被调用，因为它使用CustomThunk
-    check(0);
+    // 该函数由 CustomThunk 重定向；若被直接调用，降级为安全返回而非断言崩溃
+    ensureMsgf(false, TEXT("SortArrayByPropertyInPlace should be invoked via CustomThunk path"));
+    OriginalIndices.Empty();
 }
 
 DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
@@ -945,7 +946,7 @@ DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
     P_FINISH;
 
     P_NATIVE_BEGIN;
-    UE_LOG(LogSort, Warning, TEXT("execSortArrayByPropertyInPlace: ArrayAddr=%p, ArrayProperty=%p, PropertyName=%s"),
+    UE_LOG(LogSort, Verbose, TEXT("execSortArrayByPropertyInPlace: ArrayAddr=%p, ArrayProperty=%p, PropertyName=%s"),
         ArrayAddr, ArrayProperty, *PropertyName.ToString());
 
     if (ArrayAddr && ArrayProperty)
@@ -966,7 +967,7 @@ DEFINE_FUNCTION(USortLibrary::execSortArrayByPropertyInPlace)
 
 void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty* ArrayProp, FName PropertyName, bool bAscending, TArray<int32>& OriginalIndices)
 {
-    UE_LOG(LogSort, Warning, TEXT("GenericSortArrayByProperty: 开始执行 - TargetArray=%p, ArrayProp=%p, PropertyName=%s"),
+    UE_LOG(LogSort, Verbose, TEXT("GenericSortArrayByProperty: 开始执行 - TargetArray=%p, ArrayProp=%p, PropertyName=%s"),
         TargetArray, ArrayProp, *PropertyName.ToString());
 
     if (!TargetArray || !ArrayProp)
