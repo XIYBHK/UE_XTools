@@ -198,6 +198,13 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
         return nullptr;
     }
 
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("SpawnActorFromPool: World无效"));
+        return nullptr;
+    }
+
     // 获取或创建池
     TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
     if (!Pool.IsValid())
@@ -207,7 +214,7 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
     }
 
     // 从池中获取Actor
-    AActor* Actor = Pool->GetActor(GetWorld(), SpawnTransform);
+    AActor* Actor = Pool->GetActor(World, SpawnTransform);
     
     //  永不失败机制：如果从池中获取失败，自动回退到正常生成
     if (!Actor)
@@ -215,7 +222,7 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
         OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("池中无可用Actor，回退到正常生成: %s"), *ActorClass->GetName());
         
         // 自动回退到UE标准的SpawnActor
-        Actor = GetWorld()->SpawnActor<AActor>(ActorClass, SpawnTransform);
+        Actor = World->SpawnActor<AActor>(ActorClass, SpawnTransform);
         
         if (Actor)
         {
@@ -246,13 +253,20 @@ AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
         return nullptr;
     }
 
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("AcquireDeferredFromPool: World无效"));
+        return nullptr;
+    }
+
     TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
     if (!Pool.IsValid())
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("AcquireDeferredFromPool: 无法创建池 %s"), *ActorClass->GetName());
         return nullptr;
     }
-    return Pool->AcquireDeferred(GetWorld());
+    return Pool->AcquireDeferred(World);
 }
 
 bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform& SpawnTransform)
@@ -325,6 +339,13 @@ int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
         return 0;
     }
 
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("PrewarmPool: World无效"));
+        return 0;
+    }
+
     TSharedPtr<FActorPool> Pool = GetOrCreatePool(ActorClass);
     if (!Pool.IsValid())
     {
@@ -332,7 +353,7 @@ int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
     }
 
     //  标准对象池预热机制 - 安全的组件处理
-    Pool->PrewarmPool(GetWorld(), Count);
+    Pool->PrewarmPool(World, Count);
     
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("子系统预热池完成: %s, 预热数量=%d"), 
         *ActorClass->GetName(), Count);
@@ -699,6 +720,11 @@ void UObjectPoolSubsystem::ClearPoolCache() const
 void UObjectPoolSubsystem::QueueDelayedPrewarm(UClass* ActorClass, int32 Count)
 {
     if (!IsValid(ActorClass) || Count <= 0)
+    {
+        return;
+    }
+
+    if (!bIsInitialized)
     {
         return;
     }
