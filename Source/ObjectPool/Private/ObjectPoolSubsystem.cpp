@@ -426,20 +426,33 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetPool(UClass* ActorClass) const
 
 void UObjectPoolSubsystem::ClearAllPools()
 {
-    FWriteScopeLock WriteLock(PoolsRWLock);
-
-    for (auto& PoolPair : ActorPools)
+    TArray<TSharedPtr<FActorPool>> PoolsToClear;
     {
-        if (PoolPair.Value.IsValid())
+        FWriteScopeLock WriteLock(PoolsRWLock);
+        PoolsToClear.Reserve(ActorPools.Num());
+
+        for (auto& PoolPair : ActorPools)
         {
-            PoolPair.Value->ClearPool();
+            if (PoolPair.Value.IsValid())
+            {
+                PoolsToClear.Add(PoolPair.Value);
+            }
         }
+
+        ActorPools.Empty();
+
+        //  清理缓存
+        ClearPoolCache();
     }
 
-    ActorPools.Empty();
-
-    //  清理缓存
-    ClearPoolCache();
+    // 锁外执行清理，避免池内生命周期回调重入导致锁竞争
+    for (const TSharedPtr<FActorPool>& Pool : PoolsToClear)
+    {
+        if (Pool.IsValid())
+        {
+            Pool->ClearPool();
+        }
+    }
 
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清空所有池"));
 }

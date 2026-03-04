@@ -161,10 +161,10 @@ void FX_AssetEditorModule::CleanupManagers()
     FX_ModuleRegistrationManager::Get().UnregisterAll();
 
     // 3. 显式清理 ToolMenus 回调，避免热重载/重复加载时残留回调
-    if (UToolMenus::IsToolMenuUIEnabled())
+    UToolMenus::UnRegisterStartupCallback(this);
+    if (UToolMenus* ToolMenus = UToolMenus::TryGet())
     {
-        UToolMenus::UnRegisterStartupCallback(this);
-        UToolMenus::UnregisterOwner(this);
+        ToolMenus->UnregisterOwner(this);
     }
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("X_AssetEditor 管理器清理完成"));

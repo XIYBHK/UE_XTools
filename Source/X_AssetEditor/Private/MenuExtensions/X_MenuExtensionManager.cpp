@@ -54,6 +54,11 @@ void FX_MenuExtensionManager::UnregisterMenuExtensions()
 
 void FX_MenuExtensionManager::RegisterContentBrowserContextMenuExtender()
 {
+    if (ContentBrowserExtenderDelegateHandle.IsValid())
+    {
+        return;
+    }
+
     FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
     TArray<FContentBrowserMenuExtender_SelectedAssets>& CBMenuExtenderDelegates = ContentBrowserModule.GetAllAssetViewContextMenuExtenders();
     
@@ -63,6 +68,11 @@ void FX_MenuExtensionManager::RegisterContentBrowserContextMenuExtender()
 
 void FX_MenuExtensionManager::UnregisterContentBrowserContextMenuExtender()
 {
+    if (!ContentBrowserExtenderDelegateHandle.IsValid())
+    {
+        return;
+    }
+
     if (FContentBrowserModule* ContentBrowserModule = FModuleManager::GetModulePtr<FContentBrowserModule>("ContentBrowser"))
     {
         TArray<FContentBrowserMenuExtender_SelectedAssets>& CBMenuExtenderDelegates = ContentBrowserModule->GetAllAssetViewContextMenuExtenders();
@@ -70,10 +80,17 @@ void FX_MenuExtensionManager::UnregisterContentBrowserContextMenuExtender()
             return Delegate.GetHandle() == ContentBrowserExtenderDelegateHandle; 
         });
     }
+
+    ContentBrowserExtenderDelegateHandle.Reset();
 }
 
 void FX_MenuExtensionManager::RegisterLevelEditorContextMenuExtender()
 {
+    if (LevelEditorExtenderDelegateHandle.IsValid())
+    {
+        return;
+    }
+
     FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
     auto& LevelEditorMenuExtenders = LevelEditorModule.GetAllLevelViewportContextMenuExtenders();
     
@@ -83,6 +100,11 @@ void FX_MenuExtensionManager::RegisterLevelEditorContextMenuExtender()
 
 void FX_MenuExtensionManager::UnregisterLevelEditorContextMenuExtender()
 {
+    if (!LevelEditorExtenderDelegateHandle.IsValid())
+    {
+        return;
+    }
+
     if (FLevelEditorModule* LevelEditorModule = FModuleManager::GetModulePtr<FLevelEditorModule>("LevelEditor"))
     {
         auto& LevelEditorMenuExtenders = LevelEditorModule->GetAllLevelViewportContextMenuExtenders();
@@ -90,6 +112,8 @@ void FX_MenuExtensionManager::UnregisterLevelEditorContextMenuExtender()
             return Delegate.GetHandle() == LevelEditorExtenderDelegateHandle; 
         });
     }
+
+    LevelEditorExtenderDelegateHandle.Reset();
 }
 
 void FX_MenuExtensionManager::RegisterMenus()
