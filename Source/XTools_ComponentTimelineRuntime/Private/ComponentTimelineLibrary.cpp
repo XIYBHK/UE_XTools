@@ -201,12 +201,23 @@ void UComponentTimelineLibrary::InitializeTimelines(UObject* BlueprintOwner, AAc
 	{
 		if (bErrorFree)
 		{
+			UWorld* OwnerWorld = BlueprintOwner->GetWorld();
+			if (!IsValid(OwnerWorld))
+			{
+				UE_LOG(LogComponentTimelineRuntime, Warning, TEXT("InitializeTimelines: BlueprintOwner World 无效，跳过时间轴初始化"));
+				return;
+			}
+
 			// 防止用户在用户构造脚本中生成Actor
-			FGuardValue_Bitfield(BlueprintOwner->GetWorld()->bIsRunningConstructionScript, true);
+			FGuardValue_Bitfield(OwnerWorld->bIsRunningConstructionScript, true);
 			for (int32 i = ParentBPClassStack.Num() - 1; i >= 0; i--)
 			{
 				const UBlueprintGeneratedClass* CurrentBPGClass = ParentBPClassStack[i];
-				check(CurrentBPGClass);
+				if (!CurrentBPGClass)
+				{
+					UE_LOG(LogComponentTimelineRuntime, Warning, TEXT("InitializeTimelines: 遇到空的 BlueprintGeneratedClass，已跳过"));
+					continue;
+				}
 
 				if (const UBlueprintGeneratedClass* BPGC = Cast<const UBlueprintGeneratedClass>(CurrentBPGClass))
 				{
