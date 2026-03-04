@@ -291,10 +291,11 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
   case EPointSamplingMode::Echelon:
   case EPointSamplingMode::EchelonLeft:
   case EPointSamplingMode::EchelonRight: {
-    const int32 Direction = (Mode == EPointSamplingMode::EchelonLeft) ? -1
-                            : (Mode == EPointSamplingMode::EchelonRight)
-                                ? 1
-                                : Param3;
+    const int32 Direction = (Mode == EPointSamplingMode::EchelonLeft)
+                                ? -1
+                                : (Mode == EPointSamplingMode::EchelonRight)
+                                      ? 1
+                                      : (Param3 < 0 ? -1 : 1);
     return UFormationSamplingLibrary::GenerateEchelonFormation(
         PointCount, CenterLocation, Rotation, Spacing, Direction,
         FMath::Clamp(Param1, 5.0f, 45.0f), // EchelonAngle
@@ -367,15 +368,22 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
         CoordinateSpace, JitterStrength, RandomSeed);
 
   case EPointSamplingMode::ConcentricRings: {
-    // 使用默认的每环点数配置
-    TArray<int32> DefaultPointsPerRing = {6, 12, 18, 24};
+    const int32 RingCount = FMath::Max(1, static_cast<int32>(Param1));
+    TArray<int32> PointsPerRing = {6, 12, 18, 24};
+    if (Param3 > 0) {
+      const int32 BasePointsPerRing = FMath::Clamp(Param3, 3, 128);
+      PointsPerRing.Reset(RingCount);
+      for (int32 RingIndex = 1; RingIndex <= RingCount; ++RingIndex) {
+        PointsPerRing.Add(BasePointsPerRing * RingIndex);
+      }
+    }
+
     return UFormationSamplingLibrary::GenerateConcentricRingsFormation(
         PointCount, CenterLocation, Rotation,
-        DefaultPointsPerRing,                      // PointsPerRing
-        FMath::Max(50.0f, Spacing),                // MaxRadius
-        FMath::Max(1, static_cast<int32>(Param1)), // RingCount
-        CoordinateSpace, JitterStrength, RandomSeed
-    );
+        PointsPerRing,               // PointsPerRing
+        FMath::Max(50.0f, Spacing),  // MaxRadius
+        RingCount,                   // RingCount
+        CoordinateSpace, JitterStrength, RandomSeed);
   }
 
   // 不支持的模式
