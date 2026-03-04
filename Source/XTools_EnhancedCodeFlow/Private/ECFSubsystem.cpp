@@ -13,6 +13,8 @@ DEFINE_STAT(STAT_ECF_InstancesCount);
 
 void UECFSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	Super::Initialize(Collection);
+
 	// 只有游戏世界的子系统可以 tick
 	bCanTick = false;
 	if (UWorld* ThisWorld = GetWorld())
@@ -33,23 +35,33 @@ void UECFSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UECFSubsystem::Deinitialize()
 {
+	// 在子系统销毁前显式停止所有动作，确保回调和状态收敛
+	RemoveAllActions(false, nullptr);
 	Actions.Empty();
 	PendingAddActions.Empty();
+
+	Super::Deinitialize();
 }
 
 bool UECFSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	// 如果项目中已启用 Marketplace 版本的 EnhancedCodeFlow 插件，则不创建 XTools 集成版子系统，避免重复调度和状态冲突
+	static bool bHasLoggedExternalPluginWarning = false;
 	if (const TSharedPtr<IPlugin> ExternalECFPlugin = IPluginManager::Get().FindPlugin(TEXT("EnhancedCodeFlow")))
 	{
 		if (ExternalECFPlugin->IsEnabled())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("XTools_EnhancedCodeFlow: Detected external EnhancedCodeFlow plugin enabled, XTools subsystem will not be created."));
+			if (!bHasLoggedExternalPluginWarning)
+			{
+				bHasLoggedExternalPluginWarning = true;
+				UE_LOG(LogTemp, Warning, TEXT("XTools_EnhancedCodeFlow: Detected external EnhancedCodeFlow plugin enabled, XTools subsystem will not be created."));
+			}
 			return false;
 		}
 	}
 
 	//  检查插件设置，如果未启用则不创建子系统
+	static bool bHasLoggedMissingSettingsClass = false;
 	if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
 	{
 		if (const UObject* Settings = SettingsClass->GetDefaultObject())
@@ -65,6 +77,11 @@ bool UECFSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 				}
 			}
 		}
+	}
+	else if (!bHasLoggedMissingSettingsClass)
+	{
+		bHasLoggedMissingSettingsClass = true;
+		UE_LOG(LogTemp, Verbose, TEXT("XTools_EnhancedCodeFlow: X_AssetEditorSettings not found, using default subsystem creation behavior."));
 	}
 	
 	return Super::ShouldCreateSubsystem(Outer);
