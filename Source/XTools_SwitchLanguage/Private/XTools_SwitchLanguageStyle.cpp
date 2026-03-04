@@ -10,6 +10,7 @@
 #include "Slate/SlateGameResources.h"
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyleMacros.h"
+#include "Misc/Paths.h"
 
 #define RootToContentDir Style->RootToContentDir
 
@@ -49,6 +50,10 @@ TSharedRef<FSlateStyleSet> FXTools_SwitchLanguageStyle::Create()
 	if (Plugin.IsValid())
 	{
 		Style->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
+	}
+	else
+	{
+		Style->SetContentRoot(FPaths::ProjectPluginsDir() / TEXT("XTools/Resources"));
 	}
 
 	// 注册工具栏图标

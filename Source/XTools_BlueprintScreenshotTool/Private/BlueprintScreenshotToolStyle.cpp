@@ -4,6 +4,7 @@
 #include "BlueprintScreenshotToolStyle.h"
 #include "Runtime/Launch/Resources/Version.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
 #include "Styling/SlateStyleRegistry.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleMacros.h"
@@ -30,7 +31,15 @@ void FBlueprintScreenshotToolStyle::FStyle::Initialize()
 {
 	auto& PluginManager = IPluginManager::Get();
 	const auto Plugin = PluginManager.FindPlugin("XTools");
-	const auto ResourcesDir = Plugin->GetBaseDir() / TEXT("Resources");
+	FString ResourcesDir = FPaths::ProjectPluginsDir() / TEXT("XTools/Resources");
+	if (Plugin.IsValid())
+	{
+		ResourcesDir = Plugin->GetBaseDir() / TEXT("Resources");
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("XTools plugin descriptor missing, fallback to project plugins resources"));
+	}
 
 	StyleInstance->SetContentRoot(ResourcesDir);
 	StyleInstance->Set(IconName, new IMAGE_BRUSH_SVG(IconFileName, Icon40x40));

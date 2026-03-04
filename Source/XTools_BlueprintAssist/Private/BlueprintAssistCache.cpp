@@ -40,6 +40,13 @@ void FBACache::TearDown()
 
 void FBACache::Init()
 {
+	if (bHasInitialized)
+	{
+		return;
+	}
+
+	bHasInitialized = true;
+
 	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 	AssetRegistry.OnFilesLoaded().AddRaw(this, &FBACache::LoadCache);
 
@@ -50,6 +57,29 @@ void FBACache::Init()
 #else
 	FCoreUObjectDelegates::OnObjectSaved.AddRaw(this, &FBACache::OnObjectSaved);
 #endif
+}
+
+void FBACache::Cleanup()
+{
+	if (!bHasInitialized)
+	{
+		return;
+	}
+
+	if (FAssetRegistryModule* AssetRegistryModule = FModuleManager::GetModulePtr<FAssetRegistryModule>("AssetRegistry"))
+	{
+		AssetRegistryModule->Get().OnFilesLoaded().RemoveAll(this);
+	}
+
+	FCoreDelegates::OnPreExit.RemoveAll(this);
+
+#if BA_UE_VERSION_OR_LATER(5, 0)
+	FCoreUObjectDelegates::OnObjectPreSave.RemoveAll(this);
+#else
+	FCoreUObjectDelegates::OnObjectSaved.RemoveAll(this);
+#endif
+
+	bHasInitialized = false;
 }
 
 void FBACache::LoadCache()
@@ -223,7 +253,14 @@ FString FBACache::GetProjectSavedCachePath(bool bFullPath)
 
 FString FBACache::GetPluginCachePath(bool bFullPath)
 {
-	FString PluginDir = IPluginManager::Get().FindPlugin("XTools")->GetBaseDir();
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools");
+	if (!Plugin.IsValid())
+	{
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools plugin descriptor missing, fallback to project cache path"));
+		return GetProjectSavedCachePath(bFullPath);
+	}
+
+	FString PluginDir = Plugin->GetBaseDir();
 
 	if (bFullPath)
 	{

@@ -5,6 +5,7 @@
 #include "SWebBrowser.h"
 #include "Interfaces/IPluginManager.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
+#include "Misc/Paths.h"
 
 // UE 5.0+ EditorStyleSet.h 已废弃，使用 Styling/AppStyle.h
 #if ENGINE_MAJOR_VERSION >= 5
@@ -25,7 +26,12 @@ void ENUpdatePopup::OnBrowserLinkClicked(const FSlateHyperlinkRun::FMetadata& Me
 
 void ENUpdatePopup::Register()
 {
-	FString UpdateConfigPath = IPluginManager::Get().FindPlugin(TEXT("XTools"))->GetBaseDir();
+	FString UpdateConfigPath = FPaths::ProjectPluginsDir() / TEXT("XTools");
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("XTools")))
+	{
+		UpdateConfigPath = Plugin->GetBaseDir();
+	}
+
 	UpdateConfigPath /= "UpdateConfig.ini";
 	const FString UpdateConfigFile = FConfigCacheIni::NormalizeConfigIniPath(UpdateConfigPath);
 	const FString CurrentPluginVersion = "3.14";

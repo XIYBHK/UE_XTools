@@ -48,10 +48,10 @@ FBAInputProcessor::FBAInputProcessor()
 	BlueprintActions.Init();
 
 #if WITH_SLATE_DEBUGGING
-	FSlateDebugging::InputEvent.AddRaw(this, &FBAInputProcessor::HandleSlateInputEvent);
+	SlateInputEventDelegateHandle = FSlateDebugging::InputEvent.AddRaw(this, &FBAInputProcessor::HandleSlateInputEvent);
 #endif
 
-	FSlateApplication::Get().OnApplicationActivationStateChanged().AddRaw(this, &FBAInputProcessor::OnWindowFocusChanged);
+	AppActivationStateDelegateHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddRaw(this, &FBAInputProcessor::OnWindowFocusChanged);
 
 	CommandLists = {
 		GlobalActions.GlobalCommands,
@@ -76,8 +76,22 @@ void FBAInputProcessor::Cleanup()
 {
 	if (FSlateApplication::IsInitialized())
 	{
+		if (AppActivationStateDelegateHandle.IsValid())
+		{
+			FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(AppActivationStateDelegateHandle);
+			AppActivationStateDelegateHandle.Reset();
+		}
+
 		FSlateApplication::Get().UnregisterInputPreProcessor(BAInputProcessorInstance);
 	}
+
+#if WITH_SLATE_DEBUGGING
+	if (SlateInputEventDelegateHandle.IsValid())
+	{
+		FSlateDebugging::InputEvent.Remove(SlateInputEventDelegateHandle);
+		SlateInputEventDelegateHandle.Reset();
+	}
+#endif
 
 	BAInputProcessorInstance.Reset();
 }

@@ -108,6 +108,9 @@ public:
 private:
 	TArray<TSharedPtr<FUICommandList>> CommandLists;
 
+	FDelegateHandle SlateInputEventDelegateHandle;
+	FDelegateHandle AppActivationStateDelegateHandle;
+
 	TSet<FKey> KeysDown;
 	TMap<FKey, double> KeysDownStartTime;
 

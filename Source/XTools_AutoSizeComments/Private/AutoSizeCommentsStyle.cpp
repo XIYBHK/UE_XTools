@@ -2,6 +2,7 @@
 
 #include "AutoSizeCommentsMacros.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyleRegistry.h"
 #include "Styling/SlateTypes.h"
@@ -35,7 +36,15 @@ void FASCStyle::Initialize()
 
 	StyleSet = MakeShareable(new FSlateStyleSet("AutoSizeCommentsStyle"));
 
-	StyleSet->SetContentRoot(IPluginManager::Get().FindPlugin("XTools")->GetBaseDir() / TEXT("Resources"));
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools");
+	if (!Plugin.IsValid())
+	{
+		StyleSet->SetContentRoot(FPaths::ProjectPluginsDir() / TEXT("XTools/Resources"));
+	}
+	else
+	{
+		StyleSet->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
+	}
 
 	StyleSet->Set("ASC.AnchorBox", new ASC_BOX_BRUSH("AnchorBox", FMargin(18.0f/64.0f), FLinearColor(1.0f, 1.0f, 1.0f, 1.0f)));
 

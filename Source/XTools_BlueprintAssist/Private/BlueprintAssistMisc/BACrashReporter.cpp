@@ -491,13 +491,19 @@ TArray<FBACrashReport> FBACrashReporter::GetUnsentReports()
 								{
 									if (UnsentReports.Num() < 5)
 									{
-										FBACrashReport Report(ReportId);
-										if (!BAXmlUtils::FindBlueprintAssistVersion(XmlFile, Report.Version))
-										{
-											// fallback to the current plugin version
-											FPluginDescriptor PluginDesc = IPluginManager::Get().FindPlugin("XTools")->GetDescriptor();
-											Report.Version = PluginDesc.VersionName;
-										}
+											FBACrashReport Report(ReportId);
+											if (!BAXmlUtils::FindBlueprintAssistVersion(XmlFile, Report.Version))
+											{
+												// fallback to the current plugin version
+												if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools"))
+												{
+													Report.Version = Plugin->GetDescriptor().VersionName;
+												}
+												else
+												{
+													Report.Version = TEXT("Unknown");
+												}
+											}
 
 										UnsentReports.Add(Report);
 									}

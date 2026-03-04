@@ -152,10 +152,17 @@ void FBlueprintAssistModule::ShutdownModule()
 	}
 
 	FBATabHandler::Get().Cleanup();
+	FBATabHandler::TearDown();
 
 	FBAInputProcessor::Get().Cleanup();
 
 	FBAToolbar::Get().Cleanup();
+	FBAToolbar::TearDown();
+
+	FBACache::Get().Cleanup();
+	FBACache::TearDown();
+
+	UnbindLiveCodingSound();
 
 	if (RootObject.IsValid())
 	{
@@ -232,9 +239,13 @@ void FBlueprintAssistModule::BindLiveCodingSound()
 void FBlueprintAssistModule::UnbindLiveCodingSound()
 {
 #if WITH_LIVE_CODING
-	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
+	if (LiveCodingDelegate.IsValid())
 	{
-		LiveCoding->GetOnPatchCompleteDelegate().Remove(LiveCodingDelegate);
+		if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
+		{
+			LiveCoding->GetOnPatchCompleteDelegate().Remove(LiveCodingDelegate);
+		}
+
 		LiveCodingDelegate.Reset();
 		UE_LOG(LogBlueprintAssist, Log, TEXT("Unbound sound from live coding complete"));
 	}

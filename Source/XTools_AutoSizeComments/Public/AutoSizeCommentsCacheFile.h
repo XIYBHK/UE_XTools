@@ -125,6 +125,7 @@ public:
 protected:
 	FASCGraphData& GetCacheFileGraphData(UEdGraph* Graph);
 
+	bool bHasInitialized = false;
 	bool bHasLoaded = false;
 
 	FASCCacheData CacheData;

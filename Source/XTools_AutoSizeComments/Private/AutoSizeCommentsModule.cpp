@@ -100,12 +100,15 @@ void FAutoSizeCommentsModule::ShutdownModule()
 	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
 
 	FAutoSizeCommentGraphHandler::Get().UnbindDelegates();
+	FAutoSizeCommentGraphHandler::TearDown();
 
 	FAutoSizeCommentsInputProcessor::Cleanup();
 
 	FAutoSizeCommentsNotifications::Get().Shutdown();
+	FAutoSizeCommentsNotifications::TearDown();
 
 	FAutoSizeCommentsCacheFile::Get().Cleanup();
+	FAutoSizeCommentsCacheFile::TearDown();
 
 	FASCStyle::Shutdown();
 

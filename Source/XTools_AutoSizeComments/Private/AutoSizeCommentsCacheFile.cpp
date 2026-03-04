@@ -35,6 +35,13 @@ void FAutoSizeCommentsCacheFile::TearDown()
 
 void FAutoSizeCommentsCacheFile::Init()
 {
+	if (bHasInitialized)
+	{
+		return;
+	}
+
+	bHasInitialized = true;
+
 	if (FAssetRegistryModule* AssetRegistryModule = FModuleManager::GetModulePtr<FAssetRegistryModule>(TEXT("AssetRegistry")))
 	{
 		AssetRegistryModule->Get().OnFilesLoaded().AddRaw(this, &FAutoSizeCommentsCacheFile::LoadCacheFromFile);
@@ -46,6 +53,11 @@ void FAutoSizeCommentsCacheFile::Init()
 
 void FAutoSizeCommentsCacheFile::Cleanup()
 {
+	if (!bHasInitialized)
+	{
+		return;
+	}
+
 	if (FAssetRegistryModule* AssetRegistryModule = FModuleManager::GetModulePtr<FAssetRegistryModule>(TEXT("AssetRegistry")))
 	{
 		AssetRegistryModule->Get().OnFilesLoaded().RemoveAll(this);
@@ -53,6 +65,8 @@ void FAutoSizeCommentsCacheFile::Cleanup()
 
 	FCoreDelegates::OnPreExit.RemoveAll(this);
 	FCoreUObjectDelegates::OnAssetLoaded.RemoveAll(this);
+
+	bHasInitialized = false;
 }
 
 void FAutoSizeCommentsCacheFile::LoadCacheFromFile()
@@ -322,7 +336,14 @@ FString FAutoSizeCommentsCacheFile::GetProjectCachePath(bool bFullPath)
 
 FString FAutoSizeCommentsCacheFile::GetPluginCachePath(bool bFullPath)
 {
-	FString PluginDir = IPluginManager::Get().FindPlugin("XTools")->GetBaseDir();
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools");
+	if (!Plugin.IsValid())
+	{
+		UE_LOG(LogAutoSizeComments, Warning, TEXT("XTools plugin descriptor missing, fallback to project cache path"));
+		return GetProjectCachePath(bFullPath);
+	}
+
+	FString PluginDir = Plugin->GetBaseDir();
 
 	if (bFullPath)
 	{
