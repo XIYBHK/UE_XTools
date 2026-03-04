@@ -43,7 +43,7 @@ protected:
 		// Ensure the Action has been started from the Game Thread.
 		if (IsInGameThread() == false)
 		{
-			checkf(false, TEXT("ECF Actions must be started from the Game Thread!"));
+			ensureMsgf(false, TEXT("ECF Actions must be started from the Game Thread!"));
 			return FECFHandle();
 		}
 
@@ -78,7 +78,7 @@ protected:
 		// Ensure the Action has been started from the Game Thread.
 		if (IsInGameThread() == false)
 		{
-			checkf(false, TEXT("ECF Coroutines must be started from the Game Thread!"));
+			ensureMsgf(false, TEXT("ECF Coroutines must be started from the Game Thread!"));
 			return;
 		}
 
