@@ -251,12 +251,13 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
         CoordinateSpace, JitterStrength, RandomSeed);
 
   case EPointSamplingMode::SnowflakeArc:
+    // Param1: Layers, Param2: Spacing, Param3: ArcAngle (deg, <=0 uses default)
     return UFormationSamplingLibrary::GenerateSnowflakeArc(
         PointCount, CenterLocation, Rotation,
         FMath::Max(50.0f, Spacing),                // Radius
         FMath::Max(1, static_cast<int32>(Param1)), // SnowflakeLayers
         FMath::Max(25.0f, Param2),                 // Spacing
-        FMath::Clamp(Param1, 1.0f, 360.0f),        // ArcAngle
+        Param3 > 0 ? FMath::Clamp(static_cast<float>(Param3), 1.0f, 360.0f) : 180.0f, // ArcAngle
         0.0f,                                      // StartAngle
         CoordinateSpace, JitterStrength, RandomSeed);
 
