@@ -122,6 +122,12 @@ namespace
 void FObjectPoolModule::StartupModule()
 {
     OBJECTPOOL_LOG(Log, TEXT("ObjectPool模块启动中..."));
+
+    if (bIsInitialized)
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("ObjectPool模块已初始化，跳过重复启动"));
+        return;
+    }
     
     //  初始化模块
     InitializeModule();
@@ -138,6 +144,11 @@ void FObjectPoolModule::StartupModule()
 
 void FObjectPoolModule::ShutdownModule()
 {
+    if (!bIsInitialized)
+    {
+        return;
+    }
+
     OBJECTPOOL_LOG(Log, TEXT("ObjectPool模块关闭中..."));
     
     //  注销控制台命令（仅在非Shipping版本）
@@ -172,6 +183,10 @@ void FObjectPoolModule::CleanupModule()
 void FObjectPoolModule::RegisterConsoleCommands()
 {
     //  注册调试用的控制台命令
+    if (ConsoleCommands.Num() > 0)
+    {
+        UnregisterConsoleCommands();
+    }
     
     // 显示对象池统计信息
     ConsoleCommands.Add(IConsoleManager::Get().RegisterConsoleCommand(

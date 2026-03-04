@@ -104,6 +104,7 @@ bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
     //  检查插件设置，如果未启用则不创建子系统
     // 注意：这里不能直接include X_AssetEditorSettings.h，因为会产生循环依赖
     // 使用FindObject动态加载配置
+    static bool bHasLoggedMissingSettingsClass = false;
     if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
     {
         if (const UObject* Settings = SettingsClass->GetDefaultObject())
@@ -119,6 +120,11 @@ bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
                 }
             }
         }
+    }
+    else if (!bHasLoggedMissingSettingsClass)
+    {
+        bHasLoggedMissingSettingsClass = true;
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("未找到X_AssetEditorSettings，使用默认策略创建ObjectPool子系统"));
     }
     
     // 只在游戏世界中创建
