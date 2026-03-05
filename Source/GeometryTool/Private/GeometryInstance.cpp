@@ -18,6 +18,10 @@ DEFINE_LOG_CATEGORY(LogGeometryTool);
 
 namespace GeometryToolInternal
 {
+	constexpr float MinDistance = 1.0f;
+	constexpr int32 MaxAxisSamples = 128;
+	constexpr int64 MaxPointBudget = 200000;
+
 	/**
 	 * 在指定平面上根据角度和半径计算偏移量（极坐标转笛卡尔坐标）
 	 * @param AngleDeg 角度（度）
@@ -30,6 +34,16 @@ namespace GeometryToolInternal
 	{
 		return AxisX * UKismetMathLibrary::DegCos(AngleDeg) * Radius +
 		       AxisY * UKismetMathLibrary::DegSin(AngleDeg) * Radius;
+	}
+
+	int32 CalcAxisSamples(float Length, float Distance)
+	{
+		return FMath::Clamp(FMath::FloorToInt(Length / Distance) + 1, 1, MaxAxisSamples);
+	}
+
+	bool ExceedsPointBudget(int64 Count)
+	{
+		return Count > MaxPointBudget;
 	}
 }
 
@@ -70,7 +84,8 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
         return FTransforms;
     }
 
-    Distance = FMath::Clamp(Distance, 0.f, 100000.f);
+    Distance = FMath::Clamp(Distance, GeometryToolInternal::MinDistance, 100000.f);
+    Noise = FMath::Max(0.0f, Noise);
 
     if (USphereComponent* Sphere = Cast<USphereComponent>(Shape))
     {
@@ -95,6 +110,12 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
 
     if (bIsAddInstance)
     {
+        if (!GetStaticMesh())
+        {
+            UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，跳过 AddInstance。"));
+            return FTransforms;
+        }
+
         for (const FTransform& Transform : FTransforms)
         {
             AddInstance(Transform, true);
@@ -106,7 +127,7 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
 
 void UGeometryInstance::GetPointsByCustomRect(
     FTransform OriginTransform,
-    FVector Counts3D,
+    FIntVector Counts3D,
     FVector Distance3D,
     bool bIsUseWorldSpace,
     FRotator Rotator_A,
@@ -116,44 +137,72 @@ void UGeometryInstance::GetPointsByCustomRect(
     FVector Size_B,
     bool bIsUseRandomSize)
 {
-    if (bIsUseWorldSpace && GetStaticMesh())
+    if (!GetStaticMesh())
     {
-        for (int Index_Z = 0; Index_Z < Counts3D.Z; ++Index_Z)
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，无法添加实例。"));
+        return;
+    }
+
+    const int32 CountX = FMath::Clamp(Counts3D.X, 1, GeometryToolInternal::MaxAxisSamples);
+    const int32 CountY = FMath::Clamp(Counts3D.Y, 1, GeometryToolInternal::MaxAxisSamples);
+    const int32 CountZ = FMath::Clamp(Counts3D.Z, 1, GeometryToolInternal::MaxAxisSamples);
+
+    if (GeometryToolInternal::ExceedsPointBudget(static_cast<int64>(CountX) * CountY * CountZ))
+    {
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 自定义矩形采样点数过大，已取消生成。Count=(%d,%d,%d)"), CountX, CountY, CountZ);
+        return;
+    }
+
+    const FVector SafeDistance(
+        FMath::Max(0.0f, Distance3D.X),
+        FMath::Max(0.0f, Distance3D.Y),
+        FMath::Max(0.0f, Distance3D.Z));
+
+    // 统一使用世界空间计算点位，避免本地/世界坐标混用导致偏移。
+    const FTransform ComponentWorldTransform = GetComponentTransform();
+    const FVector ForwardVector = OriginTransform.GetRotation().GetForwardVector();
+    const FVector RightVector = OriginTransform.GetRotation().GetRightVector();
+    const FVector UpVector = OriginTransform.GetRotation().GetUpVector();
+
+    for (int32 Index_Z = 0; Index_Z < CountZ; ++Index_Z)
+    {
+        for (int32 Index_Y = 0; Index_Y < CountY; ++Index_Y)
         {
-            for (int Index_Y = 0; Index_Y < Counts3D.Y; ++Index_Y)
+            for (int32 Index_X = 0; Index_X < CountX; ++Index_X)
             {
-                for (int Index_X = 0; Index_X < Counts3D.X; ++Index_X)
+                FTransform InstanceTransform;
+
+                const FVector Location = OriginTransform.GetLocation()
+                    + SafeDistance.X * Index_X * ForwardVector
+                    + SafeDistance.Y * Index_Y * RightVector
+                    + SafeDistance.Z * Index_Z * UpVector
+                    - SafeDistance.X * (CountX - 1) * 0.5f * ForwardVector
+                    - SafeDistance.Y * (CountY - 1) * 0.5f * RightVector
+                    - SafeDistance.Z * (CountZ - 1) * 0.5f * UpVector;
+
+                InstanceTransform.SetLocation(Location);
+                InstanceTransform.SetRotation(OriginTransform.GetRotation());
+                InstanceTransform.SetScale3D(OriginTransform.GetScale3D());
+
+                ApplyTransformParameters(
+                    InstanceTransform,
+                    false,  // bIsUseLookAtOrigin
+                    bIsUseRandomRotation,
+                    bIsUseRandomSize,
+                    Rotator_A, Rotator_B, Size_A, Size_B,
+                    FRotator::ZeroRotator,  // Rotator_Delta
+                    FVector::ZeroVector,    // Origin
+                    Location                // PointLocation
+                );
+
+                if (bIsUseWorldSpace)
                 {
-                    FTransform InstanceTransform;
-
-                    FVector ForwardVector = OriginTransform.GetRotation().GetForwardVector();
-                    FVector RightVector = OriginTransform.GetRotation().GetRightVector();
-                    FVector UpVector = OriginTransform.GetRotation().GetUpVector();
-
-                    FVector Location = OriginTransform.GetLocation()
-                        + Distance3D.X * Index_X * ForwardVector
-                        + Distance3D.Y * Index_Y * RightVector
-                        + Distance3D.Z * Index_Z * UpVector
-                        - Distance3D.X * (Counts3D.X - 1) * 0.5 * ForwardVector
-                        - Distance3D.Y * (Counts3D.Y - 1) * 0.5 * RightVector
-                        - Distance3D.Z * (Counts3D.Z - 1) * 0.5 * UpVector;
-
-                    InstanceTransform.SetLocation(Location);
-                    InstanceTransform.SetRotation(OriginTransform.GetRotation());
-                    InstanceTransform.SetScale3D(OriginTransform.GetScale3D());
-
-                    ApplyTransformParameters(
-                        InstanceTransform,
-                        false,  // bIsUseLookAtOrigin
-                        bIsUseRandomRotation,
-                        bIsUseRandomSize,
-                        Rotator_A, Rotator_B, Size_A, Size_B,
-                        FRotator::ZeroRotator,  // Rotator_Delta
-                        FVector::ZeroVector,    // Origin
-                        Location                 // PointLocation
-                    );
-
-                    AddInstance(InstanceTransform, bIsUseWorldSpace);
+                    AddInstance(InstanceTransform, true);
+                }
+                else
+                {
+                    const FTransform LocalTransform = InstanceTransform.GetRelativeTransform(ComponentWorldTransform);
+                    AddInstance(LocalTransform, false);
                 }
             }
         }
@@ -226,42 +275,63 @@ TArray<FTransform> UGeometryInstance::GenerateSpherePoints(
         return FTransforms;
     }
 
-    float Radius = Sphere->GetScaledSphereRadius();
-    FVector Origin = Sphere->GetComponentLocation();
-    float SphereRound = 2.f * Radius * 3.14159f;
-    int32 NumPerRound = FMath::Floor(SphereRound / Distance);
-    float DeltaAnglePerRound = FMath::Clamp(360.f / NumPerRound, 0.f, 360.f);
-
-    float Longitude = 0.f;
-    float Lantitude = 0.f;
-    FRotator CurtRotator(0, 0, 0);
-
-    while (Longitude <= 360.f)
+    const float Radius = Sphere->GetScaledSphereRadius();
+    if (Radius <= KINDA_SMALL_NUMBER)
     {
-        Lantitude = 0.f;
-        while (Lantitude <= 360.f)
+        return FTransforms;
+    }
+
+    const FVector Origin = Sphere->GetComponentLocation();
+    const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
+    const float SphereRound = 2.0f * PI * Radius;
+    const int32 NumPerRound = FMath::Clamp(FMath::FloorToInt(SphereRound / SafeDistance), 8, 180);
+    const int64 EstimatedCount = static_cast<int64>(NumPerRound) * NumPerRound;
+    if (GeometryToolInternal::ExceedsPointBudget(EstimatedCount))
+    {
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 球体采样点数过大，已取消生成。NumPerRound=%d"), NumPerRound);
+        return FTransforms;
+    }
+
+    const float DeltaAnglePerRound = 360.0f / NumPerRound;
+    const float SafeNoise = FMath::Max(0.0f, Noise);
+    const float NoiseAngle = (SafeNoise > KINDA_SMALL_NUMBER)
+        ? FMath::Clamp(FMath::RadiansToDegrees(SafeNoise / Radius), 0.0f, 45.0f)
+        : 0.0f;
+
+    FTransforms.Reserve(static_cast<int32>(EstimatedCount));
+
+    for (int32 LongitudeIndex = 0; LongitudeIndex < NumPerRound; ++LongitudeIndex)
+    {
+        const float Longitude = LongitudeIndex * DeltaAnglePerRound;
+        const FRotator LongitudeRotator(0.0f, Longitude, 0.0f);
+        const FVector AxisX = LongitudeRotator.Quaternion().GetForwardVector();
+        const FVector AxisY = LongitudeRotator.Quaternion().GetUpVector();
+
+        for (int32 LatitudeIndex = 0; LatitudeIndex < NumPerRound; ++LatitudeIndex)
         {
-            CurtRotator.Yaw += Longitude;
-
-            float AngleNoise = FMath::Clamp(360.f / FMath::Floor(SphereRound / Noise), 0.f, 360.f);
-            float Lantitude_A = Lantitude + FMath::RandRange(0.f, AngleNoise);
-
-            FVector Point = Origin + GeometryToolInternal::PolarToCartesianOnPlane(
-                Lantitude_A, Radius,
-                CurtRotator.Quaternion().GetForwardVector(),
-                CurtRotator.Quaternion().GetUpVector());
+            const float Latitude = LatitudeIndex * DeltaAnglePerRound;
+            const float LatitudeNoise = (NoiseAngle > 0.0f) ? FMath::RandRange(-NoiseAngle, NoiseAngle) : 0.0f;
+            const FVector Point = Origin + GeometryToolInternal::PolarToCartesianOnPlane(
+                Latitude + LatitudeNoise, Radius, AxisX, AxisY);
 
             FTransform InstanceTransform;
             InstanceTransform.SetLocation(Point);
 
-            ApplyTransformParameters(InstanceTransform, bIsUseLookAtOrigin, bIsUseRandomRotation, bIsUseRandomSize,
-                Rotator_A, Rotator_B, Size_A, Size_B, Rotator_Delta, GetComponentLocation(), Point);
+            ApplyTransformParameters(
+                InstanceTransform,
+                bIsUseLookAtOrigin,
+                bIsUseRandomRotation,
+                bIsUseRandomSize,
+                Rotator_A,
+                Rotator_B,
+                Size_A,
+                Size_B,
+                Rotator_Delta,
+                Origin,
+                Point);
 
             FTransforms.Add(InstanceTransform);
-
-            Lantitude += DeltaAnglePerRound;
         }
-        Longitude += DeltaAnglePerRound;
     }
 
     return FTransforms;
@@ -287,13 +357,27 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
         return FTransforms;
     }
 
-    FVector Origin = Box->GetComponentLocation();
-    FVector BoxRange3D = 2 * FVector(Box->GetScaledBoxExtent().X, Box->GetScaledBoxExtent().Y, Box->GetScaledBoxExtent().Z);
-    FRotator Rotator = Box->GetComponentRotation();
+    const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
+    const float SafeNoise = FMath::Max(0.0f, Noise);
 
-    int32 X = FMath::Floor(BoxRange3D.X / Distance) + 1;
-    int32 Y = FMath::Floor(BoxRange3D.Y / Distance) + 1;
-    int32 Z = FMath::Floor(BoxRange3D.Z / Distance) + 1;
+    const FVector Origin = Box->GetComponentLocation();
+    const FVector BoxRange3D = 2.0f * Box->GetScaledBoxExtent();
+    const FRotator Rotator = Box->GetComponentRotation();
+
+    const int32 X = GeometryToolInternal::CalcAxisSamples(BoxRange3D.X, SafeDistance);
+    const int32 Y = GeometryToolInternal::CalcAxisSamples(BoxRange3D.Y, SafeDistance);
+    const int32 Z = GeometryToolInternal::CalcAxisSamples(BoxRange3D.Z, SafeDistance);
+
+    // Box 仅采样边界，近似上限按完整体积估算做保护
+    if (GeometryToolInternal::ExceedsPointBudget(static_cast<int64>(X) * Y * Z))
+    {
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 盒体采样点数过大，已取消生成。Count=(%d,%d,%d)"), X, Y, Z);
+        return FTransforms;
+    }
+
+    const FVector ForwardVector = Rotator.Quaternion().GetForwardVector();
+    const FVector RightVector = Rotator.Quaternion().GetRightVector();
+    const FVector UpVector = Rotator.Quaternion().GetUpVector();
 
     for (int32 Index_Z = 0; Index_Z < Z; ++Index_Z)
     {
@@ -306,22 +390,20 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
                     continue;
                 }
 
-                float RandomDistanceDelta = FMath::RandRange(Noise * -1.f, Noise);
-
-                FVector ForwardVector = Rotator.Quaternion().GetForwardVector();
-                FVector RightVector = Rotator.Quaternion().GetRightVector();
-                FVector UpVector = Rotator.Quaternion().GetUpVector();
+                const float NoiseForward = FMath::RandRange(-SafeNoise, SafeNoise);
+                const float NoiseRight = FMath::RandRange(-SafeNoise, SafeNoise);
+                const float NoiseUp = FMath::RandRange(-SafeNoise, SafeNoise);
 
                 FVector Location = Origin
-                    + Distance * Index_X * ForwardVector
-                    + Distance * Index_Y * RightVector
-                    + Distance * Index_Z * UpVector
-                    - Distance * (X - 1) * 0.5 * ForwardVector
-                    - Distance * (Y - 1) * 0.5 * RightVector
-                    - Distance * (Z - 1) * 0.5 * UpVector
-                    + RandomDistanceDelta * ForwardVector
-                    + RandomDistanceDelta * RightVector
-                    + RandomDistanceDelta * UpVector;
+                    + SafeDistance * Index_X * ForwardVector
+                    + SafeDistance * Index_Y * RightVector
+                    + SafeDistance * Index_Z * UpVector
+                    - SafeDistance * (X - 1) * 0.5f * ForwardVector
+                    - SafeDistance * (Y - 1) * 0.5f * RightVector
+                    - SafeDistance * (Z - 1) * 0.5f * UpVector
+                    + NoiseForward * ForwardVector
+                    + NoiseRight * RightVector
+                    + NoiseUp * UpVector;
 
                 FTransform InstanceTransform;
                 InstanceTransform.SetLocation(Location);
@@ -356,6 +438,117 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
     {
         return FTransforms;
     }
+
+    const float Radius = Capsule->GetScaledCapsuleRadius();
+    const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+    const float CylinderHalfHeight = FMath::Max(0.0f, HalfHeight - Radius);
+    if (Radius <= KINDA_SMALL_NUMBER)
+    {
+        return FTransforms;
+    }
+
+    const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
+    const float SafeNoise = FMath::Max(0.0f, Noise);
+
+    const FVector Origin = Capsule->GetComponentLocation();
+    const FRotator Rotator = Capsule->GetComponentRotation();
+    const FVector ForwardVector = Rotator.Quaternion().GetForwardVector();
+    const FVector RightVector = Rotator.Quaternion().GetRightVector();
+    const FVector UpVector = Rotator.Quaternion().GetUpVector();
+
+    const int32 AroundCount = FMath::Clamp(FMath::FloorToInt((2.0f * PI * Radius) / SafeDistance), 8, 180);
+    const int32 SideCount = (CylinderHalfHeight > KINDA_SMALL_NUMBER)
+        ? FMath::Max(2, FMath::FloorToInt((2.0f * CylinderHalfHeight) / SafeDistance) + 1)
+        : 1;
+    const int32 CapArcCount = FMath::Clamp(FMath::FloorToInt((0.5f * PI * Radius) / SafeDistance), 2, 64);
+
+    int64 EstimatedCount = static_cast<int64>(AroundCount) * SideCount; // 圆柱侧面
+    EstimatedCount += static_cast<int64>(AroundCount) * (CapArcCount - 1) * 2; // 上下半球
+    EstimatedCount += 2; // 两极
+    if (GeometryToolInternal::ExceedsPointBudget(EstimatedCount))
+    {
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 胶囊采样点数过大，已取消生成。"));
+        return FTransforms;
+    }
+
+    auto AddPoint = [&](const FVector& PointLocation)
+    {
+        FVector JitteredPoint = PointLocation
+            + FMath::RandRange(-SafeNoise, SafeNoise) * ForwardVector
+            + FMath::RandRange(-SafeNoise, SafeNoise) * RightVector
+            + FMath::RandRange(-SafeNoise, SafeNoise) * UpVector;
+
+        FTransform InstanceTransform;
+        InstanceTransform.SetLocation(JitteredPoint);
+        ApplyTransformParameters(
+            InstanceTransform,
+            bIsUseLookAtOrigin,
+            bIsUseRandomRotation,
+            bIsUseRandomSize,
+            Rotator_A,
+            Rotator_B,
+            Size_A,
+            Size_B,
+            Rotator_Delta,
+            Origin,
+            JitteredPoint);
+        FTransforms.Add(InstanceTransform);
+    };
+
+    const float AroundDelta = 360.0f / AroundCount;
+
+    // 1) 圆柱侧面
+    if (CylinderHalfHeight > KINDA_SMALL_NUMBER)
+    {
+        for (int32 SideIndex = 0; SideIndex < SideCount; ++SideIndex)
+        {
+            const float Z = -CylinderHalfHeight + (2.0f * CylinderHalfHeight) * (static_cast<float>(SideIndex) / (SideCount - 1));
+            const FVector RingCenter = Origin + Z * UpVector;
+
+            for (int32 AroundIndex = 0; AroundIndex < AroundCount; ++AroundIndex)
+            {
+                const float Angle = AroundIndex * AroundDelta;
+                const FVector Radial = GeometryToolInternal::PolarToCartesianOnPlane(Angle, Radius, ForwardVector, RightVector);
+                AddPoint(RingCenter + Radial);
+            }
+        }
+    }
+    else
+    {
+        // 退化为球体时至少保留赤道圈
+        for (int32 AroundIndex = 0; AroundIndex < AroundCount; ++AroundIndex)
+        {
+            const float Angle = AroundIndex * AroundDelta;
+            AddPoint(Origin + GeometryToolInternal::PolarToCartesianOnPlane(Angle, Radius, ForwardVector, RightVector));
+        }
+    }
+
+    // 2) 上下半球（不包含赤道，避免和圆柱端圈重复）
+    const FVector TopCenter = Origin + CylinderHalfHeight * UpVector;
+    const FVector BottomCenter = Origin - CylinderHalfHeight * UpVector;
+    for (int32 ArcIndex = 1; ArcIndex < CapArcCount; ++ArcIndex)
+    {
+        const float Alpha = (static_cast<float>(ArcIndex) / CapArcCount) * (0.5f * PI); // (0, PI/2)
+        const float RingRadius = Radius * FMath::Cos(Alpha);
+        const float HeightOffset = Radius * FMath::Sin(Alpha);
+
+        if (RingRadius <= KINDA_SMALL_NUMBER)
+        {
+            continue;
+        }
+
+        for (int32 AroundIndex = 0; AroundIndex < AroundCount; ++AroundIndex)
+        {
+            const float Angle = AroundIndex * AroundDelta;
+            const FVector RingOffset = GeometryToolInternal::PolarToCartesianOnPlane(Angle, RingRadius, ForwardVector, RightVector);
+            AddPoint(TopCenter + HeightOffset * UpVector + RingOffset);
+            AddPoint(BottomCenter - HeightOffset * UpVector + RingOffset);
+        }
+    }
+
+    // 3) 两极
+    AddPoint(TopCenter + Radius * UpVector);
+    AddPoint(BottomCenter - Radius * UpVector);
 
     return FTransforms;
 }

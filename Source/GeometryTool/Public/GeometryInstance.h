@@ -140,11 +140,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "XTools|几何工具|矩形采样",
         meta = (DisplayName = "自定义矩形区域点阵",
-            ToolTip = "在指定的自定义矩形区域内生成规则点阵。\n\n参数：\nOriginTransform - 原点变换\nCounts3D - 三维点数量\nDistance3D - 三维间距\nbIsUseWorldSpace - 是否使用世界坐标系\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放",
-            Keywords = "矩形,自定义,3D"))
+            ToolTip = "在指定的自定义矩形区域内生成规则点阵。\n\n参数：\nOriginTransform - 原点变换（按世界空间解释）\nCounts3D - 三维点数量\nDistance3D - 三维间距\nbIsUseWorldSpace - 实例写入空间（true=世界空间，false=组件本地空间）\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放",
+            Keywords = "矩形,自定义,3D",
+            CPP_Default_Counts3D = "(X=5,Y=5,Z=1)"))
     void GetPointsByCustomRect(
         UPARAM(DisplayName="原点变换") FTransform OriginTransform,
-        UPARAM(DisplayName="三维点数量") FVector Counts3D = FVector(5.f, 5.f, 1.f),
+        UPARAM(DisplayName="三维点数量") FIntVector Counts3D,
         UPARAM(DisplayName="三维间距") FVector Distance3D = FVector(100.f, 100.f, 100.f),
         UPARAM(DisplayName="使用世界坐标系") bool bIsUseWorldSpace = true,
         UPARAM(DisplayName="旋转最小值") FRotator Rotator_A = FRotator(0, 0, 0),
@@ -153,6 +154,31 @@ public:
         UPARAM(DisplayName="缩放最小值") FVector Size_A = FVector(1, 1, 1),
         UPARAM(DisplayName="缩放最大值") FVector Size_B = FVector(1, 1, 1),
         UPARAM(DisplayName="使用随机缩放") bool bIsUseRandomSize = false);
+
+    // C++ 便捷重载：保持旧调用习惯，默认 5x5x1 点阵
+    void GetPointsByCustomRect(
+        FTransform OriginTransform,
+        FVector Distance3D = FVector(100.f, 100.f, 100.f),
+        bool bIsUseWorldSpace = true,
+        FRotator Rotator_A = FRotator(0, 0, 0),
+        FRotator Rotator_B = FRotator(0, 0, 0),
+        bool bIsUseRandomRotation = false,
+        FVector Size_A = FVector(1, 1, 1),
+        FVector Size_B = FVector(1, 1, 1),
+        bool bIsUseRandomSize = false)
+    {
+        GetPointsByCustomRect(
+            OriginTransform,
+            FIntVector(5, 5, 1),
+            Distance3D,
+            bIsUseWorldSpace,
+            Rotator_A,
+            Rotator_B,
+            bIsUseRandomRotation,
+            Size_A,
+            Size_B,
+            bIsUseRandomSize);
+    }
 
     UFUNCTION(BlueprintCallable, Category = "XTools|几何工具|圆形采样",
         meta = (DisplayName = "圆形多层次点阵",
