@@ -292,8 +292,9 @@ bool FX_PivotOperation::RebuildMesh()
 
 void FX_PivotOperation::BeginUndoTransaction(const FString& TransactionName)
 {
-    if (TargetMesh)
+    if (TargetMesh && !ActiveTransaction.IsValid())
     {
+        ActiveTransaction = MakeUnique<FScopedTransaction>(FText::FromString(TransactionName));
         TargetMesh->Modify();
     }
 }
@@ -304,6 +305,8 @@ void FX_PivotOperation::EndUndoTransaction()
     {
         TargetMesh->MarkPackageDirty();
     }
+
+    ActiveTransaction.Reset();
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -95,6 +95,12 @@ public:
     void RefreshDelegateBindings();
 
     /**
+     * 重新构建父类前缀缓存
+     * 当设置中的 ParentClassPrefixMappings 发生变化时调用
+     */
+    void RebuildParentClassPrefixCache();
+
+    /**
      * 重命名选中的资产
      * @return 操作结果（包含计数和详情）
      */

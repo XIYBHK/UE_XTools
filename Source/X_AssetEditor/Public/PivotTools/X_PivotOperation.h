@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "PivotTools/X_PivotTypes.h"
+#include "ScopedTransaction.h"
 
 // 前向声明
 class UStaticMesh;
@@ -46,6 +47,9 @@ public:
 private:
     /** 目标静态网格体 */
     UStaticMesh* TargetMesh;
+
+    /** Undo 事务（每次 Execute 生命周期内有效） */
+    TUniquePtr<FScopedTransaction> ActiveTransaction;
 
     /**
      * 计算网格边界盒（考虑所有 LOD）

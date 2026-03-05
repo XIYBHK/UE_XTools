@@ -72,16 +72,8 @@ bool FX_AssetNamingManager::Initialize()
         );
     }
 
-    // 预先构建按 Key 长度倒序排序的父类前缀映射缓存，避免在 GetCorrectPrefix 中重复排序
-    SortedParentClassPrefixes.Reset();
-    for (const auto& Pair : Settings->ParentClassPrefixMappings)
-    {
-        SortedParentClassPrefixes.Add(Pair);
-    }
-    SortedParentClassPrefixes.Sort([](const TPair<FString, FString>& A, const TPair<FString, FString>& B)
-    {
-        return A.Key.Len() > B.Key.Len();
-    });
+    // 预构建父类前缀缓存
+    RebuildParentClassPrefixCache();
 
     UE_LOG(LogX_AssetNaming, Log, TEXT("Asset Naming Manager initialized with %d prefix rules"),
         Settings->AssetPrefixMappings.Num());
@@ -110,6 +102,9 @@ void FX_AssetNamingManager::RefreshDelegateBindings()
     // 先关闭现有委托
     FX_AssetNamingDelegates::Get()->Shutdown();
 
+    // 同步刷新父类前缀缓存，确保设置修改立即生效
+    RebuildParentClassPrefixCache();
+
     // 根据设置重新绑定
     if (Settings->bAutoRenameOnImport || Settings->bAutoRenameOnCreate)
     {
@@ -123,6 +118,27 @@ void FX_AssetNamingManager::RefreshDelegateBindings()
     {
         UE_LOG(LogX_AssetNaming, Log, TEXT("Auto-rename disabled, delegates unbound"));
     }
+}
+
+void FX_AssetNamingManager::RebuildParentClassPrefixCache()
+{
+    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+    if (!Settings)
+    {
+        SortedParentClassPrefixes.Reset();
+        return;
+    }
+
+    SortedParentClassPrefixes.Reset();
+    for (const auto& Pair : Settings->ParentClassPrefixMappings)
+    {
+        SortedParentClassPrefixes.Add(Pair);
+    }
+
+    SortedParentClassPrefixes.Sort([](const TPair<FString, FString>& A, const TPair<FString, FString>& B)
+    {
+        return A.Key.Len() > B.Key.Len();
+    });
 }
 
 FString FX_AssetNamingManager::GetSimpleClassName(const FAssetData& AssetData) const

@@ -376,6 +376,15 @@ void UX_AssetEditorSettings::PostEditChangeProperty(FPropertyChangedEvent& Prope
 			Manager.RefreshDelegateBindings();
 		}
 	}
+
+	// 父类前缀映射变更后，立即刷新缓存，避免需要重启编辑器
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UX_AssetEditorSettings, ParentClassPrefixMappings))
+	{
+		if (FModuleManager::Get().IsModuleLoaded("X_AssetEditor"))
+		{
+			FX_AssetNamingManager::Get().RebuildParentClassPrefixCache();
+		}
+	}
 }
 #endif
 

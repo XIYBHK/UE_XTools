@@ -114,7 +114,7 @@ FX_PivotOperationResult FX_PivotManager::SetPivotForAssets(
             }
             
             // 刷新视口
-            if (ActorsToCompensate.Num() > 0)
+            if (ActorsToCompensate.Num() > 0 && GEditor)
             {
                 GEditor->RedrawLevelEditingViewports(true);
                 GEditor->NoteSelectionChange();
@@ -509,8 +509,11 @@ bool FX_PivotManager::SetPivotForStaticMeshActor(
     }
     
     // 强制刷新视口显示和选择
-    GEditor->RedrawLevelEditingViewports(true);
-    GEditor->NoteSelectionChange();
+    if (GEditor)
+    {
+        GEditor->RedrawLevelEditingViewports(true);
+        GEditor->NoteSelectionChange();
+    }
 
     return true;
 }
@@ -741,7 +744,7 @@ FX_PivotOperationResult FX_PivotManager::RestorePivotSnapshots(const TArray<FAss
             }
             
             // 刷新视口
-            if (ActorsToCompensate.Num() > 0)
+            if (ActorsToCompensate.Num() > 0 && GEditor)
             {
                 GEditor->RedrawLevelEditingViewports(true);
                 GEditor->NoteSelectionChange();
