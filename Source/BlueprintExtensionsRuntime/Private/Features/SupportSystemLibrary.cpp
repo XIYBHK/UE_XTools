@@ -13,8 +13,10 @@ TArray<FTransform> USupportSystemLibrary::GetLocalFulcrumTransform(const UPrimit
     TArray<FTransform> FulcrumTransformArray;
     if (!TargetComponent) return FulcrumTransformArray;
 
-    FVector ComponentExtent = TargetComponent->Bounds.BoxExtent;
-    float BottomZ = PlaneBase.Z; // Use the Z coordinate of PlaneBase
+    // 使用局部空间包围盒，避免世界AABB在组件旋转后导致局部支点畸变
+    const FVector ComponentExtent = TargetComponent->CalcBounds(FTransform::Identity).BoxExtent;
+    // PlaneBase 输入按世界坐标解释，转换到组件局部空间后再作为局部支点Z
+    const float BottomZ = TargetComponent->GetComponentTransform().InverseTransformPosition(PlaneBase).Z;
 
     // Calculate the positions of the four fulcrums in local space
     FulcrumTransformArray.Add(FTransform(FVector(ComponentExtent.X, ComponentExtent.Y, BottomZ)));

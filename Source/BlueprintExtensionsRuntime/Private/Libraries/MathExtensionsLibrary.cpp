@@ -165,23 +165,29 @@ float UMathExtensionsLibrary::StableFrame(float DeltaTime, const TArray<float>& 
 		{
 			if (FDoubleProperty* DoubleProperty = CastField<FDoubleProperty>(ValueProperty))
 			{
-				double Value = DoubleProperty->GetPropertyValue(ValueAddr);
-				DoubleProperty->SetPropertyValue(ValueAddr, FMath::RadiansToDegrees(FMath::Acos(Value)));
+				const double Value = DoubleProperty->GetPropertyValue(ValueAddr);
+				const double ClampedValue = FMath::Clamp(Value, -1.0, 1.0);
+				DoubleProperty->SetPropertyValue(ValueAddr, FMath::RadiansToDegrees(FMath::Acos(ClampedValue)));
 			}
 			else if (FStructProperty* StructProperty = CastField<FStructProperty>(ValueProperty))
 			{
 				if (StructProperty->Struct == TBaseStructure<FVector2D>::Get())
 				{
 					FVector2D* Vec2 = static_cast<FVector2D*>(ValueAddr);
-					Vec2->X = FMath::RadiansToDegrees(FMath::Acos(Vec2->X));
-					Vec2->Y = FMath::RadiansToDegrees(FMath::Acos(Vec2->Y));
+					const double ClampedX = FMath::Clamp(static_cast<double>(Vec2->X), -1.0, 1.0);
+					const double ClampedY = FMath::Clamp(static_cast<double>(Vec2->Y), -1.0, 1.0);
+					Vec2->X = static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(ClampedX)));
+					Vec2->Y = static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(ClampedY)));
 				}
 				else if (StructProperty->Struct == TBaseStructure<FVector>::Get())
 				{
 					FVector* Vec = static_cast<FVector*>(ValueAddr);
-					Vec->X = FMath::RadiansToDegrees(FMath::Acos(Vec->X));
-					Vec->Y = FMath::RadiansToDegrees(FMath::Acos(Vec->Y));
-					Vec->Z = FMath::RadiansToDegrees(FMath::Acos(Vec->Z));
+					const double ClampedX = FMath::Clamp(static_cast<double>(Vec->X), -1.0, 1.0);
+					const double ClampedY = FMath::Clamp(static_cast<double>(Vec->Y), -1.0, 1.0);
+					const double ClampedZ = FMath::Clamp(static_cast<double>(Vec->Z), -1.0, 1.0);
+					Vec->X = static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(ClampedX)));
+					Vec->Y = static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(ClampedY)));
+					Vec->Z = static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(ClampedZ)));
 				}
 			}
 		}

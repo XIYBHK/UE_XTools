@@ -8,6 +8,7 @@
 #include "CoreMinimal.h"
 #include "K2Node.h"
 #include "EdGraph/EdGraphPin.h"
+#include "KismetCompiler.h"
 #include "EdGraphSchema_K2.h"
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintNodeSpawner.h"
@@ -20,6 +21,62 @@
  */
 namespace K2NodeHelpers
 {
+	/**
+	 * 统一连接入口：通过 Schema 校验连接合法性
+	 */
+	FORCEINLINE bool TryConnect(FKismetCompilerContext& CompilerContext, UEdGraphPin* SourcePin, UEdGraphPin* TargetPin)
+	{
+		if (!SourcePin || !TargetPin)
+		{
+			return false;
+		}
+
+		const UEdGraphSchema* Schema = CompilerContext.GetSchema();
+		return Schema && Schema->TryCreateConnection(SourcePin, TargetPin);
+	}
+
+	/**
+	 * 重建中间节点后安全地重新获取 Pin
+	 */
+	FORCEINLINE UEdGraphPin* ReconstructAndFindPin(UK2Node* Node, const FName& PinName, EEdGraphPinDirection Direction = EGPD_MAX)
+	{
+		if (!Node)
+		{
+			return nullptr;
+		}
+
+		Node->PostReconstructNode();
+		return (Direction == EGPD_MAX) ? Node->FindPin(PinName) : Node->FindPin(PinName, Direction);
+	}
+
+	/**
+	 * ExpandNode 标准入口：统一必要引脚校验
+	 */
+	FORCEINLINE bool BeginExpandNode(FKismetCompilerContext& CompilerContext, UK2Node* Node, std::initializer_list<UEdGraphPin*> RequiredPins, const FText& ErrorMessage)
+	{
+		for (UEdGraphPin* RequiredPin : RequiredPins)
+		{
+			if (!RequiredPin)
+			{
+				CompilerContext.MessageLog.Error(*ErrorMessage.ToString(), Node);
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * ExpandNode 标准收尾：断开原节点所有链接
+	 */
+	FORCEINLINE void EndExpandNode(UK2Node* Node)
+	{
+		if (Node)
+		{
+			Node->BreakAllNodeLinks();
+		}
+	}
+
 	/**
 	 * 检查引脚是否为 Wildcard 类型
 	 * @param Pin 要检查的引脚

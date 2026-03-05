@@ -103,7 +103,10 @@ void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerCon
 			UEdGraphPin* IfThenElseThenPin = IfThenElse->GetThenPin();
 			UEdGraphPin* IfThenElseCondPin = IfThenElse->GetConditionPin();
 
-			SequenceExecPin->MakeLinkTo(IfThenElseExecPin);
+			if (const UEdGraphSchema* Schema = CompilerContext.GetSchema())
+			{
+				Schema->TryCreateConnection(SequenceExecPin, IfThenElseExecPin);
+			}
 			CompilerContext.MovePinLinksToIntermediate(*CaseExecPin, *IfThenElseThenPin);
 			CompilerContext.MovePinLinksToIntermediate(*CaseCondPin, *IfThenElseCondPin);
 		}

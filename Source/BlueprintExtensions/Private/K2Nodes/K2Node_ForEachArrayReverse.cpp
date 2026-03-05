@@ -1,4 +1,4 @@
-﻿#include "K2Nodes/K2Node_ForEachArrayReverse.h"
+#include "K2Nodes/K2Node_ForEachArrayReverse.h"
 #include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器
@@ -92,6 +92,13 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
     FKismetCompilerContext &CompilerContext, UEdGraph *SourceGraph) {
   // 【参考 K2Node_SmartSort 实现模式】
   // 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+  if (!K2NodeHelpers::BeginExpandNode(
+          CompilerContext, this,
+          {GetExecPin(), GetArrayPin(), GetDelayPin(), GetLoopBodyPin(),
+           GetValuePin(), GetIndexPin(), GetBreakPin(), GetCompletedPin()},
+          LOCTEXT("MissingPins", "@@ 节点引脚不完整"))) {
+    return;
+  }
 
   // 验证数组引脚连接
   UEdGraphPin *ArrayPin = GetArrayPin();
@@ -142,9 +149,9 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(
           this, SourceGraph);
   LoopCounterSet->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterSet->GetVariablePin(), LoopCounterPin);
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterSet->GetValuePin(), Length->GetReturnValuePin());
 
   // 5. 计数器减1（初始化为 length-1）
@@ -155,7 +162,7 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       UKismetMathLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
   IncrementInit->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       IncrementInit->FindPinChecked(TEXT("A")), LoopCounterPin);
   IncrementInit->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("-1");
 
@@ -164,11 +171,11 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(
           this, SourceGraph);
   LoopCounterSetInit->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterSetInit->GetVariablePin(), LoopCounterPin);
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterSetInit->GetValuePin(), IncrementInit->GetReturnValuePin());
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterSet->GetThenPin(), LoopCounterSetInit->GetExecPin());
 
   // 7. 创建分支节点
@@ -176,7 +183,7 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this,
                                                                 SourceGraph);
   Branch->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterSetInit->GetThenPin(), Branch->GetExecPin());
 
   // 8. 创建循环条件（计数器 >= 0）
@@ -187,11 +194,11 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       UKismetMathLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, GreaterEqual_IntInt)));
   Condition->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       Condition->GetReturnValuePin(), Branch->GetConditionPin());
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       Condition->FindPinChecked(TEXT("A")), LoopCounterPin);
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       Condition->FindPinChecked(TEXT("B")), LoopCounterZeroPin);
 
   // 9. Break 功能：设置计数器为-1以跳出循环
@@ -200,10 +207,10 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
           this, SourceGraph);
   LoopCounterBreak->AllocateDefaultPins();
   LoopCounterBreak->GetValuePin()->DefaultValue = TEXT("-1");
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterPin, LoopCounterBreak->GetVariablePin());
   // 【修复】连接 Break 的 Then 引脚到 Branch 的 Else，使 Break 后执行流继续到 Completed
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
 
   // 10. 创建执行序列（循环体 -> 延迟路径）
@@ -212,7 +219,7 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
           this, SourceGraph);
   Sequence->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(Branch->GetThenPin(),
+  K2NodeHelpers::TryConnect(CompilerContext, Branch->GetThenPin(),
                                                    Sequence->GetExecPin());
 
   // 11. 创建延迟节点
@@ -223,9 +230,28 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       UKismetSystemLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetSystemLibrary, Delay)));
   DelayNode->AllocateDefaultPins();
-  // 【修复】延迟节点连接到 Sequence 的第二个输出，先执行循环体再延迟
-  CompilerContext.GetSchema()->TryCreateConnection(
-      Sequence->GetThenPinGivenIndex(1), DelayNode->GetExecPin());
+  // Delay<=0 时等同于无延迟：直接进入递减分支；仅 Delay>0 走 Delay 节点
+  UK2Node_CallFunction *DelayLessEqualZero =
+      CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this,
+                                                                  SourceGraph);
+  DelayLessEqualZero->SetFromFunction(
+      UKismetMathLibrary::StaticClass()->FindFunctionByName(
+          GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_FloatFloat)));
+  DelayLessEqualZero->AllocateDefaultPins();
+
+  UK2Node_IfThenElse *DelayBranch =
+      CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this,
+                                                                SourceGraph);
+  DelayBranch->AllocateDefaultPins();
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      Sequence->GetThenPinGivenIndex(1), DelayBranch->GetExecPin());
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      DelayLessEqualZero->GetReturnValuePin(), DelayBranch->GetConditionPin());
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      DelayLessEqualZero->FindPinChecked(TEXT("A")), GetDelayPin());
+  DelayLessEqualZero->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("0.0");
+  K2NodeHelpers::TryConnect(CompilerContext, DelayBranch->GetElsePin(),
+                                                   DelayNode->GetExecPin());
 
   // 12. 创建递减节点
   UK2Node_CallFunction *Increment =
@@ -235,24 +261,38 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       UKismetMathLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
   Increment->AllocateDefaultPins();
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       Increment->FindPinChecked(TEXT("A")), LoopCounterPin);
   Increment->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("-1");
 
   // 12. 创建赋值节点（递减后的值）
-  UK2Node_AssignmentStatement *LoopCounterAssign =
+  UK2Node_AssignmentStatement *LoopCounterAssignNoDelay =
       CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(
           this, SourceGraph);
-  LoopCounterAssign->AllocateDefaultPins();
-  // 【修复】递减逻辑连接到 Delay->Then，确保顺序为：循环体 → 延迟 → 递减
-  CompilerContext.GetSchema()->TryCreateConnection(
-      LoopCounterAssign->GetExecPin(), DelayNode->GetThenPin());
-  CompilerContext.GetSchema()->TryCreateConnection(
-      LoopCounterAssign->GetVariablePin(), LoopCounterPin);
-  CompilerContext.GetSchema()->TryCreateConnection(
-      LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
-  CompilerContext.GetSchema()->TryCreateConnection(
-      LoopCounterAssign->GetThenPin(), Branch->GetExecPin()); // 循环回到分支
+  LoopCounterAssignNoDelay->AllocateDefaultPins();
+  // Delay<=0：直接递减
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignNoDelay->GetExecPin(), DelayBranch->GetThenPin());
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignNoDelay->GetVariablePin(), LoopCounterPin);
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignNoDelay->GetValuePin(), Increment->GetReturnValuePin());
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignNoDelay->GetThenPin(), Branch->GetExecPin()); // 循环回到分支
+
+  UK2Node_AssignmentStatement *LoopCounterAssignWithDelay =
+      CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(
+          this, SourceGraph);
+  LoopCounterAssignWithDelay->AllocateDefaultPins();
+  // Delay>0：延迟后递减
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignWithDelay->GetExecPin(), DelayNode->GetThenPin());
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignWithDelay->GetVariablePin(), LoopCounterPin);
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignWithDelay->GetValuePin(), Increment->GetReturnValuePin());
+  K2NodeHelpers::TryConnect(CompilerContext, 
+      LoopCounterAssignWithDelay->GetThenPin(), Branch->GetExecPin()); // 循环回到分支
 
   // 13. 获取数组元素
   UK2Node_CallFunction *GetValue =
@@ -267,13 +307,14 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   GetValueTargetArrayPin->PinType = GetArrayPin()->PinType;
   GetValueTargetArrayPin->PinType.PinValueType =
       FEdGraphTerminalType(GetArrayPin()->PinType.PinValueType);
-  CompilerContext.GetSchema()->TryCreateConnection(
+  K2NodeHelpers::TryConnect(CompilerContext, 
       GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
   CompilerContext.CopyPinLinksToIntermediate(*GetArrayPin(),
                                              *GetValueTargetArrayPin);
-  UEdGraphPin *ValuePin = GetValue->FindPinChecked(TEXT("Item"));
+  UEdGraphPin *ValuePin =
+      K2NodeHelpers::ReconstructAndFindPin(GetValue, TEXT("Item"));
+  check(ValuePin);
   ValuePin->PinType = GetValuePin()->PinType;
-  GetValue->PostReconstructNode();
 
   // 14. 最后统一移动所有外部连接（参考智能排序模式）
   CompilerContext.MovePinLinksToIntermediate(*GetExecPin(),
@@ -290,7 +331,7 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   CompilerContext.MovePinLinksToIntermediate(*GetIndexPin(), *LoopCounterPin);
 
   // 15. 断开原节点所有链接
-  BreakAllNodeLinks();
+  K2NodeHelpers::EndExpandNode(this);
 }
 
 #pragma endregion
@@ -578,3 +619,4 @@ void UK2Node_ForEachArrayReverse::PropagatePinType() const {
 // ——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #undef LOCTEXT_NAMESPACE
+

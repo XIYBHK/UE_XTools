@@ -46,7 +46,7 @@ void UK2Node_CasePairedPinsNode::GetNodeContextMenuActions(class UToolMenu* Menu
 					&UK2Node_CasePairedPinsNode::RemoveCasePinAt, const_cast<UEdGraphPin*>(Context->Pin))));
 		}
 
-		if (Context->Node->Pins.Num() >= 1)
+		if (GetCasePinCount() > 0)
 		{
 			Section.AddMenuEntry("RemoveFirstCasePin", LOCTEXT("RemoveFirstCasePin", "删除第一个条件"),
 				LOCTEXT("RemoveFirstCasePinTooltip", "删除第一个条件分支"), FSlateIcon(),
@@ -187,6 +187,11 @@ void UK2Node_CasePairedPinsNode::RemoveCasePinAt(UEdGraphPin* Pin)
 
 void UK2Node_CasePairedPinsNode::RemoveFirstCasePin()
 {
+	if (GetCasePinCount() <= 0)
+	{
+		return;
+	}
+
 	Modify();
 
 	RemoveCasePinAt(0);
@@ -194,6 +199,11 @@ void UK2Node_CasePairedPinsNode::RemoveFirstCasePin()
 
 void UK2Node_CasePairedPinsNode::RemoveLastCasePin()
 {
+	if (GetCasePinCount() <= 0)
+	{
+		return;
+	}
+
 	Modify();
 
 	RemoveCasePinAt(GetCasePinCount() - 1);

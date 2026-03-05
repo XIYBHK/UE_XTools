@@ -1,4 +1,4 @@
-﻿#include "K2Nodes/K2Node_ForEachMap.h"
+#include "K2Nodes/K2Node_ForEachMap.h"
 #include "K2Nodes/K2NodeHelpers.h"
 #include "K2NodePinTypeHelpers.h"
 
@@ -119,6 +119,13 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 {
 	// 【参考 K2Node_SmartSort 实现模式】
 	// 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+	if (!K2NodeHelpers::BeginExpandNode(
+			CompilerContext, this,
+			{GetExecPin(), GetMapPin(), GetLoopBodyPin(), GetBreakPin(), GetKeyPin(), GetValuePin(), GetIndexPin(), GetCompletedPin()},
+			LOCTEXT("MissingPins", "@@ 节点引脚不完整")))
+	{
+		return;
+	}
 
 	// 验证 Map 引脚连接
 	UEdGraphPin* MapPin = GetMapPin();
@@ -148,19 +155,19 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	UK2Node_AssignmentStatement* LoopCounterInitialise = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
 	LoopCounterInitialise->AllocateDefaultPins();
 	LoopCounterInitialise->GetValuePin()->DefaultValue = TEXT("0");
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterPin, LoopCounterInitialise->GetVariablePin());
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterPin, LoopCounterInitialise->GetVariablePin());
 
 	// 3. 创建分支节点
 	UK2Node_IfThenElse* Branch = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
 	Branch->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterInitialise->GetThenPin(), Branch->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterInitialise->GetThenPin(), Branch->GetExecPin());
 
 	// 4. 创建循环条件（计数器 < Map长度）
 	UK2Node_CallFunction* Condition = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	Condition->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Less_IntInt)));
 	Condition->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(Condition->GetReturnValuePin(), Branch->GetConditionPin());
-	CompilerContext.GetSchema()->TryCreateConnection(Condition->FindPinChecked(TEXT("A")), LoopCounterPin);
+	K2NodeHelpers::TryConnect(CompilerContext, Condition->GetReturnValuePin(), Branch->GetConditionPin());
+	K2NodeHelpers::TryConnect(CompilerContext, Condition->FindPinChecked(TEXT("A")), LoopCounterPin);
 
 	// 5. 获取Map长度
 	UK2Node_CallFunction* Length = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -169,7 +176,7 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	UEdGraphPin* LengthTargetMapPin = Length->FindPinChecked(TEXT("TargetMap"), EGPD_Input);
 	LengthTargetMapPin->PinType = GetMapPin()->PinType;
 	LengthTargetMapPin->PinType.PinValueType = FEdGraphTerminalType(GetMapPin()->PinType.PinValueType);
-	CompilerContext.GetSchema()->TryCreateConnection(Condition->FindPinChecked(TEXT("B")), Length->GetReturnValuePin());
+	K2NodeHelpers::TryConnect(CompilerContext, Condition->FindPinChecked(TEXT("B")), Length->GetReturnValuePin());
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *LengthTargetMapPin);
 	Length->PostReconstructNode();
 
@@ -185,30 +192,30 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 
 	UK2Node_AssignmentStatement* LoopCounterBreak = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
 	LoopCounterBreak->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetVariablePin(), LoopCounterPin);
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetValuePin(), BreakLength->GetReturnValuePin());
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetVariablePin(), LoopCounterPin);
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetValuePin(), BreakLength->GetReturnValuePin());
 	// 【修复】连接 Break 的 Then 引脚到 Branch 的 Else，使 Break 后执行流继续到 Completed
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
 
 	// 7. 创建执行序列（循环体 -> 递增）
 	UK2Node_ExecutionSequence* Sequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
 	Sequence->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(Sequence->GetExecPin(), Branch->GetThenPin());
+	K2NodeHelpers::TryConnect(CompilerContext, Sequence->GetExecPin(), Branch->GetThenPin());
 
 	// 8. 创建递增节点
 	UK2Node_CallFunction* Increment = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	Increment->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
 	Increment->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(Increment->FindPinChecked(TEXT("A")), LoopCounterPin);
+	K2NodeHelpers::TryConnect(CompilerContext, Increment->FindPinChecked(TEXT("A")), LoopCounterPin);
 	Increment->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("1");
 
 	// 9. 创建赋值节点（递增后的值）
 	UK2Node_AssignmentStatement* LoopCounterAssign = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
 	LoopCounterAssign->AllocateDefaultPins();
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetVariablePin(), LoopCounterPin);
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
-	CompilerContext.GetSchema()->TryCreateConnection(LoopCounterAssign->GetThenPin(), Branch->GetExecPin());  // 循环回到分支
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetVariablePin(), LoopCounterPin);
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
+	K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetThenPin(), Branch->GetExecPin());  // 循环回到分支
 
 	// 10. 获取Key
 	UK2Node_CallFunction* GetKey = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -218,10 +225,10 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	GetKeyTargetMapPin->PinType = GetMapPin()->PinType;
 	GetKeyTargetMapPin->PinType.PinValueType = FEdGraphTerminalType(GetMapPin()->PinType.PinValueType);
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *GetKeyTargetMapPin);
-	CompilerContext.GetSchema()->TryCreateConnection(GetKey->FindPinChecked(TEXT("Index")), LoopCounterPin);
-	UEdGraphPin* KeyPin = GetKey->FindPinChecked(TEXT("Key"));
+	K2NodeHelpers::TryConnect(CompilerContext, GetKey->FindPinChecked(TEXT("Index")), LoopCounterPin);
+	UEdGraphPin* KeyPin = K2NodeHelpers::ReconstructAndFindPin(GetKey, TEXT("Key"));
+	check(KeyPin);
 	KeyPin->PinType = GetKeyPin()->PinType;
-	GetKey->PostReconstructNode();
 
 	// 11. 获取Value
 	UK2Node_CallFunction* GetValue = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -230,11 +237,11 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	UEdGraphPin* GetValueTargetMapPin = GetValue->FindPinChecked(TEXT("TargetMap"), EGPD_Input);
 	GetValueTargetMapPin->PinType = GetMapPin()->PinType;
 	GetValueTargetMapPin->PinType.PinValueType = FEdGraphTerminalType(GetMapPin()->PinType.PinValueType);
-	CompilerContext.GetSchema()->TryCreateConnection(GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
+	K2NodeHelpers::TryConnect(CompilerContext, GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *GetValueTargetMapPin);
-	UEdGraphPin* ValuePin = GetValue->FindPinChecked(TEXT("Value"));
+	UEdGraphPin* ValuePin = K2NodeHelpers::ReconstructAndFindPin(GetValue, TEXT("Value"));
+	check(ValuePin);
 	ValuePin->PinType = GetValuePin()->PinType;
-	GetValue->PostReconstructNode();
 
 	// 12. 最后统一移动所有外部连接（参考智能排序模式）
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *LoopCounterInitialise->GetExecPin());
@@ -246,7 +253,7 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CompilerContext.MovePinLinksToIntermediate(*GetIndexPin(), *LoopCounterPin);
 
 	// 13. 断开原节点所有链接
-	BreakAllNodeLinks();
+	K2NodeHelpers::EndExpandNode(this);
 }
 
 #pragma endregion
@@ -570,3 +577,4 @@ void UK2Node_ForEachMap::PropagatePinType() const
 //——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #undef LOCTEXT_NAMESPACE
+

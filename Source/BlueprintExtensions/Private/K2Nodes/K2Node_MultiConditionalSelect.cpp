@@ -224,8 +224,15 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
 
-	UEdGraphPin* ReferenceOptionPin = GetCasePinPairs()[0].Key;
 	TArray<CasePinPair> CasePinPairs = GetCasePinPairs();
+	if (CasePinPairs.Num() == 0 || !CasePinPairs[0].Key)
+	{
+		CompilerContext.MessageLog.Error(*LOCTEXT("MultiConditionalSelect_NoCasePins", "错误：[多条件选择] 节点 %% 缺少有效条件分支。").ToString(), this);
+		BreakAllNodeLinks();
+		return;
+	}
+
+	UEdGraphPin* ReferenceOptionPin = CasePinPairs[0].Key;
 
 	FEdGraphPinType Select1stPinType;
 	Select1stPinType.PinCategory = UEdGraphSchema_K2::PC_Int;
@@ -294,8 +301,12 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	UEdGraphPin* ArrayPin = MakeArray->GetOutputPin();
 	UEdGraphPin* TargetArrayPin = ArrayFind->FindPinChecked(TEXT("TargetArray"));
 	UEdGraphPin* ItemToFindPin = ArrayFind->FindPinChecked(TEXT("ItemToFind"));
+	const UEdGraphSchema* Schema = CompilerContext.GetSchema();
 	ArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
-	ArrayPin->MakeLinkTo(TargetArrayPin);
+	if (Schema)
+	{
+		Schema->TryCreateConnection(ArrayPin, TargetArrayPin);
+	}
 	TargetArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
 	ItemToFindPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
 	MakeArray->GetSchema()->TrySetDefaultValue(*ItemToFindPin, TEXT("true"));
@@ -303,13 +314,19 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	// Link between Array Find and 1st Select
 	UEdGraphPin* ArrayFindOutputPin = ArrayFind->GetReturnValuePin();
 	UEdGraphPin* Select1stIndexPin = Select1st->GetIndexPin();
-	ArrayFindOutputPin->MakeLinkTo(Select1stIndexPin);
+	if (Schema)
+	{
+		Schema->TryCreateConnection(ArrayFindOutputPin, Select1stIndexPin);
+	}
 	Select1st->NotifyPinConnectionListChanged(Select1stIndexPin);
 
 	// Link between Array Find and Int Equal
 	UEdGraphPin* IntEqualAPin = IntEqual->FindPinChecked(TEXT("A"));
 	UEdGraphPin* IntEqualBPin = IntEqual->FindPinChecked(TEXT("B"));
-	ArrayFindOutputPin->MakeLinkTo(IntEqualAPin);
+	if (Schema)
+	{
+		Schema->TryCreateConnection(ArrayFindOutputPin, IntEqualAPin);
+	}
 	ArrayFindOutputPin->GetSchema()->TrySetDefaultValue(*IntEqualBPin, TEXT("-1"));
 
 	// Link among 1st Select, 2nd Select and Int Equal
@@ -318,9 +335,15 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	UEdGraphPin* Select2ndIndexPin = Select2nd->GetIndexPin();
 	TArray<UEdGraphPin*> Select2ndOptionPins;
 	Select2nd->GetOptionPins(Select2ndOptionPins);
-	IntEqualReturnValuePin->MakeLinkTo(Select2ndIndexPin);
+	if (Schema)
+	{
+		Schema->TryCreateConnection(IntEqualReturnValuePin, Select2ndIndexPin);
+	}
 	Select2nd->NotifyPinConnectionListChanged(Select2ndIndexPin);
-	Select1stReturnValuePin->MakeLinkTo(Select2ndOptionPins[0]);
+	if (Schema)
+	{
+		Schema->TryCreateConnection(Select1stReturnValuePin, Select2ndOptionPins[0]);
+	}
 	CompilerContext.MovePinLinksToIntermediate(*GetDefaultOptionPin(), *Select2ndOptionPins[1]);
 
 	// Link 2nd Select and outer
