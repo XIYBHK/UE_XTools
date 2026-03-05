@@ -225,7 +225,7 @@ public:
 		UPARAM(DisplayName="触发概率") float BaseChance,
 		UPARAM(DisplayName="更新失败数") int32& OutFailureCount,
 		UPARAM(DisplayName="当前概率") float& OutActualChance,
-		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"),
+		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"), // 用于系统隔离标记与状态观测，不覆盖手动输入
 		UPARAM(DisplayName="连续失败数") int32 FailureCount = 0);
 
 	/**
@@ -272,7 +272,7 @@ public:
 		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream,
 		UPARAM(DisplayName="更新失败数") int32& OutFailureCount,
 		UPARAM(DisplayName="当前概率") float& OutActualChance,
-		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"),
+		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"), // 用于系统隔离标记与状态观测，不覆盖手动输入
 		UPARAM(DisplayName="连续失败数") int32 FailureCount = 0);
 
 	/**
@@ -594,7 +594,10 @@ public:
 	static FCriticalSection PerformanceStatsLock;
 
 	// 获取或创建PRD状态 - 线程安全版本
-	static int32& GetOrCreatePRDState(const FString& StateID);
+	static int32 GetOrCreatePRDStateValue(const FString& StateID);
+
+	// 更新PRD状态值 - 线程安全版本
+	static void SetPRDStateValue(const FString& StateID, int32 FailureCount);
 
 	// 更新性能统计 - 线程安全版本
 	static void UpdatePerformanceStats(int32 FailureCount);

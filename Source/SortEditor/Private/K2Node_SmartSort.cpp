@@ -8,6 +8,7 @@
 #include "K2Node_CallFunction.h"
 #include "K2Node_IfThenElse.h"
 #include "K2Node_SwitchEnum.h"
+#include "K2Node_ExecutionSequence.h"
 #include "K2Node_TemporaryVariable.h"
 #include "K2Node_AssignmentStatement.h"
 #include "KismetCompiler.h"
@@ -16,7 +17,6 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Engine/Engine.h"
-#include "Kismet/KismetSystemLibrary.h"
 #include "SortLibrary.h"
 #include "XToolsErrorReporter.h"
 
@@ -916,6 +916,7 @@ void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContex
 		{
 			// 获取输入数组的源连接
 			UEdGraphPin* SourceArrayPin = FuncInputArrayPin->LinkedTo[0];
+			const UEdGraphSchema* Schema = CompilerContext.GetSchema();
 
 			// 将智能排序节点的输出连接到原始数组源
 			// 这样输出就会指向修改后的数组
@@ -923,7 +924,10 @@ void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContex
 			{
 				for (UEdGraphPin* LinkedPin : SortedArrayOutputPin->LinkedTo)
 				{
-					LinkedPin->MakeLinkTo(SourceArrayPin);
+					if (Schema)
+					{
+						Schema->TryCreateConnection(SourceArrayPin, LinkedPin);
+					}
 				}
 			}
 		}
@@ -1171,44 +1175,27 @@ UEdGraphPin* UK2Node_SmartSort::GetSortModePin() const
 
 void UK2Node_SmartSort::CreatePureFunctionExecutionFlow(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode, UEdGraph* SourceGraph)
 {
-	// 对于Pure函数，我们需要创建一个中间的执行节点来连接执行流
-	// 使用一个简单的"Do Nothing"节点来传递执行流
-
-	// 创建一个"Print String"节点作为中间节点（但不实际打印任何内容）
-	UK2Node_CallFunction* PassthroughNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	PassthroughNode->FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UKismetSystemLibrary, PrintString),
-		UKismetSystemLibrary::StaticClass()
-	);
-	PassthroughNode->AllocateDefaultPins();
+	// Pure函数没有Exec引脚；使用ExecutionSequence仅在编译期转发执行流，避免运行时副作用
+	UK2Node_ExecutionSequence* SequenceNode = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
+	SequenceNode->AllocateDefaultPins();
 
 	// 连接执行引脚
 	UEdGraphPin* MyExecPin = this->GetExecPin();
-	UEdGraphPin* PassthroughExecPin = PassthroughNode->GetExecPin();
-	UEdGraphPin* PassthroughThenPin = PassthroughNode->GetThenPin();
+	UEdGraphPin* SequenceExecPin = SequenceNode->GetExecPin();
+	UEdGraphPin* SequenceThenPin = SequenceNode->GetThenPinGivenIndex(0);
 	UEdGraphPin* MyThenPin = this->GetThenPin();
 
-	if (MyExecPin && PassthroughExecPin)
+	if (MyExecPin && SequenceExecPin)
 	{
-		CompilerContext.MovePinLinksToIntermediate(*MyExecPin, *PassthroughExecPin);
+		CompilerContext.MovePinLinksToIntermediate(*MyExecPin, *SequenceExecPin);
 	}
 
-	if (PassthroughThenPin && MyThenPin)
+	if (SequenceThenPin && MyThenPin)
 	{
-		CompilerContext.MovePinLinksToIntermediate(*MyThenPin, *PassthroughThenPin);
+		CompilerContext.MovePinLinksToIntermediate(*MyThenPin, *SequenceThenPin);
 	}
 
-	// 设置PrintString的参数为空字符串，这样不会有任何输出
-	UEdGraphPin* InStringPin = PassthroughNode->FindPin(TEXT("InString"), EGPD_Input);
-	if (InStringPin)
-	{
-		InStringPin->DefaultValue = TEXT("");
-	}
-
-	// 连接Pure函数的输出到我们的输出引脚
-	// 这样Pure函数会在输出被使用时自动执行
-
-	UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] Pure函数执行流创建完成，使用中间执行节点"));
+	UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] Pure函数执行流创建完成，使用ExecutionSequence节点"));
 }
 
 void UK2Node_SmartSort::SetEnumPinDefaultValue(UEdGraphPin* EnumPin, UEnum* EnumClass)

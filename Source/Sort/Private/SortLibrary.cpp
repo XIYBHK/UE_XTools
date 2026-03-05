@@ -249,7 +249,8 @@ void USortLibrary::SortActorsByAngle(const TArray<AActor*>& Actors, const FVecto
         ToActor.Normalize();
 
         const float Dot = FVector::DotProduct(NormalizedDirection, ToActor);
-        float AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
+        const float ClampedDot = FMath::Clamp(Dot, -1.0f, 1.0f);
+        float AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(ClampedDot));
 
         // 对于2D角度，判断是否为优角 (> 180度)
         if (b2DAngle)
@@ -333,7 +334,8 @@ void USortLibrary::SortActorsByAngleAndDistance(const TArray<AActor*>& Actors, c
         if (b2DAngle) ToActor.Z = 0.0f;
         ToActor.Normalize();
         const float Dot = FVector::DotProduct(NormalizedDirection, ToActor);
-        float Angle = FMath::RadiansToDegrees(FMath::Acos(Dot));
+        const float ClampedDot = FMath::Clamp(Dot, -1.0f, 1.0f);
+        float Angle = FMath::RadiansToDegrees(FMath::Acos(ClampedDot));
         if (b2DAngle)
         {
             const float CrossZ = NormalizedDirection.X * ToActor.Y - NormalizedDirection.Y * ToActor.X;
@@ -981,9 +983,9 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
         return;
     }
 
-    UE_LOG(LogSort, Warning, TEXT("GenericSortArrayByProperty: 创建ArrayHelper"));
+    UE_LOG(LogSort, Verbose, TEXT("GenericSortArrayByProperty: 创建ArrayHelper"));
     FScriptArrayHelper ArrayHelper(ArrayProp, TargetArray);
-    UE_LOG(LogSort, Warning, TEXT("GenericSortArrayByProperty: ArrayHelper创建成功，数组大小=%d"), ArrayHelper.Num());
+    UE_LOG(LogSort, Verbose, TEXT("GenericSortArrayByProperty: ArrayHelper创建成功，数组大小=%d"), ArrayHelper.Num());
     if (ArrayHelper.Num() < 2)
     {
         // 数组太小，不需要排序
@@ -1109,9 +1111,24 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
         }
         else if (NumericProp->IsInteger())
         {
-            const int64 LeftValue = NumericProp->GetSignedIntPropertyValue(LeftValuePtr);
-            const int64 RightValue = NumericProp->GetSignedIntPropertyValue(RightValuePtr);
-            bResult = LeftValue < RightValue;
+            const bool bIsUnsignedInteger =
+                (CastField<FByteProperty>(Property) != nullptr) ||
+                (CastField<FUInt16Property>(Property) != nullptr) ||
+                (CastField<FUInt32Property>(Property) != nullptr) ||
+                (CastField<FUInt64Property>(Property) != nullptr);
+
+            if (bIsUnsignedInteger)
+            {
+                const uint64 LeftValue = NumericProp->GetUnsignedIntPropertyValue(LeftValuePtr);
+                const uint64 RightValue = NumericProp->GetUnsignedIntPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
+            else
+            {
+                const int64 LeftValue = NumericProp->GetSignedIntPropertyValue(LeftValuePtr);
+                const int64 RightValue = NumericProp->GetSignedIntPropertyValue(RightValuePtr);
+                bResult = LeftValue < RightValue;
+            }
         }
     }
     else if (const FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
@@ -1142,9 +1159,25 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
     #endif
     else if (const FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
     {
-        const int64 LeftValue = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(LeftValuePtr);
-        const int64 RightValue = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(RightValuePtr);
-        bResult = LeftValue < RightValue;
+        const FNumericProperty* UnderlyingProp = EnumProp->GetUnderlyingProperty();
+        const bool bIsUnsignedUnderlying =
+            (CastField<FByteProperty>(UnderlyingProp) != nullptr) ||
+            (CastField<FUInt16Property>(UnderlyingProp) != nullptr) ||
+            (CastField<FUInt32Property>(UnderlyingProp) != nullptr) ||
+            (CastField<FUInt64Property>(UnderlyingProp) != nullptr);
+
+        if (bIsUnsignedUnderlying)
+        {
+            const uint64 LeftValue = UnderlyingProp->GetUnsignedIntPropertyValue(LeftValuePtr);
+            const uint64 RightValue = UnderlyingProp->GetUnsignedIntPropertyValue(RightValuePtr);
+            bResult = LeftValue < RightValue;
+        }
+        else
+        {
+            const int64 LeftValue = UnderlyingProp->GetSignedIntPropertyValue(LeftValuePtr);
+            const int64 RightValue = UnderlyingProp->GetSignedIntPropertyValue(RightValuePtr);
+            bResult = LeftValue < RightValue;
+        }
     }
 
     return bResult == bAscending;

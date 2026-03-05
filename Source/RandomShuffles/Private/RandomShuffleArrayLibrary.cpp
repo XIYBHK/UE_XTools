@@ -240,6 +240,16 @@ namespace RandomShuffles {
         if (P <= 0.f) return 0.f;
         if (P >= 1.f) return 1.f;
 
+        // 低概率区间（P < 0.01）使用二次近似，避免直接贴边到0.01导致偏差过大
+        // 基于表首项拟合：C ~= k * P^2, 其中 k = 0.000156 / (0.01^2) = 1.56
+        constexpr float MinTableP = 0.01f;
+        constexpr float MinTableC = 0.000156f;
+        if (P < MinTableP)
+        {
+            constexpr float QuadraticK = MinTableC / (MinTableP * MinTableP);
+            return FMath::Min(QuadraticK * P * P, MinTableC);
+        }
+
         // 使用二分查找找到合适的区间
         int32 Left = 0;
         int32 Right = PRDConstantTable.Num() - 1;
@@ -354,13 +364,9 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
         Count = ArrayHelper.Num();
     }
 
-    FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
-    OutputHelper.Resize(Count);
-    
     auto randFunc = RandomShuffles::FRand{ Stream };
     auto begin = ScriptArrayInputIterator<uint8*>(TargetArray, ArrayProp);
     auto end = ScriptArrayInputIterator<uint8*>(TargetArray, ArrayProp, ArrayHelper.Num());
-    auto out = ScriptArrayOutputIterator(OutputArray, OutputProp);
 
     if (WeightsProp) {
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
@@ -369,10 +375,18 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
             return;
         }
 
+        FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
+        OutputHelper.Resize(Count);
+        auto out = ScriptArrayOutputIterator(OutputArray, OutputProp);
+
         auto wbegin = ScriptArrayInputIterator<float>(Weights, WeightsProp);
         WeightPoolSample(begin, end, wbegin, out, Count, randFunc);
     }
     else {
+        FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
+        OutputHelper.Resize(Count);
+        auto out = ScriptArrayOutputIterator(OutputArray, OutputProp);
+
         auto wbegin = ConstWeightIterator(1.0f);
         WeightPoolSample(begin, end, wbegin, out, Count, randFunc);
     }
@@ -411,7 +425,7 @@ namespace RandomShuffles
         const bool bSuccess = RandomFunc() < OutActualChance;
 
         // 更新失败次数
-        OutFailureCount = bSuccess ? 0 : FailureCount + 1;
+        OutFailureCount = bSuccess ? 0 : FMath::Min(FailureCount + 1, RandomShuffles::Config::MaxFailureCount);
 
         return bSuccess;
     }
@@ -426,17 +440,20 @@ FCriticalSection URandomShuffleArrayLibrary::PerformanceStatsLock;
 // 简单版本 - 自动状态管理
 bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, FString StateID)
 {
-    // 输入验证
-    BaseChance = FMath::Clamp(BaseChance, RandomShuffles::Config::MinValidChance, RandomShuffles::Config::MaxValidChance);
+    // 输入验证：与其他PRD接口保持一致，允许BaseChance=0完全关闭触发
+    BaseChance = FMath::Clamp(BaseChance, 0.0f, RandomShuffles::Config::MaxValidChance);
 
-    int32& FailureCount = GetOrCreatePRDState(StateID);
+    int32 FailureCount = GetOrCreatePRDStateValue(StateID);
     float ActualChance = 0.0f;
+    int32 UpdatedFailureCount = FailureCount;
 
-    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, FailureCount, ActualChance,
+    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, UpdatedFailureCount, ActualChance,
         []() { return FMath::FRand(); });
 
+    SetPRDStateValue(StateID, UpdatedFailureCount);
+
     // 更新性能统计
-    UpdatePerformanceStats(FailureCount);
+    UpdatePerformanceStats(UpdatedFailureCount);
 
     return bResult;
 }
@@ -444,37 +461,68 @@ bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, FString Stat
 // 高级版本 - 完全手动控制
 bool URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(float BaseChance, int32& OutFailureCount, float& OutActualChance, FString StateID, int32 FailureCount)
 {
-    return RandomShuffles::CalculatePRD(BaseChance, FailureCount, OutFailureCount, OutActualChance,
+    BaseChance = FMath::Clamp(BaseChance, 0.0f, RandomShuffles::Config::MaxValidChance);
+
+    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, OutFailureCount, OutActualChance,
         []() { return FMath::FRand(); });
+
+    // 高级模式仍由调用者控制输入失败数，这里仅按 StateID 记录最新状态，便于系统隔离和观测
+    if (!StateID.IsEmpty())
+    {
+        SetPRDStateValue(StateID, OutFailureCount);
+    }
+    UpdatePerformanceStats(OutFailureCount);
+
+    return bResult;
 }
 
 // 简单版本 - 随机流 + 自动状态管理
 bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(float BaseChance, FRandomStream& Stream, FString StateID)
 {
-    int32& FailureCount = GetOrCreatePRDState(StateID);
+    BaseChance = FMath::Clamp(BaseChance, 0.0f, RandomShuffles::Config::MaxValidChance);
+
+    int32 FailureCount = GetOrCreatePRDStateValue(StateID);
     float ActualChance = 0.0f;
-    return RandomShuffles::CalculatePRD(BaseChance, FailureCount, FailureCount, ActualChance,
+    int32 UpdatedFailureCount = FailureCount;
+
+    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, UpdatedFailureCount, ActualChance,
         [&Stream]() { return Stream.FRand(); });
+
+    SetPRDStateValue(StateID, UpdatedFailureCount);
+    UpdatePerformanceStats(UpdatedFailureCount);
+
+    return bResult;
 }
 
 // 高级版本 - 随机流 + 完全手动控制
 bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(float BaseChance, FRandomStream& Stream, int32& OutFailureCount, float& OutActualChance, FString StateID, int32 FailureCount)
 {
-    return RandomShuffles::CalculatePRD(BaseChance, FailureCount, OutFailureCount, OutActualChance,
+    BaseChance = FMath::Clamp(BaseChance, 0.0f, RandomShuffles::Config::MaxValidChance);
+
+    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, OutFailureCount, OutActualChance,
         [&Stream]() { return Stream.FRand(); });
+
+    // 高级模式仍由调用者控制输入失败数，这里仅按 StateID 记录最新状态，便于系统隔离和观测
+    if (!StateID.IsEmpty())
+    {
+        SetPRDStateValue(StateID, OutFailureCount);
+    }
+    UpdatePerformanceStats(OutFailureCount);
+
+    return bResult;
 }
 
 // PRD状态管理函数实现 - 线程安全版本
-int32& URandomShuffleArrayLibrary::GetOrCreatePRDState(const FString& StateID)
+int32 URandomShuffleArrayLibrary::GetOrCreatePRDStateValue(const FString& StateID)
 {
     FScopeLock Lock(&PRDStateLock);
 
     const FName StateKey(*StateID);
 
     // 如果已存在，直接返回
-    if (PRDStateMap.Contains(StateKey))
+    if (const int32* ExistingValue = PRDStateMap.Find(StateKey))
     {
-        return PRDStateMap[StateKey];
+        return *ExistingValue;
     }
 
     // 首次使用时预分配内存
@@ -488,18 +536,33 @@ int32& URandomShuffleArrayLibrary::GetOrCreatePRDState(const FString& StateID)
     {
         // 使用 Error 级别日志确保可见性
         UE_LOG(LogRandomShuffle, Error,
-            TEXT("PRD状态映射已达到最大大小限制 (%d)。新状态 '%s' 无法创建，将返回临时状态。"),
+            TEXT("PRD状态映射已达到最大大小限制 (%d)。新状态 '%s' 无法创建，将返回默认状态值。"),
             RandomShuffles::Config::MaxStateMapSize, *StateID);
 
-        // 修复：返回线程局部的临时状态，避免多个系统共享同一个默认状态
-        // 使用 thread_local 确保每个线程有独立的临时状态
-        static thread_local int32 TemporaryState = 0;
-        return TemporaryState;
+        return 0;
     }
 
     // 添加新状态
     PRDStateMap.Add(StateKey, 0);
-    return PRDStateMap[StateKey];
+    return 0;
+}
+
+void URandomShuffleArrayLibrary::SetPRDStateValue(const FString& StateID, int32 FailureCount)
+{
+    FScopeLock Lock(&PRDStateLock);
+
+    const FName StateKey(*StateID);
+    if (int32* ExistingValue = PRDStateMap.Find(StateKey))
+    {
+        *ExistingValue = FMath::Clamp(FailureCount, 0, RandomShuffles::Config::MaxFailureCount);
+        return;
+    }
+
+    // 状态可能在并发下被清理；如果仍有空间则重建该状态
+    if (PRDStateMap.Num() < RandomShuffles::Config::MaxStateMapSize)
+    {
+        PRDStateMap.Add(StateKey, FMath::Clamp(FailureCount, 0, RandomShuffles::Config::MaxFailureCount));
+    }
 }
 
 void URandomShuffleArrayLibrary::ClearPRDState(FString StateID)
@@ -527,12 +590,19 @@ void URandomShuffleArrayLibrary::ClearAllPRDStates()
 // 性能统计实现
 FPRDPerformanceStats URandomShuffleArrayLibrary::GetPRDPerformanceStats()
 {
-    FScopeLock Lock(&PerformanceStatsLock);
+    int32 CurrentStateMapSize = 0;
+    {
+        FScopeLock StateLock(&PRDStateLock);
+        CurrentStateMapSize = PRDStateMap.Num();
+    }
 
-    // 更新当前状态映射大小
-    PerformanceStats.StateMapSize = PRDStateMap.Num();
-
-    return PerformanceStats;
+    FPRDPerformanceStats Snapshot;
+    {
+        FScopeLock StatsLock(&PerformanceStatsLock);
+        Snapshot = PerformanceStats;
+    }
+    Snapshot.StateMapSize = CurrentStateMapSize;
+    return Snapshot;
 }
 
 void URandomShuffleArrayLibrary::ResetPRDPerformanceStats()
