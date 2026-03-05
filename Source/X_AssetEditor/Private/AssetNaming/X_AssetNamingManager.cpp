@@ -348,10 +348,16 @@ FString FX_AssetNamingManager::GetCorrectPrefix(const FAssetData& AssetData, con
 
 FX_RenameOperationResult FX_AssetNamingManager::RenameSelectedAssets()
 {
-    FX_RenameOperationResult Result;
-
     // 获取选中的资产数据
     TArray<FAssetData> SelectedAssets = UEditorUtilityLibrary::GetSelectedAssetData();
+    return RenameAssets(SelectedAssets);
+}
+
+FX_RenameOperationResult FX_AssetNamingManager::RenameAssets(const TArray<FAssetData>& AssetsToRename)
+{
+    FX_RenameOperationResult Result;
+
+    const TArray<FAssetData>& SelectedAssets = AssetsToRename;
     if (SelectedAssets.Num() == 0)
     {
         UE_LOG(LogX_AssetNaming, Warning, TEXT("No assets selected; cannot perform rename"));

@@ -262,7 +262,7 @@ void FX_MenuExtensionManager::AddAssetNamingMenuEntry(FMenuBuilder& MenuBuilder,
             FUIAction(
                 FExecuteAction::CreateLambda([SelectedAssets]()
                 {
-                    FX_AssetNamingManager::Get().RenameSelectedAssets();
+                    FX_AssetNamingManager::Get().RenameAssets(SelectedAssets);
                 })
             )
         );

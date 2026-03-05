@@ -107,6 +107,13 @@ public:
     FX_RenameOperationResult RenameSelectedAssets();
 
     /**
+     * 重命名指定资产列表
+     * @param AssetsToRename 要处理的资产数组
+     * @return 操作结果（包含计数和详情）
+     */
+    FX_RenameOperationResult RenameAssets(const TArray<FAssetData>& AssetsToRename);
+
+    /**
      * 获取资产的简单类名
      * @param AssetData 资产数据
      * @return 简单类名
