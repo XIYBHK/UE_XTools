@@ -21,6 +21,7 @@ UX_AssetEditorSettings::UX_AssetEditorSettings()
 	// 设为 15 秒可覆盖大部分正常操作，同时避免误判复制操作
 	, FactoryCreationTimeWindow(15.0f)
 	, StartupActivationDelay(30.0f)
+	, bEnableCloseReopenFallbackForMaterialRefresh(false)
 	// 子系统开关默认值
 	, bEnableObjectPoolSubsystem(false)
 	, bEnableEnhancedCodeFlowSubsystem(true)

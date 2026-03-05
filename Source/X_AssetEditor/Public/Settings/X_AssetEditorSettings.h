@@ -187,7 +187,19 @@ public:
 	TMap<FString, FString> ParentClassPrefixMappings;
 
 	// ========== 材质工具设置 ==========
-	// （材质收集已内置并行优化，无需额外设置）
+
+	/**
+	 * 材质编辑器刷新失败时，是否回退为“关闭并重新打开编辑器”
+	 *
+	 * 说明：
+	 * - 默认关闭，优先使用无打断的实时刷新链路
+	 * - 开启后，当插件无法通过 Graph/Preview 刷新链路同步材质编辑器时，
+	 *   将自动执行关开编辑器作为兜底方案
+	 */
+	UPROPERTY(config, EditAnywhere, Category="材质工具设置", meta=(
+		DisplayName="材质刷新失败时关开编辑器兜底",
+		ToolTip="默认关闭。开启后，当材质编辑器实时刷新链路不可用时，自动关闭并重新打开该材质编辑器作为兜底。"))
+	bool bEnableCloseReopenFallbackForMaterialRefresh;
 
 	// ========== 子系统开关 ==========
 
