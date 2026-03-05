@@ -425,19 +425,9 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
         return;
     }
 
-    // 检查资产是否仍然存在（避免处理已被删除或重命名的资产）
-    // 注意：不能使用 FPackageName::DoesPackageExist()，因为它只检查磁盘文件
-    // 新创建未保存的资产只存在于内存中，需要使用 FindPackage() 或 GetAsset() 检查
-    FString PackageName = AssetData.PackageName.ToString();
-    UPackage* Package = FindPackage(nullptr, *PackageName);
-    if (!Package)
-    {
-        // 包不在内存中，可能已被删除或重命名
-        UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset package no longer exists in memory: %s (may have been renamed or deleted)"),
-            *AssetData.AssetName.ToString());
-        Result.SkippedCount++;
-        return;
-    }
+    // 手动批量流程应尽量处理“已选中即可处理”的资产。
+    // 这里不再以 FindPackage 作为前置条件，避免误跳过未加载但可重命名的资产。
+    // 后续会通过 AssetData.GetAsset() 做最终对象有效性校验。
 
     // 检查是否在排除列表中
     if (IsAssetExcluded(AssetData))

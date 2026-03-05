@@ -77,7 +77,7 @@ private:
 	/** 委托句柄 */
 	FDelegateHandle OnAssetAddedHandle;
 	FDelegateHandle OnAssetPostImportHandle;
-	FDelegateHandle OnNewAssetCreatedHandle;
+	FDelegateHandle OnConfigureNewAssetPropertiesHandle;
 	FDelegateHandle OnFilesLoadedHandle;
 	FDelegateHandle OnEditorModeChangedHandle;
 	FTSTicker::FDelegateHandle DelayedActivationTickerHandle;
@@ -96,11 +96,17 @@ private:
 	/** 重入保护标志（防止递归重命名导致崩溃） */
 	bool bIsProcessingAsset = false;
 
-	/** 最后一次工厂创建资产的时间戳 */
-	double LastFactoryCreationTime = 0.0;
+	/** 最近一次“手动新建资产意图”时间戳（由 OnConfigureNewAssetProperties 标记） */
+	double LastManualCreateIntentTime = 0.0;
 
-	/** 最后一次工厂支持的资产类（用于类型校验，防止误伤） */
-	TWeakObjectPtr<UClass> LastFactorySupportedClass;
+	/** 当前手动新建意图的有效时间窗（秒） */
+	double ManualCreateIntentWindowSeconds = 0.0;
+
+	/** 最近一次手动新建意图的工厂支持类（用于类型校验，防止误伤） */
+	TWeakObjectPtr<UClass> LastManualCreateSupportedClass;
+
+	/** 是否存在尚未消费的手动新建意图 */
+	bool bHasPendingManualCreateIntent = false;
 
 	/**
 	 * 当资产添加到 AssetRegistry 时调用（新建或导入资产）
@@ -109,10 +115,10 @@ private:
 	void OnAssetAdded(const FAssetData& AssetData);
 
 	/**
-	 * 当通过工厂创建新资产时调用
+	 * 当显示“新建资产属性配置”时调用
 	 * @param Factory - 用于创建资产的工厂
 	 */
-	void OnNewAssetCreated(class UFactory* Factory);
+	void OnConfigureNewAssetProperties(class UFactory* Factory);
 
 	/**
 	 * 资产导入或重新导入后调用
@@ -168,5 +174,11 @@ private:
 	 * 检查指定模式 ID 是否为特殊模式
 	 */
 	static bool IsSpecialModeID(const FEditorModeID& ModeID);
+
+	/** 清空“手动新建意图”状态 */
+	void ResetManualCreateIntent();
+
+	/** 检查资产是否携带有效 SourceFile 标签（用于识别真实外部导入） */
+	static bool HasValidSourceFileTag(const FAssetData& AssetData);
 };
 

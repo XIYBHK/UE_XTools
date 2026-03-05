@@ -9,22 +9,23 @@
 #include "AssetRegistry/AssetData.h"
 #include "Editor.h"
 #include "Factories/Factory.h"
+#include "Factories/BlueprintFactory.h"
 #include "Subsystems/ImportSubsystem.h"
 #include "Misc/CoreDelegates.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "Containers/Ticker.h"
 #include "Framework/Application/SlateApplication.h"
-#include "HAL/PlatformFilemanager.h"
-#include "Internationalization/Regex.h"
 #include "EditorModeManager.h"
 #include "EditorModes.h"
-#include "Misc/PackageName.h"
+#include "UObject/Object.h"
 
 DEFINE_LOG_CATEGORY(LogX_AssetNamingDelegates);
 
 // 需要排除自动重命名的特殊编辑模式（ID 来自 UE 源码）
 static const TArray<FEditorModeID> GSpecialEditorModes = {
 	TEXT("EM_FractureEditorMode"),        // 破碎模式 (ChaosEditor)
+	TEXT("EM_ChaosEditorMode"),           // Chaos 相关模式（不同版本命名可能不同）
+	TEXT("EM_ChaosClothAssetEditorMode"), // Chaos 布料相关模式（不同版本命名可能不同）
 	TEXT("EM_ModelingToolsEditorMode"),   // 建模模式 (ModelingToolsEditorMode)
 	TEXT("EM_Landscape"),                 // 地形模式
 	TEXT("EM_Foliage"),                   // 植被模式
@@ -89,11 +90,11 @@ void FX_AssetNamingDelegates::Initialize(FOnAssetNeedsRename InRenameCallback)
 	);
 	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnFilesLoaded 委托"));
 
-	// 4. 绑定 OnNewAssetCreated（用于精准识别 Factory 创建/导入操作）
-	OnNewAssetCreatedHandle = FEditorDelegates::OnNewAssetCreated.AddRaw(
-		this, &FX_AssetNamingDelegates::OnNewAssetCreated
+	// 4. 绑定 OnConfigureNewAssetProperties（用于捕获“手动新建资产意图”）
+	OnConfigureNewAssetPropertiesHandle = FEditorDelegates::OnConfigureNewAssetProperties.AddRaw(
+		this, &FX_AssetNamingDelegates::OnConfigureNewAssetProperties
 	);
-	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnNewAssetCreated 委托"));
+	UE_LOG(LogX_AssetNamingDelegates, Log, TEXT("已绑定到 OnConfigureNewAssetProperties 委托"));
 
 	// ========== 【关键修复】无论 AssetRegistry 是否已加载，都延迟激活 ==========
 	bIsActive = true;
@@ -126,6 +127,7 @@ void FX_AssetNamingDelegates::Shutdown()
 	// 必须最先置为 false，阻止并发/延迟回调继续执行
 	bIsActive = false;
 	bIsProcessingAsset = false;
+	ResetManualCreateIntent();
 
 	// 1. 解绑 OnAssetPostImport
 	if (OnAssetPostImportHandle.IsValid() && GEditor)
@@ -161,11 +163,11 @@ void FX_AssetNamingDelegates::Shutdown()
 		OnFilesLoadedHandle.Reset();
 	}
 
-	// 4. 解绑 OnNewAssetCreated
-	if (OnNewAssetCreatedHandle.IsValid())
+	// 4. 解绑 OnConfigureNewAssetProperties
+	if (OnConfigureNewAssetPropertiesHandle.IsValid())
 	{
-		FEditorDelegates::OnNewAssetCreated.Remove(OnNewAssetCreatedHandle);
-		OnNewAssetCreatedHandle.Reset();
+		FEditorDelegates::OnConfigureNewAssetProperties.Remove(OnConfigureNewAssetPropertiesHandle);
+		OnConfigureNewAssetPropertiesHandle.Reset();
 	}
 
 	// 5. 解绑编辑模式切换回调
@@ -250,11 +252,9 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		return;
 	}
 
-	const float FactoryTimeWindow = Settings ? Settings->FactoryCreationTimeWindow : 5.0f;
-
 	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
 
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, AssetData, FactoryTimeWindow](float DeltaTime) -> bool
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, AssetData](float DeltaTime) -> bool
 	{
 		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
 		if (!SharedThis.IsValid() || !SharedThis->bIsActive || !SharedThis->RenameCallback.IsBound())
@@ -262,98 +262,146 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			return false;
 		}
 
-		bool bIsUserAction = false;
-		double CurrentTime = FPlatformTime::Seconds();
-		double TimeSinceLastFactory = CurrentTime - SharedThis->LastFactoryCreationTime;
-
-		// 通道 1: Factory 时间窗检测
-		if (TimeSinceLastFactory <= FactoryTimeWindow)
-		{
-			// 类型匹配检查
-			if (SharedThis->LastFactorySupportedClass.IsValid())
-			{
-				UClass* FactoryClass = SharedThis->LastFactorySupportedClass.Get();
-				UClass* AssetClass = AssetData.GetClass();
-				if (!AssetClass)
-				{
-					if (UObject* Asset = AssetData.GetAsset())
-					{
-						AssetClass = Asset->GetClass();
-					}
-				}
-				if (AssetClass && !AssetClass->IsChildOf(FactoryClass))
-				{
-					UE_LOG(LogX_AssetNamingDelegates, Verbose,
-						TEXT("类型不匹配，跳过: %s"), *AssetData.AssetName.ToString());
-					return false;
-				}
-			}
-			bIsUserAction = true;
-			UE_LOG(LogX_AssetNamingDelegates, Log,
-				TEXT("Factory 时间窗命中 (%.2fs): %s"), TimeSinceLastFactory, *AssetData.AssetName.ToString());
-		}
-
-		// 通道 2: 文件时间戳检测（备用，捕获拖拽导入等场景）
-		if (!bIsUserAction)
-		{
-			FString PackagePath = AssetData.PackagePath.ToString();
-			FString DiskPath = FPackageName::LongPackageNameToFilename(PackagePath, TEXT(".uasset"));
-			IPlatformFile& PlatformFile = IPlatformFile::GetPlatformPhysical();
-
-			if (PlatformFile.FileExists(*DiskPath))
-			{
-				const FFileStatData FileStat = PlatformFile.GetStatData(*DiskPath);
-				const FDateTime CreationTime = FileStat.CreationTime;
-				const FDateTime ModifiedTime = FileStat.ModificationTime;
-				FTimespan Age = FDateTime::Now() - CreationTime;
-
-				// 检查条件：
-				// 1. 文件在 10 秒内创建
-				// 2. 创建时间等于修改时间（新创建的文件，排除复制操作）
-				//    复制的文件通常会有不同的创建和修改时间
-				if (Age.GetTotalSeconds() <= 10.0 && CreationTime == ModifiedTime)
-				{
-					bIsUserAction = true;
-					UE_LOG(LogX_AssetNamingDelegates, Log,
-						TEXT("文件时间戳命中 (%.1fs): %s"), Age.GetTotalSeconds(), *AssetData.AssetName.ToString());
-				}
-			}
-		}
-
-		if (!bIsUserAction)
+		// 严格策略：
+		// OnAssetAdded 仅接受“手动新建资产意图令牌”命中的路径。
+		// 无令牌直接拒绝，从源头规避复制/粘贴/移动/启动自检/内置批处理误触发。
+		if (!SharedThis->bHasPendingManualCreateIntent)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
-				TEXT("所有检测通道未命中，跳过: %s"), *AssetData.AssetName.ToString());
+				TEXT("跳过 OnAssetAdded（无手动新建意图令牌）: %s"),
+				*AssetData.AssetName.ToString());
 			return false;
 		}
 
-		// 执行重命名
-		SharedThis->bIsProcessingAsset = true;
+		double CurrentTime = FPlatformTime::Seconds();
+		double TimeSinceLastCreateIntent = CurrentTime - SharedThis->LastManualCreateIntentTime;
+		const double IntentWindow = FMath::Max(SharedThis->ManualCreateIntentWindowSeconds, 0.1);
+
+		if (TimeSinceLastCreateIntent > IntentWindow)
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("跳过 OnAssetAdded（手动新建意图过期 %.2fs > %.2fs）: %s"),
+				TimeSinceLastCreateIntent, IntentWindow, *AssetData.AssetName.ToString());
+			SharedThis->ResetManualCreateIntent();
+			return false;
+		}
+
+		if (!SharedThis->LastManualCreateSupportedClass.IsValid())
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("跳过 OnAssetAdded（手动新建工厂支持类无效）: %s"), *AssetData.AssetName.ToString());
+			SharedThis->ResetManualCreateIntent();
+			return false;
+		}
+
+		UClass* FactoryClass = SharedThis->LastManualCreateSupportedClass.Get();
+		UClass* AssetClass = AssetData.GetClass();
+		if (!AssetClass)
+		{
+			if (UObject* LoadedAsset = AssetData.GetAsset())
+			{
+				AssetClass = LoadedAsset->GetClass();
+			}
+		}
+
+		if (!AssetClass)
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("跳过 OnAssetAdded（无法解析资产类）: %s"), *AssetData.AssetName.ToString());
+			SharedThis->ResetManualCreateIntent();
+			return false;
+		}
+
+		if (!AssetClass->IsChildOf(FactoryClass))
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("跳过 OnAssetAdded（手动新建类型不匹配）: %s (Asset=%s, Factory=%s)"),
+				*AssetData.AssetName.ToString(),
+				*AssetClass->GetName(),
+				*FactoryClass->GetName());
+			SharedThis->ResetManualCreateIntent();
+			return false;
+		}
+
+		if (SharedThis->IsInSpecialEditorMode())
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("跳过 OnAssetAdded（特殊编辑模式）: %s"), *AssetData.AssetName.ToString());
+			SharedThis->ResetManualCreateIntent();
+			return false;
+		}
+
+		if (!SharedThis->DetectUserOperationContext())
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("跳过 OnAssetAdded（非用户交互上下文）: %s"), *AssetData.AssetName.ToString());
+			SharedThis->ResetManualCreateIntent();
+			return false;
+		}
+
+		UE_LOG(LogX_AssetNamingDelegates, Log,
+			TEXT("命中手动新建资产自动重命名条件: %s (%.2fs)"),
+			*AssetData.AssetName.ToString(), TimeSinceLastCreateIntent);
+
+		// 执行重命名，作用域结束自动恢复重入标记
+		TGuardValue<bool> ProcessingGuard(SharedThis->bIsProcessingAsset, true);
 		SharedThis->RenameCallback.Execute(AssetData);
-		SharedThis->bIsProcessingAsset = false;
+		SharedThis->ResetManualCreateIntent();
 
 		return false;
 	}), 0.1f);
 }
 
-void FX_AssetNamingDelegates::OnNewAssetCreated(UFactory* Factory)
+void FX_AssetNamingDelegates::OnConfigureNewAssetProperties(UFactory* Factory)
 {
-	// 更新最后一次工厂创建资产的时间戳
-	LastFactoryCreationTime = FPlatformTime::Seconds();
-	
-	if (Factory)
+	const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+	const float BaseTimeWindow = (Settings && Settings->FactoryCreationTimeWindow > 0.0f)
+		? Settings->FactoryCreationTimeWindow
+		: 5.0f;
+
+	// 部分内置流程（例如 PackedLevelActorBuilder）会使用 BlueprintFactory 并跳过类选择器，
+	// 这类资产不是“常规手动新建资产”路径，直接抑制自动命名令牌。
+	if (const UBlueprintFactory* BlueprintFactory = Cast<UBlueprintFactory>(Factory))
 	{
-		LastFactorySupportedClass = Factory->GetSupportedClass();
+		if (BlueprintFactory->bSkipClassPicker)
+		{
+			UE_LOG(LogX_AssetNamingDelegates, Verbose,
+				TEXT("OnConfigureNewAssetProperties 命中 BlueprintFactory(bSkipClassPicker=true)，跳过手动新建意图"));
+			ResetManualCreateIntent();
+			return;
+		}
+	}
+
+	// 建立“手动新建意图令牌”。
+	// 注意：UE5.3~5.7 中 OnNewAssetCreated 基本无广播，故改用该委托作为可靠入口。
+	LastManualCreateIntentTime = FPlatformTime::Seconds();
+	ManualCreateIntentWindowSeconds = BaseTimeWindow;
+	bHasPendingManualCreateIntent = false;
+
+	if (Factory && Factory->GetSupportedClass())
+	{
+		LastManualCreateSupportedClass = Factory->GetSupportedClass();
+		bHasPendingManualCreateIntent = true;
+
+		// 蓝图“选择父类”流程可能显著拉长用户交互时间。
+		// 对该流程放宽时间窗，避免用户手动创建被误判为超时。
+		if (Cast<UBlueprintFactory>(Factory))
+		{
+			ManualCreateIntentWindowSeconds = FMath::Max<double>(ManualCreateIntentWindowSeconds, 120.0);
+		}
 	}
 	else
 	{
-		LastFactorySupportedClass.Reset();
+		LastManualCreateSupportedClass.Reset();
 	}
-	
-	UE_LOG(LogX_AssetNamingDelegates, Verbose, 
-		TEXT("FEditorDelegates::OnNewAssetCreated 触发 (Factory: %s, Class: %s), 更新时间戳"), 
+
+	UE_LOG(LogX_AssetNamingDelegates, Verbose,
+		TEXT("OnConfigureNewAssetProperties 触发 (Factory: %s, Class: %s), 手动新建意图=%s"),
 		Factory ? *Factory->GetName() : TEXT("None"),
-		LastFactorySupportedClass.IsValid() ? *LastFactorySupportedClass->GetName() : TEXT("None"));
+		LastManualCreateSupportedClass.IsValid() ? *LastManualCreateSupportedClass->GetName() : TEXT("None"),
+		bHasPendingManualCreateIntent ? TEXT("有效") : TEXT("无效"));
+	UE_LOG(LogX_AssetNamingDelegates, Verbose,
+		TEXT("手动新建意图时间窗=%.2fs"), ManualCreateIntentWindowSeconds);
 }
 
 void FX_AssetNamingDelegates::OnAssetPostImport(UFactory* Factory, UObject* CreatedObject)
@@ -386,6 +434,16 @@ void FX_AssetNamingDelegates::OnAssetPostImport(UFactory* Factory, UObject* Crea
 	FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(CreatedObject));
 	if (!AssetData.IsValid())
 	{
+		return;
+	}
+
+	// 严格策略：
+	// 导入路径仅接受“Factory 非空”或“携带有效 SourceFile 标签”的对象。
+	// 这样既兼容 Interchange(Factory==nullptr) 导入，也能避免把普通内部资产流程误判为导入。
+	if (!Factory && !HasValidSourceFileTag(AssetData))
+	{
+		UE_LOG(LogX_AssetNamingDelegates, Verbose,
+			TEXT("跳过 OnAssetPostImport（Factory 为空且无 SourceFile 标签）: %s"), *CreatedObject->GetName());
 		return;
 	}
 
@@ -642,8 +700,28 @@ bool FX_AssetNamingDelegates::DetectUserOperationContext() const
 
 bool FX_AssetNamingDelegates::IsInSpecialEditorMode() const
 {
-	// 直接返回通过回调跟踪的状态
-	return bIsInSpecialMode;
+	// 优先返回回调维护的状态
+	if (bIsInSpecialMode)
+	{
+		return true;
+	}
+
+	// 兜底实时检测，避免在某些时序下回调尚未绑定导致漏判
+	if (!GEditor || GEditor->GetWorldContexts().Num() == 0)
+	{
+		return false;
+	}
+
+	FEditorModeTools& ModeTools = GLevelEditorModeTools();
+	for (const FEditorModeID& ModeID : GSpecialEditorModes)
+	{
+		if (ModeTools.IsModeActive(ModeID))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool FX_AssetNamingDelegates::IsSpecialModeID(const FEditorModeID& ModeID)
@@ -738,4 +816,24 @@ void FX_AssetNamingDelegates::UnbindEditorModeChangedDelegate()
 	}
 
 	OnEditorModeChangedHandle.Reset();
+}
+
+void FX_AssetNamingDelegates::ResetManualCreateIntent()
+{
+	bHasPendingManualCreateIntent = false;
+	LastManualCreateIntentTime = 0.0;
+	ManualCreateIntentWindowSeconds = 0.0;
+	LastManualCreateSupportedClass.Reset();
+}
+
+bool FX_AssetNamingDelegates::HasValidSourceFileTag(const FAssetData& AssetData)
+{
+	FString SourceFileJson;
+	if (!AssetData.GetTagValue(UObject::SourceFileTagName(), SourceFileJson))
+	{
+		return false;
+	}
+
+	SourceFileJson.TrimStartAndEndInline();
+	return !SourceFileJson.IsEmpty() && SourceFileJson != TEXT("[]");
 }
