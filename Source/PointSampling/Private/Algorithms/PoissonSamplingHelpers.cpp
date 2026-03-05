@@ -208,13 +208,30 @@ namespace PoissonSamplingHelpers
         {
             // 在[Radius, 2*Radius]范围内随机生成点
             const float Distance = Radius + GetRandomFloat(RandomStream) * Radius;
-            const float Angle1 = GetRandomFloat(RandomStream) * 2.0f * PI;
-            const float Angle2 = (BoundsMax.Z > BoundsMin.Z) ? GetRandomFloat(RandomStream) * 2.0f * PI : 0.0f;
+            FVector Offset = FVector::ZeroVector;
 
-            FVector Offset;
-            Offset.X = Distance * FMath::Cos(Angle1);
-            Offset.Y = Distance * FMath::Sin(Angle1);
-            Offset.Z = (BoundsMax.Z > BoundsMin.Z) ? Distance * FMath::Sin(Angle2) : 0.0f;
+            if (BoundsMax.Z > BoundsMin.Z)
+            {
+                // 3D：在单位球面均匀采样方向，确保候选点距离严格位于 [r, 2r]
+                const float Azimuth = GetRandomFloat(RandomStream) * 2.0f * PI;
+                const float Z = GetRandomRange(-1.0f, 1.0f, RandomStream);
+                const float XY = FMath::Sqrt(FMath::Max(0.0f, 1.0f - Z * Z));
+                Offset = FVector(
+                    Distance * XY * FMath::Cos(Azimuth),
+                    Distance * XY * FMath::Sin(Azimuth),
+                    Distance * Z
+                );
+            }
+            else
+            {
+                // 2D：圆环采样
+                const float Angle = GetRandomFloat(RandomStream) * 2.0f * PI;
+                Offset = FVector(
+                    Distance * FMath::Cos(Angle),
+                    Distance * FMath::Sin(Angle),
+                    0.0f
+                );
+            }
 
             return Center + Offset;
         }

@@ -46,6 +46,7 @@ public:
   UFUNCTION(
       BlueprintCallable, Category = "Point Sampling|Poisson",
       meta = (DisplayName = "泊松采样（Box组件）",
+              ToolTip = "在Box内生成泊松点集。注意：JitterStrength>0 会在生成后对点位扰动，可能破坏严格最小距离约束。",
               AdvancedDisplay = "TargetPointCount,JitterStrength,bUseCache"))
   static TArray<FVector> GeneratePoissonPointsInBox(
       UPARAM(ref) UBoxComponent *BoxComponent, float Radius = 50.0f,
@@ -57,6 +58,7 @@ public:
   UFUNCTION(
       BlueprintCallable, Category = "Point Sampling|Poisson",
       meta = (DisplayName = "泊松采样（Box参数）",
+              ToolTip = "在给定Box参数内生成泊松点集。注意：JitterStrength>0 会在生成后对点位扰动，可能破坏严格最小距离约束。",
               ScriptMethod = "GeneratePoissonPointsInBox",
               AdvancedDisplay = "TargetPointCount,JitterStrength,bUseCache"))
   static TArray<FVector> GeneratePoissonPointsInBoxByVector(
@@ -72,6 +74,7 @@ public:
 
   UFUNCTION(BlueprintCallable, Category = "Point Sampling|Poisson|Stream",
             meta = (DisplayName = "泊松采样（流送-Box组件）",
+                    ToolTip = "使用RandomStream在Box内生成可复现泊松点集。注意：JitterStrength>0 会在生成后对点位扰动，可能破坏严格最小距离约束。",
                     AdvancedDisplay = "TargetPointCount,JitterStrength"))
   static TArray<FVector> GeneratePoissonPointsInBoxFromStream(
       const FRandomStream &RandomStream,
@@ -82,6 +85,7 @@ public:
 
   UFUNCTION(BlueprintCallable, Category = "Point Sampling|Poisson|Stream",
             meta = (DisplayName = "泊松采样（流送-Box参数）",
+                    ToolTip = "使用RandomStream在给定Box参数内生成可复现泊松点集。注意：JitterStrength>0 会在生成后对点位扰动，可能破坏严格最小距离约束。",
                     ScriptMethod = "GeneratePoissonPointsInBoxByVector",
                     AdvancedDisplay = "TargetPointCount,JitterStrength"))
   static TArray<FVector> GeneratePoissonPointsInBoxByVectorFromStream(

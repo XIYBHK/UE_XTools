@@ -65,8 +65,10 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 	const int32 NumTriangles = IndexBuffer.GetNumIndices() / 3;
 
 	TArray<float> TriangleAreas;
+	TArray<int32> ValidTriangleIndices;
 	float TotalArea = 0.0f;
 	TriangleAreas.Reserve(NumTriangles);
+	ValidTriangleIndices.Reserve(NumTriangles);
 
 	for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles; ++TriangleIndex)
 	{
@@ -90,6 +92,7 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 		const float Area = FVector::CrossProduct(V1 - V0, V2 - V0).Size() * 0.5f;
 
 		TriangleAreas.Add(Area);
+		ValidTriangleIndices.Add(TriangleIndex);
 		TotalArea += Area;
 	}
 
@@ -99,23 +102,25 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 		return Points;
 	}
 
-	const int32 TargetPoints = (MaxPoints > 0) ? MaxPoints : FMath::Min(10000, NumTriangles * 2);
+	const int32 ValidTriangleCount = ValidTriangleIndices.Num();
+	const int32 TargetPoints = (MaxPoints > 0) ? MaxPoints : FMath::Min(10000, ValidTriangleCount * 2);
 	Points.Reserve(TargetPoints);
 
-	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 开始基于面积的采样: %d 个三角形, 总面积 %.2f, 目标点数 %d"),
-		NumTriangles, TotalArea, TargetPoints);
+	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 开始基于面积的采样: %d/%d 个有效三角形, 总面积 %.2f, 目标点数 %d"),
+		ValidTriangleCount, NumTriangles, TotalArea, TargetPoints);
 
 	FRandomStream RandomStream(FMath::Rand());
 
-	for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles && Points.Num() < TargetPoints; ++TriangleIndex)
+	for (int32 ValidIndex = 0; ValidIndex < ValidTriangleCount && Points.Num() < TargetPoints; ++ValidIndex)
 	{
-		const float TriangleArea = TriangleAreas[TriangleIndex];
+		const float TriangleArea = TriangleAreas[ValidIndex];
 		if (TriangleArea <= 0.0f)
 		{
 			continue;
 		}
 
 		const int32 PointsForThisTriangle = FMath::Max(1, FMath::RoundToInt((TriangleArea / TotalArea) * TargetPoints));
+		const int32 TriangleIndex = ValidTriangleIndices[ValidIndex];
 
 		for (int32 PointIndex = 0; PointIndex < PointsForThisTriangle && Points.Num() < TargetPoints; ++PointIndex)
 		{

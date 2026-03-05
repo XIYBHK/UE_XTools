@@ -104,7 +104,9 @@ TArray<FVector> FGeometricFormationHelper::GenerateArchimedeanSpiral(
 	Points.Reserve(PointCount);
 
 	// 阿基米德螺旋：r = a + bθ
-	const float AngleStep = (Turns * 2.0f * PI) / (PointCount - 1);
+	const float AngleStep = (PointCount > 1)
+		? (Turns * 2.0f * PI) / static_cast<float>(PointCount - 1)
+		: 0.0f;
 	const float GrowthRate = Spacing / (2.0f * PI); // b参数
 
 	for (int32 i = 0; i < PointCount; ++i)

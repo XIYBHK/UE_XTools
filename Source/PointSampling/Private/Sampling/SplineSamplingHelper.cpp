@@ -46,6 +46,18 @@ TArray<FVector> FSplineSamplingHelper::GenerateAlongSpline(
 		return Points;
 	}
 
+	// 单点采样：返回弧长中点，避免 PointCount-1 除零
+	if (PointCount == 1)
+	{
+		const float ParameterT = FindParameterByArcLength(
+			ControlPoints,
+			TotalArcLength * 0.5f,
+			bClosedSpline,
+			TotalArcLength);
+		Points.Add(EvaluateSplineAtParameter(ControlPoints, ParameterT, bClosedSpline));
+		return Points;
+	}
+
 	// 等距采样：按弧长均匀分布点
 	const float ArcStep = TotalArcLength / (PointCount - 1);
 
@@ -218,7 +230,7 @@ float FSplineSamplingHelper::FindParameterByArcLength(
 
 	if (TargetArcLength >= TotalArcLength)
 	{
-		return bClosedSpline ? 1.0f : static_cast<float>(ControlPoints.Num() - 1);
+		return bClosedSpline ? static_cast<float>(ControlPoints.Num()) : static_cast<float>(ControlPoints.Num() - 1);
 	}
 
 	const int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);

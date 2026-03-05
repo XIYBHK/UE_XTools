@@ -544,8 +544,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTextureSource(
       OriginalY = FMath::Clamp(OriginalY, 0, OriginalHeight - 1);
 
       // 获取归一化坐标
-      FVector2D Coord((float)OriginalX / (OriginalWidth - 1),
-                      (float)OriginalY / (OriginalHeight - 1));
+      const float WidthDenominator = FMath::Max(1.0f, static_cast<float>(OriginalWidth - 1));
+      const float HeightDenominator = FMath::Max(1.0f, static_cast<float>(OriginalHeight - 1));
+      FVector2D Coord(static_cast<float>(OriginalX) / WidthDenominator,
+                      static_cast<float>(OriginalY) / HeightDenominator);
 
       // 获取密度
       float SamplingValue = GetTextureDensityAtCoordinate(
@@ -951,8 +953,10 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
       }
 
       // 获取归一化坐标
-      FVector2D Coord((float)OriginalX / (OriginalWidth - 1),
-                      (float)OriginalY / (OriginalHeight - 1));
+      const float WidthDenominator = FMath::Max(1.0f, static_cast<float>(OriginalWidth - 1));
+      const float HeightDenominator = FMath::Max(1.0f, static_cast<float>(OriginalHeight - 1));
+      FVector2D Coord(static_cast<float>(OriginalX) / WidthDenominator,
+                      static_cast<float>(OriginalY) / HeightDenominator);
 
       // 获取密度
       float SamplingValue = GetTextureDensityAtCoordinatePlatform(

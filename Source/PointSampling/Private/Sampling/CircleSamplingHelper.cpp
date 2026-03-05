@@ -311,6 +311,12 @@ TArray<FVector> FCircleSamplingHelper::GenerateFibonacci(
 
 	if (bIs3D)
 	{
+		if (PointCount == 1)
+		{
+			Points.Add(FVector(0.0f, Radius, 0.0f));
+			return Points;
+		}
+
 		// 3D球体 - 斐波那契球面（最均匀的球面分布）
 		for (int32 i = 0; i < PointCount; ++i)
 		{
@@ -526,7 +532,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateGoldenSpiral(
 		float Angle = i * GoldenAngleRad;
 
 		// 计算半径（线性增长，但可以通过参数调整）
-		float Radius = (static_cast<float>(i) / (PointCount - 1)) * MaxRadius;
+		const float Radius = (PointCount > 1)
+			? (static_cast<float>(i) / static_cast<float>(PointCount - 1)) * MaxRadius
+			: 0.0f;
 
 		// 极坐标转换为笛卡尔坐标
 		FVector Point(
@@ -616,7 +624,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateRoseCurve(
 	for (int32 i = 0; i < PointCount; ++i)
 	{
 		// 参数t从0到2π
-		float T = (static_cast<float>(i) / (PointCount - 1)) * 2.0f * PI;
+		const float T = (PointCount > 1)
+			? (static_cast<float>(i) / static_cast<float>(PointCount - 1)) * 2.0f * PI
+			: 0.0f;
 
 		// 计算半径
 		float Radius = A * FMath::Cos(K * T);

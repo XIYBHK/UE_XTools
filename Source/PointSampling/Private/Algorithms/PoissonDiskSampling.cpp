@@ -22,6 +22,14 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 	float Radius,
 	int32 MaxAttempts)
 {
+	if (Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	{
+		UE_LOG(LogPointSampling, Warning,
+			TEXT("GeneratePoisson2D: 参数无效 (Width=%.2f, Height=%.2f, Radius=%.2f, MaxAttempts=%d)"),
+			Width, Height, Radius, MaxAttempts);
+		return TArray<FVector2D>();
+	}
+
 	TArray<FVector2D> Points = GenerateOptimizedPoisson2D(Width, Height, Radius, MaxAttempts, nullptr);
 
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson2D: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
@@ -37,6 +45,14 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2DFromStream(
 	float Radius,
 	int32 MaxAttempts)
 {
+	if (Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	{
+		UE_LOG(LogPointSampling, Warning,
+			TEXT("GeneratePoisson2DFromStream: 参数无效 (Width=%.2f, Height=%.2f, Radius=%.2f, MaxAttempts=%d)"),
+			Width, Height, Radius, MaxAttempts);
+		return TArray<FVector2D>();
+	}
+
 	TArray<FVector2D> Points = GenerateOptimizedPoisson2D(Width, Height, Radius, MaxAttempts, &RandomStream);
 
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson2DFromStream: 生成了 %d 个点 (区域: %.1fx%.1f, 半径: %.1f)"),
@@ -52,6 +68,14 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 	float Radius,
 	int32 MaxAttempts)
 {
+	if (Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	{
+		UE_LOG(LogPointSampling, Warning,
+			TEXT("GeneratePoisson3D: 参数无效 (Width=%.2f, Height=%.2f, Depth=%.2f, Radius=%.2f, MaxAttempts=%d)"),
+			Width, Height, Depth, Radius, MaxAttempts);
+		return TArray<FVector>();
+	}
+
 	TArray<FVector> Points = GenerateOptimizedPoisson3D(Width, Height, Depth, Radius, MaxAttempts, nullptr);
 
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson3D: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
@@ -68,6 +92,14 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3DFromStream(
 	float Radius,
 	int32 MaxAttempts)
 {
+	if (Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	{
+		UE_LOG(LogPointSampling, Warning,
+			TEXT("GeneratePoisson3DFromStream: 参数无效 (Width=%.2f, Height=%.2f, Depth=%.2f, Radius=%.2f, MaxAttempts=%d)"),
+			Width, Height, Depth, Radius, MaxAttempts);
+		return TArray<FVector>();
+	}
+
 	TArray<FVector> Points = GenerateOptimizedPoisson3D(Width, Height, Depth, Radius, MaxAttempts, &RandomStream);
 
 	UE_LOG(LogPointSampling, Verbose, TEXT("GeneratePoisson3DFromStream: 生成了 %d 个点 (区域: %.1fx%.1fx%.1f, 半径: %.1f)"),
@@ -174,6 +206,14 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 		UE_LOG(LogPointSampling, Log, TEXT("GeneratePoissonInBoxByVector: Depth(%.1f) < Radius(%.1f)，自动降级为2D采样"), 
 			Depth, ActualRadius);
 		bIs2D = true;
+
+		// 目标点数模式下，降级到2D后需要按2D面积重新估算半径，避免密度偏差
+		if (TargetPointCount > 0)
+		{
+			ActualRadius = CalculateRadiusFromTargetCount(
+				TargetPointCount, Width, Height, Depth, true);
+			UE_LOG(LogPointSampling, Log, TEXT("GeneratePoissonInBoxByVector: 2D降级后重算 Radius = %.2f"), ActualRadius);
+		}
 	}
 
 	// 缓存系统检查（包含位置和旋转信息，使用传入的BoxExtent）
@@ -370,6 +410,13 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
 		UE_LOG(LogPointSampling, Log, TEXT("GeneratePoissonInBoxByVectorFromStream: Depth(%.1f) < Radius(%.1f)，自动降级为2D采样"), 
 			Depth, ActualRadius);
 		bIs2D = true;
+
+		// 目标点数模式下，降级到2D后需要按2D面积重新估算半径，避免密度偏差
+		if (TargetPointCount > 0)
+		{
+			ActualRadius = CalculateRadiusFromTargetCount(TargetPointCount, Width, Height, Depth, true);
+			UE_LOG(LogPointSampling, Log, TEXT("GeneratePoissonInBoxByVectorFromStream: 2D降级后重算 Radius = %.2f"), ActualRadius);
+		}
 	}
 
 	// 生成点（使用统一的内部实现，传入RandomStream）
@@ -377,8 +424,8 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
 	
 	if (bIs2D)
 	{
-		// 2D采样（使用内部函数）
-		TArray<FVector2D> Points2D = GeneratePoisson2DInternal(Width, Height, ActualRadius, MaxAttempts, &RandomStream);
+		// 2D采样（与非Stream版本保持一致，使用优化版算法）
+		TArray<FVector2D> Points2D = GenerateOptimizedPoisson2D(Width, Height, ActualRadius, MaxAttempts, &RandomStream);
 		
 		// 转换为3D并偏移到局部空间
 		Points.Reserve(Points2D.Num());
@@ -389,8 +436,8 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
 	}
 	else
 	{
-		// 3D采样（使用内部函数）
-		Points = GeneratePoisson3DInternal(Width, Height, Depth, ActualRadius, MaxAttempts, &RandomStream);
+		// 3D采样（与非Stream版本保持一致，使用优化版算法）
+		Points = GenerateOptimizedPoisson3D(Width, Height, Depth, ActualRadius, MaxAttempts, &RandomStream);
 		
 		// 转换坐标到局部空间
 		for (FVector& Point : Points)

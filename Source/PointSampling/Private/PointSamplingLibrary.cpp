@@ -428,6 +428,9 @@ float UPointSamplingLibrary::CalculateDistributionUniformity(
 
   // 标准化均匀性分数 (0-1, 1表示完全均匀)
   const float MaxExpectedStdDev = AvgDistance * 0.5f; // 经验值
+  if (MaxExpectedStdDev <= KINDA_SMALL_NUMBER) {
+    return StdDev <= KINDA_SMALL_NUMBER ? 1.0f : 0.0f;
+  }
   float UniformityScore =
       1.0f - FMath::Clamp(StdDev / MaxExpectedStdDev, 0.0f, 1.0f);
 

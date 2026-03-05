@@ -196,7 +196,9 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSpiralRectangle(
 	for (int32 i = 0; i < ActualPointCount; ++i)
 	{
 		// 计算当前点的比例（0到1）
-		float t = static_cast<float>(i) / (ActualPointCount - 1);
+		const float t = (ActualPointCount > 1)
+			? static_cast<float>(i) / static_cast<float>(ActualPointCount - 1)
+			: 0.0f;
 		
 		// 计算当前角度和半径
 		float theta = t * TotalTheta;
