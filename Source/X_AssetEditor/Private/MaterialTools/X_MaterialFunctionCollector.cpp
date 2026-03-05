@@ -17,10 +17,6 @@
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
 
-// 并行处理相关
-#include "Async/ParallelFor.h"
-#include "HAL/CriticalSection.h"
-
 TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromAsset(const FAssetData& Asset)
 {
     TArray<UMaterial*> Materials;
@@ -188,21 +184,16 @@ TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromActor(AActo
 TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromAssetParallel(const TArray<FAssetData>& Assets)
 {
     TArray<UMaterial*> AllMaterials;
-    
-    // 并行处理，提高性能
-    FCriticalSection CriticalSection;
-    ParallelFor(Assets.Num(), [&](int32 Index)
+
+    // 资产加载与UObject访问必须在主线程执行，避免并发访问导致不稳定。
+    for (const FAssetData& Asset : Assets)
     {
-        // 收集单个资产的材质
-        TArray<UMaterial*> AssetMaterials = CollectMaterialsFromAsset(Assets[Index]);
-        
-        // 线程安全地添加到结果
-        FScopeLock Lock(&CriticalSection);
+        TArray<UMaterial*> AssetMaterials = CollectMaterialsFromAsset(Asset);
         for (UMaterial* Material : AssetMaterials)
         {
             AllMaterials.AddUnique(Material);
         }
-    });
+    }
     
     return AllMaterials;
 }
@@ -210,21 +201,16 @@ TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromAssetParall
 TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromActorParallel(const TArray<AActor*>& Actors)
 {
     TArray<UMaterial*> AllMaterials;
-    
-    // 并行处理，提高性能
-    FCriticalSection CriticalSection;
-    ParallelFor(Actors.Num(), [&](int32 Index)
+
+    // Actor/组件遍历包含大量UObject访问，保持主线程串行更安全。
+    for (AActor* Actor : Actors)
     {
-        // 收集单个Actor的材质
-        TArray<UMaterial*> ActorMaterials = CollectMaterialsFromActor(Actors[Index]);
-        
-        // 线程安全地添加到结果
-        FScopeLock Lock(&CriticalSection);
+        TArray<UMaterial*> ActorMaterials = CollectMaterialsFromActor(Actor);
         for (UMaterial* Material : ActorMaterials)
         {
             AllMaterials.AddUnique(Material);
         }
-    });
+    }
     
     return AllMaterials;
 }

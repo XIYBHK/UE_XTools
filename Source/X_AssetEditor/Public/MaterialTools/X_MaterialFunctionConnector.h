@@ -269,13 +269,15 @@ public:
      * @param FunctionCall - 材质函数调用表达式
      * @param ConnectionMode - 连接模式
      * @param Params - 材质函数参数，可选，包含用户设置的连接选项
+     * @param bEnableSmartConnect - 当Params为空时是否启用智能连接
      * @return 是否成功设置连接
      */
     static bool SetupAutoConnections(
         UMaterial* Material, 
         UMaterialExpressionMaterialFunctionCall* FunctionCall,
         EConnectionMode ConnectionMode,
-        TSharedPtr<FX_MaterialFunctionParams> Params = nullptr);
+        TSharedPtr<FX_MaterialFunctionParams> Params = nullptr,
+        bool bEnableSmartConnect = true);
         
     /**
      * 创建Add节点连接到指定材质属性

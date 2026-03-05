@@ -24,6 +24,9 @@
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "UObject/UnrealType.h"
+#include "MaterialEditingLibrary.h"
+#include "MaterialEditorUtilities.h"
+#include "MaterialGraph/MaterialGraph.h"
 
 UMaterial* FX_MaterialFunctionCore::GetBaseMaterial(UMaterialInterface* MaterialInterface)
 {
@@ -181,16 +184,9 @@ void FX_MaterialFunctionCore::RecompileMaterial(UMaterial* Material)
         UE_LOG(LogX_AssetEditor, Warning, TEXT("材质为空，无法重新编译"));
         return;
     }
-    
-    // 标记材质为已修改
-    Material->MarkPackageDirty();
-    
-    // 编译材质 - 使用标准的材质更新方式
-    Material->PreEditChange(nullptr);
-    Material->PostEditChange();
-    
-    // 使用正确的方式处理材质更新，不需要额外的PropertyChangedEvent
-    // UE5.3中，在大多数情况下，PreEditChange和PostEditChange已足够触发材质重编译
+
+    // 使用官方库路径，确保依赖材质实例与视口同步刷新链路完整执行。
+    UMaterialEditingLibrary::RecompileMaterial(Material);
 }
 
 bool FX_MaterialFunctionCore::RefreshOpenMaterialEditor(UMaterial* Material)
@@ -215,15 +211,55 @@ bool FX_MaterialFunctionCore::RefreshOpenMaterialEditor(UMaterial* Material)
         return false;
     }
     
-    // 先更新材质以确保所有更改都被应用
-    Material->PreEditChange(nullptr);
-    Material->PostEditChange();
+    // 仅刷新已打开的编辑器，不主动打开新标签页，避免批处理时打断用户工作流。
+    const auto OpenEditors = AssetEditorSubsystem->FindEditorsForAsset(Material);
+    if (OpenEditors.Num() == 0)
+    {
+        return false;
+    }
+
+    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
+    const bool bEnableCloseReopenFallback = Settings && Settings->bEnableCloseReopenFallbackForMaterialRefresh;
+
+    bool bRefreshedByGraphPath = false;
+
+    // 对于插件侧直接改Expression数据的场景，优先重建Graph并触发材质编辑器刷新链路，
+    // 避免仅PostEditChange导致节点/连线显示不同步。
+    if (Material->MaterialGraph)
+    {
+        const TSharedPtr<IMaterialEditor> MaterialEditor = FMaterialEditorUtilities::GetIMaterialEditorForObject(Material->MaterialGraph);
+        if (MaterialEditor.IsValid())
+        {
+            Material->MaterialGraph->RebuildGraph();
+            FMaterialEditorUtilities::UpdateMaterialAfterGraphChange(Material->MaterialGraph);
+            FMaterialEditorUtilities::ForceRefreshExpressionPreviews(Material->MaterialGraph);
+            FMaterialEditorUtilities::UpdateDetailView(Material->MaterialGraph);
+            bRefreshedByGraphPath = true;
+        }
+        else
+        {
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("材质编辑器实例不可用，Graph刷新链路未执行: %s"), *Material->GetName());
+        }
+    }
+
+    // Graph路径不可用时，退回通用重编译链路。
+    if (!bRefreshedByGraphPath)
+    {
+        RecompileMaterial(Material);
+
+        // 可选兜底：在刷新链路不可用时，执行一次关开编辑器。
+        if (bEnableCloseReopenFallback)
+        {
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("执行材质编辑器关开兜底刷新: %s"), *Material->GetName());
+            AssetEditorSubsystem->CloseAllEditorsForAsset(Material);
+            AssetEditorSubsystem->OpenEditorForAsset(Material);
+            return true;
+        }
+    }
+
     Material->MarkPackageDirty();
-    
-    // 判断材质编辑器是否已打开（这里应该已经被关闭了）
-    // 重新打开编辑器以显示最新状态
-    AssetEditorSubsystem->OpenEditorForAsset(Material);
-    UE_LOG(LogX_AssetEditor, Log, TEXT("已重新打开材质编辑器"));
+    UE_LOG(LogX_AssetEditor, Log, TEXT("材质编辑器已打开，已执行刷新（GraphPath=%s）"),
+        bRefreshedByGraphPath ? TEXT("true") : TEXT("false"));
     return true;
 }
 
