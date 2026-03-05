@@ -14,11 +14,113 @@
 #include "MaterialGraph/MaterialGraph.h"
 //  添加MakeMaterialAttributes支持
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
+#include "Materials/MaterialAttributeDefinitionMap.h"
 //  引入常量定义
 #include "MaterialTools/X_MaterialConstants.h"
 
 namespace
 {
+    int32 CalculateMatchScore(const FString& InputName, const FString& TargetName);
+
+    FString NormalizeForMatch(const FString& InName)
+    {
+        FString Lower = InName.ToLower();
+        FString Normalized;
+        Normalized.Reserve(Lower.Len());
+        for (TCHAR Char : Lower)
+        {
+            if (FChar::IsAlnum(Char))
+            {
+                Normalized.AppendChar(Char);
+            }
+        }
+        return Normalized;
+    }
+
+    bool IsIgnoredPinName(const FString& PinName)
+    {
+        const FString Lower = PinName.ToLower();
+        return Lower.StartsWith(X_MaterialConstants::Prefix_Not.ToLower())
+            || Lower.StartsWith(X_MaterialConstants::Prefix_Ignore.ToLower());
+    }
+
+    TArray<FString> GetPropertyAliases(EMaterialProperty Property)
+    {
+        switch (Property)
+        {
+            case MP_BaseColor:
+                return {X_MaterialConstants::Alias_Albedo, X_MaterialConstants::Alias_Diffuse};
+            case MP_Metallic:
+                return {X_MaterialConstants::Alias_Metalness};
+            case MP_Roughness:
+                return {X_MaterialConstants::Alias_Rough};
+            case MP_EmissiveColor:
+                return {X_MaterialConstants::Alias_Emission, X_MaterialConstants::Alias_Emissive};
+            case MP_AmbientOcclusion:
+                return {X_MaterialConstants::Alias_AO, X_MaterialConstants::Alias_Ambient};
+            default:
+                return {};
+        }
+    }
+
+    bool IsNumericMaterialType(uint32 Type)
+    {
+        return (Type & MCT_Numeric) != 0;
+    }
+
+    bool IsTextureMaterialType(uint32 Type)
+    {
+        return (Type & MCT_Texture) != 0
+            || Type == MCT_SparseVolumeTexture;
+    }
+
+    bool AreMaterialTypesCompatible(uint32 SourceType, uint32 TargetType)
+    {
+        if (SourceType == MCT_Unknown || TargetType == MCT_Unknown)
+        {
+            return true;
+        }
+
+        if (SourceType == TargetType)
+        {
+            return true;
+        }
+
+        const bool bSourceIsMaterialAttributes = (SourceType == MCT_MaterialAttributes);
+        const bool bTargetAcceptsMaterialAttributes = (TargetType & MCT_MaterialAttributes) != 0;
+        if (bSourceIsMaterialAttributes || bTargetAcceptsMaterialAttributes)
+        {
+            return bSourceIsMaterialAttributes && bTargetAcceptsMaterialAttributes;
+        }
+
+        if (IsTextureMaterialType(SourceType) || IsTextureMaterialType(TargetType))
+        {
+            return (SourceType & TargetType) != 0;
+        }
+
+        if (IsNumericMaterialType(SourceType) && IsNumericMaterialType(TargetType))
+        {
+            return true;
+        }
+
+        return (SourceType & TargetType) != 0;
+    }
+
+    uint32 GetExpectedMaterialPropertyType(EMaterialProperty Property)
+    {
+        return static_cast<uint32>(FMaterialAttributeDefinitionMap::GetValueType(Property));
+    }
+
+    int32 CalculateMatchScoreWithAliases(const FString& InputName, const FString& TargetName, const TArray<FString>& Aliases)
+    {
+        int32 Score = CalculateMatchScore(InputName, TargetName);
+        for (const FString& Alias : Aliases)
+        {
+            Score = FMath::Max(Score, CalculateMatchScore(InputName, Alias));
+        }
+        return Score;
+    }
+
     /**
      * 计算字符串匹配分数
      * @param InputName 输入名称（例如函数引脚名）
@@ -32,32 +134,199 @@ namespace
             return -1;
         }
 
-        // 转换为小写进行比较
-        FString InputLower = InputName.ToLower();
-        FString TargetLower = TargetName.ToLower();
-
-        // 1. 黑名单检查
-        if (InputLower.StartsWith(X_MaterialConstants::Prefix_Not.ToLower()) || 
-            InputLower.StartsWith(X_MaterialConstants::Prefix_Ignore.ToLower()))
+        if (IsIgnoredPinName(InputName))
         {
-            return -100; // 明确排除
+            return -100;
         }
 
-        // 2. 完全匹配 (最高分)
+        const FString InputLower = InputName.ToLower();
+        const FString TargetLower = TargetName.ToLower();
+        const FString InputNormalized = NormalizeForMatch(InputName);
+        const FString TargetNormalized = NormalizeForMatch(TargetName);
+
+        if (InputNormalized.IsEmpty() || TargetNormalized.IsEmpty())
+        {
+            return -1;
+        }
+
+        // 规范化后完全一致，最高优先级。
+        if (InputNormalized.Equals(TargetNormalized))
+        {
+            return 120;
+        }
+
         if (InputLower.Equals(TargetLower))
         {
-            return 100;
+            return 110;
         }
 
-        // 3. 包含匹配 (中等分数)
-        if (InputLower.Contains(TargetLower))
+        if (InputNormalized.StartsWith(TargetNormalized) || InputNormalized.EndsWith(TargetNormalized))
         {
-            // 简单的包含可能误判，例如 "NotBaseColor" (已由黑名单处理)
-            // 或者 "BaseColorMap" -> BaseColor，这是合理的
-            return 50;
+            return 90;
+        }
+
+        if (InputLower.Contains(TargetLower) || InputNormalized.Contains(TargetNormalized))
+        {
+            return 65;
         }
 
         return 0;
+    }
+
+    int32 FindBestFunctionInputIndexBySemantic(
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        const FString& SemanticName,
+        uint32 SourceType,
+        const TSet<int32>* ExcludedInputs = nullptr)
+    {
+        if (!FunctionCall)
+        {
+            return INDEX_NONE;
+        }
+
+        int32 BestScore = -1;
+        int32 BestIndex = INDEX_NONE;
+
+        for (int32 InputIndex = 0; InputIndex < FunctionCall->FunctionInputs.Num(); ++InputIndex)
+        {
+            if (ExcludedInputs && ExcludedInputs->Contains(InputIndex))
+            {
+                continue;
+            }
+
+            const uint32 TargetInputType = static_cast<uint32>(FunctionCall->GetInputType(InputIndex));
+            if (!AreMaterialTypesCompatible(SourceType, TargetInputType))
+            {
+                continue;
+            }
+
+            const FString InputName = FunctionCall->FunctionInputs[InputIndex].Input.InputName.ToString();
+            int32 Score = CalculateMatchScore(InputName, SemanticName);
+            if (Score < 0)
+            {
+                Score = 0;
+            }
+
+            if (Score > BestScore)
+            {
+                BestScore = Score;
+                BestIndex = InputIndex;
+            }
+        }
+
+        return BestIndex;
+    }
+
+    int32 FindBestFunctionOutputIndexBySemantic(
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        const FString& SemanticName,
+        uint32 TargetType,
+        int32 PreferredOutputIndex = INDEX_NONE)
+    {
+        if (!FunctionCall || FunctionCall->FunctionOutputs.Num() == 0)
+        {
+            return INDEX_NONE;
+        }
+
+        int32 BestScore = -1;
+        int32 BestIndex = INDEX_NONE;
+
+        for (int32 OutputIndex = 0; OutputIndex < FunctionCall->FunctionOutputs.Num(); ++OutputIndex)
+        {
+            const uint32 SourceOutputType = static_cast<uint32>(FunctionCall->GetOutputType(OutputIndex));
+            if (TargetType != MCT_Unknown && !AreMaterialTypesCompatible(SourceOutputType, TargetType))
+            {
+                continue;
+            }
+
+            const FString OutputName = FunctionCall->FunctionOutputs[OutputIndex].Output.OutputName.ToString();
+            int32 Score = CalculateMatchScore(OutputName, SemanticName);
+            if (Score < 0)
+            {
+                Score = 0;
+            }
+
+            if (PreferredOutputIndex == OutputIndex)
+            {
+                Score += 25;
+            }
+
+            if (Score > BestScore)
+            {
+                BestScore = Score;
+                BestIndex = OutputIndex;
+            }
+        }
+
+        if (BestIndex == INDEX_NONE && PreferredOutputIndex != INDEX_NONE
+            && FunctionCall->FunctionOutputs.IsValidIndex(PreferredOutputIndex))
+        {
+            const uint32 PreferredType = static_cast<uint32>(FunctionCall->GetOutputType(PreferredOutputIndex));
+            if (TargetType == MCT_Unknown || AreMaterialTypesCompatible(PreferredType, TargetType))
+            {
+                return PreferredOutputIndex;
+            }
+        }
+
+        if (BestIndex == INDEX_NONE)
+        {
+            return 0;
+        }
+
+        return BestIndex;
+    }
+
+    bool InsertFunctionIntoExpressionInput(
+        UMaterialExpression* TargetExpression,
+        int32 TargetInputIndex,
+        const FString& TargetInputSemantic,
+        UMaterialExpressionMaterialFunctionCall* NewFunctionCall,
+        int32 PreferredOutputIndex = INDEX_NONE)
+    {
+        if (!TargetExpression || !NewFunctionCall)
+        {
+            return false;
+        }
+
+        TArrayView<FExpressionInput*> TargetInputs = TargetExpression->GetInputsView();
+        if (!TargetInputs.IsValidIndex(TargetInputIndex) || !TargetInputs[TargetInputIndex])
+        {
+            return false;
+        }
+
+        FExpressionInput* TargetInput = TargetInputs[TargetInputIndex];
+        UMaterialExpression* PreviousExpression = TargetInput->Expression;
+        const int32 PreviousOutputIndex = (TargetInput->OutputIndex == INDEX_NONE) ? 0 : TargetInput->OutputIndex;
+
+        if (PreviousExpression)
+        {
+            const uint32 PreviousSourceType = static_cast<uint32>(PreviousExpression->GetOutputType(PreviousOutputIndex));
+            const int32 FunctionInputIndex = FindBestFunctionInputIndexBySemantic(
+                NewFunctionCall,
+                TargetInputSemantic,
+                PreviousSourceType);
+
+            if (FunctionInputIndex != INDEX_NONE
+                && NewFunctionCall->FunctionInputs.IsValidIndex(FunctionInputIndex))
+            {
+                NewFunctionCall->FunctionInputs[FunctionInputIndex].Input.Connect(PreviousOutputIndex, PreviousExpression);
+            }
+        }
+
+        const uint32 TargetInputType = static_cast<uint32>(TargetExpression->GetInputType(TargetInputIndex));
+        const int32 FunctionOutputIndex = FindBestFunctionOutputIndexBySemantic(
+            NewFunctionCall,
+            TargetInputSemantic,
+            TargetInputType,
+            PreferredOutputIndex);
+
+        if (FunctionOutputIndex == INDEX_NONE)
+        {
+            return false;
+        }
+
+        TargetInput->Connect(FunctionOutputIndex, NewFunctionCall);
+        return true;
     }
 }
 
@@ -263,7 +532,8 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
     UMaterial* Material, 
     UMaterialExpressionMaterialFunctionCall* FunctionCall,
     EConnectionMode ConnectionMode,
-    TSharedPtr<FX_MaterialFunctionParams> Params)
+    TSharedPtr<FX_MaterialFunctionParams> Params,
+    bool bEnableSmartConnect)
 {
     if (!Material || !FunctionCall)
     {
@@ -271,11 +541,35 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         return false;
     }
 
-    //  最高优先级：检查用户是否禁用了智能连接
-    if (Params.IsValid() && !Params->bEnableSmartConnect)
+    const bool bSmartConnectEnabled = Params.IsValid() ? Params->bEnableSmartConnect : bEnableSmartConnect;
+
+    // 智能连接关闭：优先走手动参数；无参数时使用基础回退策略，保证显式开关始终生效。
+    if (!bSmartConnectEnabled)
     {
-        UE_LOG(LogX_AssetEditor, Log, TEXT("用户禁用了智能连接，使用手动配置模式"));
-        return ProcessManualConnections(Material, FunctionCall, ConnectionMode, Params);
+        if (Params.IsValid())
+        {
+            UE_LOG(LogX_AssetEditor, Log, TEXT("用户禁用了智能连接，使用手动配置模式"));
+            return ProcessManualConnections(Material, FunctionCall, ConnectionMode, Params);
+        }
+
+        UE_LOG(LogX_AssetEditor, Log, TEXT("智能连接已禁用且未提供手动参数，使用基础连接策略"));
+
+        if (IsMaterialAttributesEnabled(Material))
+        {
+            return ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0);
+        }
+
+        if (ConnectionMode == EConnectionMode::Add)
+        {
+            return CreateAddConnectionToProperty(Material, FunctionCall, 0, MP_EmissiveColor) != nullptr;
+        }
+
+        if (ConnectionMode == EConnectionMode::Multiply)
+        {
+            return CreateMultiplyConnectionToProperty(Material, FunctionCall, 0, MP_EmissiveColor) != nullptr;
+        }
+
+        return ConnectExpressionToMaterialProperty(Material, FunctionCall, MP_BaseColor, 0);
     }
     
     UE_LOG(LogX_AssetEditor, Log, TEXT("正在对材质 %s 应用智能连接逻辑..."), *Material->GetName());
@@ -348,9 +642,11 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
     {
         FExpressionInput* Input;
         EMaterialProperty Property;
-        FExpressionOutput* Output;
+        int32 OutputIndex;
+        uint32 OutputType;
         FString PropertyName;
         TArray<FString> Aliases;
+        bool bConsumed = false;
     };
     TArray<FPropertyConnection> PropertyConnections;
 
@@ -359,7 +655,9 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
     {
         if (Input.Expression)
         {
-            PropertyConnections.Add({&Input, Prop, nullptr, Name, Aliases});
+            const int32 SourceOutputIndex = (Input.OutputIndex == INDEX_NONE) ? 0 : Input.OutputIndex;
+            const uint32 SourceOutputType = static_cast<uint32>(Input.Expression->GetOutputType(SourceOutputIndex));
+            PropertyConnections.Add({&Input, Prop, SourceOutputIndex, SourceOutputType, Name, Aliases, false});
         }
     };
 
@@ -373,10 +671,18 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
     AddConnectionTarget(EditorOnlyData->AmbientOcclusion, MP_AmbientOcclusion, X_MaterialConstants::AmbientOcclusion, {X_MaterialConstants::Alias_AO, X_MaterialConstants::Alias_Ambient});
     
     // 对于每一个输入，尝试找到匹配的现有连接
-    for (const FFunctionExpressionInput& FunctionInput : FunctionInputs)
+    for (int32 FunctionInputIndex = 0; FunctionInputIndex < FunctionInputs.Num(); ++FunctionInputIndex)
     {
+        const FFunctionExpressionInput& FunctionInput = FunctionInputs[FunctionInputIndex];
         const FExpressionInput& Input = FunctionInput.Input;
         const FString InputName = Input.InputName.ToString();
+        const uint32 TargetInputType = static_cast<uint32>(FunctionCall->GetInputType(FunctionInputIndex));
+
+        if (IsIgnoredPinName(InputName))
+        {
+            UE_LOG(LogX_AssetEditor, Verbose, TEXT("输入引脚 %s 被忽略前缀排除"), *InputName);
+            continue;
+        }
 
         int32 BestScore = 0;
         FPropertyConnection* BestConnection = nullptr;
@@ -384,20 +690,17 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         // 遍历所有可能的连接目标，寻找最佳匹配
         for (FPropertyConnection& Connection : PropertyConnections)
         {
-            if (Connection.Output) continue; // 已被占用
-
-            // 1. 检查标准名称
-            int32 Score = CalculateMatchScore(InputName, Connection.PropertyName);
-            
-            // 2. 检查别名
-            for (const FString& Alias : Connection.Aliases)
+            if (Connection.bConsumed)
             {
-                int32 AliasScore = CalculateMatchScore(InputName, Alias);
-                if (AliasScore > Score)
-                {
-                    Score = AliasScore;
-                }
+                continue; // 已被占用
             }
+
+            if (!AreMaterialTypesCompatible(Connection.OutputType, TargetInputType))
+            {
+                continue;
+            }
+
+            int32 Score = CalculateMatchScoreWithAliases(InputName, Connection.PropertyName, Connection.Aliases);
 
             // 更新最佳匹配
             if (Score > BestScore)
@@ -414,7 +717,9 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
             FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
             if (InputPtr)
             {
-                InputPtr->Connect(0, BestConnection->Input->Expression);
+                const int32 SourceOutputIndex = (BestConnection->OutputIndex == INDEX_NONE) ? 0 : BestConnection->OutputIndex;
+                InputPtr->Connect(SourceOutputIndex, BestConnection->Input->Expression);
+                BestConnection->bConsumed = true;
                 UE_LOG(LogX_AssetEditor, Log, TEXT("自动连接 %s 到函数输入 %s (匹配度: %d)"),
                     *BestConnection->PropertyName, *InputName, BestScore);
                 bHasConnected = true;
@@ -459,11 +764,14 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
 
             for (const auto& Target : Targets)
             {
-                int32 Score = CalculateMatchScore(OutputName, Target.N);
-                for (const FString& Alias : Target.A)
+                const uint32 OutputType = static_cast<uint32>(FunctionCall->GetOutputType(OutputIndex));
+                const uint32 PropertyType = GetExpectedMaterialPropertyType(Target.P);
+                if (!AreMaterialTypesCompatible(OutputType, PropertyType))
                 {
-                    Score = FMath::Max(Score, CalculateMatchScore(OutputName, Alias));
+                    continue;
                 }
+
+                int32 Score = CalculateMatchScoreWithAliases(OutputName, Target.N, Target.A);
 
                 if (Score > BestScore)
                 {
@@ -911,10 +1219,24 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
     {
         UMaterialExpression* Expression;
         int32 OutputIndex;
+        uint32 OutputType;
         EMaterialProperty Property;
         FString PropertyName;
+        bool bConsumed = false;
     };
     TArray<FAvailableConnection> AvailableConnections;
+
+    auto AddAvailableConnection = [&AvailableConnections](FExpressionInput& SourceInput, EMaterialProperty Property, const FString& PropertyName)
+    {
+        if (!SourceInput.IsConnected() || !SourceInput.Expression)
+        {
+            return;
+        }
+
+        const int32 SourceOutputIndex = (SourceInput.OutputIndex == INDEX_NONE) ? 0 : SourceInput.OutputIndex;
+        const uint32 SourceOutputType = static_cast<uint32>(SourceInput.Expression->GetOutputType(SourceOutputIndex));
+        AvailableConnections.Add({SourceInput.Expression, SourceOutputIndex, SourceOutputType, Property, PropertyName, false});
+    };
 
     // 首先尝试从MaterialAttributes连接的节点获取连接
     if (EditorOnlyData->MaterialAttributes.IsConnected())
@@ -927,20 +1249,13 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
             UE_LOG(LogX_AssetEditor, Log, TEXT("从MakeMaterialAttributes节点收集可用连接"));
 
             // 从MakeMaterialAttributes节点的输入引脚收集连接
-            if (MakeMANode->BaseColor.IsConnected())
-                AvailableConnections.Add({MakeMANode->BaseColor.Expression, MakeMANode->BaseColor.OutputIndex, MP_BaseColor, TEXT("basecolor")});
-            if (MakeMANode->EmissiveColor.IsConnected())
-                AvailableConnections.Add({MakeMANode->EmissiveColor.Expression, MakeMANode->EmissiveColor.OutputIndex, MP_EmissiveColor, TEXT("emissive")});
-            if (MakeMANode->Metallic.IsConnected())
-                AvailableConnections.Add({MakeMANode->Metallic.Expression, MakeMANode->Metallic.OutputIndex, MP_Metallic, TEXT("metallic")});
-            if (MakeMANode->Roughness.IsConnected())
-                AvailableConnections.Add({MakeMANode->Roughness.Expression, MakeMANode->Roughness.OutputIndex, MP_Roughness, TEXT("roughness")});
-            if (MakeMANode->Normal.IsConnected())
-                AvailableConnections.Add({MakeMANode->Normal.Expression, MakeMANode->Normal.OutputIndex, MP_Normal, TEXT("normal")});
-            if (MakeMANode->Specular.IsConnected())
-                AvailableConnections.Add({MakeMANode->Specular.Expression, MakeMANode->Specular.OutputIndex, MP_Specular, TEXT("specular")});
-            if (MakeMANode->AmbientOcclusion.IsConnected())
-                AvailableConnections.Add({MakeMANode->AmbientOcclusion.Expression, MakeMANode->AmbientOcclusion.OutputIndex, MP_AmbientOcclusion, TEXT("ambient")});
+            AddAvailableConnection(MakeMANode->BaseColor, MP_BaseColor, TEXT("basecolor"));
+            AddAvailableConnection(MakeMANode->EmissiveColor, MP_EmissiveColor, TEXT("emissive"));
+            AddAvailableConnection(MakeMANode->Metallic, MP_Metallic, TEXT("metallic"));
+            AddAvailableConnection(MakeMANode->Roughness, MP_Roughness, TEXT("roughness"));
+            AddAvailableConnection(MakeMANode->Normal, MP_Normal, TEXT("normal"));
+            AddAvailableConnection(MakeMANode->Specular, MP_Specular, TEXT("specular"));
+            AddAvailableConnection(MakeMANode->AmbientOcclusion, MP_AmbientOcclusion, TEXT("ambient"));
         }
         // 情况2：MaterialAttributes连接到MaterialFunctionCall（如MF_VT_Mat）
         else if (UMaterialExpressionMaterialFunctionCall* FunctionNode = Cast<UMaterialExpressionMaterialFunctionCall>(MAExpression))
@@ -956,20 +1271,13 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
                     UE_LOG(LogX_AssetEditor, Log, TEXT("回溯找到MakeMaterialAttributes节点，从该节点收集连接"));
 
                     // 从MakeMaterialAttributes节点的输入引脚收集连接
-                    if (FoundMakeMANode->BaseColor.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->BaseColor.Expression, FoundMakeMANode->BaseColor.OutputIndex, MP_BaseColor, TEXT("basecolor")});
-                    if (FoundMakeMANode->EmissiveColor.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->EmissiveColor.Expression, FoundMakeMANode->EmissiveColor.OutputIndex, MP_EmissiveColor, TEXT("emissive")});
-                    if (FoundMakeMANode->Metallic.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->Metallic.Expression, FoundMakeMANode->Metallic.OutputIndex, MP_Metallic, TEXT("metallic")});
-                    if (FoundMakeMANode->Roughness.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->Roughness.Expression, FoundMakeMANode->Roughness.OutputIndex, MP_Roughness, TEXT("roughness")});
-                    if (FoundMakeMANode->Normal.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->Normal.Expression, FoundMakeMANode->Normal.OutputIndex, MP_Normal, TEXT("normal")});
-                    if (FoundMakeMANode->Specular.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->Specular.Expression, FoundMakeMANode->Specular.OutputIndex, MP_Specular, TEXT("specular")});
-                    if (FoundMakeMANode->AmbientOcclusion.IsConnected())
-                        AvailableConnections.Add({FoundMakeMANode->AmbientOcclusion.Expression, FoundMakeMANode->AmbientOcclusion.OutputIndex, MP_AmbientOcclusion, TEXT("ambient")});
+                    AddAvailableConnection(FoundMakeMANode->BaseColor, MP_BaseColor, TEXT("basecolor"));
+                    AddAvailableConnection(FoundMakeMANode->EmissiveColor, MP_EmissiveColor, TEXT("emissive"));
+                    AddAvailableConnection(FoundMakeMANode->Metallic, MP_Metallic, TEXT("metallic"));
+                    AddAvailableConnection(FoundMakeMANode->Roughness, MP_Roughness, TEXT("roughness"));
+                    AddAvailableConnection(FoundMakeMANode->Normal, MP_Normal, TEXT("normal"));
+                    AddAvailableConnection(FoundMakeMANode->Specular, MP_Specular, TEXT("specular"));
+                    AddAvailableConnection(FoundMakeMANode->AmbientOcclusion, MP_AmbientOcclusion, TEXT("ambient"));
                 }
             }
             else
@@ -984,20 +1292,13 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
     {
         UE_LOG(LogX_AssetEditor, Log, TEXT("从材质主引脚收集可用连接"));
 
-        if (EditorOnlyData->BaseColor.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->BaseColor.Expression, EditorOnlyData->BaseColor.OutputIndex, MP_BaseColor, TEXT("basecolor")});
-        if (EditorOnlyData->EmissiveColor.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->EmissiveColor.Expression, EditorOnlyData->EmissiveColor.OutputIndex, MP_EmissiveColor, TEXT("emissive")});
-        if (EditorOnlyData->Metallic.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->Metallic.Expression, EditorOnlyData->Metallic.OutputIndex, MP_Metallic, TEXT("metallic")});
-        if (EditorOnlyData->Roughness.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->Roughness.Expression, EditorOnlyData->Roughness.OutputIndex, MP_Roughness, TEXT("roughness")});
-        if (EditorOnlyData->Normal.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->Normal.Expression, EditorOnlyData->Normal.OutputIndex, MP_Normal, TEXT("normal")});
-        if (EditorOnlyData->Specular.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->Specular.Expression, EditorOnlyData->Specular.OutputIndex, MP_Specular, TEXT("specular")});
-        if (EditorOnlyData->AmbientOcclusion.IsConnected())
-            AvailableConnections.Add({EditorOnlyData->AmbientOcclusion.Expression, EditorOnlyData->AmbientOcclusion.OutputIndex, MP_AmbientOcclusion, TEXT("ambient")});
+        AddAvailableConnection(EditorOnlyData->BaseColor, MP_BaseColor, TEXT("basecolor"));
+        AddAvailableConnection(EditorOnlyData->EmissiveColor, MP_EmissiveColor, TEXT("emissive"));
+        AddAvailableConnection(EditorOnlyData->Metallic, MP_Metallic, TEXT("metallic"));
+        AddAvailableConnection(EditorOnlyData->Roughness, MP_Roughness, TEXT("roughness"));
+        AddAvailableConnection(EditorOnlyData->Normal, MP_Normal, TEXT("normal"));
+        AddAvailableConnection(EditorOnlyData->Specular, MP_Specular, TEXT("specular"));
+        AddAvailableConnection(EditorOnlyData->AmbientOcclusion, MP_AmbientOcclusion, TEXT("ambient"));
     }
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("收集到 %d 个可用属性连接"), AvailableConnections.Num());
@@ -1011,88 +1312,87 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
     // 尝试将可用连接匹配到函数的输入引脚
     bool bAnyInputConnected = false;
 
-    // 通用方案：检查函数是否同时有输入和输出引脚
-    const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
-    bool bHasInputsAndOutputs = (FunctionInputs.Num() >= 2 && FunctionOutputs.Num() > 0);
-
-    if (bHasInputsAndOutputs)
+    for (int32 InputIndex = 0; InputIndex < FunctionInputs.Num(); ++InputIndex)
     {
-        // 对于有输入和输出的函数（如菲涅尔），使用插入模式：
-        // 将函数插入到BaseColor和EmissiveColor的连接中作为中间节点
-        UE_LOG(LogX_AssetEditor, Log, TEXT("检测到有输入输出的函数，使用插入模式连接逻辑"));
-
-        // 查找BaseColor和EmissiveColor的源连接
-        const FAvailableConnection* BaseColorConn = nullptr;
-        const FAvailableConnection* EmissiveConn = nullptr;
-
-        for (const FAvailableConnection& Connection : AvailableConnections)
+        const FExpressionInput& Input = FunctionInputs[InputIndex].Input;
+        const FString InputName = Input.InputName.ToString();
+        if (IsIgnoredPinName(InputName))
         {
-            if (Connection.Property == MP_BaseColor)
+            UE_LOG(LogX_AssetEditor, Verbose, TEXT("MaterialAttributes模式：输入引脚 %s 被忽略前缀排除"), *InputName);
+            continue;
+        }
+
+        const uint32 TargetInputType = static_cast<uint32>(FunctionCall->GetInputType(InputIndex));
+        int32 BestScore = 0;
+        int32 BestConnectionIndex = INDEX_NONE;
+
+        for (int32 ConnectionIndex = 0; ConnectionIndex < AvailableConnections.Num(); ++ConnectionIndex)
+        {
+            const FAvailableConnection& Connection = AvailableConnections[ConnectionIndex];
+            if (Connection.bConsumed || !Connection.Expression)
             {
-                BaseColorConn = &Connection;
+                continue;
             }
-            else if (Connection.Property == MP_EmissiveColor)
+
+            if (!AreMaterialTypesCompatible(Connection.OutputType, TargetInputType))
             {
-                EmissiveConn = &Connection;
+                continue;
+            }
+
+            const TArray<FString> Aliases = GetPropertyAliases(Connection.Property);
+            const int32 Score = CalculateMatchScoreWithAliases(InputName, Connection.PropertyName, Aliases);
+            if (Score > BestScore)
+            {
+                BestScore = Score;
+                BestConnectionIndex = ConnectionIndex;
             }
         }
 
-        // 连接第一个输入到BaseColor源（插入到BaseColor连接中）
-        if (BaseColorConn && FunctionInputs.Num() > 0)
+        // 保底策略：对于前两个输入，按BaseColor/Emissive顺序兜底，避免无匹配时完全断开。
+        bool bUsedFallback = false;
+        if (BestConnectionIndex == INDEX_NONE && InputIndex < 2)
         {
-            const FExpressionInput& Input = FunctionInputs[0].Input;
-            FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
-            if (InputPtr && BaseColorConn->Expression)
+            const EMaterialProperty PreferredProperty = (InputIndex == 0) ? MP_BaseColor : MP_EmissiveColor;
+            for (int32 ConnectionIndex = 0; ConnectionIndex < AvailableConnections.Num(); ++ConnectionIndex)
             {
-                InputPtr->Connect(BaseColorConn->OutputIndex, BaseColorConn->Expression);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("插入模式：连接第一个输入 '%s' 到 BaseColor源节点"),
-                    *Input.InputName.ToString());
-                bAnyInputConnected = true;
-            }
-        }
-
-        // 连接第二个输入到EmissiveColor源（插入到EmissiveColor连接中）
-        if (EmissiveConn && FunctionInputs.Num() > 1)
-        {
-            const FExpressionInput& Input = FunctionInputs[1].Input;
-            FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
-            if (InputPtr && EmissiveConn->Expression)
-            {
-                InputPtr->Connect(EmissiveConn->OutputIndex, EmissiveConn->Expression);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("插入模式：连接第二个输入 '%s' 到 EmissiveColor源节点"),
-                    *Input.InputName.ToString());
-                bAnyInputConnected = true;
-            }
-        }
-    }
-    else
-    {
-        // 普通函数（只有输入或只有输出）：使用名称匹配逻辑
-        for (const FFunctionExpressionInput& FunctionInput : FunctionInputs)
-        {
-            const FExpressionInput& Input = FunctionInput.Input;
-            const FString InputName = Input.InputName.ToString().ToLower();
-
-            UE_LOG(LogX_AssetEditor, Log, TEXT("处理函数输入引脚: %s"), *Input.InputName.ToString());
-
-            // 尝试根据名称匹配
-            for (const FAvailableConnection& Connection : AvailableConnections)
-            {
-                if (InputName.Contains(Connection.PropertyName))
+                const FAvailableConnection& Connection = AvailableConnections[ConnectionIndex];
+                if (Connection.bConsumed || !Connection.Expression || Connection.Property != PreferredProperty)
                 {
-                    // 连接这个属性到函数输入
-                    FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
-                    if (InputPtr && Connection.Expression)
-                    {
-                        InputPtr->Connect(Connection.OutputIndex, Connection.Expression);
-                        UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes模式：自动连接 %s 到函数输入 %s"),
-                            *Connection.PropertyName, *Input.InputName.ToString());
-                        bAnyInputConnected = true;
-                    }
-                    break; // 找到匹配就停止
+                    continue;
                 }
+
+                if (!AreMaterialTypesCompatible(Connection.OutputType, TargetInputType))
+                {
+                    continue;
+                }
+
+                BestConnectionIndex = ConnectionIndex;
+                bUsedFallback = true;
+                break;
             }
         }
+
+        if (BestConnectionIndex == INDEX_NONE || (BestScore <= 0 && !bUsedFallback))
+        {
+            continue;
+        }
+
+        FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
+        if (!InputPtr)
+        {
+            continue;
+        }
+
+        FAvailableConnection& BestConnection = AvailableConnections[BestConnectionIndex];
+        const int32 SourceOutputIndex = (BestConnection.OutputIndex == INDEX_NONE) ? 0 : BestConnection.OutputIndex;
+        InputPtr->Connect(SourceOutputIndex, BestConnection.Expression);
+        BestConnection.bConsumed = true;
+        bAnyInputConnected = true;
+
+        UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes模式：连接 %s 到函数输入 %s (%s)"),
+            *BestConnection.PropertyName,
+            *InputName,
+            bUsedFallback ? TEXT("保底策略") : TEXT("名称匹配"));
     }
 
     if (bAnyInputConnected)
@@ -1175,58 +1475,90 @@ bool FX_MaterialFunctionConnector::ConnectToMaterialAttributesFunctionInputs(
     UE_LOG(LogX_AssetEditor, Log, TEXT("尝试将 %s 连接到现有MaterialAttributes函数 %s 的输入"),
         *NewFunctionName, *ExistingFunctionName);
 
-    // 获取已有函数的输入引脚
-    const TArray<FFunctionExpressionInput>& ExistingInputs = ExistingFunctionCall->FunctionInputs;
+    const TArray<FString> ExistingInputNames = UMaterialEditingLibrary::GetMaterialExpressionInputNames(ExistingFunctionCall);
+    const TArray<FFunctionExpressionOutput>& NewOutputs = FunctionCall->FunctionOutputs;
+    TArrayView<FExpressionInput*> ExistingInputsView = ExistingFunctionCall->GetInputsView();
 
-    // 根据新函数特性找到合适的输入引脚
-    FString TargetInputName;
-    if (NewFunctionName.Contains(TEXT("Fresnel")))
+    int32 BestTargetInputIndex = INDEX_NONE;
+    int32 BestTargetScore = -1;
+
+    for (int32 InputIndex = 0; InputIndex < ExistingInputNames.Num(); ++InputIndex)
     {
-        // 查找Emissive相关输入
-        for (const FFunctionExpressionInput& Input : ExistingInputs)
+        if (!ExistingInputsView.IsValidIndex(InputIndex) || !ExistingInputsView[InputIndex])
         {
-            FString InputName = Input.Input.InputName.ToString();
-            if (InputName.Contains(TEXT("Emissive")) || InputName.Contains(TEXT("自发光")))
+            continue;
+        }
+
+        const FString CandidateName = ExistingInputNames[InputIndex];
+        if (IsIgnoredPinName(CandidateName))
+        {
+            continue;
+        }
+
+        const uint32 CandidateInputType = static_cast<uint32>(ExistingFunctionCall->GetInputType(InputIndex));
+        int32 Score = 0;
+
+        for (int32 NewOutputIndex = 0; NewOutputIndex < NewOutputs.Num(); ++NewOutputIndex)
+        {
+            const uint32 NewOutputType = static_cast<uint32>(FunctionCall->GetOutputType(NewOutputIndex));
+            if (!AreMaterialTypesCompatible(NewOutputType, CandidateInputType))
             {
-                TargetInputName = InputName;
-                break;
+                continue;
             }
+
+            const FString OutputName = NewOutputs[NewOutputIndex].Output.OutputName.ToString();
+            Score = FMath::Max(Score, CalculateMatchScore(OutputName, CandidateName));
         }
-        if (TargetInputName.IsEmpty())
+
+        Score = FMath::Max(Score, CalculateMatchScore(NewFunctionName, CandidateName));
+
+        if (NewFunctionName.Contains(TEXT("Fresnel"))
+            && (CandidateName.Contains(TEXT("Emissive")) || CandidateName.Contains(TEXT("Emission")) || CandidateName.Contains(TEXT("自发光"))))
         {
-            TargetInputName = TEXT("Emissive Color");  // 备用名称
+            Score += 25;
         }
-    }
-    else
-    {
-        // 尝试找到第一个可用的输入
-        if (ExistingInputs.Num() > 0)
+
+        if (ExistingInputsView[InputIndex]->Expression)
         {
-            TargetInputName = ExistingInputs[0].Input.InputName.ToString();
+            Score += 5;
+        }
+
+        if (Score > BestTargetScore)
+        {
+            BestTargetScore = Score;
+            BestTargetInputIndex = InputIndex;
         }
     }
 
-    if (TargetInputName.IsEmpty())
+    if (BestTargetInputIndex == INDEX_NONE && ExistingInputsView.Num() > 0)
     {
-        UE_LOG(LogX_AssetEditor, Warning, TEXT("无法找到合适的输入引脚连接到MaterialAttributes函数"));
+        BestTargetInputIndex = 0;
+    }
+
+    if (BestTargetInputIndex == INDEX_NONE)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("无法找到可用输入引脚以插入MaterialAttributes函数"));
         return false;
     }
 
-    // 使用官方API连接
-    bool bSuccess = UMaterialEditingLibrary::ConnectMaterialExpressions(
-        FunctionCall,
-        OutputIndex == 0 ? FString() : FString::Printf(TEXT("%d"), OutputIndex),
+    const FString TargetSemantic = ExistingInputNames.IsValidIndex(BestTargetInputIndex)
+        ? ExistingInputNames[BestTargetInputIndex]
+        : ExistingFunctionCall->GetInputName(BestTargetInputIndex).ToString();
+
+    const bool bSuccess = InsertFunctionIntoExpressionInput(
         ExistingFunctionCall,
-        TargetInputName
-    );
+        BestTargetInputIndex,
+        TargetSemantic,
+        FunctionCall,
+        OutputIndex);
 
     if (bSuccess)
     {
-        UE_LOG(LogX_AssetEditor, Log, TEXT("成功连接到MaterialAttributes函数的 %s 输入"), *TargetInputName);
+        UE_LOG(LogX_AssetEditor, Log, TEXT("成功插入到MaterialAttributes函数输入: %s"), *TargetSemantic);
     }
     else
     {
-        UE_LOG(LogX_AssetEditor, Warning, TEXT("连接到MaterialAttributes函数的 %s 输入失败"), *TargetInputName);
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("插入到MaterialAttributes函数输入失败: %s"), *TargetSemantic);
     }
 
     return bSuccess;
@@ -1247,11 +1579,88 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("尝试通用连接：函数 %s 到表达式 %s"), *FunctionName, *ExpressionClassName);
 
-    // 尝试简单的表达式替换策略
-    // 如果无法找到合适的输入引脚，可以考虑创建新的连接
-    UE_LOG(LogX_AssetEditor, Warning, TEXT("暂不支持连接到 %s 类型的表达式，可能需要手动连接"), *ExpressionClassName);
+    const TArray<FString> InputNames = UMaterialEditingLibrary::GetMaterialExpressionInputNames(MaterialAttributesExpression);
+    TArrayView<FExpressionInput*> InputsView = MaterialAttributesExpression->GetInputsView();
+    const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
 
-    return false;
+    if (InputNames.Num() == 0 || InputsView.Num() == 0)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("表达式 %s 没有可用输入引脚"), *ExpressionClassName);
+        return false;
+    }
+
+    int32 BestInputIndex = INDEX_NONE;
+    int32 BestScore = -1;
+
+    for (int32 InputIndex = 0; InputIndex < InputNames.Num(); ++InputIndex)
+    {
+        if (!InputsView.IsValidIndex(InputIndex) || !InputsView[InputIndex])
+        {
+            continue;
+        }
+
+        const FString CandidateName = InputNames[InputIndex];
+        if (IsIgnoredPinName(CandidateName))
+        {
+            continue;
+        }
+
+        const uint32 CandidateType = static_cast<uint32>(MaterialAttributesExpression->GetInputType(InputIndex));
+        int32 Score = 0;
+
+        for (int32 OutputPinIndex = 0; OutputPinIndex < FunctionOutputs.Num(); ++OutputPinIndex)
+        {
+            const uint32 OutputType = static_cast<uint32>(FunctionCall->GetOutputType(OutputPinIndex));
+            if (!AreMaterialTypesCompatible(OutputType, CandidateType))
+            {
+                continue;
+            }
+
+            const FString OutputName = FunctionOutputs[OutputPinIndex].Output.OutputName.ToString();
+            Score = FMath::Max(Score, CalculateMatchScore(OutputName, CandidateName));
+        }
+
+        Score = FMath::Max(Score, CalculateMatchScore(FunctionName, CandidateName));
+        if (InputsView[InputIndex]->Expression)
+        {
+            Score += 5;
+        }
+
+        if (Score > BestScore)
+        {
+            BestScore = Score;
+            BestInputIndex = InputIndex;
+        }
+    }
+
+    if (BestInputIndex == INDEX_NONE)
+    {
+        BestInputIndex = 0;
+    }
+
+    if (!InputsView.IsValidIndex(BestInputIndex))
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("未找到可插入的表达式输入位: %s"), *ExpressionClassName);
+        return false;
+    }
+
+    const FString TargetSemantic = InputNames.IsValidIndex(BestInputIndex)
+        ? InputNames[BestInputIndex]
+        : MaterialAttributesExpression->GetInputName(BestInputIndex).ToString();
+
+    const bool bSuccess = InsertFunctionIntoExpressionInput(
+        MaterialAttributesExpression,
+        BestInputIndex,
+        TargetSemantic,
+        FunctionCall,
+        OutputIndex);
+
+    if (!bSuccess)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("通用插入失败: %s"), *ExpressionClassName);
+    }
+
+    return bSuccess;
 }
 
 bool FX_MaterialFunctionConnector::FallbackConnectToFirstBaseEmissiveNode(
@@ -1456,46 +1865,47 @@ bool FX_MaterialFunctionConnector::ConnectFunctionToBaseEmissiveNode(
     // 对MaterialFunctionCall，优先查找Emissive相关输入
     if (UMaterialExpressionMaterialFunctionCall* TargetFunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(TargetExpression))
     {
-        FString TargetInputName;
-
-        for (const FFunctionExpressionInput& Input : TargetFunctionCall->FunctionInputs)
+        const TArray<FString> InputNames = UMaterialEditingLibrary::GetMaterialExpressionInputNames(TargetFunctionCall);
+        int32 TargetInputIndex = INDEX_NONE;
+        for (int32 InputIndex = 0; InputIndex < InputNames.Num(); ++InputIndex)
         {
-            const FString InputName = Input.Input.InputName.ToString();
+            const FString& InputName = InputNames[InputIndex];
             if (InputName.Contains(TEXT("Emissive")) || InputName.Contains(TEXT("自发光")) || InputName.Contains(TEXT("Emission")))
             {
-                TargetInputName = InputName;
+                TargetInputIndex = InputIndex;
                 break;
             }
         }
-        if (TargetInputName.IsEmpty() && TargetFunctionCall->FunctionInputs.Num() > 0)
+
+        if (TargetInputIndex == INDEX_NONE && InputNames.Num() > 0)
         {
-            // 找不到Emissive专用输入时，退而求其次使用第一个输入
-            TargetInputName = TargetFunctionCall->FunctionInputs[0].Input.InputName.ToString();
+            TargetInputIndex = 0;
         }
 
-        if (TargetInputName.IsEmpty())
+        if (TargetInputIndex == INDEX_NONE)
         {
             UE_LOG(LogX_AssetEditor, Warning, TEXT("Base+Emissive节点上未找到可用输入引脚"));
             return false;
         }
 
-        const FString OutputPinName = (OutputIndex == 0)
-            ? FString()
-            : FString::Printf(TEXT("%d"), OutputIndex);
+        const FString TargetSemantic = InputNames.IsValidIndex(TargetInputIndex)
+            ? InputNames[TargetInputIndex]
+            : TEXT("Emissive");
 
-        const bool bSuccess = UMaterialEditingLibrary::ConnectMaterialExpressions(
-            FunctionCall,
-            OutputPinName,
+        const bool bSuccess = InsertFunctionIntoExpressionInput(
             TargetFunctionCall,
-            TargetInputName);
+            TargetInputIndex,
+            TargetSemantic,
+            FunctionCall,
+            OutputIndex);
 
         if (bSuccess)
         {
-            UE_LOG(LogX_AssetEditor, Log, TEXT("成功将函数输出连接到节点输入 %s"), *TargetInputName);
+            UE_LOG(LogX_AssetEditor, Log, TEXT("成功将函数插入到节点输入 %s"), *TargetSemantic);
         }
         else
         {
-            UE_LOG(LogX_AssetEditor, Warning, TEXT("连接到节点输入 %s 失败"), *TargetInputName);
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("插入到节点输入 %s 失败"), *TargetSemantic);
         }
 
         return bSuccess;
@@ -1531,6 +1941,7 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
     // 智能分析：检查所有输出引脚并逐个连接
     const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
     bool bAnyConnected = false;
+    TSet<int32> UsedFunctionInputIndices;
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("函数 %s 有 %d 个输出引脚，开始智能匹配"), *FunctionName, FunctionOutputs.Num());
 
@@ -1544,49 +1955,56 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
         UE_LOG(LogX_AssetEditor, Log, TEXT("分析输出引脚 [%d]: %s"), i, *Output.OutputName.ToString());
 
         // 根据输出引脚名称智能匹配MaterialProperty
-        EMaterialProperty TargetProperty = MP_EmissiveColor;  // 默认初始化
         FExpressionInput* TargetInput = nullptr;
+        FString TargetSemantic;
         bool bFoundMatch = false;
 
         if (OutputName.Contains(TEXT("basecolor")) || OutputName.Contains(TEXT("diffuse")) || OutputName.Contains(TEXT("albedo")))
         {
             TargetInput = &MakeMANode->BaseColor;
+            TargetSemantic = X_MaterialConstants::BaseColor;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 BaseColor"), *Output.OutputName.ToString());
         }
         else if (OutputName.Contains(TEXT("metallic")))
         {
             TargetInput = &MakeMANode->Metallic;
+            TargetSemantic = X_MaterialConstants::Metallic;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 Metallic"), *Output.OutputName.ToString());
         }
         else if (OutputName.Contains(TEXT("roughness")) || OutputName.Contains(TEXT("rough")))
         {
             TargetInput = &MakeMANode->Roughness;
+            TargetSemantic = X_MaterialConstants::Roughness;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 Roughness"), *Output.OutputName.ToString());
         }
         else if (OutputName.Contains(TEXT("normal")))
         {
             TargetInput = &MakeMANode->Normal;
+            TargetSemantic = X_MaterialConstants::Normal;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 Normal"), *Output.OutputName.ToString());
         }
         else if (OutputName.Contains(TEXT("emissive")) || OutputName.Contains(TEXT("emission")) || OutputName.Contains(TEXT("自发光")))
         {
             TargetInput = &MakeMANode->EmissiveColor;
+            TargetSemantic = X_MaterialConstants::EmissiveColor;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 EmissiveColor"), *Output.OutputName.ToString());
         }
         else if (OutputName.Contains(TEXT("specular")))
         {
             TargetInput = &MakeMANode->Specular;
+            TargetSemantic = X_MaterialConstants::Specular;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 Specular"), *Output.OutputName.ToString());
         }
         else if (OutputName.Contains(TEXT("ambient")) || OutputName.Contains(TEXT("ao")))
         {
             TargetInput = &MakeMANode->AmbientOcclusion;
+            TargetSemantic = X_MaterialConstants::AmbientOcclusion;
             bFoundMatch = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("输出引脚 '%s' 匹配到 AmbientOcclusion"), *Output.OutputName.ToString());
         }
@@ -1598,12 +2016,14 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
                 if (FunctionName.Contains(TEXT("Fresnel")))
                 {
                     TargetInput = &MakeMANode->EmissiveColor;
+                    TargetSemantic = X_MaterialConstants::EmissiveColor;
                     bFoundMatch = true;
                     UE_LOG(LogX_AssetEditor, Log, TEXT("单输出Fresnel函数，推断为 EmissiveColor"));
                 }
                 else if (FunctionName.Contains(TEXT("BaseColor")) || FunctionName.Contains(TEXT("Diffuse")))
                 {
                     TargetInput = &MakeMANode->BaseColor;
+                    TargetSemantic = X_MaterialConstants::BaseColor;
                     bFoundMatch = true;
                     UE_LOG(LogX_AssetEditor, Log, TEXT("单输出BaseColor函数，推断为 BaseColor"));
                 }
@@ -1619,8 +2039,37 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
         // 使用UE源码验证的直接连接方法
         if (bFoundMatch && TargetInput)
         {
-            TargetInput->Expression = FunctionCall;
-            TargetInput->OutputIndex = i;
+            UMaterialExpression* PreviousExpression = TargetInput->Expression;
+            const int32 PreviousOutputIndex = (TargetInput->OutputIndex == INDEX_NONE) ? 0 : TargetInput->OutputIndex;
+
+            if (PreviousExpression)
+            {
+                const uint32 PreviousSourceType = static_cast<uint32>(PreviousExpression->GetOutputType(PreviousOutputIndex));
+                const FString PreserveSemantic = TargetSemantic.IsEmpty()
+                    ? Output.OutputName.ToString()
+                    : TargetSemantic;
+
+                const int32 FunctionInputIndex = FindBestFunctionInputIndexBySemantic(
+                    FunctionCall,
+                    PreserveSemantic,
+                    PreviousSourceType,
+                    &UsedFunctionInputIndices);
+
+                if (FunctionInputIndex != INDEX_NONE
+                    && FunctionCall->FunctionInputs.IsValidIndex(FunctionInputIndex))
+                {
+                    FExpressionInput& FunctionInput = FunctionCall->FunctionInputs[FunctionInputIndex].Input;
+                    if (!FunctionInput.Expression)
+                    {
+                        FunctionInput.Connect(PreviousOutputIndex, PreviousExpression);
+                        UsedFunctionInputIndices.Add(FunctionInputIndex);
+                        UE_LOG(LogX_AssetEditor, Log, TEXT("已保留原链路：%s -> 新函数输入[%d]"),
+                            *PreserveSemantic, FunctionInputIndex);
+                    }
+                }
+            }
+
+            TargetInput->Connect(i, FunctionCall);
             bAnyConnected = true;
             UE_LOG(LogX_AssetEditor, Log, TEXT("成功连接输出 [%d] 到MakeMaterialAttributes节点"), i);
         }

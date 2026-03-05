@@ -270,7 +270,7 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         return nullptr;
     }
 
-    // 如果材质编辑器已打开，先关闭以避免冲突
+    // 记录材质编辑器是否已打开，仅用于后续按需刷新（不再强制关闭）。
     bool bWasEditorOpen = false;
     if (GEditor)
     {
@@ -281,8 +281,6 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
             if (OpenEditors.Num() > 0)
             {
                 bWasEditorOpen = true;
-                AssetEditorSubsystem->CloseAllEditorsForAsset(Material);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("材质编辑器已打开，先关闭以避免冲突"));
             }
         }
     }
@@ -321,8 +319,23 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
     
     if (FunctionCall && bSetupConnections)
     {
+        // 将显式参数与UserParams合并，使用拷贝避免污染调用方传入的共享参数对象。
+        TSharedPtr<FX_MaterialFunctionParams> EffectiveParams = nullptr;
+        if (UserParams.IsValid())
+        {
+            EffectiveParams = MakeShared<FX_MaterialFunctionParams>(*UserParams);
+            EffectiveParams->bSetupConnections = bSetupConnections;
+            EffectiveParams->bEnableSmartConnect = bEnableSmartConnect;
+            EffectiveParams->ConnectionMode = ConnectionMode;
+        }
+
         // 设置自动连接 - 委托给连接器类
-        FX_MaterialFunctionConnector::SetupAutoConnections(Material, FunctionCall, ConnectionMode, UserParams);
+        FX_MaterialFunctionConnector::SetupAutoConnections(
+            Material,
+            FunctionCall,
+            ConnectionMode,
+            EffectiveParams,
+            bEnableSmartConnect);
     }
     
     // 直接设置材质函数表达式的描述
@@ -343,13 +356,16 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         FunctionCall->MaterialExpressionEditorX -= 15; // 稍微调整位置以便更好地显示描述
     }
     
-    // 标记材质为已修改
-    Material->MarkPackageDirty();
-    Material->PreEditChange(nullptr);
-    Material->PostEditChange();
-    
-    // 刷新材质编辑器
-    FX_MaterialFunctionCore::RefreshOpenMaterialEditor(Material);
+    // 仅当材质编辑器本来就处于打开状态时才触发编辑器内刷新；
+    // 未打开时走常规重编译路径。
+    if (bWasEditorOpen)
+    {
+        FX_MaterialFunctionCore::RefreshOpenMaterialEditor(Material);
+    }
+    else
+    {
+        FX_MaterialFunctionCore::RecompileMaterial(Material);
+    }
     
     return FunctionCall;
 }
@@ -434,6 +450,12 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
     {
         // 设置材质函数引用
         FunctionCall->SetMaterialFunction(Function);
+
+        // 对齐官方材质编辑器行为：创建表达式后显式挂接到MaterialGraph节点层。
+        if (Material->MaterialGraph && !FunctionCall->GraphNode)
+        {
+            Material->MaterialGraph->AddExpression(FunctionCall, false);
+        }
         
         // 如果PosX和PosY都是0，进行智能位置计算
         if (PosX == 0 && PosY == 0)

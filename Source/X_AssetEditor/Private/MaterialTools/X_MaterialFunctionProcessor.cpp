@@ -33,7 +33,7 @@ void FX_MaterialFunctionProcessor::ProcessAssetMaterialFunction(
     UE_LOG(LogX_AssetEditor, Log, TEXT("开始处理%d个资产的材质函数应用: %s"), 
         SelectedAssets.Num(), *MaterialFunction->GetName());
 
-    // 收集所有材质，使用并行处理提高性能
+    // 收集所有材质（API名保留Parallel以兼容，内部已改为主线程安全收集）
     TArray<UMaterial*> Materials = FX_MaterialFunctionCollector::CollectMaterialsFromAssetParallel(SelectedAssets);
     
     if (Materials.Num() == 0)
@@ -70,7 +70,7 @@ void FX_MaterialFunctionProcessor::ProcessActorMaterialFunction(
     UE_LOG(LogX_AssetEditor, Log, TEXT("开始处理%d个Actor的材质函数应用: %s"), 
         SelectedActors.Num(), *MaterialFunction->GetName());
 
-    // 收集所有材质，使用并行处理提高性能
+    // 收集所有材质（API名保留Parallel以兼容，内部已改为主线程安全收集）
     TArray<UMaterial*> Materials = FX_MaterialFunctionCollector::CollectMaterialsFromActorParallel(SelectedActors);
     
     if (Materials.Num() == 0)
@@ -236,9 +236,11 @@ FMaterialProcessResult FX_MaterialFunctionProcessor::AddFunctionToMultipleMateri
         }
         
         // 添加函数到材质
+        const bool bEnableSmartConnect = Params.IsValid() ? Params->bEnableSmartConnect : true;
+        const EConnectionMode ConnectionMode = Params.IsValid() ? Params->ConnectionMode : EConnectionMode::Add;
         UMaterialExpressionMaterialFunctionCall* FunctionCall = 
             FX_MaterialFunctionOperation::AddFunctionToMaterial(BaseMaterial, MaterialFunction, NodeName, 
-                PosX, PosY, bSetupConnections, true, EConnectionMode::Add, Params);
+                PosX, PosY, bSetupConnections, bEnableSmartConnect, ConnectionMode, Params);
         
         if (FunctionCall)
         {
