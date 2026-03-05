@@ -56,25 +56,7 @@ void SX_MaterialFunctionParamDialog::Construct(const FArguments& InArgs, TWeakPt
 	{
 		StructureDetailsView->GetDetailsView()->SetIsPropertyVisibleDelegate(FIsPropertyVisible::CreateLambda([HiddenPropertyName](const FPropertyAndParent& InPropertyAndParent)
 		{
-			if (InPropertyAndParent.Property.GetFName() == HiddenPropertyName)
-			{
-				return false;
-			}
-
-			if (InPropertyAndParent.Property.HasAnyPropertyFlags(CPF_Parm))
-			{
-				return true;
-			}
-
-			for (const FProperty* Parent : InPropertyAndParent.ParentProperties)
-			{
-				if (Parent->HasAnyPropertyFlags(CPF_Parm))
-				{
-					return true;
-				}
-			}
-
-			return false;
+			return InPropertyAndParent.Property.GetFName() != HiddenPropertyName;
 		}));
 	}
 
@@ -111,11 +93,11 @@ void SX_MaterialFunctionParamDialog::Construct(const FArguments& InArgs, TWeakPt
 					.ContentPadding(FMargin(6, 2))
 					.OnClicked_Lambda([this, InParentWindow]()
 					{
+						bOKPressed = true;
 						if (TSharedPtr<SWindow> ParentWindow = InParentWindow.Pin())
 						{
 							ParentWindow->RequestDestroyWindow();
 						}
-						bOKPressed = true;
 						return FReply::Handled(); 
 					})
 					.ToolTipText(InArgs._OkButtonTooltipText)

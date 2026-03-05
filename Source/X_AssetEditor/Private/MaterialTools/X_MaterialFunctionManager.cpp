@@ -184,82 +184,12 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionManager::CreateMater
 
 TSharedRef<SWindow> FX_MaterialFunctionManager::CreateMaterialFunctionPickerWindow(FOnMaterialFunctionSelected OnFunctionSelected)
 {
-    // 打印日志，标明使用了哪个方法
-    UE_LOG(LogX_AssetEditor, Warning, TEXT("FX_MaterialFunctionManager::CreateMaterialFunctionPickerWindow 调用"));
-    // 使用新版的选择器实现
-    return ShowNewMaterialFunctionPicker(OnFunctionSelected);
+    return FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(OnFunctionSelected);
 }
 
 TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FOnMaterialFunctionSelected OnFunctionSelected)
 {
-    // 打印日志，标明使用了哪个方法
-    UE_LOG(LogX_AssetEditor, Warning, TEXT("FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker 调用 - 使用新版选择器"));
-    
-    // 创建窗口
-    TSharedRef<SWindow> Window = SNew(SWindow)
-        .Title(FText::FromString(TEXT("选择材质函数")))
-        .ClientSize(FVector2D(400, 600))
-        .SupportsMaximize(false)
-        .SupportsMinimize(false);
-
-    const TWeakPtr<SWindow> WeakWindow = Window;
-
-    // 配置资产选择器
-    FAssetPickerConfig AssetPickerConfig;
-    AssetPickerConfig.Filter.ClassPaths.Add(UMaterialFunction::StaticClass()->GetClassPathName());
-    AssetPickerConfig.Filter.bRecursiveClasses = true;
-    AssetPickerConfig.bAllowNullSelection = false;
-    AssetPickerConfig.bCanShowFolders = true;
-    AssetPickerConfig.bCanShowClasses = true;
-    AssetPickerConfig.bShowTypeInColumnView = true;
-    AssetPickerConfig.bShowPathInColumnView = true;
-    AssetPickerConfig.InitialAssetViewType = EAssetViewType::List;
-
-    // 选择回调
-    AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateLambda(
-        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
-        {
-            UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
-            if (MaterialFunction && OnFunctionSelected.IsBound())
-            {
-                OnFunctionSelected.Execute(MaterialFunction);
-            }
-            
-            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
-            {
-                PinnedWindow->RequestDestroyWindow();
-            }
-        });
-
-    // 双击回调
-    AssetPickerConfig.OnAssetDoubleClicked = FOnAssetDoubleClicked::CreateLambda(
-        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
-        {
-            UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
-            if (MaterialFunction && OnFunctionSelected.IsBound())
-            {
-                OnFunctionSelected.Execute(MaterialFunction);
-            }
-            
-            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
-            {
-                PinnedWindow->RequestDestroyWindow();
-            }
-        });
-
-    // 创建资产选择器小部件
-    TSharedRef<SWidget> AssetPickerWidget = SNew(SBox)
-        .WidthOverride(400.0f)
-        .HeightOverride(600.0f)
-        [
-            FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser").Get().CreateAssetPicker(AssetPickerConfig)
-        ];
-
-    // 设置窗口内容并显示
-    Window->SetContent(AssetPickerWidget);
-    FSlateApplication::Get().AddModalWindow(Window, nullptr, false);
-
-    return Window;
+    return FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(OnFunctionSelected);
 }
 
 TSharedRef<SWindow> FX_MaterialFunctionManager::CreateNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected)

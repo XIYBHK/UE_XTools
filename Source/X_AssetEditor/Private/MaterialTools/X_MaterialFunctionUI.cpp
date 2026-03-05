@@ -158,20 +158,13 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
     AssetPickerConfig.bFocusSearchBoxWhenOpened = false;
     AssetPickerConfig.SaveSettingsName = TEXT("MaterialFunctionPicker"); // 保存设置
 
-    // 配置选择回调
+    // 单击仅选中，避免误触就执行操作；双击作为确认行为
     AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateLambda(
-        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
+        [](const FAssetData& AssetData)
         {
-            UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
-            if (MaterialFunction && OnFunctionSelected.IsBound())
+            if (const UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset()))
             {
-                OnFunctionSelected.Execute(MaterialFunction);
-            }
-            
-            // 关闭窗口
-            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
-            {
-                PinnedWindow->RequestDestroyWindow();
+                UE_LOG(LogX_AssetEditor, Verbose, TEXT("材质函数已选中(待确认): %s"), *MaterialFunction->GetName());
             }
         });
 
