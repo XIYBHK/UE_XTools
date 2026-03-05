@@ -408,15 +408,9 @@ void FX_CollisionManager::SaveStaticMeshChanges(UStaticMesh* StaticMesh)
     // 标记包为脏状态
     StaticMesh->MarkPackageDirty();
 
-    // 如果资产编辑器打开，刷新显示
-    if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
-    {
-        if (AssetEditorSubsystem->FindEditorForAsset(StaticMesh, false))
-        {
-            // 刷新资产编辑器
-            AssetEditorSubsystem->CloseAllEditorsForAsset(StaticMesh);
-        }
-    }
+    // 触发编辑器数据刷新，不强制关闭用户已打开的编辑器窗口。
+    StaticMesh->PreEditChange(nullptr);
+    StaticMesh->PostEditChange();
 }
 
 void FX_CollisionManager::LogOperation(const FString& Message, bool bIsError)

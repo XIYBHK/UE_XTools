@@ -148,11 +148,7 @@ FX_PivotOperationResult FX_PivotManager::SetPivotForActors(
     
     LogOperation(FString::Printf(TEXT("开始为 %d 个 Actor 设置 Pivot"), SelectedActors.Num()));
 
-    // 显示进度对话框
-    FScopedSlowTask Progress((float)SelectedActors.Num(),
-        LOCTEXT("SettingPivotForActors", "正在修改 Actor Pivot..."));
-    Progress.MakeDialog();
-
+    TMap<UStaticMesh*, TArray<AStaticMeshActor*>> MeshToSelectedActors;
     for (AActor* Actor : SelectedActors)
     {
         if (!Actor)
@@ -161,33 +157,161 @@ FX_PivotOperationResult FX_PivotManager::SetPivotForActors(
             continue;
         }
 
+        AStaticMeshActor* StaticMeshActor = Cast<AStaticMeshActor>(Actor);
+        if (!StaticMeshActor)
+        {
+            Result.SkippedCount++;
+            continue;
+        }
+
+        UStaticMeshComponent* MeshComponent = StaticMeshActor->GetStaticMeshComponent();
+        if (!MeshComponent || !MeshComponent->GetStaticMesh())
+        {
+            Result.FailureCount++;
+            const FString ErrorMsg = FString::Printf(TEXT("设置 Actor Pivot 失败: %s - Actor 没有有效的静态网格体组件"),
+                *Actor->GetActorLabel());
+            Result.ErrorMessages.Add(ErrorMsg);
+            LogOperation(ErrorMsg, true);
+            continue;
+        }
+
+        MeshToSelectedActors.FindOrAdd(MeshComponent->GetStaticMesh()).Add(StaticMeshActor);
+    }
+
+    FScopedSlowTask Progress((float)MeshToSelectedActors.Num(),
+        LOCTEXT("SettingPivotForActors", "正在修改 Actor Pivot..."));
+    Progress.MakeDialog();
+
+    bool bAnyCompensated = false;
+
+    for (const TPair<UStaticMesh*, TArray<AStaticMeshActor*>>& Pair : MeshToSelectedActors)
+    {
+        UStaticMesh* StaticMesh = Pair.Key;
+        const TArray<AStaticMeshActor*>& SelectedMeshActors = Pair.Value;
+
+        if (!StaticMesh || SelectedMeshActors.Num() == 0)
+        {
+            continue;
+        }
+
         Progress.EnterProgressFrame(1.0f,
-            FText::Format(LOCTEXT("ProcessingActor", "处理: {0}"),
-            FText::FromString(Actor->GetActorLabel())));
+            FText::Format(LOCTEXT("ProcessingMeshActors", "处理网格: {0}"),
+            FText::FromString(StaticMesh->GetName())));
+
+        if (BoundsPoint == EPivotBoundsPoint::WorldOrigin && SelectedMeshActors.Num() > 1)
+        {
+            const FString ErrorMsg = FString::Printf(
+                TEXT("设置 Actor Pivot 失败: 网格 %s 在 WorldOrigin 模式下被多个选中Actor共享（%d 个），该模式仅支持每个网格选择一个Actor"),
+                *StaticMesh->GetName(),
+                SelectedMeshActors.Num());
+            Result.FailureCount += SelectedMeshActors.Num();
+            Result.ErrorMessages.Add(ErrorMsg);
+            LogOperation(ErrorMsg, true);
+            continue;
+        }
+
+        // 记录场景中所有引用该网格的Actor，统一补偿，避免未选中实例发生位置跳变。
+        TArray<TPair<AStaticMeshActor*, FTransform>> ActorsToCompensate;
+        if (GEditor && GEditor->GetEditorWorldContext().World())
+        {
+            UWorld* World = GEditor->GetEditorWorldContext().World();
+            for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+            {
+                AStaticMeshActor* WorldActor = *It;
+                if (WorldActor && WorldActor->GetStaticMeshComponent() &&
+                    WorldActor->GetStaticMeshComponent()->GetStaticMesh() == StaticMesh)
+                {
+                    ActorsToCompensate.Add(TPair<AStaticMeshActor*, FTransform>(
+                        WorldActor,
+                        WorldActor->GetActorTransform()));
+                }
+            }
+        }
+
+        if (ActorsToCompensate.Num() == 0)
+        {
+            // 回退到至少补偿选中的Actor
+            for (AStaticMeshActor* SelectedMeshActor : SelectedMeshActors)
+            {
+                if (SelectedMeshActor)
+                {
+                    ActorsToCompensate.Add(TPair<AStaticMeshActor*, FTransform>(
+                        SelectedMeshActor,
+                        SelectedMeshActor->GetActorTransform()));
+                }
+            }
+        }
 
         FString ErrorMessage;
-        if (SetPivotForStaticMeshActor(Actor, BoundsPoint, ErrorMessage))
+        bool bMeshOperationSuccess = false;
+        FVector ActorCompensationLocalDelta = FVector::ZeroVector;
+
+        if (BoundsPoint == EPivotBoundsPoint::WorldOrigin)
         {
-            Result.SuccessCount++;
-            FString SuccessMsg = FString::Printf(TEXT("成功设置 Actor Pivot: %s"), *Actor->GetActorLabel());
-            Result.SuccessMessages.Add(SuccessMsg);
-            LogOperation(SuccessMsg);
+            // WorldOrigin 模式以唯一选中的Actor作为锚点。
+            AStaticMeshActor* AnchorActor = SelectedMeshActors[0];
+            const FRotator AnchorRotation = AnchorActor->GetActorRotation();
+            const FVector AnchorLocation = AnchorActor->GetActorLocation();
+            const FVector MeshVertexOffset = AnchorRotation.UnrotateVector(AnchorLocation);
+            ActorCompensationLocalDelta = -MeshVertexOffset;
+
+            FX_PivotOperation Operation(StaticMesh);
+            bMeshOperationSuccess = Operation.Execute(MeshVertexOffset, ErrorMessage);
         }
         else
         {
-            if (ErrorMessage.IsEmpty())
+            const FBox MeshBounds = StaticMesh->GetBoundingBox();
+            ActorCompensationLocalDelta = CalculateTargetPoint(MeshBounds, BoundsPoint);
+            bMeshOperationSuccess = SetPivotForStaticMesh(StaticMesh, BoundsPoint, ErrorMessage);
+        }
+
+        if (!bMeshOperationSuccess)
+        {
+            Result.FailureCount += SelectedMeshActors.Num();
+            const FString ErrorMsg = FString::Printf(TEXT("设置 Actor Pivot 失败: %s - %s"),
+                *StaticMesh->GetName(), *ErrorMessage);
+            Result.ErrorMessages.Add(ErrorMsg);
+            LogOperation(ErrorMsg, true);
+            continue;
+        }
+
+        for (const TPair<AStaticMeshActor*, FTransform>& ActorPair : ActorsToCompensate)
+        {
+            AStaticMeshActor* CompensateActor = ActorPair.Key;
+            if (!CompensateActor)
             {
-                Result.SkippedCount++;
+                continue;
             }
-            else
+
+            const FTransform& OriginalTransform = ActorPair.Value;
+            const FVector PivotOffsetWorld = OriginalTransform.GetRotation().RotateVector(ActorCompensationLocalDelta);
+            const FVector NewActorLocation = OriginalTransform.GetLocation() + PivotOffsetWorld;
+
+            CompensateActor->Modify();
+            CompensateActor->SetActorLocation(NewActorLocation);
+            CompensateActor->MarkPackageDirty();
+
+            if (UStaticMeshComponent* MeshComp = CompensateActor->GetStaticMeshComponent())
             {
-                Result.FailureCount++;
-                FString ErrorMsg = FString::Printf(TEXT("设置 Actor Pivot 失败: %s - %s"), 
-                    *Actor->GetActorLabel(), *ErrorMessage);
-                Result.ErrorMessages.Add(ErrorMsg);
-                LogOperation(ErrorMsg, true);
+                MeshComp->UpdateComponentToWorld();
             }
         }
+
+        bAnyCompensated = bAnyCompensated || (ActorsToCompensate.Num() > 0);
+        Result.SuccessCount += SelectedMeshActors.Num();
+        const FString SuccessMsg = FString::Printf(
+            TEXT("成功设置 Actor Pivot: 网格 %s（选中Actor %d 个，补偿场景Actor %d 个）"),
+            *StaticMesh->GetName(),
+            SelectedMeshActors.Num(),
+            ActorsToCompensate.Num());
+        Result.SuccessMessages.Add(SuccessMsg);
+        LogOperation(SuccessMsg);
+    }
+
+    if (bAnyCompensated && GEditor)
+    {
+        GEditor->RedrawLevelEditingViewports(true);
+        GEditor->NoteSelectionChange();
     }
 
     ShowOperationResult(Result, TEXT("设置 Actor Pivot"));
@@ -657,6 +781,7 @@ FX_PivotOperationResult FX_PivotManager::RestorePivotSnapshotsForActors(const TA
 
     LogOperation(FString::Printf(TEXT("开始为 %d 个 Actor 还原 Pivot"), SelectedActors.Num()));
 
+    TMap<UStaticMesh*, TArray<AStaticMeshActor*>> MeshToSelectedActors;
     for (AActor* Actor : SelectedActors)
     {
         AStaticMeshActor* StaticMeshActor = Cast<AStaticMeshActor>(Actor);
@@ -673,76 +798,120 @@ FX_PivotOperationResult FX_PivotManager::RestorePivotSnapshotsForActors(const TA
             continue;
         }
 
-        UStaticMesh* StaticMesh = MeshComponent->GetStaticMesh();
-        FSoftObjectPath MeshPath(StaticMesh);
-        
-        // 查找快照
+        MeshToSelectedActors.FindOrAdd(MeshComponent->GetStaticMesh()).Add(StaticMeshActor);
+    }
+
+    bool bAnyCompensated = false;
+
+    for (const TPair<UStaticMesh*, TArray<AStaticMeshActor*>>& Pair : MeshToSelectedActors)
+    {
+        UStaticMesh* StaticMesh = Pair.Key;
+        const TArray<AStaticMeshActor*>& SelectedMeshActors = Pair.Value;
+
+        if (!StaticMesh || SelectedMeshActors.Num() == 0)
+        {
+            continue;
+        }
+
+        const FSoftObjectPath MeshPath(StaticMesh);
         FX_PivotSnapshot* Snapshot = PivotSnapshots.Find(MeshPath);
         if (!Snapshot)
         {
-            Result.SkippedCount++;
+            Result.SkippedCount += SelectedMeshActors.Num();
             LogOperation(FString::Printf(TEXT("未找到快照: %s"), *StaticMesh->GetName()));
             continue;
         }
 
-        // 计算当前边界盒中心
-        FVector CurrentCenter = StaticMesh->GetBoundingBox().GetCenter();
-        
-        // 计算需要的偏移量
-        FVector Offset = Snapshot->BoundsCenter - CurrentCenter;
-
-        // 如果偏移量很小，跳过
+        const FVector CurrentCenter = StaticMesh->GetBoundingBox().GetCenter();
+        const FVector Offset = Snapshot->BoundsCenter - CurrentCenter;
         if (Offset.IsNearlyZero(0.001f))
         {
-            Result.SkippedCount++;
+            Result.SkippedCount += SelectedMeshActors.Num();
             LogOperation(FString::Printf(TEXT("Pivot 已经在目标位置: %s"), *StaticMesh->GetName()));
             continue;
         }
 
-        // 记录原始世界位置和旋转
-        FVector OriginalWorldLocation = StaticMeshActor->GetActorLocation();
-        FRotator OriginalWorldRotation = StaticMeshActor->GetActorRotation();
+        // 记录场景中所有引用该网格的Actor，统一补偿，避免未选中实例发生位置跳变。
+        TArray<TPair<AStaticMeshActor*, FTransform>> ActorsToCompensate;
+        if (GEditor && GEditor->GetEditorWorldContext().World())
+        {
+            UWorld* World = GEditor->GetEditorWorldContext().World();
+            for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+            {
+                AStaticMeshActor* WorldActor = *It;
+                if (WorldActor && WorldActor->GetStaticMeshComponent() &&
+                    WorldActor->GetStaticMeshComponent()->GetStaticMesh() == StaticMesh)
+                {
+                    ActorsToCompensate.Add(TPair<AStaticMeshActor*, FTransform>(
+                        WorldActor,
+                        WorldActor->GetActorTransform()));
+                }
+            }
+        }
 
-        // 应用偏移到网格
+        if (ActorsToCompensate.Num() == 0)
+        {
+            for (AStaticMeshActor* SelectedMeshActor : SelectedMeshActors)
+            {
+                if (SelectedMeshActor)
+                {
+                    ActorsToCompensate.Add(TPair<AStaticMeshActor*, FTransform>(
+                        SelectedMeshActor,
+                        SelectedMeshActor->GetActorTransform()));
+                }
+            }
+        }
+
         FX_PivotOperation Operation(StaticMesh);
         FString ErrorMessage;
         if (!Operation.Execute(Offset, ErrorMessage))
         {
-            Result.FailureCount++;
-            FString ErrorMsg = FString::Printf(TEXT("还原 Pivot 失败: %s - %s"), 
+            Result.FailureCount += SelectedMeshActors.Num();
+            const FString ErrorMsg = FString::Printf(TEXT("还原 Pivot 失败: %s - %s"),
                 *StaticMesh->GetName(), *ErrorMessage);
             Result.ErrorMessages.Add(ErrorMsg);
             LogOperation(ErrorMsg, true);
             continue;
         }
 
-        // 补偿 Actor 位置：顶点向 +Offset 方向移动，Actor 需要向 -Offset 方向移动来保持世界位置
-        FVector PivotOffsetWorld = OriginalWorldRotation.RotateVector(-Offset);
-        FVector NewActorLocation = OriginalWorldLocation + PivotOffsetWorld;
-
-        // 使用事务系统来支持 Undo
-        StaticMeshActor->Modify();
-        StaticMeshActor->SetActorLocation(NewActorLocation);
-
-        // 标记 Actor 已修改，触发编辑器刷新
-        StaticMeshActor->MarkPackageDirty();
-        FPropertyChangedEvent PropertyChangedEvent(nullptr);
-        StaticMeshActor->PostEditChangeProperty(PropertyChangedEvent);
-        
-        if (MeshComponent)
+        for (const TPair<AStaticMeshActor*, FTransform>& ActorPair : ActorsToCompensate)
         {
-            MeshComponent->UpdateComponentToWorld();
+            AStaticMeshActor* CompensateActor = ActorPair.Key;
+            if (!CompensateActor)
+            {
+                continue;
+            }
+
+            const FTransform& OriginalTransform = ActorPair.Value;
+            const FVector PivotOffsetWorld = OriginalTransform.GetRotation().RotateVector(-Offset);
+            const FVector NewActorLocation = OriginalTransform.GetLocation() + PivotOffsetWorld;
+
+            CompensateActor->Modify();
+            CompensateActor->SetActorLocation(NewActorLocation);
+            CompensateActor->MarkPackageDirty();
+
+            if (UStaticMeshComponent* MeshComp = CompensateActor->GetStaticMeshComponent())
+            {
+                MeshComp->UpdateComponentToWorld();
+            }
         }
 
-        Result.SuccessCount++;
-        FString SuccessMsg = FString::Printf(TEXT("成功还原 Actor Pivot: %s"), *StaticMesh->GetName());
+        bAnyCompensated = bAnyCompensated || (ActorsToCompensate.Num() > 0);
+        Result.SuccessCount += SelectedMeshActors.Num();
+        const FString SuccessMsg = FString::Printf(
+            TEXT("成功还原 Actor Pivot: 网格 %s（选中Actor %d 个，补偿场景Actor %d 个）"),
+            *StaticMesh->GetName(),
+            SelectedMeshActors.Num(),
+            ActorsToCompensate.Num());
         Result.SuccessMessages.Add(SuccessMsg);
         LogOperation(SuccessMsg);
     }
 
-    // 刷新视口
-    GEditor->RedrawLevelEditingViewports(true);
-    GEditor->NoteSelectionChange();
+    if (bAnyCompensated && GEditor)
+    {
+        GEditor->RedrawLevelEditingViewports(true);
+        GEditor->NoteSelectionChange();
+    }
 
     ShowOperationResult(Result, TEXT("还原 Actor Pivot"));
     return Result;
