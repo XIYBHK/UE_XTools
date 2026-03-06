@@ -100,7 +100,11 @@ public:
 	// The text is used for searching Blueprint Diff toolbar buttons to inject "Take Screenshot" button
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "BlueprintScreenshotTool|DeveloperMode",
 		meta = (EditCondition = "bDeveloperMode", DisplayName = "差异工具栏文本", Tooltip = "用于搜索蓝图差异工具栏按钮以注入【截图】按钮的文本"))
-	TArray<FText> DiffToolbarTexts = {FText::FromString(TEXT("Lock/Unlock")), FText::FromString(TEXT("Vertical/Horizontal"))};
+	TArray<FText> DiffToolbarTexts =
+	{
+		NSLOCTEXT("SBlueprintDif", "LockGraphsLabel", "Lock/Unlock"),
+		NSLOCTEXT("SBlueprintDif", "SplitGraphsModeLabel", "Vertical/Horizontal")
+	};
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "BlueprintScreenshotTool|DeveloperMode",
 		meta = (EditCondition = "bDeveloperMode", DisplayName = "差异窗口按钮标签", Tooltip = "差异窗口截图按钮的标签"))

@@ -6,6 +6,7 @@
 #include "BlueprintScreenshotToolHandler.h"
 #include "BlueprintScreenshotToolSettings.h"
 #include "BlueprintScreenshotToolStyle.h"
+#include "BlueprintScreenshotToolWindowManager.h"
 #include "ISettingsModule.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Interfaces/IPluginManager.h"
@@ -36,6 +37,7 @@ void FBlueprintScreenshotToolModule::StartupModule()
 
 	RegisterStyle();
 	RegisterCommands();
+	WindowManager = TStrongObjectPtr<UBlueprintScreenshotToolWindowManager>(NewObject<UBlueprintScreenshotToolWindowManager>(GetTransientPackage()));
 	InitializeAsyncScreenshot();
 	bIsPluginInitialized = true;
 }
@@ -46,6 +48,7 @@ void FBlueprintScreenshotToolModule::ShutdownModule()
 	if (bIsPluginInitialized)
 	{
 		ShutdownAsyncScreenshot();
+		WindowManager.Reset();
 		UnregisterStyle();
 		UnregisterCommands();
 		bIsPluginInitialized = false;

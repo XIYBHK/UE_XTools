@@ -18,6 +18,13 @@ void FBlueprintScreenshotToolCommandManager::RegisterCommands()
 void FBlueprintScreenshotToolCommandManager::UnregisterCommands()
 {
 	UnregisterToolbarExtension();
+	if (const TSharedPtr<FUICommandList> MainFrameCommandList = MainFrameCommands.Pin())
+	{
+		MainFrameCommandList->UnmapAction(FBlueprintScreenshotToolCommands::Get().TakeScreenshot);
+		MainFrameCommandList->UnmapAction(FBlueprintScreenshotToolCommands::Get().OpenDirectory);
+	}
+
+	MainFrameCommands.Reset();
 	FBlueprintScreenshotToolCommands::Unregister();
 	CommandList.Reset();
 }
@@ -41,6 +48,7 @@ void FBlueprintScreenshotToolCommandManager::MapCommands()
 
 	const auto& EditorCommandList = IMainFrameModule::Get().GetMainFrameCommandBindings();
 	EditorCommandList->Append(CommandList.ToSharedRef());
+	MainFrameCommands = EditorCommandList;
 }
 
 void FBlueprintScreenshotToolCommandManager::RegisterToolbarExtension()

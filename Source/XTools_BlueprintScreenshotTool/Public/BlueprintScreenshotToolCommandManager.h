@@ -10,6 +10,7 @@ class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API FBlueprintScreenshotToolCommandManager
 private:
 	TSharedPtr<FUICommandList> CommandList;
 	TSharedPtr<FExtender> ToolbarExtension;
+	TWeakPtr<FUICommandList> MainFrameCommands;
 
 public:
 	void RegisterCommands();

@@ -7,6 +7,30 @@
 #include "SBlueprintDiff.h"
 #include "Algo/RemoveIf.h"
 
+namespace
+{
+TArray<FText> GetDefaultDiffToolbarTexts()
+{
+	TArray<FText> ToolbarTexts;
+	ToolbarTexts.Add(NSLOCTEXT("SBlueprintDif", "LockGraphsLabel", "Lock/Unlock"));
+	ToolbarTexts.Add(NSLOCTEXT("SBlueprintDif", "SplitGraphsModeLabel", "Vertical/Horizontal"));
+	return ToolbarTexts;
+}
+
+bool MatchesAnyToolbarLabel(const FText& ButtonText, const TArray<FText>& CandidateTexts)
+{
+	for (const FText& CandidateText : CandidateTexts)
+	{
+		if (CandidateText.EqualToCaseIgnored(ButtonText))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+}
+
 void UBlueprintScreenshotToolWindowManager::Tick(float DeltaTime)
 {
 	// UE 最佳实践：避免每帧执行昂贵的UI遍历操作
@@ -216,15 +240,20 @@ void UBlueprintScreenshotToolWindowManager::AddButtonToDiffWindow(TSharedRef<SBl
 	FilteredToolBars = FilteredToolBars.FilterByPredicate([](const TSharedPtr<SMultiBoxWidget>& ToolBar)
 	{
 		bool bTakeScreenshotButtonExists = false;
-		auto ToolbarTextToCheck = GetDefault<UBlueprintScreenshotToolSettings>()->DiffToolbarTexts;
+		TArray<FText> ToolbarTextToCheck = GetDefaultDiffToolbarTexts();
+		ToolbarTextToCheck.Append(GetDefault<UBlueprintScreenshotToolSettings>()->DiffToolbarTexts);
 
 		const auto TextBlocks = UBlueprintScreenshotToolWindowManager::FindChildren<STextBlock>(ToolBar);
 		for (const auto TextBlock : TextBlocks)
 		{
 			const auto& ButtonText = TextBlock->GetText();
-			const auto NumRemovedElems = ToolbarTextToCheck.RemoveAll([ButtonText](const FText& InText) { return InText.EqualToCaseIgnored(ButtonText); });
+			const bool bMatchedDiffToolbarText = MatchesAnyToolbarLabel(ButtonText, ToolbarTextToCheck);
+			if (bMatchedDiffToolbarText)
+			{
+				ToolbarTextToCheck.RemoveAll([ButtonText](const FText& InText) { return InText.EqualToCaseIgnored(ButtonText); });
+			}
 
-			if (NumRemovedElems == 0 && !bTakeScreenshotButtonExists)
+			if (!bMatchedDiffToolbarText && !bTakeScreenshotButtonExists)
 			{
 				const auto Label = GetDefault<UBlueprintScreenshotToolSettings>()->DiffWindowButtonLabel;
 				bTakeScreenshotButtonExists = Label.EqualToCaseIgnored(ButtonText);

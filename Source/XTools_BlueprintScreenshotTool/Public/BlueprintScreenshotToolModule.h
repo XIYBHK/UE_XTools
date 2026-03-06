@@ -5,14 +5,17 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
+#include "UObject/StrongObjectPtr.h"
 
 class FBlueprintScreenshotToolCommandManager;
 class UBlueprintScreenshotToolHandler;
+class UBlueprintScreenshotToolWindowManager;
 
 class FBlueprintScreenshotToolModule : public IModuleInterface
 {
 private:
 	TSharedPtr<FBlueprintScreenshotToolCommandManager> CommandManager;
+	TStrongObjectPtr<UBlueprintScreenshotToolWindowManager> WindowManager;
 	bool bIsPluginInitialized = false;
 
 public:
