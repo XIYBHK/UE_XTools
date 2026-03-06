@@ -53,19 +53,16 @@ private:
 
 	static void PrepareForScreenshot();
 	static void ExecuteAsyncScreenshot();
-	static FBSTScreenshotData CaptureWithTempWindow(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& WindowSize);
 	static void UpdateScreenshotState(bool bIsProcessing);
-	static FBSTVector2D CalculateOptimalWindowSize(FBSTScreenshotData& ScreenshotData, const FString& Path);
-
+	static void WarmupGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor);
+	
 protected:
 	static void RestoreNodeSelection(TSharedPtr<SGraphEditor> InGraphEditor, const TSet<UObject*>& InSelectedNodes);
 	static bool HasAnySelectedNodes(const TSet<TSharedPtr<SGraphEditor>>& InGraphEditors);
 	static void ShowNotification(const TArray<FString>& InPaths);
 	static void ShowDirectoryErrorNotification(const FString& InPath);
 	static void ShowSaveFailedNotification(const FString& InFailedCount);
-	static UTextureRenderTarget2D* DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize);
-	static UTextureRenderTarget2D* DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, bool bIsWarmup);
-	static UTextureRenderTarget2D* DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, class FWidgetRenderer* InRenderer, bool bIsWarmup);
+	static UTextureRenderTarget2D* DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, class FWidgetRenderer* InRenderer = nullptr);
 
 	static FString GenerateScreenshotName(TSharedPtr<SGraphEditor> InGraphEditor);
 };

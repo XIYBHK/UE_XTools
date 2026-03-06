@@ -35,6 +35,80 @@ struct FWidgetSnapshotTextureData;
 
 bool UBlueprintScreenshotToolHandler::bTakingScreenshot = false;
 static TArray<TSharedPtr<SGraphEditor>> CachedGraphEditorsForWarmup;
+static TUniquePtr<FWidgetRenderer> CachedWarmupRenderer;
+
+namespace
+{
+struct FGraphCaptureState
+{
+	FBSTVector2D CachedViewLocation = FBSTVector2D::ZeroVector;
+	FBSTVector2D NewViewLocation = FBSTVector2D::ZeroVector;
+	FBSTVector2D WindowSize = FBSTVector2D::ZeroVector;
+	float CachedZoomAmount = 1.f;
+	float NewZoomAmount = 1.f;
+	FGraphPanelSelectionSet SelectedNodes;
+};
+
+bool PrepareGraphEditorForCapture(TSharedPtr<SGraphEditor> InGraphEditor, FGraphCaptureState& OutState)
+{
+	if (!InGraphEditor.IsValid())
+	{
+		return false;
+	}
+
+	const UBlueprintScreenshotToolSettings* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
+	OutState.SelectedNodes = InGraphEditor->GetSelectedNodes();
+	InGraphEditor->GetViewLocation(OutState.CachedViewLocation, OutState.CachedZoomAmount);
+
+	float WindowSizeScale = 1.f;
+	if (OutState.SelectedNodes.Num() > 0)
+	{
+		FSlateRect BoundsForSelectedNodes;
+		InGraphEditor->GetBoundsForSelectedNodes(BoundsForSelectedNodes, Settings->ScreenshotPadding);
+
+		OutState.NewViewLocation = BoundsForSelectedNodes.GetTopLeft();
+		OutState.NewZoomAmount = Settings->ZoomAmount;
+		OutState.WindowSize = BoundsForSelectedNodes.GetSize();
+		WindowSizeScale = Settings->ZoomAmount;
+	}
+	else
+	{
+		OutState.NewViewLocation = OutState.CachedViewLocation;
+		OutState.NewZoomAmount = OutState.CachedZoomAmount;
+
+		const FBSTVector2D WindowPosition = InGraphEditor->GetTickSpaceGeometry().GetAbsolutePosition();
+		const float DPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(WindowPosition.X, WindowPosition.Y);
+		const FBSTVector2D SizeOfWidget = InGraphEditor->GetCachedGeometry().GetLocalSize();
+		OutState.WindowSize = SizeOfWidget * DPIScale;
+	}
+
+	OutState.WindowSize = OutState.WindowSize.ClampAxes(Settings->MinScreenshotSize, Settings->MaxScreenshotSize);
+	OutState.WindowSize *= WindowSizeScale;
+
+	InGraphEditor->SetViewLocation(OutState.NewViewLocation, OutState.NewZoomAmount);
+	InGraphEditor->ClearSelectionSet();
+	InGraphEditor->Invalidate(EInvalidateWidgetReason::PaintAndVolatility);
+	return true;
+}
+
+void RestoreGraphEditorAfterCapture(TSharedPtr<SGraphEditor> InGraphEditor, const FGraphCaptureState& InState)
+{
+	if (!InGraphEditor.IsValid())
+	{
+		return;
+	}
+
+	for (const UObject* NodeObject : InState.SelectedNodes)
+	{
+		if (const UEdGraphNode* SelectedNode = Cast<UEdGraphNode>(NodeObject))
+		{
+			InGraphEditor->SetNodeSelection(const_cast<UEdGraphNode*>(SelectedNode), true);
+		}
+	}
+
+	InGraphEditor->SetViewLocation(InState.CachedViewLocation, InState.CachedZoomAmount);
+}
+}
 
 void UBlueprintScreenshotToolHandler::PrepareForScreenshot()
 {
@@ -46,6 +120,8 @@ void UBlueprintScreenshotToolHandler::PrepareForScreenshot()
 
 	CachedGraphEditorsForWarmup.Reset();
 	CachedGraphEditorsForWarmup = GraphEditors.Array();
+	CachedWarmupRenderer = MakeUnique<FWidgetRenderer>(true, true);
+	CachedWarmupRenderer->SetIsPrepassNeeded(true);
 
 	const auto bHasSelectedNodes = HasAnySelectedNodes(GraphEditors);
 	for (const auto& GraphEditor : GraphEditors)
@@ -55,7 +131,7 @@ void UBlueprintScreenshotToolHandler::PrepareForScreenshot()
 			continue;
 		}
 
-		CaptureGraphEditor(GraphEditor);
+		WarmupGraphEditor(GraphEditor);
 	}
 	
 	bTakingScreenshot = true;
@@ -78,6 +154,7 @@ void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
 
 	if (GraphEditors.Num() <= 0)
 	{
+		CachedWarmupRenderer.Reset();
 		return;
 	}
 
@@ -105,6 +182,8 @@ void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
 		}
 	}
 
+	CachedWarmupRenderer.Reset();
+
 	if (Paths.Num() > 0)
 	{
 		ShowNotification(Paths);
@@ -124,18 +203,6 @@ void UBlueprintScreenshotToolHandler::OnPostTick(float DeltaTime)
 	{
 		ExecuteAsyncScreenshot();
 	}
-}
-
-FBSTVector2D UBlueprintScreenshotToolHandler::CalculateOptimalWindowSize(FBSTScreenshotData& ScreenshotData, const FString& Path)
-{
-	FBSTVector2D OptimalSize = FBSTVector2D(1920, 1080);
-	
-	if (ScreenshotData.Size.X > 0 && ScreenshotData.Size.Y > 0)
-	{
-		OptimalSize = FBSTVector2D(ScreenshotData.Size.X, ScreenshotData.Size.Y);
-	}
-	
-	return OptimalSize;
 }
 
 void UBlueprintScreenshotToolHandler::UpdateScreenshotState(bool bIsProcessing)
@@ -191,164 +258,35 @@ FString UBlueprintScreenshotToolHandler::SaveScreenshot(const FBSTScreenshotData
 	
 }
 
-FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureWithTempWindow(TSharedPtr<SGraphEditor> InGraphEditor, const FBSTVector2D& InWindowSize)
-{
-	if (!InGraphEditor)
-	{
-		return FBSTScreenshotData();
-	}
-
-	FBSTVector2D CachedViewLocation;
-	float CachedZoomAmount = 1.f;
-	InGraphEditor->GetViewLocation(CachedViewLocation, CachedZoomAmount);
-	
-	const FGraphPanelSelectionSet SelectedNodes = InGraphEditor->GetSelectedNodes();
-	const auto* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
-
-	FBSTVector2D WindowSize = InWindowSize;
-	FBSTVector2D NewViewLocation = CachedViewLocation;
-	float NewZoomAmount = CachedZoomAmount;
-
-	if (SelectedNodes.Num() > 0)
-	{
-		FSlateRect BoundsForSelectedNodes;
-		InGraphEditor->GetBoundsForSelectedNodes(BoundsForSelectedNodes, Settings->ScreenshotPadding);
-		
-		NewViewLocation = BoundsForSelectedNodes.GetTopLeft();
-		NewZoomAmount = Settings->ZoomAmount;
-		WindowSize = BoundsForSelectedNodes.GetSize() * Settings->ZoomAmount;
-	}
-
-	WindowSize = WindowSize.ClampAxes(Settings->MinScreenshotSize, Settings->MaxScreenshotSize);
-	InGraphEditor->SetViewLocation(NewViewLocation, NewZoomAmount);
-	
-	InGraphEditor->ClearSelectionSet();
-	
-	TSharedRef<SWindow> NewWindowRef = SNew(SWindow)
-		.CreateTitleBar(false)
-		.ClientSize(WindowSize)
-		.ScreenPosition(FBSTVector2D(0.0f, 0.0f))
-		.AdjustInitialSizeAndPositionForDPIScale(false)
-		.SaneWindowPlacement(false)
-		.SupportsTransparency(EWindowTransparency::PerWindow)
-		.InitialOpacity(0.0f);
-
-	NewWindowRef->SetContent(InGraphEditor.ToSharedRef());
-	FSlateApplication::Get().AddWindow(NewWindowRef, false);
-
-	InGraphEditor->Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
-	NewWindowRef->ShowWindow();
-	InGraphEditor->Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
-	FlushRenderingCommands();
-
-	FBSTScreenshotData ScreenshotData;
-	ScreenshotData.Size = FIntVector(WindowSize.X, WindowSize.Y, 0);
-	
-	TArray<FColor> ColorData;
-	FSlateApplication::Get().TakeScreenshot(NewWindowRef, ColorData, ScreenshotData.Size);
-	ScreenshotData.ColorData = MoveTemp(ColorData);
-
-	InGraphEditor->SetViewLocation(CachedViewLocation, CachedZoomAmount);
-	RestoreNodeSelection(InGraphEditor, SelectedNodes);
-	
-	NewWindowRef->HideWindow();
-	NewWindowRef->RequestDestroyWindow();
-
-	if (!Settings->bOverrideScreenshotNaming)
-	{
-		ScreenshotData.CustomName = GenerateScreenshotName(InGraphEditor);
-	}
-
-	return ScreenshotData;
-}
-
 FBSTScreenshotData UBlueprintScreenshotToolHandler::CaptureGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor)
 {
-	if (!InGraphEditor)
+	if (!InGraphEditor.IsValid())
 	{
 		return FBSTScreenshotData();
 	}
 
-	FBSTVector2D CachedViewLocation;
-	FBSTVector2D NewViewLocation;
-	FBSTVector2D WindowSize;
-	
-	float CachedZoomAmount = 1.f;
-	float NewZoomAmount = 1.f;
-	float WindowSizeScale = 1.f;
-	
-	const auto* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
-	const auto SelectedNodes = InGraphEditor->GetSelectedNodes();
-
-	InGraphEditor->GetViewLocation(CachedViewLocation, CachedZoomAmount);
-	
-	
-	if (SelectedNodes.Num() > 0)
+	FGraphCaptureState CaptureState;
+	if (!PrepareGraphEditorForCapture(InGraphEditor, CaptureState))
 	{
-		FSlateRect BoundsForSelectedNodes;
-		InGraphEditor->GetBoundsForSelectedNodes(BoundsForSelectedNodes, Settings->ScreenshotPadding);
-		
-		NewViewLocation = BoundsForSelectedNodes.GetTopLeft();
-		NewZoomAmount = Settings->ZoomAmount;
-
-		WindowSizeScale = Settings->ZoomAmount;
-
-		WindowSize = BoundsForSelectedNodes.GetSize();
-	}
-	else
-	{
-		NewViewLocation = CachedViewLocation;
-		NewZoomAmount = CachedZoomAmount;
-
-		const FBSTVector2D WindowPosition = InGraphEditor->GetTickSpaceGeometry().GetAbsolutePosition();
-		const auto DPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(WindowPosition.X, WindowPosition.Y);
-
-		const auto& CachedGeometry = InGraphEditor->GetCachedGeometry();
-		const auto SizeOfWidget = CachedGeometry.GetLocalSize();
-		WindowSize = SizeOfWidget * DPIScale;
-
-		InGraphEditor->SetViewLocation(NewViewLocation, CachedZoomAmount);
+		return FBSTScreenshotData();
 	}
 
-	InGraphEditor->SetViewLocation(NewViewLocation, NewZoomAmount);
-	
-	WindowSize = WindowSize.ClampAxes(Settings->MinScreenshotSize, Settings->MaxScreenshotSize);
-	WindowSize *= WindowSizeScale;
-
-	InGraphEditor->ClearSelectionSet();
-
-	// 触发资源加载
-	InGraphEditor->Invalidate(EInvalidateWidgetReason::Paint);
-	InGraphEditor->SlatePrepass(1.0f);
-	FlushRenderingCommands();
-	InGraphEditor->SlatePrepass(1.0f);
-	FlushRenderingCommands();
-
-	// 双重绘制:第一次触发资源加载,第二次使用已加载资源
-	// 注意:由于 Slate 资源加载机制,打开蓝图后的第一次截图可能仍有部分图标显示异常
-	// 建议:如果第一次截图有问题,请再截一次
-	// 转换 FBSTVector2D 到 FVector2D
-	const FVector2D WindowSizeVector2D(WindowSize.X, WindowSize.Y);
-	TStrongObjectPtr<UTextureRenderTarget2D> WarmupTarget(DrawGraphEditor(InGraphEditor, WindowSizeVector2D));
-	FPlatformProcess::Sleep(0.05f);
-
-	const auto RenderTarget = TStrongObjectPtr<UTextureRenderTarget2D>(DrawGraphEditor(InGraphEditor, WindowSizeVector2D));
+	const FVector2D WindowSizeVector2D(CaptureState.WindowSize.X, CaptureState.WindowSize.Y);
+	const auto RenderTarget = TStrongObjectPtr<UTextureRenderTarget2D>(DrawGraphEditor(InGraphEditor, WindowSizeVector2D, CachedWarmupRenderer.Get()));
 	if (!RenderTarget.IsValid())
 	{
 		UE_LOG(LogBlueprintScreenshotTool, Error, TEXT("Failed to create render target for screenshot"));
-		RestoreNodeSelection(InGraphEditor, SelectedNodes);
-		InGraphEditor->SetViewLocation(CachedViewLocation, CachedZoomAmount);
+		RestoreGraphEditorAfterCapture(InGraphEditor, CaptureState);
 		return FBSTScreenshotData();
 	}
-	FlushRenderingCommands();
 
 	FBSTScreenshotData ScreenshotData;
-	ScreenshotData.Size = FIntVector(WindowSize.X, WindowSize.Y, 0);
+	ScreenshotData.Size = FIntVector(CaptureState.WindowSize.X, CaptureState.WindowSize.Y, 0);
 	RenderTarget->GameThread_GetRenderTargetResource()->ReadPixels(ScreenshotData.ColorData);
 
-	RestoreNodeSelection(InGraphEditor, SelectedNodes);
-	InGraphEditor->SetViewLocation(CachedViewLocation, CachedZoomAmount);
+	RestoreGraphEditorAfterCapture(InGraphEditor, CaptureState);
 
+	const UBlueprintScreenshotToolSettings* Settings = GetDefault<UBlueprintScreenshotToolSettings>();
 	if (Settings->bOverrideScreenshotNaming)
 	{
 		return ScreenshotData;
@@ -474,93 +412,37 @@ void UBlueprintScreenshotToolHandler::ShowSaveFailedNotification(const FString& 
 	Notification->SetCompletionState(SNotificationItem::CS_Fail);
 }
 
-UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize)
+void UBlueprintScreenshotToolHandler::WarmupGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor)
 {
-	return DrawGraphEditorInternal(InGraphEditor, InWindowSize, false);
+	if (!InGraphEditor.IsValid() || !CachedWarmupRenderer.IsValid())
+	{
+		return;
+	}
+
+	FGraphCaptureState CaptureState;
+	if (!PrepareGraphEditorForCapture(InGraphEditor, CaptureState))
+	{
+		return;
+	}
+
+	const FVector2D WindowSizeVector2D(CaptureState.WindowSize.X, CaptureState.WindowSize.Y);
+	TStrongObjectPtr<UTextureRenderTarget2D> WarmupTarget(DrawGraphEditor(InGraphEditor, WindowSizeVector2D, CachedWarmupRenderer.Get()));
+	RestoreGraphEditorAfterCapture(InGraphEditor, CaptureState);
 }
 
-UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorWithRenderer(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, FWidgetRenderer* InRenderer, bool bIsWarmup)
+UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, FWidgetRenderer* InRenderer)
 {
-	UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Start rendering: Size=%s, Warmup=%d"), *InWindowSize.ToString(), bIsWarmup);
-
 	constexpr auto bUseGamma = true;
-	constexpr auto DrawTimes = 2;
 	constexpr auto Filter = TF_Default;
 
-	// 使用传入的 Renderer (首次截图时共享同一个实例)
+	TUniquePtr<FWidgetRenderer> LocalWidgetRenderer;
 	FWidgetRenderer* WidgetRenderer = InRenderer;
-
-	UTextureRenderTarget2D* RenderTarget = FWidgetRenderer::CreateTargetFor(
-		InWindowSize,
-		Filter,
-		bUseGamma
-	);
-
-	if (!ensureMsgf(IsValid(RenderTarget), TEXT("RenderTarget is not valid")))
+	if (WidgetRenderer == nullptr)
 	{
-		UE_LOG(LogBlueprintScreenshotTool, Error, TEXT("Failed to create render target"));
-		return nullptr;
+		LocalWidgetRenderer = MakeUnique<FWidgetRenderer>(bUseGamma, true);
+		LocalWidgetRenderer->SetIsPrepassNeeded(true);
+		WidgetRenderer = LocalWidgetRenderer.Get();
 	}
-
-	if (bUseGamma)
-	{
-		RenderTarget->bForceLinearGamma = true;
-		RenderTarget->UpdateResourceImmediate(true);
-	}
-
-	// 预绘制:第一次绘制触发所有资源(包括图标)的加载
-	{
-		constexpr auto RenderingScale = 1.f;
-		constexpr auto DeltaTime = 0.f;
-		WidgetRenderer->DrawWidget(
-			RenderTarget,
-			InGraphEditor.ToSharedRef(),
-			RenderingScale,
-			InWindowSize,
-			DeltaTime
-		);
-		FlushRenderingCommands();
-		
-		RenderTarget->UpdateResourceImmediate(false);
-		FlushRenderingCommands();
-		
-		// 预热模式:额外等待
-		if (bIsWarmup)
-		{
-			UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Warmup phase: waiting for resources to load"));
-			FPlatformProcess::Sleep(0.2f);  // 200ms for resource loading
-		}
-	}
-
-	// 正式绘制
-	for (int32 Count = 0; Count < DrawTimes; Count++)
-	{
-		constexpr auto RenderingScale = 1.f;
-		constexpr auto DeltaTime = 0.f;
-		
-		WidgetRenderer->DrawWidget(
-			RenderTarget,
-			InGraphEditor.ToSharedRef(),
-			RenderingScale,
-			InWindowSize,
-			DeltaTime
-		);
-
-		FlushRenderingCommands();
-	}
-	
-	UE_LOG(LogBlueprintScreenshotTool, VeryVerbose, TEXT("Rendering complete"));
-	return RenderTarget;
-}
-
-UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorInternal(TSharedPtr<SGraphEditor> InGraphEditor, const FVector2D& InWindowSize, bool bIsWarmup)
-{
-	constexpr auto bUseGamma = true;
-	constexpr auto DrawTimes = 2;
-	constexpr auto Filter = TF_Default;
-
-	TUniquePtr<FWidgetRenderer> WidgetRenderer = MakeUnique<FWidgetRenderer>(bUseGamma, true);
-	WidgetRenderer->SetIsPrepassNeeded(true);
 	
 	UTextureRenderTarget2D* RenderTarget = FWidgetRenderer::CreateTargetFor(
 		InWindowSize,
@@ -579,38 +461,16 @@ UTextureRenderTarget2D* UBlueprintScreenshotToolHandler::DrawGraphEditorInternal
 		RenderTarget->UpdateResourceImmediate(true);
 	}
 
-	// 预绘制
-	{
-		constexpr auto RenderingScale = 1.f;
-		constexpr auto DeltaTime = 0.f;
-		WidgetRenderer->DrawWidget(
-			RenderTarget,
-			InGraphEditor.ToSharedRef(),
-			RenderingScale,
-			InWindowSize,
-			DeltaTime
-		);
-		FlushRenderingCommands();
-		RenderTarget->UpdateResourceImmediate(false);
-		FlushRenderingCommands();
-	}
-
-	// 正式绘制
-	for (int32 Count = 0; Count < DrawTimes; Count++)
-	{
-		constexpr auto RenderingScale = 1.f;
-		constexpr auto DeltaTime = 0.f;
-		
-		WidgetRenderer->DrawWidget(
-			RenderTarget,
-			InGraphEditor.ToSharedRef(),
-			RenderingScale,
-			InWindowSize,
-			DeltaTime
-		);
-
-		FlushRenderingCommands();
-	}
+	constexpr auto RenderingScale = 1.f;
+	constexpr auto DeltaTime = 0.f;
+	WidgetRenderer->DrawWidget(
+		RenderTarget,
+		InGraphEditor.ToSharedRef(),
+		RenderingScale,
+		InWindowSize,
+		DeltaTime
+	);
+	FlushRenderingCommands();
 
 	return RenderTarget;
 }
