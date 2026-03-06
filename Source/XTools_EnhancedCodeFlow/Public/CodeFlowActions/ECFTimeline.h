@@ -78,16 +78,34 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline - Tick"), STAT_ECFDETAILS_TIMELINE, STATGROUP_ECFDETAILS);
 #endif
-		// 参考UE原生FTimeline::TickTimeline实现
-		// 先计算新位置，再根据位置计算值并触发回调
-		
-		// 第一次Tick时DeltaTime应用前CurrentTime=0，直接输出StartValue
-		// 后续Tick累加时间并插值
-		if (!bFirstTick)
+		// 第一次 Tick 直接输出起点值，与 UE 时间轴首帧行为对齐。
+		if (bFirstTick)
 		{
-			CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
+			bFirstTick = false;
 		}
-		bFirstTick = false;
+		else
+		{
+			const float UnclampedTime = CurrentTime + DeltaTime * PlayRate;
+			if (Settings.bLoop && UnclampedTime > Time)
+			{
+				// 对齐 UE 原生 FTimeline::TickTimeline：先精确走到终点，再回到起点并消化溢出时间。
+				CurrentTime = Time;
+				CurrentValue = StopValue;
+				TickFunc(CurrentValue, CurrentTime);
+
+				CurrentTime = 0.f;
+				float RemainingTime = UnclampedTime;
+				while (RemainingTime > Time)
+				{
+					RemainingTime -= Time;
+				}
+				CurrentTime = RemainingTime;
+			}
+			else
+			{
+				CurrentTime = FMath::Clamp(UnclampedTime, 0.f, Time);
+			}
+		}
 
 		// 计算插值比例
 		const float Alpha = CurrentTime / Time;
@@ -118,20 +136,7 @@ protected:
 		{
 			if (Settings.bLoop)
 			{
-				// 修复：循环模式下的双重Tick问题
-				// 1. 先触发精确的终点值（只触发一次）
-				CurrentValue = StopValue;
-				TickFunc(StopValue, Time);
-
-				// 2. 处理溢出时间，重置到下一周期起点
-				while (CurrentTime > Time)
-				{
-					CurrentTime -= Time;
-				}
-
-				// 3. 重置到起点状态，避免在下一帧重复触发终点
-				CurrentValue = StartValue;
-				// 注意：不在这里再次调用 TickFunc，因为下一帧会从起点开始
+				return;
 			}
 			else
 			{

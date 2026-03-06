@@ -26,24 +26,15 @@ protected:
 
 	void BeginDestroy() override
 	{
-		// 修复：处理协程句柄生命周期管理
-		// 当Owner在协程完成前被销毁时，需要安全地标记协程为已完成但不立即销毁句柄
+		// 协程 frame 由 Action 持有并负责销毁；Owner 提前失效时直接终止这条协程链。
 		if (bHasCoroutineHandle)
 		{
-			// 先检查协程是否已完成
-			if (CoroutineHandle.promise().bHasFinished == false)
+			if (CoroutineHandle)
 			{
-				// 如果协程仍在运行（可能有异步任务在后台），标记为已完成
-				// 不立即销毁句柄，让异步任务自然结束
 				CoroutineHandle.promise().bHasFinished = true;
-				// 注意：不调用 destroy()，避免在异步任务可能仍在访问时销毁句柄
-			}
-			else
-			{
-				// 协程已完成，可以安全销毁句柄
 				CoroutineHandle.destroy();
-				bHasCoroutineHandle = false;
 			}
+			bHasCoroutineHandle = false;
 		}
 		Super::BeginDestroy();
 	}

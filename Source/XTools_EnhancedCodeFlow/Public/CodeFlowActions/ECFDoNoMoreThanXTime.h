@@ -67,6 +67,12 @@ protected:
                                 STAT_ECFDETAILS_DONOMORETHANXTIMES,
                                 STATGROUP_ECFDETAILS);
 #endif
+    // 队列为空且当前锁窗已结束时，动作自然完成，避免永久常驻 Tick。
+    if ((ExecsEnqueued <= 0) && (CurrentTime >= LockTime)) {
+      MarkAsFinished();
+      return;
+    }
+
     if (CurrentTime < LockTime) {
       CurrentTime += DeltaTime;
     }

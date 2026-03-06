@@ -20,7 +20,10 @@ FECFCoroutineAwaiter_WaitSeconds::FECFCoroutineAwaiter_WaitSeconds(const UObject
 
 void FECFCoroutineAwaiter_WaitSeconds::await_suspend(FECFCoroutineHandle CoroHandle)
 {
-	AddCoroutineAction<UECFWaitSeconds>(Owner, CoroHandle, Settings, Time);
+	if (!AddCoroutineAction<UECFWaitSeconds>(Owner, CoroHandle, Settings, Time))
+	{
+		CoroHandle.resume();
+	}
 }
 
 /*^^^ Wait Ticks Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
@@ -34,7 +37,10 @@ FECFCoroutineAwaiter_WaitTicks::FECFCoroutineAwaiter_WaitTicks(const UObject* In
 
 void FECFCoroutineAwaiter_WaitTicks::await_suspend(FECFCoroutineHandle CoroHandle)
 {
-	AddCoroutineAction<UECFWaitTicks>(Owner, CoroHandle, Settings, Ticks);
+	if (!AddCoroutineAction<UECFWaitTicks>(Owner, CoroHandle, Settings, Ticks))
+	{
+		CoroHandle.resume();
+	}
 }
 
 /*^^^ Wait Until Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
@@ -49,7 +55,10 @@ FECFCoroutineAwaiter_WaitUntil::FECFCoroutineAwaiter_WaitUntil(const UObject* In
 
 void FECFCoroutineAwaiter_WaitUntil::await_suspend(FECFCoroutineHandle CoroHandle)
 {
-	AddCoroutineAction<UECFWaitUntil>(Owner, CoroHandle, Settings, MoveTemp(Predicate), TimeOut);
+	if (!AddCoroutineAction<UECFWaitUntil>(Owner, CoroHandle, Settings, MoveTemp(Predicate), TimeOut))
+	{
+		CoroHandle.resume();
+	}
 }
 
 /*^^^ Run Async And Wait Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
@@ -65,7 +74,10 @@ FECFCoroutineAwaiter_RunAsyncAndWait::FECFCoroutineAwaiter_RunAsyncAndWait(const
 
 void FECFCoroutineAwaiter_RunAsyncAndWait::await_suspend(FECFCoroutineHandle CoroHandle)
 {
-	AddCoroutineAction<UECFRunAsyncAndWait>(Owner, CoroHandle, Settings, MoveTemp(AsyncTaskFunction), TimeOut, ThreadPriority);
+	if (!AddCoroutineAction<UECFRunAsyncAndWait>(Owner, CoroHandle, Settings, MoveTemp(AsyncTaskFunction), TimeOut, ThreadPriority))
+	{
+		CoroHandle.resume();
+	}
 }
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION

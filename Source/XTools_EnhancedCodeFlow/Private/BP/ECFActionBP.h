@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Kismet/BlueprintAsyncActionBase.h"
+#include "Containers/Ticker.h"
 #include "ECFActionSettings.h"
 #include "BP/ECFHandleBP.h"
 #include "ECFActionBP.generated.h"
@@ -51,8 +52,17 @@ protected:
 	// Just a handy flag to check if the action has been activated already.
 	bool bActivated = false;
 
+	// Watches the underlying handle and clears this proxy when the action disappears without a callback.
+	FTSTicker::FDelegateHandle Proxy_CompletionTickerHandle;
+
 	// Mark this async node as ready to destroy.
 	void ClearAsyncBPAction();
+
+	// Start polling the underlying handle lifetime after activation.
+	void StartCompletionWatch();
+
+	// Per-frame completion watch used for externally stopped or silently finished actions.
+	bool TickCompletionWatch(float DeltaTime);
 
 	// Checks if the given proxy object is still valid and safe to use.
 	static bool IsProxyValid(const UObject* ProxyObject);

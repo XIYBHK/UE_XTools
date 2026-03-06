@@ -3,6 +3,7 @@
 #include "ECFActionBP.h"
 #include "EnhancedCodeFlow.h"
 #include "ECFStats.h"
+#include "Containers/Ticker.h"
 #include "Runtime/Launch/Resources/Version.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
@@ -26,6 +27,7 @@ UECFActionBP::~UECFActionBP()
 void UECFActionBP::Init(const UObject* WorldContextObject, FECFActionSettings& Settings)
 {
 	Proxy_WorldContextObject = WorldContextObject;
+	RegisterWithGameInstance(WorldContextObject);
 	Proxy_IsPausedAtStart = Settings.bStartPaused;
 	Settings.bStartPaused = true;
 }
@@ -38,20 +40,72 @@ UWorld* UECFActionBP::GetWorld() const
 void UECFActionBP::Activate()
 {
 	bActivated = true;
+	if (!Proxy_Handle.IsValid())
+	{
+		ClearAsyncBPAction();
+		return;
+	}
+
 	if (Proxy_IsPausedAtStart == false)
 	{
 		FFlow::ResumeAction(Proxy_WorldContextObject, Proxy_Handle);
 	}
+
+	StartCompletionWatch();
 }
 
 void UECFActionBP::ClearAsyncBPAction()
 {
+	if (Proxy_CompletionTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(Proxy_CompletionTickerHandle);
+		Proxy_CompletionTickerHandle.Reset();
+	}
+
 	SetReadyToDestroy();
 #if (ENGINE_MAJOR_VERSION == 5)
 	MarkAsGarbage();
 #else
 	MarkPendingKill();
 #endif
+}
+
+void UECFActionBP::StartCompletionWatch()
+{
+	if (Proxy_CompletionTickerHandle.IsValid() || !Proxy_Handle.IsValid())
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UECFActionBP> WeakThis(this);
+	Proxy_CompletionTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([WeakThis](float DeltaTime)
+		{
+			if (UECFActionBP* StrongThis = WeakThis.Get())
+			{
+				return StrongThis->TickCompletionWatch(DeltaTime);
+			}
+
+			return false;
+		}),
+		0.0f);
+}
+
+bool UECFActionBP::TickCompletionWatch(float DeltaTime)
+{
+	if (!Proxy_Handle.IsValid())
+	{
+		ClearAsyncBPAction();
+		return false;
+	}
+
+	if (!FFlow::IsActionRunning(Proxy_WorldContextObject.Get(), Proxy_Handle))
+	{
+		ClearAsyncBPAction();
+		return false;
+	}
+
+	return true;
 }
 
 bool UECFActionBP::IsProxyValid(const UObject* ProxyObject)

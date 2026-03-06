@@ -2,6 +2,7 @@
 
 #include "ECFRunAsyncThenBP.h"
 #include "EnhancedCodeFlow.h"
+#include "Async/Async.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
@@ -11,20 +12,30 @@ UECFRunAsyncThenBP* UECFRunAsyncThenBP::ECFRunAsyncThen(const UObject* WorldCont
 	if (Proxy)
 	{
 		Proxy->Init(WorldContextObject, Settings);
+		TWeakObjectPtr<UECFRunAsyncThenBP> WeakProxy(Proxy);
 		Proxy->Proxy_Handle = FFlow::RunAsyncThen(WorldContextObject,
-			[Proxy]()
+			[WeakProxy]()
 			{
-				if (IsProxyValid(Proxy))
+				::AsyncTask(ENamedThreads::GameThread, [WeakProxy]()
 				{
-					Proxy->AsyncTask.Broadcast(false, false);
-				}
+					if (UECFRunAsyncThenBP* StrongProxy = WeakProxy.Get())
+					{
+						if (IsProxyValid(StrongProxy))
+						{
+							StrongProxy->AsyncTask.Broadcast(false, false);
+						}
+					}
+				});
 			},
-			[Proxy](bool bTimedOut, bool bStopped)
+			[WeakProxy](bool bTimedOut, bool bStopped)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFRunAsyncThenBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnExecute.Broadcast(bTimedOut, bStopped);
-					Proxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnExecute.Broadcast(bTimedOut, bStopped);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
 			},
 		InTimeOut, Priority, Settings);

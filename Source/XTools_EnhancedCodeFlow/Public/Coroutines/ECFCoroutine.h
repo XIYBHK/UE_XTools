@@ -22,7 +22,8 @@ struct FECFCoroutinePromise
 {
 	FECFCoroutine get_return_object() { return { FECFCoroutine::from_promise(*this) }; }
 	std::suspend_never initial_suspend() noexcept { return {}; }
-	std::suspend_never final_suspend() noexcept { return {}; }
+	// 将最终挂起交给外部所有者显式销毁，避免协程完成后句柄悬空。
+	std::suspend_always final_suspend() noexcept { return {}; }
 	void return_void() { bHasFinished = true; }
 	void unhandled_exception()
 	{

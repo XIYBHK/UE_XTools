@@ -75,7 +75,13 @@ protected:
 
 	void Complete(bool bStopped) override
 	{
-		CoroutineHandle.resume();
+		if (HasValidOwner())
+		{
+			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
+			{
+				CoroutineHandle.resume();
+			}
+		}
 	}
 };
 

@@ -77,12 +77,33 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline Vector - Tick"), STAT_ECFDETAILS_TIMELINEVECTOR, STATGROUP_ECFDETAILS);
 #endif
-		// 第一次Tick不累加时间，直接输出StartValue，与UE原生时间轴行为一致
-		if (!bFirstTick)
+		// 第一次 Tick 直接输出起点值，与 UE 时间轴首帧行为对齐。
+		if (bFirstTick)
 		{
-			CurrentTime = FMath::Clamp(CurrentTime + DeltaTime * PlayRate, 0.f, Time);
+			bFirstTick = false;
 		}
-		bFirstTick = false;
+		else
+		{
+			const float UnclampedTime = CurrentTime + DeltaTime * PlayRate;
+			if (Settings.bLoop && UnclampedTime > Time)
+			{
+				CurrentTime = Time;
+				CurrentValue = StopValue;
+				TickFunc(CurrentValue, CurrentTime);
+
+				CurrentTime = 0.f;
+				float RemainingTime = UnclampedTime;
+				while (RemainingTime > Time)
+				{
+					RemainingTime -= Time;
+				}
+				CurrentTime = RemainingTime;
+			}
+			else
+			{
+				CurrentTime = FMath::Clamp(UnclampedTime, 0.f, Time);
+			}
+		}
 
 		const float Alpha = CurrentTime / Time;
 
@@ -111,16 +132,7 @@ protected:
 		{
 			if (Settings.bLoop)
 			{
-				// 参考UE原生FTimeline::TickTimeline的Loop实现
-				// 1. 先触发精确的终点值
-				CurrentValue = StopValue;
-				TickFunc(StopValue, Time);
-				
-				// 2. 处理溢出时间，计算新位置
-				while (CurrentTime > Time)
-				{
-					CurrentTime -= Time;
-				}
+				return;
 			}
 			else
 			{

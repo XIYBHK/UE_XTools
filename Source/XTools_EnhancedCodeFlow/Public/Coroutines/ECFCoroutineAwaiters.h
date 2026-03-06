@@ -18,12 +18,15 @@ protected:
 
 	// Helper function for adding coroutine actions to the ECF subsystem.
 	template<typename T, typename ... Ts>
-	void AddCoroutineAction(const UObject* InOwner, FECFCoroutineHandle InCoroutineHandle, const FECFActionSettings& InSettings, Ts&& ... Args)
+	bool AddCoroutineAction(const UObject* InOwner, FECFCoroutineHandle InCoroutineHandle, const FECFActionSettings& InSettings, Ts&& ... Args)
 	{
 		if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
 		{
-			ECF->AddCoroutineAction<T>(InOwner, InCoroutineHandle, InSettings, Forward<Ts>(Args)...);
+			return ECF->AddCoroutineAction<T>(InOwner, InCoroutineHandle, InSettings, Forward<Ts>(Args)...);
 		}
+
+		ensureMsgf(false, TEXT("ECF Coroutine - failed to obtain subsystem, suspended coroutine will be resumed immediately."));
+		return false;
 	}
 
 	// Storing owner to pass it to the ECF subsystem later.

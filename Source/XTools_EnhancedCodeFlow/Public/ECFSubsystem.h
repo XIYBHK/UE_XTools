@@ -73,13 +73,13 @@ protected:
 
 	// Add Coroutine Action to List.
 	template<typename T, typename ... Ts>
-	void AddCoroutineAction(const UObject* InOwner, FECFCoroutineHandle InCoroutineHandle, const FECFActionSettings& Settings, Ts&& ... Args)
+	bool AddCoroutineAction(const UObject* InOwner, FECFCoroutineHandle InCoroutineHandle, const FECFActionSettings& Settings, Ts&& ... Args)
 	{
 		// Ensure the Action has been started from the Game Thread.
 		if (IsInGameThread() == false)
 		{
 			ensureMsgf(false, TEXT("ECF Coroutines must be started from the Game Thread!"));
-			return;
+			return false;
 		}
 
 		// Create and set new coroutine action.
@@ -89,7 +89,10 @@ protected:
 		{
 			NewAction->Init();
 			PendingAddActions.Add(NewAction);
+			return true;
 		}
+
+		return false;
 	}
 
 	// Try to find running or pending action.
