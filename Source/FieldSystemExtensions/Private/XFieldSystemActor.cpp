@@ -216,7 +216,7 @@ void AXFieldSystemActor::OnlyAffectDestruction()
 {
 	bEnableFiltering = true;
 	ObjectType = EFieldObjectType::Field_Object_Destruction;
-	FilterType = EFieldFilterType::Field_Filter_Dynamic;
+	FilterType = EFieldFilterType::Field_Filter_All;
 	
 	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Configured to only affect Destruction objects"));
 }
@@ -490,6 +490,7 @@ void AXFieldSystemActor::ApplyRuntimeFiltering()
 
 	int32 ProcessedCount = 0;
 	int32 ExcludedCount = 0;
+	int32 AddedGCCount = 0;
 
 	// 遍历场景中所有Actor
 	for (TActorIterator<AActor> It(World); It; ++It)
@@ -502,19 +503,37 @@ void AXFieldSystemActor::ApplyRuntimeFiltering()
 
 		ProcessedCount++;
 
-		// 检查是否应该排除此Actor
-		if (!ShouldAffectActor(Actor))
+		const bool bShouldAffect = ShouldAffectActor(Actor);
+
+		if (bShouldAffect)
+		{
+			if (UGeometryCollectionComponent* GC = Actor->FindComponentByClass<UGeometryCollectionComponent>())
+			{
+				CachedGeometryCollections.AddUnique(GC);
+				++AddedGCCount;
+
+				if (bAutoRegisterToGCs && !GC->InitializationFields.Contains(this))
+				{
+					GC->InitializationFields.Add(this);
+				}
+			}
+			continue;
+		}
+
+		// 兼容模式：对非目标Actor禁用物理响应
+		if (bDisablePhysicsForExcludedActors)
 		{
 			DisableFieldResponseForActor(Actor);
-			ExcludedCount++;
-			
-			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Excluded Actor '%s' from Field effects"), 
-				*Actor->GetName());
 		}
+
+		ExcludedCount++;
+		
+		UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Excluded Actor '%s' from Field targeting"), 
+			*Actor->GetName());
 	}
 
-	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Runtime filtering applied - Processed %d actors, Excluded %d"), 
-		ProcessedCount, ExcludedCount);
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Runtime filtering applied - Processed %d actors, Excluded %d, CachedGC %d"), 
+		ProcessedCount, ExcludedCount, AddedGCCount);
 }
 
 void AXFieldSystemActor::RegisterSpawnListener()
@@ -560,9 +579,12 @@ void AXFieldSystemActor::OnActorSpawned(AActor* SpawnedActor)
 	// 检查是否应该排除此Actor
 	if (!ShouldAffectActor(SpawnedActor))
 	{
-		DisableFieldResponseForActor(SpawnedActor);
+		if (bDisablePhysicsForExcludedActors)
+		{
+			DisableFieldResponseForActor(SpawnedActor);
+		}
 		
-		UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Spawn listener excluded '%s'"), 
+		UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Spawn listener excluded '%s' from Field targeting"), 
 			*SpawnedActor->GetName());
 	}
 	else
@@ -572,6 +594,12 @@ void AXFieldSystemActor::OnActorSpawned(AActor* SpawnedActor)
 		if (GC)
 		{
 			CachedGeometryCollections.AddUnique(GC);
+
+			if (bAutoRegisterToGCs && !GC->InitializationFields.Contains(this))
+			{
+				GC->InitializationFields.Add(this);
+			}
+
 			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Added spawned GeometryCollection from '%s'"), 
 				*SpawnedActor->GetName());
 		}

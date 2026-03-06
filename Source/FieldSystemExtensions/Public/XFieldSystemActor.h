@@ -149,6 +149,17 @@ public:
 			DisplayName = "监听Spawn事件"))
 	bool bListenToActorSpawn = true;
 
+	/**
+	 * 是否使用兼容模式禁用非目标Actor的物理响应
+	 *
+	 * 默认关闭。推荐优先使用筛选后的GeometryCollection定向派发或InitializationFields注册，
+	 * 只有在必须阻止非GC物理对象响应Field时才启用。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Field|Filter|Advanced",
+		meta = (EditCondition = "bEnableFiltering && (bEnableActorClassFilter || bEnableActorTagFilter)",
+			DisplayName = "兼容模式：禁用非目标Actor物理"))
+	bool bDisablePhysicsForExcludedActors = false;
+
 	// ============================================================================
 	// 蓝图可调用方法
 	// ============================================================================
@@ -171,7 +182,7 @@ public:
 
 	/**
 	 * 应用Actor类/Tag筛选（运行时实现）
-	 * 扫描场景中的Actor，修改符合筛选条件的Actor的物理响应
+	 * 默认只维护筛选后的GeometryCollection缓存；兼容模式下才会修改非目标Actor的物理响应
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Field|Filter", 
 		meta = (DisplayName = "应用运行时筛选"))
@@ -186,8 +197,8 @@ public:
 	bool ShouldAffectActor(AActor* Actor) const;
 
 	/**
-	 * 禁用指定Actor对Field的响应
-	 * 通过修改物理组件的属性实现
+	 * 兼容模式：禁用指定Actor的物理模拟以阻止其响应Field
+	 * 注意：这会同时阻止重力、冲量等普通物理效果，不是精准Field过滤
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Field|Filter", 
 		meta = (DisplayName = "禁用Actor的Field响应"))
@@ -339,4 +350,3 @@ protected:
 	/** 注销Spawn监听 */
 	void UnregisterSpawnListener();
 };
-
