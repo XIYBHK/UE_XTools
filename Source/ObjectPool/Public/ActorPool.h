@@ -15,6 +15,8 @@
 // 包含日志头文件以支持宏
 DECLARE_LOG_CATEGORY_EXTERN(LogActorPool, Log, All);
 
+class FObjectPoolPreallocator;
+
 // 性能统计宏
 #if STATS
 DECLARE_CYCLE_STAT_EXTERN(TEXT("ActorPool_GetActor"), STAT_ActorPool_GetActor, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
@@ -153,6 +155,16 @@ public:
     bool FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransform);
 
     /**
+     * 应用高级预分配配置
+     */
+    void ConfigurePreallocator(UWorld* World, const FObjectPoolConfig& Config);
+
+    /**
+     * 获取预分配统计信息
+     */
+    FObjectPoolPreallocationStats GetPreallocationStats() const;
+
+    /**
      * 销毁所有不可用的Actor（用于强制清理）
      */
     void CleanupInvalidActors();
@@ -223,6 +235,9 @@ private:
 
     /** 声明 Preallocator 为友元，允许其访问 CreateNewActor 以执行预分配 */
     friend class FObjectPoolPreallocator;
+
+    /** 高级预分配器 */
+    TUniquePtr<FObjectPoolPreallocator> Preallocator;
 
 private:    //  内部辅助方法
     /**

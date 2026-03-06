@@ -7,6 +7,7 @@
 #include "ActorPool.h"
 #include "ObjectPool.h"
 #include "ObjectPoolUtils.h"
+#include "ObjectPoolPreallocator.h"
 
 //  生命周期接口
 #include "ObjectPoolInterface.h"
@@ -55,6 +56,7 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
     //  预分配容器
     AvailableActors.Reserve(InitialSize);
     ActiveActors.Reserve(InitialSize);
+    Preallocator = MakeUnique<FObjectPoolPreallocator>(this);
 
     //  注册GC回调
     if (GEngine)
@@ -123,6 +125,10 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
             ActiveActors.Add(ResultActor);
             // Actor 已在 AllActorsSet 中（从 AvailableActors 移动），无需重复添加
             UpdateStats(true);
+            if (Preallocator.IsValid())
+            {
+                Preallocator->RecordUsagePattern(ActiveActors.Num());
+            }
             ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
             return ResultActor;
         }
@@ -169,6 +175,10 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
             ActiveActors.Add(NewActor);
             AllActorsSet.Add(NewActor);
             UpdateStats(false);
+            if (Preallocator.IsValid())
+            {
+                Preallocator->RecordUsagePattern(ActiveActors.Num());
+            }
             ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
             return NewActor;
         }
@@ -203,6 +213,10 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
     if (ResultActor)
     {
         UpdateStats(true);
+        if (Preallocator.IsValid())
+        {
+            Preallocator->RecordUsagePattern(ActiveActors.Num() + 1);
+        }
         return ResultActor;
     }
 
@@ -213,6 +227,10 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
         if (NewActor)
         {
             UpdateStats(false);
+            if (Preallocator.IsValid())
+            {
+                Preallocator->RecordUsagePattern(ActiveActors.Num() + 1);
+            }
             return NewActor;
         }
     }
@@ -307,6 +325,10 @@ bool FActorPool::ReturnActor(AActor* Actor)
 
     // 修复：更新归还统计信息
     ++TotalReturned;
+    if (Preallocator.IsValid())
+    {
+        Preallocator->RecordUsagePattern(ActiveActors.Num());
+    }
 
     ACTORPOOL_DEBUG(TEXT("Actor归还到池: %s"), *Actor->GetName());
     return true;
@@ -737,5 +759,31 @@ void FActorPool::InitializePool(UWorld* World)
         ACTORPOOL_LOG(Log, TEXT("InitializePool预热完成: %s, 请求数量=%d"), 
             *ActorClass->GetName(), InitialSize);
     }
+}
+
+void FActorPool::ConfigurePreallocator(UWorld* World, const FObjectPoolConfig& Config)
+{
+    if (!Preallocator.IsValid() || !IsValid(World))
+    {
+        return;
+    }
+
+    if (!Config.bEnablePrewarm || Config.PreallocationCount <= 0)
+    {
+        Preallocator->StopPreallocation();
+        return;
+    }
+
+    Preallocator->StartPreallocation(World, Config);
+}
+
+FObjectPoolPreallocationStats FActorPool::GetPreallocationStats() const
+{
+    if (Preallocator.IsValid())
+    {
+        return Preallocator->GetStats();
+    }
+
+    return FObjectPoolPreallocationStats();
 }
 

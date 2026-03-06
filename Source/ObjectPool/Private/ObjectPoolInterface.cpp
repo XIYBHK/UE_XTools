@@ -38,71 +38,22 @@ void IObjectPoolInterface::SafeCallLifecycleEvent(AActor* Actor, const FString& 
 
     OBJECTPOOL_LOG(Verbose, TEXT("调用Actor %s 的生命周期事件: %s"), *Actor->GetName(), *EventType);
 
-    //  根据事件类型调用相应的函数
     if (EventType == TEXT("OnPoolActorCreated"))
     {
-        ExecuteBlueprintEvent(Actor, FName("OnPoolActorCreated"));
-        
-        // 同时调用C++版本（如果有重写）
-        if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
-        {
-            Interface->OnPoolActorCreated_Implementation();
-        }
+        IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
     }
     else if (EventType == TEXT("OnPoolActorActivated"))
     {
-        ExecuteBlueprintEvent(Actor, FName("OnPoolActorActivated"));
-        
-        // 同时调用C++版本（如果有重写）
-        if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
-        {
-            Interface->OnPoolActorActivated_Implementation();
-        }
+        IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
     }
     else if (EventType == TEXT("OnReturnToPool"))
     {
-        ExecuteBlueprintEvent(Actor, FName("OnReturnToPool"));
-        
-        // 同时调用C++版本（如果有重写）
-        if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
-        {
-            Interface->OnReturnToPool_Implementation();
-        }
+        IObjectPoolInterface::Execute_OnReturnToPool(Actor);
     }
     else
     {
         OBJECTPOOL_LOG(Warning, TEXT("未知的生命周期事件类型: %s"), *EventType);
     }
-}
-
-void IObjectPoolInterface::ExecuteBlueprintEvent(AActor* Actor, const FName& FunctionName)
-{
-    if (!IsValid(Actor))
-    {
-        return;
-    }
-
-    //  查找蓝图函数
-    UFunction* Function = Actor->GetClass()->FindFunctionByName(FunctionName);
-    if (!Function)
-    {
-        // 这不是错误，Actor可能没有实现这个特定的事件
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("Actor %s 没有实现蓝图函数: %s"), 
-            *Actor->GetName(), *FunctionName.ToString());
-        return;
-    }
-
-    //  检查函数是否是蓝图事件（简化版本）
-    if (!Function->HasAnyFunctionFlags(FUNC_BlueprintEvent))
-    {
-        OBJECTPOOL_LOG(VeryVerbose, TEXT("函数 %s 不是蓝图事件"), *FunctionName.ToString());
-        // 继续执行，不返回
-    }
-
-    //  安全调用蓝图函数（不使用 C++ 异常）
-    Actor->ProcessEvent(Function, nullptr);
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("成功调用Actor %s 的蓝图事件: %s"), 
-        *Actor->GetName(), *FunctionName.ToString());
 }
 
 //  接口的默认实现已在头文件中定义
@@ -126,7 +77,24 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
     double StartTime = FPlatformTime::Seconds();
     bool bSuccess = false;
 
-    //  根据事件类型调用相应的方法
+    auto ExecuteEvent = [Actor](EObjectPoolLifecycleEvent InEventType)
+    {
+        switch (InEventType)
+        {
+        case EObjectPoolLifecycleEvent::Created:
+            IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+            return TEXT("OnPoolActorCreated");
+        case EObjectPoolLifecycleEvent::Activated:
+            IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
+            return TEXT("OnPoolActorActivated");
+        case EObjectPoolLifecycleEvent::ReturnedToPool:
+            IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+            return TEXT("OnReturnToPool");
+        default:
+            return TEXT("Unknown");
+        }
+    };
+
     FString EventName;
     switch (EventType)
     {
@@ -147,27 +115,23 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
     if (bAsync)
     {
         //  异步调用（在游戏线程的下一帧执行）
-        AsyncTask(ENamedThreads::GameThread, [Actor, EventName]()
+        AsyncTask(ENamedThreads::GameThread, [Actor, EventType]()
         {
             if (IsValid(Actor))
             {
-                ExecuteBlueprintEvent(Actor, FName(*EventName));
-
-                // 同时调用C++版本
-                if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
+                switch (EventType)
                 {
-                    if (EventName == TEXT("OnPoolActorCreated"))
-                    {
-                        Interface->OnPoolActorCreated_Implementation();
-                    }
-                    else if (EventName == TEXT("OnPoolActorActivated"))
-                    {
-                        Interface->OnPoolActorActivated_Implementation();
-                    }
-                    else if (EventName == TEXT("OnReturnToPool"))
-                    {
-                        Interface->OnReturnToPool_Implementation();
-                    }
+                case EObjectPoolLifecycleEvent::Created:
+                    IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+                    break;
+                case EObjectPoolLifecycleEvent::Activated:
+                    IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
+                    break;
+                case EObjectPoolLifecycleEvent::ReturnedToPool:
+                    IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+                    break;
+                default:
+                    break;
                 }
             }
         });
@@ -175,25 +139,7 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
     }
     else
     {
-        //  同步调用（不使用 C++ 异常）
-        ExecuteBlueprintEvent(Actor, FName(*EventName));
-
-        // 同时调用C++版本
-        if (IObjectPoolInterface* Interface = Cast<IObjectPoolInterface>(Actor))
-        {
-            if (EventName == TEXT("OnPoolActorCreated"))
-            {
-                Interface->OnPoolActorCreated_Implementation();
-            }
-            else if (EventName == TEXT("OnPoolActorActivated"))
-            {
-                Interface->OnPoolActorActivated_Implementation();
-            }
-            else if (EventName == TEXT("OnReturnToPool"))
-            {
-                Interface->OnReturnToPool_Implementation();
-            }
-        }
+        ExecuteEvent(EventType);
         bSuccess = true;
     }
 

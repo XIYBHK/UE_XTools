@@ -61,7 +61,7 @@ public:
      * 
      * 注意：此事件在Actor的BeginPlay之前调用
      */
-    UFUNCTION(BlueprintImplementableEvent, Category = "对象池生命周期", meta = (
+    UFUNCTION(BlueprintNativeEvent, Category = "对象池生命周期", meta = (
         DisplayName = "池Actor创建时",
         ToolTip = "Actor在对象池中首次创建时调用，用于一次性初始化。适合设置不会改变的属性、缓存组件引用、加载资源等操作。",
         Keywords = "创建,初始化,对象池,生命周期,首次,一次性",
@@ -81,7 +81,7 @@ public:
      * 
      * 注意：此时Actor已经设置了正确的Transform
      */
-    UFUNCTION(BlueprintImplementableEvent, Category = "对象池生命周期", meta = (
+    UFUNCTION(BlueprintNativeEvent, Category = "对象池生命周期", meta = (
         DisplayName = "从池激活时",
         ToolTip = "Actor从对象池中被获取并激活时调用，用于重置状态和开始逻辑。每次从池中获取都会调用，适合重置变量、开始动画、启用AI等操作。",
         Keywords = "激活,获取,对象池,生命周期,重置,开始",
@@ -101,7 +101,7 @@ public:
      * 
      * 注意：此事件后Actor会被隐藏并停用
      */
-    UFUNCTION(BlueprintImplementableEvent, Category = "对象池生命周期", meta = (
+    UFUNCTION(BlueprintNativeEvent, Category = "对象池生命周期", meta = (
         DisplayName = "归还到池时",
         ToolTip = "Actor即将归还到对象池时调用，用于清理状态和停止逻辑。适合停止动画、清理引用、重置变量、禁用组件等清理操作。",
         Keywords = "归还,回收,对象池,生命周期,清理,停止",
@@ -109,28 +109,6 @@ public:
         CompactNodeTitle = "池归还",
         BlueprintInternalUseOnly = "false"))
     void OnReturnToPool();
-
-    /**
-     * C++版本的生命周期事件 - 可选实现
-     * 
-     * 如果需要在C++中处理生命周期事件，可以重写这些虚函数
-     * 蓝图事件和C++函数会同时被调用
-     */
-
-    /**
-     * C++版本：Actor在池中首次创建时调用
-     */
-    virtual void OnPoolActorCreated_Implementation() {}
-
-    /**
-     * C++版本：Actor从池中激活时调用
-     */
-    virtual void OnPoolActorActivated_Implementation() {}
-
-    /**
-     * C++版本：Actor归还到池时调用
-     */
-    virtual void OnReturnToPool_Implementation() {}
 
     /**
      * 检查Actor是否实现了对象池接口
@@ -183,11 +161,4 @@ public:
      */
     static FObjectPoolLifecycleStats GetLifecycleStats(AActor* Actor);
 
-protected:
-    /**
-     * 内部辅助函数：执行蓝图事件
-     * @param Actor 目标Actor
-     * @param FunctionName 函数名
-     */
-    static void ExecuteBlueprintEvent(AActor* Actor, const FName& FunctionName);
 };

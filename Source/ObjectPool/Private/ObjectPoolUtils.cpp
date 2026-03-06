@@ -84,10 +84,6 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         //  首次初始化时调用OnPoolActorCreated事件
         if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
         {
-            if (IObjectPoolInterface* PoolInterface = Cast<IObjectPoolInterface>(Actor))
-            {
-                PoolInterface->OnPoolActorCreated_Implementation();
-            }
             IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
             OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("已调用生命周期事件OnPoolActorCreated: %s"), *Actor->GetName());
         }

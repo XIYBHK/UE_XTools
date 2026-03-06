@@ -172,6 +172,16 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
         return false;
     }
 
+    if (ConfigManager.IsValid())
+    {
+        ConfigManager->ApplyConfigToPool(*NewPool, Config);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        NewPool->ConfigurePreallocator(World, Config);
+    }
+
     //  使用延迟预热避免开始游戏时卡顿
     if (InitialSize > 0)
     {

@@ -72,6 +72,12 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
 
     XTOOLS_ATOMIC_STORE(bIsActive, true);
 
+    if (TickHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
+        TickHandle.Reset();
+    }
+
     //  根据策略执行预分配
     switch (Config.Strategy)
     {
@@ -83,6 +89,8 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
     case EObjectPoolPreallocationStrategy::Predictive:
     case EObjectPoolPreallocationStrategy::Adaptive:
         // 这些策略在Tick中执行
+        TickHandle = FTSTicker::GetCoreTicker().AddTicker(
+            FTickerDelegate::CreateRaw(this, &FObjectPoolPreallocator::HandleTicker));
         break;
         
     default:
@@ -106,6 +114,12 @@ void FObjectPoolPreallocator::StopPreallocation()
 
     XTOOLS_ATOMIC_STORE(bIsActive, false);
     OwnerWorld.Reset();
+
+    if (TickHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
+        TickHandle.Reset();
+    }
     
     {
         FScopeLock Lock(&PreallocatorLock);
@@ -170,6 +184,18 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
     }
 }
 
+bool FObjectPoolPreallocator::HandleTicker(float DeltaTime)
+{
+    if (!XTOOLS_ATOMIC_LOAD(bIsActive))
+    {
+        TickHandle.Reset();
+        return false;
+    }
+
+    Tick(DeltaTime);
+    return XTOOLS_ATOMIC_LOAD(bIsActive);
+}
+
 FObjectPoolPreallocationStats FObjectPoolPreallocator::GetStats() const
 {
     FScopeLock Lock(&PreallocatorLock);
@@ -213,8 +239,10 @@ void FObjectPoolPreallocator::ExecuteImmediatePreallocation(UWorld* World, int32
     {
         FScopeLock Lock(&PreallocatorLock);
         Stats.PreallocatedCount = SuccessCount;
+        Stats.PreallocationOperations = 1;
         Stats.TotalPreallocationTimeMs = TotalTime;
-        Stats.UpdateStats(SuccessCount, Count, OwnerPool->CalculateMemoryUsage());
+        Stats.AveragePreallocationTimeMs = TotalTime;
+        Stats.MemoryUsageBytes = OwnerPool->CalculateMemoryUsage();
     }
 
     OBJECTPOOL_LOG(Log, TEXT("ExecuteImmediatePreallocation: 完成，成功: %d/%d，耗时: %.2fms"), 
@@ -354,7 +382,9 @@ void FObjectPoolPreallocator::UpdateStats()
     int32 CurrentCount = XTOOLS_ATOMIC_LOAD(CurrentProgress);
     int64 MemoryUsage = OwnerPool ? OwnerPool->CalculateMemoryUsage() : 0;
 
-    Stats.UpdateStats(CurrentCount, Config.PreallocationCount, MemoryUsage);
+    Stats.PreallocatedCount = CurrentCount;
+    Stats.MemoryUsageBytes = MemoryUsage;
+    ++Stats.PreallocationOperations;
 }
 
 bool FObjectPoolPreallocator::ShouldContinuePreallocation() const
@@ -439,4 +469,45 @@ int32 FObjectPoolPreallocator::PredictRequiredCount() const
         AverageUsage, PredictedCount);
 
     return PredictedCount;
+}
+
+FObjectPoolPreallocator::FAdjustmentRecommendation FObjectPoolPreallocator::CheckAdjustmentNeeded(const FObjectPoolStats& CurrentUsage) const
+{
+    FAdjustmentRecommendation Recommendation;
+
+    const int32 TotalActors = CurrentUsage.CurrentActive + CurrentUsage.CurrentAvailable;
+    if (TotalActors <= 0)
+    {
+        return Recommendation;
+    }
+
+    const float UsageRatio = static_cast<float>(CurrentUsage.CurrentActive) / TotalActors;
+
+    if (UsageRatio >= 0.85f)
+    {
+        Recommendation.bShouldAdjust = true;
+        Recommendation.bShouldExpand = true;
+        Recommendation.RecommendedSize = FMath::Max(CurrentUsage.PoolSize + Config.MaxAllocationsPerFrame, CurrentUsage.PoolSize + 1);
+        Recommendation.Reason = TEXT("池使用率持续偏高，建议扩容预分配容量");
+    }
+    else if (UsageRatio <= 0.2f && UsageHistory.Num() >= 5)
+    {
+        Recommendation.bShouldAdjust = true;
+        Recommendation.bShouldExpand = false;
+        Recommendation.RecommendedSize = FMath::Max(1, CurrentUsage.CurrentActive + 1);
+        Recommendation.Reason = TEXT("池长期低使用率，建议收缩预分配目标");
+    }
+
+    return Recommendation;
+}
+
+void FObjectPoolPreallocator::RecordUsagePattern(int32 UsedCount)
+{
+    FScopeLock Lock(&PreallocatorLock);
+    UsageHistory.Add(FMath::Max(0, UsedCount));
+
+    if (UsageHistory.Num() > MaxHistorySize)
+    {
+        UsageHistory.RemoveAt(0, UsageHistory.Num() - MaxHistorySize);
+    }
 }

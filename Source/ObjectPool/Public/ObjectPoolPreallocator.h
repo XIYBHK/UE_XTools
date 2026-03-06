@@ -11,6 +11,7 @@
 #include "HAL/CriticalSection.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Containers/Ticker.h"
 
 //  UE版本兼容性
 #include "XToolsVersionCompat.h"
@@ -127,6 +128,11 @@ public:
      */
     int32 EstimateActorMemorySize(UClass* ActorClass) const;
 
+    /**
+     * 内部Ticker回调
+     */
+    bool HandleTicker(float DeltaTime);
+
 private:
     //  预分配策略实现
 
@@ -210,6 +216,9 @@ private:
 
     /** 上次调整时间 */
     double LastAdjustmentTime = 0.0;
+
+    /** Ticker句柄 */
+    FTSTicker::FDelegateHandle TickHandle;
 
     /** 性能监控 */
     struct FPerformanceMetrics
