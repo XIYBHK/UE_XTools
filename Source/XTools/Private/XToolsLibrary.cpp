@@ -79,6 +79,9 @@ namespace XToolsConfig
     constexpr int32 PRD_MAX_FAILURE_COUNT = 12;
     constexpr int32 PRD_ARRAY_SIZE = PRD_MAX_FAILURE_COUNT + 1;
     constexpr int32 PRD_TARGET_SUCCESSES = 10000;
+    constexpr double PRD_TEST_MARGIN_MULTIPLIER = 2.0;
+    constexpr int32 PRD_MIN_TEST_MULTIPLIER = 100;
+    constexpr int32 PRD_MAX_TOTAL_TESTS_CAP = 100000000;
 
     // 性能测试配置
     constexpr int32 PERF_TEST_ARRAY_COUNT = 100;
@@ -383,12 +386,13 @@ void UXToolsLibrary::GetAllAttachedActorsRecursively(AActor* ParentActor, TArray
     // GetAttachedActors(OutArr, bResetArray, bRecursivelyIncludeAttachedActors)
     // 第三个参数设为false，我们手动控制递归遍历以获得更好的性能和控制
     ParentActor->GetAttachedActors(OutAllChildren, false, false);
+    const int32 TraversalStartIndex = bIncludeSelf ? 1 : 0;
 
     // 5. 核心算法：迭代式广度优先搜索（BFS）
     // 不使用递归函数调用，而是直接遍历数组本身
     // 因为我们在遍历过程中会不断向数组末尾 Add 元素，Num() 会动态增加，
     // 这个循环会自动处理所有新加入的"孙子"节点
-    for (int32 i = 0; i < OutAllChildren.Num(); ++i)
+    for (int32 i = TraversalStartIndex; i < OutAllChildren.Num(); ++i)
     {
         AActor* CurrentActor = OutAllChildren[i];
 
@@ -531,23 +535,6 @@ void UXToolsLibrary::DrawBezierDebug(
 
 FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray<FVector>& Points, float Progress, bool bShowDebug, float Duration, FBezierDebugColors DebugColors, FBezierSpeedOptions SpeedOptions)
 {
-    if (!GEngine)
-    {
-        FXToolsErrorReporter::Error(LogXTools,
-            TEXT("CalculateBezierPoint: GEngine为空，引擎未正确初始化"),
-            TEXT("CalculateBezierPoint"));
-        return FVector::ZeroVector;
-    }
-
-    UWorld* World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
-    if (!World)
-    {
-        FXToolsErrorReporter::Error(LogXTools,
-            TEXT("CalculateBezierPoint: 无效的世界上下文对象"),
-            TEXT("CalculateBezierPoint"));
-        return FVector::ZeroVector;
-    }
-    
     // 参数验证
     if (Points.Num() < 2)
     {
@@ -556,6 +543,27 @@ FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray
 
     // 确保Progress在[0,1]范围内
     Progress = FMath::Clamp(Progress, 0.0f, 1.0f);
+
+    UWorld* World = nullptr;
+    if (bShowDebug)
+    {
+        if (!GEngine)
+        {
+            FXToolsErrorReporter::Error(LogXTools,
+                TEXT("CalculateBezierPoint: GEngine为空，引擎未正确初始化"),
+                TEXT("CalculateBezierPoint"));
+            return FVector::ZeroVector;
+        }
+
+        World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
+        if (!World)
+        {
+            FXToolsErrorReporter::Error(LogXTools,
+                TEXT("CalculateBezierPoint: 调试绘制需要有效的世界上下文对象"),
+                TEXT("CalculateBezierPoint"));
+            return FVector::ZeroVector;
+        }
+    }
 
     FVector ResultPoint;
     TArray<FVector> WorkPoints;
@@ -670,12 +678,19 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     float ActualChance = 0.0f;
     int32 TotalSuccesses = 0;
     int32 TotalTests = 0;
+    bool bReachedTestLimit = false;
 
     //  获取线程安全的 PRD 测试器
     FThreadSafePRDTester& PRDTester = FThreadSafePRDTester::Get();
 
-    // 修复：添加最大测试次数限制，防止极小概率导致无限循环
-    const int32 MaxTotalTests = PRD_TARGET_SUCCESSES * 100; // 最多 100 万次测试
+    // 基于输入概率动态估算安全测试上限，避免低概率输入被固定阈值过早截断。
+    const double SafeBaseChance = FMath::Max(static_cast<double>(BaseChance), UE_DOUBLE_SMALL_NUMBER);
+    const double EstimatedTestsForTargetSuccesses = static_cast<double>(PRD_TARGET_SUCCESSES) / SafeBaseChance;
+    const double DynamicMaxTotalTests = FMath::CeilToDouble(EstimatedTestsForTargetSuccesses * PRD_TEST_MARGIN_MULTIPLIER);
+    const int32 MaxTotalTests = FMath::Clamp(
+        static_cast<int32>(FMath::Min(DynamicMaxTotalTests, static_cast<double>(MAX_int32))),
+        PRD_TARGET_SUCCESSES * PRD_MIN_TEST_MULTIPLIER,
+        PRD_MAX_TOTAL_TESTS_CAP);
 
     //  优化的测试循环 - 使用配置常量和线程安全
     while (TotalSuccesses < PRD_TARGET_SUCCESSES && TotalTests < MaxTotalTests)
@@ -707,8 +722,9 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
         //  检查是否达到最大测试次数
         if (TotalTests >= MaxTotalTests)
         {
+            bReachedTestLimit = true;
             FXToolsErrorReporter::Warning(LogXTools,
-                FString::Printf(TEXT("TestPRDDistribution: 达到最大测试次数限制 (%d)，停止测试。成功次数: %d/%d"),
+                FString::Printf(TEXT("TestPRDDistribution: 达到动态最大测试次数限制 (%d)，提前停止。成功次数: %d/%d，结果可能不完整。"),
                     MaxTotalTests, TotalSuccesses, PRD_TARGET_SUCCESSES),
                 TEXT("TestPRDDistribution"));
             break;
@@ -751,6 +767,13 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     }
 
     FXToolsErrorReporter::Info(LogXTools, TEXT("=== 测试完成 ==="), TEXT("TestPRDDistribution"));
+    if (bReachedTestLimit || TotalSuccesses < PRD_TARGET_SUCCESSES)
+    {
+        FXToolsErrorReporter::Warning(LogXTools,
+            FString::Printf(TEXT("TestPRDDistribution: 本次结果为部分样本。已收集成功次数: %d/%d。"),
+                TotalSuccesses, PRD_TARGET_SUCCESSES),
+            TEXT("TestPRDDistribution"));
+    }
 
     return Distribution;
 }

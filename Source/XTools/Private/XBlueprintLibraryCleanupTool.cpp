@@ -12,6 +12,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/App.h"
+#include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/Blueprint.h"
 #include "K2Node_FunctionEntry.h"
@@ -23,6 +24,18 @@
 #define LOCTEXT_NAMESPACE "XBlueprintLibraryCleanupTool"
 
 #if WITH_EDITOR
+
+namespace
+{
+    bool IsUserContentMountPoint(const FString& ObjectOrPackagePath)
+    {
+        const FName MountPoint = FPackageName::GetPackageMountPoint(ObjectOrPackagePath, false);
+        return !MountPoint.IsNone() &&
+            MountPoint != TEXT("Engine") &&
+            MountPoint != TEXT("Script") &&
+            MountPoint != TEXT("Temp");
+    }
+}
 
 UBlueprint* UXBlueprintLibraryCleanupTool::GetBlueprintFromAssetData(const FAssetData& AssetData)
 {
@@ -63,26 +76,7 @@ bool UXBlueprintLibraryCleanupTool::IsBlueprintFunctionLibrary(UBlueprint* Bluep
         return false;
     }
     
-    // 确保这是用户创建的蓝图函数库，而不是引擎内置的
-    FString BlueprintPath = Blueprint->GetPathName();
-    
-    // 排除引擎内置路径
-    if (BlueprintPath.StartsWith(TEXT("/Engine/")) ||
-        BlueprintPath.StartsWith(TEXT("/Script/Engine")) ||
-        BlueprintPath.StartsWith(TEXT("/Script/CoreUObject")) ||
-        BlueprintPath.StartsWith(TEXT("/Script/UMG")) ||
-        BlueprintPath.StartsWith(TEXT("/Script/")) ||
-        BlueprintPath.Contains(TEXT("Engine/Content")) ||
-        BlueprintPath.Contains(TEXT("EngineContent")))
-    {
-        return false;
-    }
-    
-    // 只处理项目内容和插件内容
-    FString ProjectPath = FString(TEXT("/")) + FApp::GetProjectName();
-    return BlueprintPath.StartsWith(TEXT("/Game/")) || 
-           BlueprintPath.Contains(TEXT("/Plugins/")) ||
-           BlueprintPath.StartsWith(ProjectPath);
+    return IsUserContentMountPoint(Blueprint->GetPathName());
 }
 
 TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibraries()
@@ -97,9 +91,16 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
     Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
     Filter.bRecursiveClasses = true;
     
-    // 只搜索用户项目和插件目录，排除引擎目录
-    Filter.PackagePaths.Add(TEXT("/Game"));
-    Filter.PackagePaths.Add(TEXT("/Plugins"));
+    // 只搜索项目和插件等用户内容挂载点，排除 /Engine、/Script、/Temp。
+    TArray<FString> ContentRoots;
+    FPackageName::QueryRootContentPaths(ContentRoots);
+    for (const FString& ContentRoot : ContentRoots)
+    {
+        if (IsUserContentMountPoint(ContentRoot))
+        {
+            Filter.PackagePaths.Add(*ContentRoot);
+        }
+    }
     Filter.bRecursivePaths = true;
     
     TArray<FAssetData> AssetDataArray;
@@ -149,8 +150,7 @@ TArray<UBlueprint*> UXBlueprintLibraryCleanupTool::GetAllBlueprintFunctionLibrar
             FString BlueprintPath = AssetData.GetObjectPathString();
             
             // 确保是用户自定义的（不是引擎内置的）
-            if (BlueprintPath.StartsWith(TEXT("/Game/")) || 
-                BlueprintPath.Contains(TEXT("/Plugins/")))
+            if (IsUserContentMountPoint(BlueprintPath))
             {
                 FunctionLibraryAssets.Add(AssetData);
             }
