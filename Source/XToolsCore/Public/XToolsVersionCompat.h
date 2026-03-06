@@ -78,8 +78,7 @@ namespace XToolsVersionCompat
 	template<typename T>
 	FORCEINLINE T AtomicLoad(const TAtomic<T>& AtomicVar)
 	{
-		// UE 5.3+: 支持直接读取
-		return AtomicVar;
+		return AtomicVar.Load();
 	}
 
 	/**
@@ -88,8 +87,7 @@ namespace XToolsVersionCompat
 	template<typename T>
 	FORCEINLINE void AtomicStore(TAtomic<T>& AtomicVar, T Value)
 	{
-		// UE 5.3+: 支持直接赋值
-		AtomicVar = Value;
+		AtomicVar.Store(Value);
 	}
 
 	/**
@@ -98,7 +96,6 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicIncrement(TAtomic<int32>& AtomicVar)
 	{
-		// UE 5.3+: 直接递增
 		return ++AtomicVar;
 	}
 
@@ -108,7 +105,6 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicDecrement(TAtomic<int32>& AtomicVar)
 	{
-		// UE 5.3+: 直接递减
 		return --AtomicVar;
 	}
 
@@ -119,9 +115,7 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicAdd(TAtomic<int32>& AtomicVar, int32 Value)
 	{
-		// UE 5.3+: 直接加法
-		AtomicVar += Value;
-		return AtomicVar;
+		return AtomicVar += Value;
 	}
 
 	/**
@@ -131,9 +125,7 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicSub(TAtomic<int32>& AtomicVar, int32 Value)
 	{
-		// UE 5.3+: 直接减法
-		AtomicVar -= Value;
-		return AtomicVar;
+		return AtomicVar -= Value;
 	}
 
 	/**
@@ -143,22 +135,18 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE int32 AtomicExchange(TAtomic<int32>& AtomicVar, int32 Value)
 	{
-		return FPlatformAtomics::InterlockedExchange(reinterpret_cast<volatile int32*>(&AtomicVar), Value);
+		return AtomicVar.Exchange(Value);
 	}
 
 	/**
 	 * 原子交换 TAtomic<int64>（兼容所有UE版本）
-	 * 注意：UE 5.3 不支持 InterlockedExchange64，使用自旋锁实现
+	 * 注意：必须保持真正的原子交换语义，不能拆成“先读后写”
 	 * @param Value 新值
 	 * @return 旧值
 	 */
 	FORCEINLINE int64 AtomicExchange(TAtomic<int64>& AtomicVar, int64 Value)
 	{
-		// UE 5.3 的 FPlatformAtomics 不支持 InterlockedExchange64
-		// 使用直接赋值（在 UE 5.3+ 中 TAtomic<int64> 支持直接操作）
-		int64 OldValue = AtomicVar;
-		AtomicVar = Value;
-		return OldValue;
+		return AtomicVar.Exchange(Value);
 	}
 
 	/**
@@ -169,14 +157,7 @@ namespace XToolsVersionCompat
 	 */
 	FORCEINLINE bool AtomicCompareExchange(TAtomic<int32>& AtomicVar, int32& Expected, int32 Desired)
 	{
-		const int32 OldValue = FPlatformAtomics::InterlockedCompareExchange(
-			reinterpret_cast<volatile int32*>(&AtomicVar), Desired, Expected);
-		const bool bSucceeded = (OldValue == Expected);
-		if (!bSucceeded)
-		{
-			Expected = OldValue;
-		}
-		return bSucceeded;
+		return AtomicVar.CompareExchange(Expected, Desired);
 	}
 }
 
