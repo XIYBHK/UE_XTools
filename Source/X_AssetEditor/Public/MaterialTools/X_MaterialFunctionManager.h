@@ -61,8 +61,10 @@ public:
     
     // UI操作
     static TSharedRef<SWindow> CreateMaterialFunctionPickerWindow(FOnMaterialFunctionSelected OnFunctionSelected);
+    static TSharedRef<SWindow> ShowMaterialFunctionPicker(FOnMaterialFunctionSelected OnFunctionSelected);
     static TSharedRef<SWindow> ShowNewMaterialFunctionPicker(FOnMaterialFunctionSelected OnFunctionSelected);
     static TSharedRef<SWindow> CreateNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected);
+    static TSharedRef<SWindow> ShowNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected);
     static TArray<TSharedPtr<FName>> GetCommonNodeNames();
     
     // 特定功能接口

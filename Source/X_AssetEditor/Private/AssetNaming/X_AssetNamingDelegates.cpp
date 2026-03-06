@@ -262,29 +262,29 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			return false;
 		}
 
-		// 严格策略：
-		// OnAssetAdded 仅接受“手动新建资产意图令牌”命中的路径。
-		// 无令牌直接拒绝，从源头规避复制/粘贴/移动/启动自检/内置批处理误触发。
+		// OnAssetAdded 仍以“手动新建意图”为高置信度信号。
+		// 但令牌只在真正命中目标资产或超时后清空，避免一个流程中前置辅助资产先到达时误伤主资产。
 		if (!SharedThis->bHasPendingManualCreateIntent)
 		{
+			// UE5.3 官方源码中，PKG_NewlyCreated/AssetCreated 同时被“新建”和“复制”路径复用，
+			// 引擎也没有通用的资产复制前后委托可供可靠区分。因此这里坚持只接受显式手动新建意图令牌，
+			// 避免把 DuplicateAsset/ObjectTools/AdvancedCopy 等流程误判为“创建时自动重命名”。
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("跳过 OnAssetAdded（无手动新建意图令牌）: %s"),
 				*AssetData.AssetName.ToString());
 			return false;
 		}
 
-		double CurrentTime = FPlatformTime::Seconds();
-		double TimeSinceLastCreateIntent = CurrentTime - SharedThis->LastManualCreateIntentTime;
-		const double IntentWindow = FMath::Max(SharedThis->ManualCreateIntentWindowSeconds, 0.1);
-
-		if (TimeSinceLastCreateIntent > IntentWindow)
+		if (!SharedThis->HasActiveManualCreateIntent())
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
-				TEXT("跳过 OnAssetAdded（手动新建意图过期 %.2fs > %.2fs）: %s"),
-				TimeSinceLastCreateIntent, IntentWindow, *AssetData.AssetName.ToString());
+				TEXT("跳过 OnAssetAdded（手动新建意图已过期）: %s"),
+				*AssetData.AssetName.ToString());
 			SharedThis->ResetManualCreateIntent();
 			return false;
 		}
+
+		const double TimeSinceLastCreateIntent = FPlatformTime::Seconds() - SharedThis->LastManualCreateIntentTime;
 
 		if (!SharedThis->LastManualCreateSupportedClass.IsValid())
 		{
@@ -307,19 +307,17 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		if (!AssetClass)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
-				TEXT("跳过 OnAssetAdded（无法解析资产类）: %s"), *AssetData.AssetName.ToString());
-			SharedThis->ResetManualCreateIntent();
-			return false;
+				TEXT("延迟重试 OnAssetAdded（暂时无法解析资产类）: %s"), *AssetData.AssetName.ToString());
+			return SharedThis->HasActiveManualCreateIntent();
 		}
 
 		if (!AssetClass->IsChildOf(FactoryClass))
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
-				TEXT("跳过 OnAssetAdded（手动新建类型不匹配）: %s (Asset=%s, Factory=%s)"),
+				TEXT("跳过 OnAssetAdded（当前资产与手动新建类型不匹配，继续等待同流程后续资产）: %s (Asset=%s, Factory=%s)"),
 				*AssetData.AssetName.ToString(),
 				*AssetClass->GetName(),
 				*FactoryClass->GetName());
-			SharedThis->ResetManualCreateIntent();
 			return false;
 		}
 
@@ -824,6 +822,17 @@ void FX_AssetNamingDelegates::ResetManualCreateIntent()
 	LastManualCreateIntentTime = 0.0;
 	ManualCreateIntentWindowSeconds = 0.0;
 	LastManualCreateSupportedClass.Reset();
+}
+
+bool FX_AssetNamingDelegates::HasActiveManualCreateIntent() const
+{
+	if (!bHasPendingManualCreateIntent)
+	{
+		return false;
+	}
+
+	const double IntentWindow = FMath::Max(ManualCreateIntentWindowSeconds, 0.1);
+	return (FPlatformTime::Seconds() - LastManualCreateIntentTime) <= IntentWindow;
 }
 
 bool FX_AssetNamingDelegates::HasValidSourceFileTag(const FAssetData& AssetData)

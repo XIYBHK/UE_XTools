@@ -14,6 +14,8 @@
 #include "PivotTools/X_PivotManager.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "Settings/X_AssetEditorSettingsCustomization.h"
+#include "MaterialTools/X_MaterialFunctionParams.h"
+#include "MaterialTools/X_MaterialFunctionParamsCustomization.h"
 #include "XToolsErrorReporter.h"
 
 // UE核心头文件
@@ -216,6 +218,10 @@ void FX_AssetEditorModule::RegisterSettingsCustomization()
 			UX_AssetEditorSettings::StaticClass()->GetFName(),
 			FOnGetDetailCustomizationInstance::CreateStatic(&FX_AssetEditorSettingsCustomization::MakeInstance)
 		);
+        PropertyModule.RegisterCustomPropertyTypeLayout(
+            FX_MaterialFunctionParams::StaticStruct()->GetFName(),
+            FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FX_MaterialFunctionParamsCustomization::MakeInstance)
+        );
 		PropertyModule.NotifyCustomizationModuleChanged();
 	}
 }
@@ -227,6 +233,8 @@ void FX_AssetEditorModule::UnregisterSettingsCustomization()
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomClassLayout(UX_AssetEditorSettings::StaticClass()->GetFName());
+        PropertyModule.UnregisterCustomPropertyTypeLayout(FX_MaterialFunctionParams::StaticStruct()->GetFName());
+        PropertyModule.NotifyCustomizationModuleChanged();
 	}
 }
 

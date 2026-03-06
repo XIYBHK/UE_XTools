@@ -187,14 +187,24 @@ TSharedRef<SWindow> FX_MaterialFunctionManager::CreateMaterialFunctionPickerWind
     return FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(OnFunctionSelected);
 }
 
+TSharedRef<SWindow> FX_MaterialFunctionManager::ShowMaterialFunctionPicker(FOnMaterialFunctionSelected OnFunctionSelected)
+{
+    return FX_MaterialFunctionUI::ShowMaterialFunctionPickerWindow(OnFunctionSelected);
+}
+
 TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNewMaterialFunctionPicker(FOnMaterialFunctionSelected OnFunctionSelected)
 {
-    return FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(OnFunctionSelected);
+    return FX_MaterialFunctionUI::ShowMaterialFunctionPickerWindow(OnFunctionSelected);
 }
 
 TSharedRef<SWindow> FX_MaterialFunctionManager::CreateNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected)
 {
     return FX_MaterialFunctionUI::CreateNodePickerWindow(OnNodeSelected);
+}
+
+TSharedRef<SWindow> FX_MaterialFunctionManager::ShowNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected)
+{
+    return FX_MaterialFunctionUI::ShowNodePickerWindow(OnNodeSelected);
 }
 
 TArray<TSharedPtr<FName>> FX_MaterialFunctionManager::GetCommonNodeNames()

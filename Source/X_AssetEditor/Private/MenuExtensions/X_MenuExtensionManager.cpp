@@ -466,7 +466,7 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
                 {
                     //  修复：直接使用SelectedActors，与原代码一致
                     // 使用简单版选择器
-                    FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(
+                    FX_MaterialFunctionUI::ShowMaterialFunctionPickerWindow(
                         FOnMaterialFunctionSelected::CreateLambda([SelectedActors](UMaterialFunctionInterface* SelectedFunction)
                         {
                             if (SelectedFunction)
@@ -503,8 +503,19 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
                                 // 显示参数对话框
                                 FText DialogTitle = FText::Format(LOCTEXT("MaterialFunctionParamDialogTitleForActors", "配置材质函数参数: {0}"),
                                     FText::FromString(SelectedFunction->GetName()));
+                                const FText SummaryText = FX_MaterialFunctionOperation::BuildFunctionSummary(SelectedFunction);
+                                const bool bHasMaterialAttributesOutput = FX_MaterialFunctionOperation::HasMaterialAttributesOutput(SelectedFunction);
+                                const FText OutputNamesText = FX_MaterialFunctionOperation::BuildFunctionOutputNamesText(SelectedFunction);
 
-                                if (SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope))
+                                if (SX_MaterialFunctionParamDialog::ShowDialog(
+                                    DialogTitle,
+                                    StructOnScope,
+                                    SummaryText,
+                                    InputCount,
+                                    OutputCount,
+                                    bHasMaterialAttributesOutput,
+                                    OutputNamesText,
+                                    SelectedFunction))
                                 {
                                     //  修复：使用与原代码一致的调用方式
                                     FX_MaterialFunctionOperation::ProcessActorMaterialFunction(
@@ -549,7 +560,7 @@ void FX_MenuExtensionManager::AddActorMaterialMenuEntry(FMenuBuilder& MenuBuilde
 void FX_MenuExtensionManager::HandleAddMaterialFunctionToAssets(TArray<FAssetData> SelectedAssets)
 {
     // 使用简单版材质函数选择器
-    FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(
+    FX_MaterialFunctionUI::ShowMaterialFunctionPickerWindow(
         FOnMaterialFunctionSelected::CreateStatic(&FX_MenuExtensionManager::OnMaterialFunctionSelected, SelectedAssets)
     );
 }
@@ -590,8 +601,19 @@ void FX_MenuExtensionManager::OnMaterialFunctionSelected(UMaterialFunctionInterf
     // 显示参数对话框
     FText DialogTitle = FText::Format(LOCTEXT("MaterialFunctionParamDialogTitle", "配置材质函数参数: {0}"),
         FText::FromString(SelectedFunction->GetName()));
+    const FText SummaryText = FX_MaterialFunctionOperation::BuildFunctionSummary(SelectedFunction);
+    const bool bHasMaterialAttributesOutput = FX_MaterialFunctionOperation::HasMaterialAttributesOutput(SelectedFunction);
+    const FText OutputNamesText = FX_MaterialFunctionOperation::BuildFunctionOutputNamesText(SelectedFunction);
 
-    if (SX_MaterialFunctionParamDialog::ShowDialog(DialogTitle, StructOnScope))
+    if (SX_MaterialFunctionParamDialog::ShowDialog(
+        DialogTitle,
+        StructOnScope,
+        SummaryText,
+        InputCount,
+        OutputCount,
+        bHasMaterialAttributesOutput,
+        OutputNamesText,
+        SelectedFunction))
     {
         // 使用与原代码一致的调用方式
         FX_MaterialFunctionOperation::ProcessAssetMaterialFunction(

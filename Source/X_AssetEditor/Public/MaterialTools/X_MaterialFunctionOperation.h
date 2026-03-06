@@ -287,6 +287,35 @@ public:
         UMaterialFunctionInterface* Function,
         int32& OutInputCount, 
         int32& OutOutputCount);
+
+    /**
+     * 获取材质函数的摘要文本，用于参数弹窗提示
+     * @param Function - 材质函数
+     * @return 摘要文本
+     */
+    static FText BuildFunctionSummary(UMaterialFunctionInterface* Function);
+
+    /**
+     * 检查材质函数是否包含 Material Attributes 输出
+     * @param Function - 材质函数
+     * @return 是否存在 Material Attributes 输出
+     */
+    static bool HasMaterialAttributesOutput(UMaterialFunctionInterface* Function);
+
+    /**
+     * 获取材质函数输出名称摘要
+     * @param Function - 材质函数
+     * @return 输出名称摘要文本
+     */
+    static FText BuildFunctionOutputNamesText(UMaterialFunctionInterface* Function);
+
+    /**
+     * 基于当前参数生成预连接预览文本
+     * @param Function - 材质函数
+     * @param Params - 当前参数
+     * @return 预连接预览文本
+     */
+    static FText BuildConnectionPreviewText(UMaterialFunctionInterface* Function, const FX_MaterialFunctionParams& Params);
         
     /**
      * 创建Add节点连接到指定材质属性

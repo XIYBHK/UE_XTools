@@ -178,6 +178,9 @@ private:
 	/** 清空“手动新建意图”状态 */
 	void ResetManualCreateIntent();
 
+	/** 检查“手动新建意图”是否仍在有效时间窗内 */
+	bool HasActiveManualCreateIntent() const;
+
 	/** 检查资产是否携带有效 SourceFile 标签（用于识别真实外部导入） */
 	static bool HasValidSourceFileTag(const FAssetData& AssetData);
 };

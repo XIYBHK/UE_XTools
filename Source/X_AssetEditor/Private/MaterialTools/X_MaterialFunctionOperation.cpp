@@ -15,6 +15,7 @@
 #include "Logging/LogMacros.h"
 #include "X_AssetEditor.h"
 #include "MaterialTools/X_MaterialFunctionCore.h"
+#include "MaterialTools/X_MaterialConstants.h"
 
 // 拆分后模块
 #include "MaterialTools/X_MaterialFunctionCollector.h"
@@ -40,6 +41,67 @@
 // UE官方材质编辑API
 #include "MaterialEditingLibrary.h"
 #include "MaterialGraph/MaterialGraph.h"
+
+namespace
+{
+    FString NormalizeMaterialPreviewName(const FString& InName)
+    {
+        FString Lower = InName.ToLower();
+        FString Result;
+        for (const TCHAR Char : Lower)
+        {
+            if (FChar::IsAlnum(Char))
+            {
+                Result.AppendChar(Char);
+            }
+        }
+        return Result;
+    }
+
+    int32 CalculatePreviewMatchScore(const FString& OutputName, const FString& SemanticName, const TArray<FString>& Aliases = {})
+    {
+        const FString NormalizedOutput = NormalizeMaterialPreviewName(OutputName);
+
+        auto ScoreCandidate = [&NormalizedOutput](const FString& Candidate) -> int32
+        {
+            const FString NormalizedCandidate = NormalizeMaterialPreviewName(Candidate);
+            if (NormalizedOutput.IsEmpty() || NormalizedCandidate.IsEmpty())
+            {
+                return -1;
+            }
+
+            if (NormalizedOutput == NormalizedCandidate)
+            {
+                return 120;
+            }
+
+            if (NormalizedOutput.StartsWith(NormalizedCandidate) || NormalizedOutput.EndsWith(NormalizedCandidate))
+            {
+                return 90;
+            }
+
+            if (NormalizedOutput.Contains(NormalizedCandidate))
+            {
+                return 60;
+            }
+
+            return -1;
+        };
+
+        int32 BestScore = ScoreCandidate(SemanticName);
+        for (const FString& Alias : Aliases)
+        {
+            BestScore = FMath::Max(BestScore, ScoreCandidate(Alias));
+        }
+
+        if (BestScore < 0 && NormalizedOutput == TEXT("result"))
+        {
+            BestScore = 10;
+        }
+
+        return BestScore;
+    }
+}
 
 
 /**
@@ -854,6 +916,238 @@ void FX_MaterialFunctionOperation::GetFunctionInputOutputCount(
     // 清理临时对象
     FunctionCall->MarkAsGarbage();
     TempMaterial->MarkAsGarbage();
+}
+
+FText FX_MaterialFunctionOperation::BuildFunctionSummary(UMaterialFunctionInterface* Function)
+{
+    if (!Function)
+    {
+        return LOCTEXT("MaterialFunctionSummaryInvalid", "未能读取材质函数信息。");
+    }
+
+    TArray<FFunctionExpressionInput> Inputs;
+    TArray<FFunctionExpressionOutput> Outputs;
+    Function->GetInputsAndOutputs(Inputs, Outputs);
+
+    TArray<FText> InputNames;
+    for (const FFunctionExpressionInput& Input : Inputs)
+    {
+        const FName InputName = Input.Input.InputName;
+        InputNames.Add(InputName.IsNone() ? LOCTEXT("UnnamedInput", "未命名输入") : FText::FromName(InputName));
+    }
+
+    TArray<FText> OutputNames;
+    for (const FFunctionExpressionOutput& Output : Outputs)
+    {
+        const FName OutputName = Output.Output.OutputName;
+        OutputNames.Add(OutputName.IsNone() ? LOCTEXT("UnnamedOutput", "未命名输出") : FText::FromName(OutputName));
+    }
+
+    const FText InputsText = InputNames.Num() > 0
+        ? FText::Join(FText::FromString(TEXT("、")), InputNames)
+        : LOCTEXT("NoInputs", "无");
+    const FText OutputsText = OutputNames.Num() > 0
+        ? FText::Join(FText::FromString(TEXT("、")), OutputNames)
+        : LOCTEXT("NoOutputs", "无");
+
+    FText StrategyText = LOCTEXT("SummaryStrategyDirect", "建议：以单输出最终属性函数方式使用。");
+    if (Outputs.Num() > 1)
+    {
+        StrategyText = LOCTEXT("SummaryStrategyMultiOutput", "建议：这是多输出函数，执行前确认每个输出的语义与目标属性是否一致。");
+    }
+    else if (Inputs.Num() > 0 && Outputs.Num() > 0)
+    {
+        StrategyText = LOCTEXT("SummaryStrategySmart", "建议：优先使用智能连接或插入链路模式。");
+    }
+
+    return FText::Format(
+        LOCTEXT("MaterialFunctionSummaryFormat", "输入 {0} 个：{1}\n输出 {2} 个：{3}\n{4}"),
+        FText::AsNumber(Inputs.Num()),
+        InputsText,
+        FText::AsNumber(Outputs.Num()),
+        OutputsText,
+        StrategyText);
+}
+
+bool FX_MaterialFunctionOperation::HasMaterialAttributesOutput(UMaterialFunctionInterface* Function)
+{
+    if (!Function)
+    {
+        return false;
+    }
+
+    TArray<FFunctionExpressionInput> Inputs;
+    TArray<FFunctionExpressionOutput> Outputs;
+    Function->GetInputsAndOutputs(Inputs, Outputs);
+
+    for (const FFunctionExpressionOutput& Output : Outputs)
+    {
+        const FName OutputName = Output.Output.OutputName;
+        if (OutputName.ToString().Contains(TEXT("Attributes")))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+FText FX_MaterialFunctionOperation::BuildFunctionOutputNamesText(UMaterialFunctionInterface* Function)
+{
+    if (!Function)
+    {
+        return FText::GetEmpty();
+    }
+
+    TArray<FFunctionExpressionInput> Inputs;
+    TArray<FFunctionExpressionOutput> Outputs;
+    Function->GetInputsAndOutputs(Inputs, Outputs);
+
+    TArray<FText> OutputNames;
+    for (const FFunctionExpressionOutput& Output : Outputs)
+    {
+        const FName OutputName = Output.Output.OutputName;
+        OutputNames.Add(OutputName.IsNone() ? LOCTEXT("UnnamedOutputPreview", "未命名输出") : FText::FromName(OutputName));
+    }
+
+    return OutputNames.Num() > 0
+        ? FText::Join(FText::FromString(TEXT("、")), OutputNames)
+        : LOCTEXT("NoOutputPreview", "无");
+}
+
+FText FX_MaterialFunctionOperation::BuildConnectionPreviewText(UMaterialFunctionInterface* Function, const FX_MaterialFunctionParams& Params)
+{
+    if (!Function)
+    {
+        return LOCTEXT("ConnectionPreviewInvalidFunction", "预计执行结果：当前无法读取所选材质函数。");
+    }
+
+    TArray<FFunctionExpressionInput> Inputs;
+    TArray<FFunctionExpressionOutput> Outputs;
+    Function->GetInputsAndOutputs(Inputs, Outputs);
+
+    auto GetOutputLabel = [&Outputs](int32 Index) -> FText
+    {
+        if (!Outputs.IsValidIndex(Index))
+        {
+            return LOCTEXT("ConnectionPreviewUnknownOutput", "未命名输出");
+        }
+
+        const FName OutputName = Outputs[Index].Output.OutputName;
+        return OutputName.IsNone() ? LOCTEXT("ConnectionPreviewUnnamedOutput", "未命名输出") : FText::FromName(OutputName);
+    };
+
+    if (!Params.bSetupConnections)
+    {
+        return FText::Format(
+            LOCTEXT("ConnectionPreviewNodeOnly", "预计执行：只添加节点“{0}”，不会自动建立输出连接。"),
+            FText::FromString(Params.NodeName));
+    }
+
+    if (Outputs.Num() == 0)
+    {
+        return LOCTEXT("ConnectionPreviewNoOutputs", "预计执行：当前函数没有可用输出，无法建立材质属性连接。");
+    }
+
+    if (Params.bUseMaterialAttributes)
+    {
+        int32 PreferredIndex = 0;
+        for (int32 Index = 0; Index < Outputs.Num(); ++Index)
+        {
+            if (Outputs[Index].Output.OutputName.ToString().Contains(TEXT("Attributes")))
+            {
+                PreferredIndex = Index;
+                break;
+            }
+        }
+
+        return FText::Format(
+            LOCTEXT("ConnectionPreviewMaterialAttributes", "预计执行：优先使用输出“{0}”接入 Material Attributes 主链路，并尽量保留现有材质链路。"),
+            GetOutputLabel(PreferredIndex));
+    }
+
+    if (Params.bEnableSmartConnect)
+    {
+        if (Outputs.Num() == 1)
+        {
+            return FText::Format(
+                LOCTEXT("ConnectionPreviewSmartSingleOutput", "预计执行：使用唯一输出“{0}”进行智能连接，并自动推断最合适的插入位置。"),
+                GetOutputLabel(0));
+        }
+
+        return FText::Format(
+            LOCTEXT("ConnectionPreviewSmartMultiOutput", "预计执行：根据输出语义在 {0} 个输出中自动选择最合适的连接来源。多输出函数会优先按输出名匹配目标属性。"),
+            FText::AsNumber(Outputs.Num()));
+    }
+
+    struct FPreviewTarget
+    {
+        bool bEnabled;
+        FString Label;
+        FString SemanticName;
+        TArray<FString> Aliases;
+    };
+
+    const TArray<FPreviewTarget> PreviewTargets = {
+        {Params.bConnectToBaseColor, TEXT("Base Color"), X_MaterialConstants::BaseColor, {X_MaterialConstants::Alias_Albedo, X_MaterialConstants::Alias_Diffuse}},
+        {Params.bConnectToMetallic, TEXT("Metallic"), X_MaterialConstants::Metallic, {X_MaterialConstants::Alias_Metalness}},
+        {Params.bConnectToRoughness, TEXT("Roughness"), X_MaterialConstants::Roughness, {X_MaterialConstants::Alias_Rough}},
+        {Params.bConnectToNormal, TEXT("Normal"), X_MaterialConstants::Normal, {}},
+        {Params.bConnectToEmissive, TEXT("Emissive Color"), X_MaterialConstants::EmissiveColor, {X_MaterialConstants::Alias_Emission, X_MaterialConstants::Alias_Emissive}},
+        {Params.bConnectToAO, TEXT("Ambient Occlusion"), X_MaterialConstants::AmbientOcclusion, {X_MaterialConstants::Alias_AO, X_MaterialConstants::Alias_Ambient}}
+    };
+
+    TArray<FText> PreviewLines;
+    for (const FPreviewTarget& Target : PreviewTargets)
+    {
+        if (!Target.bEnabled)
+        {
+            continue;
+        }
+
+        int32 BestIndex = 0;
+        int32 BestScore = -1;
+        for (int32 OutputIndex = 0; OutputIndex < Outputs.Num(); ++OutputIndex)
+        {
+            const int32 Score = CalculatePreviewMatchScore(
+                Outputs[OutputIndex].Output.OutputName.ToString(),
+                Target.SemanticName,
+                Target.Aliases);
+
+            if (Score > BestScore)
+            {
+                BestScore = Score;
+                BestIndex = OutputIndex;
+            }
+        }
+
+        PreviewLines.Add(FText::Format(
+            LOCTEXT("ConnectionPreviewLine", "输出“{0}” -> {1}"),
+            GetOutputLabel(BestIndex),
+            FText::FromString(Target.Label)));
+    }
+
+    FText ModeText = LOCTEXT("ConnectionPreviewDirect", "直接连接");
+    if (Params.ConnectionMode == EConnectionMode::Add)
+    {
+        ModeText = LOCTEXT("ConnectionPreviewAdd", "Add 叠加");
+    }
+    else if (Params.ConnectionMode == EConnectionMode::Multiply)
+    {
+        ModeText = LOCTEXT("ConnectionPreviewMultiply", "Multiply 相乘");
+    }
+
+    if (PreviewLines.Num() == 0)
+    {
+        return FText::Format(
+            LOCTEXT("ConnectionPreviewManualNoTargets", "预计执行：当前处于“{0}”手动模式，但尚未选择任何最终材质属性。"),
+            ModeText);
+    }
+
+    return FText::Format(
+        LOCTEXT("ConnectionPreviewManualMapped", "预计执行：以“{0}”模式建立这些连接：\n{1}"),
+        ModeText,
+        FText::Join(FText::FromString(TEXT("\n")), PreviewLines));
 }
 
 #undef LOCTEXT_NAMESPACE

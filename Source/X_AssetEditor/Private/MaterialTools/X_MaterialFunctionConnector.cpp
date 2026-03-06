@@ -22,6 +22,59 @@ namespace
 {
     int32 CalculateMatchScore(const FString& InputName, const FString& TargetName);
 
+    bool TryGetExpressionOutputName(UMaterialExpression* Expression, int32 OutputIndex, FString& OutOutputName)
+    {
+        if (!Expression)
+        {
+            return false;
+        }
+
+        TArray<FExpressionOutput>& Outputs = Expression->GetOutputs();
+        if (!Outputs.IsValidIndex(OutputIndex))
+        {
+            return false;
+        }
+
+        const FExpressionOutput& Output = Outputs[OutputIndex];
+        if (!Output.OutputName.IsNone())
+        {
+            OutOutputName = Output.OutputName.ToString();
+            return true;
+        }
+
+        if (OutputIndex == 0)
+        {
+            OutOutputName.Reset();
+            return true;
+        }
+
+        if (Output.MaskR && !Output.MaskG && !Output.MaskB && !Output.MaskA)
+        {
+            OutOutputName = TEXT("R");
+            return true;
+        }
+
+        if (!Output.MaskR && Output.MaskG && !Output.MaskB && !Output.MaskA)
+        {
+            OutOutputName = TEXT("G");
+            return true;
+        }
+
+        if (!Output.MaskR && !Output.MaskG && Output.MaskB && !Output.MaskA)
+        {
+            OutOutputName = TEXT("B");
+            return true;
+        }
+
+        if (!Output.MaskR && !Output.MaskG && !Output.MaskB && Output.MaskA)
+        {
+            OutOutputName = TEXT("A");
+            return true;
+        }
+
+        return false;
+    }
+
     FString NormalizeForMatch(const FString& InName)
     {
         FString Lower = InName.ToLower();
@@ -342,9 +395,22 @@ bool FX_MaterialFunctionConnector::ConnectExpressionToMaterialProperty(
         return false;
     }
 
-    //  优先使用UE官方API进行连接
-    FString OutputName = OutputIndex == 0 ? FString() : FString::Printf(TEXT("%d"), OutputIndex);
-    bool bSuccess = UMaterialEditingLibrary::ConnectMaterialProperty(Expression, OutputName, MaterialProperty);
+    // 优先按 UE 官方语义传递真实输出名；拿不到输出名时再回退到索引直连。
+    FString OutputName;
+    bool bSuccess = false;
+    if (TryGetExpressionOutputName(Expression, OutputIndex, OutputName))
+    {
+        bSuccess = UMaterialEditingLibrary::ConnectMaterialProperty(Expression, OutputName, MaterialProperty);
+    }
+    else
+    {
+        UE_LOG(
+            LogX_AssetEditor,
+            Warning,
+            TEXT("无法解析表达式 %s 的输出 %d 名称，跳过官方API并尝试直接连接"),
+            *Expression->GetClass()->GetName(),
+            OutputIndex);
+    }
     
     if (bSuccess)
     {
@@ -1145,12 +1211,25 @@ bool FX_MaterialFunctionConnector::ConnectMaterialAttributesToMaterial(
         // 没有现有连接，直接连接到材质主节点
         UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes引脚未连接，直接连接到材质主节点"));
 
-        // 优先使用UE官方API
-        bool bSuccess = UMaterialEditingLibrary::ConnectMaterialProperty(
-            FunctionCall,
-            OutputIndex == 0 ? FString() : FString::Printf(TEXT("%d"), OutputIndex),
-            MP_MaterialAttributes
-        );
+        // 优先按 UE 官方语义传递真实输出名。
+        FString OutputName;
+        bool bSuccess = false;
+        if (TryGetExpressionOutputName(FunctionCall, OutputIndex, OutputName))
+        {
+            bSuccess = UMaterialEditingLibrary::ConnectMaterialProperty(
+                FunctionCall,
+                OutputName,
+                MP_MaterialAttributes
+            );
+        }
+        else
+        {
+            UE_LOG(
+                LogX_AssetEditor,
+                Warning,
+                TEXT("无法解析函数输出 %d 的名称，跳过官方API并尝试直接连接MaterialAttributes"),
+                OutputIndex);
+        }
 
         if (bSuccess)
         {

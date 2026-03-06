@@ -1,13 +1,14 @@
 #include "MaterialTools/X_MaterialFunctionUI.h"
 
 #include "Materials/MaterialFunction.h"
-#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/Views/STableRow.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Styling/AppStyle.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Logging/LogMacros.h"
@@ -32,43 +33,98 @@
 void SX_MaterialNodePicker::Construct(const FArguments& InArgs)
 {
     OnNodeSelectedDelegate = InArgs._OnNodeSelected;
-    
-    // 获取常用节点名称
     NodeNames = FX_MaterialFunctionUI::GetCommonNodeNames();
-    
+    RefreshFilteredNodeNames();
+    if (FilteredNodeNames.Num() > 0)
+    {
+        PendingSelection = FilteredNodeNames[0];
+    }
+
     ChildSlot
     [
         SNew(SVerticalBox)
-        
-        // 标题
         + SVerticalBox::Slot()
         .AutoHeight()
-        .Padding(5)
+        .Padding(8.0f, 8.0f, 8.0f, 4.0f)
         [
             SNew(STextBlock)
             .Text(LOCTEXT("SelectNodeTitle", "选择目标节点"))
             .Font(FAppStyle::Get().GetFontStyle("HeadingFont"))
         ]
-        
-        // 节点列表
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 4.0f)
+        [
+            SAssignNew(SearchBox, SSearchBox)
+            .HintText(LOCTEXT("NodeSearchHint", "搜索目标节点"))
+            .OnTextChanged(this, &SX_MaterialNodePicker::HandleSearchTextChanged)
+        ]
         + SVerticalBox::Slot()
         .FillHeight(1.0f)
-        .Padding(5)
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
         [
-            SAssignNew(NodeListBox, SScrollBox)
+            SAssignNew(NodeListView, SListView<TSharedPtr<FName>>)
+            .ListItemsSource(&FilteredNodeNames)
+            .SelectionMode(ESelectionMode::Single)
+            .OnGenerateRow(this, &SX_MaterialNodePicker::GenerateNodeItem)
+            .OnSelectionChanged(this, &SX_MaterialNodePicker::HandleNodeSelectionChanged)
+            .OnMouseButtonDoubleClick(this, &SX_MaterialNodePicker::HandleNodeDoubleClicked)
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        [
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+            .HAlign(HAlign_Right)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(2.0f)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
+                    .ForegroundColor(FLinearColor::White)
+                    .ContentPadding(FMargin(8, 2))
+                    .IsEnabled_Lambda([this]()
+                    {
+                        return PendingSelection.IsValid();
+                    })
+                    .OnClicked(this, &SX_MaterialNodePicker::OnConfirmClicked)
+                    [
+                        SNew(STextBlock)
+                        .TextStyle(FAppStyle::Get(), "ContentBrowser.TopBar.Font")
+                        .Text(LOCTEXT("NodePickerConfirm", "确定"))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(2.0f)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "FlatButton")
+                    .ForegroundColor(FLinearColor::White)
+                    .ContentPadding(FMargin(8, 2))
+                    .OnClicked(this, &SX_MaterialNodePicker::OnCancelClicked)
+                    [
+                        SNew(STextBlock)
+                        .TextStyle(FAppStyle::Get(), "ContentBrowser.TopBar.Font")
+                        .Text(LOCTEXT("NodePickerCancel", "取消"))
+                    ]
+                ]
+            ]
         ]
     ];
-    
-    // 填充节点列表
-    if (NodeListBox.IsValid())
+
+    if (NodeListView.IsValid() && PendingSelection.IsValid())
     {
-        for (TSharedPtr<FName> NodeName : NodeNames)
-        {
-            NodeListBox->AddSlot()
-            [
-                GenerateNodeItem(NodeName)
-            ];
-        }
+        NodeListView->SetSelection(PendingSelection);
+    }
+
+    if (SearchBox.IsValid())
+    {
+        FSlateApplication::Get().SetKeyboardFocus(SearchBox, EFocusCause::SetDirectly);
     }
 }
 
@@ -88,43 +144,112 @@ TSharedRef<SWindow> SX_MaterialNodePicker::CreateNodePickerWindow(FOnMaterialNod
     return Window;
 }
 
-TSharedRef<SWidget> SX_MaterialNodePicker::GenerateNodeItem(TSharedPtr<FName> NodeName)
+TSharedRef<ITableRow> SX_MaterialNodePicker::GenerateNodeItem(TSharedPtr<FName> NodeName, const TSharedRef<STableViewBase>& OwnerTable)
 {
-    return SNew(SButton)
-        .ButtonStyle(FAppStyle::Get(), "NoBorder")
-        .OnClicked(this, &SX_MaterialNodePicker::OnNodeSelected, NodeName)
-        .HAlign(HAlign_Left)
-        .VAlign(VAlign_Center)
-        .ContentPadding(FMargin(5, 2))
+    return SNew(STableRow<TSharedPtr<FName>>, OwnerTable)
         [
             SNew(STextBlock)
-            .Text(FText::FromName(*NodeName))
+            .Text(NodeName.IsValid() ? FText::FromName(*NodeName) : FText::GetEmpty())
             .Font(FAppStyle::Get().GetFontStyle("NormalFont"))
         ];
 }
 
-FReply SX_MaterialNodePicker::OnNodeSelected(TSharedPtr<FName> NodeName)
+void SX_MaterialNodePicker::RefreshFilteredNodeNames()
 {
+    FilteredNodeNames.Reset();
+
+    const FString SearchLower = SearchText.ToLower();
+    for (const TSharedPtr<FName>& NodeName : NodeNames)
+    {
+        if (!NodeName.IsValid())
+        {
+            continue;
+        }
+
+        const FString NodeText = NodeName->ToString();
+        if (SearchLower.IsEmpty() || NodeText.ToLower().Contains(SearchLower))
+        {
+            FilteredNodeNames.Add(NodeName);
+        }
+    }
+
+    if (!FilteredNodeNames.Contains(PendingSelection))
+    {
+        PendingSelection = FilteredNodeNames.Num() > 0 ? FilteredNodeNames[0] : nullptr;
+    }
+}
+
+void SX_MaterialNodePicker::ConfirmSelection()
+{
+    if (!PendingSelection.IsValid())
+    {
+        return;
+    }
+
     if (OnNodeSelectedDelegate.IsBound())
     {
-        OnNodeSelectedDelegate.Execute(*NodeName);
+        OnNodeSelectedDelegate.Execute(*PendingSelection);
     }
-    
-    // 关闭窗口
-    TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(AsShared());
-    if (Window.IsValid())
+
+    if (TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(AsShared()))
     {
         Window->RequestDestroyWindow();
     }
-    
+}
+
+void SX_MaterialNodePicker::HandleSearchTextChanged(const FText& InSearchText)
+{
+    SearchText = InSearchText.ToString();
+    RefreshFilteredNodeNames();
+
+    if (NodeListView.IsValid())
+    {
+        NodeListView->RequestListRefresh();
+        if (PendingSelection.IsValid())
+        {
+            NodeListView->SetSelection(PendingSelection);
+            NodeListView->RequestScrollIntoView(PendingSelection);
+        }
+    }
+}
+
+void SX_MaterialNodePicker::HandleNodeSelectionChanged(TSharedPtr<FName> NodeName, ESelectInfo::Type SelectInfo)
+{
+    PendingSelection = NodeName;
+}
+
+void SX_MaterialNodePicker::HandleNodeDoubleClicked(TSharedPtr<FName> NodeName)
+{
+    PendingSelection = NodeName;
+    ConfirmSelection();
+}
+
+FReply SX_MaterialNodePicker::OnConfirmClicked()
+{
+    ConfirmSelection();
+    return FReply::Handled();
+}
+
+FReply SX_MaterialNodePicker::OnCancelClicked()
+{
+    if (TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(AsShared()))
+    {
+        Window->RequestDestroyWindow();
+    }
+
     return FReply::Handled();
 }
 
 // 使用新版的资产选择器实现
 TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FOnMaterialFunctionSelected OnFunctionSelected)
 {
+    return ShowMaterialFunctionPickerWindow(OnFunctionSelected);
+}
+
+TSharedRef<SWindow> FX_MaterialFunctionUI::ShowMaterialFunctionPickerWindow(FOnMaterialFunctionSelected OnFunctionSelected)
+{
     // 打印日志，标明使用了哪个方法
-    UE_LOG(LogX_AssetEditor, Warning, TEXT("FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow 调用 - 使用新版选择器"));
+    UE_LOG(LogX_AssetEditor, Verbose, TEXT("FX_MaterialFunctionUI::ShowMaterialFunctionPickerWindow 调用"));
     
     // 创建窗口
     TSharedRef<SWindow> Window = SNew(SWindow)
@@ -134,6 +259,26 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
         .SupportsMinimize(false);
 
     const TWeakPtr<SWindow> WeakWindow = Window;
+    TSharedPtr<FAssetData> PendingSelection = MakeShared<FAssetData>();
+
+    auto ConfirmSelection = [OnFunctionSelected, WeakWindow, PendingSelection]()
+    {
+        if (!PendingSelection.IsValid() || !PendingSelection->IsValid())
+        {
+            return;
+        }
+
+        UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(PendingSelection->GetAsset());
+        if (MaterialFunction && OnFunctionSelected.IsBound())
+        {
+            OnFunctionSelected.Execute(MaterialFunction);
+        }
+
+        if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
+        {
+            PinnedWindow->RequestDestroyWindow();
+        }
+    };
 
     // 配置资产选择器
     FAssetPickerConfig AssetPickerConfig;
@@ -155,13 +300,14 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
     // 启用过滤器UI和其他选项
     AssetPickerConfig.bAddFilterUI = true;               // 启用过滤器UI
     AssetPickerConfig.bCanShowRealTimeThumbnails = true;
-    AssetPickerConfig.bFocusSearchBoxWhenOpened = false;
+    AssetPickerConfig.bFocusSearchBoxWhenOpened = true;
     AssetPickerConfig.SaveSettingsName = TEXT("MaterialFunctionPicker"); // 保存设置
 
     // 单击仅选中，避免误触就执行操作；双击作为确认行为
     AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateLambda(
-        [](const FAssetData& AssetData)
+        [PendingSelection](const FAssetData& AssetData)
         {
+            *PendingSelection = AssetData;
             if (const UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset()))
             {
                 UE_LOG(LogX_AssetEditor, Verbose, TEXT("材质函数已选中(待确认): %s"), *MaterialFunction->GetName());
@@ -170,34 +316,87 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
 
     // 配置双击回调
     AssetPickerConfig.OnAssetDoubleClicked = FOnAssetDoubleClicked::CreateLambda(
-        [OnFunctionSelected, WeakWindow](const FAssetData& AssetData)
+        [PendingSelection, ConfirmSelection](const FAssetData& AssetData)
         {
-            UMaterialFunctionInterface* MaterialFunction = Cast<UMaterialFunctionInterface>(AssetData.GetAsset());
-            if (MaterialFunction && OnFunctionSelected.IsBound())
-            {
-                OnFunctionSelected.Execute(MaterialFunction);
-            }
-            
-            // 关闭窗口
-            if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
-            {
-                PinnedWindow->RequestDestroyWindow();
-            }
+            *PendingSelection = AssetData;
+            ConfirmSelection();
         });
 
     // 创建资产选择器小部件
-    TSharedRef<SWidget> AssetPickerWidget = SNew(SBox)
-        .WidthOverride(400.0f)
-        .HeightOverride(600.0f)
+    TSharedRef<SWidget> AssetPickerWidget =
+        SNew(SVerticalBox)
+        + SVerticalBox::Slot()
+        .FillHeight(1.0f)
         [
-            FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser").Get().CreateAssetPicker(AssetPickerConfig)
+            SNew(SBox)
+            .WidthOverride(400.0f)
+            .HeightOverride(560.0f)
+            [
+                FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser").Get().CreateAssetPicker(AssetPickerConfig)
+            ]
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 6.0f, 8.0f, 8.0f)
+        [
+            SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+            .HAlign(HAlign_Right)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(2.0f)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
+                    .ForegroundColor(FLinearColor::White)
+                    .ContentPadding(FMargin(8, 2))
+                    .IsEnabled_Lambda([PendingSelection]()
+                    {
+                        return PendingSelection.IsValid() && PendingSelection->IsValid();
+                    })
+                    .OnClicked_Lambda([ConfirmSelection]()
+                    {
+                        ConfirmSelection();
+                        return FReply::Handled();
+                    })
+                    [
+                        SNew(STextBlock)
+                        .TextStyle(FAppStyle::Get(), "ContentBrowser.TopBar.Font")
+                        .Text(LOCTEXT("MaterialFunctionPickerConfirm", "确定"))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(2.0f)
+                [
+                    SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "FlatButton")
+                    .ForegroundColor(FLinearColor::White)
+                    .ContentPadding(FMargin(8, 2))
+                    .OnClicked_Lambda([WeakWindow]()
+                    {
+                        if (const TSharedPtr<SWindow> PinnedWindow = WeakWindow.Pin())
+                        {
+                            PinnedWindow->RequestDestroyWindow();
+                        }
+                        return FReply::Handled();
+                    })
+                    [
+                        SNew(STextBlock)
+                        .TextStyle(FAppStyle::Get(), "ContentBrowser.TopBar.Font")
+                        .Text(LOCTEXT("MaterialFunctionPickerCancel", "取消"))
+                    ]
+                ]
+            ]
         ];
 
     // 设置窗口内容
     Window->SetContent(AssetPickerWidget);
 
     // 添加为模态窗口
-    FSlateApplication::Get().AddModalWindow(Window, nullptr, false);
+    FSlateApplication::Get().AddModalWindow(Window, FSlateApplication::Get().GetActiveTopLevelWindow(), false);
 
     return Window;
 }
@@ -205,6 +404,13 @@ TSharedRef<SWindow> FX_MaterialFunctionUI::CreateMaterialFunctionPickerWindow(FO
 TSharedRef<SWindow> FX_MaterialFunctionUI::CreateNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected)
 {
     return SX_MaterialNodePicker::CreateNodePickerWindow(OnNodeSelected);
+}
+
+TSharedRef<SWindow> FX_MaterialFunctionUI::ShowNodePickerWindow(FOnMaterialNodeSelected OnNodeSelected)
+{
+    TSharedRef<SWindow> Window = CreateNodePickerWindow(OnNodeSelected);
+    FSlateApplication::Get().AddModalWindow(Window, FSlateApplication::Get().GetActiveTopLevelWindow(), false);
+    return Window;
 }
 
 TArray<TSharedPtr<FName>> FX_MaterialFunctionUI::GetCommonNodeNames()
