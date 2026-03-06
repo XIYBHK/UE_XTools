@@ -1,162 +1,67 @@
-# XTools_SwitchLanguage 模块
+# XTools_SwitchLanguage
 
 ## 概述
 
-XTools_SwitchLanguage 是 XTools 插件的语言切换模块，提供运行时动态切换本地化语言的功能。该模块采用 XTools 前缀命名以避免与其他模块冲突。
+`XTools_SwitchLanguage` 是一个编辑器模块，为 Unreal Editor 工具栏提供一个中英切换按钮。
 
-## 功能特性
+当前实现目标很明确：
+- 在编辑器工具栏提供一键切换入口
+- 在 `en` 与 `zh-Hans` 之间切换编辑器语言
+- 尽量对齐 UE5.3 编辑器自身的国际化设置行为
 
-- **多语言支持**: 支持英语、中文、日语、韩语、法语、德语、西班牙语、俄语
-- **自动检测**: 可自动检测并切换到系统首选语言
-- **文化代码**: 支持通过文化代码（如 "zh-Hans", "en"）直接切换语言
-- **语言历史**: 记录最近的语言切换历史
-- **诊断工具**: 提供本地化系统诊断信息
-- **蓝图友好**: 所有功能都通过蓝图函数库暴露
+它不是一个通用运行时语言系统，也没有提供蓝图函数库或多语言管理框架。
 
-## 蓝图节点
+## 当前功能
 
-### 核心功能
-- **切换语言**: 切换到指定的枚举语言
-- **切换语言（文化代码）**: 通过文化代码切换语言
-- **重置为系统语言**: 恢复到系统首选语言
+- 在关卡编辑器工具栏添加语言切换按钮
+- 在资产编辑器默认工具栏添加语言切换按钮
+- 点击后在英文和简体中文之间切换
+- 切换成功后：
+  - 更新编辑器当前语言/地区设置
+  - 写入 `GEditorSettingsIni`
+  - 刷新本地化文本资源
+  - 清理图表可视化缓存
+  - 刷新当前已打开蓝图节点
 
-### 查询功能
-- **获取当前语言**: 获取当前使用的语言枚举
-- **获取当前文化代码**: 获取当前的文化代码
-- **获取支持的语言列表**: 获取所有可用语言的详细信息
-- **检查语言是否可用**: 检查指定语言是否可用
+## 实现说明
 
-### 转换功能
-- **语言枚举转文化代码**: 将枚举转换为文化代码
-- **文化代码转语言枚举**: 将文化代码转换为枚举
+该模块的切换逻辑参考了 UE5.3 编辑器国际化设置：
+- 当当前 `Language` 与 `Locale` 一致时，使用 `SetCurrentLanguageAndLocale`
+- 否则仅切换 `Language`
+- 设置会写入编辑器配置，而不是游戏运行时配置
 
-### 系统功能
-- **获取系统首选语言**: 获取系统首选的语言枚举
-- **获取系统首选文化代码**: 获取系统首选的文化代码
+这意味着它更接近“编辑器显示语言切换按钮”，而不是“项目内多语言系统”。
 
-### 历史管理
-- **获取语言切换历史**: 获取最近的切换历史
-- **清空语言切换历史**: 清空历史记录
+## 模块类型
 
-### 诊断工具
-- **获取本地化诊断信息**: 获取详细的系统诊断信息
-- **刷新本地化资源**: 强制刷新本地化资源
+- 模块名：`XTools_SwitchLanguage`
+- 模块类型：`Editor`
+- 适用场景：编辑器内工具栏扩展
 
-## 使用示例
+## 已知边界
 
-### 基本语言切换
-```cpp
-// 切换到中文
-FLanguageSwitchResult Result = UXTools_SwitchLanguageLibrary::SwitchLanguage(ESupportedLanguage::Chinese);
-if (Result.bSuccess)
-{
-    UE_LOG(LogTemp, Log, TEXT("语言切换成功: %s"), *Result.CultureName);
-}
-```
+- 当前只支持 `en` 和 `zh-Hans` 双向切换
+- 依赖目标语言存在对应的编辑器本地化资源
+- 主要覆盖编辑器 UI、蓝图图表和常见文本缓存刷新
+- 不提供运行时语言切换接口
 
-### 通过文化代码切换
-```cpp
-// 切换到日语
-FLanguageSwitchResult Result = UXTools_SwitchLanguageLibrary::SwitchLanguageByCulture(TEXT("ja"));
-```
+## 依赖
 
-### 获取当前语言信息
-```cpp
-ESupportedLanguage CurrentLang = UXTools_SwitchLanguageLibrary::GetCurrentLanguage();
-FString CultureName = UXTools_SwitchLanguageLibrary::GetCurrentCultureName();
-```
+- `Core`
+- `CoreUObject`
+- `Engine`
+- `Projects`
+- `EditorFramework`
+- `UnrealEd`
+- `ToolMenus`
+- `Slate`
+- `SlateCore`
+- `Kismet`
 
-### 获取支持的语言列表
-```cpp
-TArray<FLanguageInfo> SupportedLanguages = UXTools_SwitchLanguageLibrary::GetSupportedLanguages();
-for (const FLanguageInfo& LangInfo : SupportedLanguages)
-{
-    if (LangInfo.bIsAvailable)
-    {
-        UE_LOG(LogTemp, Log, TEXT("可用语言: %s (%s)"), 
-            *LangInfo.DisplayName.ToString(), *LangInfo.CultureCode);
-    }
-}
-```
+## 维护说明
 
-## 支持的语言
+如果后续要把这个模块扩展成完整语言工具，应明确拆分两类目标：
+- 编辑器语言切换
+- 游戏运行时/蓝图语言切换
 
-| 枚举值 | 文化代码 | 显示名称 |
-|--------|----------|----------|
-| English | en | English |
-| Chinese | zh-Hans | 中文 |
-| Japanese | ja | 日本語 |
-| Korean | ko | 한국어 |
-| French | fr | Français |
-| German | de | Deutsch |
-| Spanish | es | Español |
-| Russian | ru | Русский |
-| Auto | - | Auto |
-
-## 技术细节
-
-### 模块依赖
-- **XToolsCore** (版本兼容层和通用框架)
-  - 提供统一的错误/日志处理
-  - 跨版本兼容性支持
-  - 通用宏定义
-- **Core** (包含国际化功能和基础系统)
-- **CoreUObject** (UObject 系统)
-- **Engine** (引擎核心功能)
-
-### 平台支持
-- Windows 64位
-- macOS
-- Linux
-- Android
-- iOS
-
-### API 前缀
-- 类前缀: `XTools_SwitchLanguage` 或 `UXTools_SwitchLanguage`
-- 函数前缀: `XTOOLS_SWITCHLANGUAGE_API`
-- 宏定义: `WITH_XTOOLS_SWITCHLANGUAGE`
-
-### 本地化资源
-模块本身使用 LOCTEXT 进行本地化，支持通过 UE 本地化仪表板进行翻译。
-
-## 命名规范
-
-为了避免与参考模块 `SwitchLanguage` 产生冲突，本模块采用以下命名规范：
-
-- **模块名**: `XTools_SwitchLanguage`
-- **类名**: `UXTools_SwitchLanguageLibrary`, `FXTools_SwitchLanguageModule`
-- **文件名**: `XTools_SwitchLanguage.*`
-- **API 导出**: `XTOOLS_SWITCHLANGUAGE_API`
-- **宏定义**: `WITH_XTOOLS_SWITCHLANGUAGE`
-
-## 注意事项
-
-1. **资源可用性**: 语言切换成功与否取决于对应的本地化资源是否可用
-2. **运行时切换**: 切换后需要调用 `刷新本地化资源` 以确保 UI 更新
-3. **历史记录**: 语言切换历史最多保存 10 条记录
-4. **自动语言**: 选择 "Auto" 会自动切换到系统首选语言
-5. **模块冲突**: 通过 XTools 前缀避免与其他同名模块冲突
-
-## 故障排除
-
-### 语言切换失败
-- 检查本地化资源是否已正确部署
-- 使用 `获取本地化诊断信息` 查看详细状态
-- 确保目标文化代码在系统中可用
-
-### UI 未更新
-- 调用 `刷新本地化资源` 强制更新
-- 检查 UI 组件是否使用了 FText 而非 FString
-- 确保本地化资源已编译
-
-### 编译错误
-- 确保模块已在 XTools.uplugin 中正确注册
-- 检查依赖模块是否正确配置
-- 验证所有文件名和类名使用了正确的 XTools 前缀
-
-## 版本信息
-
-- 版本: 1.0.0
-- 兼容 UE 版本: 5.3-5.6
-- 依赖 XToolsCore: 1.9.1+
-- 模块类型: Runtime
+这两类需求在 UE 中使用的配置文件、切换 API 和刷新路径都不一样，不适合继续混在同一个简单工具栏模块里。

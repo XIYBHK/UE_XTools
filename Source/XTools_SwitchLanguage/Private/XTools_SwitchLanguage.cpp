@@ -11,10 +11,54 @@
 #include "Interfaces/IMainFrameModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Interfaces/IPluginManager.h"
+#include "EdGraph/EdGraphSchema.h"
+#include "Internationalization/Culture.h"
+#include "Internationalization/Internationalization.h"
+#include "Internationalization/TextLocalizationManager.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Editor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
+#include "UObject/UObjectIterator.h"
 
 #define LOCTEXT_NAMESPACE "FXTools_SwitchLanguageModule"
+
+namespace
+{
+FString GetNextEditorCulture()
+{
+	const FString CurrentLanguage = FInternationalization::Get().GetCurrentLanguage()->GetName();
+	if (CurrentLanguage == TEXT("en"))
+	{
+		return TEXT("zh-Hans");
+	}
+
+	if (CurrentLanguage.StartsWith(TEXT("zh")))
+	{
+		return TEXT("en");
+	}
+
+	return TEXT("en");
+}
+
+void PersistEditorLanguageSettings(const FString& CultureName)
+{
+	GConfig->SetString(TEXT("Internationalization"), TEXT("Language"), *CultureName, GEditorSettingsIni);
+	GConfig->SetString(TEXT("Internationalization"), TEXT("Locale"), *CultureName, GEditorSettingsIni);
+	GConfig->SetString(TEXT("Internationalization"), TEXT("Culture"), TEXT(""), GEditorSettingsIni);
+	GConfig->Flush(false, GEditorSettingsIni);
+}
+
+void RefreshGraphSchemas()
+{
+	for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
+	{
+		if (UEdGraphSchema* Schema = Cast<UEdGraphSchema>(ClassIt->GetDefaultObject()))
+		{
+			Schema->ForceVisualizationCacheClear();
+		}
+	}
+}
+}
 
 void FXTools_SwitchLanguageModule::StartupModule()
 {
@@ -82,23 +126,22 @@ void FXTools_SwitchLanguageModule::ShutdownModule()
 
 void FXTools_SwitchLanguageModule::PluginButtonClicked()
 {
-	// 简单切换：英文 <-> 中文
-	FString CurrentLanguage = UKismetInternationalizationLibrary::GetCurrentLanguage();
+	const FString TargetCulture = GetNextEditorCulture();
+	FInternationalization& I18N = FInternationalization::Get();
+	const bool bLanguageMatchesLocale = I18N.GetCurrentLanguage() == I18N.GetCurrentLocale();
+	const bool bSwitchSucceeded = bLanguageMatchesLocale
+		? I18N.SetCurrentLanguageAndLocale(TargetCulture)
+		: I18N.SetCurrentLanguage(TargetCulture);
 
-	if (CurrentLanguage == "en")
+	if (!bSwitchSucceeded)
 	{
-		UKismetInternationalizationLibrary::SetCurrentLanguage("zh-Hans");
-	}
-	else if (CurrentLanguage.StartsWith("zh"))
-	{
-		UKismetInternationalizationLibrary::SetCurrentLanguage("en");
-	}
-	else
-	{
-		UKismetInternationalizationLibrary::SetCurrentLanguage("en");
+		UE_LOG(LogTemp, Warning, TEXT("XTools_SwitchLanguage: Failed to switch editor language to '%s'."), *TargetCulture);
+		return;
 	}
 
-	// 刷新蓝图
+	PersistEditorLanguageSettings(TargetCulture);
+	FTextLocalizationManager::Get().RefreshResources();
+	RefreshGraphSchemas();
 	RefreshBlueprints();
 }
 
