@@ -57,6 +57,7 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
         Stats.PreallocationStartTime = FDateTime::Now();
         XTOOLS_ATOMIC_STORE(CurrentProgress, 0);
         AccumulatedTime = 0.0f;
+        OwnerWorld = World;
     }
 
     //  检查内存预算
@@ -104,6 +105,7 @@ void FObjectPoolPreallocator::StopPreallocation()
     }
 
     XTOOLS_ATOMIC_STORE(bIsActive, false);
+    OwnerWorld.Reset();
     
     {
         FScopeLock Lock(&PreallocatorLock);
@@ -130,12 +132,7 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
         return;
     }
 
-    //  使用子系统的智能World获取方法
-    UWorld* World = nullptr;
-    if (UObjectPoolSubsystem* Subsystem = UObjectPoolSubsystem::Get(nullptr))
-    {
-        World = Subsystem->GetWorld();
-    }
+    UWorld* World = OwnerWorld.Get();
 
     if (!World)
     {
@@ -333,8 +330,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
     double StartTime = FPlatformTime::Seconds();
 
     //  通过对象池创建Actor
-    FTransform DefaultTransform = FTransform::Identity;
-            bool bSuccess = OwnerPool->CreateNewActor(World) != nullptr;
+    const bool bSuccess = OwnerPool->CreateNewActor(World) != nullptr;
 
     if (bSuccess)
     {

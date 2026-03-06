@@ -192,6 +192,16 @@ public:
     bool IsActorPooled(const AActor* Actor) const;
 
     /**
+     * 查询指定类型是否已经存在池
+     */
+    bool IsActorClassRegistered(UClass* ActorClass) const;
+
+    /**
+     * 获取指定类型池的统计信息
+     */
+    FObjectPoolStats GetPoolStatsForClass(UClass* ActorClass) const;
+
+    /**
      * 获取所有池的统计信息（用于调试显示）
      * @return 所有池的统计信息数组
      */

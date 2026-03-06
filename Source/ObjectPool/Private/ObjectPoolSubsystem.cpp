@@ -453,16 +453,22 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetPool(UClass* ActorClass) const
 
 void UObjectPoolSubsystem::ClearAllPools()
 {
+    TArray<UClass*> DestroyedClasses;
     TArray<TSharedPtr<FActorPool>> PoolsToClear;
     {
         FWriteScopeLock WriteLock(PoolsRWLock);
         PoolsToClear.Reserve(ActorPools.Num());
+        DestroyedClasses.Reserve(ActorPools.Num());
 
         for (auto& PoolPair : ActorPools)
         {
             if (PoolPair.Value.IsValid())
             {
                 PoolsToClear.Add(PoolPair.Value);
+                if (IsValid(PoolPair.Key))
+                {
+                    DestroyedClasses.Add(PoolPair.Key);
+                }
             }
         }
 
@@ -473,6 +479,15 @@ void UObjectPoolSubsystem::ClearAllPools()
     }
 
     // 锁外执行清理，避免池内生命周期回调重入导致锁竞争
+    for (UClass* DestroyedClass : DestroyedClasses)
+    {
+        ++SubsystemStats.TotalPoolsDestroyed;
+        if (PoolManager.IsValid())
+        {
+            PoolManager->OnPoolDestroying(DestroyedClass);
+        }
+    }
+
     for (const TSharedPtr<FActorPool>& Pool : PoolsToClear)
     {
         if (Pool.IsValid())
@@ -515,6 +530,21 @@ bool UObjectPoolSubsystem::IsActorPooled(const AActor* Actor) const
         return false;
     }
     return Pool->ContainsActor(Actor);
+}
+
+bool UObjectPoolSubsystem::IsActorClassRegistered(UClass* ActorClass) const
+{
+    return GetPool(ActorClass).IsValid();
+}
+
+FObjectPoolStats UObjectPoolSubsystem::GetPoolStatsForClass(UClass* ActorClass) const
+{
+    if (TSharedPtr<FActorPool> Pool = GetPool(ActorClass))
+    {
+        return Pool->GetStats();
+    }
+
+    return FObjectPoolStats();
 }
 
 //  内部辅助方法实现
@@ -593,6 +623,11 @@ void UObjectPoolSubsystem::CleanupInvalidPools()
     for (UClass* InvalidClass : InvalidClasses)
     {
         ActorPools.Remove(InvalidClass);
+        ++SubsystemStats.TotalPoolsDestroyed;
+        if (PoolManager.IsValid() && IsValid(InvalidClass))
+        {
+            PoolManager->OnPoolDestroying(InvalidClass);
+        }
         OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清理无效池: %s"),
             InvalidClass ? *InvalidClass->GetName() : TEXT("Unknown"));
     }
@@ -678,6 +713,11 @@ void UObjectPoolSubsystem::OnPreGarbageCollect()
     for (UClass* InvalidKey : InvalidKeys)
     {
         ActorPools.Remove(InvalidKey);
+        ++SubsystemStats.TotalPoolsDestroyed;
+        if (PoolManager.IsValid() && IsValid(InvalidKey))
+        {
+            PoolManager->OnPoolDestroying(InvalidKey);
+        }
         OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("GC前清理：移除无效Actor类的池"));
     }
 }

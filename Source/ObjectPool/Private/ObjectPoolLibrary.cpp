@@ -302,7 +302,6 @@ int32 UObjectPoolLibrary::BatchSpawnActorsEx(const UObject* WorldContext, TSubcl
 
 bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
-    //  优先使用简化子系统
     UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
     if (!PoolSubsystem)
     {
@@ -310,16 +309,10 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
         return false;
     }
 
-    //  极简API设计：通过PrewarmPool(0)检查池是否存在
-    // 注意：这是内部实现细节，用户应该使用极简API
-    bool bRegistered = false;
-    //  通过PrewarmPool(0)检查池是否已注册（不使用异常）
-    int32 AvailableCount = PoolSubsystem->PrewarmPool(ActorClass, 0);
-    bRegistered = (AvailableCount >= 0);
+    const bool bRegistered = PoolSubsystem->IsActorClassRegistered(ActorClass);
     
-    OBJECTPOOL_LOG(VeryVerbose, TEXT("IsActorClassRegistered检查: %s, 可用数量=%d, 已注册=%s"),
+    OBJECTPOOL_LOG(VeryVerbose, TEXT("IsActorClassRegistered检查: %s, 已注册=%s"),
         ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
-        AvailableCount,
         bRegistered ? TEXT("是") : TEXT("否"));
 
     OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::IsActorClassRegistered: %s, 结果: %s"),
@@ -331,8 +324,14 @@ bool UObjectPoolLibrary::IsActorClassRegistered(const UObject* WorldContext, TSu
 
 FObjectPoolStats UObjectPoolLibrary::GetPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)
 {
-    //  极简API：直接返回空统计，避免死代码路径
-    return FObjectPoolStats();
+    UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
+    if (!PoolSubsystem)
+    {
+        OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::GetPoolStats: 无法获取对象池子系统"));
+        return FObjectPoolStats();
+    }
+
+    return PoolSubsystem->GetPoolStatsForClass(ActorClass);
 }
 
 void UObjectPoolLibrary::DisplayPoolStats(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, bool bShowOnScreen, bool bPrintToLog, float DisplayDuration, FLinearColor TextColor)

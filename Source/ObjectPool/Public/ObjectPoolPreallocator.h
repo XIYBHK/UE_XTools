@@ -181,6 +181,9 @@ private:
     /** 所属的对象池 */
     FActorPool* OwnerPool;
 
+    /** 启动预分配时绑定的世界 */
+    TWeakObjectPtr<UWorld> OwnerWorld;
+
     /** 预分配配置 */
     FObjectPoolConfig Config;
 

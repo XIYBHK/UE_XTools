@@ -504,6 +504,7 @@ void FActorPool::ClearPool()
         TotalRequests = 0;
         PoolHits = 0;
         TotalCreated = 0;
+        TotalReturned = 0;
     }
 
     // 锁外执行销毁，降低回调重入风险
