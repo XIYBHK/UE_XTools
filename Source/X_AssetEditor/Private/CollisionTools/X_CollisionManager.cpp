@@ -16,6 +16,7 @@
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Misc/MessageDialog.h"
 #include "Editor.h"
+#include "ScopedTransaction.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "StaticMeshEditorSubsystem.h"
 
@@ -23,8 +24,9 @@ DEFINE_LOG_CATEGORY(LogX_CollisionManager);
 
 FX_CollisionOperationResult FX_CollisionManager::RemoveCollisionFromAssets(const TArray<FAssetData>& SelectedAssets)
 {
+    FScopedTransaction Transaction(FText::FromString(TEXT("批量移除碰撞")));
     FX_CollisionOperationResult Result;
-    
+
     LogOperation(FString::Printf(TEXT("开始移除 %d 个资产的碰撞"), SelectedAssets.Num()));
 
     for (const FAssetData& AssetData : SelectedAssets)
@@ -66,8 +68,9 @@ FX_CollisionOperationResult FX_CollisionManager::RemoveCollisionFromAssets(const
 
 FX_CollisionOperationResult FX_CollisionManager::AddConvexCollisionToAssets(const TArray<FAssetData>& SelectedAssets)
 {
+    FScopedTransaction Transaction(FText::FromString(TEXT("批量添加凸包碰撞")));
     FX_CollisionOperationResult Result;
-    
+
     LogOperation(FString::Printf(TEXT("开始为 %d 个资产添加凸包碰撞"), SelectedAssets.Num()));
 
     for (const FAssetData& AssetData : SelectedAssets)
@@ -109,6 +112,7 @@ FX_CollisionOperationResult FX_CollisionManager::AddConvexCollisionToAssets(cons
 
 FX_CollisionOperationResult FX_CollisionManager::SetCollisionComplexity(const TArray<FAssetData>& SelectedAssets, EX_CollisionComplexity ComplexityType)
 {
+    FScopedTransaction Transaction(FText::FromString(TEXT("批量设置碰撞复杂度")));
     FX_CollisionOperationResult Result;
     ECollisionTraceFlag TraceFlag = ConvertToCollisionTraceFlag(ComplexityType);
     
@@ -170,6 +174,7 @@ FX_CollisionOperationResult FX_CollisionManager::SetCollisionComplexity(const TA
 
 FX_CollisionOperationResult FX_CollisionManager::AddSimpleCollisionToAssets(const TArray<FAssetData>& SelectedAssets, uint8 ShapeType)
 {
+    FScopedTransaction Transaction(FText::FromString(TEXT("批量添加简单碰撞")));
     FX_CollisionOperationResult Result;
 
     LogOperation(FString::Printf(TEXT("开始为 %d 个资产添加简单碰撞，类型=%d"), SelectedAssets.Num(), (int32)ShapeType));

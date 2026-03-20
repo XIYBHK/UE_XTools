@@ -120,7 +120,7 @@ public:
 	    FBPTerminal* ItemTerm = Context.NetMap.FindRef(ItemPinNet);
 
 	    // 在执行 MapAdd 前进行安全检查
-	    if (!*MapTerm || !KeyTerm || !ItemTerm)
+	    if (!MapTerm || !*MapTerm || !KeyTerm || !ItemTerm)
 	    {
 	        // 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
 	        Context.MessageLog.Warning(*NSLOCTEXT("K2Node", "Error_InvalidTerminals", "引脚寄了").ToString(), Node);
@@ -238,8 +238,7 @@ void UK2Node_MapRemoveArrayItem::PinConnectionListChanged(UEdGraphPin* Pin)
         }
     }
 
-    // 更新引脚类型
-    PropagatePinType();
+    // 类型传播统一由 NotifyPinConnectionListChanged 处理，避免双重回调
 }
 
 void UK2Node_MapRemoveArrayItem::NotifyPinConnectionListChanged(UEdGraphPin* Pin)

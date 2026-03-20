@@ -203,6 +203,7 @@ private:
     /** 是否已初始化 */
     bool bIsInitialized;
 
+    // 统计字段仅在持有 PoolLock 时访问，无需原子类型
     /** 总请求次数 */
     int64 TotalRequests;
 

@@ -33,13 +33,20 @@ public class XTools_EnhancedCodeFlow : ModuleRules
             "WITH_ENHANCEDCODEFLOW=1"
         });
 
-        // 必需的模块依赖
-        PrivateDependencyModuleNames.AddRange(
+        // 公共依赖模块（Core/CoreUObject/Engine 作为公共依赖，确保下游模块可正确链接）
+        PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"Core",
 				"CoreUObject",
-				"Engine",
+				"Engine"
+			}
+		);
+
+        // 私有依赖模块
+        PrivateDependencyModuleNames.AddRange(
+			new string[]
+			{
 				"Projects",   // IPluginManager 所在模块，用于检测外部 EnhancedCodeFlow 插件
 				"XToolsCore"  // UE 版本兼容性支持
 			}

@@ -48,10 +48,48 @@ bool FFormationMathUtils::DoPathsIntersect(
     float t = (AC.X * CD.Y - AC.Y * CD.X) / CrossAB_CD;
     float u = (AC.X * AB.Y - AC.Y * AB.X) / CrossAB_CD;
 
-    // 检查交点是否在两条线段上
-    return (t >= 0.0f && t <= 1.0f && u >= 0.0f && u <= 1.0f);
+    // 检查交点是否在两条线段上（精确相交）
+    if (t >= 0.0f && t <= 1.0f && u >= 0.0f && u <= 1.0f)
+    {
+        return true;
+    }
+
+    // 如果 Threshold > 0，检查两条线段的最短距离是否小于阈值
+    if (Threshold > 0.0f)
+    {
+        // 将 t 和 u 限制到 [0,1] 范围，计算两条线段间最近点对的距离
+        float ClampedT = FMath::Clamp(t, 0.0f, 1.0f);
+        float ClampedU = FMath::Clamp(u, 0.0f, 1.0f);
+
+        FVector2D ClosestOnAB = A + AB * ClampedT;
+        FVector2D ClosestOnCD = C + CD * ClampedU;
+
+        // 重新计算：从 ClosestOnAB 到 CD 的最近点
+        float CDLenSq = FVector2D::DotProduct(CD, CD);
+        if (CDLenSq > 1e-6f)
+        {
+            FVector2D AClosestToC = ClosestOnAB - C;
+            ClampedU = FMath::Clamp(FVector2D::DotProduct(AClosestToC, CD) / CDLenSq, 0.0f, 1.0f);
+            ClosestOnCD = C + CD * ClampedU;
+        }
+
+        // 从 ClosestOnCD 到 AB 的最近点
+        float ABLenSq = FVector2D::DotProduct(AB, AB);
+        if (ABLenSq > 1e-6f)
+        {
+            FVector2D CClosestToA = ClosestOnCD - A;
+            ClampedT = FMath::Clamp(FVector2D::DotProduct(CClosestToA, AB) / ABLenSq, 0.0f, 1.0f);
+            ClosestOnAB = A + AB * ClampedT;
+        }
+
+        float DistSq = FVector2D::DistSquared(ClosestOnAB, ClosestOnCD);
+        return (DistSq <= Threshold * Threshold);
+    }
+
+    return false;
 }
 
+// TODO: 使用空间分区将 O(N^2) 邻域查询优化为 O(N)
 FVector FFormationMathUtils::CalculateSeparationForce(
     int32 UnitIndex,
     const TArray<FVector>& Positions,

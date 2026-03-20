@@ -184,19 +184,22 @@ void UK2Node_MapIdentical::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 	{
 		if(GetMapAPin()->LinkedTo.Num() == 0 && GetMapBPin()->LinkedTo.Num() == 0)
 		{
-			GetMapAPin()->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetMapAPin()->PinType.PinSubCategory = NAME_None;
-			GetMapAPin()->PinType.PinSubCategoryObject = nullptr;
-			GetMapAPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetMapAPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
-			GetMapAPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
-			
-			GetMapBPin()->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetMapBPin()->PinType.PinSubCategory = NAME_None;
-			GetMapBPin()->PinType.PinSubCategoryObject = nullptr;
-			GetMapBPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetMapBPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
-			GetMapBPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+			// 仅在引脚当前类型已经是 Wildcard 时才重置，保留已序列化恢复的确定类型
+			if(GetMapAPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+			{
+				GetMapAPin()->PinType.PinSubCategory = NAME_None;
+				GetMapAPin()->PinType.PinSubCategoryObject = nullptr;
+				GetMapAPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
+				GetMapAPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
+				GetMapAPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+
+				GetMapBPin()->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+				GetMapBPin()->PinType.PinSubCategory = NAME_None;
+				GetMapBPin()->PinType.PinSubCategoryObject = nullptr;
+				GetMapBPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
+				GetMapBPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
+				GetMapBPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+			}
 		}
 		else
 		{

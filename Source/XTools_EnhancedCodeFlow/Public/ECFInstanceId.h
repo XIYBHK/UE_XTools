@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ECFTypes.h"
+#include <atomic>
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
@@ -84,7 +85,7 @@ protected:
 
 private:
 	
-	static uint64 DynamicIdCounter;
+	static std::atomic<uint64> DynamicIdCounter;
 };
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION

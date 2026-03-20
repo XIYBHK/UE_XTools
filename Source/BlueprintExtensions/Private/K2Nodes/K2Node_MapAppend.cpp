@@ -179,19 +179,22 @@ void UK2Node_MapAppend::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 	{
 		if(GetTargetMapPin()->LinkedTo.Num() == 0 && GetSourceMapPin()->LinkedTo.Num() == 0)
 		{
-			GetTargetMapPin()->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetTargetMapPin()->PinType.PinSubCategory = NAME_None;
-			GetTargetMapPin()->PinType.PinSubCategoryObject = nullptr;
-			GetTargetMapPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetTargetMapPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
-			GetTargetMapPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
-			
-			GetSourceMapPin()->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetSourceMapPin()->PinType.PinSubCategory = NAME_None;
-			GetSourceMapPin()->PinType.PinSubCategoryObject = nullptr;
-			GetSourceMapPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
-			GetSourceMapPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
-			GetSourceMapPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+			// 仅在引脚当前类型已经是 Wildcard 时才重置，保留已序列化恢复的确定类型
+			if(GetTargetMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+			{
+				GetTargetMapPin()->PinType.PinSubCategory = NAME_None;
+				GetTargetMapPin()->PinType.PinSubCategoryObject = nullptr;
+				GetTargetMapPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
+				GetTargetMapPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
+				GetTargetMapPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+
+				GetSourceMapPin()->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+				GetSourceMapPin()->PinType.PinSubCategory = NAME_None;
+				GetSourceMapPin()->PinType.PinSubCategoryObject = nullptr;
+				GetSourceMapPin()->PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Wildcard;
+				GetSourceMapPin()->PinType.PinValueType.TerminalSubCategory = NAME_None;
+				GetSourceMapPin()->PinType.PinValueType.TerminalSubCategoryObject = nullptr;
+			}
 		}
 		else
 		{

@@ -100,10 +100,9 @@ public class X_AssetEditor : ModuleRules
 		// 编译器优化设置
 		OptimizeCode = CodeOptimization.InShippingBuildsOnly;
 
-	// 添加模块定义
+	// 添加模块定义（WITH_EDITOR 由 UBT 对 Editor 类型模块自动定义，无需手动声明）
 	PublicDefinitions.AddRange(new string[] {
 		"WITH_X_ASSETEDITOR=1",
-		"WITH_EDITOR=1",
 		"UE_PLUGIN=1"
 	});
 	}

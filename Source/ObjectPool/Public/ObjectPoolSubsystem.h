@@ -214,6 +214,13 @@ public:
     const FObjectPoolSubsystemStats& GetStats() const { return SubsystemStats; }
 
     /**
+     * 清空指定类型的对象池
+     * @param ActorClass Actor类
+     * @return 是否成功清空
+     */
+    bool ClearPoolByClass(UClass* ActorClass);
+
+    /**
      * 获取当前池数量
      */
     int32 GetPoolCount() const;

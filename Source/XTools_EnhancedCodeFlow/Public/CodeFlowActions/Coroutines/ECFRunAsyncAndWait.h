@@ -57,14 +57,13 @@ protected:
 
 			XTOOLS_ATOMIC_STORE(bIsAsyncTaskDone, false);
 
-			TWeakObjectPtr<ThisClass> WeakThis(this);
-			AsyncTask(ThreadType, [WeakThis]()
+			// 将任务函数按值 move 到 lambda 中，避免后台线程通过 TWeakObjectPtr 访问 UObject（非线程安全）
+			TUniqueFunction<void()> TaskCopy = MoveTemp(AsyncTaskFunc);
+			TAtomic<bool>* DoneFlag = &bIsAsyncTaskDone;
+			AsyncTask(ThreadType, [Task = MoveTemp(TaskCopy), DoneFlag]()
 			{
-				if (ThisClass* StrongThis = WeakThis.Get())
-				{
-					StrongThis->AsyncTaskFunc();
-					XTOOLS_ATOMIC_STORE(StrongThis->bIsAsyncTaskDone, true);
-				}
+				Task();
+				XTOOLS_ATOMIC_STORE(*DoneFlag, true);
 			});
 
 			return true;

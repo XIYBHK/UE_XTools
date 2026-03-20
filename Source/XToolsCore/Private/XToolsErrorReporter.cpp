@@ -38,14 +38,20 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
                                           const FString& Message,
                                           const FName Context,
                                           bool bNotifyOnScreen,
-                                          float DisplayTime)
+                                          float DisplayTime,
+                                          const ANSICHAR* File,
+                                          int32 Line)
 {
     const FString FullMessage = BuildFullMessage(Message, Context);
 
     // 只在有有效日志分类时记录日志
     if (Category)
     {
-        FMsg::Logf(__FILE__, __LINE__, Category->GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
+        // 如果调用者通过宏传入了有效的文件/行号信息，使用调用者的位置；
+        // 否则回退到当前文件位置（向后兼容直接调用静态方法的情况）
+        const ANSICHAR* LogFile = (File && File[0] != '\0') ? File : __FILE__;
+        const int32 LogLine = (Line > 0) ? Line : __LINE__;
+        FMsg::Logf(LogFile, LogLine, Category->GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
     }
 
     if (bNotifyOnScreen && GEngine)

@@ -459,7 +459,37 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetPool(UClass* ActorClass) const
     return nullptr;
 }
 
+bool UObjectPoolSubsystem::ClearPoolByClass(UClass* ActorClass)
+{
+    if (!ActorClass)
+    {
+        return false;
+    }
 
+    TSharedPtr<FActorPool> PoolToClear;
+    {
+        FWriteScopeLock WriteLock(PoolsRWLock);
+        TSharedPtr<FActorPool>* Found = ActorPools.Find(ActorClass);
+        if (!Found || !Found->IsValid())
+        {
+            return false;
+        }
+        PoolToClear = *Found;
+        ActorPools.Remove(ActorClass);
+        ClearPoolCache();
+    }
+
+    ++SubsystemStats.TotalPoolsDestroyed;
+    if (PoolManager.IsValid())
+    {
+        PoolManager->OnPoolDestroying(ActorClass);
+    }
+
+    PoolToClear->ClearPool();
+
+    OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清空 %s 的对象池"), *ActorClass->GetName());
+    return true;
+}
 
 void UObjectPoolSubsystem::ClearAllPools()
 {

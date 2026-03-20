@@ -165,6 +165,9 @@ private:
 
 	/** 防止递归调用的标志 */
 	bool bIsReconstructingPins;
+
+	/** 防止 RebuildDynamicPins 递归调用 */
+	bool bIsRebuilding = false;
 #endif
 
 };

@@ -34,7 +34,7 @@ DEFINE_LOG_CATEGORY(LogBlueprintScreenshotTool);
 struct FWidgetSnapshotTextureData;
 
 bool UBlueprintScreenshotToolHandler::bTakingScreenshot = false;
-static TArray<TSharedPtr<SGraphEditor>> CachedGraphEditorsForWarmup;
+static TArray<TWeakPtr<SGraphEditor>> CachedGraphEditorsForWarmup;
 static TUniquePtr<FWidgetRenderer> CachedWarmupRenderer;
 
 namespace
@@ -119,7 +119,10 @@ void UBlueprintScreenshotToolHandler::PrepareForScreenshot()
 	}
 
 	CachedGraphEditorsForWarmup.Reset();
-	CachedGraphEditorsForWarmup = GraphEditors.Array();
+	for (const TSharedPtr<SGraphEditor>& Editor : GraphEditors)
+	{
+		CachedGraphEditorsForWarmup.Add(Editor);
+	}
 	CachedWarmupRenderer = MakeUnique<FWidgetRenderer>(true, true);
 	CachedWarmupRenderer->SetIsPrepassNeeded(true);
 
@@ -144,7 +147,14 @@ void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
 	TSet<TSharedPtr<SGraphEditor>> GraphEditors;
 	if (CachedGraphEditorsForWarmup.Num() > 0)
 	{
-		GraphEditors = TSet<TSharedPtr<SGraphEditor>>(CachedGraphEditorsForWarmup);
+		for (const TWeakPtr<SGraphEditor>& WeakEditor : CachedGraphEditorsForWarmup)
+		{
+			TSharedPtr<SGraphEditor> Pinned = WeakEditor.Pin();
+			if (Pinned.IsValid())
+			{
+				GraphEditors.Add(Pinned);
+			}
+		}
 		CachedGraphEditorsForWarmup.Reset();
 	}
 	else

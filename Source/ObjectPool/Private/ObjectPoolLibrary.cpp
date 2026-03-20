@@ -421,12 +421,17 @@ bool UObjectPoolLibrary::ClearPool(const UObject* WorldContext, TSubclassOf<AAct
         return false;
     }
 
-    //  极简API设计：ClearPool功能已被移除
-    OBJECTPOOL_LOG(Warning, TEXT("ClearPool功能已被移除（极简API设计）"));
-    // 用户应该通过RegisterActorClass重新注册来实现清理功能
+    if (!ActorClass)
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::ClearPool: ActorClass 无效"));
+        return false;
+    }
 
-    OBJECTPOOL_LOG(Verbose, TEXT("UObjectPoolLibrary::ClearPool: %s"),
-        ActorClass ? *ActorClass->GetName() : TEXT("Invalid"));
+    if (!Subsystem->ClearPoolByClass(ActorClass))
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::ClearPool: 未找到 %s 的对象池"), *ActorClass->GetName());
+        return false;
+    }
 
     return true;
 }

@@ -38,7 +38,8 @@ public class XTools_ComponentTimelineRuntime : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core"
+				"Core",
+				"XToolsCore"
 			}
 		);
 

@@ -14,7 +14,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogXToolsCore, Log, All);
 // Plugin version
 #define XTOOLS_VERSION_MAJOR 1
 #define XTOOLS_VERSION_MINOR 9
-#define XTOOLS_VERSION_PATCH 4
+#define XTOOLS_VERSION_PATCH 6
 
 // Debugging
 #if !UE_BUILD_SHIPPING
@@ -38,7 +38,8 @@ DECLARE_LOG_CATEGORY_EXTERN(LogXToolsCore, Log, All);
 static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
 
 //=============================================================================
-// 防御性编程宏 - 用于提升硬件不稳定环境下的代码鲁棒性
+// 防御性编程宏 - 预留API，供模块扩展使用
+// 用于提升硬件不稳定环境下的代码鲁棒性
 //=============================================================================
 
 /**
@@ -61,31 +62,37 @@ static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
  *       XTOOLS_CHECK_VALID(MyActor, false);  // 返回 false
  */
 #define XTOOLS_CHECK_VALID(Obj, ReturnValue) \
-	if (!IsValid(Obj)) { \
-		UE_LOG(LogXToolsCore, Warning, TEXT("XTOOLS_CHECK_VALID: %s 无效 (%s:%d)"), \
-			TEXT(#Obj), TEXT(__FILE__), __LINE__); \
-		return ReturnValue; \
-	}
+	do { \
+		if (!IsValid(Obj)) { \
+			UE_LOG(LogXToolsCore, Warning, TEXT("XTOOLS_CHECK_VALID: %s 无效 (%s:%d)"), \
+				TEXT(#Obj), TEXT(__FILE__), __LINE__); \
+			return ReturnValue; \
+		} \
+	} while(0)
 
 /**
  * UObject 有效性检查宏（静默版）：检查 UObject 有效性后继续，否则静默返回
  * 用法：XTOOLS_CHECK_VALID_SILENT(MyActor, );
  */
 #define XTOOLS_CHECK_VALID_SILENT(Obj, ReturnValue) \
-	if (!IsValid(Obj)) { \
-		return ReturnValue; \
-	}
+	do { \
+		if (!IsValid(Obj)) { \
+			return ReturnValue; \
+		} \
+	} while(0)
 
 /**
  * 数组边界检查宏：检查数组索引是否有效
  * 用法：XTOOLS_CHECK_ARRAY_INDEX(MyArray, Index, false);
  */
 #define XTOOLS_CHECK_ARRAY_INDEX(Array, Index, ReturnValue) \
-	if (!Array.IsValidIndex(Index)) { \
-		UE_LOG(LogXToolsCore, Error, TEXT("XTOOLS_CHECK_ARRAY_INDEX: %s[%d] 越界，数组长度=%d (%s:%d)"), \
-			TEXT(#Array), Index, Array.Num(), TEXT(__FILE__), __LINE__); \
-		return ReturnValue; \
-	}
+	do { \
+		if (!Array.IsValidIndex(Index)) { \
+			UE_LOG(LogXToolsCore, Error, TEXT("XTOOLS_CHECK_ARRAY_INDEX: %s[%d] 越界，数组长度=%d (%s:%d)"), \
+				TEXT(#Array), Index, Array.Num(), TEXT(__FILE__), __LINE__); \
+			return ReturnValue; \
+		} \
+	} while(0)
 
 /**
  * 指针非空断言宏（仅 Debug/Development 构建）
@@ -104,6 +111,8 @@ static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
  * 用法：XTOOLS_COND_LOG(bShouldLog, Warning, TEXT("Something happened"));
  */
 #define XTOOLS_COND_LOG(Condition, Verbosity, Format, ...) \
-	if (Condition) { \
-		UE_LOG(LogXToolsCore, Verbosity, Format, ##__VA_ARGS__); \
-	}
+	do { \
+		if (Condition) { \
+			UE_LOG(LogXToolsCore, Verbosity, Format, ##__VA_ARGS__); \
+		} \
+	} while(0)

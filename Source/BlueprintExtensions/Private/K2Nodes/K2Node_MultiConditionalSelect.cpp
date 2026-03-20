@@ -222,7 +222,7 @@ Condition 1 | +-----+ | [1]            |     | | Item To Find                  |
 // clang-format on
 void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	Super::ExpandNode(CompilerContext, SourceGraph);
+	// 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
 
 	TArray<CasePinPair> CasePinPairs = GetCasePinPairs();
 	if (CasePinPairs.Num() == 0 || !CasePinPairs[0].Key)

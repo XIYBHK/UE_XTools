@@ -94,12 +94,8 @@ protected:
 				TickFunc(CurrentValue, CurrentTime);
 
 				CurrentTime = 0.f;
-				float RemainingTime = UnclampedTime;
-				while (RemainingTime > Time)
-				{
-					RemainingTime -= Time;
-				}
-				CurrentTime = RemainingTime;
+				// 使用 FMath::Fmod 替代 while 循环消化溢出时间，避免大溢出时循环次数过多
+				CurrentTime = (Time > 0.f) ? FMath::Fmod(UnclampedTime, Time) : 0.f;
 			}
 			else
 			{
@@ -129,24 +125,29 @@ protected:
 			break;
 		}
 
-		TickFunc(CurrentValue, CurrentTime);
-
 		// 检查是否到达终点
 		if (CurrentTime >= Time)
 		{
 			if (Settings.bLoop)
 			{
+				// 循环模式：正常调用 TickFunc（溢出已在上方通过 Fmod 处理）
+				TickFunc(CurrentValue, CurrentTime);
 				return;
 			}
 			else
 			{
-				// 确保最终值精确到达StopValue，避免浮点精度问题
+				// 非循环模式：确保最终值精确到达 StopValue，只调用一次 TickFunc 避免重复
 				CurrentValue = StopValue;
 				CurrentTime = Time;
 				TickFunc(CurrentValue, CurrentTime);
 				Complete(false);
 				MarkAsFinished();
 			}
+		}
+		else
+		{
+			// 未到达终点：正常输出当前插值
+			TickFunc(CurrentValue, CurrentTime);
 		}
 	}
 

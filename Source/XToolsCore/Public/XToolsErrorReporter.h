@@ -22,43 +22,54 @@
 struct XTOOLSCORE_API FXToolsErrorReporter
 {
     // 模板方法 - 支持所有日志分类类型（包括 FNoLoggingCategory）
+    // File/Line 参数由 XTOOLS_LOG_* 宏自动传入调用者的位置信息
     template<typename LogCategoryType>
     static void Report(const LogCategoryType& Category,
                        ELogVerbosity::Type Verbosity,
                        const FString& Message,
                        const FName Context = NAME_None,
                        bool bNotifyOnScreen = false,
-                       float DisplayTime = 5.0f);
+                       float DisplayTime = 5.0f,
+                       const ANSICHAR* File = "",
+                       int32 Line = 0);
 
     template<typename LogCategoryType>
     static void Error(const LogCategoryType& Category,
                       const FString& Message,
                       const FName Context = NAME_None,
                       bool bNotifyOnScreen = false,
-                      float DisplayTime = 5.0f);
+                      float DisplayTime = 5.0f,
+                      const ANSICHAR* File = "",
+                      int32 Line = 0);
 
     template<typename LogCategoryType>
     static void Warning(const LogCategoryType& Category,
                         const FString& Message,
                         const FName Context = NAME_None,
                         bool bNotifyOnScreen = false,
-                        float DisplayTime = 5.0f);
+                        float DisplayTime = 5.0f,
+                        const ANSICHAR* File = "",
+                        int32 Line = 0);
 
     template<typename LogCategoryType>
     static void Info(const LogCategoryType& Category,
                      const FString& Message,
                      const FName Context = NAME_None,
                      bool bNotifyOnScreen = false,
-                     float DisplayTime = 5.0f);
+                     float DisplayTime = 5.0f,
+                     const ANSICHAR* File = "",
+                     int32 Line = 0);
 
 private:
-    // 内部实现方法
+    // 内部实现方法（File/Line 参数用于输出调用者的实际位置）
     static void ReportInternal(FLogCategoryBase* Category,
                               ELogVerbosity::Type Verbosity,
                               const FString& Message,
                               const FName Context,
                               bool bNotifyOnScreen,
-                              float DisplayTime);
+                              float DisplayTime,
+                              const ANSICHAR* File = "",
+                              int32 Line = 0);
 };
 
 /**
@@ -82,6 +93,36 @@ private:
         } \
     } while (0)
 
+/**
+ * 便捷日志宏 - 自动传入调用点的文件名和行号。
+ * 解决直接调用静态方法时 __FILE__/__LINE__ 始终指向 ErrorReporter 本身的问题。
+ *
+ * 用法：
+ *   XTOOLS_LOG_ERROR(LogMyCategory, TEXT("发生错误"));
+ *   XTOOLS_LOG_WARNING(LogMyCategory, TEXT("警告信息"));
+ *   XTOOLS_LOG_INFO(LogMyCategory, TEXT("普通日志"));
+ *
+ * 需要屏幕提示时使用带参数版本：
+ *   XTOOLS_LOG_ERROR_EX(LogMyCategory, TEXT("错误"), NAME_None, true, 3.0f);
+ */
+#define XTOOLS_LOG_ERROR(Category, Message) \
+    FXToolsErrorReporter::Error(Category, Message, NAME_None, false, 5.0f, __FILE__, __LINE__)
+
+#define XTOOLS_LOG_WARNING(Category, Message) \
+    FXToolsErrorReporter::Warning(Category, Message, NAME_None, false, 5.0f, __FILE__, __LINE__)
+
+#define XTOOLS_LOG_INFO(Category, Message) \
+    FXToolsErrorReporter::Info(Category, Message, NAME_None, false, 5.0f, __FILE__, __LINE__)
+
+#define XTOOLS_LOG_ERROR_EX(Category, Message, Context, bNotifyOnScreen, DisplayTime) \
+    FXToolsErrorReporter::Error(Category, Message, Context, bNotifyOnScreen, DisplayTime, __FILE__, __LINE__)
+
+#define XTOOLS_LOG_WARNING_EX(Category, Message, Context, bNotifyOnScreen, DisplayTime) \
+    FXToolsErrorReporter::Warning(Category, Message, Context, bNotifyOnScreen, DisplayTime, __FILE__, __LINE__)
+
+#define XTOOLS_LOG_INFO_EX(Category, Message, Context, bNotifyOnScreen, DisplayTime) \
+    FXToolsErrorReporter::Info(Category, Message, Context, bNotifyOnScreen, DisplayTime, __FILE__, __LINE__)
+
 // 模板方法实现 - 必须在头文件中
 template<typename LogCategoryType>
 void FXToolsErrorReporter::Report(const LogCategoryType& Category,
@@ -89,19 +130,21 @@ void FXToolsErrorReporter::Report(const LogCategoryType& Category,
                                   const FString& Message,
                                   const FName Context,
                                   bool bNotifyOnScreen,
-                                  float DisplayTime)
+                                  float DisplayTime,
+                                  const ANSICHAR* File,
+                                  int32 Line)
 {
     // 获取日志分类指针
     // 对于 FLogCategoryBase 派生类，传递指针；对于 FNoLoggingCategory，传递 nullptr
     FLogCategoryBase* CategoryPtr = nullptr;
-    
+
     // 使用 UE 的 TIsDerivedFrom 检查类型，兼容所有构建配置
     if constexpr (TIsDerivedFrom<LogCategoryType, FLogCategoryBase>::Value)
     {
         CategoryPtr = const_cast<FLogCategoryBase*>(static_cast<const FLogCategoryBase*>(&Category));
     }
-    
-    ReportInternal(CategoryPtr, Verbosity, Message, Context, bNotifyOnScreen, DisplayTime);
+
+    ReportInternal(CategoryPtr, Verbosity, Message, Context, bNotifyOnScreen, DisplayTime, File, Line);
 }
 
 template<typename LogCategoryType>
@@ -109,9 +152,11 @@ void FXToolsErrorReporter::Error(const LogCategoryType& Category,
                                  const FString& Message,
                                  const FName Context,
                                  bool bNotifyOnScreen,
-                                 float DisplayTime)
+                                 float DisplayTime,
+                                 const ANSICHAR* File,
+                                 int32 Line)
 {
-    Report(Category, ELogVerbosity::Error, Message, Context, bNotifyOnScreen, DisplayTime);
+    Report(Category, ELogVerbosity::Error, Message, Context, bNotifyOnScreen, DisplayTime, File, Line);
 }
 
 template<typename LogCategoryType>
@@ -119,9 +164,11 @@ void FXToolsErrorReporter::Warning(const LogCategoryType& Category,
                                    const FString& Message,
                                    const FName Context,
                                    bool bNotifyOnScreen,
-                                   float DisplayTime)
+                                   float DisplayTime,
+                                   const ANSICHAR* File,
+                                   int32 Line)
 {
-    Report(Category, ELogVerbosity::Warning, Message, Context, bNotifyOnScreen, DisplayTime);
+    Report(Category, ELogVerbosity::Warning, Message, Context, bNotifyOnScreen, DisplayTime, File, Line);
 }
 
 template<typename LogCategoryType>
@@ -129,7 +176,9 @@ void FXToolsErrorReporter::Info(const LogCategoryType& Category,
                                 const FString& Message,
                                 const FName Context,
                                 bool bNotifyOnScreen,
-                                float DisplayTime)
+                                float DisplayTime,
+                                const ANSICHAR* File,
+                                int32 Line)
 {
-    Report(Category, ELogVerbosity::Log, Message, Context, bNotifyOnScreen, DisplayTime);
+    Report(Category, ELogVerbosity::Log, Message, Context, bNotifyOnScreen, DisplayTime, File, Line);
 }

@@ -333,9 +333,8 @@ protected:
 	/** Spawn监听器句柄 */
 	FDelegateHandle SpawnListenerHandle;
 
-	/** 缓存的GeometryCollectionComponent列表（用于Tag筛选） */
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<class UGeometryCollectionComponent>> CachedGeometryCollections;
+	/** 缓存的GeometryCollectionComponent列表（用于Tag筛选，使用弱引用避免阻止GC回收） */
+	TArray<TWeakObjectPtr<class UGeometryCollectionComponent>> CachedGeometryCollections;
 
 	/** Actor Spawn事件回调 */
 	UFUNCTION()

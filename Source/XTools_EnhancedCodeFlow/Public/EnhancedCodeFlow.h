@@ -35,17 +35,7 @@
 namespace EnhancedCodeFlowConfig
 {
     // 默认时间配置
-    constexpr float DefaultTickInterval = 0.0f;        // 默认Tick间隔
-    constexpr float MinTickInterval = 0.001f;          // 最小Tick间隔
     constexpr float MaxDelayTime = 3600.0f;            // 最大延迟时间（1小时）
-
-    // 异步任务配置
-    constexpr float DefaultAsyncTimeout = 30.0f;       // 默认异步超时时间
-    constexpr int32 MaxConcurrentAsyncTasks = 100;     // 最大并发异步任务数
-
-    // 性能配置
-    constexpr int32 DefaultActionPoolSize = 64;        // 默认动作池大小
-    constexpr int32 MaxActionsPerOwner = 1000;         // 每个所有者最大动作数
 }
 
 class XTOOLS_ENHANCEDCODEFLOW_API FEnhancedCodeFlow

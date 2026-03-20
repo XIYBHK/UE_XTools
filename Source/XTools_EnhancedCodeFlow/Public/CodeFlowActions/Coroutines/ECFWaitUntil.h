@@ -26,9 +26,9 @@ protected:
 
 		if (Predicate)
 		{
+			// 首帧条件已满足时直接返回 false，由 await_suspend 统一 resume（避免双重 resume 未定义行为）
 			if (Predicate(0.f))
 			{
-				CoroutineHandle.resume();
 				return false;
 			}
 			if (InTimeOut > 0.f)

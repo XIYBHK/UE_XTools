@@ -64,7 +64,8 @@ public class FormationSystem : ModuleRules
 			"AIModule",
 			"Slate",
 			"SlateCore",
-			"UMG"
+			"UMG",
+			"XToolsCore"
 		});
 
 		// 私有依赖模块

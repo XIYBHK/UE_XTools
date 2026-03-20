@@ -239,9 +239,8 @@ UEnum* UK2Node_SmartSort::GetSortModeEnumForType(const FEdGraphPinType& ArrayTyp
 
 void UK2Node_SmartSort::RebuildDynamicPins()
 {
-	// 修复：添加递归调用保护，避免在 PinConnectionListChanged 中多次调用导致问题
+	// 递归调用保护（使用实例成员变量，避免静态变量跨实例共享）
 #if WITH_EDITORONLY_DATA
-	static bool bIsRebuilding = false;
 	if (bIsRebuilding)
 	{
 		return;

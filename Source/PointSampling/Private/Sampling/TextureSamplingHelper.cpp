@@ -76,6 +76,7 @@ FLinearColor FTextureSamplingHelper::SampleTexturePixel(UTexture2D *Texture,
   }
 
   FTexture2DMipMap &Mip0 = PlatformData->Mips[0];
+  // TODO: 使用 RAII 封装 BulkData 的锁定/解锁，避免异常安全问题
   const void *RawData = Mip0.BulkData.LockReadOnly();
   if (!RawData) {
     UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 无法锁定纹理数据"));
@@ -383,21 +384,23 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinate(
     SamplingValue =
         CalculatePixelSamplingValue(Color, bUseAlphaChannel, bInvert);
   } else if (SourceFormat == TSF_RGBA16) {
-    // RGBA16 格式（16位/通道）
-    uint16 R = *((uint16 *)(&SourceData[PixelIndex + 0]));
-    uint16 G = *((uint16 *)(&SourceData[PixelIndex + 2]));
-    uint16 B = *((uint16 *)(&SourceData[PixelIndex + 4]));
-    uint16 A = *((uint16 *)(&SourceData[PixelIndex + 6]));
+    // RGBA16 格式（16位/通道）-- 使用 FMemory::Memcpy 避免 ARM 未对齐访问
+    uint16 R, G, B, A;
+    FMemory::Memcpy(&R, &SourceData[PixelIndex + 0], sizeof(uint16));
+    FMemory::Memcpy(&G, &SourceData[PixelIndex + 2], sizeof(uint16));
+    FMemory::Memcpy(&B, &SourceData[PixelIndex + 4], sizeof(uint16));
+    FMemory::Memcpy(&A, &SourceData[PixelIndex + 6], sizeof(uint16));
     FColor Color(FMath::RoundToInt(R / 257.0f), FMath::RoundToInt(G / 257.0f),
                  FMath::RoundToInt(B / 257.0f), FMath::RoundToInt(A / 257.0f));
     SamplingValue =
         CalculatePixelSamplingValue(Color, bUseAlphaChannel, bInvert);
   } else if (SourceFormat == TSF_RGBA16F) {
-    // RGBA16F 格式（半浮点/通道）
-    FFloat16 R = *((FFloat16 *)(&SourceData[PixelIndex + 0]));
-    FFloat16 G = *((FFloat16 *)(&SourceData[PixelIndex + 2]));
-    FFloat16 B = *((FFloat16 *)(&SourceData[PixelIndex + 4]));
-    FFloat16 A = *((FFloat16 *)(&SourceData[PixelIndex + 6]));
+    // RGBA16F 格式（半浮点/通道）-- 使用 FMemory::Memcpy 避免 ARM 未对齐访问
+    FFloat16 R, G, B, A;
+    FMemory::Memcpy(&R, &SourceData[PixelIndex + 0], sizeof(FFloat16));
+    FMemory::Memcpy(&G, &SourceData[PixelIndex + 2], sizeof(FFloat16));
+    FMemory::Memcpy(&B, &SourceData[PixelIndex + 4], sizeof(FFloat16));
+    FMemory::Memcpy(&A, &SourceData[PixelIndex + 6], sizeof(FFloat16));
     FColor Color(FMath::RoundToInt(R.GetFloat() * 255.0f),
                  FMath::RoundToInt(G.GetFloat() * 255.0f),
                  FMath::RoundToInt(B.GetFloat() * 255.0f),
@@ -761,6 +764,17 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
 
   int64 PixelIndex = ((int64)PixelY * OriginalWidth + PixelX) * BytesPerPixel;
 
+  // 边界检查：确保访问的像素数据不会越界
+  const int64 DataSize = (int64)OriginalWidth * OriginalHeight * BytesPerPixel;
+  const int64 MaxOffset = (PixelFormat == PF_FloatRGBA) ? (BytesPerPixel - 1) : 3;
+  if (PixelIndex + MaxOffset >= DataSize)
+  {
+    UE_LOG(LogPointSampling, Warning,
+           TEXT("[纹理采样] 运行时像素索引越界: Index=%lld, MaxOffset=%lld, DataSize=%lld"),
+           PixelIndex, MaxOffset, DataSize);
+    return 0.0f;
+  }
+
   float SamplingValue = 0.0f;
 
   // 处理不同的像素格式
@@ -798,19 +812,21 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinatePlatform(
     float R = 0.0f, G = 0.0f, B = 0.0f, A = 0.0f;
 
     if (BytesPerPixel == 16) {
-      const float *FloatData =
-          reinterpret_cast<const float *>(PixelData + PixelIndex);
-      R = FloatData[0];
-      G = FloatData[1];
-      B = FloatData[2];
-      A = FloatData[3];
+      // 使用 FMemory::Memcpy 避免 ARM 未对齐访问
+      float FloatChannels[4];
+      FMemory::Memcpy(FloatChannels, PixelData + PixelIndex, sizeof(float) * 4);
+      R = FloatChannels[0];
+      G = FloatChannels[1];
+      B = FloatChannels[2];
+      A = FloatChannels[3];
     } else if (BytesPerPixel == 8) {
-      const FFloat16 *HalfData =
-          reinterpret_cast<const FFloat16 *>(PixelData + PixelIndex);
-      R = HalfData[0].GetFloat();
-      G = HalfData[1].GetFloat();
-      B = HalfData[2].GetFloat();
-      A = HalfData[3].GetFloat();
+      // 使用 FMemory::Memcpy 避免 ARM 未对齐访问
+      FFloat16 HalfChannels[4];
+      FMemory::Memcpy(HalfChannels, PixelData + PixelIndex, sizeof(FFloat16) * 4);
+      R = HalfChannels[0].GetFloat();
+      G = HalfChannels[1].GetFloat();
+      B = HalfChannels[2].GetFloat();
+      A = HalfChannels[3].GetFloat();
     } else {
       return 0.0f;
     }

@@ -300,10 +300,11 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 	FFieldSystemCommand Command = FFieldObjectCommands::CreateFieldCommand(Target, Field, MetaData);
 
 	int32 AppliedCount = 0;
-	
-	for (UGeometryCollectionComponent* GC : CachedGeometryCollections)
+
+	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakGC : CachedGeometryCollections)
 	{
-		if (!IsValid(GC))
+		UGeometryCollectionComponent* GC = WeakGC.Get();
+		if (!GC)
 		{
 			continue;
 		}
@@ -363,9 +364,10 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 
 	int32 RegisteredCount = 0;
 
-	for (UGeometryCollectionComponent* GC : CachedGeometryCollections)
+	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakGC : CachedGeometryCollections)
 	{
-		if (!IsValid(GC))
+		UGeometryCollectionComponent* GC = WeakGC.Get();
+		if (!GC)
 		{
 			continue;
 		}
@@ -416,9 +418,10 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 	int32 TotalApplied = 0;
 
 	// 遍历每个GC
-	for (UGeometryCollectionComponent* GC : CachedGeometryCollections)
+	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakGC : CachedGeometryCollections)
 	{
-		if (!IsValid(GC))
+		UGeometryCollectionComponent* GC = WeakGC.Get();
+		if (!GC)
 		{
 			continue;
 		}

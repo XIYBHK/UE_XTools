@@ -787,6 +787,7 @@ void USortLibrary::RemoveDuplicateFloats(const TArray<float>& InArray, TArray<fl
 
 void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<int32>& OutArray)
 {
+    // TSet 去重已是 O(N) 平均，且不改变元素相对顺序无要求，无需改为排序+相邻比较
     TSet<int32> UniqueInts(InArray);
     OutArray = UniqueInts.Array();
 }

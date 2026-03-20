@@ -358,10 +358,17 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
     double StartTime = FPlatformTime::Seconds();
 
     //  通过对象池创建Actor
-    const bool bSuccess = OwnerPool->CreateNewActor(World) != nullptr;
+    AActor* NewActor = OwnerPool->CreateNewActor(World);
 
-    if (bSuccess)
+    if (NewActor)
     {
+        // 将创建的 Actor 注册到池列表，避免"幽灵 Actor"
+        {
+            FWriteScopeLock WriteLock(OwnerPool->PoolLock);
+            OwnerPool->AvailableActors.Add(NewActor);
+            OwnerPool->AllActorsSet.Add(NewActor);
+        }
+
         double EndTime = FPlatformTime::Seconds();
         double CreationTime = (EndTime - StartTime) * 1000.0; // 毫秒
 
@@ -372,7 +379,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
             PerformanceMetrics.TotalCreationTimeMs / PerformanceMetrics.CreationCount;
     }
 
-    return bSuccess;
+    return NewActor != nullptr;
 }
 
 void FObjectPoolPreallocator::UpdateStats()
