@@ -199,33 +199,155 @@ void FObjectPoolModule::RegisterConsoleCommands()
         ECVF_Default
     ));
     
-    // 清空指定对象池
+    // 清空指定对象池（无参数时清空所有）
     ConsoleCommands.Add(IConsoleManager::Get().RegisterConsoleCommand(
         TEXT("objectpool.clear"),
-        TEXT("清空指定类型的对象池。用法: objectpool.clear <ClassName>"),
+        TEXT("清空对象池。用法: objectpool.clear [ClassName]（不指定则清空所有）"),
         FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
         {
+            if (!GEngine) return;
+
+            UWorld* World = nullptr;
+            for (const FWorldContext& Context : GEngine->GetWorldContexts())
+            {
+                if (Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE)
+                {
+                    World = Context.World();
+                    break;
+                }
+            }
+
+            if (!World)
+            {
+                OBJECTPOOL_LOG(Warning, TEXT("objectpool.clear: 未找到游戏世界"));
+                return;
+            }
+
+            UObjectPoolSubsystem* Subsystem = World->GetSubsystem<UObjectPoolSubsystem>();
+            if (!Subsystem)
+            {
+                OBJECTPOOL_LOG(Warning, TEXT("objectpool.clear: 对象池子系统未启用"));
+                return;
+            }
+
             if (Args.Num() > 0)
             {
-                OBJECTPOOL_LOG(Warning, TEXT("清空对象池功能尚未实现: %s"), *Args[0]);
-                // TODO: 实现对象池清空功能
+                // 按类名查找并清空指定池
+                UClass* FoundClass = FindObject<UClass>(nullptr, *Args[0]);
+                if (!FoundClass)
+                {
+                    FoundClass = FindObject<UClass>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *Args[0]));
+                }
+                if (FoundClass && Subsystem->ClearPoolByClass(FoundClass))
+                {
+                    OBJECTPOOL_LOG(Log, TEXT("objectpool.clear: 已清空 %s 的对象池"), *Args[0]);
+                }
+                else
+                {
+                    OBJECTPOOL_LOG(Warning, TEXT("objectpool.clear: 未找到类 '%s' 的对象池"), *Args[0]);
+                }
             }
             else
             {
-                OBJECTPOOL_LOG(Warning, TEXT("请指定要清空的Actor类名"));
+                // 通过统计信息获取所有池的类名，逐个清空（ClearAllPools 非公开接口）
+                TArray<FObjectPoolStats> AllStats = Subsystem->GetAllPoolStats();
+                int32 ClearedCount = 0;
+                for (const FObjectPoolStats& Stats : AllStats)
+                {
+                    UClass* PoolClass = FindObject<UClass>(nullptr, *Stats.ActorClassName);
+                    if (PoolClass && Subsystem->ClearPoolByClass(PoolClass))
+                    {
+                        ++ClearedCount;
+                    }
+                }
+                OBJECTPOOL_LOG(Log, TEXT("objectpool.clear: 已清空 %d/%d 个对象池"), ClearedCount, AllStats.Num());
             }
         }),
         ECVF_Default
     ));
-    
+
     // 验证对象池完整性
     ConsoleCommands.Add(IConsoleManager::Get().RegisterConsoleCommand(
         TEXT("objectpool.validate"),
-        TEXT("验证所有对象池的完整性和状态"),
+        TEXT("验证所有对象池的完整性，报告无效Actor"),
         FConsoleCommandDelegate::CreateLambda([]()
         {
-            OBJECTPOOL_LOG(Warning, TEXT("对象池验证功能尚未实现"));
-            // TODO: 实现对象池验证功能
+            if (!GEngine) return;
+
+            UWorld* World = nullptr;
+            for (const FWorldContext& Context : GEngine->GetWorldContexts())
+            {
+                if (Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE)
+                {
+                    World = Context.World();
+                    break;
+                }
+            }
+
+            if (!World)
+            {
+                OBJECTPOOL_LOG(Warning, TEXT("objectpool.validate: 未找到游戏世界"));
+                return;
+            }
+
+            UObjectPoolSubsystem* Subsystem = World->GetSubsystem<UObjectPoolSubsystem>();
+            if (!Subsystem)
+            {
+                OBJECTPOOL_LOG(Warning, TEXT("objectpool.validate: 对象池子系统未启用"));
+                return;
+            }
+
+            // 获取所有池统计并输出验证结果
+            // 注意：TotalCreated 是累计创建数（包含已销毁的），不等于当前存活数
+            // 有效不变式：Active+Available <= TotalCreated，且各计数非负，Available <= PoolSize
+            TArray<FObjectPoolStats> AllStats = Subsystem->GetAllPoolStats();
+            int32 TotalIssues = 0;
+
+            for (const FObjectPoolStats& Stats : AllStats)
+            {
+                TArray<FString> Issues;
+                const int32 CurrentAlive = Stats.CurrentActive + Stats.CurrentAvailable;
+
+                if (Stats.CurrentActive < 0 || Stats.CurrentAvailable < 0)
+                {
+                    Issues.Add(TEXT("计数为负数"));
+                }
+                if (CurrentAlive > Stats.TotalCreated)
+                {
+                    Issues.Add(FString::Printf(TEXT("存活数(%d)>累计创建数(%d)"), CurrentAlive, Stats.TotalCreated));
+                }
+                if (Stats.PoolSize > 0 && Stats.CurrentAvailable > Stats.PoolSize)
+                {
+                    Issues.Add(FString::Printf(TEXT("可用数(%d)>池上限(%d)"), Stats.CurrentAvailable, Stats.PoolSize));
+                }
+
+                if (Issues.Num() > 0)
+                {
+                    OBJECTPOOL_LOG(Warning, TEXT("  [!] %s: %s (Active=%d, Available=%d, Created=%d, PoolSize=%d)"),
+                        *Stats.ActorClassName, *FString::Join(Issues, TEXT("; ")),
+                        Stats.CurrentActive, Stats.CurrentAvailable, Stats.TotalCreated, Stats.PoolSize);
+                    ++TotalIssues;
+                }
+                else
+                {
+                    OBJECTPOOL_LOG(Log, TEXT("  [OK] %s: Active=%d, Available=%d, Created=%d, HitRate=%.0f%%"),
+                        *Stats.ActorClassName, Stats.CurrentActive, Stats.CurrentAvailable,
+                        Stats.TotalCreated, Stats.HitRate * 100.0f);
+                }
+            }
+
+            if (AllStats.Num() == 0)
+            {
+                OBJECTPOOL_LOG(Log, TEXT("objectpool.validate: 当前没有注册的对象池"));
+            }
+            else if (TotalIssues == 0)
+            {
+                OBJECTPOOL_LOG(Log, TEXT("objectpool.validate: 所有 %d 个对象池验证通过"), AllStats.Num());
+            }
+            else
+            {
+                OBJECTPOOL_LOG(Warning, TEXT("objectpool.validate: %d 个池中发现 %d 个异常"), AllStats.Num(), TotalIssues);
+            }
         }),
         ECVF_Default
     ));

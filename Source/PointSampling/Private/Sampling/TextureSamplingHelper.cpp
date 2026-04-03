@@ -1561,6 +1561,7 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromMaterial(
   // 渲染材质到RenderTarget
   if (!RenderMaterialToTarget(Material, RenderTarget)) {
     UE_LOG(LogPointSampling, Error, TEXT("[Material采样] 材质渲染失败"));
+    RenderTarget->ConditionalBeginDestroy();
     return Points;
   }
 
@@ -1601,6 +1602,7 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromMaterialWithPoisson(
   // 渲染材质到RenderTarget
   if (!RenderMaterialToTarget(Material, RenderTarget)) {
     UE_LOG(LogPointSampling, Error, TEXT("[Material泊松采样] 材质渲染失败"));
+    RenderTarget->ConditionalBeginDestroy();
     return Points;
   }
 

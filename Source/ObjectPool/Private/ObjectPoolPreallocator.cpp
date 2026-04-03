@@ -150,7 +150,8 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
 
     if (!World)
     {
-        OBJECTPOOL_LOG(Warning, TEXT("Tick: 无法获取有效的World"));
+        OBJECTPOOL_LOG(Warning, TEXT("Tick: 无法获取有效的World，停止预分配"));
+        StopPreallocation();
         return;
     }
 

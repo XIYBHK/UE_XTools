@@ -419,13 +419,14 @@ void UMapExtensionsLibrary::GenericMap_KeysFromValue(const void* MapAddr, const 
 		
 		for(int32 i = 0; i < MapHelper.Num(); i++)
 		{
-			const void* MapValuePtr = MapHelper.GetValuePtr(MapHelper.FindInternalIndex(i));
+			const int32 InternalIndex = MapHelper.FindInternalIndex(i);
+			const void* MapValuePtr = MapHelper.GetValuePtr(InternalIndex);
 			if(!MapValuePtr) continue;
-			
+
 			if(ValueProperty->Identical(ValuePtr, MapValuePtr, PPF_None))
 			{
 				const int32 LastIndex = ArrayHelper.AddValue();
-				InnerProp->CopySingleValueToScriptVM(ArrayHelper.GetRawPtr(LastIndex), MapHelper.GetKeyPtr(i));
+				InnerProp->CopySingleValueToScriptVM(ArrayHelper.GetRawPtr(LastIndex), MapHelper.GetKeyPtr(InternalIndex));
 			}
 		}
 	}
@@ -623,6 +624,7 @@ bool UMapExtensionsLibrary::GenericMap_SetValueAt(const void* MapAddr, const FMa
 		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(KeyStorageSpace, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
 		
 		MapHelper.AddPair(KeyStorageSpace, ValuePtr);
+		KeyProperty->DestroyValue(KeyStorageSpace);
 		return true;
 	}
 	

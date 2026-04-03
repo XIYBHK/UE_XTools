@@ -317,6 +317,10 @@ bool FX_CollisionManager::RemoveCollisionFromMesh(UStaticMesh* StaticMesh)
         return false;
     }
 
+    // 记录到事务（配合 FScopedTransaction 实现可靠撤销）
+    StaticMesh->Modify();
+    BodySetup->Modify();
+
     // 清除所有碰撞数据
     BodySetup->RemoveSimpleCollision();
 
@@ -341,27 +345,43 @@ bool FX_CollisionManager::AddConvexCollisionToMesh(UStaticMesh* StaticMesh)
         return false;
     }
 
-    // 先清除现有的简单碰撞
+    // 先检查 RenderData/LOD0 可用性，避免先清碰撞后发现无数据可用
+    if (StaticMesh->GetNumLODs() == 0 || !StaticMesh->GetRenderData()
+        || StaticMesh->GetRenderData()->LODResources.Num() == 0)
+    {
+        LogOperation(FString::Printf(TEXT("网格体 '%s' 无可用的 LOD0 渲染数据，无法生成凸包碰撞"),
+            *StaticMesh->GetName()), true);
+        return false;
+    }
+
+    const FStaticMeshLODResources& LODResource = StaticMesh->GetRenderData()->LODResources[0];
+    const int32 NumVertices = LODResource.GetNumVertices();
+    if (NumVertices == 0)
+    {
+        LogOperation(FString::Printf(TEXT("网格体 '%s' LOD0 顶点数为 0，无法生成凸包碰撞"),
+            *StaticMesh->GetName()), true);
+        return false;
+    }
+
+    // 记录到事务（配合 FScopedTransaction 实现可靠撤销）
+    StaticMesh->Modify();
+    BodySetup->Modify();
+
+    // 渲染数据验证通过后再清除现有碰撞
     BodySetup->RemoveSimpleCollision();
 
     // 添加凸包碰撞（基于 LOD0 顶点数据）
-    if (StaticMesh->GetNumLODs() > 0 && StaticMesh->GetRenderData())
+    FKConvexElem ConvexElem;
+    TArray<FVector> Vertices;
+    Vertices.Reserve(NumVertices);
+    for (int32 VertIndex = 0; VertIndex < NumVertices; ++VertIndex)
     {
-        const FStaticMeshLODResources& LODResource = StaticMesh->GetRenderData()->LODResources[0];
-
-        FKConvexElem ConvexElem;
-        TArray<FVector> Vertices;
-        const int32 NumVertices = LODResource.GetNumVertices();
-        Vertices.Reserve(NumVertices);
-        for (int32 VertIndex = 0; VertIndex < NumVertices; ++VertIndex)
-        {
-            const FVector Vertex = (FVector)LODResource.VertexBuffers.PositionVertexBuffer.VertexPosition(VertIndex);
-            Vertices.Add(Vertex);
-        }
-        ConvexElem.VertexData = MoveTemp(Vertices);
-        ConvexElem.UpdateElemBox();
-        BodySetup->AggGeom.ConvexElems.Add(ConvexElem);
+        const FVector Vertex = (FVector)LODResource.VertexBuffers.PositionVertexBuffer.VertexPosition(VertIndex);
+        Vertices.Add(Vertex);
     }
+    ConvexElem.VertexData = MoveTemp(Vertices);
+    ConvexElem.UpdateElemBox();
+    BodySetup->AggGeom.ConvexElems.Add(ConvexElem);
 
     // 标记并重建
     BodySetup->MarkPackageDirty();
@@ -385,6 +405,10 @@ bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, EC
         LogOperation(TEXT("无法获取BodySetup，设置碰撞复杂度失败"), true);
         return false;
     }
+
+    // 记录到事务（配合 FScopedTransaction 实现可靠撤销）
+    StaticMesh->Modify();
+    BodySetup->Modify();
 
     // 设置碰撞复杂度
     BodySetup->CollisionTraceFlag = TraceFlag;

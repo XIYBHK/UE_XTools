@@ -49,6 +49,15 @@ void UFormationManagerComponent::BeginPlay()
     Super::BeginPlay();
 }
 
+void UFormationManagerComponent::DestroyOwnerActor()
+{
+    AActor* Owner = GetOwner();
+    if (IsValid(Owner))
+    {
+        Owner->Destroy();
+    }
+}
+
 void UFormationManagerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -155,9 +164,10 @@ bool UFormationManagerComponent::StartFormationTransition(
         Config.TransitionMode
     );
 
-    // 初始化变换状态
+    // 初始化变换状态并启用 Tick 驱动位置更新
     TransitionState.bIsTransitioning = true;
     TransitionState.StartTime = GetWorld()->GetTimeSeconds();
+    SetComponentTickEnabled(true);
     TransitionState.OverallProgress = 0.0f;
     TransitionState.Config = Config;
     
@@ -240,6 +250,7 @@ void UFormationManagerComponent::StopFormationTransition(bool bSnapToTarget)
     TransitionState.bIsTransitioning = false;
     TransitionState.OverallProgress = 0.0f;
     TransitionState.UnitTransitions.Empty();
+    SetComponentTickEnabled(false);
 }
 
 // ========== 算法实现 ==========
@@ -280,18 +291,44 @@ TArray<int32> UFormationManagerComponent::CalculateAssignmentByMode(
     const TArray<FVector>& ToPositions,
     EFormationTransitionMode Mode)
 {
-    // 统一的成本矩阵创建和求解流程
+    // 专用算法直接分发，不走成本矩阵路径
+    switch (Mode)
+    {
+    case EFormationTransitionMode::DirectMapping:
+        {
+            // 按索引直接映射
+            TArray<int32> Assignment;
+            Assignment.SetNum(FromPositions.Num());
+            for (int32 i = 0; i < FromPositions.Num(); ++i)
+            {
+                Assignment[i] = i;
+            }
+            return Assignment;
+        }
 
-    // 1. 根据模式确定是否使用相对位置
+    case EFormationTransitionMode::DirectRelativePositionMatching:
+        return CalculateDirectRelativePositionMatching(FromPositions, ToPositions);
+
+    case EFormationTransitionMode::SpatialOrderMapping:
+    case EFormationTransitionMode::DistancePriorityAssignment:
+        return CalculateSpatialOrderMapping(FromPositions, ToPositions);
+
+    case EFormationTransitionMode::RTSFlockMovement:
+        return CalculateRTSFlockMovementAssignment(FromPositions, ToPositions);
+
+    case EFormationTransitionMode::PathAwareAssignment:
+        return CalculatePathAwareAssignment(FromPositions, ToPositions);
+
+    case EFormationTransitionMode::OptimizedAssignment:
+    case EFormationTransitionMode::SimpleAssignment:
+    default:
+        break;
+    }
+
+    // OptimizedAssignment / SimpleAssignment 走成本矩阵路径
     bool bUseRelativePosition = (Mode == EFormationTransitionMode::OptimizedAssignment);
-
-    // 2. 创建基础成本矩阵
     TArray<TArray<float>> CostMatrix = CreateCostMatrix(FromPositions, ToPositions, bUseRelativePosition);
-
-    // 3. 应用算法特定的修正
     ApplyCostModifications(CostMatrix, FromPositions, ToPositions, Mode);
-
-    // 4. 求解分配问题
     return SolveAssignmentProblem(CostMatrix);
 }
 
@@ -472,6 +509,10 @@ void UFormationManagerComponent::UpdateUnitPositions(float DeltaTime)
     if (bAllCompleted)
     {
         TransitionState.bIsTransitioning = false;
+        SetComponentTickEnabled(false);
+
+        // 通知 Owner Actor 过渡已完成，由外部决定是否销毁
+        OnFormationTransitionCompleted.Broadcast();
     }
 }
 

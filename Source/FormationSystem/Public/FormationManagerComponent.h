@@ -8,6 +8,9 @@
 // 前向声明
 class IFormationInterface;
 
+/** 阵型过渡完成时广播 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFormationTransitionCompleted);
+
 /**
  * 阵型管理器组件
  * 负责管理阵型变换的核心逻辑
@@ -28,6 +31,10 @@ public:
     /** 当前阵型变换状态 */
     UPROPERTY(BlueprintReadOnly, Category = "Formation", meta = (DisplayName = "变换状态"))
     FFormationTransitionState TransitionState;
+
+    /** 阵型过渡完成时广播（可用于清理临时管理 Actor） */
+    UPROPERTY(BlueprintAssignable, Category = "Formation", meta = (DisplayName = "过渡完成事件"))
+    FOnFormationTransitionCompleted OnFormationTransitionCompleted;
 
     /**
      * 检测两个阵型是否为相同阵型的平移关系
@@ -77,6 +84,10 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "Formation", meta = (DisplayName = "停止阵型变换"))
     void StopFormationTransition(bool bSnapToTarget = false);
+
+    /** 销毁拥有此组件的 Actor（用于自动清理临时管理 Actor） */
+    UFUNCTION()
+    void DestroyOwnerActor();
 
     /**
      * 检查是否正在进行阵型变换

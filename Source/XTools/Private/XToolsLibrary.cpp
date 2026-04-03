@@ -544,24 +544,18 @@ FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray
     // 确保Progress在[0,1]范围内
     Progress = FMath::Clamp(Progress, 0.0f, 1.0f);
 
+    // 调试绘制降级处理：无法获取 World 时只关闭调试绘制，不影响数值计算
     UWorld* World = nullptr;
     if (bShowDebug)
     {
-        if (!GEngine)
+        if (GEngine)
         {
-            FXToolsErrorReporter::Error(LogXTools,
-                TEXT("CalculateBezierPoint: GEngine为空，引擎未正确初始化"),
-                TEXT("CalculateBezierPoint"));
-            return FVector::ZeroVector;
+            World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
         }
-
-        World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
         if (!World)
         {
-            FXToolsErrorReporter::Error(LogXTools,
-                TEXT("CalculateBezierPoint: 调试绘制需要有效的世界上下文对象"),
-                TEXT("CalculateBezierPoint"));
-            return FVector::ZeroVector;
+            UE_LOG(LogXTools, Warning, TEXT("CalculateBezierPoint: 无法获取 World，跳过调试绘制"));
+            bShowDebug = false;
         }
     }
 

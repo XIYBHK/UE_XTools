@@ -1047,25 +1047,42 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
     QuickSortByProperty(ArrayHelper, ArrayProp->Inner, SortProp, Indices, 0, ArrayHelper.Num() - 1, bAscending, DepthLimit);
 
     // 根据排序后的索引重新排列数组
+    // 使用 InitializeValue/DestroyValue 正确处理非 POD 类型（FString、TArray 等）
+    FProperty* InnerProp = ArrayProp->Inner;
+    const int32 ElementSize = XTOOLS_GET_ELEMENT_SIZE(InnerProp);
+    const int32 NumElements = ArrayHelper.Num();
     TArray<uint8> TempStorage;
-    const int32 ElementSize = XTOOLS_GET_ELEMENT_SIZE(ArrayProp->Inner);
-    TempStorage.SetNumUninitialized(ElementSize * ArrayHelper.Num());
+    TempStorage.SetNumZeroed(ElementSize * NumElements);
+
+    // 先对临时缓冲区中每个元素执行构造
+    for (int32 i = 0; i < NumElements; ++i)
+    {
+        void* DestPtr = TempStorage.GetData() + (i * ElementSize);
+        InnerProp->InitializeValue(DestPtr);
+    }
 
     // 复制排序后的元素到临时存储
-    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    for (int32 i = 0; i < NumElements; ++i)
     {
         const int32 SourceIndex = Indices[i];
         void* SourcePtr = ArrayHelper.GetRawPtr(SourceIndex);
         void* DestPtr = TempStorage.GetData() + (i * ElementSize);
-        ArrayProp->Inner->CopyCompleteValue(DestPtr, SourcePtr);
+        InnerProp->CopyCompleteValue(DestPtr, SourcePtr);
     }
 
     // 将排序后的元素复制回原数组
-    for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+    for (int32 i = 0; i < NumElements; ++i)
     {
         void* SourcePtr = TempStorage.GetData() + (i * ElementSize);
         void* DestPtr = ArrayHelper.GetRawPtr(i);
-        ArrayProp->Inner->CopyCompleteValue(DestPtr, SourcePtr);
+        InnerProp->CopyCompleteValue(DestPtr, SourcePtr);
+    }
+
+    // 销毁临时缓冲区中的元素，防止非 POD 成员泄漏
+    for (int32 i = 0; i < NumElements; ++i)
+    {
+        void* Ptr = TempStorage.GetData() + (i * ElementSize);
+        InnerProp->DestroyValue(Ptr);
     }
 
     // 返回原始索引
@@ -1179,6 +1196,26 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
             const int64 RightValue = UnderlyingProp->GetSignedIntPropertyValue(RightValuePtr);
             bResult = LeftValue < RightValue;
         }
+    }
+    else
+    {
+        // 不支持的属性类型：记录一次性警告，返回 false 保持原序（不参与排序）
+        static TSet<FName> WarnedPropertyTypes;
+        const FName PropertyClassName = Property->GetClass()->GetFName();
+        if (!WarnedPropertyTypes.Contains(PropertyClassName))
+        {
+            WarnedPropertyTypes.Add(PropertyClassName);
+            FXToolsErrorReporter::Warning(
+                LogSort,
+                FString::Printf(TEXT("ComparePropertyValues: 不支持的属性类型 '%s'（属性: %s），元素将保持原序。支持的类型: 数值、布尔、FName、FString、FText(编辑器)、枚举"),
+                    *PropertyClassName.ToString(), *Property->GetName()),
+                NAME_None,
+                true,
+                5.0f
+            );
+        }
+        // 始终返回 false：对排序算法而言表示"不小于"，确保不破坏比较器的严格弱序约束
+        return false;
     }
 
     return bResult == bAscending;

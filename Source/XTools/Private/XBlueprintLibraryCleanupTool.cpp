@@ -432,7 +432,8 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
         }
         
         bool bBlueprintModified = false;
-        
+        const int32 SuccessCountBeforeThisBlueprint = SuccessCount;
+
         for (const FWorldContextScanResult& Result : Results)
         {
             // 尝试移除参数
@@ -542,14 +543,20 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
             
             // 2. 重新编译蓝图
             FKismetEditorUtilities::CompileBlueprint(Blueprint);
-            
-            // 3. 检查编译结果
+
+            // 3. 检查编译结果，编译失败时回滚统计
             if (Blueprint->Status == BS_Error)
             {
+                // 该蓝图内的移除操作虽然执行了但编译失败，将本蓝图新增的成功计数回退到失败
+                const int32 ThisBlueprintSuccessCount = SuccessCount - SuccessCountBeforeThisBlueprint;
+                FailureCount += ThisBlueprintSuccessCount;
+                SuccessCount = SuccessCountBeforeThisBlueprint;
+
                 if (bLogToConsole)
                 {
                     FXToolsErrorReporter::Error(LogXTools,
-                        FString::Printf(TEXT("蓝图编译失败: %s"), *Blueprint->GetName()),
+                        FString::Printf(TEXT("蓝图编译失败，回滚 %d 个参数的成功计数: %s"),
+                            ThisBlueprintSuccessCount, *Blueprint->GetName()),
                         TEXT("ExecuteCleanupWorldContextParams"));
                 }
             }

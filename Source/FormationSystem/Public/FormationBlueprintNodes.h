@@ -77,8 +77,11 @@ public:
      * @param bShowDebug 是否显示调试信息
      * @return 创建的阵型管理器组件
      */
-    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", 
-        meta = (DisplayName = "阵型变换序列", WorldContext = "WorldContext"))
+    UE_DEPRECATED(5.3, "序列逻辑未实现，当前仅执行序列中第一个阵型。请改用 QuickFormationTransition 逐个执行。")
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation",
+        meta = (DisplayName = "阵型变换序列（未完成）", WorldContext = "WorldContext",
+        DeprecatedFunction, DeprecationMessage = "序列逻辑未实现，当前仅执行第一个阵型。请改用 QuickFormationTransition。",
+        ToolTip = "警告：此函数序列逻辑未完成，SequenceInterval 和 bLoop 参数不生效，仅执行 FormationSequence[0]。请使用 QuickFormationTransition 替代。"))
     static UFormationManagerComponent* FormationTransitionSequence(
         const UObject* WorldContext,
         const TArray<AActor*>& Units,

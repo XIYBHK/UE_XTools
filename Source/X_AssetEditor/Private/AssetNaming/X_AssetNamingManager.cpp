@@ -499,6 +499,21 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
         FString NormalizedForSuffix = NormalizeNumericSuffix(CurrentName);
         if (NormalizedForSuffix != CurrentName)
         {
+            // 规范化后需检查文件夹级冲突，避免规范成已有名字
+            const TSet<FString>* FolderNames = FolderNameCache.Find(PackagePath);
+            if (FolderNames)
+            {
+                TSet<FString> OtherNames = *FolderNames;
+                OtherNames.Remove(CurrentName);
+                if (OtherNames.Contains(NormalizedForSuffix))
+                {
+                    UE_LOG(LogX_AssetNaming, Log,
+                        TEXT("数字后缀规范化 '%s' -> '%s' 与已有资产冲突，跳过"), *CurrentName, *NormalizedForSuffix);
+                    Result.SkippedCount++;
+                    return;
+                }
+            }
+
             UE_LOG(LogX_AssetNaming, Log,
                 TEXT("数字后缀规范化（前缀已正确）: %s -> %s"), *CurrentName, *NormalizedForSuffix);
 
@@ -611,7 +626,18 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     {
         UE_LOG(LogX_AssetNaming, Log,
             TEXT("数字后缀规范化（最终名称）: %s -> %s"), *FinalNewName, *NormalizedFinalName);
-        FinalNewName = NormalizedFinalName;
+
+        // 规范化后可能重新产生冲突（例如 _1 -> _01 与已有的 _01 冲突），需再次检查
+        if (ExistingNames.Contains(NormalizedFinalName))
+        {
+            UE_LOG(LogX_AssetNaming, Log,
+                TEXT("规范化后名称 '%s' 与已有资产冲突，保留冲突解算结果 '%s'"), *NormalizedFinalName, *FinalNewName);
+            // 保留冲突解算后的名字，不采用规范化结果
+        }
+        else
+        {
+            FinalNewName = NormalizedFinalName;
+        }
     }
 
     // ========== 【最终安全检查】防御性编程 ==========
@@ -657,17 +683,16 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
 {
     int32 TotalCount = Result.SuccessCount + Result.SkippedCount + Result.FailedCount;
 
-    // 构建详细的操作结果信息
-    static FString LastOperationDetails;
-    LastOperationDetails.Empty();
-    LastOperationDetails.Append(FString::Printf(TEXT("资产名称规范化详情 (%s)\n\n"), *FDateTime::Now().ToString()));
-    LastOperationDetails.Append(LOCTEXT("NormalizationHeader", "==================== 规范化操作完成 ====================\n").ToString());
-    LastOperationDetails.Append(LOCTEXT("SummaryLabel", "概览：\n").ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("TotalLabel", "- 总计：{0}\n"), FText::AsNumber(TotalCount)).ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("RenamedLabel", "- 已重命名：{0}\n"), FText::AsNumber(Result.SuccessCount)).ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("AlreadyOkLabel", "- 无需处理：{0}\n"), FText::AsNumber(Result.SkippedCount)).ToString());
-    LastOperationDetails.Append(FText::Format(LOCTEXT("FailedLabel", "- 失败：{0}\n"), FText::AsNumber(Result.FailedCount)).ToString());
-    LastOperationDetails.Append(LOCTEXT("SeparatorLine", "====================================================\n").ToString());
+    // 构建详细的操作结果信息（每次创建独立副本，避免通知间串结果）
+    TSharedPtr<FString> OperationDetails = MakeShared<FString>();
+    OperationDetails->Append(FString::Printf(TEXT("资产名称规范化详情 (%s)\n\n"), *FDateTime::Now().ToString()));
+    OperationDetails->Append(LOCTEXT("NormalizationHeader", "==================== 规范化操作完成 ====================\n").ToString());
+    OperationDetails->Append(LOCTEXT("SummaryLabel", "概览：\n").ToString());
+    OperationDetails->Append(FText::Format(LOCTEXT("TotalLabel", "- 总计：{0}\n"), FText::AsNumber(TotalCount)).ToString());
+    OperationDetails->Append(FText::Format(LOCTEXT("RenamedLabel", "- 已重命名：{0}\n"), FText::AsNumber(Result.SuccessCount)).ToString());
+    OperationDetails->Append(FText::Format(LOCTEXT("AlreadyOkLabel", "- 无需处理：{0}\n"), FText::AsNumber(Result.SkippedCount)).ToString());
+    OperationDetails->Append(FText::Format(LOCTEXT("FailedLabel", "- 失败：{0}\n"), FText::AsNumber(Result.FailedCount)).ToString());
+    OperationDetails->Append(LOCTEXT("SeparatorLine", "====================================================\n").ToString());
 
     // 添加提示信息
     if (Result.SkippedCount > 0)
@@ -675,10 +700,10 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
         const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
         if (Settings && (Settings->bAutoRenameOnImport || Settings->bAutoRenameOnCreate))
         {
-            LastOperationDetails.Append(TEXT("\n"));
-            LastOperationDetails.Append(LOCTEXT("AutoRenameNote", "注意：部分资产已被跳过，可能因为它们已不存在。\n").ToString());
-            LastOperationDetails.Append(LOCTEXT("AutoRenameHint", "当开启了“创建/导入时自动重命名”且资产已经被自动重命名时，\n").ToString());
-            LastOperationDetails.Append(LOCTEXT("AutoRenameHint2", "可能会发生这种情况。请查看输出日志了解详情。\n").ToString());
+            OperationDetails->Append(TEXT("\n"));
+            OperationDetails->Append(LOCTEXT("AutoRenameNote", "注意：部分资产已被跳过，可能因为它们已不存在。\n").ToString());
+            OperationDetails->Append(LOCTEXT("AutoRenameHint", "当开启了“创建/导入时自动重命名”且资产已经被自动重命名时，\n").ToString());
+            OperationDetails->Append(LOCTEXT("AutoRenameHint2", "可能会发生这种情况。请查看输出日志了解详情。\n").ToString());
         }
     }
 
@@ -700,11 +725,11 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
     Info.bAllowThrottleWhenFrameRateIsLow = true;
     Info.Image = nullptr;
 
-    // 添加点击查看详情功能
-    Info.Hyperlink = FSimpleDelegate::CreateLambda([=]()
+    // 添加点击查看详情功能（通过 TSharedPtr 按值捕获，每个通知持有独立副本）
+    Info.Hyperlink = FSimpleDelegate::CreateLambda([OperationDetails]()
     {
         FMessageDialog::Open(EAppMsgType::Ok,
-            FText::FromString(LastOperationDetails),
+            FText::FromString(*OperationDetails),
             NSLOCTEXT("X_AssetNaming", "ViewDetailsHyperlink", "查看详情"));
     });
     Info.HyperlinkText = NSLOCTEXT("X_AssetNaming", "ViewDetailsHyperlink", "查看详情");
@@ -728,7 +753,7 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
     if (Result.FailedCount > 0 && Result.FailedCount > TotalCount / 3)
     {
         FMessageDialog::Open(EAppMsgType::Ok,
-            FText::FromString(LastOperationDetails),
+            FText::FromString(*OperationDetails),
             NSLOCTEXT("X_AssetNaming", "AssetRenameDetails", "资产名称规范化详情"));
     }
 
@@ -861,16 +886,26 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
     FString NormalizedFinalName = NormalizeNumericSuffix(FinalNewName);
     if (NormalizedFinalName != FinalNewName)
     {
-        UE_LOG(LogX_AssetNaming, Log, 
+        UE_LOG(LogX_AssetNaming, Log,
             TEXT("数字后缀规范化（最终名称）: %s -> %s"), *FinalNewName, *NormalizedFinalName);
-        FinalNewName = NormalizedFinalName;
+
+        // 规范化后可能重新产生冲突（例如 _1 -> _01 与已有的 _01 冲突），需再次检查
+        if (ExistingNames.Contains(NormalizedFinalName))
+        {
+            UE_LOG(LogX_AssetNaming, Log,
+                TEXT("规范化后名称 '%s' 与已有资产冲突，保留冲突解算结果 '%s'"), *NormalizedFinalName, *FinalNewName);
+        }
+        else
+        {
+            FinalNewName = NormalizedFinalName;
+        }
     }
 
     // ========== 【最终安全检查】防御性编程 ==========
     // 理论上不应该发生，但作为最后的安全防线
     if (FinalNewName == CurrentName)
     {
-        UE_LOG(LogX_AssetNaming, Error, 
+        UE_LOG(LogX_AssetNaming, Error,
             TEXT("CRITICAL: Final rename would be same-name operation (%s)! This is a logic error."),
             *CurrentName);
         return false;  // 直接拒绝执行，而不是强制修改名称

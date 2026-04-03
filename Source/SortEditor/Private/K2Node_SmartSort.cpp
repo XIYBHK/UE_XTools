@@ -908,27 +908,16 @@ void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContex
 	}
 	else if (!FuncOutputArrayPin && SortedArrayOutputPin)
 	{
-		// 对于void函数（如SortArrayByPropertyInPlace），我们需要特殊处理
-		// 因为函数原地修改数组，我们需要将智能排序节点的输出连接传递给输入数组的连接
+		// 原地排序函数（如 SortArrayByPropertyInPlace）没有数组返回值。
+		// 通过编译器的 MovePinLinksToIntermediate 把 SortedArray 的消费者
+		// 重定向到中间函数节点的 TargetArray 输入引脚（ref 参数），
+		// 让编译器正确跟踪数据流，而非绕过编译器直接 TryCreateConnection。
 		UEdGraphPin* FuncInputArrayPin = CallFunctionNode->FindPin(TEXT("TargetArray"), EGPD_Input);
 		if (FuncInputArrayPin && FuncInputArrayPin->LinkedTo.Num() > 0)
 		{
-			// 获取输入数组的源连接
 			UEdGraphPin* SourceArrayPin = FuncInputArrayPin->LinkedTo[0];
-			const UEdGraphSchema* Schema = CompilerContext.GetSchema();
-
-			// 将智能排序节点的输出连接到原始数组源
-			// 这样输出就会指向修改后的数组
-			if (SortedArrayOutputPin->LinkedTo.Num() > 0)
-			{
-				for (UEdGraphPin* LinkedPin : SortedArrayOutputPin->LinkedTo)
-				{
-					if (Schema)
-					{
-						Schema->TryCreateConnection(SourceArrayPin, LinkedPin);
-					}
-				}
-			}
+			// 把 SortedArray 输出的所有消费者移到输入数组的源引脚上
+			CompilerContext.MovePinLinksToIntermediate(*SortedArrayOutputPin, *SourceArrayPin);
 		}
 	}
 
@@ -943,57 +932,50 @@ void UK2Node_SmartSort::ConnectOutputPins(FKismetCompilerContext& CompilerContex
 
 void UK2Node_SmartSort::ConnectDynamicInputPins(FKismetCompilerContext& CompilerContext, UK2Node_CallFunction* CallFunctionNode)
 {
-	// 连接升序/降序引脚
-	UEdGraphPin* AscendingPin = this->FindPin(FSmartSort_Helper::PN_Ascending);
-	UEdGraphPin* FuncAscendingPin = CallFunctionNode->FindPin(TEXT("bAscending"), EGPD_Input);
-	if(FuncAscendingPin && AscendingPin)
+	// 辅助 lambda：有连线则移动，无连线则拷贝默认值和默认文本值到目标引脚
+	auto ConnectOrCopyDefault = [&CompilerContext](UEdGraphPin* SourcePin, UEdGraphPin* TargetPin)
 	{
-		CompilerContext.MovePinLinksToIntermediate(*AscendingPin, *FuncAscendingPin);
-	}
+		if (!SourcePin || !TargetPin) return;
+		if (SourcePin->LinkedTo.Num() > 0)
+		{
+			CompilerContext.MovePinLinksToIntermediate(*SourcePin, *TargetPin);
+		}
+		else
+		{
+			TargetPin->DefaultValue = SourcePin->DefaultValue;
+			TargetPin->DefaultTextValue = SourcePin->DefaultTextValue;
+			TargetPin->DefaultObject = SourcePin->DefaultObject;
+		}
+	};
 
-	// 连接其他特定的动态引脚
+	// 连接升序/降序引脚
+	ConnectOrCopyDefault(
+		this->FindPin(FSmartSort_Helper::PN_Ascending),
+		CallFunctionNode->FindPin(TEXT("bAscending"), EGPD_Input));
+
+	// 连接 Location（Actor排序可能叫 Location 或 Center）
 	UEdGraphPin* LocationPin = this->FindPin(FSmartSort_Helper::PN_Location);
 	if(LocationPin)
 	{
-		// 对于Actor排序，可能是Location或Center
 		UEdGraphPin* FuncLocationPin = CallFunctionNode->FindPin(TEXT("Location"), EGPD_Input);
 		if(!FuncLocationPin) FuncLocationPin = CallFunctionNode->FindPin(TEXT("Center"), EGPD_Input);
-		if(FuncLocationPin)
-		{
-			CompilerContext.MovePinLinksToIntermediate(*LocationPin, *FuncLocationPin);
-		}
+		ConnectOrCopyDefault(LocationPin, FuncLocationPin);
 	}
 
-	UEdGraphPin* DirectionPin = this->FindPin(FSmartSort_Helper::PN_Direction);
-	if(DirectionPin)
-	{
-		UEdGraphPin* FuncDirectionPin = CallFunctionNode->FindPin(TEXT("Direction"), EGPD_Input);
-		if(FuncDirectionPin)
-		{
-			CompilerContext.MovePinLinksToIntermediate(*DirectionPin, *FuncDirectionPin);
-		}
-	}
+	// 连接 Direction
+	ConnectOrCopyDefault(
+		this->FindPin(FSmartSort_Helper::PN_Direction),
+		CallFunctionNode->FindPin(TEXT("Direction"), EGPD_Input));
 
-	UEdGraphPin* AxisPin = this->FindPin(FSmartSort_Helper::PN_Axis);
-	if(AxisPin)
-	{
-		UEdGraphPin* FuncAxisPin = CallFunctionNode->FindPin(TEXT("Axis"), EGPD_Input);
-		if(FuncAxisPin)
-		{
-			CompilerContext.MovePinLinksToIntermediate(*AxisPin, *FuncAxisPin);
-		}
-	}
+	// 连接 Axis
+	ConnectOrCopyDefault(
+		this->FindPin(FSmartSort_Helper::PN_Axis),
+		CallFunctionNode->FindPin(TEXT("Axis"), EGPD_Input));
 
 	// 连接属性名称引脚（用于结构体排序）
-	UEdGraphPin* PropertyNamePin = this->FindPin(FSmartSort_Helper::PN_PropertyName);
-	if(PropertyNamePin)
-	{
-		UEdGraphPin* FuncPropertyNamePin = CallFunctionNode->FindPin(TEXT("PropertyName"), EGPD_Input);
-		if(FuncPropertyNamePin)
-		{
-			CompilerContext.MovePinLinksToIntermediate(*PropertyNamePin, *FuncPropertyNamePin);
-		}
-	}
+	ConnectOrCopyDefault(
+		this->FindPin(FSmartSort_Helper::PN_PropertyName),
+		CallFunctionNode->FindPin(TEXT("PropertyName"), EGPD_Input));
 
 	// 连接Then执行引脚（只对非Pure函数）
 	UFunction* Function = CallFunctionNode->GetTargetFunction();

@@ -84,6 +84,10 @@ bool UFormationBlueprintNodes::QuickFormationTransition(
 
     if (bSuccess)
     {
+        // 过渡完成后自动销毁临时管理 Actor
+        OutFormationManager->OnFormationTransitionCompleted.AddDynamic(
+            OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+
         if (bShowDebug)
         {
             UFormationLibrary::DrawFormationDebug(WorldContext, CurrentFormation, Config.DebugDuration, FLinearColor::Green, 2.0f);
@@ -157,8 +161,8 @@ UFormationManagerComponent* UFormationBlueprintNodes::FormationTransitionSequenc
     SequenceActor->AddInstanceComponent(FormationManager);
     FormationManager->RegisterComponent();
 
-    // TODO: 实现序列逻辑（需要额外的序列管理组件）
-    // 这里先实现第一个阵型的变换
+    // 序列逻辑未实现：仅执行第一个阵型的变换，SequenceInterval 和 bLoop 参数不生效
+    UE_LOG(LogFormationSystem, Warning, TEXT("FormationTransitionSequence: 序列逻辑未完成，仅执行 FormationSequence[0]。请改用 QuickFormationTransition。"));
     if (FormationSequence.Num() > 0)
     {
         FVector CurrentCenter;
@@ -170,6 +174,10 @@ UFormationManagerComponent* UFormationBlueprintNodes::FormationTransitionSequenc
         Config.bShowDebug = bShowDebug;
 
         FormationManager->StartFormationTransition(Units, CurrentFormation, FirstTargetFormation, Config);
+
+        // 过渡完成后自动销毁临时管理 Actor
+        FormationManager->OnFormationTransitionCompleted.AddDynamic(
+            FormationManager, &UFormationManagerComponent::DestroyOwnerActor);
     }
 
     return FormationManager;
@@ -598,6 +606,10 @@ bool UFormationBlueprintNodes::RTSFlockFormationTransition(
 
     if (bSuccess)
     {
+        // 过渡完成后自动销毁临时管理 Actor
+        OutFormationManager->OnFormationTransitionCompleted.AddDynamic(
+            OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+
         if (bShowDebug)
         {
             UFormationLibrary::DrawFormationDebug(WorldContext, CurrentFormation, Config.DebugDuration, FLinearColor::Green, 2.0f);
@@ -686,6 +698,10 @@ bool UFormationBlueprintNodes::PathAwareFormationTransition(
 
     if (bSuccess)
     {
+        // 过渡完成后自动销毁临时管理 Actor
+        OutFormationManager->OnFormationTransitionCompleted.AddDynamic(
+            OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+
         if (bShowDebug)
         {
             UFormationLibrary::DrawFormationDebug(WorldContext, CurrentFormation, Config.DebugDuration, FLinearColor::Green, 2.0f);
