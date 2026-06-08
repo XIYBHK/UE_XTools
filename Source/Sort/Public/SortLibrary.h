@@ -148,10 +148,10 @@ public:
         UPARAM(DisplayName="Actor数组") const TArray<AActor*>& Actors,
         UPARAM(DisplayName="中心点") const FVector& Center,
         UPARAM(DisplayName="参考方向") const FVector& Direction,
-        UPARAM(DisplayName="最大夹角") float MaxAngle,
-        UPARAM(DisplayName="最大距离") float MaxDistance,
-        UPARAM(DisplayName="夹角权重") float AngleWeight,
-        UPARAM(DisplayName="距离权重") float DistanceWeight,
+        UPARAM(DisplayName="最大夹角", meta=(UIMin="0.0", UIMax="180.0", ClampMin="0.0", ClampMax="180.0")) float MaxAngle,
+        UPARAM(DisplayName="最大距离", meta=(UIMin="0.0", UIMax="100000.0", ClampMin="0.0")) float MaxDistance,
+        UPARAM(DisplayName="夹角权重", meta=(UIMin="0.0", UIMax="1.0", ClampMin="0.0")) float AngleWeight,
+        UPARAM(DisplayName="距离权重", meta=(UIMin="0.0", UIMax="1.0", ClampMin="0.0")) float DistanceWeight,
         UPARAM(DisplayName="排序后数组") TArray<AActor*>& SortedActors,
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
         UPARAM(DisplayName="已排序夹角") TArray<float>& SortedAngles,
@@ -515,7 +515,7 @@ public:
     static void RemoveDuplicateFloats(
         UPARAM(DisplayName="输入数组") const TArray<float>& InArray,
         UPARAM(DisplayName="输出数组") TArray<float>& OutArray,
-        UPARAM(DisplayName="容差值") float Tolerance = 0.0001f);
+        UPARAM(DisplayName="容差值", meta=(ClampMin="0.0", UIMin="0.0", UIMax="1.0")) float Tolerance = 0.0001f);
 
     /** 清除整数数组中的重复项 */
     UFUNCTION(BlueprintPure,
@@ -553,7 +553,7 @@ public:
     static void RemoveDuplicateVectors(
         UPARAM(DisplayName="输入数组") const TArray<FVector>& InArray,
         UPARAM(DisplayName="输出数组") TArray<FVector>& OutArray,
-        UPARAM(DisplayName="容差值") float Tolerance = 0.0001f);
+        UPARAM(DisplayName="容差值", meta=(ClampMin="0.0", UIMin="0.0", UIMax="1.0")) float Tolerance = 0.0001f);
 
     /** 查找向量数组中的重复向量 */
     UFUNCTION(BlueprintPure,
@@ -610,6 +610,9 @@ private:
     
     // 堆排序回退算法（用于防止栈溢出）
     static void HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending);
+
+    // 堆调整（HeapSort 内部，作为成员静态函数以访问 GetPropertyValuePtr/ComparePropertyValues）
+    static void HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Root, int32 End, int32 Low, bool bAscending);
 
     // 属性值访问辅助函数
     static void* GetPropertyValuePtr(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, int32 ElementIndex);

@@ -196,9 +196,9 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
     // 检查Class有效性（与原生第475-482行一致）
     if (!ThisClass || ((0 == ThisClass->LinkedTo.Num()) && (NULL == ClassToSpawn)))
     {
-        CompilerContext.MessageLog.Error(*FText::Format(
-            FText::FromString(TEXT("Spawn node {0} must have a {1} specified.")), 
-            FText::FromString(GetNodeTitle(ENodeTitleType::ListView).ToString()), 
+        CompilerContext.MessageLog.Warning(*FText::Format(
+            FText::FromString(TEXT("Spawn node {0} must have a {1} specified.")),
+            FText::FromString(GetNodeTitle(ENodeTitleType::ListView).ToString()),
             FText::FromString(TEXT("Class"))
         ).ToString(), this, ThisClass);
         BreakAllNodeLinks();

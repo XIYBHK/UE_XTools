@@ -326,7 +326,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogObjectPoolManager, Log, All);
  * 池管理器的性能统计宏
  */
 #if STATS
-DECLARE_CYCLE_STAT_EXTERN(TEXT("PoolManager_PerformMaintenance"), STAT_PoolManager_PerformMaintenance, STATGROUP_Game, OBJECTPOOL_API);
-DECLARE_CYCLE_STAT_EXTERN(TEXT("PoolManager_AutoResize"), STAT_PoolManager_AutoResize, STATGROUP_Game, OBJECTPOOL_API);
-DECLARE_CYCLE_STAT_EXTERN(TEXT("PoolManager_SmartPreallocation"), STAT_PoolManager_SmartPreallocation, STATGROUP_Game, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("PoolManager_PerformMaintenance"), STAT_PoolManager_PerformMaintenance, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("PoolManager_AutoResize"), STAT_PoolManager_AutoResize, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("PoolManager_SmartPreallocation"), STAT_PoolManager_SmartPreallocation, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
 #endif

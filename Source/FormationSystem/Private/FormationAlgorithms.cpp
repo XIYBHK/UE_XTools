@@ -433,9 +433,9 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
                            FMath::IsNearlyEqual(FromSize.Y, ToSize.Y, SizeToleranceY);
 
     // 输出更详细的调试信息
-    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: FromAABB Size=(%s)"), *FromSize.ToString());
-    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: ToAABB Size=(%s)"), *ToSize.ToString());
-    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 尺寸差异=(X:%.2f, Y:%.2f, Z:%.2f)"),
+    UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: FromAABB Size=(%s)"), *FromSize.ToString());
+    UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: ToAABB Size=(%s)"), *ToSize.ToString());
+    UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: 尺寸差异=(X:%.2f, Y:%.2f, Z:%.2f)"),
            FMath::Abs(FromSize.X - ToSize.X),
            FMath::Abs(FromSize.Y - ToSize.Y),
            FMath::Abs(FromSize.Z - ToSize.Z));
@@ -449,7 +449,7 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
     // 相同阵型优化：如果是相同阵型的平移，使用精确的相对位置匹配
     if (bIsSameFormation)
     {
-        UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 相同阵型平移，使用精确相对位置匹配"));
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: 相同阵型平移，使用精确相对位置匹配"));
 
         // 计算AABB相对位置成本矩阵
         TArray<TArray<float>> RelativeCostMatrix;
@@ -484,7 +484,7 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
                 // 调试输出第一个单位的相对位置成本
                 if (i == 0 && j < 5)
                 {
-                    UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 单位0->目标%d 相对位置成本=%.4f"), j, RelativeCost);
+                    UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: 单位0->目标%d 相对位置成本=%.4f"), j, RelativeCost);
                 }
             }
         }
@@ -502,15 +502,15 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
             AssignmentStr += FString::Printf(TEXT("[%d->%d:%.1f] "), i, Assignment[i], Distance);
         }
         float AverageDistance = Assignment.Num() > 0 ? TotalDistance / Assignment.Num() : 0.0f;
-        UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 相同阵型分配结果: %s..."), *AssignmentStr);
-        UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 相同阵型平均移动距离: %.2f"), AverageDistance);
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: 相同阵型分配结果: %s..."), *AssignmentStr);
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: 相同阵型平均移动距离: %.2f"), AverageDistance);
         UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 相同阵型使用AABB相对位置匹配完成"));
         
         return Assignment;
     }
     else
     {
-        UE_LOG(LogFormationSystem, Log, TEXT("空间排序算法: 不同阵型变换，使用空间排序匹配"));
+        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("空间排序算法: 不同阵型变换，使用空间排序匹配"));
     }
 
     // 计算起始位置的空间排序数据
@@ -611,13 +611,15 @@ bool UFormationManagerComponent::DetectSpiralFormation(const TArray<FSpatialSort
     float DistanceSum = 0.0f;
     float AngleDistanceSum = 0.0f;
     float AngleSquaredSum = 0.0f;
-    
+    float DistanceSquaredSum = 0.0f;
+
     for (const FSpatialSortData& Data : SortedData)
     {
         AngleSum += Data.Angle;
         DistanceSum += Data.DistanceToCenter;
         AngleDistanceSum += Data.Angle * Data.DistanceToCenter;
         AngleSquaredSum += Data.Angle * Data.Angle;
+        DistanceSquaredSum += Data.DistanceToCenter * Data.DistanceToCenter;
     }
     
     float n = static_cast<float>(SortedData.Num());
@@ -632,8 +634,15 @@ bool UFormationManagerComponent::DetectSpiralFormation(const TArray<FSpatialSort
     float Slope = Numerator / Denominator;
     float Intercept = (DistanceSum - Slope * AngleSum) / n;
     
-    // 计算相关系数
-    float CorrelationCoefficient = Numerator / (FMath::Sqrt(Denominator) * FMath::Sqrt(n * DistanceSum * DistanceSum - DistanceSum * DistanceSum));
+    // 计算皮尔逊相关系数：分母 = sqrt(nΣx²-(Σx)²) * sqrt(nΣy²-(Σy)²)
+    // y 分量需用距离平方和 DistanceSquaredSum，而非 (ΣD)²
+    const float DistanceVariance = FMath::Max(0.0f, n * DistanceSquaredSum - DistanceSum * DistanceSum);
+    const float CorrelationDenominator = FMath::Sqrt(Denominator) * FMath::Sqrt(DistanceVariance);
+    if (FMath::IsNearlyZero(CorrelationDenominator))
+    {
+        return false;
+    }
+    float CorrelationCoefficient = Numerator / CorrelationDenominator;
     
     // 相关系数的绝对值大于0.7表示强相关
     return FMath::Abs(CorrelationCoefficient) > 0.7f;
@@ -646,11 +655,17 @@ float UFormationManagerComponent::CalculateSpiralParameter(float Angle, float Di
 }
 
 float UFormationManagerComponent::CalculateFlockingBonus(
-    int32 FromIndex, 
-    int32 ToIndex, 
-    const TArray<FVector>& FromPositions, 
+    int32 FromIndex,
+    int32 ToIndex,
+    const TArray<FVector>& FromPositions,
     const TArray<FVector>& ToPositions)
 {
+    if (!FromPositions.IsValidIndex(FromIndex) || !ToPositions.IsValidIndex(ToIndex) ||
+        FromPositions.Num() == 0 || ToPositions.Num() == 0)
+    {
+        return 0.0f;
+    }
+
     // 计算相对位置向量
     FVector FromRelative = FromPositions[FromIndex] - FromPositions[0];
     FVector ToRelative = ToPositions[ToIndex] - ToPositions[0];

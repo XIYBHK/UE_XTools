@@ -99,15 +99,15 @@ struct FPointSamplingConfig
 	EXToolsSamplingMethod Method = EXToolsSamplingMethod::SurfaceProximity;
 
 	/** 生成点网格的间距 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sampling", meta = (ClampMin = "0.1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sampling", meta = (ClampMin = "0.1", UIMin = "1.0", UIMax = "500.0", ForceUnits = "cm"))
 	float GridSpacing = 10.0f;
 
 	/** 每个采样点在各轴上的最大随机偏移量 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sampling", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sampling", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "100.0", ForceUnits = "cm"))
 	float Noise = 0.0f;
 
 	/** [表面邻近度模式] 检测球体半径 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sampling", meta = (ClampMin = "0.1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sampling", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "100.0", ForceUnits = "cm"))
 	float TraceRadius = 5.0f;
 
 	/** 是否使用复杂碰撞（按多边形） */
@@ -125,11 +125,11 @@ struct FPointSamplingConfig
 	bool bEnableDebugDraw = false;
 
 	/** 调试绘制时是否仅显示成功命中的点 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (EditCondition = "bEnableDebugDraw"))
 	bool bDrawOnlySuccessfulHits = true;
 
 	/** 调试绘制持续时间 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "0.1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "30.0", ForceUnits = "s", EditCondition = "bEnableDebugDraw"))
 	float DebugDrawDuration = 5.0f;
 };
 

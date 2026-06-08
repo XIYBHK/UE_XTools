@@ -613,10 +613,10 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     TSet<FString> ExistingNames = *ExistingNamesPtr;
     ExistingNames.Remove(CurrentName);
 
-    // 命名冲突解决：自动添加数字后缀
+    // 命名冲突解决：自动添加数字后缀（两位补零，与 NormalizeNumericSuffix 保持一致，避免重命名后二次规范化）
     while (ExistingNames.Contains(FinalNewName))
     {
-        FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, SuffixCounter++);
+        FinalNewName = FString::Printf(TEXT("%s_%02d"), *NewName, SuffixCounter++);
     }
 
     // ========== 【UE最佳实践】最终数字后缀规范化 ==========

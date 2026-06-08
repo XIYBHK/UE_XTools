@@ -391,7 +391,7 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetOrCreatePool(UClass* ActorClass)
     //  快速缓存检查（无锁优化）
     {
         FScopeLock CacheReadLock(&CacheLock);
-        if (LastAccessedClass == ActorClass && LastAccessedPool.IsValid())
+        if (LastAccessedClass.Get() == ActorClass && LastAccessedPool.IsValid())
         {
             TSharedPtr<FActorPool> CachedPool = LastAccessedPool.Pin();
             if (CachedPool.IsValid())

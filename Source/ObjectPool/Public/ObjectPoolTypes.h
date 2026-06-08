@@ -7,6 +7,11 @@
 #include "Internationalization/Text.h"
 #include "ObjectPoolTypes.generated.h"
 
+// 对象池模块统一统计分组（基础头中声明，供 Manager/ConfigManager/Utils/Subsystem 等共享）
+#if STATS
+DECLARE_STATS_GROUP(TEXT("ObjectPoolUtils"), STATGROUP_ObjectPoolUtils, STATCAT_Advanced);
+#endif
+
 /**
  * 对象池生命周期事件类型
  * 用于跟踪Actor在对象池中的状态变化
@@ -142,23 +147,19 @@ struct OBJECTPOOL_API FObjectPoolConfig
     bool bAutoCleanup = true;
 
     /** 自动清理间隔(秒) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "高级配置", meta = (ClampMin = "1.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "高级配置", meta = (ClampMin = "1.0", ForceUnits = "s", EditCondition = "bAutoCleanup"))
     float AutoCleanupInterval = 60.0f;
 
     /** 预分配数量 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "预分配配置", meta = (ClampMin = "0"))
     int32 PreallocationCount = 0;
 
-    /** 预分配策略 (用于预分配器内部) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "预分配配置")
-    EObjectPoolPreallocationStrategy Strategy = EObjectPoolPreallocationStrategy::Progressive;
-
     /** 是否启用预热 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "预分配配置")
     bool bEnablePrewarm = true;
 
     /** 预分配延迟（毫秒） */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "预分配配置", meta = (ClampMin = "0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "预分配配置", meta = (ClampMin = "0", ForceUnits = "ms"))
     float PreallocationDelay = 0.0f;
 
     /** 是否启用内存预算 */
@@ -166,32 +167,15 @@ struct OBJECTPOOL_API FObjectPoolConfig
     bool bEnableMemoryBudget = false;
 
     /** 最大内存预算（MB） */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "内存管理", meta = (ClampMin = "1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "内存管理", meta = (ClampMin = "1", UIMax = "2048", EditCondition = "bEnableMemoryBudget"))
     int32 MaxMemoryBudgetMB = 100;
 
     /** 每帧最大分配数量 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "性能控制", meta = (ClampMin = "1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "性能控制", meta = (ClampMin = "1", UIMax = "100"))
     int32 MaxAllocationsPerFrame = 10;
 
     /** 默认构造函数 */
-    FObjectPoolConfig()
-    {
-        ActorClass = nullptr;
-        InitialSize = 10;
-        HardLimit = 0;
-        FallbackStrategy = EObjectPoolFallbackStrategy::CreateNew;
-        PreallocationStrategy = EObjectPoolPreallocationStrategy::Progressive;
-        bPrewarmOnStart = true;
-        bAutoCleanup = true;
-        AutoCleanupInterval = 60.0f;
-        PreallocationCount = 0;
-        Strategy = EObjectPoolPreallocationStrategy::Progressive;
-        bEnablePrewarm = true;
-        PreallocationDelay = 0.0f;
-        bEnableMemoryBudget = false;
-        MaxMemoryBudgetMB = 100;
-        MaxAllocationsPerFrame = 10;
-    }
+    FObjectPoolConfig() = default;
 };
 
 /**

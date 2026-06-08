@@ -77,16 +77,17 @@ public:
    * @return 基于像素的点位数组（局部坐标，居中）
    */
   static TArray<FVector> GenerateFromMaterial(
-      UMaterialInterface *Material, int32 MaxSampleSize, float Spacing,
-      float PixelThreshold, float TextureScale,
+      UObject *WorldContextObject, UMaterialInterface *Material,
+      int32 MaxSampleSize, float Spacing, float PixelThreshold, float TextureScale,
       ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto);
 
   /**
    * 从材质实例采样生成点阵（基于泊松圆盘）
    */
   static TArray<FVector> GenerateFromMaterialWithPoisson(
-      UMaterialInterface *Material, int32 MaxSampleSize, float MinRadius,
-      float MaxRadius, float PixelThreshold, float TextureScale,
+      UObject *WorldContextObject, UMaterialInterface *Material,
+      int32 MaxSampleSize, float MinRadius, float MaxRadius, float PixelThreshold,
+      float TextureScale,
       ETextureSamplingChannel SamplingChannel = ETextureSamplingChannel::Auto,
       int32 MaxAttempts = 30);
 
@@ -278,11 +279,13 @@ private:
 
   /**
    * 将材质渲染到RenderTarget
+   * @param WorldContextObject 世界上下文对象（材质资产自身无有效世界，必须由外部提供）
    * @param Material 要渲染的材质
    * @param RenderTarget 目标RenderTarget
    * @return 是否渲染成功
    */
-  static bool RenderMaterialToTarget(UMaterialInterface *Material,
+  static bool RenderMaterialToTarget(UObject *WorldContextObject,
+                                     UMaterialInterface *Material,
                                      UTextureRenderTarget2D *RenderTarget);
 
   /**

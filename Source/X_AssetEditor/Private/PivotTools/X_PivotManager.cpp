@@ -37,10 +37,14 @@ FX_PivotOperationResult FX_PivotManager::SetPivotForAssets(
     // 显示进度对话框
     FScopedSlowTask Progress((float)SelectedAssets.Num(),
         LOCTEXT("SettingPivot", "正在修改网格 Pivot..."));
-    Progress.MakeDialog();
+    Progress.MakeDialog(true);
 
     for (const FAssetData& AssetData : SelectedAssets)
     {
+        if (Progress.ShouldCancel())
+        {
+            break;
+        }
         Progress.EnterProgressFrame(1.0f,
             FText::Format(LOCTEXT("ProcessingMesh", "处理: {0}"),
             FText::FromName(AssetData.AssetName)));
@@ -180,7 +184,7 @@ FX_PivotOperationResult FX_PivotManager::SetPivotForActors(
 
     FScopedSlowTask Progress((float)MeshToSelectedActors.Num(),
         LOCTEXT("SettingPivotForActors", "正在修改 Actor Pivot..."));
-    Progress.MakeDialog();
+    Progress.MakeDialog(true);
 
     bool bAnyCompensated = false;
 
@@ -193,6 +197,8 @@ FX_PivotOperationResult FX_PivotManager::SetPivotForActors(
         {
             continue;
         }
+
+        if (Progress.ShouldCancel()) break;
 
         Progress.EnterProgressFrame(1.0f,
             FText::Format(LOCTEXT("ProcessingMeshActors", "处理网格: {0}"),
@@ -648,10 +654,12 @@ FX_PivotOperationResult FX_PivotManager::RestorePivotSnapshots(const TArray<FAss
 
     FScopedSlowTask Progress((float)SelectedAssets.Num(),
         LOCTEXT("RestoringPivot", "正在还原 Pivot..."));
-    Progress.MakeDialog();
+    Progress.MakeDialog(true);
 
     for (const FAssetData& AssetData : SelectedAssets)
     {
+        if (Progress.ShouldCancel()) break;
+
         Progress.EnterProgressFrame(1.0f,
             FText::Format(LOCTEXT("RestoringMesh", "还原: {0}"),
             FText::FromName(AssetData.AssetName)));

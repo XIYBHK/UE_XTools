@@ -7,6 +7,14 @@
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Components/SceneComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Stats/Stats.h"
+
+DECLARE_STATS_GROUP(TEXT("FormationSystem"), STATGROUP_FormationSystem, STATCAT_Advanced)
+DECLARE_CYCLE_STAT(TEXT("UpdateUnitPositions"), STAT_UpdateUnitPositions, STATGROUP_FormationSystem)
+DECLARE_CYCLE_STAT(TEXT("CalculateOptimalAssignment"), STAT_CalculateOptimalAssignment, STATGROUP_FormationSystem)
 
 // 性能优化配置常量（外部声明）
 namespace FormationPerformanceConfig
@@ -26,9 +34,6 @@ namespace FormationPerformanceConfig
     /** 最小尺寸阈值，避免除零错误 */
     constexpr float MinSizeThreshold = 1.0f;
 }
-#include "Kismet/KismetMathLibrary.h"
-#include "Components/SceneComponent.h"
-#include "Kismet/GameplayStatics.h"
 
 // ========== 组件生命周期管理 ==========
 
@@ -223,7 +228,34 @@ bool UFormationManagerComponent::StartFormationTransitionWithInterface(
     const FFormationData& ToFormation,
     const FFormationTransitionConfig& Config)
 {
-    return StartFormationTransition(Units, FromFormation, ToFormation, Config);
+    const bool bStarted = StartFormationTransition(Units, FromFormation, ToFormation, Config);
+    if (bStarted)
+    {
+        // 变换已成功开始，通知实现了 IFormationInterface 的单位
+        NotifyFormationInterfaceActors();
+    }
+    return bStarted;
+}
+
+void UFormationManagerComponent::NotifyFormationInterfaceActors()
+{
+    // 基于已计算好的变换数据，通知实现了 IFormationInterface 的单位
+    for (const FUnitTransitionData& UnitData : TransitionState.UnitTransitions)
+    {
+        AActor* Unit = UnitData.TargetActor.Get();
+        if (!IsValid(Unit) || !Unit->Implements<UFormationInterface>())
+        {
+            continue;
+        }
+
+        // 注意：是否参与变换应由调用方在传入 Units 前筛选。已纳入 TransitionState 的单位都会被
+        // UpdateUnitPositions 统一驱动移动，故此处对所有接口单位发送回调，不再用
+        // CanParticipateInFormation 二次过滤——否则会出现"跳过通知但仍被移动"的语义矛盾。
+        IFormationInterface::Execute_OnFormationPositionAssigned(
+            Unit, UnitData.TargetLocation, TransitionState.Config);
+        IFormationInterface::Execute_OnFormationTransitionStarted(
+            Unit, UnitData.StartLocation, UnitData.TargetLocation, TransitionState.Config);
+    }
 }
 
 void UFormationManagerComponent::StopFormationTransition(bool bSnapToTarget)
@@ -260,6 +292,7 @@ TArray<int32> UFormationManagerComponent::CalculateOptimalAssignment(
     const TArray<FVector>& ToPositions,
     EFormationTransitionMode TransitionMode)
 {
+    SCOPE_CYCLE_COUNTER(STAT_CalculateOptimalAssignment);
     // 性能优化：条件日志记录，避免不必要的字符串构造
     UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationManager: 开始计算最优分配，单位数量: %d"), FromPositions.Num());
 
@@ -458,6 +491,7 @@ void UFormationManagerComponent::ApplyCostModifications(
 
 void UFormationManagerComponent::UpdateUnitPositions(float DeltaTime)
 {
+    SCOPE_CYCLE_COUNTER(STAT_UpdateUnitPositions);
     if (!TransitionState.bIsTransitioning)
     {
         return;
@@ -499,6 +533,12 @@ void UFormationManagerComponent::UpdateUnitPositions(float DeltaTime)
         if (Progress >= 1.0f)
         {
             UnitData.bCompleted = true;
+
+            // 首次完成时通知接口（仅调用一次）
+            if (IsValid(Actor) && Actor->Implements<UFormationInterface>())
+            {
+                IFormationInterface::Execute_OnFormationTransitionCompleted(Actor, UnitData.TargetLocation);
+            }
         }
         else
         {

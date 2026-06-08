@@ -26,13 +26,13 @@
 
 namespace MapIdenticalHelper
 {
-	FName MapAPinName = TEXT("MapA");
-	FName MapBPinName = TEXT("MapB");
-	FName MapLibrary_MapPinName = TEXT("TargetMap");
-	FName MapLibrary_KeysPinName = TEXT("Keys");
-	FName MapLibrary_ValuesPinName = TEXT("Values");
-	FName ArrayAPinValue = TEXT("ArrayA");
-	FName ArrayBPinValue = TEXT("ArrayB");
+	const FName MapAPinName = TEXT("MapA");
+	const FName MapBPinName = TEXT("MapB");
+	const FName MapLibrary_MapPinName = TEXT("TargetMap");
+	const FName MapLibrary_KeysPinName = TEXT("Keys");
+	const FName MapLibrary_ValuesPinName = TEXT("Values");
+	const FName ArrayAPinValue = TEXT("ArrayA");
+	const FName ArrayBPinValue = TEXT("ArrayB");
 }
 
 #pragma endregion
@@ -131,11 +131,11 @@ void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, U
 	// Copy MapB to get values target map pin
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapBPin(), *GetTargetMapPin(MapBGetValues));
 
-	// Connect get map B keys return value to keys B pin of map identical internal 
-	GetSchema()->TryCreateConnection(KeysBPin, MapBGetKeys->FindPinChecked(TEXT("Keys"), EGPD_Output));
+	// Connect get map B keys return value to keys B pin of map identical internal
+	K2NodeHelpers::TryConnect(CompilerContext, KeysBPin, MapBGetKeys->FindPinChecked(TEXT("Keys"), EGPD_Output));
 
-	// Connect get map B values return value to values B pin of map identical internal 
-	GetSchema()->TryCreateConnection(ValueBPin, MapBGetValues->FindPinChecked(TEXT("Values"), EGPD_Output));
+	// Connect get map B values return value to values B pin of map identical internal
+	K2NodeHelpers::TryConnect(CompilerContext, ValueBPin, MapBGetValues->FindPinChecked(TEXT("Values"), EGPD_Output));
 
 	// Move the map identical return value to this function's return value
 	CompilerContext.MovePinLinksToIntermediate(*GetReturnValuePin(), *MapIdentical->GetReturnValuePin());

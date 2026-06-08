@@ -491,7 +491,7 @@ FMaterialProcessResult FX_MaterialFunctionOperation::AddFresnelToAssets(
 }
 
 TArray<UMaterialInterface*> FX_MaterialFunctionOperation::CollectMaterialsFromAssets(
-    TArray<UObject*> SourceObjects)
+    const TArray<UObject*>& SourceObjects)
 {
     // 委托给收集器类
     return FX_MaterialFunctionCollector::CollectMaterialsFromAssets(SourceObjects);
@@ -892,30 +892,11 @@ void FX_MaterialFunctionOperation::GetFunctionInputOutputCount(
         return;
     }
     
-    // 创建一个临时的材质函数调用来检查输入输出引脚
-    // 这是一种获取函数输入输出信息的有效方法
-    UMaterial* TempMaterial = NewObject<UMaterial>();
-    if (!TempMaterial)
-    {
-        return;
-    }
-    
-    UMaterialExpressionMaterialFunctionCall* FunctionCall = NewObject<UMaterialExpressionMaterialFunctionCall>(TempMaterial);
-    if (!FunctionCall)
-    {
-        return;
-    }
-    
-    FunctionCall->MaterialFunction = Function;
-    FunctionCall->UpdateFromFunctionResource();
-    
-    // 获取输入输出引脚数量
-    OutInputCount = FunctionCall->FunctionInputs.Num();
-    OutOutputCount = FunctionCall->FunctionOutputs.Num();
-    
-    // 清理临时对象
-    FunctionCall->MarkAsGarbage();
-    TempMaterial->MarkAsGarbage();
+    TArray<FFunctionExpressionInput> Inputs;
+    TArray<FFunctionExpressionOutput> Outputs;
+    Function->GetInputsAndOutputs(Inputs, Outputs);
+    OutInputCount = Inputs.Num();
+    OutOutputCount = Outputs.Num();
 }
 
 FText FX_MaterialFunctionOperation::BuildFunctionSummary(UMaterialFunctionInterface* Function)

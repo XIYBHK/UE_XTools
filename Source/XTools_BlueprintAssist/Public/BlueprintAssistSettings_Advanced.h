@@ -91,7 +91,7 @@ public:
 
 	/** Determines what to do with Blueprint Assist crash reports when launching the editor */
 	UPROPERTY(EditAnywhere, config, Category = "Crash Reporter", meta = (DisplayName = "崩溃报告方式", Tooltip = "确定启动编辑器时如何处理BlueprintAssist崩溃报告"))
-	EBACrashReportingMethod CrashReportingMethod = EBACrashReportingMethod::Ask;
+	EBACrashReportingMethod CrashReportingMethod = EBACrashReportingMethod::Never;
 
 	/** When crashing during formatting, the related nodes will be written to Saved/Crashes/BACrashData */
 	UPROPERTY(EditAnywhere, config, Category = "Crash Reporter", meta = (DisplayName = "转储格式化崩溃节点", Tooltip = "格式化时崩溃时,相关节点将被写入Saved/Crashes/BACrashData"))

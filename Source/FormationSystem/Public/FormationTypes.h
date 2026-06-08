@@ -143,8 +143,9 @@ struct FORMATIONSYSTEM_API FFormationTransitionConfig
     EFormationTransitionMode TransitionMode = EFormationTransitionMode::DirectRelativePositionMatching;
 
     /** 变换持续时间（秒） */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Transition", 
-              meta = (DisplayName = "变换时间", ClampMin = "0.1", ClampMax = "10.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Transition",
+              meta = (DisplayName = "变换时间", ClampMin = "0.1", ClampMax = "10.0",
+                     UIMin = "0.5", UIMax = "5.0"))
     float Duration = 2.0f;
 
     /** 是否使用缓动曲线 */
@@ -269,33 +270,39 @@ struct FORMATIONSYSTEM_API FBoidsMovementParams
     float SeekWeight = 3.0f;
 
     /** 邻居检测半径 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids", 
-              meta = (DisplayName = "邻居半径", ClampMin = "50.0", ClampMax = "500.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids",
+              meta = (DisplayName = "邻居半径", ClampMin = "50.0", ClampMax = "500.0",
+                     UIMin = "50.0", UIMax = "500.0", ForceUnits = "cm"))
     float NeighborRadius = 150.0f;
 
     /** 分离检测半径 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids", 
-              meta = (DisplayName = "分离半径", ClampMin = "20.0", ClampMax = "200.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids",
+              meta = (DisplayName = "分离半径", ClampMin = "20.0", ClampMax = "200.0",
+                     UIMin = "20.0", UIMax = "200.0", ForceUnits = "cm"))
     float SeparationRadius = 80.0f;
 
     /** 对齐半径（保持方向一致的距离） */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids", 
-              meta = (DisplayName = "对齐半径", ClampMin = "50.0", ClampMax = "300.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids",
+              meta = (DisplayName = "对齐半径", ClampMin = "50.0", ClampMax = "300.0",
+                     UIMin = "50.0", UIMax = "300.0", ForceUnits = "cm"))
     float AlignmentRadius = 150.0f;
 
     /** 聚合半径（保持群体的距离） */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids", 
-              meta = (DisplayName = "聚合半径", ClampMin = "50.0", ClampMax = "300.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids",
+              meta = (DisplayName = "聚合半径", ClampMin = "50.0", ClampMax = "300.0",
+                     UIMin = "50.0", UIMax = "300.0", ForceUnits = "cm"))
     float CohesionRadius = 150.0f;
 
     /** 最大移动速度 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids", 
-              meta = (DisplayName = "最大速度", ClampMin = "100.0", ClampMax = "1000.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids",
+              meta = (DisplayName = "最大速度", ClampMin = "100.0", ClampMax = "1000.0",
+                     UIMin = "100.0", UIMax = "1000.0", ForceUnits = "cm/s"))
     float MaxSpeed = 400.0f;
 
     /** 最大转向力 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids", 
-              meta = (DisplayName = "最大转向力", ClampMin = "50.0", ClampMax = "500.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boids",
+              meta = (DisplayName = "最大转向力", ClampMin = "50.0", ClampMax = "500.0",
+                     UIMin = "50.0", UIMax = "500.0"))
     float MaxSteerForce = 200.0f;
 
     FBoidsMovementParams()

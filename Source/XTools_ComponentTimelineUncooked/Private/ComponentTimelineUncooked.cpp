@@ -7,6 +7,8 @@
 
 #include "ComponentTimelineUncooked.h"
 
+DEFINE_LOG_CATEGORY(LogComponentTimelineUncooked);
+
 #define LOCTEXT_NAMESPACE "FComponentTimelineUncookedModule"
 
 /**

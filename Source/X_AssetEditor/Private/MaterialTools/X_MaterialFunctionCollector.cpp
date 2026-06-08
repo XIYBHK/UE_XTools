@@ -216,7 +216,7 @@ TArray<UMaterial*> FX_MaterialFunctionCollector::CollectMaterialsFromActorParall
 }
 
 TArray<UMaterialInterface*> FX_MaterialFunctionCollector::CollectMaterialsFromAssets(
-    TArray<UObject*> SourceObjects)
+    const TArray<UObject*>& SourceObjects)
 {
     TArray<UMaterialInterface*> CollectedMaterials;
     

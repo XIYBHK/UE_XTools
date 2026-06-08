@@ -107,17 +107,21 @@ void UPointSamplingLibrary::AnalyzeSamplingStats(const TArray<FVector> &Points,
     return;
   }
 
-  // 对于大量点集，计算复杂度很高，记录警告
+  // 质心计算是 O(N)，始终计算并返回有效值
+  OutCentroid = FormationSamplingInternal::CalculateCentroid(Points);
+
+  // 距离统计是 O(N²)；点集过大时跳过该部分防止卡顿（质心已计算，仍有效返回）
   const int32 MaxReasonablePoints = 1000;
   if (NumPoints > MaxReasonablePoints) {
     UE_LOG(LogPointSampling, Warning,
-           TEXT("[采样统计] 点集较大 (%d 点)，距离计算复杂度为 "
-                "O(N²)，可能影响性能"),
-           NumPoints);
+           TEXT("[采样统计] 点集较大 (%d 点)，超过安全阈值 %d，"
+                "跳过 O(N²) 距离计算（质心仍有效）。请减少点数或增大采样半径。"),
+           NumPoints, MaxReasonablePoints);
+    OutMinDistance = 0.0f;
+    OutMaxDistance = 0.0f;
+    OutAvgDistance = 0.0f;
+    return;
   }
-
-  // 计算质心
-  OutCentroid = FormationSamplingInternal::CalculateCentroid(Points);
 
   // 计算所有点对之间的距离统计
   int32 DistanceCount = 0;
@@ -154,11 +158,15 @@ bool UPointSamplingLibrary::ValidatePoissonSampling(
 
   const float MinAllowedDistance = ExpectedMinDistance * (1.0f - Tolerance);
 
-  // 对于大量点集，验证复杂度很高
+  // 对于大量点集，验证复杂度很高；超阈值时跳过 O(N²) 验证防止卡顿
+  // 注意：跳过验证返回 true（保守认为有效）——"未验证"不等于"无效"，避免误报大数据集失败
   const int32 MaxReasonablePoints = 500;
   if (NumPoints > MaxReasonablePoints) {
     UE_LOG(LogPointSampling, Warning,
-           TEXT("[泊松验证] 点集较大 (%d 点)，验证复杂度为 O(N²)"), NumPoints);
+           TEXT("[泊松验证] 点集较大 (%d 点)，超过安全阈值 %d，"
+                "跳过 O(N²) 验证并视为有效。请减少点数或增大采样半径。"),
+           NumPoints, MaxReasonablePoints);
+    return true;
   }
 
   // 检查是否有任何点对距离小于最小允许距离

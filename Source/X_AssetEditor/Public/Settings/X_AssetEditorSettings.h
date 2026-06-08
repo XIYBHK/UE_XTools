@@ -110,7 +110,8 @@ public:
 	 */
 	UPROPERTY(config, EditAnywhere, Category="资产命名高级", meta=(
 		DisplayName="Factory 创建时间窗",
-		ToolTip="识别 Factory 创建/导入操作的时间窗口（秒），在此时间内的资产添加事件将被视为新建/导入操作"))
+		ToolTip="识别 Factory 创建/导入操作的时间窗口（秒），在此时间内的资产添加事件将被视为新建/导入操作",
+		UIMin="0.0", UIMax="10.0", ForceUnits="s"))
 	float FactoryCreationTimeWindow;
 
 	/**
@@ -119,7 +120,8 @@ public:
 	 */
 	UPROPERTY(config, EditAnywhere, Category="资产命名高级", meta=(
 		DisplayName="启动延迟激活时间",
-		ToolTip="编辑器启动后延迟激活自动重命名的时间（秒），避免误处理启动时的资产加载"))
+		ToolTip="编辑器启动后延迟激活自动重命名的时间（秒），避免误处理启动时的资产加载",
+		UIMin="0.0", UIMax="60.0", ForceUnits="s"))
 	float StartupActivationDelay;
 
 	// ========== 排除规则 ==========

@@ -216,8 +216,11 @@ TArray<FTransform> UGeometryInstance::GetPointsByCircle(
     float RadiusDelta)
 {
     TArray<FTransform> FTransforms;
+    const AActor* Owner = GetOwner();
+    const FVector OwnerLocation = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
+
     FTransform FirstTransform;
-    FirstTransform.SetLocation(GetOwner() ? GetOwner()->GetActorLocation() : FVector(0, 0, 0));
+    FirstTransform.SetLocation(OwnerLocation);
     FirstTransform.SetRotation(FRotator(0, 0, 0).Quaternion());
     FirstTransform.SetScale3D(FVector(1, 1, 1));
 
@@ -240,7 +243,7 @@ TArray<FTransform> UGeometryInstance::GetPointsByCircle(
         {
             CurtAngle = InitAngle + (360.f / CurtCount) * count;
 
-            FVector Point = GetOwner() ? GetOwner()->GetActorLocation() : FVector(0, 0, 0);
+            FVector Point = OwnerLocation;
             Point += GeometryToolInternal::PolarToCartesianOnPlane(CurtAngle, CurtRadius, FVector(1, 0, 0), FVector(0, 1, 0));
 
             FTransform CurtTransform;

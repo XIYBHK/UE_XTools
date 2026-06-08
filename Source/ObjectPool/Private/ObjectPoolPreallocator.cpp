@@ -79,12 +79,12 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
     }
 
     //  根据策略执行预分配
-    switch (Config.Strategy)
+    switch (Config.PreallocationStrategy)
     {
     case EObjectPoolPreallocationStrategy::Immediate:
         ExecuteImmediatePreallocation(World, Config.PreallocationCount);
         break;
-        
+
     case EObjectPoolPreallocationStrategy::Progressive:
     case EObjectPoolPreallocationStrategy::Predictive:
     case EObjectPoolPreallocationStrategy::Adaptive:
@@ -92,15 +92,15 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
         TickHandle = FTSTicker::GetCoreTicker().AddTicker(
             FTickerDelegate::CreateRaw(this, &FObjectPoolPreallocator::HandleTicker));
         break;
-        
+
     default:
         OBJECTPOOL_LOG(Warning, TEXT("StartPreallocation: 不支持的预分配策略"));
         XTOOLS_ATOMIC_STORE(bIsActive, false);
         return false;
     }
 
-    OBJECTPOOL_LOG(Log, TEXT("StartPreallocation: 启动预分配，策略: %d, 目标数量: %d"), 
-        (int32)Config.Strategy, Config.PreallocationCount);
+    OBJECTPOOL_LOG(Log, TEXT("StartPreallocation: 启动预分配，策略: %d, 目标数量: %d"),
+        (int32)Config.PreallocationStrategy, Config.PreallocationCount);
 
     return true;
 }
@@ -156,7 +156,7 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
     }
 
     //  根据策略执行预分配
-    switch (Config.Strategy)
+    switch (Config.PreallocationStrategy)
     {
     case EObjectPoolPreallocationStrategy::Progressive:
         ExecuteProgressivePreallocation(World, DeltaTime);

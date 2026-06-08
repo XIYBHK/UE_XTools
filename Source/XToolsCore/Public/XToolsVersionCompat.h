@@ -172,6 +172,8 @@ namespace XToolsVersionCompat
 #define XTOOLS_ATOMIC_DECREMENT(AtomicVar) XToolsVersionCompat::AtomicDecrement(AtomicVar)
 #define XTOOLS_ATOMIC_ADD(AtomicVar, Value) XToolsVersionCompat::AtomicAdd(AtomicVar, Value)
 #define XTOOLS_ATOMIC_SUB(AtomicVar, Value) XToolsVersionCompat::AtomicSub(AtomicVar, Value)
+#define XTOOLS_ATOMIC_EXCHANGE(AtomicVar, Value) XToolsVersionCompat::AtomicExchange(AtomicVar, Value)
+#define XTOOLS_ATOMIC_COMPARE_EXCHANGE(AtomicVar, Expected, Desired) XToolsVersionCompat::AtomicCompareExchange(AtomicVar, Expected, Desired)
 
 /**
  * FProperty ElementSize 访问宏（兼容 UE 5.3-5.7）
@@ -217,5 +219,3 @@ namespace XToolsVersionCompat
 			(Prop)->ElementSize = (Size); \
 		} while (0)
 #endif
-#define XTOOLS_ATOMIC_EXCHANGE(AtomicVar, Value) XToolsVersionCompat::AtomicExchange(AtomicVar, Value)
-#define XTOOLS_ATOMIC_COMPARE_EXCHANGE(AtomicVar, Expected, Desired) XToolsVersionCompat::AtomicCompareExchange(AtomicVar, Expected, Desired)

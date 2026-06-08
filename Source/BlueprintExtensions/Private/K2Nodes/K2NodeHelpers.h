@@ -58,7 +58,8 @@ namespace K2NodeHelpers
 		{
 			if (!RequiredPin)
 			{
-				CompilerContext.MessageLog.Error(*ErrorMessage.ToString(), Node);
+				// 用 Warning 而非 Error：与项目 K2Node 规范一致，避免硬性阻断蓝图编译；调用方据返回值终止展开
+				CompilerContext.MessageLog.Warning(*ErrorMessage.ToString(), Node);
 				return false;
 			}
 		}
@@ -161,8 +162,10 @@ namespace K2NodeHelpers
 		if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 		{
 			UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(NodeType::StaticClass());
-			check(NodeSpawner != nullptr);
-			ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+			if (ensureMsgf(NodeSpawner != nullptr, TEXT("RegisterNode: UBlueprintNodeSpawner::Create 返回空，节点注册跳过")))
+			{
+				ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+			}
 		}
 	}
 }

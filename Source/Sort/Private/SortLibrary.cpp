@@ -792,18 +792,13 @@ void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<
     OutArray = UniqueInts.Array();
 }
 
-// 为TSet提供不区分大小写的字符串比较功能，符合UE最佳实践
-struct FCaseInsensitiveStringKeyFuncs
+// 为TSet提供不区分大小写的字符串比较功能，继承 BaseKeyFuncs 保证跨版本编译安全
+struct FCaseInsensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
 {
-    // TSet needs us to define these types
-    using KeyInitType = const FString&;
-    using ElementInitType = const FString&;
-    static constexpr bool bAllowDuplicateKeys = false;
-
     /**
      * @return The key from an element.
      */
-    static FORCEINLINE KeyInitType GetSetKey(ElementInitType Element)
+    static FORCEINLINE const FString& GetSetKey(const FString& Element)
     {
         return Element;
     }
@@ -811,7 +806,7 @@ struct FCaseInsensitiveStringKeyFuncs
     /**
      * @return True if the keys are equal.
      */
-    static FORCEINLINE bool Matches(KeyInitType A, KeyInitType B)
+    static FORCEINLINE bool Matches(const FString& A, const FString& B)
     {
         return A.Equals(B, ESearchCase::IgnoreCase);
     }
@@ -819,7 +814,7 @@ struct FCaseInsensitiveStringKeyFuncs
     /**
      * @return The hash for a key.
      */
-    static FORCEINLINE uint32 GetKeyHash(KeyInitType Key)
+    static FORCEINLINE uint32 GetKeyHash(const FString& Key)
     {
         return GetTypeHash(Key.ToLower());
     }
@@ -1221,54 +1216,53 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
     return bResult == bAscending;
 }
 
-void USortLibrary::HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
+// 成员静态函数，避免 TFunction 堆分配与间接调用（需访问 USortLibrary 的私有属性辅助函数）
+void USortLibrary::HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp,
+    TArray<int32>& Indices, int32 Root, int32 End, int32 Low, bool bAscending)
 {
-    // 使用TFunction替代lambda递归
-    TFunction<void(int32, int32)> Heapify;
-    Heapify = [&](int32 Root, int32 End)
+    int32 Largest = Root;
+    int32 Left = 2 * Root + 1 - Low;
+    int32 Right = 2 * Root + 2 - Low;
+
+    if (Left <= End - Low)
     {
-        int32 Largest = Root;
-        int32 Left = 2 * Root + 1 - Low;
-        int32 Right = 2 * Root + 2 - Low;
-
-        if (Left <= End - Low)
+        void* LeftValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Left + Low]);
+        void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
+        if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, LeftValue, bAscending))
         {
-            void* LeftValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Left + Low]);
-            void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
-            if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, LeftValue, bAscending))
-            {
-                Largest = Left + Low;
-            }
+            Largest = Left + Low;
         }
+    }
 
-        if (Right <= End - Low)
+    if (Right <= End - Low)
+    {
+        void* RightValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Right + Low]);
+        void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
+        if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, RightValue, bAscending))
         {
-            void* RightValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Right + Low]);
-            void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
-            if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, RightValue, bAscending))
-            {
-                Largest = Right + Low;
-            }
+            Largest = Right + Low;
         }
+    }
 
-        if (Largest != Root)
-        {
-            Indices.Swap(Root, Largest);
-            Heapify(Largest, End);
-        }
-    };
+    if (Largest != Root)
+    {
+        Indices.Swap(Root, Largest);
+        HeapifyByProperty(ArrayHelper, InnerProp, SortProp, Indices, Largest, End, Low, bAscending);
+    }
+}
 
-    // Build heap
+void USortLibrary::HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
+{    // Build heap
     for (int32 i = (High - Low) / 2 - 1 + Low; i >= Low; --i)
     {
-        Heapify(i, High);
+        HeapifyByProperty(ArrayHelper, InnerProp, SortProp, Indices, i, High, Low, bAscending);
     }
 
     // Extract elements from heap
     for (int32 i = High; i > Low; --i)
     {
         Indices.Swap(Low, i);
-        Heapify(Low, i - 1);
+        HeapifyByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, i - 1, Low, bAscending);
     }
 }
 

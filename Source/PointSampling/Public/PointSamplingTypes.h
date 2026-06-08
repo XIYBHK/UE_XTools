@@ -216,7 +216,8 @@ struct POINTSAMPLING_API FPoissonSamplingConfig
 
 	/** 点之间的最小距离（<=0时根据目标点数自动计算） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Poisson",
-		meta = (DisplayName = "最小距离", ToolTip = "点之间的最小距离，<=0时根据目标点数计算"))
+		meta = (DisplayName = "最小距离", ToolTip = "点之间的最小距离，<=0时根据目标点数计算",
+		        UIMin = "0.0", UIMax = "10000.0"))
 	float MinDistance = 50.0f;
 
 	/** 目标点数量（<=0时忽略，由MinDistance控制；>0时自动计算MinDistance并严格裁剪到目标数量） */
@@ -226,7 +227,8 @@ struct POINTSAMPLING_API FPoissonSamplingConfig
 
 	/** 最大尝试次数（在标记一个点为不活跃前的最大尝试次数） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Poisson|Advanced",
-		meta = (DisplayName = "最大尝试次数", ToolTip = "构造函数建议5-10，运行时建议15-30"))
+		meta = (DisplayName = "最大尝试次数", ToolTip = "构造函数建议5-10，运行时建议15-30",
+		        ClampMin = "1", UIMin = "1", UIMax = "50"))
 	int32 MaxAttempts = 30;
 
 	/** 坐标空间类型 */

@@ -227,7 +227,12 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *GetKeyTargetMapPin);
 	K2NodeHelpers::TryConnect(CompilerContext, GetKey->FindPinChecked(TEXT("Index")), LoopCounterPin);
 	UEdGraphPin* KeyPin = K2NodeHelpers::ReconstructAndFindPin(GetKey, TEXT("Key"));
-	check(KeyPin);
+	if (!ensureMsgf(KeyPin, TEXT("ForEachMap: 找不到 Key 引脚，中间节点重建失败")))
+	{
+		CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachMap_NoKeyPin", "警告：[ForEachMap] 节点 @@ 找不到 Key 引脚，展开中止。").ToString(), this);
+		BreakAllNodeLinks();
+		return;
+	}
 	KeyPin->PinType = GetKeyPin()->PinType;
 
 	// 11. 获取Value
@@ -240,7 +245,12 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	K2NodeHelpers::TryConnect(CompilerContext, GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *GetValueTargetMapPin);
 	UEdGraphPin* ValuePin = K2NodeHelpers::ReconstructAndFindPin(GetValue, TEXT("Value"));
-	check(ValuePin);
+	if (!ensureMsgf(ValuePin, TEXT("ForEachMap: 找不到 Value 引脚，中间节点重建失败")))
+	{
+		CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachMap_NoValuePin", "警告：[ForEachMap] 节点 @@ 找不到 Value 引脚，展开中止。").ToString(), this);
+		BreakAllNodeLinks();
+		return;
+	}
 	ValuePin->PinType = GetValuePin()->PinType;
 
 	// 12. 最后统一移动所有外部连接（参考智能排序模式）

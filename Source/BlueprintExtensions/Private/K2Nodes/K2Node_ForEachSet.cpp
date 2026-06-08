@@ -203,7 +203,12 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
     K2NodeHelpers::TryConnect(CompilerContext, GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
     K2NodeHelpers::TryConnect(CompilerContext, GetValueTargetArrayPin, ToArrayFunValuePin);
     UEdGraphPin* ValuePin = K2NodeHelpers::ReconstructAndFindPin(GetValue, TEXT("Item"));
-    check(ValuePin);
+    if (!ensureMsgf(ValuePin, TEXT("ForEachSet: 找不到 Item(Value) 引脚，中间节点重建失败")))
+    {
+        CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachSet_NoValuePin", "警告：[ForEachSet] 节点 @@ 找不到 Value 引脚，展开中止。").ToString(), this);
+        BreakAllNodeLinks();
+        return;
+    }
     ValuePin->PinType = GetValuePin()->PinType;
 
     // 12. 最后统一移动所有外部连接（参考智能排序模式）

@@ -8,6 +8,7 @@
 
 #include "SGraphNodes/SGraphNodeConditionalSequence.h"
 
+#include "BlueprintExtensions.h"
 #include "K2Nodes/K2Node_ConditionalSequence.h"
 #include "KismetPins/SGraphPinExec.h"
 #include "NodeFactory.h"
@@ -50,7 +51,7 @@ void SGraphNodeConditionalSequence::CreatePinWidgets()
 			TSharedPtr<SGraphPin> NewPin = FNodeFactory::CreatePinWidget(Pin);
 			if (!NewPin.IsValid())
 			{
-				UE_LOG(LogTemp, Warning, TEXT("SGraphNodeConditionalSequence: Failed to create pin widget for pin %s"), *Pin->GetName());
+				UE_LOG(LogBlueprintExtensions, Warning, TEXT("SGraphNodeConditionalSequence: Failed to create pin widget for pin %s"), *Pin->GetName());
 				continue;
 			}
 

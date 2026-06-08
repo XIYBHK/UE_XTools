@@ -75,12 +75,14 @@ private:
 //  模块日志类别定义
 DECLARE_LOG_CATEGORY_EXTERN(LogObjectPool, Log, All);
 
-//  性能统计宏定义
+//  性能统计宏定义：Stat 在 Shipping 下禁用
 #if !OBJECTPOOL_SHIPPING
     #define OBJECTPOOL_STAT(StatName) SCOPE_CYCLE_COUNTER(STAT_##StatName)
-    #define OBJECTPOOL_LOG(Verbosity, Format, ...) UE_LOG(LogObjectPool, Verbosity, Format, ##__VA_ARGS__)
 #else
     #define OBJECTPOOL_STAT(StatName)
-    #define OBJECTPOOL_LOG(Verbosity, Format, ...)
 #endif
+
+// 日志宏：所有构型统一走 UE_LOG，由 LogObjectPool 的运行时 verbosity 过滤。
+// Warning/Error 在 Shipping 下仍会输出（不再像旧实现那样整体静默丢失重要日志）。
+#define OBJECTPOOL_LOG(Verbosity, Format, ...) UE_LOG(LogObjectPool, Verbosity, Format, ##__VA_ARGS__)
 

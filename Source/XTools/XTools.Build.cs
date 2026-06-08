@@ -126,7 +126,7 @@ public class XTools : ModuleRules
 		// Editor-only dependencies
 		if (Target.bBuildEditor)
 		{
-			PublicDependencyModuleNames.AddRange(new string[] {
+			PrivateDependencyModuleNames.AddRange(new string[] {
 				"Kismet",
 				"UnrealEd",
 				"BlueprintGraph",

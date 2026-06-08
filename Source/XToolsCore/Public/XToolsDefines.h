@@ -35,7 +35,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogXToolsCore, Log, All);
 #define XTOOLS_FEATURE_DEBUG_DRAWING 1
 
 // Parent finder settings
-static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
+inline constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
 
 //=============================================================================
 // 防御性编程宏 - 预留API，供模块扩展使用
@@ -45,6 +45,7 @@ static constexpr int32 XTOOLS_MAX_PARENT_DEPTH = 100;
 /**
  * 安全执行宏：检查指针有效后执行代码
  * 用法：XTOOLS_SAFE_EXECUTE(MyPtr, MyPtr->DoSomething())
+ * 注意：仅用于非 UObject 裸指针；UObject 请用 IsValid
  */
 #define XTOOLS_SAFE_EXECUTE(Ptr, Code) \
 	do { \

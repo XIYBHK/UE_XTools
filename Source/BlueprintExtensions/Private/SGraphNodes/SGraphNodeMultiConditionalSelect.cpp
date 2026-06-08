@@ -8,6 +8,7 @@
 
 #include "SGraphNodes/SGraphNodeMultiConditionalSelect.h"
 
+#include "BlueprintExtensions.h"
 #include "K2Nodes/K2Node_MultiConditionalSelect.h"
 #include "NodeFactory.h"
 
@@ -30,7 +31,7 @@ void SGraphNodeMultiConditionalSelect::CreatePinWidgets()
 			TSharedPtr<SGraphPin> NewPin = FNodeFactory::CreatePinWidget(Pin);
 			if (!NewPin.IsValid())
 			{
-				UE_LOG(LogTemp, Warning, TEXT("SGraphNodeMultiConditionalSelect: Failed to create pin widget for pin %s"), *Pin->GetName());
+				UE_LOG(LogBlueprintExtensions, Warning, TEXT("SGraphNodeMultiConditionalSelect: Failed to create pin widget for pin %s"), *Pin->GetName());
 				continue;
 			}
 

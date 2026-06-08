@@ -305,7 +305,6 @@ DECLARE_LOG_CATEGORY_EXTERN(LogObjectPoolUtils, Log, All);
  * 对象池工具类的统计宏
  */
 #if STATS
-DECLARE_STATS_GROUP(TEXT("ObjectPoolUtils"), STATGROUP_ObjectPoolUtils, STATCAT_Advanced);
 DECLARE_CYCLE_STAT_EXTERN(TEXT("ResetActorForPooling"), STAT_ResetActorForPooling, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
 DECLARE_CYCLE_STAT_EXTERN(TEXT("ActivateActorFromPool"), STAT_ActivateActorFromPool, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
 DECLARE_CYCLE_STAT_EXTERN(TEXT("ValidateConfig"), STAT_ValidateConfig, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);

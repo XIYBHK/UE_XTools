@@ -75,7 +75,7 @@ public:
      * @param SourceObjects - 源对象列表
      * @return 材质接口列表
      */
-    static TArray<UMaterialInterface*> CollectMaterialsFromAssets(TArray<UObject*> SourceObjects);
+    static TArray<UMaterialInterface*> CollectMaterialsFromAssets(const TArray<UObject*>& SourceObjects);
     
 
 };

@@ -34,7 +34,8 @@ UBASettings_Advanced::UBASettings_Advanced(const FObjectInitializer& ObjectIniti
 	bHighlightBadComments = false;
 
 	//~~~ Crash Reporter
-	CrashReportingMethod = EBACrashReportingMethod::Ask;
+	// [XTools 集成] 默认 Never：禁用向第三方服务器上传崩溃报告
+	CrashReportingMethod = EBACrashReportingMethod::Never;
 	bDumpFormattingCrashNodes = true;
 	bIncludeNodesInCrashReport = false;
 	bIncludeSettingsInCrashReport = true;

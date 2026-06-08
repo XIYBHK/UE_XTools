@@ -216,7 +216,7 @@ TArray<TSharedPtr<FName>> FX_MaterialFunctionManager::GetCommonNodeNames()
 
 // 添加一个通用方法，从各种资产类型中收集材质接口
 TArray<UMaterialInterface*> FX_MaterialFunctionManager::CollectMaterialsFromAssets(
-    TArray<UObject*> SourceObjects)
+    const TArray<UObject*>& SourceObjects)
 {
     return FX_MaterialFunctionOperation::CollectMaterialsFromAssets(SourceObjects);
 }

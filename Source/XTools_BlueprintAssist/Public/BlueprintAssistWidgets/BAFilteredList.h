@@ -6,7 +6,7 @@
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistStyle.h"
 #include "BlueprintAssistStyle.h"
-#include "EditorStyleSet.h"
+#include "Styling/AppStyle.h"
 #include "SlateOptMacros.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Views/ITypedTableView.h"

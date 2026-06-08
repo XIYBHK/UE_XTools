@@ -45,7 +45,7 @@ FString UVariableReflectionLibrary::GetValueByString(UObject* OwnerObject, FStri
 {
 	FString Value;
 
-	if (OwnerObject == nullptr)
+	if (!IsValid(OwnerObject))
 	{
 		return Value;
 	}

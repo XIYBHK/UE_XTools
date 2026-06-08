@@ -80,7 +80,7 @@ public class FormationSystem : ModuleRules
 		// 编辑器专用依赖
 		if (Target.bBuildEditor)
 		{
-			PublicDependencyModuleNames.AddRange(new string[] {
+			PrivateDependencyModuleNames.AddRange(new string[] {
 				"Kismet",
 				"UnrealEd",
 				"BlueprintGraph",

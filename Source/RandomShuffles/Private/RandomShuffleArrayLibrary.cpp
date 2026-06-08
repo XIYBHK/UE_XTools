@@ -210,7 +210,7 @@ namespace RandomShuffles {
     };
 
     // 按概率排序的PRD常数表，便于二分查找
-    const TArray<FPRDEntry> PRDConstantTable = {
+    static const FPRDEntry PRDConstantTable[] = {
         {0.01f, 0.000156f}, {0.02f, 0.000620f}, {0.03f, 0.001386f}, {0.04f, 0.002449f}, {0.05f, 0.003802f},
         {0.06f, 0.005440f}, {0.07f, 0.007359f}, {0.08f, 0.009552f}, {0.09f, 0.012016f}, {0.10f, 0.014746f},
         {0.11f, 0.017736f}, {0.12f, 0.020983f}, {0.13f, 0.024482f}, {0.14f, 0.028230f}, {0.15f, 0.032221f},
@@ -252,7 +252,7 @@ namespace RandomShuffles {
 
         // 使用二分查找找到合适的区间
         int32 Left = 0;
-        int32 Right = PRDConstantTable.Num() - 1;
+        int32 Right = UE_ARRAY_COUNT(PRDConstantTable) - 1;
 
         // 检查是否完全匹配
         while (Left <= Right)
@@ -275,8 +275,8 @@ namespace RandomShuffles {
         }
 
         // 找到插值区间
-        int32 LowerIndex = FMath::Clamp(Right, 0, PRDConstantTable.Num() - 1);
-        int32 UpperIndex = FMath::Clamp(Left, 0, PRDConstantTable.Num() - 1);
+        int32 LowerIndex = FMath::Clamp(Right, 0, (int32)UE_ARRAY_COUNT(PRDConstantTable) - 1);
+        int32 UpperIndex = FMath::Clamp(Left, 0, (int32)UE_ARRAY_COUNT(PRDConstantTable) - 1);
 
         if (LowerIndex == UpperIndex)
         {

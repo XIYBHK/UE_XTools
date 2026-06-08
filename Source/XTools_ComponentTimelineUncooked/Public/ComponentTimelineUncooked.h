@@ -10,6 +10,8 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogComponentTimelineUncooked, Log, All);
+
 /**
  * 组件时间轴未烘焙模块类
  * 负责在编辑器中处理组件时间轴的初始化和清理工作

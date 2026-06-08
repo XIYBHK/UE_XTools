@@ -55,8 +55,8 @@ public:
 				Context.FindRequiredPinByName(MultiBranchNode, UEdGraphSchema_K2::PN_Execute, EGPD_Input);
 			if ((ExecTriggeringPin == nullptr) || !Context.ValidatePinType(ExecTriggeringPin, ExpectedExecPinType))
 			{
-				CompilerContext.MessageLog.Error(
-					*LOCTEXT("NoValidExecutionPinForMultiBranch_Error", "@@ must have a valid execution pin @@").ToString(),
+				CompilerContext.MessageLog.Warning(
+					*LOCTEXT("NoValidExecutionPinForMultiBranch_Warning", "@@ must have a valid execution pin @@").ToString(),
 					MultiBranchNode, ExecTriggeringPin);
 				return;
 			}

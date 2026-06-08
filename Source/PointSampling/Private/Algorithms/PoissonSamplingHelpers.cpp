@@ -379,7 +379,18 @@ namespace PoissonSamplingHelpers
         }
         
         // 大规模裁剪：批量移除算法
-        
+
+        // 点数上限保护：超过合理上限时 Warn 并跳过（避免 O(N²) 阻塞游戏线程）
+        const int32 BatchSizeLimit = 2000;
+        if (Points.Num() > BatchSizeLimit)
+        {
+            UE_LOG(LogTemp, Warning,
+                TEXT("[TrimToOptimalDistribution] 点数 %d 超过批量裁剪上限 %d，"
+                     "跳过裁剪以避免 O(N²) 卡顿。请考虑增大采样半径以减少点数。"),
+                Points.Num(), BatchSizeLimit);
+            return;
+        }
+
         // 1. 计算所有点的最近邻距离（一次O(N²)）
         TArray<TPair<float, int32>> DistanceIndexPairs;
         DistanceIndexPairs.Reserve(Points.Num());

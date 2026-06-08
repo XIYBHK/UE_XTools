@@ -207,8 +207,8 @@ protected:
     /** 应用缓动 */
     float ApplyEasing(float Progress, float Strength) const;
 
-    /** 通知实现了IFormationInterface接口的单位 */
-    void NotifyFormationInterfaceActors(const TArray<AActor*>& Units, const TArray<int32>& Assignment, const FFormationData& ToFormation);
+    /** 通知实现了IFormationInterface接口的单位（基于当前变换状态 TransitionState.UnitTransitions） */
+    void NotifyFormationInterfaceActors();
 
 private:
     /** 性能优化：智能缓存系统 */

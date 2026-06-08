@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistGlobals.h"
-#include "EditorStyleSet.h"
+#include "Styling/AppStyle.h"
 #include "Framework/Commands/Commands.h"
 
 /**

@@ -243,7 +243,7 @@ private:
 
     /** 最近访问的池缓存（提高热点访问性能） */
     mutable TWeakPtr<FActorPool> LastAccessedPool;
-    mutable UClass* LastAccessedClass;
+    mutable TWeakObjectPtr<UClass> LastAccessedClass;
 
     /** 缓存访问锁 */
     mutable FCriticalSection CacheLock;

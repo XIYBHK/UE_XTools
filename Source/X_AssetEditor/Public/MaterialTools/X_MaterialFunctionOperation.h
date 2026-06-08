@@ -254,7 +254,7 @@ public:
      * @return 材质接口列表
      */
     static TArray<UMaterialInterface*> CollectMaterialsFromAssets(
-        TArray<UObject*> SourceObjects);
+        const TArray<UObject*>& SourceObjects);
         
     /**
      * 创建材质函数调用表达式

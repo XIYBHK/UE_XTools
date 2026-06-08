@@ -113,6 +113,7 @@ public:
   UFUNCTION(
       BlueprintCallable, Category = "XTools|点采样|分析",
       meta = (DisplayName = "分析采样点统计",
+              BlueprintPure = false,
               ToolTip = "计算点集的距离统计信息，包括最小距离、最大距离、平均距离和质心位置。\n\n参数:\nPoints - 要分析的点集\nOutMinDistance - 输出最小点间距\nOutMaxDistance - 输出最大点间距\nOutAvgDistance - 输出平均点间距\nOutCentroid - 输出点集质心位置",
               Keywords = "统计,分析,距离,质心"))
   static void AnalyzeSamplingStats(const TArray<FVector> &Points,

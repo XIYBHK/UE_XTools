@@ -1215,8 +1215,8 @@ float FTextureSamplingHelper::CalculatePixelSamplingValueByChannel(
 
 UTextureRenderTarget2D *
 FTextureSamplingHelper::CreateTemporaryRenderTarget(int32 Size) {
-  // 创建临时RenderTarget（RGBA8格式，不带Mipmap）
-  UTextureRenderTarget2D *RenderTarget = NewObject<UTextureRenderTarget2D>();
+  // 创建临时RenderTarget（RGBA8格式，不带Mipmap）；显式指定 Transient 包作为 Outer
+  UTextureRenderTarget2D *RenderTarget = NewObject<UTextureRenderTarget2D>(GetTransientPackage());
   if (!RenderTarget) {
     return nullptr;
   }
@@ -1229,16 +1229,16 @@ FTextureSamplingHelper::CreateTemporaryRenderTarget(int32 Size) {
 }
 
 bool FTextureSamplingHelper::RenderMaterialToTarget(
-    UMaterialInterface *Material, UTextureRenderTarget2D *RenderTarget) {
-  if (!Material || !RenderTarget) {
+    UObject *WorldContextObject, UMaterialInterface *Material,
+    UTextureRenderTarget2D *RenderTarget) {
+  if (!WorldContextObject || !Material || !RenderTarget) {
     return false;
   }
 
-  // 使用KismetRenderingLibrary绘制材质到RenderTarget
-  // 注意：使用Material作为WorldContextObject，因为Material->GetWorld()可能返回nullptr
+  // 必须用有效的 WorldContextObject 提供世界上下文：材质资产自身 GetWorld() 返回 nullptr，
+  // 若以材质充当 WorldContextObject，DrawMaterialToRenderTarget 会解析世界失败并静默跳过渲染。
   UKismetRenderingLibrary::DrawMaterialToRenderTarget(
-      const_cast<UMaterialInterface *>(Material), RenderTarget,
-      const_cast<UMaterialInterface *>(Material));
+      WorldContextObject, RenderTarget, Material);
 
   return true;
 }
@@ -1539,13 +1539,13 @@ FTextureSamplingHelper::GeneratePointsFromRenderTargetWithPoisson(
 }
 
 TArray<FVector> FTextureSamplingHelper::GenerateFromMaterial(
-    UMaterialInterface *Material, int32 MaxSampleSize, float Spacing,
-    float PixelThreshold, float TextureScale,
+    UObject *WorldContextObject, UMaterialInterface *Material, int32 MaxSampleSize,
+    float Spacing, float PixelThreshold, float TextureScale,
     ETextureSamplingChannel SamplingChannel) {
   TArray<FVector> Points;
 
-  if (!Material) {
-    UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] 材质无效"));
+  if (!WorldContextObject || !Material) {
+    UE_LOG(LogPointSampling, Warning, TEXT("[Material采样] 材质或世界上下文无效"));
     return Points;
   }
 
@@ -1559,7 +1559,7 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromMaterial(
   }
 
   // 渲染材质到RenderTarget
-  if (!RenderMaterialToTarget(Material, RenderTarget)) {
+  if (!RenderMaterialToTarget(WorldContextObject, Material, RenderTarget)) {
     UE_LOG(LogPointSampling, Error, TEXT("[Material采样] 材质渲染失败"));
     RenderTarget->ConditionalBeginDestroy();
     return Points;
@@ -1580,13 +1580,13 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromMaterial(
 }
 
 TArray<FVector> FTextureSamplingHelper::GenerateFromMaterialWithPoisson(
-    UMaterialInterface *Material, int32 MaxSampleSize, float MinRadius,
-    float MaxRadius, float PixelThreshold, float TextureScale,
+    UObject *WorldContextObject, UMaterialInterface *Material, int32 MaxSampleSize,
+    float MinRadius, float MaxRadius, float PixelThreshold, float TextureScale,
     ETextureSamplingChannel SamplingChannel, int32 MaxAttempts) {
   TArray<FVector> Points;
 
-  if (!Material) {
-    UE_LOG(LogPointSampling, Warning, TEXT("[Material泊松采样] 材质无效"));
+  if (!WorldContextObject || !Material) {
+    UE_LOG(LogPointSampling, Warning, TEXT("[Material泊松采样] 材质或世界上下文无效"));
     return Points;
   }
 
@@ -1600,7 +1600,7 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromMaterialWithPoisson(
   }
 
   // 渲染材质到RenderTarget
-  if (!RenderMaterialToTarget(Material, RenderTarget)) {
+  if (!RenderMaterialToTarget(WorldContextObject, Material, RenderTarget)) {
     UE_LOG(LogPointSampling, Error, TEXT("[Material泊松采样] 材质渲染失败"));
     RenderTarget->ConditionalBeginDestroy();
     return Points;

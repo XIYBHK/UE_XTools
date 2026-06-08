@@ -6,6 +6,7 @@
  */
 
 #include "K2Node_BaseTimeline.h"
+#include "ComponentTimelineUncooked.h"
 #include "Engine/TimelineTemplate.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/CompilerResultsLog.h"
@@ -248,7 +249,7 @@ void UK2Node_BaseTimeline::ValidateNodeDuringCompilation(FCompilerResultsLog& Me
 		const FText NodeName = FText::FromString(RequiredNodeName.ToString());
 		const FText Message = FText::Format(NSLOCTEXT("UK2Node_BaseTimeline", "MissingInitialization", 
 			"蓝图中缺少 '{0}' 节点。你应该在BeginPlay时调用 '{1}' 以使时间轴正常工作。 @@"), NodeName, NodeName);
-		MessageLog.Error(*Message.ToString(), this);
+		MessageLog.Warning(*Message.ToString(), this);
 	}
 }
 
@@ -272,7 +273,7 @@ void UK2Node_BaseTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
 		if (NodeSpawner == nullptr)
 		{
-			UE_LOG(LogTemp, Error, TEXT("UK2Node_BaseTimeline::GetMenuActions: failed to create node spawner"));
+			UE_LOG(LogComponentTimelineUncooked, Error, TEXT("UK2Node_BaseTimeline::GetMenuActions: failed to create node spawner"));
 			return;
 		}
 

@@ -18,6 +18,7 @@
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Engine/Engine.h"
 #include "SortLibrary.h"
+#include "SortEditorModule.h"
 #include "XToolsErrorReporter.h"
 
 #define LOCTEXT_NAMESPACE "K2Node_SmartSort"
@@ -76,8 +77,6 @@ void UK2Node_SmartSort::AllocateDefaultPins()
 	ModePin->bHidden = true;
 	ModePin->PinToolTip = LOCTEXT("ModePin_Tooltip", "排序模式").ToString();
 	// 注意：排序模式的默认值将在RebuildDynamicPins中根据数组类型设置
-
-	Super::AllocateDefaultPins();
 }
 
 void UK2Node_SmartSort::ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins)
@@ -170,7 +169,7 @@ void UK2Node_SmartSort::PinConnectionListChanged(UEdGraphPin* Pin)
 		// 重建图形
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(FBlueprintEditorUtils::FindBlueprintForNode(this));
 
-		UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 排序模式引脚连接状态改变，已重建动态引脚"));
+		UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 排序模式引脚连接状态改变，已重建动态引脚"));
 
 #if WITH_EDITORONLY_DATA
 		bIsReconstructingPins = false;
@@ -302,7 +301,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 		{
 			// 排序模式引脚连接到变量：显示所有可能的引脚，运行时根据变量值选择
 			// 使用 Advanced 视图折叠不常用的引脚，保持 UI 简洁
-			UE_LOG(LogBlueprint, Log, TEXT("[智能排序] 排序模式连接到变量，显示所有可能的引脚（部分折叠到高级选项）"));
+			UE_LOG(LogSortEditor, Log, TEXT("[智能排序] 排序模式连接到变量，显示所有可能的引脚（部分折叠到高级选项）"));
 
 			if (SortModeEnum == StaticEnum<EActorSortMode>())
 			{
@@ -336,7 +335,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 		else
 		{
 			// 排序模式引脚未连接：根据默认值只显示需要的引脚（原有逻辑）
-			UE_LOG(LogBlueprint, Log, TEXT("[智能排序] 排序模式使用直接输入，仅显示当前模式需要的引脚"));
+			UE_LOG(LogSortEditor, Log, TEXT("[智能排序] 排序模式使用直接输入，仅显示当前模式需要的引脚"));
 
 			// 检查当前默认值是否属于新的枚举类型
 			bool bNeedResetDefault = true;
@@ -361,7 +360,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 					FString FirstEnumName = SortModeEnum->GetNameStringByIndex(0);
 					ModePin->DefaultValue = FirstEnumName;
 					EnumValue = 0;
-					UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 重置排序模式默认值: %s"), *FirstEnumName);
+					UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 重置排序模式默认值: %s"), *FirstEnumName);
 				}
 			}
 			else
@@ -370,7 +369,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 				const FString DefaultStr = ModePin->GetDefaultAsString();
 				int64 IntValue = SortModeEnum->GetValueByNameString(DefaultStr);
 				EnumValue = static_cast<uint8>(IntValue);
-				UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 保持现有排序模式: %s"), *DefaultStr);
+				UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 保持现有排序模式: %s"), *DefaultStr);
 			}
 
 			// 根据选择的排序模式，创建额外的输入引脚
@@ -452,12 +451,12 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 				if (CurrentDefault.IsEmpty() || !AvailableProperties.Contains(CurrentDefault))
 				{
 					PropertyNamePin->DefaultValue = AvailableProperties[0];
-					UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] 设置结构体属性默认值: %s"), *AvailableProperties[0]);
+					UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 设置结构体属性默认值: %s"), *AvailableProperties[0]);
 				}
 			}
 			else
 			{
-				UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] 结构体 %s 没有可排序的属性"), *StructType->GetName());
+				UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 结构体 %s 没有可排序的属性"), *StructType->GetName());
 			}
 		}
 	}
@@ -488,7 +487,7 @@ void UK2Node_SmartSort::PropagateTypeToFunctionNode(UK2Node_CallFunction* Functi
 	if (!FunctionNode)
 	{
 		FXToolsErrorReporter::Error(
-			LogBlueprint,
+			LogSortEditor,
 			TEXT("[智能排序调试] PropagateTypeToFunctionNode: FunctionNode为空"),
 			TEXT("K2Node_SmartSort::PropagateTypeToFunctionNode"));
 		return;
@@ -520,7 +519,7 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 	UEdGraphPin* ArrayInputPin = GetArrayInputPin();
 	if (!ArrayInputPin)
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_NoArrayPin", "[智能排序] 节点 %% 缺少数组输入引脚。").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("SmartSort_NoArrayPin", "[智能排序] 节点 %% 缺少数组输入引脚。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -537,7 +536,7 @@ void UK2Node_SmartSort::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 
 	if (ConnectedType.ContainerType != EPinContainerType::Array)
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_NotAnArray", "[智能排序] 连接的引脚不是数组类型。").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("SmartSort_NotAnArray", "[智能排序] 连接的引脚不是数组类型。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -572,7 +571,7 @@ void UK2Node_SmartSort::ExpandNodeWithStaticFunction(FKismetCompilerContext& Com
 	FName FunctionName;
 	if (!DetermineSortFunction(ConnectedType, FunctionName))
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_NoMatchingFunction", "找不到与选项匹配的排序函数 for node %%.").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("SmartSort_NoMatchingFunction", "找不到与选项匹配的排序函数 for node %%.").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -608,7 +607,7 @@ void UK2Node_SmartSort::ExpandNodeWithStaticFunction(FKismetCompilerContext& Com
 	// 连接数组输入引脚
 	if (!ConnectArrayInputPin(CompilerContext, ArrayInputPin, CallFunctionNode))
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -648,7 +647,7 @@ void UK2Node_SmartSort::ExpandNodeWithUnifiedFunction(FKismetCompilerContext& Co
 	// 连接数组输入引脚
 	if (!ConnectArrayInputPin(CompilerContext, ArrayInputPin, CallFunctionNode))
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("SmartSort_ArrayConnectionFailed", "无法连接数组输入引脚。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -694,19 +693,19 @@ bool UK2Node_SmartSort::DetermineSortFunction(const FEdGraphPinType& ConnectedTy
 	UEnum* SortEnum = GetSortModeEnumForType(ConnectedType);
 
 	// 添加调试日志（仅在开发模式下）
-	UE_LOG(LogBlueprint, VeryVerbose, TEXT("[智能排序] 数组类型: %s, 子类型: %s, 容器类型: %d"),
+	UE_LOG(LogSortEditor, VeryVerbose, TEXT("[智能排序] 数组类型: %s, 子类型: %s, 容器类型: %d"),
 		*ConnectedType.PinCategory.ToString(),
 		ConnectedType.PinSubCategoryObject.IsValid() ? *ConnectedType.PinSubCategoryObject->GetName() : TEXT("None"),
 		(int32)ConnectedType.ContainerType);
 
 	if (SortEnum == StaticEnum<EActorSortMode>())
 	{
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 使用Actor排序模式"));
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 使用Actor排序模式"));
 		return DetermineActorSortFunction(OutFunctionName);
 	}
 	else if (SortEnum == StaticEnum<EVectorSortMode>())
 	{
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 使用Vector排序模式"));
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 使用Vector排序模式"));
 		return DetermineVectorSortFunction(OutFunctionName);
 	}
 	else if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Struct &&
@@ -715,7 +714,7 @@ bool UK2Node_SmartSort::DetermineSortFunction(const FEdGraphPinType& ConnectedTy
 		UScriptStruct* StructType = Cast<UScriptStruct>(ConnectedType.PinSubCategoryObject.Get());
 		if (StructType && !IsVectorType(ConnectedType)) // 排除已处理的FVector
 		{
-            UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 使用结构体排序模式: %s"), *StructType->GetName());
+            UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 使用结构体排序模式: %s"), *StructType->GetName());
 			// 对于结构体，我们使用通用属性排序函数
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortArrayByPropertyInPlace);
 			return true;
@@ -723,13 +722,13 @@ bool UK2Node_SmartSort::DetermineSortFunction(const FEdGraphPinType& ConnectedTy
 	}
 	else
 	{
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 使用基础类型排序模式"));
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 使用基础类型排序模式"));
 		return DetermineBasicTypeSortFunction(ConnectedType, OutFunctionName);
 	}
 
 	// 如果所有条件都不满足，返回false
 	FXToolsErrorReporter::Error(
-		LogBlueprint,
+		LogSortEditor,
 		FString::Printf(TEXT("[智能排序] 无法确定排序函数，连接类型: %s"), *ConnectedType.PinCategory.ToString()),
 		TEXT("K2Node_SmartSort::DetermineSortFunction"));
 	return false;
@@ -776,7 +775,7 @@ bool UK2Node_SmartSort::DetermineVectorSortFunction(FName& OutFunctionName)
 	{
 		UEnum* SortEnum = StaticEnum<EVectorSortMode>();
 		DefaultStr = SortEnum->GetNameStringByIndex(0);
-            UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 向量排序模式为空，使用默认值: %s"), *DefaultStr);
+            UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 向量排序模式为空，使用默认值: %s"), *DefaultStr);
 	}
 
 	UEnum* SortEnum = StaticEnum<EVectorSortMode>();
@@ -784,29 +783,29 @@ bool UK2Node_SmartSort::DetermineVectorSortFunction(FName& OutFunctionName)
 	if (EnumValue == INDEX_NONE)
 	{
 		EnumValue = 0; // 默认使用第一个值
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] 无法解析向量排序模式: %s，使用默认值0"), *DefaultStr);
+		UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 无法解析向量排序模式: %s，使用默认值0"), *DefaultStr);
 	}
 
-    UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 向量排序模式: %s (值: %d)"), *DefaultStr, (int32)EnumValue);
+    UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 向量排序模式: %s (值: %d)"), *DefaultStr, (int32)EnumValue);
 
 	switch (static_cast<EVectorSortMode>(EnumValue))
 	{
 		case EVectorSortMode::ByLength:
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsByLength);
-            UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择向量长度排序函数: %s"), *OutFunctionName.ToString());
+            UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择向量长度排序函数: %s"), *OutFunctionName.ToString());
 			return true;
 		case EVectorSortMode::ByProjection:
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsByProjection);
-            UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择向量投影排序函数: %s"), *OutFunctionName.ToString());
+            UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择向量投影排序函数: %s"), *OutFunctionName.ToString());
 			return true;
 		case EVectorSortMode::ByAxis:
 			OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortVectorsByAxis);
-            UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择向量坐标轴排序函数: %s"), *OutFunctionName.ToString());
+            UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择向量坐标轴排序函数: %s"), *OutFunctionName.ToString());
 			return true;
 	}
 
 	FXToolsErrorReporter::Error(
-		LogBlueprint,
+		LogSortEditor,
 		FString::Printf(TEXT("[智能排序] 未找到匹配的向量排序函数，枚举值: %d"), (int32)EnumValue),
 		TEXT("K2Node_SmartSort::DetermineVectorSortFunction"));
 	return false;
@@ -817,7 +816,7 @@ bool UK2Node_SmartSort::DetermineBasicTypeSortFunction(const FEdGraphPinType& Co
 	if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Int)
 	{
 		OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortIntegerArray);
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择整数排序函数: %s"), *OutFunctionName.ToString());
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择整数排序函数: %s"), *OutFunctionName.ToString());
 		return true;
 	}
 	else if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Float ||
@@ -825,24 +824,24 @@ bool UK2Node_SmartSort::DetermineBasicTypeSortFunction(const FEdGraphPinType& Co
 			 ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Real)
 	{
 		OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortFloatArray);
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择浮点数排序函数: %s"), *OutFunctionName.ToString());
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择浮点数排序函数: %s"), *OutFunctionName.ToString());
 		return true;
 	}
 	else if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_String)
 	{
 		OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortStringArray);
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择字符串排序函数: %s"), *OutFunctionName.ToString());
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择字符串排序函数: %s"), *OutFunctionName.ToString());
 		return true;
 	}
 	else if (ConnectedType.PinCategory == UEdGraphSchema_K2::PC_Name)
 	{
 		OutFunctionName = GET_FUNCTION_NAME_CHECKED(USortLibrary, SortNameArray);
-        UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] 选择命名排序函数: %s"), *OutFunctionName.ToString());
+        UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 选择命名排序函数: %s"), *OutFunctionName.ToString());
 		return true;
 	}
 
 	FXToolsErrorReporter::Error(
-		LogBlueprint,
+		LogSortEditor,
 		FString::Printf(TEXT("[智能排序] 未找到匹配的基础类型排序函数，类型: %s"), *ConnectedType.PinCategory.ToString()),
 		TEXT("K2Node_SmartSort::DetermineBasicTypeSortFunction"));
 	return false;
@@ -992,7 +991,7 @@ void UK2Node_SmartSort::ConnectDynamicInputPins(FKismetCompilerContext& Compiler
 		}
 		else
 		{
-			UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] 无法连接Then引脚: ThenPin=%s, FuncThenPin=%s"),
+			UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 无法连接Then引脚: ThenPin=%s, FuncThenPin=%s"),
 				ThenPin ? TEXT("Valid") : TEXT("NULL"),
 				FuncThenPin ? TEXT("Valid") : TEXT("NULL"));
 		}
@@ -1011,7 +1010,7 @@ void UK2Node_SmartSort::EarlyValidation(FCompilerResultsLog& MessageLog) const
 	}
 	else if (GetResolvedArrayType().PinCategory == UEdGraphSchema_K2::PC_Wildcard)
 	{
-		MessageLog.Error(*LOCTEXT("SmartSort_ResolveFailed", "错误：[智能排序] 节点 %% 未能解析出有效的数组类型。").ToString(), this);
+		MessageLog.Warning(*LOCTEXT("SmartSort_ResolveFailed", "警告：[智能排序] 节点 %% 未能解析出有效的数组类型。").ToString(), this);
 	}
 }
 
@@ -1176,7 +1175,7 @@ void UK2Node_SmartSort::CreatePureFunctionExecutionFlow(FKismetCompilerContext& 
 		CompilerContext.MovePinLinksToIntermediate(*MyThenPin, *SequenceThenPin);
 	}
 
-	UE_LOG(LogBlueprint, Verbose, TEXT("[智能排序] Pure函数执行流创建完成，使用ExecutionSequence节点"));
+	UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] Pure函数执行流创建完成，使用ExecutionSequence节点"));
 }
 
 void UK2Node_SmartSort::SetEnumPinDefaultValue(UEdGraphPin* EnumPin, UEnum* EnumClass)
@@ -1197,7 +1196,7 @@ void UK2Node_SmartSort::SetEnumPinDefaultValue(UEdGraphPin* EnumPin, UEnum* Enum
 	{
 		FString FirstEnumName = EnumClass->GetNameStringByIndex(0);
 		EnumPin->DefaultValue = FirstEnumName;
-		UE_LOG(LogBlueprint, Warning, TEXT("[智能排序] 设置枚举默认值: %s = %s"),
+		UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 设置枚举默认值: %s = %s"),
 			*EnumPin->PinName.ToString(), *FirstEnumName);
 	}
 }

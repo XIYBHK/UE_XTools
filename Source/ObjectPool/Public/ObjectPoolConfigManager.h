@@ -249,6 +249,6 @@ DECLARE_LOG_CATEGORY_EXTERN(LogObjectPoolConfigManager, Log, All);
  * 配置管理器的性能统计宏
  */
 #if STATS
-DECLARE_CYCLE_STAT_EXTERN(TEXT("ConfigManager_ValidateConfig"), STAT_ConfigManager_ValidateConfig, STATGROUP_Game, OBJECTPOOL_API);
-DECLARE_CYCLE_STAT_EXTERN(TEXT("ConfigManager_ApplyConfig"), STAT_ConfigManager_ApplyConfig, STATGROUP_Game, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ConfigManager_ValidateConfig"), STAT_ConfigManager_ValidateConfig, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
+DECLARE_CYCLE_STAT_EXTERN(TEXT("ConfigManager_ApplyConfig"), STAT_ConfigManager_ApplyConfig, STATGROUP_ObjectPoolUtils, OBJECTPOOL_API);
 #endif

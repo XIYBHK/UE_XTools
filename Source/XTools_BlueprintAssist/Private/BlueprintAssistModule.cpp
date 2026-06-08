@@ -121,13 +121,13 @@ void FBlueprintAssistModule::OnPostEngineInit()
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBAWelcomeScreen::GetTabId(), FOnSpawnTab::CreateStatic(&SBAWelcomeScreen::CreateWelcomeScreenTab))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
 		.SetDisplayName(INVTEXT("BA Welcome Screen"))
-		.SetIcon(FSlateIcon("EditorStyle", "Icons.Help"))
+		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Help"))
 		.SetTooltipText(INVTEXT("Opens the Blueprint Assist Welcome Screen"));
 
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBASettingsChangeWindow::GetTabId(), FOnSpawnTab::CreateStatic(&SBASettingsChangeWindow::CreateTab))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
 		.SetDisplayName(INVTEXT("BA Settings Changes"))
-		.SetIcon(FSlateIcon("EditorStyle", "Icons.Help"))
+		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Help"))
 		.SetTooltipText(INVTEXT("Opens a window where you can see the changes for Blueprint Assist settings"));
 
 	UE_LOG(LogBlueprintAssist, Log, TEXT("Finished loaded BlueprintAssist Module"));
@@ -135,7 +135,9 @@ void FBlueprintAssistModule::OnPostEngineInit()
 
 void FBlueprintAssistModule::OnMainFrameCreationFinished(TSharedPtr<SWindow> InRootWindow, bool bIsRunningStartupDialog)
 {
-	FBACrashReporter::Get().Init();
+	// [XTools 集成] 禁用第三方 BugSplat 崩溃遥测：不在启动时初始化崩溃上报器，
+	// 避免向第三方服务器（blueprintassist.bugsplat.com）询问或上传用户机器信息。
+	// FBACrashReporter::Get().Init();
 
 	if (UBASettings_EditorFeatures::Get().bShowWelcomeScreenOnLaunch)
 	{

@@ -1,6 +1,7 @@
 // Copyright 2023 Tomasz Klin. All Rights Reserved.
 
 #include "K2Node_HackTimeline.h"
+#include "ComponentTimelineUncooked.h"
 #include "Engine/Blueprint.h"
 #include "Curves/CurveFloat.h"
 #include "Components/TimelineComponent.h"
@@ -612,7 +613,7 @@ void UK2Node_HackTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
 		if (NodeSpawner == nullptr)
 		{
-			UE_LOG(LogTemp, Error, TEXT("UK2Node_HackTimeline::GetMenuActions: failed to create node spawner"));
+			UE_LOG(LogComponentTimelineUncooked, Error, TEXT("UK2Node_HackTimeline::GetMenuActions: failed to create node spawner"));
 			return;
 		}
 

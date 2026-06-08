@@ -227,7 +227,7 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	TArray<CasePinPair> CasePinPairs = GetCasePinPairs();
 	if (CasePinPairs.Num() == 0 || !CasePinPairs[0].Key)
 	{
-		CompilerContext.MessageLog.Error(*LOCTEXT("MultiConditionalSelect_NoCasePins", "错误：[多条件选择] 节点 %% 缺少有效条件分支。").ToString(), this);
+		CompilerContext.MessageLog.Warning(*LOCTEXT("MultiConditionalSelect_NoCasePins", "警告：[多条件选择] 节点 @@ 缺少有效条件分支。").ToString(), this);
 		BreakAllNodeLinks();
 		return;
 	}

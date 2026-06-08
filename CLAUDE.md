@@ -163,7 +163,7 @@ FXToolsErrorReporter::Warning(
 ### EnhancedCodeFlow 异步系统
 - 基于 UE Ticker，支持协程（C++20 co_await）
 - `FECFHandle` 管理动作生命周期，`FFlow` 是静态接口
-- 编译时宏 `ECF_INSIGHTS_ENABLED` 控制 Insight 跟踪
+- 编译时宏 `ECF_INSIGHT_PROFILING` 控制 Insight 跟踪
 
 ### ComponentTimeline
 - 运行时：`UComponentTimelineComponent`；编辑器：`UK2Node_ComponentTimelineRuntime`
