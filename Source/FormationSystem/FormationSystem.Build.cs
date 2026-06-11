@@ -77,15 +77,5 @@ public class FormationSystem : ModuleRules
 			"DeveloperSettings"
 		});
 
-		// 编辑器专用依赖
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.AddRange(new string[] {
-				"Kismet",
-				"UnrealEd",
-				"BlueprintGraph",
-				"GraphEditor"
-			});
-		}
 	}
 } 

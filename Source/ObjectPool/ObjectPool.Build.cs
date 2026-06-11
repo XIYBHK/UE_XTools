@@ -35,17 +35,6 @@ public class ObjectPool : ModuleRules
         //  测试支持 - 暂时禁用以简化编译
         PublicDefinitions.Add("WITH_OBJECTPOOL_TESTS=0");
         
-        //  编辑器功能作为可选依赖
-        if (Target.bBuildEditor)
-        {
-            PrivateDependencyModuleNames.AddRange(new string[]
-            {
-                "UnrealEd",
-                "ToolMenus",
-                "EditorStyle"
-            });
-        }
-        
         //  公共包含路径
         PublicIncludePaths.AddRange(new string[]
         {

@@ -62,7 +62,7 @@ protected:
     FVector TargetLocation;
 
     /** 接受半径 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Formation Movement", meta = (ClampMin = "1.0", ClampMax = "500.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Formation Movement", meta = (ClampMin = "1.0", ClampMax = "500.0", ForceUnits = "cm"))
     float AcceptanceRadius = 50.0f;
 
     /** 移动速度倍数 */

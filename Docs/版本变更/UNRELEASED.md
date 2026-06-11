@@ -5,6 +5,15 @@
 
 ---
 
+### 代码审查修复 (2026-06-11)
+- 修复 Sort.Runtime 删除 8 个无用编辑器依赖
+- 修复 ObjectPool.Runtime 删除 3 个无用编辑器依赖
+- 修复 FormationSystem.Runtime 删除 4 个无用编辑器依赖
+- 修复 SortEditor 删除 EditorStyle 残留依赖
+- 调整 FormationLibrary 15 个 BlueprintPure 改为 BlueprintCallable
+- 新增 FormationMovementComponent AcceptanceRadius ForceUnits="cm"
+- 新增 XToolsLibrary 传统 API 4 个参数添加 UIMin/UIMax/ForceUnits
+
 ### XToolsCore
 - 调整 防御宏改 inline constexpr，版本兼容宏归类整理
 

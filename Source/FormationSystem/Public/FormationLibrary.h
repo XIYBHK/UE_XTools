@@ -24,7 +24,7 @@ public:
      * @param RowCount 行数（0表示自动计算）
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建方形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建方形阵型"))
     static FFormationData CreateSquareFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -43,7 +43,7 @@ public:
      * @param bClockwise 是否顺时针排列
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建圆形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建圆形阵型"))
     static FFormationData CreateCircleFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -62,7 +62,7 @@ public:
      * @param bVertical 是否垂直排列
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建线形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建线形阵型"))
     static FFormationData CreateLineFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -80,7 +80,7 @@ public:
      * @param bInverted 是否倒三角
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建三角形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建三角形阵型"))
     static FFormationData CreateTriangleFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -97,7 +97,7 @@ public:
      * @param Spacing 单位间距
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建箭头形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建箭头形阵型"))
     static FFormationData CreateArrowFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -114,7 +114,7 @@ public:
      * @param Turns 螺旋圈数
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建螺旋线形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建螺旋线形阵型"))
     static FFormationData CreateSpiralFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -131,7 +131,7 @@ public:
      * @param Radius 最大半径
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建实心圆形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建实心圆形阵型"))
     static FFormationData CreateSolidCircleFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -148,7 +148,7 @@ public:
      * @param ZigzagAmplitude 折线幅度
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建折线形阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建折线形阵型"))
     static FFormationData CreateZigzagFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -164,7 +164,7 @@ public:
      * @param RelativePositions 相对位置数组
      * @return 生成的阵型数据
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "创建自定义阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "创建自定义阵型"))
     static FFormationData CreateCustomFormation(
         FVector CenterLocation,
         FRotator Rotation,
@@ -188,7 +188,7 @@ public:
      * @param Formation 阵型数据
      * @return 包围盒
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "获取阵型包围盒"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "获取阵型包围盒"))
     static FBox GetFormationBounds(const FFormationData& Formation);
 
     /**
@@ -197,7 +197,7 @@ public:
      * @param Scale 缩放比例
      * @return 缩放后的阵型
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "缩放阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "缩放阵型"))
     static FFormationData ScaleFormation(const FFormationData& Formation, float Scale);
 
     /**
@@ -206,7 +206,7 @@ public:
      * @param AdditionalRotation 额外旋转
      * @return 旋转后的阵型
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "旋转阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "旋转阵型"))
     static FFormationData RotateFormation(const FFormationData& Formation, FRotator AdditionalRotation);
 
     /**
@@ -215,7 +215,7 @@ public:
      * @param NewCenterLocation 新的中心位置
      * @return 移动后的阵型
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "移动阵型"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "移动阵型"))
     static FFormationData MoveFormation(const FFormationData& Formation, FVector NewCenterLocation);
 
     /**
@@ -251,7 +251,7 @@ public:
      * @param ErrorMessage 错误信息（输出）
      * @return 是否有效
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "验证阵型数据"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "验证阵型数据"))
     static bool ValidateFormationData(const FFormationData& Formation, FString& ErrorMessage);
 
     /**
@@ -261,7 +261,7 @@ public:
      * @param TransitionMode 变换模式
      * @return 变换成本
      */
-    UFUNCTION(BlueprintPure, Category = "XTools|Formation", meta = (DisplayName = "计算变换成本"))
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "计算变换成本"))
     static float CalculateTransitionCost(
         const FFormationData& FromFormation,
         const FFormationData& ToFormation,
