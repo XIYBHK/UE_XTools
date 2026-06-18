@@ -6,17 +6,27 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "AxisLockTypes.generated.h"
 
 /**
  * 轴向锁定状态。
  * 既是查询返回值，也是组件临时恢复栈的元素。
- * 6 个字段对应 FBodyInstance 的 6 个自由度锁定开关。
+ * 保存 FBodyInstance 的完整 DOF 模式、平面锁与 6 个自由度锁定开关。
  */
 USTRUCT(BlueprintType)
-struct FAxisLockState
+struct AXISLOCKER_API FAxisLockState
 {
 	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|轴向锁定", meta = (DisplayName = "自由度模式"))
+	TEnumAsByte<EDOFMode::Type> DOFMode = EDOFMode::SixDOF;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|轴向锁定", meta = (DisplayName = "锁定平面位移"))
+	bool bLockPlaneTranslation = false;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|轴向锁定", meta = (DisplayName = "锁定平面旋转"))
+	bool bLockPlaneRotation = false;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|轴向锁定", meta = (DisplayName = "锁定位移X"))
 	bool bLockPositionX = false;
@@ -35,6 +45,9 @@ struct FAxisLockState
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|轴向锁定", meta = (DisplayName = "锁定旋转Z"))
 	bool bLockRotationZ = false;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|轴向锁定", meta = (DisplayName = "自定义平面法线"))
+	FVector CustomDOFPlaneNormal = FVector::ZeroVector;
 };
 
 /**

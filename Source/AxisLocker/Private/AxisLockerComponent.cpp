@@ -6,8 +6,12 @@
 #include "AxisLockerComponent.h"
 #include "AxisLockLibrary.h"
 #include "AxisLockerAPI.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Actor.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "XToolsErrorReporter.h"
 
 UAxisLockerComponent::UAxisLockerComponent()
@@ -28,17 +32,88 @@ UPrimitiveComponent* UAxisLockerComponent::ResolveTarget() const
 		return TargetComponentOverride.Get();
 	}
 
-	// 2) 编辑器显式引用
-	if (const AActor* Owner = GetOwner())
+	// 2) 编辑器显式目标名称
+	if (!TargetComponentName.IsNone())
 	{
-		if (UPrimitiveComponent* Resolved = Cast<UPrimitiveComponent>(TargetComponentRef.GetComponent(const_cast<AActor*>(Owner))))
+		if (AActor* Owner = GetOwner())
 		{
-			return Resolved;
+			TArray<UPrimitiveComponent*> PrimitiveComponents;
+			Owner->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+			for (UPrimitiveComponent* Component : PrimitiveComponents)
+			{
+				if (IsValid(Component) && Component->GetFName() == TargetComponentName)
+				{
+					return Component;
+				}
+			}
 		}
+
+		XTOOLS_LOG_WARNING_EX(LogAxisLocker, FString::Printf(TEXT("轴向锁定组件：指定目标组件不存在（%s）"), *TargetComponentName.ToString()), NAME_None, true, 5.0f);
+		return nullptr;
 	}
 
 	// 3) 回退到挂载父级（与参考插件等价）
 	return Cast<UPrimitiveComponent>(GetAttachParent());
+}
+
+TArray<FString> UAxisLockerComponent::GetTargetComponentNameOptions() const
+{
+	TArray<FString> Options;
+	Options.Add(FName(NAME_None).ToString());
+
+	auto AddComponentOption = [&Options](const UActorComponent* Component, const FName PreferredName = NAME_None)
+	{
+		if (!Component || !Component->IsA<UPrimitiveComponent>())
+		{
+			return;
+		}
+
+		const FName OptionName = PreferredName.IsNone() ? Component->GetFName() : PreferredName;
+		if (!OptionName.IsNone())
+		{
+			Options.AddUnique(OptionName.ToString());
+		}
+	};
+
+	if (const AActor* Owner = GetOwner())
+	{
+		TArray<UPrimitiveComponent*> PrimitiveComponents;
+		Owner->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+		for (const UPrimitiveComponent* Component : PrimitiveComponents)
+		{
+			AddComponentOption(Component);
+		}
+	}
+
+	const UBlueprintGeneratedClass* BlueprintClass = nullptr;
+	for (const UObject* Outer = this; Outer && !BlueprintClass; Outer = Outer->GetOuter())
+	{
+		if (const UBlueprintGeneratedClass* OuterBlueprintClass = Cast<UBlueprintGeneratedClass>(Outer))
+		{
+			BlueprintClass = OuterBlueprintClass;
+		}
+		else if (const USCS_Node* Node = Cast<USCS_Node>(Outer))
+		{
+			BlueprintClass = Cast<UBlueprintGeneratedClass>(Node->GetSCS()->GetOwnerClass());
+		}
+		else if (const USimpleConstructionScript* SimpleConstructionScript = Cast<USimpleConstructionScript>(Outer))
+		{
+			BlueprintClass = Cast<UBlueprintGeneratedClass>(SimpleConstructionScript->GetOwnerClass());
+		}
+	}
+
+	if (BlueprintClass)
+	{
+		if (const USimpleConstructionScript* SimpleConstructionScript = BlueprintClass->SimpleConstructionScript)
+		{
+			for (const USCS_Node* Node : SimpleConstructionScript->GetAllNodes())
+			{
+				AddComponentOption(Node ? Node->ComponentTemplate.Get() : nullptr, Node ? Node->GetVariableName() : NAME_None);
+			}
+		}
+	}
+
+	return Options;
 }
 
 void UAxisLockerComponent::ApplyConfiguredLock()
@@ -46,7 +121,10 @@ void UAxisLockerComponent::ApplyConfiguredLock()
 	UPrimitiveComponent* Target = ResolveTarget();
 	if (!Target)
 	{
-		XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("轴向锁定组件：未能解析到目标物理组件（请挂到 PrimitiveComponent 下或设置目标组件）"), NAME_None, true, 5.0f);
+		if (TargetComponentName.IsNone())
+		{
+			XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("轴向锁定组件：未能解析到目标物理组件（请挂到 PrimitiveComponent 下或设置目标组件）"), NAME_None, true, 5.0f);
+		}
 		return;
 	}
 
@@ -77,7 +155,16 @@ void UAxisLockerComponent::PushLockState()
 	UPrimitiveComponent* Target = ResolveTarget();
 	if (!Target)
 	{
-		XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("压入锁定状态失败：未能解析到目标物理组件"), NAME_None, true, 5.0f);
+		if (TargetComponentName.IsNone())
+		{
+			XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("压入锁定状态失败：未能解析到目标物理组件"), NAME_None, true, 5.0f);
+		}
+		return;
+	}
+
+	if (!Target->GetBodyInstance())
+	{
+		XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("压入锁定状态失败：目标组件没有有效的 BodyInstance"), NAME_None, true, 5.0f);
 		return;
 	}
 
@@ -92,16 +179,19 @@ void UAxisLockerComponent::PopLockState()
 		return;
 	}
 
-	const FAxisLockState State = LockStateStack.Pop();
-
 	UPrimitiveComponent* Target = ResolveTarget();
 	if (!Target)
 	{
-		XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("恢复锁定状态失败：未能解析到目标物理组件"), NAME_None, true, 5.0f);
+		if (TargetComponentName.IsNone())
+		{
+			XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("恢复锁定状态失败：未能解析到目标物理组件"), NAME_None, true, 5.0f);
+		}
 		return;
 	}
 
-	UAxisLockLibrary::LockAxes(Target,
-		State.bLockPositionX, State.bLockPositionY, State.bLockPositionZ,
-		State.bLockRotationX, State.bLockRotationY, State.bLockRotationZ);
+	const FAxisLockState State = LockStateStack.Last();
+	if (UAxisLockLibrary::ApplyLockState(Target, State))
+	{
+		LockStateStack.Pop(false);
+	}
 }

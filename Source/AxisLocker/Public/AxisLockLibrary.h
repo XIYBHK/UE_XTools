@@ -53,7 +53,7 @@ public:
 		meta = (
 			DisplayName = "获取锁定状态",
 			Keywords = "物理,查询,锁定,状态,DOF",
-			ToolTip = "读取目标组件当前 6 个自由度的锁定情况。目标无效时返回全部未锁定。"
+			ToolTip = "读取目标组件当前 DOF 模式、平面锁与 6 个自由度锁定情况。目标无效时返回全部未锁定。"
 		))
 	static FAxisLockState GetLockState(UPARAM(DisplayName = "目标组件") UPrimitiveComponent* Target);
 
@@ -85,6 +85,9 @@ public:
 	static void ApplyPreset(
 		UPARAM(DisplayName = "目标组件") UPrimitiveComponent* Target,
 		UPARAM(DisplayName = "预设") EAxisLockPreset Preset);
+
+	/** 按完整状态恢复目标组件的 DOF 配置；成功返回 true。*/
+	static bool ApplyLockState(UPrimitiveComponent* Target, const FAxisLockState& State);
 
 private:
 	/**

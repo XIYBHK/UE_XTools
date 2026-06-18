@@ -50,9 +50,34 @@ void UAxisLockLibrary::LockAxes(
 	BodyInstance->bLockXRotation = bLockRotX;
 	BodyInstance->bLockYRotation = bLockRotY;
 	BodyInstance->bLockZRotation = bLockRotZ;
+	BodyInstance->bLockTranslation = false;
+	BodyInstance->bLockRotation = false;
+	BodyInstance->CustomDOFPlaneNormal = FVector::ZeroVector;
 
 	// SixDOF 是表达任意轴组合的唯一模式；内部会 Term 旧约束并按上面 6 个开关重建
 	BodyInstance->SetDOFLock(EDOFMode::SixDOF);
+}
+
+bool UAxisLockLibrary::ApplyLockState(UPrimitiveComponent* Target, const FAxisLockState& State)
+{
+	FBodyInstance* BodyInstance = GetValidBodyInstance(Target);
+	if (!BodyInstance)
+	{
+		return false;
+	}
+
+	BodyInstance->bLockTranslation = State.bLockPlaneTranslation;
+	BodyInstance->bLockRotation = State.bLockPlaneRotation;
+	BodyInstance->bLockXTranslation = State.bLockPositionX;
+	BodyInstance->bLockYTranslation = State.bLockPositionY;
+	BodyInstance->bLockZTranslation = State.bLockPositionZ;
+	BodyInstance->bLockXRotation = State.bLockRotationX;
+	BodyInstance->bLockYRotation = State.bLockRotationY;
+	BodyInstance->bLockZRotation = State.bLockRotationZ;
+	BodyInstance->CustomDOFPlaneNormal = State.CustomDOFPlaneNormal;
+
+	BodyInstance->SetDOFLock(State.DOFMode);
+	return true;
 }
 
 void UAxisLockLibrary::UnlockAll(UPrimitiveComponent* Target)
@@ -83,12 +108,25 @@ FAxisLockState UAxisLockLibrary::GetLockState(UPrimitiveComponent* Target)
 	State.bLockRotationX = BodyInstance->bLockXRotation;
 	State.bLockRotationY = BodyInstance->bLockYRotation;
 	State.bLockRotationZ = BodyInstance->bLockZRotation;
+	State.bLockPlaneTranslation = BodyInstance->bLockTranslation;
+	State.bLockPlaneRotation = BodyInstance->bLockRotation;
+	State.DOFMode = BodyInstance->DOFMode;
+	State.CustomDOFPlaneNormal = BodyInstance->CustomDOFPlaneNormal;
 	return State;
 }
 
 bool UAxisLockLibrary::IsAnyAxisLocked(UPrimitiveComponent* Target)
 {
 	const FAxisLockState State = GetLockState(Target);
+	const EDOFMode::Type ResolvedDOFMode = FBodyInstance::ResolveDOFMode(State.DOFMode);
+	if (ResolvedDOFMode == EDOFMode::YZPlane
+		|| ResolvedDOFMode == EDOFMode::XZPlane
+		|| ResolvedDOFMode == EDOFMode::XYPlane
+		|| (ResolvedDOFMode == EDOFMode::CustomPlane && (State.bLockPlaneTranslation || State.bLockPlaneRotation)))
+	{
+		return true;
+	}
+
 	return State.bLockPositionX || State.bLockPositionY || State.bLockPositionZ
 		|| State.bLockRotationX || State.bLockRotationY || State.bLockRotationZ;
 }
