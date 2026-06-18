@@ -29,6 +29,18 @@
 			]
 		},
 		{
+			"Name": "AxisLocker",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android",
+				"iOS"
+			]
+		},
+		{
 			"Name": "XTools",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
