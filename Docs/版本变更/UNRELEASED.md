@@ -12,6 +12,11 @@
 - 新增 PRD 测试最大循环次数限制
 - 新增 补充贝塞尔采样配置编辑器元数据
 
+### AxisLocker
+- 新增 物理轴向锁定运行时模块
+- 新增 蓝图预设与状态恢复栈
+- 修复 组件目标选择改名称下拉
+
 ### BlueprintExtensions / BlueprintExtensionsRuntime
 - 修复 Map 函数边界检查和循环逻辑
 - 优化 Map_Identical 算法性能（嵌套循环优化）
