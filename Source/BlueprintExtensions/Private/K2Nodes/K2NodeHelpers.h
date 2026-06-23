@@ -28,11 +28,33 @@ namespace K2NodeHelpers
 	{
 		if (!SourcePin || !TargetPin)
 		{
+			CompilerContext.MessageLog.Error(TEXT("K2Node internal connection failed: null pin."));
 			return false;
 		}
 
 		const UEdGraphSchema* Schema = CompilerContext.GetSchema();
-		return Schema && Schema->TryCreateConnection(SourcePin, TargetPin);
+		const bool bConnected = Schema && Schema->TryCreateConnection(SourcePin, TargetPin);
+		if (!bConnected)
+		{
+			UEdGraphNode* ErrorNode = SourcePin->GetOwningNode() ? SourcePin->GetOwningNode() : TargetPin->GetOwningNode();
+			const FString Message = FString::Printf(
+				TEXT("K2Node internal connection failed: %s.%s -> %s.%s @@"),
+				SourcePin->GetOwningNode() ? *SourcePin->GetOwningNode()->GetName() : TEXT("<None>"),
+				*SourcePin->PinName.ToString(),
+				TargetPin->GetOwningNode() ? *TargetPin->GetOwningNode()->GetName() : TEXT("<None>"),
+				*TargetPin->PinName.ToString());
+
+			if (ErrorNode)
+			{
+				CompilerContext.MessageLog.Error(*Message, ErrorNode);
+			}
+			else
+			{
+				CompilerContext.MessageLog.Error(*Message);
+			}
+		}
+
+		return bConnected;
 	}
 
 	/**
@@ -149,6 +171,22 @@ namespace K2NodeHelpers
 
 		const UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
 		return Blueprint && FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint);
+	}
+
+	/**
+	 * 检查图是否允许 Latent 节点。
+	 * 当前自定义 Loop 节点会在 ExpandNode 时才生成 Delay 调用，UE 的宏图 Latent 扫描无法提前识别。
+	 * 因此只允许事件图，避免宏图再被函数图间接调用时绕过官方 Latent 过滤。
+	 */
+	FORCEINLINE bool IsLatentGraphCompatible(const UEdGraph* TargetGraph)
+	{
+		if (!TargetGraph || !TargetGraph->GetSchema())
+		{
+			return false;
+		}
+
+		const EGraphType GraphType = TargetGraph->GetSchema()->GetGraphType(TargetGraph);
+		return GraphType == EGraphType::GT_Ubergraph;
 	}
 
 	/**

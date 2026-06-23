@@ -9,6 +9,53 @@
 #include "XToolsVersionCompat.h"
 #include "MapExtensionsLibrary.generated.h"
 
+namespace XTools::MapExtensions
+{
+	inline bool ArePropertiesSameType(const FProperty* ExpectedProperty, const FProperty* ActualProperty)
+	{
+		return ExpectedProperty && ActualProperty && ExpectedProperty->SameType(ActualProperty);
+	}
+
+	inline bool ValidateSteppedProperty(FFrame& Stack, const FProperty* ExpectedProperty)
+	{
+		if (ArePropertiesSameType(ExpectedProperty, Stack.MostRecentProperty))
+		{
+			return true;
+		}
+
+		Stack.bArrayContextFailed = true;
+		return false;
+	}
+
+	struct FScopedInitializedPropertyValue
+	{
+		FScopedInitializedPropertyValue(const FProperty* InProperty, void* InValue)
+			: Property(InProperty)
+			, Value(InValue)
+		{
+			if (Property && Value)
+			{
+				Property->InitializeValue(Value);
+			}
+		}
+
+		~FScopedInitializedPropertyValue()
+		{
+			if (Property && Value)
+			{
+				Property->DestroyValue(Value);
+			}
+		}
+
+		FScopedInitializedPropertyValue(const FScopedInitializedPropertyValue&) = delete;
+		FScopedInitializedPropertyValue& operator=(const FScopedInitializedPropertyValue&) = delete;
+
+	private:
+		const FProperty* Property = nullptr;
+		void* Value = nullptr;
+	};
+}
+
 UCLASS()
 class BLUEPRINTEXTENSIONSRUNTIME_API UMapExtensionsLibrary : public UBlueprintFunctionLibrary
 {
@@ -251,11 +298,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrKeyProp) * CurrKeyProp->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		CurrKeyProp->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(CurrKeyProp, KeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrKeyProp))
+		{
+			return;
+		}
 		
 		// 获取结构体属性
 		const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
@@ -286,11 +337,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrValueProp = ArrayProp->Inner;
 		const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-		CurrValueProp->InitializeValue(ValueStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedItemValue(CurrValueProp, ValueStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrValueProp))
+		{
+			return;
+		}
 
 		P_FINISH;
 
@@ -298,8 +353,6 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		GenericMap_AddArrayItem(MapAddr, MapProperty, KeyStorageSpace, ValueStorageSpace);
 		P_NATIVE_END;
 		
-		CurrValueProp->DestroyValue(ValueStorageSpace);
-		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
 
 	static void GenericMap_AddArrayItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* ValuePtr);
@@ -332,11 +385,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrKeyProp) * CurrKeyProp->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		CurrKeyProp->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(CurrKeyProp, KeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrKeyProp))
+		{
+			return;
+		}
 		
 		// 获取结构体属性
 		const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
@@ -367,11 +424,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrValueProp = ArrayProp->Inner;
 		const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-		CurrValueProp->InitializeValue(ValueStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedItemValue(CurrValueProp, ValueStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrValueProp))
+		{
+			return;
+		}
 
 		P_FINISH;
 
@@ -379,8 +440,6 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		GenericMap_RemoveArrayItem(MapAddr, MapProperty, KeyStorageSpace, ValueStorageSpace);
 		P_NATIVE_END;
 		
-		CurrValueProp->DestroyValue(ValueStorageSpace);
-		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
 
 	static void GenericMap_RemoveArrayItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* ValuePtr);
@@ -419,11 +478,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrKeyProp) * CurrKeyProp->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		CurrKeyProp->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(CurrKeyProp, KeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrKeyProp))
+		{
+			return;
+		}
 		
 		// 获取结构体属性
 		const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
@@ -454,11 +517,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrValueProp = SetProp->ElementProp;
 		const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-		CurrValueProp->InitializeValue(ValueStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedItemValue(CurrValueProp, ValueStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrValueProp))
+		{
+			return;
+		}
 
 		P_FINISH;
 
@@ -466,8 +533,6 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		GenericMap_AddSetItem(MapAddr, MapProperty, KeyStorageSpace, ValueStorageSpace);
 		P_NATIVE_END;
 		
-		CurrValueProp->DestroyValue(ValueStorageSpace);
-		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
 
 	static void GenericMap_AddSetItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* ValuePtr);
@@ -500,11 +565,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrKeyProp) * CurrKeyProp->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		CurrKeyProp->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(CurrKeyProp, KeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrKeyProp))
+		{
+			return;
+		}
 		
 		// 获取结构体属性
 		const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
@@ -535,11 +604,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrValueProp = SetProp->ElementProp;
 		const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-		CurrValueProp->InitializeValue(ValueStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedItemValue(CurrValueProp, ValueStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrValueProp))
+		{
+			return;
+		}
 
 		P_FINISH;
 
@@ -547,8 +620,6 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		GenericMap_RemoveSetItem(MapAddr, MapProperty, KeyStorageSpace, ValueStorageSpace);
 		P_NATIVE_END;
 		
-		CurrValueProp->DestroyValue(ValueStorageSpace);
-		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
 
 	static void GenericMap_RemoveSetItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* ValuePtr);
@@ -587,11 +658,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrKeyProp) * CurrKeyProp->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		CurrKeyProp->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(CurrKeyProp, KeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrKeyProp))
+		{
+			return;
+		}
 
 		// 获取结构体属性
 		const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
@@ -622,21 +697,29 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrSubKeyProp = InnerMapProp->KeyProp;
 		const int32 SubKeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrSubKeyProp) * CurrSubKeyProp->ArrayDim;
 		void* SubKeyStorageSpace = FMemory_Alloca(SubKeyPropertySize);
-		CurrSubKeyProp->InitializeValue(SubKeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedSubKeyValue(CurrSubKeyProp, SubKeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(SubKeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrSubKeyProp))
+		{
+			return;
+		}
     
 		// 获取内部Map的Value属性
 		const FProperty* CurrValueProp = InnerMapProp->ValueProp;
 		const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 		void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-		CurrValueProp->InitializeValue(ValueStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedItemValue(CurrValueProp, ValueStorageSpace);
     
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrValueProp))
+		{
+			return;
+		}
 
 		P_FINISH;
 
@@ -644,9 +727,6 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		GenericMap_AddMapItem(MapAddr, MapProperty, KeyStorageSpace, SubKeyStorageSpace, ValueStorageSpace);
 		P_NATIVE_END;
 		
-		CurrValueProp->DestroyValue(ValueStorageSpace);
-		CurrSubKeyProp->DestroyValue(SubKeyStorageSpace);
-		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
 
 	static void GenericMap_AddMapItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* SubKeyPtr, const void* ValuePtr);
@@ -679,11 +759,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrKeyProp = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrKeyProp) * CurrKeyProp->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		CurrKeyProp->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(CurrKeyProp, KeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrKeyProp))
+		{
+			return;
+		}
 
 		// 获取结构体属性
 		const FStructProperty* StructProp = CastField<FStructProperty>(MapProperty->ValueProp);
@@ -714,11 +798,15 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		const FProperty* CurrSubKeyProp = InnerMapProp->KeyProp;
 		const int32 SubKeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrSubKeyProp) * CurrSubKeyProp->ArrayDim;
 		void* SubKeyStorageSpace = FMemory_Alloca(SubKeyPropertySize);
-		CurrSubKeyProp->InitializeValue(SubKeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedSubKeyValue(CurrSubKeyProp, SubKeyStorageSpace);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentPropertyContainer = nullptr;
 		Stack.StepCompiledIn<FProperty>(SubKeyStorageSpace);
+		if (!XTools::MapExtensions::ValidateSteppedProperty(Stack, CurrSubKeyProp))
+		{
+			return;
+		}
 
 		P_FINISH;
 
@@ -726,8 +814,6 @@ static bool GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProp
 		GenericMap_RemoveMapItem(MapAddr, MapProperty, KeyStorageSpace, SubKeyStorageSpace);
 		P_NATIVE_END;
 
-		CurrSubKeyProp->DestroyValue(SubKeyStorageSpace);
-		CurrKeyProp->DestroyValue(KeyStorageSpace);
 	}
 
 	static void GenericMap_RemoveMapItem(const void* TargetMap, const FMapProperty* MapProperty, const void* KeyPtr, const void* SubKeyPtr);

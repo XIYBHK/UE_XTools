@@ -15,6 +15,7 @@
 
 // 节点
 #include "K2Node_AssignmentStatement.h"
+#include "K2Node_CallArrayFunction.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_ExecutionSequence.h"
 #include "K2Node_IfThenElse.h"
@@ -92,6 +93,16 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
     FKismetCompilerContext &CompilerContext, UEdGraph *SourceGraph) {
   // 【参考 K2Node_SmartSort 实现模式】
   // 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+  if (!K2NodeHelpers::IsLatentGraphCompatible(SourceGraph)) {
+    CompilerContext.MessageLog.Error(
+        *LOCTEXT("LatentGraphOnly",
+                 "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
+             .ToString(),
+        this);
+    BreakAllNodeLinks();
+    return;
+  }
+
   if (!K2NodeHelpers::BeginExpandNode(
           CompilerContext, this,
           {GetExecPin(), GetArrayPin(), GetDelayPin(), GetLoopBodyPin(),
@@ -128,21 +139,20 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   UEdGraphPin *LoopCounterZeroPin = LoopCounterZeroNode->GetVariablePin();
 
   // 3. 获取数组长度
-  UK2Node_CallFunction *Length =
-      CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this,
-                                                                  SourceGraph);
+  UK2Node_CallArrayFunction *Length =
+      CompilerContext.SpawnIntermediateNode<UK2Node_CallArrayFunction>(
+          this, SourceGraph);
   Length->SetFromFunction(
       UKismetArrayLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetArrayLibrary, Array_Length)));
   Length->AllocateDefaultPins();
-  UEdGraphPin *LengthTargetArrayPin =
-      Length->FindPinChecked(TEXT("TargetArray"), EGPD_Input);
+  UEdGraphPin *LengthTargetArrayPin = Length->GetTargetArrayPin();
   LengthTargetArrayPin->PinType = GetArrayPin()->PinType;
   LengthTargetArrayPin->PinType.PinValueType =
       FEdGraphTerminalType(GetArrayPin()->PinType.PinValueType);
   CompilerContext.CopyPinLinksToIntermediate(*GetArrayPin(),
                                              *LengthTargetArrayPin);
-  Length->PostReconstructNode();
+  Length->PinConnectionListChanged(LengthTargetArrayPin);
 
   // 4. 设置循环计数器为数组长度
   UK2Node_AssignmentStatement *LoopCounterSet =
@@ -207,11 +217,17 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
           this, SourceGraph);
   LoopCounterBreak->AllocateDefaultPins();
   LoopCounterBreak->GetValuePin()->DefaultValue = TEXT("-1");
-  K2NodeHelpers::TryConnect(CompilerContext, 
+  K2NodeHelpers::TryConnect(CompilerContext,
       LoopCounterPin, LoopCounterBreak->GetVariablePin());
-  // 【修复】连接 Break 的 Then 引脚到 Branch 的 Else，使 Break 后执行流继续到 Completed
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
+
+  UK2Node_ExecutionSequence *CompleteSequence =
+      CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
+          this, SourceGraph);
+  CompleteSequence->AllocateDefaultPins();
+  K2NodeHelpers::TryConnect(CompilerContext, Branch->GetElsePin(),
+                            CompleteSequence->GetExecPin());
+  K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetThenPin(),
+                            CompleteSequence->GetExecPin());
 
   // 10. 创建执行序列（循环体 -> 延迟路径）
   // 【修复】先执行循环体，再延迟，避免初次进入时延迟
@@ -243,12 +259,10 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this,
                                                                 SourceGraph);
   DelayBranch->AllocateDefaultPins();
-  K2NodeHelpers::TryConnect(CompilerContext, 
+  K2NodeHelpers::TryConnect(CompilerContext,
       Sequence->GetThenPinGivenIndex(1), DelayBranch->GetExecPin());
   K2NodeHelpers::TryConnect(CompilerContext, 
       DelayLessEqualZero->GetReturnValuePin(), DelayBranch->GetConditionPin());
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      DelayLessEqualZero->FindPinChecked(TEXT("A")), GetDelayPin());
   DelayLessEqualZero->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("0.0");
   K2NodeHelpers::TryConnect(CompilerContext, DelayBranch->GetElsePin(),
                                                    DelayNode->GetExecPin());
@@ -295,24 +309,23 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
       LoopCounterAssignWithDelay->GetThenPin(), Branch->GetExecPin()); // 循环回到分支
 
   // 13. 获取数组元素
-  UK2Node_CallFunction *GetValue =
-      CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this,
-                                                                  SourceGraph);
+  UK2Node_CallArrayFunction *GetValue =
+      CompilerContext.SpawnIntermediateNode<UK2Node_CallArrayFunction>(
+          this, SourceGraph);
   GetValue->SetFromFunction(
       UKismetArrayLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetArrayLibrary, Array_Get)));
   GetValue->AllocateDefaultPins();
-  UEdGraphPin *GetValueTargetArrayPin =
-      GetValue->FindPinChecked(TEXT("TargetArray"), EGPD_Input);
+  UEdGraphPin *GetValueTargetArrayPin = GetValue->GetTargetArrayPin();
   GetValueTargetArrayPin->PinType = GetArrayPin()->PinType;
   GetValueTargetArrayPin->PinType.PinValueType =
       FEdGraphTerminalType(GetArrayPin()->PinType.PinValueType);
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
   CompilerContext.CopyPinLinksToIntermediate(*GetArrayPin(),
                                              *GetValueTargetArrayPin);
-  UEdGraphPin *ValuePin =
-      K2NodeHelpers::ReconstructAndFindPin(GetValue, TEXT("Item"));
+  GetValue->PinConnectionListChanged(GetValueTargetArrayPin);
+  K2NodeHelpers::TryConnect(CompilerContext,
+      GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
+  UEdGraphPin *ValuePin = GetValue->FindPin(TEXT("Item"), EGPD_Output);
   if (!ensureMsgf(ValuePin, TEXT("ForEachArrayReverse: 找不到 Item(Value) 引脚，中间节点重建失败")))
   {
       CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachArrayReverse_NoValuePin", "警告：[ForEachArrayReverse] 节点 @@ 找不到 Value 引脚，展开中止。").ToString(), this);
@@ -324,12 +337,14 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   // 14. 最后统一移动所有外部连接（参考智能排序模式）
   CompilerContext.MovePinLinksToIntermediate(*GetExecPin(),
                                              *LoopCounterSet->GetExecPin());
+  CompilerContext.CopyPinLinksToIntermediate(
+      *GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetLoopBodyPin(), *Sequence->GetThenPinGivenIndex(0));
   CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(),
-                                             *Branch->GetElsePin());
+                                             *CompleteSequence->GetThenPinGivenIndex(0));
   CompilerContext.MovePinLinksToIntermediate(*GetBreakPin(),
                                              *LoopCounterBreak->GetExecPin());
   CompilerContext.MovePinLinksToIntermediate(*GetValuePin(), *ValuePin);
@@ -390,7 +405,7 @@ void UK2Node_ForEachArrayReverse::NotifyPinConnectionListChanged(
 
 bool UK2Node_ForEachArrayReverse::IsCompatibleWithGraph(
     const UEdGraph *TargetGraph) const {
-  return K2NodeHelpers::IsEventGraphCompatible(TargetGraph) &&
+  return K2NodeHelpers::IsLatentGraphCompatible(TargetGraph) &&
          Super::IsCompatibleWithGraph(TargetGraph);
 }
 

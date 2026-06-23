@@ -6,7 +6,7 @@
 #include "K2Node_ForEachSet.generated.h"
 
 UCLASS()
-class  UK2Node_ForEachSet : public UK2Node
+class BLUEPRINTEXTENSIONS_API UK2Node_ForEachSet : public UK2Node
 {
 	GENERATED_BODY()
 

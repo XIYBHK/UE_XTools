@@ -34,6 +34,30 @@ TPropertyType* FindFirstProperty(const UScriptStruct* Struct)
 	return nullptr;
 }
 
+void* ResolveSteppedPropertyValue(FFrame& Stack, const FProperty* ExpectedProperty, void* FallbackValue)
+{
+	if (!XTools::MapExtensions::ArePropertiesSameType(ExpectedProperty, Stack.MostRecentProperty))
+	{
+		Stack.bArrayContextFailed = true;
+		return nullptr;
+	}
+
+	return Stack.MostRecentPropertyAddress ? Stack.MostRecentPropertyAddress : FallbackValue;
+}
+
+bool AreArrayInnerTypesCompatible(const FProperty* ExpectedInnerProperty, const FArrayProperty* ArrayProperty)
+{
+	return ExpectedInnerProperty && ArrayProperty && XTools::MapExtensions::ArePropertiesSameType(ExpectedInnerProperty, ArrayProperty->Inner);
+}
+
+void InitializeScriptValue(const FProperty* Property, void* ValuePtr)
+{
+	if (Property && ValuePtr)
+	{
+		Property->InitializeValue(ValuePtr);
+	}
+}
+
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #pragma region GetKey
@@ -57,31 +81,27 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_GetKey)
 	FProperty* KeyProp = MapProperty->KeyProp;
 	const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProp) * KeyProp->ArrayDim;
 	void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-	KeyProp->InitializeValue(KeyStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(KeyProp, KeyStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
 
-	const FFieldClass* KeyPropClass = KeyProp->GetClass();
-	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* ItemPtr;
-	if (Stack.MostRecentPropertyAddress != nullptr &&
-		KeyPropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
-		(MostRecentPropClass->IsChildOf(KeyPropClass) || KeyPropClass->IsChildOf(MostRecentPropClass)))
+	void* ItemPtr = ResolveSteppedPropertyValue(Stack, KeyProp, KeyStorageSpace);
+	if (!ItemPtr)
 	{
-		ItemPtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ItemPtr = KeyStorageSpace;
+		*(bool*)RESULT_PARAM = false;
+		return;
 	}
 	
 	P_FINISH;
 	P_NATIVE_BEGIN;
-	*(bool*)RESULT_PARAM = GenericMap_GetKey(MapAddr, MapProperty, Index, ItemPtr);
+	const bool bFound = GenericMap_GetKey(MapAddr, MapProperty, Index, ItemPtr);
+	if (!bFound)
+	{
+		InitializeScriptValue(KeyProp, ItemPtr);
+	}
+	*(bool*)RESULT_PARAM = bFound;
 	P_NATIVE_END
-	
-	KeyProp->DestroyValue(KeyStorageSpace);
 }
 
 bool UMapExtensionsLibrary::GenericMap_GetKey(const void* TargetMap, const FMapProperty* MapProperty, int32 Index, void* OutKeyPtr)
@@ -130,32 +150,27 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_GetValue)
 	FProperty* ValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(ValueProp) * ValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	ValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(ValueProp, ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 
-	const FFieldClass* ValuePropClass = ValueProp->GetClass();
-	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-
-	void* ItemPtr;
-	if (Stack.MostRecentPropertyAddress != nullptr &&
-		ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
-		(MostRecentPropClass->IsChildOf(ValuePropClass) || ValuePropClass->IsChildOf(MostRecentPropClass)))
+	void* ItemPtr = ResolveSteppedPropertyValue(Stack, ValueProp, ValueStorageSpace);
+	if (!ItemPtr)
 	{
-		ItemPtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ItemPtr = ValueStorageSpace;
+		*(bool*)RESULT_PARAM = false;
+		return;
 	}
 	
 	P_FINISH;
 	P_NATIVE_BEGIN;
-	*(bool*)RESULT_PARAM = GenericMap_GetValue(MapAddr, MapProperty, Index, ItemPtr);
+	const bool bFound = GenericMap_GetValue(MapAddr, MapProperty, Index, ItemPtr);
+	if (!bFound)
+	{
+		InitializeScriptValue(ValueProp, ItemPtr);
+	}
+	*(bool*)RESULT_PARAM = bFound;
 	P_NATIVE_END
-
-	ValueProp->DestroyValue(ValueStorageSpace);
 }
 
 bool UMapExtensionsLibrary::GenericMap_GetValue(const void* TargetMap, const FMapProperty* MapProperty, int32 Index, void* OutValuePtr)
@@ -213,7 +228,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_Keys)
 
 void UMapExtensionsLibrary::GenericMap_Keys(const void* MapAddr, const FMapProperty* MapProperty, const void* ArrayAddr, const FArrayProperty* ArrayProperty)
 {
-	if(MapAddr && ArrayAddr && ensure(MapProperty->KeyProp->GetID() == ArrayProperty->Inner->GetID()) )
+	if(MapAddr && ArrayAddr && MapProperty && ensure(AreArrayInnerTypesCompatible(MapProperty->KeyProp, ArrayProperty)) )
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
 		FScriptArrayHelper ArrayHelper(ArrayProperty, ArrayAddr);
@@ -268,7 +283,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_Values)
 
 void UMapExtensionsLibrary::GenericMap_Values(const void* MapAddr, const FMapProperty* MapProperty, const void* ArrayAddr, const FArrayProperty* ArrayProperty)
 {
-	if(MapAddr && ArrayAddr && ensure(MapProperty->ValueProp->GetID() == ArrayProperty->Inner->GetID()))
+	if(MapAddr && ArrayAddr && MapProperty && ensure(AreArrayInnerTypesCompatible(MapProperty->ValueProp, ArrayProperty)))
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
 		FScriptArrayHelper ArrayHelper(ArrayProperty, ArrayAddr);
@@ -308,41 +323,37 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_ContainsValue)
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	CurrValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(CurrValueProp, ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 
-	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
-	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* ValuePtr;
-	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
-		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
+	void* ValuePtr = ResolveSteppedPropertyValue(Stack, CurrValueProp, ValueStorageSpace);
+	if (!ValuePtr)
 	{
-		ValuePtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ValuePtr = ValueStorageSpace;
+		*(bool*)RESULT_PARAM = false;
+		return;
 	}
 
 	P_FINISH;
 	P_NATIVE_BEGIN;
 	*(bool*)RESULT_PARAM = GenericMap_FindValue(MapAddr, MapProperty, CurrValueProp, ValuePtr);
 	P_NATIVE_END;
-
-	CurrValueProp->DestroyValue(ValueStorageSpace);
 }
 
 bool UMapExtensionsLibrary::GenericMap_FindValue(const void* TargetMap, const FMapProperty* MapProperty, const FProperty* ValueProperty, const void* ValuePtr)
 {
-	if(TargetMap)
+	if(TargetMap && MapProperty && ValueProperty && ValuePtr)
 	{
 		FScriptMapHelper MapHelper(MapProperty, TargetMap);
-		for(int32 i = 0; i < MapHelper.Num(); i++)
+		for(int32 i = 0; i < MapHelper.GetMaxIndex(); i++)
 		{
-			const void* MapValuePtr = MapHelper.GetValuePtr(MapHelper.FindInternalIndex(i));
+			if (!MapHelper.IsValidIndex(i))
+			{
+				continue;
+			}
+
+			const void* MapValuePtr = MapHelper.GetValuePtr(i);
 			if(!MapValuePtr) return false;
 			if(ValueProperty->Identical(ValuePtr, MapValuePtr, PPF_None)) return true;
 		}
@@ -370,23 +381,15 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_KeysFromValue)
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	CurrValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(CurrValueProp, ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 
-	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
-	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* ValuePtr;
-	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
-		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
+	void* ValuePtr = ResolveSteppedPropertyValue(Stack, CurrValueProp, ValueStorageSpace);
+	if (!ValuePtr)
 	{
-		ValuePtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ValuePtr = ValueStorageSpace;
+		return;
 	}
 	
 	Stack.MostRecentProperty = nullptr;
@@ -403,13 +406,11 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_KeysFromValue)
 	P_NATIVE_BEGIN;
 	GenericMap_KeysFromValue(MapAddr, MapProperty, ArrayAddr, ArrayProperty, CurrValueProp, ValuePtr);
 	P_NATIVE_END
-
-	CurrValueProp->DestroyValue(ValueStorageSpace);
 }
 
 void UMapExtensionsLibrary::GenericMap_KeysFromValue(const void* MapAddr, const FMapProperty* MapProperty, const void* ArrayAddr, const FArrayProperty* ArrayProperty,  const FProperty* ValueProperty, const void* ValuePtr)
 {
-	if(MapAddr)
+	if(MapAddr && MapProperty && ArrayAddr && ensure(AreArrayInnerTypesCompatible(MapProperty->KeyProp, ArrayProperty)))
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
 		FScriptArrayHelper ArrayHelper(ArrayProperty, ArrayAddr);
@@ -420,6 +421,11 @@ void UMapExtensionsLibrary::GenericMap_KeysFromValue(const void* MapAddr, const 
 		for(int32 i = 0; i < MapHelper.Num(); i++)
 		{
 			const int32 InternalIndex = MapHelper.FindInternalIndex(i);
+			if (InternalIndex == INDEX_NONE)
+			{
+				continue;
+			}
+
 			const void* MapValuePtr = MapHelper.GetValuePtr(InternalIndex);
 			if(!MapValuePtr) continue;
 
@@ -466,7 +472,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RemoveEntries)
 
 bool UMapExtensionsLibrary::GenericMap_RemoveEntries(const void* MapAddr, const FMapProperty* MapProperty, const void* ArrayAddr, const FArrayProperty* ArrayProperty)
 {
-	if(MapAddr)
+	if(MapAddr && MapProperty && ArrayAddr && ensure(AreArrayInnerTypesCompatible(MapProperty->KeyProp, ArrayProperty)))
 	{
 		bool bResult = true;
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
@@ -502,36 +508,27 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RemoveEntriesWithValue)
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	CurrValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(CurrValueProp, ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 
-	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
-	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* ValuePtr;
-	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
-		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
+	void* ValuePtr = ResolveSteppedPropertyValue(Stack, CurrValueProp, ValueStorageSpace);
+	if (!ValuePtr)
 	{
-		ValuePtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ValuePtr = ValueStorageSpace;
+		*(bool*)RESULT_PARAM = false;
+		return;
 	}
 	
 	P_FINISH;
 	P_NATIVE_BEGIN;
 	*(bool*)RESULT_PARAM = GenericMap_RemoveEntriesWithValue(MapAddr, MapProperty, CurrValueProp, ValuePtr);
 	P_NATIVE_END
-
-	CurrValueProp->DestroyValue(ValueStorageSpace);
 }
 
 bool UMapExtensionsLibrary::GenericMap_RemoveEntriesWithValue(const void* MapAddr, const FMapProperty* MapProperty, const FProperty* ValueProp, const void* ValuePtr)
 {
-	if (MapAddr)
+	if (MapAddr && MapProperty && ValueProp && ValuePtr)
 	{
 		bool bResult = false;
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
@@ -542,7 +539,7 @@ bool UMapExtensionsLibrary::GenericMap_RemoveEntriesWithValue(const void* MapAdd
 			if (MapHelper.IsValidIndex(Index))
 			{
 				uint8* ValueData = MapHelper.GetValuePtr(Index);
-				if (ValueProp->Identical(ValueData, ValuePtr))
+				if (ValueProp->Identical(ValuePtr, ValueData, PPF_None))
 				{
 					IndicesToRemove.Add(Index);
 					bResult = true;
@@ -581,36 +578,27 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_SetValueAt)
 	const FProperty* CurrValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(CurrValueProp) * CurrValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	CurrValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(CurrValueProp, ValueStorageSpace);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 
-	const FFieldClass* CurrValuePropClass = CurrValueProp->GetClass();
-	const FFieldClass* MostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* ValuePtr;
-	// If the destination and the inner type are identical in size and their field classes derive from one another, then permit the writing out of the array element to the destination memory
-	if (Stack.MostRecentPropertyAddress != nullptr && (ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim) &&
-		(MostRecentPropClass->IsChildOf(CurrValuePropClass) || CurrValuePropClass->IsChildOf(MostRecentPropClass)))
+	void* ValuePtr = ResolveSteppedPropertyValue(Stack, CurrValueProp, ValueStorageSpace);
+	if (!ValuePtr)
 	{
-		ValuePtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ValuePtr = ValueStorageSpace;
+		*(bool*)RESULT_PARAM = false;
+		return;
 	}
 	
 	P_FINISH;
 	P_NATIVE_BEGIN;
 	*(bool*) RESULT_PARAM = GenericMap_SetValueAt(MapAddr, MapProperty, Index, ValuePtr);
 	P_NATIVE_END
-
-	CurrValueProp->DestroyValue(ValueStorageSpace);
 }
 
 bool UMapExtensionsLibrary::GenericMap_SetValueAt(const void* MapAddr, const FMapProperty* MapProperty, const int32 Index, const void* ValuePtr)
 {
-	if(MapAddr)
+	if(MapAddr && MapProperty && ValuePtr)
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
 		
@@ -619,12 +607,17 @@ bool UMapExtensionsLibrary::GenericMap_SetValueAt(const void* MapAddr, const FMa
 		const FProperty* KeyProperty = MapProperty->KeyProp;
 		const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProperty) * KeyProperty->ArrayDim;
 		void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-		KeyProperty->InitializeValue(KeyStorageSpace);
+		XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(KeyProperty, KeyStorageSpace);
 		
-		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(KeyStorageSpace, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
+		const int32 InternalIndex = MapHelper.FindInternalIndex(Index);
+		if (InternalIndex == INDEX_NONE)
+		{
+			return false;
+		}
+
+		MapHelper.KeyProp->CopyCompleteValueFromScriptVM(KeyStorageSpace, MapHelper.GetKeyPtr(InternalIndex));
 		
 		MapHelper.AddPair(KeyStorageSpace, ValuePtr);
-		KeyProperty->DestroyValue(KeyStorageSpace);
 		return true;
 	}
 	
@@ -651,70 +644,61 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItem)
 	FProperty* KeyProp = MapProperty->KeyProp;
 	const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProp) * KeyProp->ArrayDim;
 	void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-	KeyProp->InitializeValue(KeyStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(KeyProp, KeyStorageSpace);
 	
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
 	
-	const FFieldClass* KeyPropClass = KeyProp->GetClass();
-	const FFieldClass* KeyMostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* KeyPtr;
-	if (Stack.MostRecentPropertyAddress != nullptr &&
-		KeyPropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
-		(KeyMostRecentPropClass->IsChildOf(KeyPropClass) || KeyPropClass->IsChildOf(KeyMostRecentPropClass)))
+	void* KeyPtr = ResolveSteppedPropertyValue(Stack, KeyProp, KeyStorageSpace);
+	if (!KeyPtr)
 	{
-		KeyPtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		KeyPtr = KeyStorageSpace;
+		return;
 	}
 	
 	// Get value out value
 	FProperty* ValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(ValueProp) * ValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	ValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(ValueProp, ValueStorageSpace);
 	
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 	
-	const FFieldClass* ValuePropClass = ValueProp->GetClass();
-	const FFieldClass* ValueMostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	
-	void* ValuePtr;
-	if (Stack.MostRecentPropertyAddress != nullptr &&
-		ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
-		(ValueMostRecentPropClass->IsChildOf(ValuePropClass) || ValuePropClass->IsChildOf(ValueMostRecentPropClass)))
+	void* ValuePtr = ResolveSteppedPropertyValue(Stack, ValueProp, ValueStorageSpace);
+	if (!ValuePtr)
 	{
-		ValuePtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ValuePtr = ValueStorageSpace;
+		return;
 	}
 
 	P_FINISH;
 	P_NATIVE_BEGIN;
 	GenericMap_RandomItem(MapAddr, MapProperty, KeyPtr, ValuePtr);
 	P_NATIVE_END
-	
-	KeyProp->DestroyValue(KeyStorageSpace);
-	ValueProp->DestroyValue(ValueStorageSpace);
 }
 
 void UMapExtensionsLibrary::GenericMap_RandomItem(const void* MapAddr, const FMapProperty* MapProperty, void* OutKeyPtr, void* OutValuePtr)
 {
 	// 【边界检查】空 Map 时直接返回，避免 RandRange(0, -1) 未定义行为
-	if(MapAddr && MapProperty)
+	if(MapProperty)
 	{
-		FScriptMapHelper MapHelper(MapProperty, MapAddr);
-		if (MapHelper.Num() > 0)
+		if (MapAddr)
 		{
-			const int32 Index = FMath::RandRange(0, MapHelper.Num() - 1);
-			MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
-			MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+			FScriptMapHelper MapHelper(MapProperty, MapAddr);
+			if (MapHelper.Num() > 0)
+			{
+				const int32 Index = FMath::RandRange(0, MapHelper.Num() - 1);
+				const int32 InternalIndex = MapHelper.FindInternalIndex(Index);
+				if (InternalIndex != INDEX_NONE)
+				{
+					MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(InternalIndex));
+					MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(InternalIndex));
+					return;
+				}
+			}
 		}
+
+		InitializeScriptValue(MapProperty->KeyProp, OutKeyPtr);
+		InitializeScriptValue(MapProperty->ValueProp, OutValuePtr);
 	}
 }
 #pragma endregion
@@ -742,70 +726,61 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_RandomItemFromStream)
 	FProperty* KeyProp = MapProperty->KeyProp;
 	const int32 KeyPropertySize = XTOOLS_GET_ELEMENT_SIZE(KeyProp) * KeyProp->ArrayDim;
 	void* KeyStorageSpace = FMemory_Alloca(KeyPropertySize);
-	KeyProp->InitializeValue(KeyStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedKeyValue(KeyProp, KeyStorageSpace);
 	
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(KeyStorageSpace);
 	
-	const FFieldClass* KeyPropClass = KeyProp->GetClass();
-	const FFieldClass* KeyMostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	void* KeyPtr;
-	if (Stack.MostRecentPropertyAddress != nullptr &&
-		KeyPropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
-		(KeyMostRecentPropClass->IsChildOf(KeyPropClass) || KeyPropClass->IsChildOf(KeyMostRecentPropClass)))
+	void* KeyPtr = ResolveSteppedPropertyValue(Stack, KeyProp, KeyStorageSpace);
+	if (!KeyPtr)
 	{
-		KeyPtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		KeyPtr = KeyStorageSpace;
+		return;
 	}
 	
 	// Get value out value
 	FProperty* ValueProp = MapProperty->ValueProp;
 	const int32 ValuePropertySize = XTOOLS_GET_ELEMENT_SIZE(ValueProp) * ValueProp->ArrayDim;
 	void* ValueStorageSpace = FMemory_Alloca(ValuePropertySize);
-	ValueProp->InitializeValue(ValueStorageSpace);
+	XTools::MapExtensions::FScopedInitializedPropertyValue ScopedValue(ValueProp, ValueStorageSpace);
 	
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.StepCompiledIn<FProperty>(ValueStorageSpace);
 	
-	const FFieldClass* ValuePropClass = ValueProp->GetClass();
-	const FFieldClass* ValueMostRecentPropClass = Stack.MostRecentProperty->GetClass();
-	
-	void* ValuePtr;
-	if (Stack.MostRecentPropertyAddress != nullptr &&
-		ValuePropertySize == XTOOLS_GET_ELEMENT_SIZE(Stack.MostRecentProperty)*Stack.MostRecentProperty->ArrayDim &&
-		(ValueMostRecentPropClass->IsChildOf(ValuePropClass) || ValuePropClass->IsChildOf(ValueMostRecentPropClass)))
+	void* ValuePtr = ResolveSteppedPropertyValue(Stack, ValueProp, ValueStorageSpace);
+	if (!ValuePtr)
 	{
-		ValuePtr = Stack.MostRecentPropertyAddress;
-	}
-	else
-	{
-		ValuePtr = ValueStorageSpace;
+		return;
 	}
 
 	P_FINISH;
 	P_NATIVE_BEGIN;
 	GenericMap_RandomItemFromStream(MapAddr, MapProperty, RandomStream, KeyPtr, ValuePtr);
 	P_NATIVE_END
-	
-	KeyProp->DestroyValue(KeyStorageSpace);
-	ValueProp->DestroyValue(ValueStorageSpace);
 }
 
 void UMapExtensionsLibrary::GenericMap_RandomItemFromStream(const void* MapAddr, const FMapProperty* MapProperty, FRandomStream* RandomStream, void* OutKeyPtr, void* OutValuePtr)
 {
 	// 【边界检查】空 Map 时直接返回，避免 RandRange(0, -1) 未定义行为
-	if(MapAddr && MapProperty)
+	if(MapProperty)
 	{
-		FScriptMapHelper MapHelper(MapProperty, MapAddr);
-		if (MapHelper.Num() > 0)
+		if (MapAddr)
 		{
-			const int32 Index = RandomStream ? RandomStream->RandRange(0, MapHelper.Num() - 1) : FMath::RandRange(0, MapHelper.Num() - 1);
-			MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(MapHelper.FindInternalIndex(Index)));
-			MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(MapHelper.FindInternalIndex(Index)));
+			FScriptMapHelper MapHelper(MapProperty, MapAddr);
+			if (MapHelper.Num() > 0)
+			{
+				const int32 Index = RandomStream ? RandomStream->RandRange(0, MapHelper.Num() - 1) : FMath::RandRange(0, MapHelper.Num() - 1);
+				const int32 InternalIndex = MapHelper.FindInternalIndex(Index);
+				if (InternalIndex != INDEX_NONE)
+				{
+					MapHelper.KeyProp->CopyCompleteValueFromScriptVM(OutKeyPtr, MapHelper.GetKeyPtr(InternalIndex));
+					MapHelper.ValueProp->CopyCompleteValueFromScriptVM(OutValuePtr, MapHelper.GetValuePtr(InternalIndex));
+					return;
+				}
+			}
 		}
+
+		InitializeScriptValue(MapProperty->KeyProp, OutKeyPtr);
+		InitializeScriptValue(MapProperty->ValueProp, OutValuePtr);
 	}
 }
 #pragma endregion
@@ -855,7 +830,9 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_Identical)
 
 bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMapProperty* MapProperty, const void* KeysBAddr, const FArrayProperty* KeysBProp, const void* ValuesBAddr, const FArrayProperty* ValuesBProp)
 {
-	if(MapAddr && KeysBAddr && ValuesBAddr)
+	if(MapAddr && MapProperty && KeysBAddr && ValuesBAddr &&
+		ensure(AreArrayInnerTypesCompatible(MapProperty->KeyProp, KeysBProp)) &&
+		ensure(AreArrayInnerTypesCompatible(MapProperty->ValueProp, ValuesBProp)))
 	{
 		FScriptMapHelper MapHelper(MapProperty, MapAddr);
 		FScriptArrayHelper KeysBHelper(KeysBProp, KeysBAddr);
@@ -870,6 +847,10 @@ bool UMapExtensionsLibrary::GenericMap_Identical(const void* MapAddr, const FMap
 			for(int32 MapIndex = 0; MapIndex < MapHelper.Num(); MapIndex++)
 			{
 				const int32 InternalIndex = MapHelper.FindInternalIndex(MapIndex);
+				if (InternalIndex == INDEX_NONE)
+				{
+					return false;
+				}
 				bool bFound = false;
 
 				for(int32 KeyIndex = 0; KeyIndex < KeysBHelper.Num(); KeyIndex++)

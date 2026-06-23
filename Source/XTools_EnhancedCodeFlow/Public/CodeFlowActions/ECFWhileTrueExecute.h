@@ -28,13 +28,13 @@ protected:
   bool Setup(TUniqueFunction<bool()> &&InPredicate,
              TUniqueFunction<void(float)> &&InTickFunc,
              TUniqueFunction<void(bool, bool)> &&InCompleteFunc,
-             float InTimeOut) {
+             float InTimeOut, bool bEvaluatePredicateOnSetup = true) {
     Predicate = MoveTemp(InPredicate);
     TickFunc = MoveTemp(InTickFunc);
     CompleteFunc = MoveTemp(InCompleteFunc);
 
     if (Predicate && TickFunc) {
-      if (Predicate() == false) {
+      if (bEvaluatePredicateOnSetup && Predicate() == false) {
         if (CompleteFunc) {
           CompleteFunc(false, false);
         }
@@ -60,7 +60,8 @@ protected:
 
   bool Setup(TUniqueFunction<bool()> &&InPredicate,
              TUniqueFunction<void(float)> &&InTickFunc,
-             TUniqueFunction<void(bool)> &&InCompleteFunc, float InTimeOut) {
+             TUniqueFunction<void(bool)> &&InCompleteFunc, float InTimeOut,
+             bool bEvaluatePredicateOnSetup = true) {
     CompleteFunc_NoStopped = MoveTemp(InCompleteFunc);
     return Setup(
         MoveTemp(InPredicate), MoveTemp(InTickFunc),
@@ -69,12 +70,13 @@ protected:
             CompleteFunc_NoStopped(bTimeOut);
           }
         },
-        InTimeOut);
+        InTimeOut, bEvaluatePredicateOnSetup);
   }
 
   bool Setup(TUniqueFunction<bool()> &&InPredicate,
              TUniqueFunction<void(float)> &&InTickFunc,
-             TUniqueFunction<void()> &&InCompleteFunc, float InTimeOut) {
+             TUniqueFunction<void()> &&InCompleteFunc, float InTimeOut,
+             bool bEvaluatePredicateOnSetup = true) {
     CompleteFunc_NoTimeOut_NoStopped = MoveTemp(InCompleteFunc);
     return Setup(
         MoveTemp(InPredicate), MoveTemp(InTickFunc),
@@ -83,7 +85,7 @@ protected:
             CompleteFunc_NoTimeOut_NoStopped();
           }
         },
-        InTimeOut);
+        InTimeOut, bEvaluatePredicateOnSetup);
   }
 
   void Tick(float DeltaTime) override {

@@ -215,10 +215,11 @@ public:
 	 *							[]() -> void.
 	 * @param InTimeOut - if greater than 0.f it will apply timeout to this action. After this time the CompleteFunc will be called with a bTimedOut parameter set to true.
 	 * @param Settings [optional] - an extra settings to apply to this action.
+	 * @param bEvaluatePredicateOnSetup - when true, evaluates the predicate immediately during setup to preserve the native C++ API behavior.
 	 */
-	static FECFHandle WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bTimedOut*/, bool/* bStopped*/)>&& InCompleteFunc, float InTimeOut = 0.f, const FECFActionSettings& Settings = {});
-	static FECFHandle WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bTimedOut*/)>&& InCompleteFunc, float InTimeOut = 0.f, const FECFActionSettings& Settings = {});
-	static FECFHandle WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void()>&& InCompleteFunc, float InTimeOut = 0.f, const FECFActionSettings& Settings = {});
+	static FECFHandle WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bTimedOut*/, bool/* bStopped*/)>&& InCompleteFunc, float InTimeOut = 0.f, const FECFActionSettings& Settings = {}, bool bEvaluatePredicateOnSetup = true);
+	static FECFHandle WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bTimedOut*/)>&& InCompleteFunc, float InTimeOut = 0.f, const FECFActionSettings& Settings = {}, bool bEvaluatePredicateOnSetup = true);
+	static FECFHandle WhileTrueExecute(const UObject* InOwner, TUniqueFunction<bool/* bIsTrue*/()>&& InPredicate, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void()>&& InCompleteFunc, float InTimeOut = 0.f, const FECFActionSettings& Settings = {}, bool bEvaluatePredicateOnSetup = true);
 
 	/**
 	 * Stops "while true execute" actions.

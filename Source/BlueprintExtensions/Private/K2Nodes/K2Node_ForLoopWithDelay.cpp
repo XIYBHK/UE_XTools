@@ -87,6 +87,16 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
   // 【参考 K2Node_SmartSort 实现模式】
   // 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
 
+  if (!K2NodeHelpers::IsLatentGraphCompatible(SourceGraph)) {
+    CompilerContext.MessageLog.Error(
+        *LOCTEXT("LatentGraphOnly",
+                 "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
+             .ToString(),
+        this);
+    BreakAllNodeLinks();
+    return;
+  }
+
   // 编译时检查：确保必要引脚有效
   if (!K2NodeHelpers::BeginExpandNode(
           CompilerContext, this,
@@ -166,8 +176,6 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
       Sequence->GetThenPinGivenIndex(1), DelayBranch->GetExecPin());
   K2NodeHelpers::TryConnect(CompilerContext, 
       DelayLessEqualZero->GetReturnValuePin(), DelayBranch->GetConditionPin());
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      DelayLessEqualZero->FindPinChecked(TEXT("A")), GetDelayPin());
   DelayLessEqualZero->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("0.0");
   K2NodeHelpers::TryConnect(CompilerContext, DelayBranch->GetElsePin(),
                                                    DelayNode->GetExecPin());
@@ -221,9 +229,6 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
       UKismetMathLibrary::StaticClass()->FindFunctionByName(
           GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt)));
   BreakValue->AllocateDefaultPins();
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      BreakValue->FindPinChecked(TEXT("A")),
-      Condition->FindPinChecked(TEXT("B")));
   BreakValue->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("1");
 
   UK2Node_AssignmentStatement *LoopCounterBreak =
@@ -234,22 +239,33 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
       LoopCounterBreak->GetVariablePin(), LoopCounterPin);
   K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterBreak->GetValuePin(), BreakValue->GetReturnValuePin());
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      LoopCounterBreak->GetThenPin(), Branch->GetElsePin());
+
+  UK2Node_ExecutionSequence *CompleteSequence =
+      CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(
+          this, SourceGraph);
+  CompleteSequence->AllocateDefaultPins();
+  K2NodeHelpers::TryConnect(CompilerContext, Branch->GetElsePin(),
+                            CompleteSequence->GetExecPin());
+  K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetThenPin(),
+                            CompleteSequence->GetExecPin());
 
   // 10. 最后统一移动所有外部连接（参考智能排序模式）
   CompilerContext.MovePinLinksToIntermediate(*GetExecPin(),
                                              *LoopCounterInit->GetExecPin());
   CompilerContext.MovePinLinksToIntermediate(*GetFirstIndexPin(),
                                              *LoopCounterInit->GetValuePin());
+  CompilerContext.CopyPinLinksToIntermediate(
+      *GetLastIndexPin(), *BreakValue->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetLastIndexPin(), *Condition->FindPinChecked(TEXT("B")));
+  CompilerContext.CopyPinLinksToIntermediate(
+      *GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetLoopBodyPin(), *Sequence->GetThenPinGivenIndex(0));
   CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(),
-                                             *Branch->GetElsePin());
+                                             *CompleteSequence->GetThenPinGivenIndex(0));
   CompilerContext.MovePinLinksToIntermediate(*GetIndexPin(), *LoopCounterPin);
 
   // Break 引脚连接到专门的 Break 赋值节点
@@ -279,7 +295,7 @@ void UK2Node_ForLoopWithDelay::PostReconstructNode() {
 
 bool UK2Node_ForLoopWithDelay::IsCompatibleWithGraph(
     const UEdGraph *TargetGraph) const {
-  return K2NodeHelpers::IsEventGraphCompatible(TargetGraph) &&
+  return K2NodeHelpers::IsLatentGraphCompatible(TargetGraph) &&
          Super::IsCompatibleWithGraph(TargetGraph);
 }
 
@@ -317,7 +333,7 @@ void UK2Node_ForLoopWithDelay::AllocateDefaultPins() {
   DelayPin->DefaultValue = TEXT("0.1");
   DelayPin->PinToolTip =
       LOCTEXT("DelayTooltip",
-              "每次循环之间的延迟时间，单位为秒\n0表示无延迟（但仍会延迟一帧）")
+              "每次循环之间的延迟时间，单位为秒\n0表示无延迟")
           .ToString();
 
   // LoopBody 输出执行引脚
