@@ -24,6 +24,17 @@
 - 调整 K2Node 编译报错由 Error 改 Warning
 - 修复 K2Node 重建引脚校验优雅降级（ensureMsgf）
 - 调整 统一连接接口（TryConnect）与日志类别归位
+- 新增 样条线跟随移动函数库，支持 AddMovementInput 与 AI MoveTo 目标点、停止/往返/循环终点行为、调试绘制、初始右偏移捕获，并提供偏移路径速度补偿用于队形对齐
+- 修复 样条跟随角色速度补偿受 MaxWalkSpeed/MaxAcceleration 限制导致外圈掉队
+- 修复 样条跟随速度补偿恢复生命周期
+- 修复 开放样条循环停在端点
+- 优化 样条跟随节点关键参数直露，计算节点兼容 Actor
+- 优化 样条跟随节点参数说明
+- 优化 样条跟随参数 Tooltip 换行
+- 优化 样条跟随 Tick 路径静默无效输入
+- 调整 样条跟随闭合样条按终点行为处理
+- 移除 样条参考Actor队形实验逻辑
+- 新增 样条偏移按半宽限制到缩放范围
 
 ### ComponentTimeline
 - 修复 时间轴组件生命周期（Construction Script 重建问题）

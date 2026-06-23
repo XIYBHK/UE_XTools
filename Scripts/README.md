@@ -8,6 +8,7 @@
 |---------|----------|------|
 | `BuildPlugin-MultiUE.ps1` | 多版本UE插件自动化打包 | PowerShell |
 | `Clean-UEPlugin.ps1` | 插件清理工具 | PowerShell |
+| `ue_blueprint_export_flow.py` | UE蓝图复制/导出文本逻辑流梳理 | Python |
 
 ## 🚀 使用方法
 
@@ -39,6 +40,19 @@
 ```powershell
 # 使用PowerShell清理工具
 .\Clean-UEPlugin.ps1
+```
+
+#### **3. 蓝图导出文本逻辑流梳理**
+
+```powershell
+# 打印 Markdown 摘要
+python .\ue_blueprint_export_flow.py "..\Docs\ref\MarL_沿样条线移动v4.txt"
+
+# 输出到文件
+python .\ue_blueprint_export_flow.py "..\Docs\ref\MarL_沿样条线移动v4.txt" -o "..\Docs\ref\MarL_沿样条线移动v4.flow.md"
+
+# 输出 JSON，便于后续脚本二次处理
+python .\ue_blueprint_export_flow.py "..\Docs\ref\MarL_沿样条线移动v4.txt" --format json -o "..\Docs\ref\MarL_沿样条线移动v4.flow.json"
 ```
 
 ### 在项目根目录下执行
