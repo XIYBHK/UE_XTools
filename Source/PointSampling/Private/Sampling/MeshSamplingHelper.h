@@ -37,6 +37,18 @@ public:
 		int32 MaxPoints = 0
 	);
 
+	/**
+	 * 从静态网格体生成规则体素点位。
+	 */
+	static TArray<FMeshVoxelPoint> GenerateVoxelPointsFromStaticMesh(
+		UStaticMesh* StaticMesh,
+		const FTransform& Transform,
+		float VoxelSize,
+		EMeshVoxelFillMode FillMode,
+		int32 LODLevel,
+		int32 MaxVoxelCount
+	);
+
 private:
 
 	/**

@@ -547,6 +547,36 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World
 	);
 
+	/**
+	 * 从静态网格体生成规则体素点位，适合后续生成小方块/乐高块。
+	 *
+	 * 使用三角形驱动体素化：先标记与模型表面三角面相交的体素，再可选对封闭模型内部做填充。
+	 * 返回的颜色优先使用CPU可读顶点色，缺失或不可读时使用材质槽稳定色；内部颜色继承邻近表面体素，材质索引为体素命中表面的推荐主导材质槽。
+	 * 注意：运行时使用需要 StaticMesh 资产启用 Allow CPU Access；内部填充假定网格基本封闭。
+	 *
+	 * @param StaticMesh 静态网格体资产
+	 * @param Transform 模型世界变换
+	 * @param VoxelSize 体素边长（世界单位，cm）
+	 * @param FillMode 填充模式：仅表面 或 表面+内部填充
+	 * @param LODLevel LOD 级别（0=最高精度）
+	 * @param MaxVoxelCount 最大输出体素数量保护（同步节点最多500万个）；达到上限会截断或提前停止扫描
+	 * @return 体素中心点、推荐实例变换、体素边长和颜色/材质信息
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|网格",
+		meta = (DisplayName = "从静态网格体生成体素点位",
+			AdvancedDisplay = "LODLevel,MaxVoxelCount",
+			VoxelSize = "50.0",
+			MaxVoxelCount = "1000000",
+			ToolTip = "将静态网格体转换为规则体素点位，用于生成小方块/乐高块。支持仅表面或内部填充，并返回推荐实例变换、体素边长、颜色与推荐主导材质索引信息。\n\n推荐实例变换缩放保持1；如小方块原始尺寸不是1cm，请用体素边长/方块原始尺寸计算实例缩放。\n颜色优先使用CPU可读顶点色；顶点色缺失或不可读时会回退为材质槽稳定色。\nMaxVoxelCount是最大输出体素数量保护，同步节点最多500万个；表面模式达到上限会提前停止扫描，内部填充输出达到上限会截断，并另有工作内存和体素化工作量保护；极端模型也可能因内部保护返回部分表面结果。\n运行时要求：StaticMesh需启用Allow CPU Access。\n内部填充要求：模型应基本封闭；开口/自交/极薄模型可能只产生表面点或局部误填。\n负缩放会镜像体素网格索引。"))
+	static TArray<FMeshVoxelPoint> GenerateVoxelPointsFromStaticMesh(
+		UPARAM(DisplayName = "静态网格体") UStaticMesh* StaticMesh,
+		UPARAM(DisplayName = "变换") FTransform Transform,
+		UPARAM(DisplayName = "体素边长", meta = (ClampMin = "0.001", UIMin = "1.0")) float VoxelSize = 50.0f,
+		UPARAM(DisplayName = "填充模式") EMeshVoxelFillMode FillMode = EMeshVoxelFillMode::SurfaceOnly,
+		UPARAM(DisplayName = "LOD级别", meta = (ClampMin = "0", UIMin = "0")) int32 LODLevel = 0,
+		UPARAM(DisplayName = "最大体素数量", meta = (ClampMin = "1", UIMin = "1", ClampMax = "5000000", UIMax = "1000000")) int32 MaxVoxelCount = 1000000
+	);
+
 #if WITH_EDITOR
 	/**
 	 * 验证纹理是否设置为未压缩格式（用于调试，仅编辑器可用）

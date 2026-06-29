@@ -207,6 +207,56 @@ enum class ETextureSamplingChannel : uint8
 };
 
 /**
+ * 静态网格体体素点位填充模式
+ */
+UENUM(BlueprintType)
+enum class EMeshVoxelFillMode : uint8
+{
+	/** 仅输出与模型三角面相交的表面体素 */
+	SurfaceOnly UMETA(DisplayName = "仅表面"),
+
+	/** 输出表面体素，并对封闭模型内部做填充 */
+	Solid UMETA(DisplayName = "表面+内部填充")
+};
+
+/**
+ * 静态网格体体素化后的点位信息
+ */
+USTRUCT(BlueprintType)
+struct POINTSAMPLING_API FMeshVoxelPoint
+{
+	GENERATED_BODY()
+
+	/** 体素中心点位置（世界空间） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "位置"))
+	FVector Position = FVector::ZeroVector;
+
+	/** 推荐实例变换：位置为体素中心，旋转跟随模型，缩放保持1；小方块尺寸请用体素边长换算 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "变换"))
+	FTransform Transform = FTransform::Identity;
+
+	/** 体素边长（世界单位，cm），用于按小方块原始尺寸计算实例缩放 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "体素边长"))
+	float VoxelSize = 0.0f;
+
+	/** 体素网格索引 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "网格索引"))
+	FIntVector GridIndex = FIntVector::ZeroValue;
+
+	/** 推荐颜色：表面优先来自CPU可读顶点色，缺失或不可读时使用材质槽稳定色；内部继承邻近表面体素颜色 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "颜色"))
+	FLinearColor Color = FLinearColor::White;
+
+	/** 推荐主导材质槽索引：小方块可优先用此索引映射材质 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "材质索引"))
+	int32 MaterialIndex = INDEX_NONE;
+
+	/** 是否为表面体素；false 表示内部填充体素 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "是否表面"))
+	bool bIsSurface = false;
+};
+
+/**
  * 泊松采样配置结构体
  */
 USTRUCT(BlueprintType)
