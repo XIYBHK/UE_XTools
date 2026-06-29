@@ -52,18 +52,29 @@ class Node:
     pos_y: int | None = None
     function_name: str = ""
     function_parent: str = ""
+    event_name: str = ""
+    event_parent: str = ""
+    custom_function_name: str = ""
+    delegate_property_name: str = ""
+    delegate_owner_class: str = ""
+    component_property_name: str = ""
     macro_name: str = ""
     comment: str = ""
     pins: list[Pin] = field(default_factory=list)
 
 
 def read_text_auto(path: Path) -> str:
+    data = path.read_bytes()
+    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16")
+    if data[:512].count(b"\x00") > 8:
+        return data.decode("utf-16")
     for encoding in ("utf-8-sig", "utf-8", "utf-16"):
         try:
-            return path.read_text(encoding=encoding)
+            return data.decode(encoding)
         except UnicodeDecodeError:
             continue
-    return path.read_text(encoding="mbcs")
+    return data.decode("mbcs")
 
 
 def field_value(text: str, key: str) -> str:
@@ -200,6 +211,12 @@ def parse_nodes(text: str) -> list[Node]:
                     node.pos_y = int(y.group(1)) if y else None
                     fn = field_value(body, "FunctionReference")
                     node.function_parent, node.function_name = parse_member_reference(fn)
+                    event = field_value(body, "EventReference")
+                    node.event_parent, node.event_name = parse_member_reference(event)
+                    node.custom_function_name = field_value(body, "CustomFunctionName")
+                    node.delegate_property_name = field_value(body, "DelegatePropertyName")
+                    node.delegate_owner_class = field_value(body, "DelegateOwnerClass")
+                    node.component_property_name = field_value(body, "ComponentPropertyName")
                     macro = field_value(body, "MacroGraphReference")
                     node.macro_name = simplify_object_path(field_value(macro, "MacroGraph"))
                     node.comment = field_value(body, "NodeComment")
@@ -214,7 +231,17 @@ def parse_nodes(text: str) -> list[Node]:
 
 
 def node_label(node: Node) -> str:
-    if node.function_name:
+    if node.class_name == "K2Node_ComponentBoundEvent":
+        delegate_name = node.delegate_property_name or node.event_name or node.custom_function_name
+        if node.component_property_name and delegate_name:
+            base = f"{delegate_name} ({node.component_property_name})"
+        else:
+            base = delegate_name or "ComponentBoundEvent"
+    elif node.class_name == "K2Node_CustomEvent":
+        base = node.custom_function_name or node.event_name or "CustomEvent"
+    elif node.class_name == "K2Node_Event":
+        base = node.event_name or node.custom_function_name or "Event"
+    elif node.function_name:
         base = node.function_name
     elif node.macro_name:
         base = f"Macro:{node.macro_name}"
@@ -223,6 +250,28 @@ def node_label(node: Node) -> str:
     else:
         base = node.class_name.replace("K2Node_", "")
     return f"{base} [{node.name}]"
+
+
+def event_details(node: Node) -> list[str]:
+    details: list[str] = []
+    if node.class_name == "K2Node_ComponentBoundEvent":
+        if node.delegate_property_name:
+            details.append(f"delegate `{node.delegate_property_name}`")
+        if node.component_property_name:
+            details.append(f"component `{node.component_property_name}`")
+        if node.event_name:
+            details.append(f"signature `{node.event_name}`")
+        if node.custom_function_name:
+            details.append(f"binds `{node.custom_function_name}`")
+    elif node.class_name in {"K2Node_Event", "K2Node_CustomEvent"}:
+        event_name = node.event_name or node.custom_function_name
+        if event_name:
+            details.append(f"`{event_name}`")
+        if node.event_parent:
+            details.append(f"parent `{simplify_object_path(node.event_parent)}`")
+        if node.custom_function_name and node.custom_function_name != event_name:
+            details.append(f"custom `{node.custom_function_name}`")
+    return details
 
 
 def pin_label(pin: Pin) -> str:
@@ -297,6 +346,28 @@ def collect_graph_io(nodes: list[Node]) -> tuple[list[str], list[str]]:
     return inputs, outputs
 
 
+def collect_entry_nodes(nodes: list[Node]) -> list[str]:
+    rows: list[str] = []
+    entry_classes = {
+        "K2Node_FunctionEntry": "函数入口",
+        "K2Node_Event": "事件入口",
+        "K2Node_CustomEvent": "自定义事件",
+        "K2Node_ComponentBoundEvent": "组件绑定事件",
+    }
+    for node in sorted_nodes(n for n in nodes if n.class_name in entry_classes):
+        details: list[str] = []
+        if node.class_name == "K2Node_FunctionEntry":
+            if node.function_name:
+                details.append(f"`{node.function_name}`")
+            if node.function_parent:
+                details.append(f"parent `{simplify_object_path(node.function_parent)}`")
+        else:
+            details.extend(event_details(node))
+        suffix = f": {'; '.join(details)}" if details else ""
+        rows.append(f"- {entry_classes[node.class_name]} {node.name}{suffix}")
+    return rows
+
+
 def collect_exec_edges(nodes: list[Node]) -> list[str]:
     nodes_by_name = {node.name: node for node in nodes}
     pin_index = build_pin_index(nodes)
@@ -329,12 +400,21 @@ def collect_variables(nodes: list[Node]) -> list[str]:
 
 def collect_function_nodes(nodes: list[Node]) -> list[str]:
     rows: list[str] = []
-    for node in sorted_nodes(n for n in nodes if n.function_name or n.macro_name or n.comment):
+    for node in sorted_nodes(
+        n for n in nodes
+        if n.function_name
+        or n.event_name
+        or n.custom_function_name
+        or n.delegate_property_name
+        or n.macro_name
+        or n.comment
+    ):
         details: list[str] = []
         if node.function_name:
             details.append(f"`{node.function_name}`")
         if node.function_parent:
             details.append(f"parent `{simplify_object_path(node.function_parent)}`")
+        details.extend(event_details(node))
         if node.macro_name:
             details.append(f"`{node.macro_name}`")
         if node.comment:
@@ -368,7 +448,8 @@ def collect_data_edges(nodes: list[Node], limit: int) -> list[str]:
 
 
 def to_markdown(source: Path, nodes: list[Node], data_edge_limit: int) -> str:
-    inputs, outputs = collect_graph_io(nodes)
+    tunnel_inputs, tunnel_outputs = collect_graph_io(nodes)
+    entry_nodes = collect_entry_nodes(nodes)
     exec_edges = collect_exec_edges(nodes)
     variables = collect_variables(nodes)
     function_nodes = collect_function_nodes(nodes)
@@ -381,11 +462,14 @@ def to_markdown(source: Path, nodes: list[Node], data_edge_limit: int) -> str:
         f"- 节点数: {len(nodes)}",
         f"- 函数/宏/注释节点: {len(function_nodes)}",
         "",
-        "## 图入口",
-        *(inputs or ["- 未发现入口 Tunnel"]),
+        "## 入口节点",
+        *(entry_nodes or ["- 未发现事件、函数入口或组件绑定入口"]),
         "",
-        "## 图出口",
-        *(outputs or ["- 未发现出口 Tunnel"]),
+        "## Tunnel 输入",
+        *(tunnel_inputs or ["- 无（EventGraph/ConstructionScript 通常不使用 Tunnel 输入）"]),
+        "",
+        "## Tunnel 输出",
+        *(tunnel_outputs or ["- 无（EventGraph/ConstructionScript 通常不使用 Tunnel 输出）"]),
         "",
         "## 临时变量",
         *(variables or ["- 无"]),
@@ -414,6 +498,12 @@ def to_json(source: Path, nodes: list[Node]) -> str:
                 "pos": [node.pos_x, node.pos_y],
                 "function": node.function_name,
                 "function_parent": node.function_parent,
+                "event": node.event_name,
+                "event_parent": node.event_parent,
+                "custom_function": node.custom_function_name,
+                "delegate_property": node.delegate_property_name,
+                "delegate_owner_class": node.delegate_owner_class,
+                "component_property": node.component_property_name,
                 "macro": node.macro_name,
                 "comment": node.comment,
                 "pins": [

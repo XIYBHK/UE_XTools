@@ -9,6 +9,7 @@
 | `BuildPlugin-MultiUE.ps1` | 多版本UE插件自动化打包 | PowerShell |
 | `Clean-UEPlugin.ps1` | 插件清理工具 | PowerShell |
 | `ue_blueprint_export_flow.py` | UE蓝图复制/导出文本逻辑流梳理 | Python |
+| `export_blueprint_asset_copy_text.py` | 通过 UE Editor 命令行从 Blueprint 资产导出节点复制文本 | UE Python |
 
 ## 🚀 使用方法
 
@@ -54,6 +55,28 @@ python .\ue_blueprint_export_flow.py "..\Docs\ref\MarL_沿样条线移动v4.txt"
 # 输出 JSON，便于后续脚本二次处理
 python .\ue_blueprint_export_flow.py "..\Docs\ref\MarL_沿样条线移动v4.txt" --format json -o "..\Docs\ref\MarL_沿样条线移动v4.flow.json"
 ```
+
+#### **4. 从真实 Blueprint 资产导出节点文本**
+
+该脚本需要通过 UE Editor 的 PythonScriptCommandlet 执行，输入 Blueprint 对象路径，输出每个 Graph 的 UE copy-text 风格 `.md` 文件与 `manifest.json`。
+
+```powershell
+& "D:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+  "D:\BaiduNetdiskDownload\跑酷\跑酷.uproject" `
+  -run=pythonscript `
+  -script="D:/UEProject/cppxtools/plugins/UE_XTools/Scripts/export_blueprint_asset_copy_text.py --asset /Game/_BPTools/Parkour/_BP/launcher/bullet/BP_Base_Bullet.BP_Base_Bullet --output-dir D:/UEProject/cppxtools/plugins/UE_XTools/Docs/ref/BP_Base_Bullet/from_uasset" `
+  -unattended -nop4 -nosplash
+```
+
+注意：`-script` 内的 Windows 路径建议使用 `/`，避免反斜杠被 UE Python 命令行当作转义字符。
+
+导出的 `.md` 可以继续交给 `ue_blueprint_export_flow.py`：
+
+```powershell
+python .\Scripts\ue_blueprint_export_flow.py ".\Docs\ref\BP_Base_Bullet\from_uasset\EventGraph.md"
+```
+
+`ue_blueprint_export_flow.py` 会区分入口节点与 Tunnel 边界：EventGraph/ConstructionScript 入口通常是 `K2Node_Event`、`K2Node_CustomEvent`、`K2Node_ComponentBoundEvent`、`K2Node_FunctionEntry`；`K2Node_Tunnel` 主要用于宏、折叠图、子图或编译中间图的输入输出边界。
 
 ### 在项目根目录下执行
 
