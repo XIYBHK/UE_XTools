@@ -6,7 +6,9 @@
 
 #include "MenuExtensions/X_MenuExtensionManager.h"
 #include "AssetNaming/X_AssetNamingManager.h"
+#include "BlueprintTools/X_BlueprintGraphExporter.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
+#include "MaterialTools/X_MaterialBakeBlueprintLibrary.h"
 #include "MaterialTools/X_MaterialFunctionManager.h"  //  添加：材质函数管理器
 #include "MaterialTools/X_MaterialFunctionParamDialog.h"  //  添加：参数对话框
 #include "MaterialTools/X_MaterialFunctionParams.h"  //  添加：参数结构体
@@ -20,11 +22,16 @@
 #include "StaticMeshEditorSubsystemHelpers.h"
 
 #include "ContentBrowserModule.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
 #include "LevelEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "ToolMenus.h"
 #include "Misc/MessageDialog.h"
+#include "Misc/PackageName.h"
 #include "X_AssetEditor.h"
+#include "Engine/Blueprint.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 
 #define LOCTEXT_NAMESPACE "X_MenuExtensionManager"
@@ -174,6 +181,27 @@ TSharedRef<FExtender> FX_MenuExtensionManager::OnExtendContentBrowserAssetSelect
             );
         }
 
+        bool bHasBlueprintAssets = false;
+        for (const FAssetData& Asset : SelectedAssets)
+        {
+            UClass* AssetClass = Asset.GetClass();
+            if (AssetClass && AssetClass->IsChildOf(UBlueprint::StaticClass()))
+            {
+                bHasBlueprintAssets = true;
+                break;
+            }
+        }
+
+        if (bHasBlueprintAssets)
+        {
+            Extender->AddMenuExtension(
+                "GetAssetActions",
+                EExtensionHook::After,
+                nullptr,
+                FMenuExtensionDelegate::CreateRaw(this, &FX_MenuExtensionManager::AddBlueprintGraphExportMenuEntry, SelectedAssets)
+            );
+        }
+
         // 检查是否有静态网格体资产
         bool bHasStaticMeshAssets = false;
         for (const FAssetData& Asset : SelectedAssets)
@@ -188,6 +216,13 @@ TSharedRef<FExtender> FX_MenuExtensionManager::OnExtendContentBrowserAssetSelect
 
         if (bHasStaticMeshAssets)
         {
+            Extender->AddMenuExtension(
+                "GetAssetActions",
+                EExtensionHook::After,
+                nullptr,
+                FMenuExtensionDelegate::CreateRaw(this, &FX_MenuExtensionManager::AddMaterialBakeMenuEntry, SelectedAssets)
+            );
+
             Extender->AddMenuExtension(
                 "GetAssetActions",
                 EExtensionHook::After,
@@ -302,6 +337,111 @@ void FX_MenuExtensionManager::AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBui
                         }
                     }
                     FX_MaterialFunctionOperation::AddFresnelToAssets(AssetObjects);
+                })
+            )
+        );
+    }
+    MenuBuilder.EndSection();
+}
+
+void FX_MenuExtensionManager::AddMaterialBakeMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets)
+{
+    MenuBuilder.BeginSection("MaterialBake", LOCTEXT("MaterialBake", "材质烘焙"));
+    {
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("BakeBaseColorToCopiedVertexColors", "复制并烘焙BaseColor到顶点色"),
+            LOCTEXT("BakeBaseColorToCopiedVertexColorsTooltip", "复制选中的静态网格体资产，再将副本材质BaseColor按UV0烘焙到LOD0资产顶点色。原资产不会被修改。"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.Texture2D"),
+            FUIAction(
+                FExecuteAction::CreateLambda([SelectedAssets]()
+                {
+                    TArray<UStaticMesh*> SourceMeshes;
+                    for (const FAssetData& AssetData : SelectedAssets)
+                    {
+                        if (UStaticMesh* StaticMesh = Cast<UStaticMesh>(AssetData.GetAsset()))
+                        {
+                            SourceMeshes.Add(StaticMesh);
+                        }
+                    }
+
+                    if (SourceMeshes.Num() == 0)
+                    {
+                        return;
+                    }
+
+                    const FText ConfirmText = FText::Format(
+                        LOCTEXT("ConfirmBakeBaseColorToCopiedVertexColors", "将复制 {0} 个静态网格体资产，并对副本烘焙BaseColor到LOD0资产顶点色。\n\n原资产不会被修改。是否继续？"),
+                        FText::AsNumber(SourceMeshes.Num()));
+                    if (FMessageDialog::Open(EAppMsgType::YesNo, ConfirmText, LOCTEXT("BakeBaseColorToVertexColorsTitle", "确认材质烘焙")) != EAppReturnType::Yes)
+                    {
+                        return;
+                    }
+
+                    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+                    int32 SuccessCount = 0;
+                    int32 FailedCount = 0;
+                    TArray<FString> FailureMessages;
+                    for (UStaticMesh* SourceMesh : SourceMeshes)
+                    {
+                        if (!SourceMesh)
+                        {
+                            ++FailedCount;
+                            continue;
+                        }
+
+                        const FString SourcePackageName = SourceMesh->GetOutermost()->GetName();
+                        FString NewPackageName;
+                        FString NewAssetName;
+                        AssetTools.CreateUniqueAssetName(SourcePackageName, TEXT("_BakedVC"), NewPackageName, NewAssetName);
+
+                        UObject* DuplicatedObject = AssetTools.DuplicateAsset(NewAssetName, FPackageName::GetLongPackagePath(NewPackageName), SourceMesh);
+                        UStaticMesh* DuplicatedMesh = Cast<UStaticMesh>(DuplicatedObject);
+                        if (!DuplicatedMesh)
+                        {
+                            ++FailedCount;
+                            FailureMessages.Add(FString::Printf(TEXT("%s: 复制资产失败"), *SourceMesh->GetName()));
+                            continue;
+                        }
+
+                        const FX_MaterialBakeVertexColorResult BakeResult =
+                            UX_MaterialBakeBlueprintLibrary::BakeStaticMeshBaseColorToVertexColors(DuplicatedMesh, 0, 512, 0);
+                        if (BakeResult.bSuccess)
+                        {
+                            ++SuccessCount;
+                        }
+                        else
+                        {
+                            ++FailedCount;
+                            FailureMessages.Add(FString::Printf(TEXT("%s: %s"), *DuplicatedMesh->GetName(), *BakeResult.Message));
+                        }
+                    }
+
+                    FString Message = FString::Printf(TEXT("材质烘焙完成：成功 %d，失败 %d。"), SuccessCount, FailedCount);
+                    if (FailureMessages.Num() > 0)
+                    {
+                        Message += TEXT("\n\n");
+                        Message += FString::Join(FailureMessages, TEXT("\n"));
+                    }
+                    FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
+                })
+            )
+        );
+    }
+    MenuBuilder.EndSection();
+}
+
+void FX_MenuExtensionManager::AddBlueprintGraphExportMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets)
+{
+    MenuBuilder.BeginSection("BlueprintGraphExport", LOCTEXT("BlueprintGraphExport", "蓝图导出"));
+    {
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("ExportBlueprintGraphFlow", "导出蓝图逻辑流"),
+            LOCTEXT("ExportBlueprintGraphFlowTooltip", "将选中蓝图的图表、节点、引脚和连接导出为JSON与Markdown。资产不会被修改。"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.Blueprint"),
+            FUIAction(
+                FExecuteAction::CreateLambda([SelectedAssets]()
+                {
+                    FX_BlueprintGraphExporter::ExportBlueprints(SelectedAssets);
                 })
             )
         );

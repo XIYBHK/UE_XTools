@@ -6,7 +6,19 @@
 #include "MeshSamplingHelper.h"
 #include "PointSamplingTypes.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
+#if WITH_EDITOR
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#endif
+#include "Materials/MaterialInterface.h"
+#include "MaterialTypes.h"
+#include "PixelFormat.h"
+#include "Rendering/StaticMeshVertexBuffer.h"
 #include "StaticMeshResources.h"
+#include "TextureResource.h"
 
 namespace
 {
@@ -16,6 +28,8 @@ namespace
 	constexpr int32 MaxAllowedVoxelOutputCount = 5000000;
 	constexpr int64 MaxSurfaceVoxelWorkUnits = 20000000LL;
 	constexpr int64 MaxSolidVoxelWorkUnits = 50000000LL;
+	constexpr int64 MaxReadableColorTexturePixels = 4096LL * 4096LL;
+	constexpr int64 MaxReadableColorTextureBytes = 128LL * 1024LL * 1024LL;
 	constexpr double MinVoxelTriangleAxisSizeSquared = UE_DOUBLE_SMALL_NUMBER * UE_DOUBLE_SMALL_NUMBER;
 
 	struct FMeshVoxelCell
@@ -40,6 +54,58 @@ namespace
 		int32 StartTriangle = 0;
 		int32 EndTriangle = 0;
 		int32 MaterialIndex = INDEX_NONE;
+	};
+
+	struct FMeshVoxelTextureColorSource
+	{
+		TArray<FColor> Pixels;
+		int32 Width = 0;
+		int32 Height = 0;
+
+		bool IsValid() const
+		{
+			return Width > 0 && Height > 0 && Pixels.Num() == Width * Height;
+		}
+
+		bool Sample(const FVector2f& UV, FLinearColor& OutColor) const
+		{
+			if (!IsValid())
+			{
+				return false;
+			}
+
+			float U = FMath::Frac(UV.X);
+			float V = FMath::Frac(UV.Y);
+			if (U < 0.0f)
+			{
+				U += 1.0f;
+			}
+			if (V < 0.0f)
+			{
+				V += 1.0f;
+			}
+
+			const int32 PixelX = FMath::Clamp(FMath::RoundToInt(U * static_cast<float>(Width - 1)), 0, Width - 1);
+			const int32 PixelY = FMath::Clamp(FMath::RoundToInt(V * static_cast<float>(Height - 1)), 0, Height - 1);
+			const int32 PixelIndex = PixelY * Width + PixelX;
+			if (!Pixels.IsValidIndex(PixelIndex))
+			{
+				return false;
+			}
+
+			OutColor = FLinearColor(Pixels[PixelIndex]);
+			return true;
+		}
+	};
+
+	struct FMeshVoxelMaterialColorSource
+	{
+		FMeshVoxelTextureColorSource TextureColor;
+		FLinearColor ParameterColor = FLinearColor::White;
+		FString TextureName;
+		FString TextureSourceLabel;
+		bool bHasTextureColor = false;
+		bool bHasParameterColor = false;
 	};
 
 	struct FTriangleBoxAxis
@@ -237,26 +303,678 @@ namespace
 		return SaturatingMultiply(SaturatingMultiply(Dims.X, Dims.Y), Dims.Z);
 	}
 
-	FLinearColor MakeMaterialSlotColor(const int32 MaterialIndex)
+#if WITH_EDITOR
+	bool TryGetBaseColorExpressionColor(const UMaterialInterface* Material, FLinearColor& OutColor)
 	{
-		static const FLinearColor Palette[] = {
-			FLinearColor(0.95f, 0.22f, 0.20f, 1.0f),
-			FLinearColor(0.15f, 0.48f, 0.95f, 1.0f),
-			FLinearColor(0.18f, 0.72f, 0.32f, 1.0f),
-			FLinearColor(0.95f, 0.78f, 0.16f, 1.0f),
-			FLinearColor(0.72f, 0.32f, 0.95f, 1.0f),
-			FLinearColor(0.10f, 0.78f, 0.78f, 1.0f),
-			FLinearColor(0.95f, 0.45f, 0.12f, 1.0f),
-			FLinearColor(0.85f, 0.85f, 0.88f, 1.0f)
-		};
-
-		if (MaterialIndex == INDEX_NONE)
+		if (!Material)
 		{
-			return FLinearColor::White;
+			return false;
 		}
 
-		const int64 PaletteIndex = FMath::Abs(static_cast<int64>(MaterialIndex)) % UE_ARRAY_COUNT(Palette);
-		return Palette[static_cast<int32>(PaletteIndex)];
+		const UMaterial* BaseMaterial = Material->GetMaterial();
+		if (!BaseMaterial)
+		{
+			return false;
+		}
+
+		TArray<UMaterialExpression*> Expressions;
+		if (!const_cast<UMaterial*>(BaseMaterial)->GetExpressionsInPropertyChain(MP_BaseColor, Expressions, nullptr) ||
+			Expressions.Num() == 0)
+		{
+			return false;
+		}
+
+		FLinearColor AccumulatedColor = FLinearColor::Black;
+		int32 ColorCount = 0;
+		for (const UMaterialExpression* Expression : Expressions)
+		{
+			FLinearColor ExpressionColor = FLinearColor::White;
+			if (const UMaterialExpressionConstant3Vector* Constant3 = Cast<UMaterialExpressionConstant3Vector>(Expression))
+			{
+				ExpressionColor = Constant3->Constant;
+			}
+			else if (const UMaterialExpressionConstant4Vector* Constant4 = Cast<UMaterialExpressionConstant4Vector>(Expression))
+			{
+				ExpressionColor = Constant4->Constant;
+			}
+			else if (const UMaterialExpressionVectorParameter* VectorParameter = Cast<UMaterialExpressionVectorParameter>(Expression))
+			{
+				if (!Material->GetVectorParameterValue(FHashedMaterialParameterInfo(VectorParameter->ParameterName), ExpressionColor))
+				{
+					ExpressionColor = VectorParameter->DefaultValue;
+				}
+			}
+			else
+			{
+				continue;
+			}
+
+			ExpressionColor.A = FMath::Clamp(ExpressionColor.A, 0.0f, 1.0f);
+			AccumulatedColor += ExpressionColor;
+			++ColorCount;
+		}
+
+		if (ColorCount == 0)
+		{
+			return false;
+		}
+
+		OutColor = AccumulatedColor / static_cast<float>(ColorCount);
+		OutColor.A = FMath::Clamp(OutColor.A, 0.0f, 1.0f);
+		return true;
+	}
+#endif
+
+	bool TryGetMaterialParameterColor(const UMaterialInterface* Material, FLinearColor& OutColor)
+	{
+		if (!Material)
+		{
+			return false;
+		}
+
+		static const FName ColorParameterNames[] = {
+			TEXT("BaseColor"),
+			TEXT("Base Color"),
+			TEXT("Base_Color"),
+			TEXT("Color"),
+			TEXT("Tint"),
+			TEXT("BaseColorTint"),
+			TEXT("Albedo"),
+			TEXT("Diffuse")
+		};
+
+		for (const FName ParameterName : ColorParameterNames)
+		{
+			FLinearColor ParameterColor = FLinearColor::White;
+			if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(ParameterName), ParameterColor))
+			{
+				ParameterColor.A = FMath::Clamp(ParameterColor.A, 0.0f, 1.0f);
+				OutColor = ParameterColor;
+				return true;
+			}
+		}
+
+#if WITH_EDITOR
+		if (TryGetBaseColorExpressionColor(Material, OutColor))
+		{
+			return true;
+		}
+#endif
+
+		return false;
+	}
+
+	bool TryGetNamedMaterialTextureColor(const UMaterialInterface* Material, UTexture2D*& OutTexture)
+	{
+		if (!Material)
+		{
+			return false;
+		}
+
+		static const FName TextureParameterNames[] = {
+			TEXT("BaseColor"),
+			TEXT("Base Color"),
+			TEXT("Base_Color"),
+			TEXT("BaseColorTexture"),
+			TEXT("BaseColorMap"),
+			TEXT("Albedo"),
+			TEXT("AlbedoTexture"),
+			TEXT("AlbedoMap"),
+			TEXT("Diffuse"),
+			TEXT("DiffuseTexture"),
+			TEXT("DiffuseMap"),
+			TEXT("Color"),
+			TEXT("ColorTexture")
+		};
+
+		for (const FName ParameterName : TextureParameterNames)
+		{
+			UTexture* Texture = nullptr;
+			if (Material->GetTextureParameterValue(FHashedMaterialParameterInfo(ParameterName), Texture))
+			{
+				OutTexture = Cast<UTexture2D>(Texture);
+				if (OutTexture)
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	bool IsLikelyNonColorTexture(const UTexture2D* Texture)
+	{
+		if (!Texture)
+		{
+			return true;
+		}
+
+		if (Texture->CompressionSettings == TC_Normalmap ||
+			Texture->CompressionSettings == TC_Masks ||
+			Texture->CompressionSettings == TC_Grayscale ||
+			Texture->CompressionSettings == TC_Displacementmap)
+		{
+			return true;
+		}
+
+		const FString Name = Texture->GetName().ToLower();
+		return Name.Contains(TEXT("normal")) ||
+			Name.Contains(TEXT("_n_")) ||
+			Name.EndsWith(TEXT("_n")) ||
+			Name.Contains(TEXT("_m_")) ||
+			Name.EndsWith(TEXT("_m")) ||
+			Name.Contains(TEXT("rough")) ||
+			Name.Contains(TEXT("metal")) ||
+			Name.Contains(TEXT("mask")) ||
+			Name.Contains(TEXT("_msk")) ||
+			Name.Contains(TEXT("occlusion")) ||
+			Name.Contains(TEXT("_ao")) ||
+			Name.Contains(TEXT("_rma")) ||
+			Name.EndsWith(TEXT("_rma")) ||
+			Name.Contains(TEXT("_orm")) ||
+			Name.EndsWith(TEXT("_orm")) ||
+			Name.Contains(TEXT("_arm")) ||
+			Name.EndsWith(TEXT("_arm")) ||
+			Name.Contains(TEXT("mrao")) ||
+			Name.Contains(TEXT("packed")) ||
+			Name.Contains(TEXT("spec")) ||
+			Name.Contains(TEXT("height")) ||
+			Name.Contains(TEXT("bump"));
+	}
+
+	int32 ScoreColorTextureName(const UTexture2D* Texture)
+	{
+		if (!Texture || IsLikelyNonColorTexture(Texture))
+		{
+			return -100;
+		}
+
+		const FString Name = Texture->GetName().ToLower();
+		int32 Score = 0;
+		if (Name.Contains(TEXT("basecolor")) ||
+			Name.Contains(TEXT("base_color")) ||
+			Name.Contains(TEXT("albedo")) ||
+			Name.Contains(TEXT("diffuse")) ||
+			Name.Contains(TEXT("diff")) ||
+			Name.Contains(TEXT("color")) ||
+			Name.Contains(TEXT("colour")))
+		{
+			Score += 10;
+		}
+
+		if (Name.Contains(TEXT("_bc")) || Name.EndsWith(TEXT("_bc")) || Name.Contains(TEXT("_d_")) || Name.EndsWith(TEXT("_d")))
+		{
+			Score += 6;
+		}
+
+		if (Score > 0 && Texture->CompressionSettings == TC_Default)
+		{
+			Score += 1;
+		}
+
+		return Score;
+	}
+
+	bool TryGetBaseColorPropertyTexture(const UMaterialInterface* Material, UTexture2D*& OutTexture)
+	{
+		if (!Material)
+		{
+			return false;
+		}
+
+		TArray<UTexture*> Textures;
+		if (!const_cast<UMaterialInterface*>(Material)->GetTexturesInPropertyChain(MP_BaseColor, Textures, nullptr, nullptr) || Textures.Num() == 0)
+		{
+			return false;
+		}
+
+		UTexture2D* BestTexture = nullptr;
+		int32 BestScore = 0;
+		int32 ValidTextureCount = 0;
+		UTexture2D* OnlyTexture = nullptr;
+		TArray<FString> RejectedTextureNames;
+		for (UTexture* Texture : Textures)
+		{
+			UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
+			if (!Texture2D)
+			{
+				continue;
+			}
+
+			if (IsLikelyNonColorTexture(Texture2D))
+			{
+				RejectedTextureNames.Add(Texture2D->GetName());
+				continue;
+			}
+
+			++ValidTextureCount;
+			OnlyTexture = Texture2D;
+			const int32 Score = ScoreColorTextureName(Texture2D);
+			if (Score > BestScore)
+			{
+				BestScore = Score;
+				BestTexture = Texture2D;
+			}
+		}
+
+		OutTexture = BestTexture ? BestTexture : (ValidTextureCount == 1 ? OnlyTexture : nullptr);
+		if (!OutTexture && RejectedTextureNames.Num() > 0)
+		{
+			UE_LOG(LogPointSampling, Warning,
+				TEXT("[体素点位] 材质 '%s' 的BaseColor链只找到疑似非颜色贴图（%s），已忽略。若最终颜色由遮罩混合常量/参数生成，请先烘焙到BaseColor贴图或顶点色。"),
+				*Material->GetName(),
+				*FString::Join(RejectedTextureNames, TEXT(", ")));
+		}
+
+		return OutTexture != nullptr;
+	}
+
+	bool TryGetUsedMaterialTextureColor(const UMaterialInterface* Material, UTexture2D*& OutTexture)
+	{
+		if (!Material)
+		{
+			return false;
+		}
+
+		TArray<UTexture*> UsedTextures;
+		Material->GetUsedTextures(UsedTextures, EMaterialQualityLevel::Num, false, ERHIFeatureLevel::Num, true);
+
+		UTexture2D* BestTexture = nullptr;
+		int32 BestScore = 0;
+		for (UTexture* Texture : UsedTextures)
+		{
+			UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
+			if (!Texture2D)
+			{
+				continue;
+			}
+
+			const int32 Score = ScoreColorTextureName(Texture2D);
+			if (Score < 0)
+			{
+				continue;
+			}
+
+			if (Score > BestScore)
+			{
+				BestScore = Score;
+				BestTexture = Texture2D;
+			}
+		}
+
+		if (BestTexture)
+		{
+			OutTexture = BestTexture;
+			return true;
+		}
+
+		return false;
+	}
+
+#if WITH_EDITOR
+	uint32 GetTextureSourceBytesPerPixel(const ETextureSourceFormat SourceFormat)
+	{
+		switch (SourceFormat)
+		{
+		case TSF_G8:
+			return 1;
+		case TSF_BGRA8:
+			return 4;
+		default:
+			return 0;
+		}
+	}
+
+	bool TryReadTextureSourcePixel(const uint8* SourceData, const ETextureSourceFormat SourceFormat, const int64 SourceIndex, FColor& OutColor)
+	{
+		if (SourceFormat == TSF_G8)
+		{
+			const uint8 Gray = SourceData[SourceIndex];
+			OutColor = FColor(Gray, Gray, Gray, 255);
+			return true;
+		}
+
+		if (SourceFormat == TSF_BGRA8)
+		{
+			OutColor = FColor(
+				SourceData[SourceIndex + 2],
+				SourceData[SourceIndex + 1],
+				SourceData[SourceIndex + 0],
+				SourceData[SourceIndex + 3]);
+			return true;
+		}
+
+		return false;
+	}
+
+	bool TryBuildTextureColorSourceFromEditorSource(UTexture2D* Texture, FMeshVoxelTextureColorSource& OutSource, int64& InOutUsedTextureBytes)
+	{
+		if (!Texture || !Texture->Source.IsValid())
+		{
+			return false;
+		}
+
+		const ETextureSourceFormat SourceFormat = Texture->Source.GetFormat();
+		const uint32 BytesPerPixel = GetTextureSourceBytesPerPixel(SourceFormat);
+		if (BytesPerPixel == 0)
+		{
+			return false;
+		}
+
+		const int32 Width = Texture->Source.GetSizeX();
+		const int32 Height = Texture->Source.GetSizeY();
+		const int64 PixelCount = static_cast<int64>(Width) * Height;
+		const int64 RequiredBytes = PixelCount * 4;
+		if (Width <= 0 ||
+			Height <= 0 ||
+			PixelCount <= 0 ||
+			PixelCount > MaxReadableColorTexturePixels ||
+			RequiredBytes > MaxReadableColorTextureBytes - InOutUsedTextureBytes)
+		{
+			return false;
+		}
+
+		TArray64<uint8> RawData;
+		if (!Texture->Source.GetMipData(RawData, 0) ||
+			RawData.Num() < PixelCount * static_cast<int64>(BytesPerPixel))
+		{
+			return false;
+		}
+
+		const uint8* SourceData = RawData.GetData();
+		OutSource.Pixels.SetNumUninitialized(static_cast<int32>(PixelCount));
+		for (int64 PixelIndex = 0; PixelIndex < PixelCount; ++PixelIndex)
+		{
+			const int64 SourceIndex = PixelIndex * BytesPerPixel;
+			if (!TryReadTextureSourcePixel(SourceData, SourceFormat, SourceIndex, OutSource.Pixels[static_cast<int32>(PixelIndex)]))
+			{
+				OutSource.Pixels.Empty();
+				return false;
+			}
+		}
+
+		OutSource.Width = Width;
+		OutSource.Height = Height;
+		InOutUsedTextureBytes += RequiredBytes;
+		return OutSource.IsValid();
+	}
+#endif
+
+	bool TryBuildTextureColorSource(UTexture2D* Texture, FMeshVoxelTextureColorSource& OutSource, int64& InOutUsedTextureBytes)
+	{
+		if (!Texture)
+		{
+			return false;
+		}
+
+#if WITH_EDITOR
+		if (TryBuildTextureColorSourceFromEditorSource(Texture, OutSource, InOutUsedTextureBytes))
+		{
+			return true;
+		}
+#endif
+
+		FTexturePlatformData* PlatformData = Texture->GetPlatformData();
+		if (!PlatformData || PlatformData->Mips.Num() <= 0)
+		{
+			return false;
+		}
+
+		const EPixelFormat PixelFormat = PlatformData->PixelFormat;
+		if (PixelFormat != PF_B8G8R8A8 && PixelFormat != PF_R8G8B8A8)
+		{
+			return false;
+		}
+
+		FTexture2DMipMap& Mip0 = PlatformData->Mips[0];
+		const int32 Width = Mip0.SizeX > 0 ? Mip0.SizeX : PlatformData->SizeX;
+		const int32 Height = Mip0.SizeY > 0 ? Mip0.SizeY : PlatformData->SizeY;
+		const int64 PixelCount = static_cast<int64>(Width) * Height;
+		const int64 RequiredBytes = PixelCount * 4;
+		if (Width <= 0 ||
+			Height <= 0 ||
+			PixelCount <= 0 ||
+			PixelCount > MaxReadableColorTexturePixels ||
+			RequiredBytes > Mip0.BulkData.GetBulkDataSize() ||
+			RequiredBytes > MaxReadableColorTextureBytes - InOutUsedTextureBytes)
+		{
+			return false;
+		}
+
+		const void* RawData = Mip0.BulkData.LockReadOnly();
+		if (!RawData)
+		{
+			return false;
+		}
+
+		const uint8* PixelData = static_cast<const uint8*>(RawData);
+		OutSource.Pixels.SetNumUninitialized(static_cast<int32>(PixelCount));
+		for (int64 PixelIndex = 0; PixelIndex < PixelCount; ++PixelIndex)
+		{
+			const int64 SourceIndex = PixelIndex * 4;
+			if (PixelFormat == PF_B8G8R8A8)
+			{
+				OutSource.Pixels[static_cast<int32>(PixelIndex)] = FColor(
+					PixelData[SourceIndex + 2],
+					PixelData[SourceIndex + 1],
+					PixelData[SourceIndex + 0],
+					PixelData[SourceIndex + 3]);
+			}
+			else
+			{
+				OutSource.Pixels[static_cast<int32>(PixelIndex)] = FColor(
+					PixelData[SourceIndex + 0],
+					PixelData[SourceIndex + 1],
+					PixelData[SourceIndex + 2],
+					PixelData[SourceIndex + 3]);
+			}
+		}
+
+		Mip0.BulkData.Unlock();
+		OutSource.Width = Width;
+		OutSource.Height = Height;
+		if (OutSource.IsValid())
+		{
+			InOutUsedTextureBytes += RequiredBytes;
+			return true;
+		}
+
+		return false;
+	}
+
+	void BuildMaterialSlotColorCache(
+		UStaticMesh* StaticMesh,
+		const bool bBuildTextureColors,
+		TArray<FMeshVoxelMaterialColorSource>& OutSources,
+		int32& OutBaseColorTextureCount,
+		int32& OutTextureParameterCount,
+		int32& OutUsedTextureCandidateCount,
+		int32& OutTextureColorCount,
+		int32& OutUnreadableTextureCount,
+		int32& OutParameterColorCount)
+	{
+		const int32 MaterialCount = StaticMesh ? StaticMesh->GetStaticMaterials().Num() : 0;
+		OutSources.SetNum(MaterialCount);
+		OutBaseColorTextureCount = 0;
+		OutTextureParameterCount = 0;
+		OutUsedTextureCandidateCount = 0;
+		OutTextureColorCount = 0;
+		OutUnreadableTextureCount = 0;
+		OutParameterColorCount = 0;
+		int64 UsedTextureBytes = 0;
+
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+		{
+			FMeshVoxelMaterialColorSource& Source = OutSources[MaterialIndex];
+			UTexture2D* Texture = nullptr;
+			if (bBuildTextureColors && TryGetBaseColorPropertyTexture(StaticMesh->GetMaterial(MaterialIndex), Texture))
+			{
+				++OutBaseColorTextureCount;
+				Source.bHasTextureColor = TryBuildTextureColorSource(Texture, Source.TextureColor, UsedTextureBytes);
+				if (Source.bHasTextureColor)
+				{
+					Source.TextureName = Texture->GetName();
+					Source.TextureSourceLabel = TEXT("BaseColor链");
+					++OutTextureColorCount;
+				}
+				else
+				{
+					++OutUnreadableTextureCount;
+				}
+			}
+			else
+			if (bBuildTextureColors && TryGetNamedMaterialTextureColor(StaticMesh->GetMaterial(MaterialIndex), Texture))
+			{
+				++OutTextureParameterCount;
+				Source.bHasTextureColor = TryBuildTextureColorSource(Texture, Source.TextureColor, UsedTextureBytes);
+				if (Source.bHasTextureColor)
+				{
+					Source.TextureName = Texture->GetName();
+					Source.TextureSourceLabel = TEXT("参数");
+					++OutTextureColorCount;
+				}
+				else
+				{
+					++OutUnreadableTextureCount;
+				}
+			}
+			else if (bBuildTextureColors && TryGetUsedMaterialTextureColor(StaticMesh->GetMaterial(MaterialIndex), Texture))
+			{
+				++OutUsedTextureCandidateCount;
+				Source.bHasTextureColor = TryBuildTextureColorSource(Texture, Source.TextureColor, UsedTextureBytes);
+				if (Source.bHasTextureColor)
+				{
+					Source.TextureName = Texture->GetName();
+					Source.TextureSourceLabel = TEXT("引用");
+					++OutTextureColorCount;
+				}
+				else
+				{
+					++OutUnreadableTextureCount;
+				}
+			}
+
+			FLinearColor MaterialColor = FLinearColor::White;
+			if (TryGetMaterialParameterColor(StaticMesh->GetMaterial(MaterialIndex), MaterialColor))
+			{
+				Source.ParameterColor = MaterialColor;
+				Source.bHasParameterColor = true;
+				++OutParameterColorCount;
+			}
+		}
+	}
+
+	FLinearColor GetMaterialFallbackColor(
+		const int32 MaterialIndex,
+		const TArray<FMeshVoxelMaterialColorSource>& MaterialColorSources)
+	{
+		if (MaterialColorSources.IsValidIndex(MaterialIndex) &&
+			MaterialColorSources[MaterialIndex].bHasParameterColor)
+		{
+			return MaterialColorSources[MaterialIndex].ParameterColor;
+		}
+
+		return FLinearColor::White;
+	}
+
+	bool TryComputeTriangleBarycentric3D(
+		const FVector& Point,
+		const FVector& P0,
+		const FVector& P1,
+		const FVector& P2,
+		FVector& OutBarycentric)
+	{
+		const FVector V0 = P1 - P0;
+		const FVector V1 = P2 - P0;
+		const FVector V2 = Point - P0;
+		const double D00 = FVector::DotProduct(V0, V0);
+		const double D01 = FVector::DotProduct(V0, V1);
+		const double D11 = FVector::DotProduct(V1, V1);
+		const double D20 = FVector::DotProduct(V2, V0);
+		const double D21 = FVector::DotProduct(V2, V1);
+		const double Denominator = D00 * D11 - D01 * D01;
+		if (FMath::Abs(Denominator) <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		const double V = (D11 * D20 - D01 * D21) / Denominator;
+		const double W = (D00 * D21 - D01 * D20) / Denominator;
+		const double U = 1.0 - V - W;
+		OutBarycentric = FVector(U, V, W);
+		return IsFiniteVector(OutBarycentric);
+	}
+
+	bool TrySampleMaterialTextureColor(
+		const int32 MaterialIndex,
+		const TArray<FMeshVoxelMaterialColorSource>& MaterialColorSources,
+		const FVector& SamplePosition,
+		const FVector& P0,
+		const FVector& P1,
+		const FVector& P2,
+		const FVector2f& UV0,
+		const FVector2f& UV1,
+		const FVector2f& UV2,
+		FLinearColor& OutColor)
+	{
+		if (!MaterialColorSources.IsValidIndex(MaterialIndex) ||
+			!MaterialColorSources[MaterialIndex].bHasTextureColor)
+		{
+			return false;
+		}
+
+		const FVector ClosestPoint = FMath::ClosestPointOnTriangleToPoint(SamplePosition, P0, P1, P2);
+		FVector Barycentric = FVector::ZeroVector;
+		if (!TryComputeTriangleBarycentric3D(ClosestPoint, P0, P1, P2, Barycentric))
+		{
+			return false;
+		}
+
+		const float W0 = FMath::Clamp(static_cast<float>(Barycentric.X), 0.0f, 1.0f);
+		const float W1 = FMath::Clamp(static_cast<float>(Barycentric.Y), 0.0f, 1.0f);
+		const float W2 = FMath::Clamp(static_cast<float>(Barycentric.Z), 0.0f, 1.0f);
+		const float WeightSum = W0 + W1 + W2;
+		if (WeightSum <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		const FVector2f UV = (UV0 * W0 + UV1 * W1 + UV2 * W2) / WeightSum;
+		return MaterialColorSources[MaterialIndex].TextureColor.Sample(UV, OutColor);
+	}
+
+	bool TrySampleVertexColor(
+		const FColorVertexBuffer& ColorVertexBuffer,
+		const FVector& SamplePosition,
+		const FVector& P0,
+		const FVector& P1,
+		const FVector& P2,
+		const int32 I0,
+		const int32 I1,
+		const int32 I2,
+		FLinearColor& OutColor)
+	{
+		const FVector ClosestPoint = FMath::ClosestPointOnTriangleToPoint(SamplePosition, P0, P1, P2);
+		FVector Barycentric = FVector::ZeroVector;
+		if (!TryComputeTriangleBarycentric3D(ClosestPoint, P0, P1, P2, Barycentric))
+		{
+			return false;
+		}
+
+		const float W0 = FMath::Clamp(static_cast<float>(Barycentric.X), 0.0f, 1.0f);
+		const float W1 = FMath::Clamp(static_cast<float>(Barycentric.Y), 0.0f, 1.0f);
+		const float W2 = FMath::Clamp(static_cast<float>(Barycentric.Z), 0.0f, 1.0f);
+		const float WeightSum = W0 + W1 + W2;
+		if (WeightSum <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		OutColor = (FLinearColor(ColorVertexBuffer.VertexColor(I0)) * W0 +
+			FLinearColor(ColorVertexBuffer.VertexColor(I1)) * W1 +
+			FLinearColor(ColorVertexBuffer.VertexColor(I2)) * W2) / WeightSum;
+		return true;
 	}
 
 	FTransform MakeScaledLocalToWorldTransform(const FTransform& Transform)
@@ -743,6 +1461,7 @@ TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 
 	const FStaticMeshLODResources& LOD = RenderData->LODResources[EffectiveLODLevel];
 	const FPositionVertexBuffer& VertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const FStaticMeshVertexBuffer& StaticMeshVertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
 	const FColorVertexBuffer& ColorVertexBuffer = LOD.VertexBuffers.ColorVertexBuffer;
 	const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
 
@@ -920,14 +1639,91 @@ TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 
 	const bool bHasMatchingVertexColors = ColorVertexBuffer.GetNumVertices() == NumVertices;
 	const bool bUseVertexColors = bHasMatchingVertexColors && ColorVertexBuffer.GetAllowCPUAccess();
+	UE_LOG(LogPointSampling, Log,
+		TEXT("[体素点位] 顶点色诊断: LOD=%d, 资产顶点色数量=%d, 位置顶点数量=%d, CPU访问=%s, 数量匹配=%s, 启用顶点色=%s"),
+		EffectiveLODLevel,
+		ColorVertexBuffer.GetNumVertices(),
+		NumVertices,
+		ColorVertexBuffer.GetAllowCPUAccess() ? TEXT("是") : TEXT("否"),
+		bHasMatchingVertexColors ? TEXT("是") : TEXT("否"),
+		bUseVertexColors ? TEXT("是") : TEXT("否"));
+	const bool bCanUseTextureColors = !bUseVertexColors &&
+		StaticMeshVertexBuffer.GetAllowCPUAccess() &&
+		StaticMeshVertexBuffer.GetNumTexCoords() > 0;
+	TArray<FMeshVoxelMaterialColorSource> MaterialColorSources;
+	int32 BaseColorTextureCount = 0;
+	int32 TextureParameterCount = 0;
+	int32 UsedTextureCandidateCount = 0;
+	int32 TextureColorCount = 0;
+	int32 UnreadableTextureCount = 0;
+	int32 MaterialParameterColorCount = 0;
+	if (!bUseVertexColors)
+	{
+		BuildMaterialSlotColorCache(
+			StaticMesh,
+			bCanUseTextureColors,
+			MaterialColorSources,
+			BaseColorTextureCount,
+			TextureParameterCount,
+			UsedTextureCandidateCount,
+			TextureColorCount,
+			UnreadableTextureCount,
+			MaterialParameterColorCount);
+	}
+
 	if (ColorVertexBuffer.GetNumVertices() > 0 && !bUseVertexColors)
 	{
 		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] LOD%d存在顶点色但无法用于运行时颜色采样（顶点色CPU访问=%s，顶点色数量=%d，位置顶点数量=%d），将回退为材质槽稳定色"),
+			TEXT("[体素点位] LOD%d存在顶点色但无法用于运行时颜色采样（顶点色CPU访问=%s，顶点色数量=%d，位置顶点数量=%d），将尝试使用材质贴图或颜色参数"),
 			EffectiveLODLevel,
 			ColorVertexBuffer.GetAllowCPUAccess() ? TEXT("true") : TEXT("false"),
 			ColorVertexBuffer.GetNumVertices(),
 			NumVertices);
+	}
+	else if (bUseVertexColors)
+	{
+		UE_LOG(LogPointSampling, Log,
+			TEXT("[体素点位] 颜色来源: 顶点色=是, 采样=表面命中点重心插值"));
+	}
+	else if (!bUseVertexColors)
+	{
+		UE_LOG(LogPointSampling, Log,
+			TEXT("[体素点位] 颜色来源: 顶点色=否, UV可读=%s, BaseColor链=%d, 命名贴图=%d, UsedTextures候选=%d, 可读贴图=%d, 不可读贴图=%d, 材质颜色参数/常量=%d"),
+			bCanUseTextureColors ? TEXT("是") : TEXT("否"),
+			BaseColorTextureCount,
+			TextureParameterCount,
+			UsedTextureCandidateCount,
+			TextureColorCount,
+			UnreadableTextureCount,
+			MaterialParameterColorCount);
+
+		if (TextureColorCount == 0 && MaterialParameterColorCount == 0)
+		{
+			UE_LOG(LogPointSampling, Warning,
+				TEXT("[体素点位] 未找到可用颜色来源，输出将回退白色。请检查材质是否引用/暴露BaseColor贴图或简单颜色参数/常量、贴图源数据或运行时平台数据是否可读、StaticMesh是否有UV0或CPU可读顶点色。"));
+		}
+		else if (TextureColorCount > 0)
+		{
+			TArray<FString> TextureDescriptions;
+			TextureDescriptions.Reserve(FMath::Min(TextureColorCount, 8));
+			for (int32 MaterialIndex = 0; MaterialIndex < MaterialColorSources.Num() && TextureDescriptions.Num() < 8; ++MaterialIndex)
+			{
+				const FMeshVoxelMaterialColorSource& Source = MaterialColorSources[MaterialIndex];
+				if (Source.bHasTextureColor)
+				{
+					TextureDescriptions.Add(FString::Printf(
+						TEXT("%d:%s:%s"),
+						MaterialIndex,
+						*Source.TextureSourceLabel,
+						*Source.TextureName));
+				}
+			}
+
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[体素点位] 颜色贴图: %s%s"),
+				*FString::Join(TextureDescriptions, TEXT(", ")),
+				TextureColorCount > TextureDescriptions.Num() ? TEXT(" ...") : TEXT(""));
+		}
 	}
 
 	if (RequestedLODLevel != EffectiveLODLevel)
@@ -998,11 +1794,17 @@ TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 			++UnmappedMaterialTriangleCount;
 		}
 
-		const FLinearColor TriangleColor = bUseVertexColors
+		const FLinearColor TriangleFallbackColor = bUseVertexColors
 			? (FLinearColor(ColorVertexBuffer.VertexColor(I0)) +
 			   FLinearColor(ColorVertexBuffer.VertexColor(I1)) +
 			   FLinearColor(ColorVertexBuffer.VertexColor(I2))) * (1.0f / 3.0f)
-			: MakeMaterialSlotColor(MaterialIndex);
+			: GetMaterialFallbackColor(MaterialIndex, MaterialColorSources);
+		const bool bTriangleUsesTextureColor = bCanUseTextureColors &&
+			MaterialColorSources.IsValidIndex(MaterialIndex) &&
+			MaterialColorSources[MaterialIndex].bHasTextureColor;
+		const FVector2f UV0 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I0, 0) : FVector2f::ZeroVector;
+		const FVector2f UV1 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I1, 0) : FVector2f::ZeroVector;
+		const FVector2f UV2 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I2, 0) : FVector2f::ZeroVector;
 
 		for (int32 Z = MinIndex.Z; Z <= MaxIndex.Z && !bStopVoxelScan; ++Z)
 		{
@@ -1026,6 +1828,16 @@ TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 					if (!TriangleIntersectsBox(Center, BoxExtent, TriangleBoxTestData))
 					{
 						continue;
+					}
+
+					FLinearColor SurfaceColor = TriangleFallbackColor;
+					if (bUseVertexColors)
+					{
+						TrySampleVertexColor(ColorVertexBuffer, Center, P0, P1, P2, I0, I1, I2, SurfaceColor);
+					}
+					else if (bTriangleUsesTextureColor)
+					{
+						TrySampleMaterialTextureColor(MaterialIndex, MaterialColorSources, Center, P0, P1, P2, UV0, UV1, UV2, SurfaceColor);
 					}
 
 					if (FillMode == EMeshVoxelFillMode::SurfaceOnly)
@@ -1070,13 +1882,13 @@ TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 							Cell = &NewSurfaceCell.Cell;
 						}
 
-						AccumulateSurfaceVoxel(*Cell, TriangleColor, MaterialIndex, SurfaceVoxelWrites);
+						AccumulateSurfaceVoxel(*Cell, SurfaceColor, MaterialIndex, SurfaceVoxelWrites);
 						continue;
 					}
 
 					const int32 LinearIndex = ToLinearIndex(X, Y, Z, Dims);
 					FMeshVoxelCell& Cell = DenseCells[LinearIndex];
-					if (AccumulateSurfaceVoxel(Cell, TriangleColor, MaterialIndex, SurfaceVoxelWrites))
+					if (AccumulateSurfaceVoxel(Cell, SurfaceColor, MaterialIndex, SurfaceVoxelWrites))
 					{
 						DenseSurfaceIndices.Add(LinearIndex);
 					}

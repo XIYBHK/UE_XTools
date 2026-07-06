@@ -243,7 +243,7 @@ struct POINTSAMPLING_API FMeshVoxelPoint
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "网格索引"))
 	FIntVector GridIndex = FIntVector::ZeroValue;
 
-	/** 推荐颜色：表面优先来自CPU可读顶点色，缺失或不可读时使用材质槽稳定色；内部继承邻近表面体素颜色 */
+	/** 推荐颜色：表面优先来自CPU可读资产顶点色插值，其次通过UV0采样可读材质颜色贴图，再回退材质颜色参数或编辑器BaseColor链简单颜色常量；内部继承邻近表面体素颜色 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "体素", meta = (DisplayName = "颜色"))
 	FLinearColor Color = FLinearColor::White;
 

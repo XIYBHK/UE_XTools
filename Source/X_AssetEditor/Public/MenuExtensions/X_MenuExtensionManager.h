@@ -104,6 +104,20 @@ private:
     void AddMaterialFunctionMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
 
     /**
+     * 添加材质烘焙菜单项
+     * @param MenuBuilder 菜单构建器
+     * @param SelectedAssets 选中的资产
+     */
+    void AddMaterialBakeMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
+
+    /**
+     * 添加蓝图逻辑流导出菜单项
+     * @param MenuBuilder 菜单构建器
+     * @param SelectedAssets 选中的资产
+     */
+    void AddBlueprintGraphExportMenuEntry(FMenuBuilder& MenuBuilder, TArray<FAssetData> SelectedAssets);
+
+    /**
      * 处理添加材质函数到资产
      * @param SelectedAssets 选中的资产
      */
