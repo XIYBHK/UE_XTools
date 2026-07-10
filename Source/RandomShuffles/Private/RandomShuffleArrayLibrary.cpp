@@ -49,6 +49,57 @@ namespace RandomShuffles {
         }
     };
 
+    bool AreArrayElementTypesCompatible(const FArrayProperty* InputProp, const FArrayProperty* OutputProp)
+    {
+        return InputProp && OutputProp && InputProp->Inner && OutputProp->Inner &&
+            InputProp->Inner->SameType(OutputProp->Inner);
+    }
+
+    const FFloatProperty* GetFloatWeightsInnerProperty(const FArrayProperty* WeightsProp)
+    {
+        return WeightsProp ? CastField<FFloatProperty>(WeightsProp->Inner) : nullptr;
+    }
+
+    bool HasAnyPositiveWeight(FScriptArrayHelper& WeightsHelper, const FFloatProperty* WeightInnerProp)
+    {
+        if (!WeightInnerProp)
+        {
+            return false;
+        }
+
+        for (int32 Index = 0; Index < WeightsHelper.Num(); ++Index)
+        {
+            if (WeightInnerProp->GetPropertyValue(WeightsHelper.GetRawPtr(Index)) > 0.0f)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool AreWeightsValid(FScriptArrayHelper& WeightsHelper, const FFloatProperty* WeightInnerProp)
+    {
+        if (!WeightInnerProp)
+        {
+            return false;
+        }
+
+        bool bHasPositiveWeight = false;
+        for (int32 Index = 0; Index < WeightsHelper.Num(); ++Index)
+        {
+            const float Weight = WeightInnerProp->GetPropertyValue(WeightsHelper.GetRawPtr(Index));
+            if (!FMath::IsFinite(Weight) || Weight < 0.0f)
+            {
+                return false;
+            }
+
+            bHasPositiveWeight |= Weight > 0.0f;
+        }
+
+        return bHasPositiveWeight;
+    }
+
     template <typename T>
     class ScriptArrayInputIterator {
     public:
@@ -302,7 +353,15 @@ void URandomShuffleArrayLibrary::GenericArray_RandomSample(
 {
     using namespace RandomShuffles;
 
-	if(!TargetArray || !OutputArray) {
+	if(!TargetArray || !ArrayProp || !OutputArray || !OutputProp) {
+        return;
+    }
+
+    FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
+    OutputHelper.EmptyValues();
+
+    if (!AreArrayElementTypesCompatible(ArrayProp, OutputProp)) {
+        ensureMsgf(false, TEXT("RandomSample output array element type does not match input array element type."));
         return;
     }
 
@@ -314,17 +373,29 @@ void URandomShuffleArrayLibrary::GenericArray_RandomSample(
     if (Count < 0) {
         Count = ArrayHelper.Num();
     }
+    if (Count == 0) {
+        return;
+    }
 
     // 修复：先验证权重数组长度，再调整输出大小
     if (WeightsProp) {
+        const FFloatProperty* WeightInnerProp = GetFloatWeightsInnerProperty(WeightsProp);
+        if (!Weights || !WeightInnerProp) {
+            ensureMsgf(false, TEXT("RandomSample weights must be a float array."));
+            return;
+        }
+
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
         if (WeightsHelper.Num() < ArrayHelper.Num()) {
             ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
             return;
         }
+        if (!AreWeightsValid(WeightsHelper, WeightInnerProp)) {
+            ensureMsgf(false, TEXT("RandomSample weights must be finite, non-negative, and contain at least one positive value."));
+            return;
+        }
     }
 
-    FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
     OutputHelper.Resize(Count);
 
     auto randFunc = RandomShuffles::FRand{ Stream };
@@ -351,7 +422,15 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
 {
     using namespace RandomShuffles;
 
-	if(!TargetArray || !OutputArray) {
+	if(!TargetArray || !ArrayProp || !OutputArray || !OutputProp) {
+        return;
+    }
+
+    FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
+    OutputHelper.EmptyValues();
+
+    if (!AreArrayElementTypesCompatible(ArrayProp, OutputProp)) {
+        ensureMsgf(false, TEXT("StrictWeightRandomSample output array element type does not match input array element type."));
         return;
     }
 
@@ -363,19 +442,31 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
     if (Count < 0) {
         Count = ArrayHelper.Num();
     }
+    if (Count == 0) {
+        return;
+    }
 
     auto randFunc = RandomShuffles::FRand{ Stream };
     auto begin = ScriptArrayInputIterator<uint8*>(TargetArray, ArrayProp);
     auto end = ScriptArrayInputIterator<uint8*>(TargetArray, ArrayProp, ArrayHelper.Num());
 
     if (WeightsProp) {
+        const FFloatProperty* WeightInnerProp = GetFloatWeightsInnerProperty(WeightsProp);
+        if (!Weights || !WeightInnerProp) {
+            ensureMsgf(false, TEXT("StrictWeightRandomSample weights must be a float array."));
+            return;
+        }
+
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
         if (WeightsHelper.Num() < ArrayHelper.Num()) {
             ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
             return;
         }
+        if (!AreWeightsValid(WeightsHelper, WeightInnerProp)) {
+            ensureMsgf(false, TEXT("StrictWeightRandomSample weights must be finite, non-negative, and contain at least one positive value."));
+            return;
+        }
 
-        FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
         OutputHelper.Resize(Count);
         auto out = ScriptArrayOutputIterator(OutputArray, OutputProp);
 
@@ -383,7 +474,6 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
         WeightPoolSample(begin, end, wbegin, out, Count, randFunc);
     }
     else {
-        FScriptArrayHelper OutputHelper(OutputProp, OutputArray);
         OutputHelper.Resize(Count);
         auto out = ScriptArrayOutputIterator(OutputArray, OutputProp);
 

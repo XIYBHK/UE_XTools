@@ -1,220 +1,225 @@
-﻿#include "Features/SupportSystemLibrary.h"
+#include "Features/SupportSystemLibrary.h"
+
 #include "XToolsBlueprintHelpers.h"
-#include "Components/PrimitiveComponent.h"
-#include "GameFramework/Actor.h"
-#include "DrawDebugHelpers.h"
-#include "Engine/World.h"
-#include "Engine/Engine.h"
-#include "Engine/EngineTypes.h"
 #include "CollisionQueryParams.h"
+#include "Components/PrimitiveComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/EngineTypes.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+
+namespace
+{
+	void ResetStabilizeHeightOutputs(float& AveragePressureFactor, FVector& AverageImpactNormal)
+	{
+		AveragePressureFactor = 0.0f;
+		AverageImpactNormal = FVector::UpVector;
+	}
+
+	bool IsFiniteStabilizeHeightInput(float StableHeight, float GripHeight, float GripStrength, float DeltaTime, float ErrorRange, float Kp, float Ki, float Kd)
+	{
+		return FMath::IsFinite(StableHeight)
+			&& FMath::IsFinite(GripHeight)
+			&& FMath::IsFinite(GripStrength)
+			&& FMath::IsFinite(DeltaTime)
+			&& FMath::IsFinite(ErrorRange)
+			&& FMath::IsFinite(Kp)
+			&& FMath::IsFinite(Ki)
+			&& FMath::IsFinite(Kd);
+	}
+
+	bool ContainsInvalidTransform(const TArray<FTransform>& Transforms)
+	{
+		for (const FTransform& Transform : Transforms)
+		{
+			if (Transform.ContainsNaN())
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
 
 TArray<FTransform> USupportSystemLibrary::GetLocalFulcrumTransform(const UPrimitiveComponent* TargetComponent, const FVector& PlaneBase)
 {
-    TArray<FTransform> FulcrumTransformArray;
-    if (!TargetComponent) return FulcrumTransformArray;
+	TArray<FTransform> FulcrumTransformArray;
+	if (!IsValid(TargetComponent) || PlaneBase.ContainsNaN())
+	{
+		return FulcrumTransformArray;
+	}
 
-    // 使用局部空间包围盒，避免世界AABB在组件旋转后导致局部支点畸变
-    const FVector ComponentExtent = TargetComponent->CalcBounds(FTransform::Identity).BoxExtent;
-    // PlaneBase 输入按世界坐标解释，转换到组件局部空间后再作为局部支点Z
-    const float BottomZ = TargetComponent->GetComponentTransform().InverseTransformPosition(PlaneBase).Z;
+	const FVector ComponentExtent = TargetComponent->CalcBounds(FTransform::Identity).BoxExtent;
+	const float BottomZ = TargetComponent->GetComponentTransform().InverseTransformPosition(PlaneBase).Z;
 
-    // Calculate the positions of the four fulcrums in local space
-    FulcrumTransformArray.Add(FTransform(FVector(ComponentExtent.X, ComponentExtent.Y, BottomZ)));
-    FulcrumTransformArray.Add(FTransform(FVector(-ComponentExtent.X, ComponentExtent.Y, BottomZ)));
-    FulcrumTransformArray.Add(FTransform(FVector(ComponentExtent.X, -ComponentExtent.Y, BottomZ)));
-    FulcrumTransformArray.Add(FTransform(FVector(-ComponentExtent.X, -ComponentExtent.Y, BottomZ)));
+	FulcrumTransformArray.Add(FTransform(FVector(ComponentExtent.X, ComponentExtent.Y, BottomZ)));
+	FulcrumTransformArray.Add(FTransform(FVector(-ComponentExtent.X, ComponentExtent.Y, BottomZ)));
+	FulcrumTransformArray.Add(FTransform(FVector(ComponentExtent.X, -ComponentExtent.Y, BottomZ)));
+	FulcrumTransformArray.Add(FTransform(FVector(-ComponentExtent.X, -ComponentExtent.Y, BottomZ)));
 
-    return FulcrumTransformArray;
+	return FulcrumTransformArray;
 }
 
 TArray<FTransform> USupportSystemLibrary::GetWorldFulcrumTransform(const FTransform& ObjectTransform, const TArray<FTransform>& FulcrumTransformArray)
 {
-    TArray<FTransform> WorldTransforms;
+	TArray<FTransform> WorldTransforms;
+	if (ObjectTransform.ContainsNaN() || ContainsInvalidTransform(FulcrumTransformArray))
+	{
+		return WorldTransforms;
+	}
 
-    for (const FTransform& Transform : FulcrumTransformArray)
-    {
-        WorldTransforms.Add(Transform * ObjectTransform);
-    }
+	for (const FTransform& Transform : FulcrumTransformArray)
+	{
+		WorldTransforms.Add(Transform * ObjectTransform);
+	}
 
-    return WorldTransforms;
+	return WorldTransforms;
 }
 
 void USupportSystemLibrary::StabilizeHeight(
-    UObject* WorldContextObject,
-    UPrimitiveComponent* TargetComponent,
-    const TArray<FTransform>& WorldFulcrumTransform, 
-    float StableHeight,
-    float GripHeight,
-    float GripStrength,
-    float DeltaTime,
-    float ErrorRange,
-    TArray<float>& LastError,
-    TArray<float>& IntegralError,
-    float Kp,
-    float Ki,
-    float Kd,
-    ETraceTypeQuery ChannelType,
-    float& AveragePressureFactor, 
-    FVector& AverageImpactNormal, 
-    bool DrawDebug)
+	UObject* WorldContextObject,
+	UPrimitiveComponent* TargetComponent,
+	const TArray<FTransform>& WorldFulcrumTransform,
+	float StableHeight,
+	float GripHeight,
+	float GripStrength,
+	float DeltaTime,
+	float ErrorRange,
+	TArray<float>& LastError,
+	TArray<float>& IntegralError,
+	float Kp,
+	float Ki,
+	float Kd,
+	ETraceTypeQuery ChannelType,
+	float& AveragePressureFactor,
+	FVector& AverageImpactNormal,
+	bool DrawDebug)
 {
-    // 检查输入参数的有效性
-    if (!TargetComponent || !WorldContextObject || WorldFulcrumTransform.Num() == 0) return;
-	if (DeltaTime <= KINDA_SMALL_NUMBER || ErrorRange <= KINDA_SMALL_NUMBER)
+	ResetStabilizeHeightOutputs(AveragePressureFactor, AverageImpactNormal);
+
+	if (!IsValid(TargetComponent)
+		|| !WorldContextObject
+		|| WorldFulcrumTransform.Num() == 0
+		|| !IsFiniteStabilizeHeightInput(StableHeight, GripHeight, GripStrength, DeltaTime, ErrorRange, Kp, Ki, Kd)
+		|| DeltaTime <= KINDA_SMALL_NUMBER
+		|| ErrorRange <= KINDA_SMALL_NUMBER
+		|| StableHeight < 0.0f
+		|| GripHeight < 0.0f
+		|| GripStrength < 0.0f)
 	{
-		AveragePressureFactor = 0.0f;
-		AverageImpactNormal = FVector::UpVector;
 		return;
 	}
 
-    // 计算每个支点的质量
-    const float Mass = TargetComponent->GetMass() / WorldFulcrumTransform.Num();
+	if (ContainsInvalidTransform(WorldFulcrumTransform))
+	{
+		LastError.Reset();
+		IntegralError.Reset();
+		return;
+	}
 
-    // 获取世界对象（蓝图工具函数：避免使用 Checked 版本导致开发期断言崩溃）
-    UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
-    if (!World)
-    {
-        AveragePressureFactor = 0.0f;
-        AverageImpactNormal = FVector::UpVector;
-        return;
-    }
-    ECollisionChannel CollisionChannel = UEngineTypes::ConvertToCollisionChannel(ChannelType);
+	UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
+	if (!World)
+	{
+		return;
+	}
 
-    // 确保LastError和IntegralError的大小与支点数量一致
-    LastError.SetNum(WorldFulcrumTransform.Num());
-    IntegralError.SetNum(WorldFulcrumTransform.Num());
+	const float MassPerFulcrum = FMath::Max(TargetComponent->GetMass(), 0.0f) / WorldFulcrumTransform.Num();
+	const ECollisionChannel CollisionChannel = UEngineTypes::ConvertToCollisionChannel(ChannelType);
 
-    // 标记所有LineTrace是否命中
-    bool bAllHit = true;
-    TArray<FHitResult> HitResults;
-    HitResults.SetNum(WorldFulcrumTransform.Num());
+	FCollisionQueryParams CollisionParams(SCENE_QUERY_STAT(StabilizeHeight), false, TargetComponent->GetOwner());
+	CollisionParams.AddIgnoredComponent(TargetComponent);
 
-    // 存储所有PressureFactor的总和和有效计数
-    float TotalPressureFactor = 0.0f;
-    int32 ValidPressureCount = 0;
+	LastError.SetNum(WorldFulcrumTransform.Num());
+	IntegralError.SetNum(WorldFulcrumTransform.Num());
 
-    // 存储所有ImpactNormal的总和
-    FVector TotalImpactNormal(0.0f, 0.0f, 0.0f);
+	TArray<FHitResult> HitResults;
+	HitResults.SetNum(WorldFulcrumTransform.Num());
 
-    // 遍历所有支点进行LineTrace
-    for (int32 i = 0; i < WorldFulcrumTransform.Num(); ++i)
-    {
-        const FTransform& FulcrumTransform = WorldFulcrumTransform[i];
-        FVector Start = FulcrumTransform.GetLocation();
-        FVector End = Start - FulcrumTransform.GetUnitAxis(EAxis::Z) * (StableHeight + GripHeight);
-        FCollisionQueryParams CollisionParams;
-        bool bHit = World->LineTraceSingleByChannel(HitResults[i], Start, End, CollisionChannel, CollisionParams);
-        bAllHit &= bHit;
+	float TotalPressureFactor = 0.0f;
+	FVector TotalImpactNormal = FVector::ZeroVector;
 
-        // 绘制Trace起始点到终点的向量
-        if (DrawDebug)
-        {
-            DrawDebugLine(World, Start, End, FColor::Yellow, false, 0.0f, 0, 1.0f);
-        }
+	for (int32 Index = 0; Index < WorldFulcrumTransform.Num(); ++Index)
+	{
+		const FTransform& FulcrumTransform = WorldFulcrumTransform[Index];
+		const FVector SupportAxis = FulcrumTransform.GetUnitAxis(EAxis::Z);
+		const FVector Start = FulcrumTransform.GetLocation();
+		const FVector End = Start - SupportAxis * (StableHeight + GripHeight);
+		const bool bHit = World->LineTraceSingleByChannel(HitResults[Index], Start, End, CollisionChannel, CollisionParams);
 
-        // 计算PressureFactor
-        if (bHit)
-        {
-            float Error = FVector::DotProduct(HitResults[i].ImpactPoint - (FulcrumTransform.GetLocation() - FulcrumTransform.GetUnitAxis(EAxis::Z) * StableHeight), FVector(0.0f, 0.0f, 1.0f));
-            Error = FMath::Clamp(Error, -ErrorRange, ErrorRange);
-            float PressureFactor = FMath::Clamp(Error / ErrorRange, -1.0f, 1.0f);
-            TotalPressureFactor += PressureFactor;
-            ValidPressureCount++;
+		if (DrawDebug)
+		{
+			DrawDebugLine(World, Start, End, FColor::Yellow, false, 0.0f, 0, 1.0f);
+		}
 
-            // 累加ImpactNormal
-            TotalImpactNormal += HitResults[i].ImpactNormal;
-        }
-        else
-        {
-            TotalPressureFactor += -1.0f;
+		if (bHit)
+		{
+			const FVector StableLocation = Start - SupportAxis * StableHeight;
+			const float Error = FMath::Clamp(FVector::DotProduct(HitResults[Index].ImpactPoint - StableLocation, SupportAxis), -ErrorRange, ErrorRange);
+			TotalPressureFactor += FMath::Clamp(Error / ErrorRange, -1.0f, 1.0f);
+			TotalImpactNormal += HitResults[Index].ImpactNormal;
+		}
+		else
+		{
+			TotalPressureFactor += -1.0f;
+			TotalImpactNormal += SupportAxis;
+		}
+	}
 
-            // 如果未命中，使用FulcrumTransform的上方向
-            TotalImpactNormal += FulcrumTransform.GetUnitAxis(EAxis::Z);
-        }
-    }
+	AveragePressureFactor = FMath::Clamp(TotalPressureFactor / WorldFulcrumTransform.Num(), -1.0f, 1.0f);
+	AverageImpactNormal = TotalImpactNormal.GetSafeNormal(SMALL_NUMBER, FVector::UpVector);
 
-    // 计算AveragePressureFactor
-    AveragePressureFactor = (ValidPressureCount > 0) ? FMath::Clamp(TotalPressureFactor / ValidPressureCount, -1.0f, 1.0f) : -1.0f;
+	for (int32 Index = 0; Index < WorldFulcrumTransform.Num(); ++Index)
+	{
+		const FTransform& FulcrumTransform = WorldFulcrumTransform[Index];
+		const FVector SupportAxis = FulcrumTransform.GetUnitAxis(EAxis::Z);
+		const FVector StableLocation = FulcrumTransform.GetLocation() - SupportAxis * StableHeight;
+		const FHitResult& HitResult = HitResults[Index];
 
-    // 计算AverageImpactNormal
-    AverageImpactNormal = TotalImpactNormal.GetSafeNormal();
+		if (HitResult.bBlockingHit)
+		{
+			if (DrawDebug)
+			{
+				DrawDebugPoint(World, HitResult.ImpactPoint, 10.0f, FColor::Red, false, 0.0f);
+				DrawDebugLine(World, StableLocation, HitResult.ImpactPoint, FColor::Blue, false, 0.0f, 0, 1.0f);
+			}
 
-    // 遍历所有支点应用力
-    for (int32 i = 0; i < WorldFulcrumTransform.Num(); ++i)
-    {
-        const FTransform& FulcrumTransform = WorldFulcrumTransform[i];
-        const FVector StableLocation = FulcrumTransform.GetLocation() - FulcrumTransform.GetUnitAxis(EAxis::Z) * StableHeight;
-        const FHitResult& HitResult = HitResults[i];
+			const float Error = FMath::Clamp(FVector::DotProduct(HitResult.ImpactPoint - StableLocation, SupportAxis), -ErrorRange, ErrorRange);
+			const float Dot = FMath::Clamp(FVector::DotProduct(SupportAxis, AverageImpactNormal), -1.0f, 1.0f);
+			const float Angle = FMath::Acos(Dot);
+			const float NormalFactor = FMath::Clamp(1.0f - (Angle / (PI / 4.0f)), 0.0f, 1.0f);
+			const float Alpha = FMath::Exp(-DeltaTime);
+			const float SmoothedError = Alpha * LastError[Index] + (1.0f - Alpha) * Error;
 
-        if (HitResult.bBlockingHit)
-        {
-            // 绘制ImpactPoint的位置
-            if (DrawDebug)
-            {
-                DrawDebugPoint(World, HitResult.ImpactPoint, 10.0f, FColor::Red, false, 0.0f);
-            }
+			IntegralError[Index] = FMath::Clamp(IntegralError[Index] + SmoothedError * DeltaTime, -ErrorRange, ErrorRange);
 
-            // 计算误差
-            float Error = FVector::DotProduct(HitResult.ImpactPoint - StableLocation, FVector(0.0f, 0.0f, 1.0f));
-            Error = FMath::Clamp(Error, -ErrorRange, ErrorRange);
+			const float Derivative = (SmoothedError - LastError[Index]) / DeltaTime;
+			float Output = Kp * SmoothedError + Ki * IntegralError[Index] + Kd * Derivative;
 
-             // 计算NormalFactor
-            const float Dot = FMath::Clamp(FVector::DotProduct(FulcrumTransform.GetUnitAxis(EAxis::Z), AverageImpactNormal), -1.0f, 1.0f);
-            float Angle = FMath::Acos(Dot);
-            float NormalFactor = FMath::Clamp(1.0f - (Angle / (PI / 4.0f)), 0.0f, 1.0f);
+			if (Error > 0.0f)
+			{
+				const FVector Force = SupportAxis * Output * MassPerFulcrum * NormalFactor;
+				TargetComponent->AddForceAtLocation(Force, FulcrumTransform.GetLocation());
+			}
+			else if (Error < 0.0f)
+			{
+				const float GripPressure = FMath::Clamp(AveragePressureFactor + 1.0f, 0.0f, 1.0f);
+				Output *= GripStrength * GripPressure;
+				const FVector Force = SupportAxis * Output * MassPerFulcrum * NormalFactor;
+				TargetComponent->AddForceAtLocation(Force, FulcrumTransform.GetLocation());
+			}
 
-            // 绘制StableLocation到ImpactPoint的向量
-            if (DrawDebug)
-            {
-                DrawDebugLine(World, StableLocation, HitResult.ImpactPoint, FColor::Blue, false, 0.0f, 0, 1.0f);
-            }
+			LastError[Index] = SmoothedError;
+		}
+		else
+		{
+			IntegralError[Index] = 0.0f;
+			LastError[Index] = 0.0f;
+		}
 
-            // 使用指数衰减函数计算Alpha，DeltaTime越大，Alpha越小
-            const float Alpha = FMath::Exp(-DeltaTime);
-
-            // 低通滤波器平滑误差信号
-            const float SmoothedError = Alpha * Error + (1.0f - Alpha) * LastError[i];
-
-            // 积分项计算
-            IntegralError[i] += SmoothedError * DeltaTime;
-
-            // 微分项计算
-            const float Derivative = (SmoothedError - LastError[i]) / DeltaTime;
-
-            // PID输出
-            float Output = Kp * SmoothedError + Ki * IntegralError[i] + Kd * Derivative;
-
-            // 根据Error和AveragePressureFactor的值决定是否施加作用力
-            if (Error > 0.0f)
-            {
-                // 提供向上的作用力
-                const FVector Force = FulcrumTransform.GetUnitAxis(EAxis::Z) * Output * Mass * NormalFactor;
-                TargetComponent->AddForceAtLocation(Force, FulcrumTransform.GetLocation());
-            }
-            else if (Error < 0.0f)
-            {
-                // 计算GripPressure
-                float GripPressure = FMath::Clamp(AveragePressureFactor + 1.0f, 0.0f, 1.0f);
-                // 提供向下的作用力，受GripStrength和GripPressure系数控制
-                Output *= GripStrength * GripPressure;
-                const FVector Force = FulcrumTransform.GetUnitAxis(EAxis::Z) * Output * Mass * NormalFactor;
-                TargetComponent->AddForceAtLocation(Force, FulcrumTransform.GetLocation());
-            }
-
-            // 更新上一次的误差
-            LastError[i] = SmoothedError;
-        }
-        else
-        {
-            // 清空缓存数据
-            IntegralError[i] = 0.0f;
-            LastError[i] = 0.0f;
-        }
-
-        // 绘制StableLocation的位置
-        if (DrawDebug)
-        {
-            DrawDebugPoint(World, StableLocation, 10.0f, FColor::Green, false, 0.0f);
-        }
-    }
+		if (DrawDebug)
+		{
+			DrawDebugPoint(World, StableLocation, 10.0f, FColor::Green, false, 0.0f);
+		}
+	}
 }

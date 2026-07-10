@@ -12,6 +12,7 @@ UECFWhileTrueExecuteBP* UECFWhileTrueExecuteBP::ECFWhileTrueExecute(const UObjec
 	{
 		Proxy->Init(WorldContextObject, Settings);
 		Proxy->Proxy_IsTrue = true;
+		constexpr bool bEvaluatePredicateOnSetup = false;
 		Proxy->Proxy_Handle = FFlow::WhileTrueExecute(WorldContextObject,
 			[Proxy]()
 			{
@@ -37,7 +38,7 @@ UECFWhileTrueExecuteBP* UECFWhileTrueExecuteBP::ECFWhileTrueExecute(const UObjec
 					Proxy->ClearAsyncBPAction();
 				}
 			},
-		TimeOut, Settings);
+		TimeOut, Settings, bEvaluatePredicateOnSetup);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}
 

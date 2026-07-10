@@ -107,10 +107,17 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
             ActorClass ? *ActorClass->GetName() : TEXT("Invalid"),
             Actor ? *Actor->GetName() : TEXT("Failed"));
 
-        return Actor;
-    }
+        if (Actor)
+        {
+            return Actor;
+        }
 
-    OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 无法获取对象池子系统，尝试直接创建"));
+        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 子系统返回空，尝试回退创建"));
+    }
+    else
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary::SpawnActorFromPool: 无法获取对象池子系统，尝试直接创建"));
+    }
 
     if (UWorld* World = XTools::ObjectPool::ResolveWorld(WorldContext))
     {

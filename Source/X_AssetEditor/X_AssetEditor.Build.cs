@@ -58,6 +58,7 @@ public class X_AssetEditor : ModuleRules
 			"EditorFramework",
 			"LevelEditor",
 			"ToolMenus",
+			"BlueprintGraph",
 
 			// UI 模块
 			"Slate",
@@ -73,6 +74,7 @@ public class X_AssetEditor : ModuleRules
 
 			// 材质和网格模块
 			"MaterialEditor",
+			"MaterialBaking",
 			"MeshDescription",
 			"StaticMeshDescription",
 			"RawMesh",
@@ -106,4 +108,4 @@ public class X_AssetEditor : ModuleRules
 		"UE_PLUGIN=1"
 	});
 	}
-} 
+}

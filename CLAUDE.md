@@ -201,6 +201,7 @@ FXToolsErrorReporter::Warning(
 - 提交格式：`<type>(<scope>): <中文描述>`
 - type: `feat`, `fix`, `refactor`, `perf`, `docs`, `chore`, `style`
 - scope: 模块名（如 ObjectPool, BlueprintExtensions）
+- PowerShell 多行提交信息：不要用 `\n` 作为换行；使用 here-string 管道到 `git commit -F -`，确保 GitHub 正常显示正文换行
 
 ## 版本发布流程
 

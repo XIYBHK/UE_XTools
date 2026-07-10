@@ -479,6 +479,23 @@ TArray<FVector> UFormationSamplingLibrary::GenerateFromStaticMesh(
 	return Points;
 }
 
+TArray<FMeshVoxelPoint> UFormationSamplingLibrary::GenerateVoxelPointsFromStaticMesh(
+	UStaticMesh* StaticMesh,
+	FTransform Transform,
+	float VoxelSize,
+	EMeshVoxelFillMode FillMode,
+	int32 LODLevel,
+	int32 MaxVoxelCount)
+{
+	return FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
+		StaticMesh,
+		Transform,
+		VoxelSize,
+		FillMode,
+		LODLevel,
+		MaxVoxelCount);
+}
+
 #if WITH_EDITOR
 bool UFormationSamplingLibrary::ValidateTextureForSampling(UTexture2D* Texture)
 {

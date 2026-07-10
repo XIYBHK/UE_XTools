@@ -51,7 +51,8 @@ public class BlueprintExtensionsRuntime : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"GameplayTags"
+				"GameplayTags",
+				"GeometryCollectionEngine"
 			}
 		);
 	}

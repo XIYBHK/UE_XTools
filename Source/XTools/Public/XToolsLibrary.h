@@ -145,22 +145,22 @@ class XTOOLS_API UXToolsLibrary : public UBlueprintFunctionLibrary
 
 public:
     /** 
-     * 从组件开始，在Actor附加层级中查找最顶层的匹配父Actor
+     * 从组件开始，在附加层级中查找最顶层的匹配父Actor
      * @param StartComponent 要开始查找的起始组件。
      * @param ActorClass 要查找的Actor类 (可选)。
      * @param ActorTag 要匹配的Actor标签 (可选)。
      * @return 找到的最顶层的匹配父Actor，如果未找到则返回nullptr。
-     * @note 该函数会从一个组件开始，沿着它的组件附加层级(GetAttachParent)一路向上查找，
-     *       并检查每个组件所属的Actor，返回最后一个（即最顶层的）符合所有指定条件的父Actor。
+     * @note 该函数会从任意SceneComponent开始，沿着组件附加层级(GetAttachParent)一路向上查找，
+     *       包含起始组件所属Actor，并返回最后一个（即最顶层的）符合所有指定条件的Actor。
      */
-    UFUNCTION(BlueprintCallable, Category = "XTools|Actors", 
-        meta = (DisplayName = "获取附加的Actor最高级", 
+    UFUNCTION(BlueprintCallable, Category = "XTools|Actor|附加关系",
+        meta = (DisplayName = "获取最高附加父Actor",
                DeterminesOutputType = "ActorClass",
-               ToolTip = "从一个组件开始, 沿其父级链向上查找, 并返回最顶层的匹配父Actor. 注: 采用'从下至上'查找, 因其仅需一次遍历即可确定层级并找到最高匹配项, 是最高效的方式."))
+               ToolTip = "从任意场景组件开始，沿组件附加父级链向上查找，包含自身Actor，并返回最顶层的匹配Actor。可按Actor类和Actor标签过滤。"))
     static AActor* GetTopmostAttachedActor(
-        USceneComponent* StartComponent,
-        TSubclassOf<AActor> ActorClass,
-        FName ActorTag
+        UPARAM(DisplayName = "起始组件") USceneComponent* StartComponent,
+        UPARAM(DisplayName = "Actor类") TSubclassOf<AActor> ActorClass,
+        UPARAM(DisplayName = "Actor标签") FName ActorTag
     );
 
     /**
@@ -171,14 +171,14 @@ public:
      * @param OutAllChildren 输出的所有子级Actor（包含子级的子级）
      * @param bIncludeSelf 结果是否包含ParentActor自身
      */
-    UFUNCTION(BlueprintCallable, Category = "XTools|Actors",
-        meta = (DisplayName = "获取所有附加的子Actor(BFS)",
+    UFUNCTION(BlueprintCallable, Category = "XTools|Actor|附加关系",
+        meta = (DisplayName = "获取所有附加子Actor",
                Keywords = "Get Attached Child Children Recursively BFS",
-               ToolTip = "递归获取所有附加的子Actor（包括子级的子级）\n使用C++ BFS迭代算法，避免栈溢出，性能更好\n适用于复杂层级结构的Actor查找"))
+               ToolTip = "递归获取所有附加的子Actor（包括子级的子级）。使用C++迭代遍历并自动去重，适用于复杂层级结构的Actor查找。"))
     static void GetAllAttachedActorsRecursively(
-        AActor* ParentActor,
-        TArray<AActor*>& OutAllChildren,
-        bool bIncludeSelf = false
+        UPARAM(DisplayName = "父级Actor") AActor* ParentActor,
+        UPARAM(DisplayName = "所有子Actor") TArray<AActor*>& OutAllChildren,
+        UPARAM(DisplayName = "包含自身") bool bIncludeSelf = false
     );
 
     /**

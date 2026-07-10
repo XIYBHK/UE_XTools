@@ -85,6 +85,7 @@ XToolsCore (PreDefault)
 - 类: `U<Module>Library` (函数库), `F<Module>Config` (结构体), `E<Module>State` (枚举)
 - 蓝图分类: `XTools|<中文模块名>|<子类别>` (如 `XTools|排序|Actor`)
 - 提交: `<type>(<scope>): <中文描述>` (scope=模块名)
+- PowerShell 多行提交信息: 不要用 `\n` 作为换行; 使用 here-string 管道到 `git commit -F -`, 确保 GitHub 正常显示正文换行
 
 ### 元数据 (强制中文)
 ```cpp

@@ -294,58 +294,81 @@ public:
 };
 
 /**
- * 在组件层级中查找匹配指定类和标签的父Actor
+ * 在组件附加层级中查找匹配指定类和标签的最高父Actor
  * 
- * @param Component 起始组件，必须是SceneComponent（因为需要访问GetAttachParent()来遍历组件层级）
+ * @param StartComponent 起始组件，用于沿附加链向上查找
  * @param ActorClass 要查找的Actor类（可选）
  * @param ActorTag 要匹配的标签（可选）
- * @return 找到的父Actor，未找到返回nullptr
+ * @return 找到的最高父Actor，未找到返回nullptr
  * 
  * 查找规则：
- * - 同时指定类和标签时，返回第一个同时匹配的父级
+ * - 同时指定类和标签时，返回最高级同时匹配的父级
  * - 只指定类时，返回最高级匹配的父级
- * - 只指定标签时，返回第一个匹配的父级
- * - 都未指定时，返回最顶层的父级
+ * - 只指定标签时，返回最高级匹配的父级
+ * - 都未指定时，返回附加链中最顶层的Actor；没有外部父级时返回起始组件所属Actor
  * 
  * 注意：最大查找深度为XTOOLS_MAX_PARENT_DEPTH（默认100层）
  */
 AActor* UXToolsLibrary::GetTopmostAttachedActor(USceneComponent* StartComponent, TSubclassOf<AActor> ActorClass, FName ActorTag)
 {
-    if (!StartComponent)
+    if (!IsValid(StartComponent))
     {
         FXToolsErrorReporter::Warning(LogXTools,
-            TEXT("GetTopmostAttachedActor: 提供的起始组件无效 (StartComponent is null)."),
+            TEXT("GetTopmostAttachedActor: 提供的起始组件无效 (StartComponent is null or pending kill)."),
+            TEXT("GetTopmostAttachedActor"));
+        return nullptr;
+    }
+
+    AActor* StartActor = StartComponent->GetOwner();
+    if (!IsValid(StartActor))
+    {
+        FXToolsErrorReporter::Warning(LogXTools,
+            TEXT("GetTopmostAttachedActor: 起始组件没有有效的所属Actor."),
             TEXT("GetTopmostAttachedActor"));
         return nullptr;
     }
 
     AActor* HighestMatchingActor = nullptr;
-    // 从起始组件的直接父级开始向上查找
-    USceneComponent* CurrentComponent = StartComponent->GetAttachParent();
+    USceneComponent* CurrentComponent = StartComponent;
+    TSet<USceneComponent*> VisitedComponents;
+    TSet<AActor*> VisitedActors;
     int32 Iterations = 0;
 
-    // 持续向上遍历，直到没有父级或达到最大深度
-    while (CurrentComponent && Iterations < XTOOLS_MAX_PARENT_DEPTH)
+    while (IsValid(CurrentComponent) && Iterations < XTOOLS_MAX_PARENT_DEPTH)
     {
-        AActor* OwnerActor = CurrentComponent->GetOwner();
-        if (OwnerActor)
+        if (VisitedComponents.Contains(CurrentComponent))
         {
-            // 条件1: 检查类是否匹配 (如果ActorClass被指定)
-            const bool bClassMatches = !ActorClass || OwnerActor->IsA(ActorClass);
+            FXToolsErrorReporter::Warning(LogXTools,
+                TEXT("GetTopmostAttachedActor: 检测到组件附加父级循环，已停止查找."),
+                TEXT("GetTopmostAttachedActor"));
+            break;
+        }
 
-            // 条件2: 检查标签是否匹配 (如果ActorTag被指定)
-            const bool bTagMatches = ActorTag.IsNone() || OwnerActor->ActorHasTag(ActorTag);
+        VisitedComponents.Add(CurrentComponent);
+
+        AActor* CurrentActor = CurrentComponent->GetOwner();
+        if (IsValid(CurrentActor) && !VisitedActors.Contains(CurrentActor))
+        {
+            VisitedActors.Add(CurrentActor);
+
+            const bool bClassMatches = !ActorClass || CurrentActor->IsA(ActorClass);
+            const bool bTagMatches = ActorTag.IsNone() || CurrentActor->ActorHasTag(ActorTag);
 
             if (bClassMatches && bTagMatches)
             {
-                // 这是一个有效的匹配项，记录下来。
-                // 由于我们持续向上查找，这个变量会被任何更高层级的匹配项覆盖。
-                HighestMatchingActor = OwnerActor;
+                HighestMatchingActor = CurrentActor;
             }
         }
 
         CurrentComponent = CurrentComponent->GetAttachParent();
         Iterations++;
+    }
+
+    if (IsValid(CurrentComponent) && Iterations >= XTOOLS_MAX_PARENT_DEPTH)
+    {
+        FXToolsErrorReporter::Warning(LogXTools,
+            TEXT("GetTopmostAttachedActor: 达到最大查找深度，结果可能不完整."),
+            TEXT("GetTopmostAttachedActor"));
     }
 
     return HighestMatchingActor;
@@ -355,8 +378,7 @@ AActor* UXToolsLibrary::GetTopmostAttachedActor(USceneComponent* StartComponent,
  * 获取所有附加的子Actor（递归查找）
  * 
  * 使用迭代式广度优先搜索（BFS）算法，避免递归调用导致的栈溢出风险。
- * 核心思想：在遍历过程中动态扩展数组，新发现的子Actor会追加到数组末尾，
- * 循环会自动处理这些新加入的元素，直到没有更多子Actor为止。
+ * 遍历队列和输出数组分离，并使用Visited集合去重，避免重复路径或异常附加关系导致重复输出。
  * 
  * @param ParentActor 要查找的父级Actor
  * @param OutAllChildren 输出的所有子级Actor（包含子级的子级）
@@ -364,10 +386,8 @@ AActor* UXToolsLibrary::GetTopmostAttachedActor(USceneComponent* StartComponent,
  */
 void UXToolsLibrary::GetAllAttachedActorsRecursively(AActor* ParentActor, TArray<AActor*>& OutAllChildren, bool bIncludeSelf)
 {
-    // 1. 清理输出数组，避免脏数据
     OutAllChildren.Reset();
 
-    // 2. 安全检查（IsValid 优于 != nullptr，因为它处理了 PendingKill 状态）
     if (!IsValid(ParentActor))
     {
         FXToolsErrorReporter::Warning(LogXTools,
@@ -376,41 +396,41 @@ void UXToolsLibrary::GetAllAttachedActorsRecursively(AActor* ParentActor, TArray
         return;
     }
 
-    // 3. 如果需要包含自身，先加入
+    TSet<AActor*> VisitedActors;
+    VisitedActors.Add(ParentActor);
+
     if (bIncludeSelf)
     {
         OutAllChildren.Add(ParentActor);
     }
 
-    // 4. 获取第一层子Actor
-    // GetAttachedActors(OutArr, bResetArray, bRecursivelyIncludeAttachedActors)
-    // 第三个参数设为false，我们手动控制递归遍历以获得更好的性能和控制
-    ParentActor->GetAttachedActors(OutAllChildren, false, false);
-    const int32 TraversalStartIndex = bIncludeSelf ? 1 : 0;
+    TArray<AActor*> ActorsToVisit;
+    ActorsToVisit.Reserve(16);
+    ActorsToVisit.Add(ParentActor);
 
-    // 5. 核心算法：迭代式广度优先搜索（BFS）
-    // 不使用递归函数调用，而是直接遍历数组本身
-    // 因为我们在遍历过程中会不断向数组末尾 Add 元素，Num() 会动态增加，
-    // 这个循环会自动处理所有新加入的"孙子"节点
-    for (int32 i = TraversalStartIndex; i < OutAllChildren.Num(); ++i)
+    for (int32 VisitIndex = 0; VisitIndex < ActorsToVisit.Num(); ++VisitIndex)
     {
-        AActor* CurrentActor = OutAllChildren[i];
-
-        if (IsValid(CurrentActor))
+        AActor* CurrentActor = ActorsToVisit[VisitIndex];
+        if (!IsValid(CurrentActor))
         {
-            // 获取当前子Actor的下一级子Actor，并追加到数组末尾
-            // bResetArray = false (不重置，追加模式)
-            // bRecursivelyIncludeAttachedActors = false (我们自己控制递归，只取下一层)
-            CurrentActor->GetAttachedActors(OutAllChildren, false, false);
+            continue;
+        }
+
+        TArray<AActor*> DirectChildren;
+        CurrentActor->GetAttachedActors(DirectChildren, true, false);
+
+        for (AActor* ChildActor : DirectChildren)
+        {
+            if (!IsValid(ChildActor) || VisitedActors.Contains(ChildActor))
+            {
+                continue;
+            }
+
+            VisitedActors.Add(ChildActor);
+            OutAllChildren.Add(ChildActor);
+            ActorsToVisit.Add(ChildActor);
         }
     }
-    
-    // 算法解析：
-    // i=0: 处理 子A。子A 有孩子 A1, A2。A1, A2 被加到数组末尾。
-    // i=1: 处理 子B。子B 有孩子 B1。B1 被加到数组末尾。
-    // ...
-    // 当 i 移动到 A1 的位置时，会继续处理 A1 的孩子。
-    // 直到数组末尾不再增加新元素，循环自然结束。
 }
 
 FVector UXToolsLibrary::EvaluateBezierConstantSpeed(

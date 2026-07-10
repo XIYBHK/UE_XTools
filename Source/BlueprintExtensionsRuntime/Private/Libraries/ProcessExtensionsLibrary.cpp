@@ -34,6 +34,17 @@ namespace
 			{
 				continue;
 			}
+
+			if (It->HasAnyPropertyFlags(CPF_OutParm) && !It->HasAnyPropertyFlags(CPF_ConstParm))
+			{
+				FXToolsErrorReporter::Error(
+					LogBlueprintExtensionsRuntime,
+					FString::Printf(TEXT("%s: 目标 '%s' 的参数 '%s' 是输出/引用参数，不支持通过 payload 调用"),
+						CallerName, *FunctionName, *It->GetName()),
+					CallerName);
+				return nullptr;
+			}
+
 			++ParamCount;
 			if (!FirstParam)
 			{
@@ -81,9 +92,9 @@ namespace
 				return nullptr;
 			}
 		}
-		else if (PayloadProperty->GetClass() != FirstParam->GetClass())
+		else if (!PayloadProperty->SameType(FirstParam))
 		{
-			// 非结构体类型：属性类型须一致
+			// 非结构体类型：属性类型及其反射细节须兼容（例如对象类、容器Inner等）
 			FXToolsErrorReporter::Error(
 				LogBlueprintExtensionsRuntime,
 				FString::Printf(TEXT("%s: 参数属性类型不匹配 '%s'（payload=%s, 目标参数=%s）"),
@@ -93,18 +104,54 @@ namespace
 			return nullptr;
 		}
 
-		// 栈分配大小限制
-		if (PayloadSize > MaxStackAllocSize)
+		// 栈分配大小限制：ProcessEvent 需要完整的 UFunction 参数帧，而不是单个 payload 大小。
+		if (Function->ParmsSize > MaxStackAllocSize)
 		{
 			FXToolsErrorReporter::Error(
 				LogBlueprintExtensionsRuntime,
-				FString::Printf(TEXT("%s: 参数过大 (%d bytes)，超过栈分配限制 (%d bytes): %s"),
-					CallerName, PayloadSize, MaxStackAllocSize, *FunctionName),
+				FString::Printf(TEXT("%s: 函数参数帧过大 (%d bytes)，超过栈分配限制 (%d bytes): %s"),
+					CallerName, Function->ParmsSize, MaxStackAllocSize, *FunctionName),
 				CallerName);
 			return nullptr;
 		}
 
 		return FirstParam;
+	}
+
+	void ProcessEventWithSinglePayload(
+		UObject* FunctionOwnerObject,
+		UFunction* Function,
+		const FProperty* FunctionParam,
+		const FProperty* PayloadProperty,
+		const void* Payload)
+	{
+		if (!IsValid(FunctionOwnerObject) || !Function || !FunctionParam || !PayloadProperty || !Payload)
+		{
+			return;
+		}
+
+		uint8* FunctionParams = static_cast<uint8*>(
+			FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment()));
+		FMemory::Memzero(FunctionParams, Function->ParmsSize);
+
+		for (TFieldIterator<FProperty> It(Function); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+		{
+			FProperty* LocalProp = *It;
+			if (!LocalProp->HasAnyPropertyFlags(CPF_ZeroConstructor))
+			{
+				LocalProp->InitializeValue_InContainer(FunctionParams);
+			}
+		}
+
+		void* TargetParamPtr = FunctionParam->ContainerPtrToValuePtr<void>(FunctionParams);
+		FunctionParam->CopyCompleteValueFromScriptVM(TargetParamPtr, Payload);
+
+		FunctionOwnerObject->ProcessEvent(Function, FunctionParams);
+
+		for (TFieldIterator<FProperty> It(Function); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+		{
+			It->DestroyValue_InContainer(FunctionParams);
+		}
 	}
 }
 
@@ -117,7 +164,7 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallFunctionByName) {
 	P_GET_PROPERTY(FStrProperty, FunctionName);
 
 	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.StepCompiledIn<FStructProperty>(nullptr);
+	Stack.StepCompiledIn<FProperty>(nullptr);
 	void* EventPayload = Stack.MostRecentPropertyAddress;
 	P_FINISH;
 
@@ -132,16 +179,12 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallFunctionByName) {
 				return;
 			}
 
-			const int32 PropertySize = Stack.MostRecentProperty->GetSize();
-			void* FunctionDataPtr = FMemory_Alloca_Aligned(
-				PropertySize,
-				Stack.MostRecentProperty->GetMinAlignment()
-			);
-			Stack.MostRecentProperty->InitializeValue(FunctionDataPtr);
-			Stack.MostRecentProperty->CopyCompleteValue(FunctionDataPtr, EventPayload);
-
-			FunctionOwnerObject->ProcessEvent(Function, FunctionDataPtr);
-			Stack.MostRecentProperty->DestroyValue(FunctionDataPtr);
+			ProcessEventWithSinglePayload(
+				FunctionOwnerObject,
+				Function,
+				ValidatedParam,
+				Stack.MostRecentProperty,
+				EventPayload);
 		}
 	}
 	P_NATIVE_END;
@@ -157,7 +200,7 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallEventByName)
 	P_GET_PROPERTY(FStrProperty, EventName);
 
 	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.StepCompiledIn<FStructProperty>(nullptr);
+	Stack.StepCompiledIn<FProperty>(nullptr);
 	void* EventParamPtr = Stack.MostRecentPropertyAddress;
 	P_FINISH;
 
@@ -173,16 +216,12 @@ DEFINE_FUNCTION(UProcessExtensionsLibrary::execCallEventByName)
 				return;
 			}
 
-			const int32 PropertySize = Stack.MostRecentProperty->GetSize();
-			void* EventData = FMemory_Alloca_Aligned(
-				PropertySize,
-				Stack.MostRecentProperty->GetMinAlignment()
-			);
-			Stack.MostRecentProperty->InitializeValue(EventData);
-			Stack.MostRecentProperty->CopyCompleteValue(EventData, EventParamPtr);
-
-			EventOwnerObject->ProcessEvent(EventFunction, EventData);
-			Stack.MostRecentProperty->DestroyValue(EventData);
+			ProcessEventWithSinglePayload(
+				EventOwnerObject,
+				EventFunction,
+				ValidatedParam,
+				Stack.MostRecentProperty,
+				EventParamPtr);
 		}
 	}
 	P_NATIVE_END;

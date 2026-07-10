@@ -78,6 +78,22 @@ struct FNaturalSortComparator
     }
 };
 
+namespace
+{
+    bool IsSupportedSortProperty(const FProperty* Property)
+    {
+        return Property &&
+            (CastField<FNumericProperty>(Property) ||
+             CastField<FBoolProperty>(Property) ||
+             CastField<FNameProperty>(Property) ||
+             CastField<FStrProperty>(Property) ||
+#if WITH_EDITOR
+             CastField<FTextProperty>(Property) ||
+#endif
+             CastField<FEnumProperty>(Property));
+    }
+}
+
 namespace SortLibrary_Private
 {
     /**
@@ -1027,6 +1043,25 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
         return;
     }
 
+    if (!IsSupportedSortProperty(SortProp))
+    {
+        FXToolsErrorReporter::Warning(
+            LogSort,
+            FString::Printf(TEXT("不支持按属性 '%s' 的类型 '%s' 排序，数组保持原序。"),
+                *PropertyName.ToString(), *SortProp->GetClass()->GetName()),
+            TEXT("GenericSortArrayByProperty"),
+            true,
+            5.0f
+        );
+
+        OriginalIndices.SetNum(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            OriginalIndices[i] = i;
+        }
+        return;
+    }
+
     // 创建索引数组并进行排序
     TArray<int32> Indices;
     Indices.SetNum(ArrayHelper.Num());
@@ -1106,8 +1141,19 @@ T* USortLibrary::FindPropertyByName(const UStruct* Owner, FName FieldName)
 
 bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* LeftValuePtr, const void* RightValuePtr, bool bAscending)
 {
-    if (!Property || !LeftValuePtr || !RightValuePtr)
+    if (!Property)
     {
+        return false;
+    }
+
+    if (!LeftValuePtr || !RightValuePtr)
+    {
+        // 对象数组中可能存在空元素。空元素始终排在有效元素之后，避免比较器缺少明确顺序。
+        if (LeftValuePtr && !RightValuePtr)
+        {
+            return true;
+        }
+
         return false;
     }
 
@@ -1315,7 +1361,7 @@ void* USortLibrary::GetPropertyValuePtr(FScriptArrayHelper& ArrayHelper, FProper
     {
         // 对象属性：先获取对象，再获取属性值
         UObject* Object = ObjectProp->GetObjectPropertyValue(ElementPtr);
-        if (Object)
+        if (IsValid(Object))
         {
             return SortProp->ContainerPtrToValuePtr<void>(Object);
         }
