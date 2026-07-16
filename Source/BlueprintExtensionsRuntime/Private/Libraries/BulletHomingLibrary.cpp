@@ -13,6 +13,7 @@ namespace
 	{
 		bool bHasLocation = false;
 		bool bHasLiveTarget = false;
+		bool bUsesTargetComponent = false;
 		FVector Location = FVector::ZeroVector;
 		FVector Velocity = FVector::ZeroVector;
 	};
@@ -25,6 +26,14 @@ namespace
 	bool IsFiniteRotator(const FRotator& Value)
 	{
 		return FMath::IsFinite(Value.Pitch) && FMath::IsFinite(Value.Yaw) && FMath::IsFinite(Value.Roll);
+	}
+
+	FRotator ComposeVisualRotation(const FRotator& TargetRotation, const FRotator& VisualRotationOffset)
+	{
+		const FRotator SafeTargetRotation = IsFiniteRotator(TargetRotation) ? TargetRotation : FRotator::ZeroRotator;
+		const FRotator SafeVisualRotationOffset = IsFiniteRotator(VisualRotationOffset) ? VisualRotationOffset : FRotator::ZeroRotator;
+		const FRotator Result = (SafeTargetRotation.Quaternion() * SafeVisualRotationOffset.Quaternion()).Rotator().GetNormalized();
+		return IsFiniteRotator(Result) ? Result : SafeTargetRotation.GetNormalized();
 	}
 
 	FVector SafeDirectionOrFallback(const FVector& Direction, const FVector& Fallback)
@@ -44,6 +53,16 @@ namespace
 		return FVector::ForwardVector;
 	}
 
+	FVector SlerpDirection(const FVector& CurrentDirection, const FVector& TargetDirection, float Alpha)
+	{
+		const FVector SafeCurrentDirection = SafeDirectionOrFallback(CurrentDirection, TargetDirection);
+		const FVector SafeTargetDirection = SafeDirectionOrFallback(TargetDirection, SafeCurrentDirection);
+		const float SafeAlpha = FMath::Clamp(FMath::IsFinite(Alpha) ? Alpha : 0.0f, 0.0f, 1.0f);
+		const FQuat DeltaRotation = FQuat::FindBetweenNormals(SafeCurrentDirection, SafeTargetDirection);
+		const FVector InterpolatedDirection = FQuat::Slerp(FQuat::Identity, DeltaRotation, SafeAlpha).RotateVector(SafeCurrentDirection);
+		return SafeDirectionOrFallback(InterpolatedDirection, SafeTargetDirection);
+	}
+
 	float ClampSpeed(float Speed, float MaxSpeed)
 	{
 		const float SafeSpeed = FMath::Max(0.0f, FMath::IsFinite(Speed) ? Speed : 0.0f);
@@ -55,29 +74,59 @@ namespace
 		return SafeSpeed;
 	}
 
-	float InterpScalar(float Current, float Target, float DeltaTime, float InterpRate)
+	float InterpScalar(float Current, float Target, float DeltaTime, float InterpRate, bool bUseImmediateInterpolation)
 	{
-		if (InterpRate <= 0.0f || DeltaTime <= 0.0f)
+		if (DeltaTime <= 0.0f)
+		{
+			return Current;
+		}
+
+		if (bUseImmediateInterpolation)
 		{
 			return Target;
+		}
+
+		if (InterpRate <= 0.0f)
+		{
+			return Current;
 		}
 
 		return FMath::FInterpTo(Current, Target, DeltaTime, InterpRate);
 	}
 
-	FVector InterpDirection(const FVector& CurrentDirection, const FVector& TargetDirection, float DeltaTime, float InterpRate)
+	FVector InterpDirection(
+		const FVector& CurrentDirection,
+		const FVector& TargetDirection,
+		float DeltaTime,
+		float InterpRate,
+		bool bUseImmediateGuidance)
 	{
-		if (InterpRate <= 0.0f || DeltaTime <= 0.0f)
+		if (DeltaTime <= 0.0f)
+		{
+			return CurrentDirection;
+		}
+
+		if (bUseImmediateGuidance)
 		{
 			return TargetDirection;
 		}
 
-		return SafeDirectionOrFallback(FMath::VInterpTo(CurrentDirection, TargetDirection, DeltaTime, InterpRate), TargetDirection);
+		if (InterpRate <= 0.0f)
+		{
+			return CurrentDirection;
+		}
+
+		return SlerpDirection(CurrentDirection, TargetDirection, DeltaTime * InterpRate);
 	}
 
 	FRotator InterpRotation(const FRotator& CurrentRotation, const FRotator& TargetRotation, float DeltaTime, float InterpRate)
 	{
-		if (InterpRate <= 0.0f || DeltaTime <= 0.0f)
+		if (DeltaTime <= 0.0f)
+		{
+			return CurrentRotation;
+		}
+
+		if (InterpRate <= 0.0f)
 		{
 			return TargetRotation;
 		}
@@ -95,39 +144,40 @@ namespace
 		const USceneComponent* TargetComponent,
 		const AActor* TargetActor,
 		const FXToolsBulletHomingOptions& Options,
-		const FXToolsBulletHomingState& State,
-		float DeltaTime)
+		const FXToolsBulletHomingState& State)
 	{
 		FBulletTargetInfo TargetInfo;
 		if (IsValid(TargetComponent))
 		{
-			TargetInfo.Location = TargetComponent->GetComponentLocation();
-			TargetInfo.Velocity = SafeVelocityOrZero(TargetComponent->GetComponentVelocity());
-			TargetInfo.bHasLocation = IsFiniteVector(TargetInfo.Location);
-			TargetInfo.bHasLiveTarget = TargetInfo.bHasLocation;
+			const FVector ComponentLocation = TargetComponent->GetComponentLocation();
+			if (IsFiniteVector(ComponentLocation))
+			{
+				TargetInfo.Location = ComponentLocation;
+				TargetInfo.Velocity = SafeVelocityOrZero(TargetComponent->GetComponentVelocity());
+				TargetInfo.bHasLocation = true;
+				TargetInfo.bHasLiveTarget = true;
+				TargetInfo.bUsesTargetComponent = true;
+			}
 		}
-		else if (IsValid(TargetActor))
+
+		if (!TargetInfo.bHasLiveTarget && IsValid(TargetActor))
 		{
-			TargetInfo.Location = TargetActor->GetActorLocation();
-			TargetInfo.Velocity = SafeVelocityOrZero(TargetActor->GetVelocity());
-			TargetInfo.bHasLocation = IsFiniteVector(TargetInfo.Location);
-			TargetInfo.bHasLiveTarget = TargetInfo.bHasLocation;
+			const FVector ActorLocation = TargetActor->GetActorLocation();
+			if (IsFiniteVector(ActorLocation))
+			{
+				TargetInfo.Location = ActorLocation;
+				TargetInfo.Velocity = SafeVelocityOrZero(TargetActor->GetVelocity());
+				TargetInfo.bHasLocation = true;
+				TargetInfo.bHasLiveTarget = true;
+			}
 		}
-		else if (Options.bContinueAfterTargetInvalid && State.bHasLastTargetLocation && IsFiniteVector(State.LastTargetLocation))
+
+		if (!TargetInfo.bHasLiveTarget && Options.bContinueAfterTargetInvalid && State.bHasLastTargetLocation && IsFiniteVector(State.LastTargetLocation))
 		{
 			TargetInfo.Location = State.LastTargetLocation;
 			TargetInfo.Velocity = FVector::ZeroVector;
 			TargetInfo.bHasLocation = true;
 			TargetInfo.bHasLiveTarget = false;
-		}
-
-		if (TargetInfo.bHasLiveTarget && State.bHasLastTargetLocation && DeltaTime > KINDA_SMALL_NUMBER)
-		{
-			const FVector EstimatedVelocity = (TargetInfo.Location - State.LastTargetLocation) / DeltaTime;
-			if (IsFiniteVector(EstimatedVelocity) && TargetInfo.Velocity.IsNearlyZero())
-			{
-				TargetInfo.Velocity = EstimatedVelocity;
-			}
 		}
 
 		return TargetInfo;
@@ -136,6 +186,18 @@ namespace
 	float PositiveFiniteOrZero(float Value)
 	{
 		return Value > 0.0f && FMath::IsFinite(Value) ? Value : 0.0f;
+	}
+
+	float AdvanceInterpRate(float CurrentRate, float InitialRate, float GrowthRate, float MaxRate, float DeltaTime)
+	{
+		const float SafeInitialRate = PositiveFiniteOrZero(InitialRate);
+		const float SafeGrowthRate = PositiveFiniteOrZero(GrowthRate);
+		const float SafeMaxRate = FMath::Max(SafeInitialRate, PositiveFiniteOrZero(MaxRate));
+		const float SafeCurrentRate = FMath::IsFinite(CurrentRate)
+			? FMath::Clamp(CurrentRate, SafeInitialRate, SafeMaxRate)
+			: SafeInitialRate;
+
+		return FMath::Clamp(SafeCurrentRate + SafeGrowthRate * DeltaTime, SafeInitialRate, SafeMaxRate);
 	}
 
 	FVector ResolveCurrentVelocityForGuidance(
@@ -156,6 +218,11 @@ namespace
 		if (IsValid(ProjectileMovement) && !ProjectileMovement->Velocity.IsNearlyZero() && IsFiniteVector(ProjectileMovement->Velocity))
 		{
 			return ProjectileMovement->Velocity;
+		}
+
+		if (IsValid(ProjectileMovement) && IsValid(ProjectileMovement->UpdatedComponent))
+		{
+			return ProjectileMovement->UpdatedComponent->GetForwardVector();
 		}
 
 		if (IsValid(ProjectileActor))
@@ -198,7 +265,9 @@ namespace
 		const USceneComponent* TargetComponent,
 		const FXToolsBulletHomingState& State)
 	{
-		return State.LastTargetActor.Get() != TargetActor || State.LastTargetComponent.Get() != TargetComponent;
+		const AActor* ValidTargetActor = IsValid(TargetActor) ? TargetActor : nullptr;
+		const USceneComponent* ValidTargetComponent = IsValid(TargetComponent) ? TargetComponent : nullptr;
+		return State.LastTargetActor.Get() != ValidTargetActor || State.LastTargetComponent.Get() != ValidTargetComponent;
 	}
 
 	void ResetTargetDependentState(FXToolsBulletHomingState& State)
@@ -209,6 +278,7 @@ namespace
 		State.bHasLastLineOfSightDirection = false;
 		State.ClosestDistanceToTarget = 0.0f;
 		State.bHasClosestDistance = false;
+		State.InitialDistanceToTarget = 0.0f;
 		State.LastProjectileLocation = FVector::ZeroVector;
 		State.bHasLastProjectileLocation = false;
 		State.DebugTrailPoints.Reset();
@@ -219,8 +289,8 @@ namespace
 		USceneComponent* TargetComponent,
 		FXToolsBulletHomingState& State)
 	{
-		State.LastTargetActor = TargetActor;
-		State.LastTargetComponent = TargetComponent;
+		State.LastTargetActor = IsValid(TargetActor) ? TargetActor : nullptr;
+		State.LastTargetComponent = IsValid(TargetComponent) ? TargetComponent : nullptr;
 	}
 
 	float GetLaunchGuidanceScale(const FXToolsBulletHomingOptions& Options, float ElapsedTime)
@@ -332,10 +402,16 @@ namespace
 		const FVector& InputVelocity,
 		const FBulletTargetInfo& TargetInfo,
 		const FXToolsBulletHomingOptions& Options,
+		float DeltaTime,
 		float GuidanceScale,
 		FVector& OutVelocity)
 	{
 		OutVelocity = InputVelocity;
+		if (!FMath::IsFinite(DeltaTime) || DeltaTime <= 0.0f)
+		{
+			return false;
+		}
+
 		const float ConvergenceDistance = PositiveFiniteOrZero(Options.TerminalConvergenceDistance);
 		if (ConvergenceDistance <= KINDA_SMALL_NUMBER || !IsFiniteVector(CurrentLocation) || !IsFiniteVector(InputVelocity) ||
 			InputVelocity.IsNearlyZero() || !IsFiniteVector(TargetInfo.Location))
@@ -371,19 +447,33 @@ namespace
 			return false;
 		}
 
-		const float RadialSpeed = FVector::DotProduct(InputVelocity, LineOfSightDirection);
-		const FVector TangentialVelocity = InputVelocity - LineOfSightDirection * RadialSpeed;
+		const FVector TargetVelocity = SafeVelocityOrZero(TargetInfo.Velocity);
+		const FVector RelativeVelocity = InputVelocity - TargetVelocity;
+		if (!IsFiniteVector(RelativeVelocity))
+		{
+			return false;
+		}
+
+		const float RadialSpeed = FVector::DotProduct(RelativeVelocity, LineOfSightDirection);
+		const FVector TangentialVelocity = RelativeVelocity - LineOfSightDirection * RadialSpeed;
 		if (!IsFiniteVector(TangentialVelocity))
 		{
 			return false;
 		}
 
-		const float TangentialDamping = FMath::Clamp(Options.TerminalTangentialDamping, 0.0f, 1.0f) * Blend;
+		const float BaseTangentialDamping = FMath::Clamp(Options.TerminalTangentialDamping, 0.0f, 1.0f) * Blend;
+		constexpr float TerminalDampingReferenceFrameRate = 60.0f;
+		const float DampingFrameCount = DeltaTime * TerminalDampingReferenceFrameRate;
+		const float TangentialDamping = FMath::Clamp(
+			1.0f - FMath::Pow(1.0f - BaseTangentialDamping, DampingFrameCount),
+			0.0f,
+			1.0f);
 		const FVector DampedTangentialVelocity = TangentialVelocity * (1.0f - TangentialDamping);
 		const float RadialPullStrength = FMath::Clamp(Options.TerminalRadialPullStrength, 0.0f, 1.0f);
 		const float MinimumRadialSpeed = CurrentSpeed * RadialPullStrength * Blend;
 		const float ConvergedRadialSpeed = FMath::Max(RadialSpeed, MinimumRadialSpeed);
-		FVector ConvergedVelocity = DampedTangentialVelocity + LineOfSightDirection * ConvergedRadialSpeed;
+		const FVector ConvergedRelativeVelocity = DampedTangentialVelocity + LineOfSightDirection * ConvergedRadialSpeed;
+		FVector ConvergedVelocity = TargetVelocity + ConvergedRelativeVelocity;
 		if (!IsFiniteVector(ConvergedVelocity) || ConvergedVelocity.IsNearlyZero())
 		{
 			return false;
@@ -416,6 +506,20 @@ namespace
 	{
 		if (State.bHasLastProjectileLocation && IsFiniteVector(State.LastProjectileLocation))
 		{
+			if (State.bHasLastTargetLocation && IsFiniteVector(State.LastTargetLocation))
+			{
+				const FVector PreviousRelativeLocation = State.LastTargetLocation - State.LastProjectileLocation;
+				const FVector CurrentRelativeLocation = TargetLocation - CurrentLocation;
+				if (IsFiniteVector(PreviousRelativeLocation) && IsFiniteVector(CurrentRelativeLocation))
+				{
+					const FVector ClosestRelativeLocation = FMath::ClosestPointOnSegment(
+						FVector::ZeroVector,
+						PreviousRelativeLocation,
+						CurrentRelativeLocation);
+					return ClosestRelativeLocation.Size();
+				}
+			}
+
 			const FVector ClosestPoint = FMath::ClosestPointOnSegment(TargetLocation, State.LastProjectileLocation, CurrentLocation);
 			return FVector::Dist(ClosestPoint, TargetLocation);
 		}
@@ -433,7 +537,10 @@ namespace
 			return false;
 		}
 
-		const FVector PreviousToTarget = TargetLocation - State.LastProjectileLocation;
+		const FVector PreviousTargetLocation = State.bHasLastTargetLocation && IsFiniteVector(State.LastTargetLocation)
+			? State.LastTargetLocation
+			: TargetLocation;
+		const FVector PreviousToTarget = PreviousTargetLocation - State.LastProjectileLocation;
 		const FVector CurrentToTarget = TargetLocation - CurrentLocation;
 		return IsFiniteVector(PreviousToTarget) && IsFiniteVector(CurrentToTarget) &&
 			!PreviousToTarget.IsNearlyZero() && FVector::DotProduct(PreviousToTarget, CurrentToTarget) <= 0.0f;
@@ -443,11 +550,11 @@ namespace
 		const FVector& CurrentLocation,
 		const FVector& TargetLocation,
 		float DistanceToTarget,
+		float ClosestFrameDistance,
 		const FXToolsBulletHomingOptions& Options,
 		const FXToolsBulletHomingState& State)
 	{
 		const float CaptureRadius = PositiveFiniteOrZero(Options.CaptureRadius);
-		const float ClosestFrameDistance = CalculateClosestFrameDistanceToTarget(CurrentLocation, TargetLocation, State);
 		if (CaptureRadius > 0.0f)
 		{
 			if (ClosestFrameDistance <= CaptureRadius)
@@ -460,8 +567,9 @@ namespace
 		if ((Options.bDetectPassedTarget || Options.bCaptureWhenPassedTarget) && PassedTargetDistance > 0.0f && State.bHasClosestDistance)
 		{
 			constexpr float PassedDistanceHysteresis = 1.0f;
-			const bool bStartedMovingAway = State.ClosestDistanceToTarget <= PassedTargetDistance &&
-				DistanceToTarget > State.ClosestDistanceToTarget + PassedDistanceHysteresis;
+			const float ClosestDistanceSoFar = FMath::Min(State.ClosestDistanceToTarget, ClosestFrameDistance);
+			const bool bStartedMovingAway = ClosestDistanceSoFar <= PassedTargetDistance &&
+				DistanceToTarget > ClosestDistanceSoFar + PassedDistanceHysteresis;
 			const bool bCrossedTargetPlane = ClosestFrameDistance <= PassedTargetDistance &&
 				DidCrossTargetPlane(CurrentLocation, TargetLocation, State);
 			if (bStartedMovingAway || bCrossedTargetPlane)
@@ -523,7 +631,7 @@ namespace
 		OutActorRotation = IsValid(ProjectileActor) ? ProjectileActor->GetActorRotation() : TargetRotation;
 		OutVisualRotation = IsValid(VisualComponent)
 			? VisualComponent->GetComponentRotation()
-			: (TargetRotation + Options.VisualRotationOffset).GetNormalized();
+			: ComposeVisualRotation(TargetRotation, Options.VisualRotationOffset);
 	}
 
 	UWorld* ResolveWorld(const AActor* ProjectileActor, const UProjectileMovementComponent* ProjectileMovement)
@@ -634,6 +742,43 @@ namespace
 		ProjectileMovement->Velocity = ProjectileMovement->LimitVelocity(Velocity);
 		ProjectileMovement->UpdateComponentVelocity();
 	}
+
+	void RestoreTerminalStoppedProjectileMovement(FXToolsBulletHomingState& State)
+	{
+		if (UProjectileMovementComponent* StoppedProjectileMovement = State.TerminalStoppedProjectileMovement.Get())
+		{
+			if (State.SpeedBeforeTerminalStop > KINDA_SMALL_NUMBER && StoppedProjectileMovement->Velocity.IsNearlyZero())
+			{
+				const FVector ResumeVelocity = SafeDirectionOrFallback(State.CurrentDirection, FVector::ForwardVector) * State.SpeedBeforeTerminalStop;
+				StoppedProjectileMovement->Velocity = StoppedProjectileMovement->LimitVelocity(ResumeVelocity);
+				StoppedProjectileMovement->UpdateComponentVelocity();
+			}
+
+			if (State.bSimulationPausedByTerminalStatus)
+			{
+				StoppedProjectileMovement->bSimulationEnabled = true;
+			}
+		}
+
+		State.bSimulationPausedByTerminalStatus = false;
+		State.TerminalStoppedProjectileMovement.Reset();
+	}
+
+	void RestoreTerminalStoppedSpeed(
+		const UProjectileMovementComponent* ProjectileMovement,
+		const FXToolsBulletHomingOptions& Options,
+		FXToolsBulletHomingState& State)
+	{
+		if (State.CurrentSpeed <= KINDA_SMALL_NUMBER)
+		{
+			const float ResumeSpeed = State.SpeedBeforeTerminalStop > KINDA_SMALL_NUMBER
+				? State.SpeedBeforeTerminalStop
+				: InitialSpeedFromInputs(ProjectileMovement, Options);
+			State.CurrentSpeed = ClampSpeed(ResumeSpeed, Options.MaxSpeed);
+		}
+
+		State.SpeedBeforeTerminalStop = 0.0f;
+	}
 }
 
 bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
@@ -654,44 +799,152 @@ bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
 	OutWorldVelocity = FVector::ZeroVector;
 	OutActorRotation = IsValid(ProjectileActor) ? ProjectileActor->GetActorRotation() : FRotator::ZeroRotator;
 	OutVisualRotation = IsValid(VisualComponent) ? VisualComponent->GetComponentRotation() : FRotator::ZeroRotator;
+	if (!Options.bApplyVelocityToProjectileMovement)
+	{
+		RestoreTerminalStoppedProjectileMovement(State);
+	}
 
-	if (!IsValid(ProjectileActor) && !IsValid(ProjectileMovement))
+	const bool bHasProjectileActor = IsValid(ProjectileActor);
+	const bool bHasProjectileMovement = IsValid(ProjectileMovement);
+	const bool bHasUpdatedComponent = bHasProjectileMovement && IsValid(ProjectileMovement->UpdatedComponent);
+	USceneComponent* UpdatedComponent = bHasUpdatedComponent ? ProjectileMovement->UpdatedComponent : nullptr;
+	const bool bPausedByTerminalStatus = bHasUpdatedComponent &&
+		State.bSimulationPausedByTerminalStatus &&
+		State.TerminalStoppedProjectileMovement.Get() == ProjectileMovement &&
+		IsTerminalStatus(State.LatchedTerminalStatus);
+	const bool bCanApplyProjectileMovement = bHasUpdatedComponent &&
+		UpdatedComponent->Mobility == EComponentMobility::Movable &&
+		!UpdatedComponent->IsSimulatingPhysics() &&
+		(ProjectileMovement->bSimulationEnabled || bPausedByTerminalStatus);
+	const AActor* MovementReferenceOwner = bHasUpdatedComponent
+		? UpdatedComponent->GetOwner()
+		: (bHasProjectileMovement ? ProjectileMovement->GetOwner() : nullptr);
+	const bool bProjectileInputsMatch = !bHasProjectileActor || !bHasProjectileMovement ||
+		MovementReferenceOwner == ProjectileActor;
+	if ((!bHasProjectileActor && !bHasUpdatedComponent) ||
+		(Options.bApplyVelocityToProjectileMovement && !bCanApplyProjectileMovement) ||
+		!bProjectileInputsMatch)
+	{
+		return false;
+	}
+
+	const FVector CurrentLocation = bHasUpdatedComponent
+		? UpdatedComponent->GetComponentLocation()
+		: ProjectileActor->GetActorLocation();
+	if (!IsFiniteVector(CurrentLocation))
 	{
 		return false;
 	}
 
 	const float SafeDeltaTime = FMath::Max(0.0f, FMath::IsFinite(DeltaTime) ? DeltaTime : 0.0f);
-	if (DidTargetChange(TargetActor, TargetComponent, State))
+	const bool bHasValidTargetIdentity = IsValid(TargetComponent) || IsValid(TargetActor);
+	FBulletTargetInfo TargetInfo = ResolveTargetInfo(
+		TargetComponent,
+		TargetActor,
+		Options,
+		State);
+	AActor* ResolvedTargetActor = TargetInfo.bHasLiveTarget && IsValid(TargetActor) ? TargetActor : nullptr;
+	USceneComponent* ResolvedTargetComponent = TargetInfo.bHasLiveTarget && TargetInfo.bUsesTargetComponent && IsValid(TargetComponent)
+		? TargetComponent
+		: nullptr;
+	const bool bTargetChanged = TargetInfo.bHasLiveTarget
+		? DidTargetChange(ResolvedTargetActor, ResolvedTargetComponent, State)
+		: DidTargetChange(TargetActor, TargetComponent, State);
+	if (TargetInfo.bHasLiveTarget && !bTargetChanged && State.bHasLastTargetLocation && SafeDeltaTime > KINDA_SMALL_NUMBER)
 	{
-		ResetTargetDependentState(State);
-		UpdateCachedTargetIdentity(TargetActor, TargetComponent, State);
+		const FVector EstimatedVelocity = (TargetInfo.Location - State.LastTargetLocation) / SafeDeltaTime;
+		if (IsFiniteVector(EstimatedVelocity) && TargetInfo.Velocity.IsNearlyZero())
+		{
+			TargetInfo.Velocity = EstimatedVelocity;
+		}
 	}
-	const FBulletTargetInfo TargetInfo = ResolveTargetInfo(TargetComponent, TargetActor, Options, State, SafeDeltaTime);
-
-	const FVector CurrentLocation = IsValid(ProjectileMovement) && IsValid(ProjectileMovement->UpdatedComponent)
-		? ProjectileMovement->UpdatedComponent->GetComponentLocation()
-		: (IsValid(ProjectileActor) ? ProjectileActor->GetActorLocation() : FVector::ZeroVector);
+	if (bTargetChanged)
+	{
+		if (TargetInfo.bHasLiveTarget)
+		{
+			ResetTargetDependentState(State);
+			UpdateCachedTargetIdentity(ResolvedTargetActor, ResolvedTargetComponent, State);
+		}
+		else if (!bHasValidTargetIdentity)
+		{
+			UpdateCachedTargetIdentity(TargetActor, TargetComponent, State);
+		}
+	}
+	if (!TargetInfo.bHasLocation && !Options.bContinueAfterTargetInvalid && !IsTerminalStatus(State.LatchedTerminalStatus))
+	{
+		OutStatus = EXToolsBulletHomingStatus::TargetInvalid;
+		SetOutputsFromState(ProjectileActor, VisualComponent, Options, State, OutWorldVelocity, OutActorRotation, OutVisualRotation);
+		UpdateDebugTrail(CurrentLocation, Options, State);
+		State.LastProjectileLocation = CurrentLocation;
+		State.bHasLastProjectileLocation = true;
+		return false;
+	}
 
 	const FVector InitialDirection = InitialDirectionFromInputs(ProjectileActor, ProjectileMovement);
 	if (!State.bInitialized)
 	{
-		State.CurrentDirection = SafeDirectionOrFallback(InitialDirection, IsValid(ProjectileActor) ? ProjectileActor->GetActorForwardVector() : FVector::ForwardVector);
+		State.CurrentDirection = SafeDirectionOrFallback(InitialDirection, FVector::ForwardVector);
 		State.CurrentSpeed = ClampSpeed(InitialSpeedFromInputs(ProjectileMovement, Options), Options.MaxSpeed);
+		State.CurrentSpeedInterpRate = PositiveFiniteOrZero(Options.SpeedInterpRate);
+		State.CurrentDirectionInterpRate = PositiveFiniteOrZero(Options.DirectionInterpRate);
 		State.bInitialized = true;
 	}
+	if (TargetInfo.bHasLiveTarget && (!State.bTrackingStarted || bTargetChanged))
+	{
+		const bool bWasStoppedOnTerminalStatus = IsTerminalStatus(State.LatchedTerminalStatus);
+		RestoreTerminalStoppedProjectileMovement(State);
+		if (bWasStoppedOnTerminalStatus)
+		{
+			RestoreTerminalStoppedSpeed(ProjectileMovement, Options, State);
+		}
+
+		State.ElapsedTime = 0.0f;
+		State.CurrentSpeedInterpRate = PositiveFiniteOrZero(Options.SpeedInterpRate);
+		State.CurrentDirectionInterpRate = PositiveFiniteOrZero(Options.DirectionInterpRate);
+		State.bTrackingStarted = true;
+		State.LatchedTerminalStatus = EXToolsBulletHomingStatus::Tracking;
+	}
 	const float PreviousElapsedTime = State.ElapsedTime;
-	State.ElapsedTime += SafeDeltaTime;
+	const bool bHoldingTerminalStatus = Options.bStopMovementOnTerminalStatus && IsTerminalStatus(State.LatchedTerminalStatus);
+	if (State.bTrackingStarted && !bHoldingTerminalStatus)
+	{
+		State.ElapsedTime += SafeDeltaTime;
+	}
+	if (!Options.bStopMovementOnTerminalStatus)
+	{
+		const bool bWasStoppedOnTerminalStatus = IsTerminalStatus(State.LatchedTerminalStatus);
+		RestoreTerminalStoppedProjectileMovement(State);
+		if (bWasStoppedOnTerminalStatus)
+		{
+			RestoreTerminalStoppedSpeed(ProjectileMovement, Options, State);
+		}
+		State.LatchedTerminalStatus = EXToolsBulletHomingStatus::Tracking;
+	}
 
 	FVector TargetDirection = State.CurrentDirection;
 	FVector AimLocation = FVector::ZeroVector;
 	EXToolsBulletHomingStatus TerminalStatus = EXToolsBulletHomingStatus::Tracking;
+	const float DistanceToTarget = TargetInfo.bHasLocation
+		? FVector::Dist(CurrentLocation, TargetInfo.Location)
+		: 0.0f;
 	if (TargetInfo.bHasLocation)
 	{
-		const float DistanceToTarget = FVector::Dist(CurrentLocation, TargetInfo.Location);
 		if (TargetInfo.bHasLiveTarget)
 		{
-			TerminalStatus = EvaluateTerminalStatus(CurrentLocation, TargetInfo.Location, DistanceToTarget, Options, State);
-			UpdateClosestDistance(DistanceToTarget, State);
+			if (State.InitialDistanceToTarget <= KINDA_SMALL_NUMBER && FMath::IsFinite(DistanceToTarget))
+			{
+				State.InitialDistanceToTarget = DistanceToTarget;
+			}
+
+			const float ClosestFrameDistance = CalculateClosestFrameDistanceToTarget(CurrentLocation, TargetInfo.Location, State);
+			TerminalStatus = EvaluateTerminalStatus(
+				CurrentLocation,
+				TargetInfo.Location,
+				DistanceToTarget,
+				ClosestFrameDistance,
+				Options,
+				State);
+			UpdateClosestDistance(ClosestFrameDistance, State);
 		}
 		else
 		{
@@ -709,28 +962,35 @@ bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
 
 		TargetDirection = SafeDirectionOrFallback(AimLocation - CurrentLocation, State.CurrentDirection);
 	}
-	else if (!Options.bContinueAfterTargetInvalid)
+
+	if (Options.bStopMovementOnTerminalStatus && IsTerminalStatus(State.LatchedTerminalStatus))
 	{
-		OutStatus = EXToolsBulletHomingStatus::TargetInvalid;
-		SetOutputsFromState(ProjectileActor, VisualComponent, Options, State, OutWorldVelocity, OutActorRotation, OutVisualRotation);
-		UpdateDebugTrail(CurrentLocation, Options, State);
-		State.LastProjectileLocation = CurrentLocation;
-		State.bHasLastProjectileLocation = true;
-		return false;
+		TerminalStatus = State.LatchedTerminalStatus;
 	}
 
 	if (Options.bStopMovementOnTerminalStatus && IsTerminalStatus(TerminalStatus))
 	{
+		State.LatchedTerminalStatus = TerminalStatus;
 		OutStatus = TerminalStatus;
 		OutWorldVelocity = FVector::ZeroVector;
+		if (State.CurrentSpeed > KINDA_SMALL_NUMBER)
+		{
+			State.SpeedBeforeTerminalStop = State.CurrentSpeed;
+		}
 		State.CurrentSpeed = 0.0f;
 		const FRotator CurrentRotation = SafeDirectionOrFallback(State.CurrentDirection, FVector::ForwardVector).Rotation();
 		OutActorRotation = IsValid(ProjectileActor) ? ProjectileActor->GetActorRotation() : CurrentRotation;
-		OutVisualRotation = IsValid(VisualComponent) ? VisualComponent->GetComponentRotation() : (CurrentRotation + Options.VisualRotationOffset).GetNormalized();
+		OutVisualRotation = IsValid(VisualComponent) ? VisualComponent->GetComponentRotation() : ComposeVisualRotation(CurrentRotation, Options.VisualRotationOffset);
 
-		if (IsValid(ProjectileMovement))
+		if (Options.bApplyVelocityToProjectileMovement && IsValid(ProjectileMovement))
 		{
 			ApplyProjectileMovementVelocity(ProjectileMovement, FVector::ZeroVector, Options);
+			State.TerminalStoppedProjectileMovement = ProjectileMovement;
+			if (ProjectileMovement->bSimulationEnabled)
+			{
+				ProjectileMovement->bSimulationEnabled = false;
+				State.bSimulationPausedByTerminalStatus = true;
+			}
 		}
 
 		UpdateDebugTrail(CurrentLocation, Options, State);
@@ -743,41 +1003,88 @@ bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
 
 	const float RequestedTargetSpeed = Options.TargetSpeed > 0.0f ? Options.TargetSpeed : State.CurrentSpeed;
 	const float TargetSpeed = ClampSpeed(RequestedTargetSpeed, Options.MaxSpeed);
-	State.CurrentSpeed = ClampSpeed(InterpScalar(State.CurrentSpeed, TargetSpeed, SafeDeltaTime, Options.SpeedInterpRate), Options.MaxSpeed);
+	const bool bUseImmediateSpeedInterpolation =
+		PositiveFiniteOrZero(Options.SpeedInterpRate) <= KINDA_SMALL_NUMBER &&
+		PositiveFiniteOrZero(Options.SpeedInterpRateGrowth) <= KINDA_SMALL_NUMBER;
+	if (State.bTrackingStarted)
+	{
+		State.CurrentSpeed = ClampSpeed(
+			InterpScalar(State.CurrentSpeed, TargetSpeed, SafeDeltaTime, State.CurrentSpeedInterpRate, bUseImmediateSpeedInterpolation),
+			Options.MaxSpeed);
+		State.CurrentSpeedInterpRate = AdvanceInterpRate(
+			State.CurrentSpeedInterpRate,
+			Options.SpeedInterpRate,
+			Options.SpeedInterpRateGrowth,
+			Options.MaxSpeedInterpRate,
+			SafeDeltaTime);
+	}
 	const float GuidanceScale = GetLaunchGuidanceScale(Options, PreviousElapsedTime);
+	const float MaxDirectionInterpRate = FMath::Max(
+		PositiveFiniteOrZero(Options.DirectionInterpRate),
+		PositiveFiniteOrZero(Options.MaxDirectionInterpRate));
+	const bool bUseImmediateDirectionGuidance =
+		PositiveFiniteOrZero(Options.DirectionInterpRate) <= KINDA_SMALL_NUMBER &&
+		PositiveFiniteOrZero(Options.DirectionInterpRateGrowth) <= KINDA_SMALL_NUMBER;
+	const float ProgressiveGuidanceScale = bUseImmediateDirectionGuidance
+		? GuidanceScale
+		: (MaxDirectionInterpRate > KINDA_SMALL_NUMBER
+			? GuidanceScale * FMath::Clamp(State.CurrentDirectionInterpRate / MaxDirectionInterpRate, 0.0f, 1.0f)
+			: 0.0f);
+	const float FullGuidanceDistanceRatio = FMath::Clamp(Options.FullGuidanceDistanceRatio, 0.0f, 1.0f);
+	const bool bUseFullGuidance = TargetInfo.bHasLiveTarget &&
+		SafeDeltaTime > 0.0f &&
+		FullGuidanceDistanceRatio > 0.0f &&
+		State.InitialDistanceToTarget > KINDA_SMALL_NUMBER &&
+		FMath::IsFinite(DistanceToTarget) &&
+		DistanceToTarget / State.InitialDistanceToTarget <= FullGuidanceDistanceRatio &&
+		GuidanceScale >= 1.0f - KINDA_SMALL_NUMBER;
 	const FVector GuidanceCurrentDirection = SafeDirectionOrFallback(
 		ResolveCurrentVelocityForGuidance(ProjectileMovement, State),
 		State.CurrentDirection);
 	const FVector CurrentVelocity = GuidanceCurrentDirection * State.CurrentSpeed;
+	const FVector GuidanceTargetDirection = TargetInfo.bHasLocation ? TargetDirection : GuidanceCurrentDirection;
 	if (TargetInfo.bHasLocation && Options.GuidanceMode == EXToolsBulletGuidanceMode::ProportionalNavigation)
 	{
 		const FVector LineOfSightDirection = SafeDirectionOrFallback(TargetInfo.Location - CurrentLocation, State.CurrentDirection);
-		FVector GuidedVelocity = CurrentVelocity;
-		const bool bAppliedPN = TryCalculateProportionalNavigationVelocity(
-			CurrentLocation,
-			CurrentVelocity,
-			TargetInfo,
-			Options,
-			SafeDeltaTime,
-			GuidanceScale,
-			GuidedVelocity);
-
-		if (bAppliedPN)
+		if (bUseFullGuidance)
 		{
-			State.CurrentDirection = SafeDirectionOrFallback(GuidedVelocity, State.CurrentDirection);
+			State.CurrentDirection = TargetDirection;
 		}
 		else
 		{
-			const FVector ScaledTargetDirection = GuidanceScale < 1.0f
-				? SafeDirectionOrFallback(FMath::Lerp(State.CurrentDirection, TargetDirection, GuidanceScale), State.CurrentDirection)
-				: TargetDirection;
-			State.CurrentDirection = InterpDirection(State.CurrentDirection, ScaledTargetDirection, SafeDeltaTime, Options.DirectionInterpRate);
+			FVector GuidedVelocity = CurrentVelocity;
+			const bool bAppliedPN = TryCalculateProportionalNavigationVelocity(
+				CurrentLocation,
+				CurrentVelocity,
+				TargetInfo,
+				Options,
+				SafeDeltaTime,
+				ProgressiveGuidanceScale,
+				GuidedVelocity);
+
+			if (bAppliedPN)
+			{
+				State.CurrentDirection = SafeDirectionOrFallback(GuidedVelocity, GuidanceCurrentDirection);
+			}
+			else
+			{
+				const FVector ScaledTargetDirection = GuidanceScale < 1.0f
+					? SlerpDirection(GuidanceCurrentDirection, GuidanceTargetDirection, GuidanceScale)
+					: GuidanceTargetDirection;
+				State.CurrentDirection = InterpDirection(
+					GuidanceCurrentDirection,
+					ScaledTargetDirection,
+					SafeDeltaTime,
+					State.CurrentDirectionInterpRate,
+					bUseImmediateDirectionGuidance);
+			}
 		}
 
 		FVector TerminalVelocity = State.CurrentDirection * State.CurrentSpeed;
-		if (TryApplyTerminalConvergenceVelocity(CurrentLocation, TerminalVelocity, TargetInfo, Options, GuidanceScale, TerminalVelocity))
+		if (TryApplyTerminalConvergenceVelocity(CurrentLocation, TerminalVelocity, TargetInfo, Options, SafeDeltaTime, ProgressiveGuidanceScale, TerminalVelocity))
 		{
 			State.CurrentDirection = SafeDirectionOrFallback(TerminalVelocity, State.CurrentDirection);
+			State.CurrentSpeed = ClampSpeed(TerminalVelocity.Size(), Options.MaxSpeed);
 		}
 
 		State.LastLineOfSightDirection = LineOfSightDirection;
@@ -785,16 +1092,38 @@ bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
 	}
 	else
 	{
-		const FVector ScaledTargetDirection = GuidanceScale < 1.0f
-			? SafeDirectionOrFallback(FMath::Lerp(State.CurrentDirection, TargetDirection, GuidanceScale), State.CurrentDirection)
-			: TargetDirection;
-		State.CurrentDirection = InterpDirection(State.CurrentDirection, ScaledTargetDirection, SafeDeltaTime, Options.DirectionInterpRate);
+		if (bUseFullGuidance)
+		{
+			State.CurrentDirection = TargetDirection;
+		}
+		else
+		{
+			const FVector ScaledTargetDirection = GuidanceScale < 1.0f
+				? SlerpDirection(GuidanceCurrentDirection, GuidanceTargetDirection, GuidanceScale)
+				: GuidanceTargetDirection;
+			State.CurrentDirection = InterpDirection(
+				GuidanceCurrentDirection,
+				ScaledTargetDirection,
+				SafeDeltaTime,
+				State.CurrentDirectionInterpRate,
+				bUseImmediateDirectionGuidance);
+		}
 
 		if (TargetInfo.bHasLocation)
 		{
 			State.LastLineOfSightDirection = SafeDirectionOrFallback(TargetInfo.Location - CurrentLocation, State.CurrentDirection);
 			State.bHasLastLineOfSightDirection = true;
 		}
+	}
+
+	if (State.bTrackingStarted)
+	{
+		State.CurrentDirectionInterpRate = AdvanceInterpRate(
+			State.CurrentDirectionInterpRate,
+			Options.DirectionInterpRate,
+			Options.DirectionInterpRateGrowth,
+			Options.MaxDirectionInterpRate,
+			SafeDeltaTime);
 	}
 
 	OutWorldVelocity = State.CurrentDirection * State.CurrentSpeed;
@@ -817,25 +1146,55 @@ bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
 	}
 
 	const FRotator TargetRotation = State.CurrentDirection.Rotation();
+	const bool bProjectileMovementUsesActorVelocityRotation =
+		IsValid(ProjectileActor) &&
+		IsValid(ProjectileMovement) &&
+		ProjectileMovement->bRotationFollowsVelocity &&
+		IsValid(ProjectileMovement->UpdatedComponent) &&
+		ProjectileMovement->UpdatedComponent == ProjectileActor->GetRootComponent() &&
+		!ProjectileMovement->UpdatedComponent->IsSimulatingPhysics();
+	FRotator OutputActorRotation = TargetRotation;
+	if (bProjectileMovementUsesActorVelocityRotation && ProjectileMovement->bRotationRemainsVertical)
+	{
+		OutputActorRotation.Pitch = 0.0f;
+		OutputActorRotation.Yaw = FRotator::NormalizeAxis(OutputActorRotation.Yaw);
+		OutputActorRotation.Roll = 0.0f;
+	}
 	if (Options.bUpdateActorRotation && IsValid(ProjectileActor))
 	{
-		OutActorRotation = InterpRotation(ProjectileActor->GetActorRotation(), TargetRotation, SafeDeltaTime, Options.RotationInterpRate);
-		ProjectileActor->SetActorRotation(OutActorRotation);
+		const FRotator RequestedActorRotation = bProjectileMovementUsesActorVelocityRotation
+			? OutputActorRotation
+			: InterpRotation(ProjectileActor->GetActorRotation(), TargetRotation, SafeDeltaTime, Options.RotationInterpRate);
+		ProjectileActor->SetActorRotation(RequestedActorRotation);
+		OutActorRotation = ProjectileActor->GetActorRotation();
 	}
 	else
 	{
-		OutActorRotation = TargetRotation;
+		OutActorRotation = OutputActorRotation;
 	}
 
-	if (Options.bUpdateVisualComponentRotation && IsValid(VisualComponent))
+	const AActor* VisualComponentOwner = IsValid(VisualComponent) ? VisualComponent->GetOwner() : nullptr;
+	const bool bVisualComponentIsActorRoot =
+		IsValid(VisualComponentOwner) &&
+		VisualComponent == VisualComponentOwner->GetRootComponent();
+	if (Options.bUpdateVisualComponentRotation && IsValid(VisualComponent) && !bVisualComponentIsActorRoot)
 	{
-		const FRotator TargetVisualRotation = (TargetRotation + Options.VisualRotationOffset).GetNormalized();
-		OutVisualRotation = InterpRotation(VisualComponent->GetComponentRotation(), TargetVisualRotation, SafeDeltaTime, Options.RotationInterpRate);
-		VisualComponent->SetWorldRotation(OutVisualRotation);
+		const FRotator TargetVisualRotation = ComposeVisualRotation(TargetRotation, Options.VisualRotationOffset);
+		const FRotator RequestedVisualRotation = InterpRotation(
+			VisualComponent->GetComponentRotation(),
+			TargetVisualRotation,
+			SafeDeltaTime,
+			Options.RotationInterpRate);
+		VisualComponent->SetWorldRotation(RequestedVisualRotation);
+		OutVisualRotation = VisualComponent->GetComponentRotation();
+	}
+	else if (bVisualComponentIsActorRoot)
+	{
+		OutVisualRotation = VisualComponent->GetComponentRotation();
 	}
 	else
 	{
-		OutVisualRotation = (TargetRotation + Options.VisualRotationOffset).GetNormalized();
+		OutVisualRotation = ComposeVisualRotation(TargetRotation, Options.VisualRotationOffset);
 	}
 
 	UpdateDebugTrail(CurrentLocation, Options, State);
@@ -850,5 +1209,6 @@ bool UBulletHomingLibrary::UpdateHomingProjectileMovement(
 
 void UBulletHomingLibrary::ResetHomingProjectileState(FXToolsBulletHomingState& State)
 {
+	RestoreTerminalStoppedProjectileMovement(State);
 	State = FXToolsBulletHomingState();
 }

@@ -41,8 +41,40 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingState
 	float CurrentSpeed = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "终端停止前速度"))
+	float SpeedBeforeTerminalStop = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "当前方向"))
 	FVector CurrentDirection = FVector::ForwardVector;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "当前速度插值速率"))
+	float CurrentSpeedInterpRate = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "当前转向响应"))
+	float CurrentDirectionInterpRate = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "初始目标距离"))
+	float InitialDistanceToTarget = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "已开始追踪"))
+	bool bTrackingStarted = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "锁存终端状态"))
+	EXToolsBulletHomingStatus LatchedTerminalStatus = EXToolsBulletHomingStatus::Tracking;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "终端状态已暂停组件模拟"))
+	bool bSimulationPausedByTerminalStatus = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "终端状态停止的移动组件", AdvancedDisplay))
+	TWeakObjectPtr<UProjectileMovementComponent> TerminalStoppedProjectileMovement;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "最后目标位置"))
@@ -53,7 +85,7 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingState
 	bool bHasLastTargetLocation = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
-		meta = (DisplayName = "已飞行时间"))
+		meta = (DisplayName = "追踪会话时间"))
 	float ElapsedTime = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
@@ -106,37 +138,62 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingOptions
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "初始速度", ClampMin = "0.0", UIMin = "0.0",
 			ToolTip = "首次更新状态时使用的显式初始速度，单位为cm/s。大于0时优先生效；小于等于0时使用ProjectileMovement当前速度、组件InitialSpeed或目标速度。"))
-	float InitialSpeed = 0.0f;
+	float InitialSpeed = 2500.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "目标速度", ClampMin = "0.0", UIMin = "0.0",
 			ToolTip = "追踪希望达到的速度，单位为cm/s。小于等于0时保持当前速度。"))
-	float TargetSpeed = 0.0f;
+	float TargetSpeed = 6000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "最大速度", ClampMin = "0.0", UIMin = "0.0",
 			ToolTip = "速度上限，单位为cm/s。小于等于0时不额外限制；写入ProjectileMovement时会同步到组件MaxSpeed。"))
-	float MaxSpeed = 0.0f;
+	float MaxSpeed = 6000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
-		meta = (DisplayName = "速度插值速度", ClampMin = "0.0", UIMin = "0.0",
-			ToolTip = "当前速度插值到目标速度的速度。小于等于0时立即使用目标速度。"))
-	float SpeedInterpRate = 5.0f;
+		meta = (DisplayName = "初始速度插值速率", ClampMin = "0.0", UIMin = "0.0",
+			ToolTip = "开始追踪时速度插值到目标速度的初始速率。该值会按速度插值增长率逐步提高；初始值和增长率均为0时立即使用目标速度。"))
+	float SpeedInterpRate = 0.75f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
-		meta = (DisplayName = "方向插值速度", ClampMin = "0.0", UIMin = "0.0",
-			ToolTip = "当前飞行方向插值到目标方向的速度。小于等于0时立即朝向目标。"))
-	float DirectionInterpRate = 8.0f;
+		meta = (DisplayName = "速度插值增长率", ClampMin = "0.0", UIMin = "0.0",
+			ToolTip = "速度插值速率每秒增加的数值。0表示保持初始速度插值速率。"))
+	float SpeedInterpRateGrowth = 3.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "最大速度插值速率", ClampMin = "0.0", UIMin = "0.0",
+			ToolTip = "速度插值速率允许达到的上限。低于初始速度插值速率时按初始值处理。"))
+	float MaxSpeedInterpRate = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "初始转向响应", ClampMin = "0.0", UIMin = "0.0",
+			ToolTip = "开始追踪时的转向响应。纯追踪和预测拦截将其作为方向插值速率；比例导引按当前值与最大值的比例缩放横向制导和末端收束强度，避免再次插值PN速度产生帧率依赖。初始值和增长率均为0时立即使用完整制导。"))
+	float DirectionInterpRate = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "转向响应增长率", ClampMin = "0.0", UIMin = "0.0",
+			ToolTip = "转向响应每秒增加的数值。0表示保持初始转向响应。"))
+	float DirectionInterpRateGrowth = 2.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "最大转向响应", ClampMin = "0.0", UIMin = "0.0",
+			ToolTip = "转向响应允许达到的上限。低于初始值时按初始值处理；比例导引将当前值达到该上限视为完整制导强度。"))
+	float MaxDirectionInterpRate = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
+		meta = (DisplayName = "完全制导距离比例", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0",
+			ToolTip = "当前目标距离与初始目标距离之比小于等于该值时，直接使用完整制导方向。0表示不保留末段完全制导区间。"))
+	float FullGuidanceDistanceRatio = 0.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "旋转插值速度", ClampMin = "0.0", UIMin = "0.0",
-			ToolTip = "Actor/外观组件旋转插值到速度方向的速度。小于等于0时立即对齐。"))
-	float RotationInterpRate = 12.0f;
+			ToolTip = "Actor/外观组件旋转插值到速度方向的速度。小于等于0时立即对齐；若ProjectileMovement控制Actor根组件并启用RotationFollowsVelocity，Actor按组件规则立即对齐。"))
+	float RotationInterpRate = 10.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "发射直飞时间", ClampMin = "0.0", UIMin = "0.0",
 			ToolTip = "前多少秒保持发射方向为主，单位为秒。用于模拟导弹先离开发射器再开始强追踪。"))
-	float LaunchStraightTime = 0.0f;
+	float LaunchStraightTime = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "发射段制导倍率", ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0",
@@ -159,36 +216,36 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingOptions
 		meta = (DisplayName = "PN导航增益", ClampMin = "0.0", UIMin = "0.0",
 			EditCondition = "GuidanceMode == EXToolsBulletGuidanceMode::ProportionalNavigation", EditConditionHides,
 			ToolTip = "比例导引模式的导航增益，常用范围约3到5。值越大转向越积极，但过高可能抖动或过冲。"))
-	float NavigationGain = 3.0f;
+	float NavigationGain = 3.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "最大制导加速度", ClampMin = "0.0", UIMin = "0.0",
 			EditCondition = "GuidanceMode == EXToolsBulletGuidanceMode::ProportionalNavigation", EditConditionHides,
 			ToolTip = "比例导引模式每秒可施加的最大横向速度修正，单位为cm/s²。小于等于0时不额外限制。"))
-	float MaxGuidanceAcceleration = 8000.0f;
+	float MaxGuidanceAcceleration = 12000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "末端收束距离", ClampMin = "0.0", UIMin = "0.0", AdvancedDisplay,
 			EditCondition = "GuidanceMode == EXToolsBulletGuidanceMode::ProportionalNavigation", EditConditionHides,
 			ToolTip = "比例导引模式下，距离目标小于该值时逐步压低切向速度并增强朝向目标的径向速度，减少高速近目标绕圈。小于等于0时不启用。"))
-	float TerminalConvergenceDistance = 2500.0f;
+	float TerminalConvergenceDistance = 2000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "末端径向拉力", ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0", AdvancedDisplay,
 			EditCondition = "GuidanceMode == EXToolsBulletGuidanceMode::ProportionalNavigation && TerminalConvergenceDistance > 0", EditConditionHides,
 			ToolTip = "末端收束时朝目标方向的最低径向速度比例。1表示接近目标时尽量把当前速度转为朝目标飞行；0表示不额外增强径向速度。"))
-	float TerminalRadialPullStrength = 1.0f;
+	float TerminalRadialPullStrength = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "末端切向阻尼", ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0", AdvancedDisplay,
 			EditCondition = "GuidanceMode == EXToolsBulletGuidanceMode::ProportionalNavigation && TerminalConvergenceDistance > 0", EditConditionHides,
-			ToolTip = "末端收束时削减绕目标切线方向速度的强度。0不削减；1在最接近目标时最大程度压低绕圈趋势。"))
-	float TerminalTangentialDamping = 0.85f;
+			ToolTip = "末端收束时削减绕目标切线方向速度的强度。0不削减；1在最接近目标时最大程度压低绕圈趋势。阻尼会按DeltaTime换算，保持不同帧率下的收束强度一致。"))
+	float TerminalTangentialDamping = 0.9f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "捕获半径", ClampMin = "0.0", UIMin = "0.0",
 			ToolTip = "距离目标小于等于该半径时输出已捕获，单位为cm。小于等于0时不启用。"))
-	float CaptureRadius = 80.0f;
+	float CaptureRadius = 100.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "越过目标视为捕获",
@@ -197,19 +254,19 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingOptions
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "捕获后停止运动",
-			ToolTip = "为真时，输出已捕获或已越过目标后立即输出零速度，并停止写入的ProjectileMovement速度，避免蓝图未立即销毁子弹时继续绕圈。"))
+			ToolTip = "为真时，输出已捕获或已越过目标后立即输出零速度；启用写入ProjectileMovement时还会暂停组件模拟，避免重力或原生Homing在下一帧恢复运动。重新开始有效追踪时会自动恢复模拟。"))
 	bool bStopMovementOnTerminalStatus = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "检测越过目标",
 			ToolTip = "为真时，弹体曾进入越过判定距离后又远离目标，会输出已越过目标。"))
-	bool bDetectPassedTarget = false;
+	bool bDetectPassedTarget = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "越过判定距离", ClampMin = "0.0", UIMin = "0.0",
 			EditCondition = "bDetectPassedTarget || bCaptureWhenPassedTarget", EditConditionHides,
 			ToolTip = "启用越过目标检测或越过视为捕获时，最近距离曾小于等于该值且当前距离开始变大时触发终端状态，单位为cm。"))
-	float PassedTargetDistance = 300.0f;
+	float PassedTargetDistance = 350.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "目标无效后继续飞行",
@@ -218,17 +275,17 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingOptions
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "写入ProjectileMovement",
-			ToolTip = "为真时将计算出的世界速度写入ProjectileMovementComponent::Velocity，并同步节点最大速度到组件MaxSpeed。若ProjectileMovement已启用原生Homing，通常应关闭其中一方。"))
+			ToolTip = "为真时将计算出的世界速度写入ProjectileMovementComponent::Velocity，并同步节点最大速度到组件MaxSpeed。启用时必须传入模拟已启用、具有Movable UpdatedComponent且未模拟物理的ProjectileMovement；由本节点终态暂停的组件会自动恢复。若组件已启用原生Homing，通常应关闭其中一方。"))
 	bool bApplyVelocityToProjectileMovement = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "更新Actor旋转",
-			ToolTip = "为真时将Actor旋转平滑对齐到新的世界速度方向。若ProjectileMovement已启用RotationFollowsVelocity，通常应关闭其中一方。"))
-	bool bUpdateActorRotation = false;
+			ToolTip = "为真时将Actor旋转对齐到新的世界速度方向。若ProjectileMovement控制Actor根组件并启用RotationFollowsVelocity，本节点会按组件的RotationRemainsVertical规则同帧同步；否则使用旋转插值速度。"))
+	bool bUpdateActorRotation = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "更新外观组件旋转",
-			ToolTip = "为真且传入外观组件时，将外观组件世界旋转对齐到速度方向并叠加外观旋转偏移。外观组件通常是子弹的模型、特效或其父级场景组件。"))
+			ToolTip = "为真且传入外观组件时，将外观组件世界旋转对齐到速度方向并叠加外观旋转偏移。外观组件应为非根组件的模型、特效或其父级场景组件；传入Actor根组件时不会单独写入旋转，避免与Actor旋转冲突。"))
 	bool bUpdateVisualComponentRotation = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
@@ -245,13 +302,13 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingOptions
 		meta = (DisplayName = "调试持续时间", ClampMin = "0.0", UIMin = "0.0",
 			EditCondition = "bDrawDebug", EditConditionHides,
 			ToolTip = "调试线条保留时间，单位为秒。0表示只显示当前帧；调大后轨迹会在停止追踪后继续保留一段时间。"))
-	float DebugDrawTime = 5.0f;
+	float DebugDrawTime = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "速度线长度", ClampMin = "0.0", UIMin = "0.0",
 			EditCondition = "bDrawDebug", EditConditionHides,
 			ToolTip = "调试绘制中速度方向线的长度，单位为cm。"))
-	float DebugVelocityLineLength = 150.0f;
+	float DebugVelocityLineLength = 200.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "绘制轨迹线",
@@ -263,7 +320,7 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsBulletHomingOptions
 		meta = (DisplayName = "轨迹最大点数", ClampMin = "2", UIMin = "2", UIMax = "512",
 			EditCondition = "bDrawDebug && bDrawDebugTrail", EditConditionHides,
 			ToolTip = "调试轨迹最多保留的点数。数值越大轨迹越长，但绘制成本更高。"))
-	int32 MaxDebugTrailPoints = 256;
+	int32 MaxDebugTrailPoints = 64;
 };
 
 UCLASS()
@@ -275,7 +332,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "XTools|蓝图扩展|子弹",
 		meta = (DisplayName = "更新追踪弹运动",
 			Keywords = "Bullet Projectile Homing Tracking Missile Velocity Rotation 子弹 追踪 导弹 速度 旋转",
-			ToolTip = "执行一次自定义追踪弹运动更新：支持纯追踪、预测拦截和比例导引，可选写入ProjectileMovement并更新Actor/外观组件旋转。适合放在Timer或Tick中替换复杂蓝图追踪数学；不要与ProjectileMovement原生Homing同时控制同一个速度。",
+			ToolTip = "执行一次自定义追踪弹运动更新：支持纯追踪、预测拦截和比例导引，可选写入ProjectileMovement并更新Actor/外观组件旋转。同时传入子弹Actor与ProjectileMovement时，实际运动参考组件必须属于该Actor。适合放在Timer或Tick中替换复杂蓝图追踪数学；每枚弹应使用独立状态，目标瞬移或对象池换弹前应重置状态；不要与ProjectileMovement原生Homing同时控制同一个速度。",
 			AdvancedDisplay = "TargetComponent,VisualComponent"))
 	static bool UpdateHomingProjectileMovement(
 		UPARAM(DisplayName = "子弹Actor") AActor* ProjectileActor,
@@ -292,9 +349,9 @@ public:
 		UPARAM(DisplayName = "新外观旋转") FRotator& OutVisualRotation);
 
 	UFUNCTION(BlueprintCallable, Category = "XTools|蓝图扩展|子弹",
-		meta = (DisplayName = "重置追踪弹状态",
+		meta = (DisplayName = "重置并恢复追踪弹状态",
 			Keywords = "Bullet Projectile Homing Reset State 子弹 追踪 重置 状态",
-			ToolTip = "重置更新追踪弹运动节点使用的运行时状态。通常在生成子弹、切换目标或重新开始追踪前调用。"))
+			ToolTip = "重置更新追踪弹运动节点使用的运行时状态，并恢复由该节点的终端状态暂停的ProjectileMovement模拟与停止前速度。应在生成子弹、目标瞬移、对象池换弹、更换移动组件或重新开始追踪前调用。"))
 	static void ResetHomingProjectileState(
 		UPARAM(ref, DisplayName = "状态") FXToolsBulletHomingState& State);
 };
