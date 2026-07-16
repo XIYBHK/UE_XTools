@@ -130,6 +130,8 @@ python .\Scripts\ue_blueprint_export_flow.py ".\Docs\ref\BP_Base_Bullet\from_uas
 .\BuildPlugin-MultiUE.ps1 -EngineRoots "D:\Program Files\Epic Games\UE_5.4","D:\Program Files\Epic Games\UE_5.5","F:\ProgramFiles\UE_5.6" -CleanOutput -Follow
 ```
 
+以上命令用于可选的本地打包预检。正式发布时先推送发布提交到 `main`，再创建并推送 `v{版本号}` 注释标签；`build-plugin-optimized.yml` 负责正式多版本打包并创建 GitHub Release，`manual-release.yml` 仅用于补建或修复发行版。
+
 #### **自定义输出**
 ```powershell
 # 输出到指定目录

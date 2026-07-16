@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
+	"Version": 2,
 	"VersionName": "1.9.6",
 	"FriendlyName": "XTools",
 	"Description": "集成了部分第三方插件,仅供内部使用,请勿传播.",

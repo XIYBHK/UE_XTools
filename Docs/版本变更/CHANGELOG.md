@@ -1,5 +1,264 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.6 (2026-07-16)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 新增功能
+- **AxisLocker**: 新增物理轴向锁定模块、蓝图预设和状态恢复栈
+- **BlueprintExtensionsRuntime**: 新增追踪弹运动、样条跟随移动和 Mesh 反馈能力
+- **PointSampling**: 新增静态网格体体素点位及材质颜色采样
+- **X_AssetEditor**: 新增材质颜色烘焙和蓝图逻辑流导出工具
+- **BlueprintExtensions**: 新增带延迟 WhileLoop 和可中断循环节点
+
+### 重要修复
+- **BlueprintExtensionsRuntime**: 完善追踪弹制导、末端捕获及组件状态恢复
+- **多模块**: 修复蓝图节点边界、对象生命周期和跨版本编译问题
+- **ObjectPool / EnhancedCodeFlow**: 完善对象池与异步流程生命周期管理
+
+### 性能优化
+- **PointSampling**: 优化体素化、纹理采样和统计规模保护
+- **Sort / RandomShuffles**: 减少热路径分配并提升排序稳定性
+- **FormationSystem**: 优化阵型计算容差、成本计算和性能埋点
+
+</details>
+
+<details>
+<summary><strong>代码审查修复 (2026-06-11)</strong></summary>
+
+- 修复 Sort.Runtime 删除 8 个无用编辑器依赖
+- 修复 ObjectPool.Runtime 删除 3 个无用编辑器依赖
+- 修复 FormationSystem.Runtime 删除 4 个无用编辑器依赖
+- 修复 SortEditor 删除 EditorStyle 残留依赖
+- 调整 FormationLibrary 15 个 BlueprintPure 改为 BlueprintCallable
+- 新增 FormationMovementComponent AcceptanceRadius ForceUnits="cm"
+- 新增 XToolsLibrary 传统 API 4 个参数添加 UIMin/UIMax/ForceUnits
+
+</details>
+<details>
+<summary><strong>XToolsCore</strong></summary>
+
+- 调整 防御宏改 inline constexpr，版本兼容宏归类整理
+
+</details>
+<details>
+<summary><strong>XTools</strong></summary>
+
+- 新增 PRD 测试最大循环次数限制
+- 新增 补充贝塞尔采样配置编辑器元数据
+- 调整 获取最高附加父Actor包含起始组件所属Actor，并增加循环检测、无效对象检查和最大深度保护
+- 修复 获取所有附加子Actor递归遍历改为队列去重，避免重复路径或异常附加关系导致重复输出
+
+</details>
+<details>
+<summary><strong>Scripts</strong></summary>
+
+- 新增 蓝图资产复制文本导出脚本，支持从真实 Blueprint 资产导出 Graph 节点复制文本与 manifest
+
+</details>
+<details>
+<summary><strong>AxisLocker</strong></summary>
+
+- 新增 物理轴向锁定运行时模块
+- 新增 蓝图预设与状态恢复栈
+- 修复 组件目标选择改名称下拉
+
+</details>
+<details>
+<summary><strong>BlueprintExtensions / BlueprintExtensionsRuntime</strong></summary>
+
+- 新增 带延迟的 WhileLoop 蓝图节点，支持事件图 Latent 循环与 Break 中断
+- 新增 样条轨迹-导弹随机流节点，支持可复现的导弹预览样条随机偏转
+- 新增 Mesh反馈节点，支持按网格体类型和组件Tag收集Actor网格体，并可从Actor或网格体数组批量创建/缓存动态材质实例
+- 新增 追踪弹运动节点支持纯追踪、预测拦截和比例导引
+- 新增 追踪弹运动节点轨迹调试绘制
+- 优化 追踪弹比例导引算法
+- 优化 追踪弹PN末端收束
+- 优化 追踪弹末端捕获，减少近目标绕圈
+- 优化 追踪弹轨迹调试保留时间
+- 修复 追踪弹大仰角发射不追踪
+- 修复 追踪弹初始速度被组件速度覆盖
+- 优化 追踪弹写入组件速度同步
+- 优化 追踪弹最大速度同步组件
+- 优化 追踪弹速度与转向插值率渐进增长，并支持按初始距离比例进入完全制导
+- 优化 追踪弹默认速度、制导、末端捕获与调试参数，默认配置可直接用于常规第三人称追踪弹
+- 修复 追踪弹在获得有效目标前提前耗尽发射段与渐进制导阶段
+- 修复 追踪弹终端状态仅写入零速度但组件模拟仍会恢复运动
+- 优化 追踪弹PN渐进制导的零速率语义，并在组件启用速度旋转时同帧同步Actor旋转
+- 修复 追踪弹覆盖外部组件暂停状态、终端结果未锁存及换目标后零速重启
+- 优化 追踪弹方向响应在纯追踪与比例导引模式下的参数说明和旋转输出一致性
+- 修复 追踪弹继承组件速度时终端后换目标永久零速，并同步垂直旋转模式的输出结果
+- 修复 追踪弹仅凭RotationFollowsVelocity误判组件已接管Actor旋转，并明确重置节点的运动恢复语义与追踪会话计时
+- 修复 追踪弹渐进插值首帧提前增长、目标失效回退不稳定与组件旋转延后一帧
+- 修复 追踪弹PN末端切向阻尼帧率依赖，并修正零初始转向响应配合正增长率时的首帧突转
+- 修复 追踪弹零速度插值率配合正增长率时直接跳速、零最大转向响应下制导模式不一致及零DeltaTime仍执行末端收束
+- 修复 追踪弹末端收束速度大小未写回、零DeltaTime仍触发完全制导及外观根组件覆盖Actor旋转
+- 修复 追踪弹移动目标帧间捕获、越过及历史最近距离判定误差
+- 修复 追踪弹正后方目标方向插值死锁及已停止ProjectileMovement仍报告成功
+- 优化 追踪弹终端恢复组件归属，并明确目标瞬移与对象池复用的状态重置约束
+- 修复 追踪弹发射段制导倍率在反向目标时跳变及非有限弹体位置仍继续追踪
+- 修复 追踪弹非法位置提前消费目标切换状态及无效外观旋转偏移传播
+- 修复 追踪弹首次无目标时提前固化运动状态，并使用UpdatedComponent朝向初始化无Actor静止弹体
+- 修复 追踪弹新目标位置暂时非法时提前消费目标切换，并按相对速度执行移动目标PN末端收束
+- 修复 追踪弹非PN路径忽略组件实际速度方向，并同步外观组件实际旋转输出
+- 修复 追踪弹无法驱动物理或静态UpdatedComponent时仍报告成功，并校验子弹Actor与移动组件归属一致
+- 修复 追踪弹外部暂停时仍推进制导状态，并在终态锁存期间冻结追踪会话时间
+- 修复 追踪弹关闭组件写入后未归还终态暂停，并补齐空UpdatedComponent时的移动组件归属校验
+- 修复 Map 函数边界检查和循环逻辑
+- 优化 Map_Identical 算法性能（嵌套循环优化）
+- 修复 变量反射 API 逻辑错误与空对象检查（IsValid）
+- 修复 ProcessExtensions payload 调用参数帧构造，支持非结构体单参数并拒绝 out/ref 参数
+- 修复 对象属性复制改用反射 CopyCompleteValue，避免文本导入导出造成类型丢失
+- 调整 K2Node 编译报错由 Error 改 Warning
+- 修复 K2Node 重建引脚校验优雅降级（ensureMsgf）
+- 修复 带延迟循环节点限制为事件图使用，避免函数/宏图展开 Latent 节点导致编译崩溃
+- 修复 带 Break 的循环节点 Completed 执行路径，避免 Break 后完成分支连接不完整
+- 修复 ForEachMap/ForEachSet 遍历改为快照数组，避免循环体修改容器后索引漂移
+- 调整 统一连接接口（TryConnect）与日志类别归位
+- 优化 样条轨迹、支撑系统、炮塔旋转节点输入校验、中文分类和 Tooltip 说明
+- 优化 样条轨迹曲率/随机因子钳制，避免 NaN 或极端参数污染样条
+- 优化 支撑系统 Trace/PID 输出默认值和非法输入恢复逻辑
+- 优化 炮塔旋转角度钳制，支持跨 -180/180 和接近 360 度全范围旋转
+- 新增 样条线跟随移动函数库，支持 AddMovementInput 与 AI MoveTo 目标点、停止/往返/循环终点行为、调试绘制、初始右偏移捕获，并提供偏移路径速度补偿用于队形对齐
+- 修复 样条跟随角色速度补偿受 MaxWalkSpeed/MaxAcceleration 限制导致外圈掉队
+- 修复 样条跟随速度补偿恢复生命周期
+- 修复 开放样条循环停在端点
+- 优化 样条跟随节点关键参数直露，计算节点兼容 Actor
+- 优化 样条跟随节点参数说明
+- 优化 样条跟随参数 Tooltip 换行
+- 优化 样条跟随 Tick 路径静默无效输入
+- 调整 样条跟随闭合样条按终点行为处理
+- 移除 样条参考Actor队形实验逻辑
+- 新增 样条偏移按半宽限制到缩放范围
+
+</details>
+<details>
+<summary><strong>ComponentTimeline</strong></summary>
+
+- 修复 时间轴组件生命周期（Construction Script 重建问题）
+- 调整 K2Node 报错改 Warning，日志归位到模块类别
+
+</details>
+<details>
+<summary><strong>EnhancedCodeFlow</strong></summary>
+
+- 修复 协程生命周期管理（异步任务崩溃）
+- 修复 时间处理逻辑（累加方式跟踪超时）
+- 修复 循环模式双重 Tick 问题
+- 调整 WhileTrueExecute 增加是否在初始化时立即评估条件的参数，供蓝图延迟循环安全展开使用
+- 新增 Owner 有效性检查
+- 新增 协程异常处理和错误标记
+
+</details>
+<details>
+<summary><strong>ObjectPool</strong></summary>
+
+- 增强 统计信息管理（新增 TotalReturned 字段）
+- 修复 生命周期管理（OnReturnToPool 事件调用）
+- 优化 ContainsActor 性能（O(n)→O(1)，TSet 索引）
+- 新增 ClearTimersAndEvents 状态重置
+- 移除 多余头文件包含（Engine.h）
+- 修复 类指针缓存改弱引用避免 GC 悬空
+- 移除 删除重复的预分配策略字段
+- 优化 统计归入专属 StatGroup
+- 优化 SpawnActorFromPool 在子系统返回空 Actor 时回退普通生成
+- 调整 Shipping 保留 Warning/Error 日志
+
+</details>
+<details>
+<summary><strong>Sort / SortEditor / RandomShuffles</strong></summary>
+
+- 新增 SortEditor RebuildDynamicPins 递归调用保护
+- 优化 HeapSort 消除 TFunction 堆分配
+- 优化 PRD 常量表改静态数组消除堆分配
+- 修复 字符串 KeyFuncs 标准化跨版本编译
+- 修复 通用数组随机采样输出状态不一致
+- 修复 严格权重随机采样拒绝负数/NaN权重，避免输出数量越界
+- 修复 属性排序遇到不支持属性时提前保持原序，避免比较器返回 false 后仍交换元素
+- 优化 属性排序空对象比较顺序，避免对象数组存在空元素时排序不稳定
+- 优化 使用 thread_local 避免 PRD 状态共享污染
+- 调整 K2Node 报错由 Error 改 Warning
+- 调整 日志归位到 LogSortEditor，移除冗余 Super 调用
+- 新增 补充排序参数编辑器范围
+
+</details>
+<details>
+<summary><strong>FormationSystem</strong></summary>
+
+- 优化 阵型尺寸比较容差计算（相对容差替代硬编码）
+- 新增 Z 维度尺寸检查
+- 修复 浮点精度问题（Acos/DotProduct Clamp 钳位）
+- 移除 冗余 ensure() 调用
+- 修复 螺旋检测相关系数公式（补距离平方和）
+- 新增 实现阵型接口回调通知（IFormationInterface）
+- 优化 热路径添加 Stats 性能埋点
+- 修复 编队成本计算防御空数组越界
+
+</details>
+<details>
+<summary><strong>FieldSystemExtensions</strong></summary>
+
+- 修复 空指针二次调用竞态条件（lambda 存储 GetOwner）
+- 调整 关闭无 Tick 逻辑 Actor 的默认 Tick
+
+</details>
+<details>
+<summary><strong>PointSampling / GeometryTool</strong></summary>
+
+- 新增 从静态网格体生成体素点位节点，支持表面体素化、内部填充和颜色/材质索引输出
+- 优化 从静态网格体生成体素点位节点的体素化性能、内存/工作量保护和极端输入诊断
+- 优化 从静态网格体生成体素点位节点的内部填充上限处理，避免因包围盒最大可能体素数过早返回空结果，改为输出达到 MaxVoxelCount 时截断
+- 优化 体素点位节点支持CPU可读资产顶点色插值、UV采样材质贴图颜色和编辑器BaseColor链简单颜色常量回退
+- 优化 体素点位节点输出资产顶点色数量、CPU访问和启用状态诊断
+- 修复 纹理采样缓冲区越界风险（RGBA16/RGBA16F 边界检查）
+- 修复 材质渲染世界上下文错误（采样失效）
+- 优化 采样统计函数添加规模上限保护
+- 新增 不支持的形状类型警告
+- 优化 禁用组件不必要的 Tick（降低 CPU 开销）
+- 优化 圆形采点缓存 Owner 减少重复调用
+
+</details>
+<details>
+<summary><strong>X_AssetEditor</strong></summary>
+
+- 新增 静态网格体右键材质烘焙工具，默认复制资产后将材质 BaseColor 按 UV 写入副本资产顶点色，便于体素点位节点优先采样真实颜色数据
+- 新增 蓝图右键逻辑流导出工具，输出 JSON 与 Markdown 图表/节点/引脚/连接信息
+- 优化 GenerateUniqueAssetName 性能（O(N²) → O(N)）
+- 修复 Lambda 捕获悬空指针风险（弱引用模式）
+- 优化 自动规范命名导入检测（添加文件时间戳备用通道）
+- 优化 简化用户操作上下文检测逻辑
+- 修复 命名冲突后缀统一为两位补零
+- 优化 消除材质函数检查的临时 UObject
+- 优化 集合参数改 const 引用避免拷贝
+- 新增 批量修改 Pivot 支持中途取消
+
+</details>
+<details>
+<summary><strong>BlueprintAssist / ElectronicNodes</strong></summary>
+
+- 修复 数组访问边界检查（GetLeftSibling 索引越界）
+- 移除 禁用第三方崩溃遥测上报（隐私）
+- 修复 废弃样式集名改用 FAppStyle
+- 移除 清理重复模块依赖
+- 新增 引擎私有路径版本守卫注释
+
+</details>
+<details>
+<summary><strong>BlueprintScreenshotTool</strong></summary>
+
+- 修复 RenderTarget 空指针检查
+
+</details>
+<details>
+<summary><strong>多模块</strong></summary>
+
+- 调整 编辑器依赖收敛为 Private 依赖
+- 新增 补充 UPROPERTY 编辑器元数据（范围/单位/条件显示）
+
+</details>
+
+---
 ## 版本 v1.9.5 (2026-01-31)
 
 <details>

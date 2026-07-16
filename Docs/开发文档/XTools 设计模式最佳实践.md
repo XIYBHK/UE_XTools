@@ -4,7 +4,7 @@
 
 [![UE Version](https://img.shields.io/badge/UE-5.3-blue.svg)](https://www.unrealengine.com/)
 [![Architecture](https://img.shields.io/badge/Architecture-Design_Patterns-green.svg)]()
-[![Version](https://img.shields.io/badge/Version-1.7.0-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
+[![Version](https://img.shields.io/badge/Version-1.9.6-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
 
 ## 📋 目录
 

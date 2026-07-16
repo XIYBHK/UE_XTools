@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.6），提供蓝图节点和 C++ 功能库。插件采用多模块架构（21个模块），每个模块独立编译和打包。
+XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.6），提供蓝图节点和 C++ 功能库。插件采用多模块架构（23个模块），每个模块独立编译和打包。
 
 **核心设计原则**：
 - 单一职责原则：每个模块专注于一个特定功能领域
@@ -207,9 +207,11 @@ FXToolsErrorReporter::Warning(
 
 1. 开发阶段在 `Docs/版本变更/UNRELEASED.md` 记录变更
 2. 发布时用 `changelog-generator` 技能整理到 `CHANGELOG.md`
-3. 更新 `XTools.uplugin` 版本号和 `README.md` 版本徽章
-4. 运行 `.\Scripts\BuildPlugin-MultiUE.ps1 -Follow` 测试打包
-5. 推送后用 GitHub Actions `manual-release.yml` 创建发布
+3. 同步 `XToolsDefines.h`、`XTools.uplugin`、`README.md`、`CLAUDE.md` 和 `AGENTS.md` 中的版本信息
+4. 完成版本一致性、更新日志结构和 `git diff --check` 发布前检查；本地多版本打包仅作可选预检
+5. 提交并推送 `main`，再创建并推送 `v{版本号}` 注释标签
+6. `build-plugin-optimized.yml` 在标签推送后执行正式多版本打包并创建 GitHub Release
+7. `manual-release.yml` 仅用于补建或修复 Release，使用前必须确认资产对应目标提交
 
 ### UNRELEASED.md 格式
 ```markdown
@@ -231,6 +233,6 @@ VS Code 调试：启动 UE 编辑器 → Run → Attach to Process → 选择 UE
 
 ## GitHub Actions
 
-- `build-plugin-optimized.yml`: 推送/PR 时自动多版本编译测试
-- `manual-release.yml`: 手动触发，从 CHANGELOG.md 提取说明创建 Release
+- `build-plugin-optimized.yml`: 手动触发构建，或在 `v*` 标签推送时构建并创建 Release
+- `manual-release.yml`: 手动补建或更新 Release，必要时创建目标标签
 - `update-release-assets.yml`: 更新已有 Release 的资产文件

@@ -6,14 +6,15 @@
 
 ## OVERVIEW
 
-UE 5.3-5.7 模块化蓝图工具插件 (v1.9.6)，22个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
+UE 5.3-5.7 模块化蓝图工具插件 (v1.9.6)，23个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
 
 ## STRUCTURE
 
 ```
 XTools/
-├── Source/                    # 22个模块源码
+├── Source/                    # 23个模块源码
 │   ├── XToolsCore/            # [基础层] 版本兼容 + 错误处理 + 通用宏
+│   ├── AxisLocker/            # [运行时] 物理轴向锁定 + 状态恢复
 │   ├── ObjectPool/            # [运行时] Actor对象池子系统
 │   ├── XTools_EnhancedCodeFlow/ # [运行时] 异步流程控制 + 协程
 │   ├── BlueprintExtensionsRuntime/ # [运行时] 蓝图函数库 (14+库)
@@ -78,6 +79,7 @@ XToolsCore (PreDefault)
 | CI/CD | `.github/workflows/` | build-plugin-optimized.yml |
 | 打包脚本 | `Scripts/BuildPlugin-MultiUE.ps1` | `-Follow` 实时日志 |
 | 版本记录 | `Docs/版本变更/UNRELEASED.md` | 开发中变更写这里 |
+| 版本发布 | `CLAUDE.md` 版本发布流程 | 标签触发构建并创建 Release |
 
 ## CONVENTIONS
 
