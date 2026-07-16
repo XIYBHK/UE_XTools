@@ -518,11 +518,13 @@ namespace
 
 	bool TryGetBaseColorPropertyTexture(const UMaterialInterface* Material, UTexture2D*& OutTexture)
 	{
+		OutTexture = nullptr;
 		if (!Material)
 		{
 			return false;
 		}
 
+#if WITH_EDITOR
 		TArray<UTexture*> Textures;
 		if (!const_cast<UMaterialInterface*>(Material)->GetTexturesInPropertyChain(MP_BaseColor, Textures, nullptr, nullptr) || Textures.Num() == 0)
 		{
@@ -568,6 +570,9 @@ namespace
 		}
 
 		return OutTexture != nullptr;
+#else
+		return false;
+#endif
 	}
 
 	bool TryGetUsedMaterialTextureColor(const UMaterialInterface* Material, UTexture2D*& OutTexture)

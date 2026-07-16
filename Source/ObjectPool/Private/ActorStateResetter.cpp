@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
+#include "TimerManager.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/ActorComponent.h"
 

@@ -14,6 +14,7 @@
 
 ### 重要修复
 - **BlueprintExtensionsRuntime**: 完善追踪弹制导、末端捕获及组件状态恢复
+- **多版本兼容**: 修复 UE 5.3-5.7 BuildPlugin 编译问题
 - **多模块**: 修复蓝图节点边界、对象生命周期和跨版本编译问题
 - **ObjectPool / EnhancedCodeFlow**: 完善对象池与异步流程生命周期管理
 
@@ -68,6 +69,8 @@
 <details>
 <summary><strong>BlueprintExtensions / BlueprintExtensionsRuntime</strong></summary>
 
+- 修复 追踪弹调试宏在关闭调试绘制的构建中未定义
+- 修复 延迟循环节点使用已移除的浮点比较函数导致 UE 5.5+ 编译失败
 - 新增 带延迟的 WhileLoop 蓝图节点，支持事件图 Latent 循环与 Break 中断
 - 新增 样条轨迹-导弹随机流节点，支持可复现的导弹预览样条随机偏转
 - 新增 Mesh反馈节点，支持按网格体类型和组件Tag收集Actor网格体，并可从Actor或网格体数组批量创建/缓存动态材质实例
@@ -154,6 +157,7 @@
 <details>
 <summary><strong>ObjectPool</strong></summary>
 
+- 修复 Actor 状态重置缺少 TimerManager 完整类型
 - 增强 统计信息管理（新增 TotalReturned 字段）
 - 修复 生命周期管理（OnReturnToPool 事件调用）
 - 优化 ContainsActor 性能（O(n)→O(1)，TSet 索引）
@@ -206,6 +210,7 @@
 <details>
 <summary><strong>PointSampling / GeometryTool</strong></summary>
 
+- 修复 RenderTarget 创建与编辑器材质链 API 的非编辑器编译兼容
 - 新增 从静态网格体生成体素点位节点，支持表面体素化、内部填充和颜色/材质索引输出
 - 优化 从静态网格体生成体素点位节点的体素化性能、内存/工作量保护和极端输入诊断
 - 优化 从静态网格体生成体素点位节点的内部填充上限处理，避免因包围盒最大可能体素数过早返回空结果，改为输出达到 MaxVoxelCount 时截断

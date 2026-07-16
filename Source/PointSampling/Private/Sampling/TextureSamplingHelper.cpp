@@ -22,6 +22,7 @@
 #include "PointSamplingTypes.h"
 #include "Sampling/PointDeduplicationHelper.h"
 #include "TextureResource.h"
+#include "UObject/Package.h"
 
 // ============================================================================
 // 纹理采样常量定义

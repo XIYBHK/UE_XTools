@@ -1,7 +1,7 @@
 #include "Libraries/BulletHomingLibrary.h"
 
 #include "Components/SceneComponent.h"
-#if ENABLE_DRAW_DEBUG
+#if defined(ENABLE_DRAW_DEBUG) && ENABLE_DRAW_DEBUG
 #include "DrawDebugHelpers.h"
 #endif
 #include "GameFramework/Actor.h"
@@ -654,7 +654,7 @@ namespace
 		const FVector& WorldVelocity,
 		const TArray<FVector>& TrailPoints)
 	{
-#if ENABLE_DRAW_DEBUG
+#if defined(ENABLE_DRAW_DEBUG) && ENABLE_DRAW_DEBUG
 		if (!Options.bDrawDebug)
 		{
 			return;

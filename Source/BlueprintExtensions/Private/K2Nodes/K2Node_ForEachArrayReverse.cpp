@@ -252,7 +252,7 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
                                                                   SourceGraph);
   DelayLessEqualZero->SetFromFunction(
       UKismetMathLibrary::StaticClass()->FindFunctionByName(
-          GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_FloatFloat)));
+          GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_DoubleDouble)));
   DelayLessEqualZero->AllocateDefaultPins();
 
   UK2Node_IfThenElse *DelayBranch =
