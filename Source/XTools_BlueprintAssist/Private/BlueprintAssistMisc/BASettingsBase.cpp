@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 
 #include "BlueprintAssistMisc/BASettingsBase.h"
@@ -113,18 +113,21 @@ TArray<FBASettingsChange> UBASettingsBase::GetChanges() const
 	TSharedRef<FJsonObject> Curr = MakeShareable(new FJsonObject);
 	FJsonObjectConverter::UStructToJsonObject(GetClass(), this, Curr);
 
-	// iter our current properties
-	for (auto& Elem : Curr->Values)
+	if (DefaultsAsJson)
 	{
-		// find the saved property from our json
-		if (TSharedPtr<FJsonValue> DefaultValue = DefaultsAsJson->Values.FindRef(Elem.Key))
+		// iter our current properties
+		for (auto& Elem : Curr->Values)
 		{
-			const FJsonValue& Default = DefaultValue.ToSharedRef().Get();
-			const FJsonValue& New = Elem.Value.ToSharedRef().Get();
-			if (Default != New)
+			// find the saved property from our json
+			if (TSharedPtr<FJsonValue> DefaultValue = DefaultsAsJson->Values.FindRef(Elem.Key))
 			{
-				Changes.Add(FBASettingsChange(Elem.Key, DefaultValue, Elem.Value));
-				// UE_LOG(LogTemp, Warning, TEXT("%s changed old %s, new %s"), *Elem.Key, *Elem.Value.Get()->AsString(), *Value->Get()->AsString());
+				const FJsonValue& Default = DefaultValue.ToSharedRef().Get();
+				const FJsonValue& New = Elem.Value.ToSharedRef().Get();
+				if (Default != New)
+				{
+					Changes.Add(FBASettingsChange(FString(Elem.Key), DefaultValue, Elem.Value));
+					// UE_LOG(LogTemp, Warning, TEXT("%s changed old %s, new %s"), *Elem.Key, *Elem.Value.Get()->AsString(), *Value->Get()->AsString());
+				}
 			}
 		}
 	}
@@ -150,8 +153,9 @@ FString UBASettingsBase::GetAllChangesAsString() const
 			const FJsonValue& New = Elem.Value.ToSharedRef().Get();
 			if (Default != New)
 			{
-				FString Value = FBASettingsChange::GetJsonValueAsString(Elem.Key, Elem.Value);
-				FString Line = FString::Printf(TEXT("%s: \"%s\""), *Elem.Key, *Value);
+				FString JsonName(Elem.Key);
+				FString Value = FBASettingsChange::GetJsonValueAsString(JsonName, Elem.Value);
+				FString Line = FString::Printf(TEXT("%s: \"%s\""), *JsonName, *Value);
 				Changes.Append(Line).Append(LINE_TERMINATOR);
 			}
 		}
@@ -166,5 +170,25 @@ void UBASettingsBase::ResetToDefault()
 	for (FBASettingsChange& Change : Changes)
 	{
 		Change.ResetToDefault(this);
+	}
+}
+
+void UBASettingsBase::ReloadSettings(UClass* SettingsClass)
+{
+	if (SettingsClass)
+	{
+		if (UObject* ObjectToReload = SettingsClass->GetDefaultObject<UObject>())
+		{
+			// refer to the console command "RELOADCONFIG"
+			{
+				// unload the branch so next access will load the static and dynamic layers
+#if BA_UE_VERSION_OR_LATER(5, 4)
+				GConfig->SafeUnloadBranch(*ObjectToReload->GetClass()->GetConfigName());
+#endif
+
+				// now updates all the class properties now that the config was reloaded from disk
+				ObjectToReload->ReloadConfig();
+			}
+		}
 	}
 }

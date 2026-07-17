@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -7,12 +7,14 @@
 #include "UObject/Object.h"
 #include "BABlueprintHandlerObject.generated.h"
 
+class UK2Node_CustomEvent;
+struct FBACustomEventDefaults;
+struct FBAFunctionDefaults;
+struct FBAVariableDefaults;
 class UEdGraph;
 class UK2Node_EditablePinBase;
 struct FKismetUserDeclaredFunctionMetadata;
-/**
- * 
- */
+
 UCLASS()
 class XTOOLS_BLUEPRINTASSIST_API UBABlueprintHandlerObject final : public UObject
 {
@@ -56,6 +58,12 @@ public:
 	void OnBlueprintCompiled(UBlueprint* Blueprint);
 
 	void DetectGraphIssues(UEdGraph* Graph);
+
+	void ApplyFunctionDefaults(UBlueprint* Blueprint, UK2Node_EditablePinBase* FunctionEntryNode, UFunction* Function, const FBAFunctionDefaults& FunctionDefaults);
+
+	void ApplyVariableDefaults(UBlueprint* Blueprint, FBPVariableDescription& Variable, const FBAVariableDefaults& Defaults);
+
+	void ApplyCustomEventDefaults(UBlueprint* Blueprint, UK2Node_CustomEvent* CustomEventNode, const FBACustomEventDefaults& Defaults);
 
 private:
 	TWeakObjectPtr<UBlueprint> BlueprintPtr;

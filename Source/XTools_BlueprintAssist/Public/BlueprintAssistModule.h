@@ -41,6 +41,7 @@ public:
 
 private:
 	bool bWasModuleInitialized = false;
+	bool bWereSettingsRegistered = false;
 
 	TSharedPtr<FBlueprintAssistGraphPanelNodeFactory> BANodeFactory;
 

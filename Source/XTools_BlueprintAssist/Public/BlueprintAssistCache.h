@@ -121,7 +121,6 @@ public:
 	static void TearDown();
 
 	void Init();
-	void Cleanup();
 
 	FBACacheData& GetCacheData() { return CacheData; }
 
@@ -130,6 +129,8 @@ public:
 	void SaveCache();
 
 	void DeleteCache();
+
+	void Cleanup();
 
 	void CleanupFiles();
 
@@ -163,7 +164,6 @@ public:
 
 private:
 	bool bHasInitialized = false;
-
 	bool bHasLoaded = false;
 
 	FBACacheData CacheData;

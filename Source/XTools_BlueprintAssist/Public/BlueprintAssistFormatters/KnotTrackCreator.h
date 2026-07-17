@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -58,6 +58,8 @@ public:
 	TSharedPtr<FKnotNodeCreation> GetKnotCreation(const UK2Node_Knot* KnotNode) { return KnotCreationMap.FindRef(KnotNode); }
 
 	void AddNomadKnotsIntoComments();
+
+	void DirtyComments();
 
 private:
 	void MakeKnotTrack();

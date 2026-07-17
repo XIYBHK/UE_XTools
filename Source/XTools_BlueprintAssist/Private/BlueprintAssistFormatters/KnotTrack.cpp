@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistFormatters/KnotTrack.h"
 
@@ -178,13 +178,7 @@ void FKnotNodeTrack::SetTrackHeight(TSharedPtr<FFormatterInterface> Formatter)
 	}
 
 	// set starting point
-	float TestSolution = GraphHandler->GetPinY(ParentPin.GetPin());
-
-	// TODO test new method for baseline location
-	if (UBASettings_Advanced::HasDebugSetting("NewBaseline"))
-	{
-		TestSolution = FMath::Max(GraphHandler->GetPinY(ParentPin.GetPin()), GraphHandler->GetPinY(LastPin));
-	}
+	float TestSolution = FMath::Min(GraphHandler->GetPinY(ParentPin.GetPin()), GraphHandler->GetPinY(LastPin));
 
 	// GraphHandler->GetGraphOverlay()->DrawBounds(GetTrackBounds());
 
@@ -211,6 +205,7 @@ void FKnotNodeTrack::SetTrackHeight(TSharedPtr<FFormatterInterface> Formatter)
 					// UE_LOG(LogKnotTrackCreator, Error, TEXT("\tNode collision  (%s) (%f) | %s"), *FBAUtils::GetNodeName(NodeToCollisionCheck), TestSolution, *NodeBounds.ToString());
 					bNoCollisionInDirection = false;
 					TestSolution = NodeBounds.Bottom + 1;
+					// GraphHandler->GetGraphOverlay()->DrawBounds(GetTrackBounds(), FLinearColor::Red);
 				}
 			}
 		}

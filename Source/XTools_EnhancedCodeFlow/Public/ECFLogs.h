@@ -1,0 +1,7 @@
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+
+XTOOLS_ENHANCEDCODEFLOW_API DECLARE_LOG_CATEGORY_EXTERN(LogECF, Log, All);

@@ -9,12 +9,10 @@
 class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API FBlueprintScreenshotToolDiffWindowButton : public FToolBarButtonBlock
 {
 public:
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 3
 	explicit FBlueprintScreenshotToolDiffWindowButton(const FButtonArgs& ButtonArgs)
 		: FToolBarButtonBlock(ButtonArgs)
 	{
 	}
-#endif
 	
 	FBlueprintScreenshotToolDiffWindowButton();
 };

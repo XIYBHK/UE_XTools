@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -27,11 +27,12 @@ protected:
 	TUniqueFunction<void()> Func_NoTimeOut_NoStopped;
 
 	float TimeOut = 0.f;
+	float OriginTimeOut = 0.f;
 	bool bWithTimeOut = false;
 	bool bTimedOut = false;
 
 	ENamedThreads::Type ThreadType = ENamedThreads::AnyBackgroundThreadNormalTask;
-	TAtomic<bool> bIsAsyncTaskDone = false;
+	TSharedPtr<TAtomic<bool>, ESPMode::ThreadSafe> AsyncTaskDone;
 
 	bool Setup(TUniqueFunction<void()>&& InAsyncTaskFunc, TUniqueFunction<void(bool, bool)>&& InFunc, float InTimeOut, EECFAsyncPrio ThreadPriority)
 	{
@@ -55,6 +56,7 @@ protected:
 				bWithTimeOut = true;
 				bTimedOut = false;
 				TimeOut = InTimeOut;
+				OriginTimeOut = InTimeOut;
 				SetMaxActionTime(TimeOut);
 			}
 			else
@@ -63,22 +65,24 @@ protected:
 				bTimedOut = false;
 			}
 
-			XTOOLS_ATOMIC_STORE(bIsAsyncTaskDone, false);
+			AsyncTaskDone = MakeShared<TAtomic<bool>, ESPMode::ThreadSafe>(false);
 
 			// 将任务函数按值 move 到 lambda 中，避免后台线程通过 TWeakObjectPtr 访问 UObject（非线程安全）
 			TUniqueFunction<void()> TaskCopy = MoveTemp(AsyncTaskFunc);
-			TAtomic<bool>* DoneFlag = &bIsAsyncTaskDone;
+			const TSharedRef<TAtomic<bool>, ESPMode::ThreadSafe> DoneFlag = AsyncTaskDone.ToSharedRef();
 			AsyncTask(ThreadType, [Task = MoveTemp(TaskCopy), DoneFlag]()
 			{
 				Task();
-				XTOOLS_ATOMIC_STORE(*DoneFlag, true);
+				XTOOLS_ATOMIC_STORE(DoneFlag.Get(), true);
 			});
 
 			return true;
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF - Run Async Task and Run failed to start. Are you sure the AsyncTask and Function are set properly?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF - [%s] Run Async Task and Run failed to start. Are you sure the AsyncTask and Function are set properly?"), *Settings.Label);
+#endif
 			return false;
 		}
 	}
@@ -95,7 +99,9 @@ protected:
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF - Run Async Task and Run failed to start. Are you sure the Function is set properly?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF - [%s] Run Async Task and Run failed to start. Are you sure the Function is set properly?"), *Settings.Label);
+#endif
 			return false;
 		}
 	}
@@ -112,33 +118,48 @@ protected:
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF - Run Async Task and Run failed to start. Are you sure the Function is set properly?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF - [%s] Run Async Task and Run failed to start. Are you sure the Function is set properly?"), *Settings.Label);
+#endif
 			return false;
 		}
 	}
 
+	bool Reset(bool bCallUpdate) override
+	{
+		if (bWithTimeOut)
+		{
+			TimeOut = OriginTimeOut;
+		}
+		return true;
+	}
 
 	void Tick(float DeltaTime) override 
 	{
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("RunAsyncThen - Tick"), STAT_ECFDETAILS_RUNASYNCTHEN, STATGROUP_ECFDETAILS);
 #endif
+
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - RunAsyncThen Tick");
+#endif
+
 		if (bWithTimeOut)
 		{
 			TimeOut -= DeltaTime;
 			if (TimeOut <= 0.f)
 			{
 				bTimedOut = true;
-				Complete(false);
 				MarkAsFinished();
+				Complete(false);
 				return;
 			}
 		}
 
-		if (XTOOLS_ATOMIC_LOAD(bIsAsyncTaskDone))
+		if (AsyncTaskDone.IsValid() && XTOOLS_ATOMIC_LOAD(*AsyncTaskDone))
 		{
-			Complete(false);
 			MarkAsFinished();
+			Complete(false);
 		}
 	}
 

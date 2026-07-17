@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -29,7 +29,9 @@ protected:
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF Coroutine - wait ticks failed to start. Are you sure the WaitTicks is not negative?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF Coroutine [%s]- wait ticks failed to start. Are you sure the WaitTicks is not negative?"), *Settings.Label);
+#endif
 			return false;
 		}
 	}
@@ -39,28 +41,52 @@ protected:
 		CurrentTicks = 0;
 	}
 
+	bool Reset(bool bCallUpdate) override
+	{
+		CurrentTicks = 0;
+		return true;
+	}
+
 	void Tick(float DeltaTime) override
 	{
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("WaitTicks - Tick"), STAT_ECFDETAILS_WAITTICKS, STATGROUP_ECFDETAILS);
 #endif
+
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - WaitTicks Tick");
+#endif
+
 		CurrentTicks++;
 		if (CurrentTicks > WaitTicks)
 		{
-			Complete(false);
 			MarkAsFinished();
+			Complete(false);
 		}
 	}
 
 	void Complete(bool bStopped) override
 	{
-		if (HasValidOwner())
+		ResumeCoroutine(bStopped);
+	}
+
+	float GetActionTime() const override
+	{
+		return (float)CurrentTicks;
+	}
+
+	bool SetActionTime(float NewTime, bool bCallUpdate) override
+	{
+		CurrentTicks = FMath::TruncToInt(NewTime);
+		if (bCallUpdate)
 		{
-			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
+			if (CurrentTicks > WaitTicks)
 			{
-				CoroutineHandle.resume();
+				MarkAsFinished();
+				Complete(false);
 			}
 		}
+		return true;
 	}
 };
 

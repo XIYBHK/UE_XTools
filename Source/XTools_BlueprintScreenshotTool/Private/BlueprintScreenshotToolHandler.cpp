@@ -24,6 +24,10 @@ DEFINE_LOG_CATEGORY(LogBlueprintScreenshotTool);
 #include "SBlueprintDiff.h"
 #include "RenderingThread.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "TextureResource.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphNode.h"
+#include "GraphEditor.h"
 
 #include "Framework/Notifications/NotificationManager.h"
 #include "HAL/PlatformApplicationMisc.h"

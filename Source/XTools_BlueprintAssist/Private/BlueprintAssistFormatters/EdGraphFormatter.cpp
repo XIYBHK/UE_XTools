@@ -13,6 +13,7 @@
 #include "SGraphNodeComment.h"
 #include "SGraphPanel.h"
 #include "Algo/Transform.h"
+#include "BlueprintAssistFormatters/BAFormatterUtils.h"
 #include "BlueprintAssistFormatters/BlueprintAssistCommentContainsGraph.h"
 #include "BlueprintAssistFormatters/EdGraphParameterFormatter.h"
 #include "BlueprintAssistFormatters/GraphFormatterTypes.h"
@@ -22,6 +23,11 @@
 #include "Editor/BlueprintGraph/Classes/K2Node_Knot.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Stats/StatsMisc.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogExpandX, NoLogging, All);
+DEFINE_LOG_CATEGORY_STATIC(LogFormatX, NoLogging, All);
+DEFINE_LOG_CATEGORY_STATIC(LogFormatY, NoLogging, All);
+DEFINE_LOG_CATEGORY_STATIC(LogSameRow, NoLogging, All);
 
 FString ChildBranch::ToString() const
 {
@@ -35,8 +41,6 @@ FEdGraphFormatter::FEdGraphFormatter(
 	, FormatterParameters(InFormatterParameters)
 	, KnotTrackCreator()
 {
-	FormatterParameters.Init();
-
 	const UBASettings& BASettings = UBASettings::Get();
 
 	NodePadding = BASettings.BlueprintFormatterSettings.Padding;
@@ -126,13 +130,16 @@ void FEdGraphFormatter::FormatNode(UEdGraphNode* InitialNode)
 	}
 
 	// Align the root node to the 8x8 grid
-	NodeToKeepStill->NodePosX = FBAUtils::AlignTo8x8Grid(NodeToKeepStill->NodePosX); 
-	NodeToKeepStill->NodePosY = FBAUtils::AlignTo8x8Grid(NodeToKeepStill->NodePosY); 
+	NodeToKeepStill->NodePosX = FBAUtils::AlignTo8x8Grid(NodeToKeepStill->NodePosX);
+	NodeToKeepStill->NodePosY = FBAUtils::AlignTo8x8Grid(NodeToKeepStill->NodePosY);
 
 	const FVector2D SavedLocation = FVector2D(NodeToKeepStill->NodePosX, NodeToKeepStill->NodePosY);
 
 	// initialize the node pool from the root node
 	InitNodePool();
+	MarkLoopingLinks();
+	InitSameRowMapping();
+	BA_DEBUG_EARLY_EXIT("MarkLooping");
 
 	// if (UBASettings::Get().bApplyCommentPadding)
 	// {
@@ -181,7 +188,7 @@ void FEdGraphFormatter::FormatNode(UEdGraphNode* InitialNode)
 
 	BA_DEBUG_EARLY_EXIT("X2");
 
-	GetPinsOfSameHeight();
+	// GetPinsOfSameHeight();
 
 	// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Same row mapping"));
 	// for (auto Kvp : SameRowMapping)
@@ -237,10 +244,17 @@ void FEdGraphFormatter::FormatNode(UEdGraphNode* InitialNode)
 	{
 		KnotTrackCreator.FormatKnotNodes();
 
+		if (UBASettings::Get().bCreateKnotNodes && UBASettings::Get().bAddKnotNodesToComments)
+		{
+			KnotTrackCreator.AddNomadKnotsIntoComments();
+		}
+
 		if (UBASettings::Get().bApplyCommentPadding && !UBASettings_Advanced::HasDebugSetting("AfterKnots"))
 		{
 			ApplyCommentPaddingAfterKnots();
 		}
+
+		KnotTrackCreator.DirtyComments();
 	}
 
 	BA_DEBUG_EARLY_EXIT("Post-CreateKnot");
@@ -256,11 +270,6 @@ void FEdGraphFormatter::FormatNode(UEdGraphNode* InitialNode)
 		{
 			Node->NodePosX = FBAUtils::SnapToGrid(Node->NodePosX);
 		}
-	}
-
-	if (UBASettings::Get().bCreateKnotNodes && UBASettings::Get().bAddKnotNodesToComments)
-	{
-		KnotTrackCreator.AddNomadKnotsIntoComments();
 	}
 
 	//for (UEdGraphNode* Nodes : GetFormattedGraphNodes())
@@ -329,7 +338,7 @@ void FEdGraphFormatter::InitNodePool()
 			continue;
 		}
 
-		// sanity checks - these shouldn't happen! 
+		// sanity checks - these shouldn't happen!
 		{
 			if (FBAUtils::IsCommentNode(CurrentNode))
 			{
@@ -367,14 +376,14 @@ void FEdGraphFormatter::InitNodePool()
 					UEdGraphPin* LinkedPin = Pin->LinkedTo[i];
 					UEdGraphNode* LinkedNode = LinkedPin->GetOwningNode();
 
-					if (!GraphHandler->FilterDelegatePin(FPinLink(Pin, LinkedPin), GetFormatterParameters().NodesToFormat.GetCachedNodes()))
+					if (NodePool.Contains(LinkedNode) ||
+						FBAUtils::IsNodePure(LinkedNode) ||
+						!ShouldFormatNode(LinkedNode))
 					{
 						continue;
 					}
 
-					if (NodePool.Contains(LinkedNode) ||
-						FBAUtils::IsNodePure(LinkedNode) ||
-						!ShouldFormatNode(LinkedNode))
+					if (!FBAFormatterUtils::FilterDelegateLink(FPinLink(Pin, LinkedPin)))
 					{
 						continue;
 					}
@@ -405,6 +414,58 @@ void FEdGraphFormatter::InitNodePool()
 	GraphHandler->GetGraphOverlay()->DrawBounds(FBAUtils::GetNodeArrayBounds(NodePool), FLinearColor::Blue);
 #endif
 }
+
+void FEdGraphFormatter::MarkLoopingLinks()
+{
+	LoopingLinks.Reset();
+
+	TSet<UEdGraphNode*> Visited;
+	TSet<UEdGraphNode*> Path;
+	for (UEdGraphNode* Node : NodePool)
+	{
+		if (!Visited.Contains(Node))
+		{
+			MarkLoopingLinks_Recursive(Node, Path, Visited, LoopingLinks);
+		}
+	}
+}
+
+void FEdGraphFormatter::MarkLoopingLinks_Recursive(
+	UEdGraphNode* CurrNode,
+	TSet<UEdGraphNode*>& Exploring,
+	TSet<UEdGraphNode*>& Visited,
+	TSet<FPinLink>& OutCycles)
+{
+	// Mark node as being explored
+	Exploring.Add(CurrNode);
+	UE_LOG(LogSameRow, Log, TEXT("%hs - Iter %s"), __FUNCTION__, *FBAUtils::GetNodeName(CurrNode));
+	// GraphHandler->GetGraphOverlay()->DrawNodeInQueue(CurrNode);
+
+	TArray<FPinLink> OutgoingLinks = FBAUtils::GetPinLinks(CurrNode, EGPD_Output).FilterByPredicate(&FBAUtils::IsExecOrDelegatePinLink);
+	for (FPinLink& Link : OutgoingLinks)
+	{
+		UEdGraphNode* ToNode = Link.GetToNode();
+		if (!NodePool.Contains(ToNode))
+		{
+			continue;
+		}
+
+		if (Exploring.Contains(ToNode))
+		{
+			UE_LOG(LogSameRow, Log, TEXT("%hs - Add looping link %s"), __FUNCTION__, *Link.ToString());
+			OutCycles.Add(Link);
+			OutCycles.Add(Link.MakeOppositeLink());
+		}
+		else if (!Visited.Contains(ToNode))
+		{
+			MarkLoopingLinks_Recursive(ToNode, Exploring, Visited, OutCycles);
+		}
+	}
+
+	Exploring.Remove(CurrNode);
+	Visited.Add(CurrNode);
+}
+
 
 void FEdGraphFormatter::SimpleRelativeFormatting()
 {
@@ -459,14 +520,17 @@ void FEdGraphFormatter::FormatX(const bool bUseParameter)
 
 	if (UBASettings::Get().FormattingStyle == EBANodeFormattingStyle::Expanded)
 	{
-		for (int i = WaitingToExpand.Num() - 1; i >= 0; --i)
+		TArray<FFPNodeExpandStruct> FilteredWaitingToExpand = FilterExpandX(WaitingToExpand);
+		for (int i = FilteredWaitingToExpand.Num() - 1; i >= 0; --i)
 		{
-			const auto& Elem = WaitingToExpand[i];
+			const auto& Elem = FilteredWaitingToExpand[i];
+			UE_LOG(LogExpandX, Log, TEXT("Expanding %s | AVOID %s"), *Elem.Link.ToStringConst(), *FBAUtils::GetNodeName(Elem.NodeToAvoid));
+
 			TArray<FPinLink> DirtyLinks = ExpandX(Elem.Link, Elem.NodeToAvoid, bUseParameter);
 
 			if (!UBASettings_Advanced::HasDebugSetting("PostExpandX"))
 			{
-				DecideXParents(DirtyLinks, VisitedNodes, ExpandedNodes, WaitingToExpand, bUseParameter);
+				DecideXParents(DirtyLinks, VisitedNodes, ExpandedNodes, FilteredWaitingToExpand, bUseParameter);
 			}
 		}
 	}
@@ -474,25 +538,25 @@ void FEdGraphFormatter::FormatX(const bool bUseParameter)
 
 void FEdGraphFormatter::DecideXParents(
 	TArray<FPinLink> InitialLinks,
-	TSet<UEdGraphNode*>& VisitedNodes, 
+	TSet<UEdGraphNode*>& VisitedNodes,
 	TSet<UEdGraphNode*>& ExpandedNodes,
 	TArray<FFPNodeExpandStruct>& WaitingToExpand,
 	bool bUseParameter)
 {
 	TSet<TSharedPtr<FFormatXInfo>> OwnedInfos;
 
-	TQueue<FPinLink> OutputStack;
-	TQueue<FPinLink> InputStack;
+	TArray<FPinLink> OutputStack;
+	TArray<FPinLink> InputStack;
 
 	for (const FPinLink& Link : InitialLinks)
 	{
 		if (Link.GetDirection() == EGPD_Output)
 		{
-			OutputStack.Enqueue(Link);
+			OutputStack.Push(Link);
 		}
 		else
 		{
-			InputStack.Enqueue(Link);
+			InputStack.Push(Link);
 		}
 	}
 
@@ -517,8 +581,12 @@ void FEdGraphFormatter::DecideXParents(
 				break;
 			}
 
-			FPinLink FromLink;
-			CurrentStack.Dequeue(FromLink);
+			FPinLink FromLink = CurrentStack.Pop();
+
+			if (LoopingLinks.Contains(FromLink))
+			{
+				continue;
+			}
 
 			UEdGraphNode* CurrentNode = FromLink.GetNode();
 			VisitedNodes.Add(CurrentNode);
@@ -530,14 +598,16 @@ void FEdGraphFormatter::DecideXParents(
 				FromInfo = GetFormatXInfo(FromNode);
 			}
 
-			UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Processing %s | Old %s"), *FromLink.ToStringConst(), *CurrentInfo->Link.ToStringConst());
+			UE_LOG(LogFormatX, Log, TEXT("Processing %s | Old %s"), *FromLink.ToStringConst(), *CurrentInfo->Link.ToStringConst());
+			// GraphHandler->GetGraphOverlay()->DrawNodeInQueue(CurrentNode);
+
 			const int32 NewX = GetChildX(FromLink, bUseParameter);
 
 			bool bHasChanged = false;
 
 			if (!CurrentInfo->Parent) // assign the parent if it doesn't have one
 			{
-				UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tTaking no parent"));
+				UE_LOG(LogFormatX, Log, TEXT("\tTaking no parent"));
 				CurrentInfo->SetParentNew(FromInfo, FromLink);
 
 				if (CurrentNode != GetRootNode())
@@ -559,22 +629,6 @@ void FEdGraphFormatter::DecideXParents(
 				FPinLink OldLink = CurrentInfo->Link;
 
 				TSet<TSharedPtr<FFormatXInfo>> VisitedInfos;
-				UEdGraphNode* OldToAvoid = GetTopMostNodeToAvoid(OldLink, WaitingToExpand, VisitedInfos);
-
-				if (OldToAvoid)
-				{
-					VisitedInfos.Empty();
-					UEdGraphNode* NodeToAvoid = GetTopMostNodeToAvoid(FromLink, WaitingToExpand, VisitedInfos);
-					if (OldToAvoid && OldToAvoid != NodeToAvoid && CurrentDirection == EGPD_Input)
-					{
-						UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tDon't steal parent, waiting to expand %s!!!"), *OldLink.ToStringConst());
-						bShouldCheck = false;
-					}
-					else
-					{
-						UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tChecking node to avoid OLD %s NEW %s"), *FBAUtils::GetNodeName(OldToAvoid), *FBAUtils::GetNodeName(NodeToAvoid));
-					}
-				}
 
 				const bool bIsSameAsCurrentParent = FromLink == CurrentInfo->Link;
 				const bool bIsOppositeOfCurrentParent = FromLink == CurrentInfo->Link.MakeOppositeLink();
@@ -582,17 +636,19 @@ void FEdGraphFormatter::DecideXParents(
 				const bool bIsSameOrOppositeLink = bIsSameAsCurrentParent || bIsOppositeOfCurrentParent || bIsOppositeOfParentsParent;
 
 				// check for cycles
-				bool bHasCycle = !bIsSameOrOppositeLink && (CurrentInfo->GetAllChildren().Contains(FromInfo) || FromInfo->GetAllChildren().Contains(CurrentInfo));
+				bool bCycle1 = CurrentInfo->GetAllChildren().Contains(FromInfo);
+				bool bCycle2 = CurrentDirection == EGPD_Output && FromInfo->GetAllChildren().Contains(CurrentInfo);
+				bool bHasCycle = !bIsSameOrOppositeLink && (bCycle1 || bCycle2);
 				if (bHasCycle)
 				{
-					UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tHas cycle skipping"));
+					UE_LOG(LogFormatX, Log, TEXT("\tHas cycle skipping %d %d"), bCycle1, bCycle2);
 					bShouldCheck = false;
 				}
 
 				if (bShouldCheck)
 				{
 					bool bTakeNewParent = false;
-					bool bOnlyUpdateLocation = bIsSameOrOppositeLink;// && CurrentDirection == EGPD_Output;
+					bool bOnlyUpdateLocation = bIsSameOrOppositeLink;
 
 					if (!bTakeNewParent)
 					{
@@ -602,14 +658,11 @@ void FEdGraphFormatter::DecideXParents(
 
 							const bool bPositionChanged = NewX != OldX;
 							const bool bPositionIsBetter
-								// = CurrentInfo->Link.From->Direction == EGPD_Output
 								= CurrentDirection == EGPD_Output
 								? NewX > OldX
 								: NewX < OldX;
 
-							// how to do offset???
-
-							UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tComparing parents Old: %s (%d) New: %s (%d) (%d)"),
+							UE_LOG(LogFormatX, Log, TEXT("\tComparing parents Old: %s (%d) New: %s (%d) (%d)"),
 								*FBAUtils::GetNodeName(OldLink.From->GetOwningNode()), OldX,
 								*FBAUtils::GetNodeName(CurrentInfo->Link.From->GetOwningNode()), NewX,
 								static_cast<int>(CurrentInfo->Link.From->Direction));
@@ -618,14 +671,14 @@ void FEdGraphFormatter::DecideXParents(
 						}
 						else
 						{
-							UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tSKIP WRONG DIRECTION  %s | %s"), *OldLink.ToString(), *CurrentInfo->ToString());
+							UE_LOG(LogFormatX, Log, TEXT("\tSKIP WRONG DIRECTION  %s | %s"), *OldLink.ToString(), *CurrentInfo->ToString());
 						}
 					}
 
 					// take the new parent by updating the old info
 					if (bTakeNewParent)
 					{
-						UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\tTOOK PARENT %d (NEW: %s) (OLD: %s)"), bOnlyUpdateLocation, *FromLink.ToStringConst(), *CurrentInfo->Link.ToStringConst());
+						UE_LOG(LogFormatX, Log, TEXT("\t\tTOOK PARENT %d (NEW: %s) (OLD: %s)"), bOnlyUpdateLocation, *FromLink.ToStringConst(), *CurrentInfo->Link.ToStringConst());
 
 						CurrentNode->NodePosX = NewX;
 						if (bUseParameter)
@@ -647,9 +700,11 @@ void FEdGraphFormatter::DecideXParents(
 			bool bShouldIterate = bHasChanged || CurrentInfo->Link.From == nullptr;
 			if (!bShouldIterate)
 			{
-				UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tHas not changed, skipping!"));
+				UE_LOG(LogFormatX, Verbose, TEXT("\tHas not changed, skipping!"));
 				continue;
 			}
+
+			// GraphHandler->GetGraphOverlay()->DrawNodeInQueue(CurrentNode);
 
 			OwnedInfos.Add(CurrentInfo);
 
@@ -673,11 +728,16 @@ void FEdGraphFormatter::DecideXParents(
 				{
 					UEdGraphNode* LinkedNode = LinkedPin->GetOwningNode();
 					FPinLink PinLink(ParentPin, LinkedPin, LinkedNode);
-					UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tCHECKING child %s"), *PinLink.ToStringConst());
+					UE_LOG(LogFormatX, Verbose, TEXT("\tCHECKING child %s"), *PinLink.ToStringConst());
+
+					if (LoopingLinks.Contains(PinLink))
+					{
+						continue;
+					}
 
 					if (LinkedNode == GetRootNode())// || PinLink == CurrentInfo->Link.MakeOppositeLink())// || PinLink == FromLink.MakeOppositeLink())
 					{
-						UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\tSkipping"));
+						UE_LOG(LogFormatX, Verbose, TEXT("\t\tSkipping"));
 						continue;
 					}
 
@@ -691,23 +751,22 @@ void FEdGraphFormatter::DecideXParents(
 						continue;
 					}
 
-					UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\tQueueing pin link %s"), *PinLink.ToStringConst());
+					UE_LOG(LogFormatX, Verbose, TEXT("\t\tQueueing pin link %s"), *PinLink.ToStringConst());
 
 					if (ParentPin->Direction == EGPD_Output)
 					{
-						OutputStack.Enqueue(PinLink);
+						OutputStack.Push(PinLink);
 					}
 					else
 					{
-						InputStack.Enqueue(PinLink);
+						InputStack.Push(PinLink);
 					}
 
 					if (ParentPin->Direction == EGPD_Input && UBASettings::Get().FormattingStyle == EBANodeFormattingStyle::Expanded)
 					{
-						UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tChecking expand %s"), *PinLink.ToString());
 						if (FirstInputLink.HasBothPins() && FirstInputLink != PinLink.MakeOppositeLink())
 						{
-							// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tADDING %s AVOID %s %p"), *LinkedInfo->ToString(), *FirstInputInfo->ToString(), FirstInputInfo.Get());
+							// UE_LOG(LogExpandX, Log, TEXT("\tADDING %s AVOID %s %p"), *FirstInputLink->ToString(), *FirstInputInfo->ToString(), FirstInputInfo.Get());
 
 							UEdGraphNode* NodeToAvoid
 								= FirstInputLink.GetDirection() == EGPD_Output
@@ -720,7 +779,7 @@ void FEdGraphFormatter::DecideXParents(
 								ExpandStruct.Link = PinLink;
 								ExpandStruct.NodeToAvoid = NodeToAvoid;
 
-								UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\t\tADDING %s AVOID %s"), *PinLink.ToString(), *FBAUtils::GetNodeName(NodeToAvoid));
+								UE_LOG(LogExpandX, Log, TEXT("\t\t\t\tADDING %s AVOID %s"), *PinLink.ToString(), *FBAUtils::GetNodeName(NodeToAvoid));
 								WaitingToExpand.Add(ExpandStruct);
 								ExpandedNodes.Add(LinkedNode);
 							}
@@ -771,36 +830,104 @@ UEdGraphNode* FEdGraphFormatter::GetTopMostNodeToAvoid(FPinLink& Link, const TAr
 	return CurrNodeToAvoid;
 }
 
+TArray<FFPNodeExpandStruct> FEdGraphFormatter::FilterExpandX(TArray<FFPNodeExpandStruct>& InExpand)
+{
+	TArray<FFPNodeExpandStruct> FilteredWaitingToExpand;
+	TSet<UEdGraphNode*> MarkedExpandNodes;
+
+	for (FFPNodeExpandStruct& Expand : InExpand)
+	{
+		UE_LOG(LogExpandX, Log, TEXT("Checking Expanding %s | AVOID %s"), *Expand.Link.ToStringConst(), *FBAUtils::GetNodeName(Expand.NodeToAvoid));
+		UEdGraphNode* ExpandNode = Expand.Link.GetToNode();
+
+		TArray<UEdGraphNode*> Pending {ExpandNode};
+
+		bool bIsValidExpand = true;
+
+		TSet<UEdGraphNode*> Visited;
+		while (!Pending.IsEmpty())
+		{
+			UEdGraphNode* Next = Pending.Pop();
+
+			if (MarkedExpandNodes.Contains(Next))
+			{
+				bIsValidExpand = false;
+				UE_LOG(LogExpandX, Log, TEXT("\tFound duplicate expand %s AVOID %s"), *Expand.Link.ToString(), *FBAUtils::GetNodeName(Expand.NodeToAvoid));
+				break;
+			}
+
+			if (Visited.Contains(Next))
+			{
+				continue;
+			}
+
+			Visited.Add(Next);
+
+			for (FPinLink& Link : FBAUtils::GetPinLinks(Next, EGPD_Input).FilterByPredicate(&FBAUtils::IsExecOrDelegatePinLink))
+			{
+				if (LoopingLinks.Contains(Link))
+				{
+					continue;
+				}
+
+				UEdGraphNode* ToNode = Link.GetToNode();
+				if (!NodePool.Contains(ToNode))
+				{
+					continue;
+				}
+
+				Pending.Push(ToNode);
+			}
+		}
+
+		if (bIsValidExpand)
+		{
+			UE_LOG(LogExpandX, Log, TEXT("\tIs valid adding"));
+			MarkedExpandNodes.Add(ExpandNode);
+			FilteredWaitingToExpand.Add(Expand);
+		}
+	}
+
+	return FilteredWaitingToExpand;
+}
+
 TArray<FPinLink> FEdGraphFormatter::ExpandX(const FPinLink& Link, UEdGraphNode* NodeToAvoid, bool bUseParameter)
 {
 	TSharedPtr<FFormatXInfo> FromInfo = GetFormatXInfo(Link.GetFromNodeUnsafe());
+	UE_LOG(LogExpandX, Log, TEXT("Expand %s avoid %s"), *FromInfo->ToString(), *FBAUtils::GetNodeName(NodeToAvoid));
 
-	// move all children to the right, but not any linked to node to avoid
+	// move all children to the right, but the node to avoid
 	auto Filter = [NodeToAvoid](TSharedPtr<FFormatXInfo> Info){ return Info->GetNode() != NodeToAvoid; };
 	TArray<TSharedPtr<FFormatXInfo>> ToMove = FromInfo->GetAllChildrenWithFilter(Filter);
 
 	ToMove.Add(FromInfo);
 
-	// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("To move %s"), *SecondaryInfo->ToString());
-	// for (TSharedPtr<FFormatXInfo> Info : ToMove)
-	// {
-	// 	UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t%s"), *Info->ToString());
-	// }
+	for (TSharedPtr<FFormatXInfo> Info : ToMove)
+	{
+		UE_LOG(LogExpandX, Log, TEXT("\tTOMOVE: %s"), *Info->ToString());
+	}
 
 	TArray<UEdGraphNode*> NodesToMove;
 	Algo::Transform(ToMove, NodesToMove, [](const TSharedPtr<FFormatXInfo>& Info) { return Info->Node; });
 
 	FSlateRect BranchBounds = GetNodeArrayBounds(NodesToMove, bUseParameter);
 	FSlateRect BoundsToAvoid = GetNodeBounds(NodeToAvoid, bUseParameter);
-	// GraphHandler->GetGraphOverlay()->DrawBounds(BranchBounds, FLinearColor::Red);
+
+	if (BA_DEBUG("DrawExpandX"))
+	{
+		GraphHandler->GetGraphOverlay()->DrawBounds(BranchBounds, FLinearColor::Red);
+		GraphHandler->GetGraphOverlay()->DrawBounds(BoundsToAvoid, FLinearColor::Green);
+	}
+
 	const float Delta = BoundsToAvoid.Right - BranchBounds.Left + NodePadding.X;
-	UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("EXPANDING %s %f (AVOID %s)"), *Link.ToStringConst(), Delta, *FBAUtils::GetNodeName(NodeToAvoid));
+	UE_LOG(LogExpandX, Log, TEXT("Expand delta %f"), Delta);
 	if (Delta > 0)
 	{
-		UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tMoving link %s %f"), *Link.ToStringConst(), Delta);
+		UE_LOG(LogExpandX, Log, TEXT("EXPANDING %s %f (AVOID %s)"), *Link.ToStringConst(), Delta, *FBAUtils::GetNodeName(NodeToAvoid));
+		UE_LOG(LogExpandX, Log, TEXT("\tMoving link %s %f"), *Link.ToStringConst(), Delta);
 		for (UEdGraphNode* Child : NodesToMove)
 		{
-			UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t%s"), *FBAUtils::GetNodeName(Child));
+			UE_LOG(LogExpandX, Log, TEXT("\t\t%s"), *FBAUtils::GetNodeName(Child));
 		}
 
 		TArray<FPinLink> DirtyLinks;
@@ -825,7 +952,7 @@ TArray<FPinLink> FEdGraphFormatter::ExpandX(const FPinLink& Link, UEdGraphNode* 
 					UEdGraphNode* LinkedNode = LinkedPin->GetOwningNode();
 
 					FPinLink PinLink(ParentPin, LinkedPin, LinkedNode);
-					// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\tChecking %s"), *PinLink.ToStringConst());
+					UE_LOG(LogExpandX, Log, TEXT("\t\tChecking %s"), *PinLink.ToStringConst());
 
 					if (LinkedNode == NodeToAvoid)
 					{
@@ -834,36 +961,36 @@ TArray<FPinLink> FEdGraphFormatter::ExpandX(const FPinLink& Link, UEdGraphNode* 
 
 					if (NodesToMove.Contains(LinkedNode))
 					{
-						// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tSkipping moved nodes"));
+						UE_LOG(LogExpandX, Log, TEXT("\t\t\tSkipping moved nodes"));
 						continue;
 					}
-					
+
 					if (LinkedNode == GetRootNode())
 					{
-						// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tSkipping root node"));
+						UE_LOG(LogExpandX, Log, TEXT("\t\t\tSkipping root node"));
 						continue;
 					}
 
 					// if (PinLink == CurrentInfo->Link.MakeOppositeLink() && PinLink != Link.MakeOppositeLink())
 					// {
-					// 	UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tSkipping root node or moved node"));
+					// 	UE_LOG(LogExpandX, Log, TEXT("\t\t\tSkipping root node or moved node"));
 					// 	continue;
 					// }
 
 					if (!NodePool.Contains(LinkedNode))
 					{
-						// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tSkipping node pool"));
+						UE_LOG(LogExpandX, Log, TEXT("\t\t\tSkipping node pool"));
 						continue;
 					}
 
 					if (FBAUtils::IsNodePure(LinkedNode))
 					{
-						// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tSkipping pure node"));
+						UE_LOG(LogExpandX, Log, TEXT("\t\t\tSkipping pure node"));
 						continue;
 					}
 
 					DirtyLinks.Add(PinLink);
-					UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tADDING DIRTY %s"), *PinLink.ToStringConst());
+					UE_LOG(LogExpandX, Log, TEXT("\t\t\tADDING DIRTY %s"), *PinLink.ToStringConst());
 				}
 			}
 		}
@@ -872,106 +999,6 @@ TArray<FPinLink> FEdGraphFormatter::ExpandX(const FPinLink& Link, UEdGraphNode* 
 	}
 
 	return {};
-}
-
-TArray<FPinLink> FEdGraphFormatter::GetNodesToExpand()
-{
-	UEdGraphNode* RootNode = GetRootNode();
-
-	TSet<FPinLink> NodesToExpand;
-
-	TSet<UEdGraphNode*> VisitedNodes;
-	TSet<UEdGraphNode*> PendingNodes;
-	PendingNodes.Add(RootNode);
-	TSet<FPinLink> VisitedLinks;
-	FPinLink RootInfo = FPinLink(nullptr, nullptr, RootNode);
-
-	TArray<FPinLink> OutputStack;
-	TArray<FPinLink> InputStack;
-	OutputStack.Push(RootInfo);
-
-	EEdGraphPinDirection LastDirection = EGPD_Output;
-
-	while (OutputStack.Num() > 0 || InputStack.Num() > 0)
-	{
-		// try to get the current info from the pending input
-		FPinLink CurrentInfo;
-
-		TArray<FPinLink>& FirstStack = LastDirection == EGPD_Output ? OutputStack : InputStack;
-		TArray<FPinLink>& SecondStack = LastDirection == EGPD_Output ? InputStack : OutputStack;
-
-		if (FirstStack.Num() > 0)
-		{
-			CurrentInfo = FirstStack.Pop();
-		}
-		else
-		{
-			CurrentInfo = SecondStack.Pop();
-		}
-
-		LastDirection = CurrentInfo.GetDirection();
-
-		TArray<UEdGraphPin*> LinkedPins = FBAUtils::GetLinkedPins(CurrentInfo.GetNode()).FilterByPredicate(FBAUtils::IsExecOrDelegatePin);
-
-		for (int i = LinkedPins.Num() - 1; i >= 0; --i)
-		{
-			UEdGraphPin* ParentPin = LinkedPins[i];
-
-			for (UEdGraphPin* LinkedPin : ParentPin->LinkedTo)
-			{
-				UEdGraphNode* LinkedNode = LinkedPin->GetOwningNode();
-
-				const FPinLink PinLink(ParentPin, LinkedPin, LinkedNode);
-				if (VisitedLinks.Contains(PinLink))
-				{
-					continue;
-				}
-
-				VisitedLinks.Add(PinLink);
-				if (!NodePool.Contains(LinkedNode))
-				{
-					continue;
-				}
-
-				if (FBAUtils::IsNodePure(LinkedNode))
-				{
-					continue;
-				}
-
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tIterating pin link %s"), *PinLink.ToString());
-
-				if (ParentPin->Direction == EGPD_Output)
-				{
-					OutputStack.Push(PinLink);
-				}
-				else
-				{
-					if (UBASettings::Get().FormattingStyle == EBANodeFormattingStyle::Expanded)
-					{
-						const bool bHasCycle = PendingNodes.Contains(LinkedNode) || FBAUtils::GetExecTree(LinkedNode, EGPD_Input).Contains(CurrentInfo.GetNode());
-						if (!bHasCycle)
-						{
-							if (CurrentInfo.GetDirection() == EGPD_Output)
-							{
-								// whats this for...?
-								// if (!CurrentInfo->Parent.IsValid() || LinkedNode != CurrentInfo->Parent->GetNode())
-								{
-									NodesToExpand.Add(CurrentInfo);
-									GraphHandler->GetGraphOverlay()->DrawNodeInQueue(CurrentInfo.GetNode());
-								}
-							}
-						}
-					}
-
-					InputStack.Push(PinLink);
-				}
-
-				PendingNodes.Add(LinkedNode);
-			}
-		}
-	}
-
-	return NodesToExpand.Array();
 }
 
 void FEdGraphFormatter::ExpandByHeight()
@@ -1041,6 +1068,7 @@ void FEdGraphFormatter::ExpandNodesAheadOfParameters()
 	{
 		if (!ensure(FormatXInfoMap.Contains(Node)))
 		{
+			UE_LOG(LogBlueprintAssist, Error, TEXT("Failed to find format x info for %s"), *FBAUtils::GetNodeName(Node));
 			continue;
 		}
 		TSharedPtr<FFormatXInfo> Info = FormatXInfoMap[Node];
@@ -1093,7 +1121,7 @@ void FEdGraphFormatter::FormatY_Recursive(
 	const bool bSameRow,
 	TSet<UEdGraphNode*>& Children)
 {
-	// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Iter %s %d"), *CurrentLink.ToStringConst(), bSameRow);
+	UE_LOG(LogFormatY, Log, TEXT("Iter %s %d"), *CurrentLink.ToStringConst(), bSameRow);
 
 	UEdGraphNode* CurrentNode = CurrentLink.GetNode();
 	// GraphHandler->GetGraphOverlay()->DrawNodeInQueue(CurrentNode);
@@ -1134,15 +1162,22 @@ void FEdGraphFormatter::FormatY_Recursive(
 				bNoCollision = false;
 				const int32 Delta = OtherBounds.Bottom - MyBounds.Top;
 
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Collision between %d | %s and %s"),
-				// 	Delta + 1,
-				// 	*FBAUtils::GetNodeName(CurrentNode),
-				// 	*FBAUtils::GetNodeName(NodeToCollisionCheck));
-				//
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t%s"), *MyBounds.ToString());
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t%s"), *OtherBounds.ToString());
+				UE_LOG(LogFormatY, Log, TEXT("Collision between %d | %s and %s"),
+					Delta + 1,
+					*FBAUtils::GetNodeName(CurrentNode),
+					*FBAUtils::GetNodeName(NodeToCollisionCheck));
 
-					// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\tMoved node single %s"), *FBAUtils::GetNodeName(CurrentNode));
+				UE_LOG(LogFormatY, Log, TEXT("\t%s"), *MyBounds.ToString());
+				UE_LOG(LogFormatY, Log, TEXT("\t%s"), *OtherBounds.ToString());
+
+				UE_LOG(LogFormatY, Log, TEXT("\t\tMoved node single %s"), *FBAUtils::GetNodeName(CurrentNode));
+
+				if (BA_DEBUG("DrawYCollision"))
+				{
+					GraphHandler->GetGraphOverlay()->DrawBounds(OtherBounds, FLinearColor::Red);
+					GraphHandler->GetGraphOverlay()->DrawBounds(MyBounds, FLinearColor::Green);
+				}
+
 				CurrentNode->NodePosY += Delta + 1;
 
 				CurrentNode->NodePosY = FBAUtils::AlignTo8x8Grid(CurrentNode->NodePosY);
@@ -1217,9 +1252,9 @@ void FEdGraphFormatter::FormatY_Recursive(
 				continue;
 			}
 
-			// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tIter Child %s"), *Link.ToStringConst());
+			// UE_LOG(LogFormatY, Log, TEXT("\tIter Child %s"), *Link.ToStringConst());
 
-			// ignore input links if they have execution to a node we've already processed 
+			// ignore input links if they have execution to a node we've already processed
 			bool bSkipInputExecution = Link.GetDirection() == EGPD_Input && FBAUtils::DoesNodeHaveExecutionTo(ToNode, NodesToCollisionCheck, EGPD_Input);
 
 			if (VisitedLinks.Contains(Link)
@@ -1228,12 +1263,12 @@ void FEdGraphFormatter::FormatY_Recursive(
 				|| NodesToCollisionCheck.Contains(ToNode)
 				|| bSkipInputExecution)
 			{
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tSkipping child"));
+				// UE_LOG(LogFormatY, Log, TEXT("\t\t\tSkipping child"));
 				continue;
 			}
 			VisitedLinks.Add(Link);
 
-			// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\tTaking Child %s"), *FBAUtils::GetNodeName(OtherNode));
+			// UE_LOG(LogFormatY, Log, TEXT("\t\tTaking Child %s"), *FBAUtils::GetNodeName(OtherNode));
 
 			FBAUtils::StraightenPin(GraphHandler, Link.From, Link.To);
 
@@ -1244,7 +1279,7 @@ void FEdGraphFormatter::FormatY_Recursive(
 			{
 				// bChildIsSameRow = true;
 				bFirstPin = false;
-				// UE_LOG(LogBlueprintAssist, Error, TEXT("\t\tNode %s is same row as %s"),
+				// UE_LOG(LogFormatY, Error, TEXT("\t\tNode %s is same row as %s"),
 				//        *FBAUtils::GetNodeName(OtherNode),
 				//        *FBAUtils::GetNodeName(CurrentNode));
 			}
@@ -1252,7 +1287,7 @@ void FEdGraphFormatter::FormatY_Recursive(
 			{
 				if (LastProcessed != nullptr)
 				{
-					//UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Moved node %s to %s"), *FBAUtils::GetNodeName(OtherNode), *FBAUtils::GetNodeName(LastPinOther->GetOwningNode()));
+					//UE_LOG(LogFormatY, Log, TEXT("Moved node %s to %s"), *FBAUtils::GetNodeName(OtherNode), *FBAUtils::GetNodeName(LastPinOther->GetOwningNode()));
 					int32 NewNodePosY = FMath::Max(ToNode->NodePosY, LastProcessed->GetOwningNode()->NodePosY);
 					FBAUtils::SetNodePosY(GraphHandler, ToNode, NewNodePosY);
 				}
@@ -1294,10 +1329,10 @@ void FEdGraphFormatter::FormatY_Recursive(
 				ChildBranches.Add(ChildBranch(Link.To, Link.From, LocalChildren));
 			}
 
-			//UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Local children for %s"), *FBAUtils::GetNodeName(CurrentNode));
+			//UE_LOG(LogFormatY, Log, TEXT("Local children for %s"), *FBAUtils::GetNodeName(CurrentNode));
 			//for (UEdGraphNode* Node : LocalChildren)
 			//{
-			//	UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tChild %s"), *FBAUtils::GetNodeName(Node));
+			//	UE_LOG(LogFormatY, Log, TEXT("\tChild %s"), *FBAUtils::GetNodeName(Node));
 			//}
 
 			if (!bChildIsSameRow && LocalChildren.Num() > 0)
@@ -1397,179 +1432,10 @@ void FEdGraphFormatter::FormatY_Recursive(
 
 	if (bSameRow && CurrentLink.From != nullptr && !bCenteredParent)
 	{
-		// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\tFinal Straightening %s"), *CurrentLink.ToStringConst());
+		// UE_LOG(LogFormatY, Log, TEXT("\t\t\tFinal Straightening %s"), *CurrentLink.ToStringConst());
 
 		FBAUtils::StraightenPin(GraphHandler, CurrentLink.To, CurrentLink.From);
 		RefreshParameters(CurrentLink.GetFromNodeUnsafe());
-	}
-}
-
-void FEdGraphFormatter::GetPinsOfSameHeight_Recursive(
-	UEdGraphNode* CurrentNode,
-	UEdGraphPin* CurrentPin,
-	UEdGraphPin* ParentPin,
-	TSet<UEdGraphNode*>& NodesToCollisionCheck,
-	TSet<FPinLink>& VisitedLinks)
-{
-	NodesToCollisionCheck.Emplace(CurrentNode);
-
-	TArray<TArray<UEdGraphPin*>> OutputInput;
-
-	bool bFirstPin = true;
-
-	auto& GraphHandlerCapture = GraphHandler;
-
-	auto LinkedToSorter = [&GraphHandlerCapture, &NodesToCollisionCheck](UEdGraphPin& PinA, UEdGraphPin& PinB)
-	{
-		struct FLocal
-		{
-			static void GetPins(UEdGraphPin* NextPin, TSet<UEdGraphNode*>& VisitedNodes, TArray<UEdGraphPin*>& OutPins, bool& bHasEventNode, int32& DepthToEventNode, int32 TempDepth)
-			{
-				if (FBAUtils::IsEventNode(NextPin->GetOwningNode()))
-				{
-					DepthToEventNode = TempDepth;
-					bHasEventNode = true;
-				}
-
-				if (VisitedNodes.Contains(NextPin->GetOwningNode()))
-				{
-					OutPins.Add(NextPin);
-					return;
-				}
-
-				VisitedNodes.Add(NextPin->GetOwningNode());
-
-				auto NextPins = FBAUtils::GetLinkedToPins(NextPin->GetOwningNode(), EGPD_Input);
-
-				for (UEdGraphPin* Pin : NextPins)
-				{
-					GetPins(Pin, VisitedNodes, OutPins, bHasEventNode, DepthToEventNode, TempDepth + 1);
-				}
-			}
-
-			static UEdGraphPin* HighestPin(TSharedPtr<FBAGraphHandler> GraphHandler, UEdGraphPin* Pin, TSet<UEdGraphNode*>& VisitedNodes, bool& bHasEventNode, int32& DepthToEventNode)
-			{
-				TArray<UEdGraphPin*> OutPins;
-				GetPins(Pin, VisitedNodes, OutPins, bHasEventNode, DepthToEventNode, 0);
-
-				if (OutPins.Num() == 0)
-				{
-					return nullptr;
-				}
-
-				OutPins.StableSort([GraphHandler](UEdGraphPin& PinA, UEdGraphPin& PinB)
-				{
-					const FVector2D PinPosA = FBAUtils::GetPinPos(GraphHandler, &PinA);
-					const FVector2D PinPosB = FBAUtils::GetPinPos(GraphHandler, &PinB);
-
-					if (PinPosA.X != PinPosB.X)
-					{
-						return PinPosA.X < PinPosB.X;
-					}
-
-					return PinPosA.Y < PinPosB.Y;
-				});
-
-				return OutPins[0];
-			}
-		};
-
-		bool bHasEventNodeA = false;
-		int32 DepthToEventNodeA = 0;
-
-		auto VisitedNodesCopyA = NodesToCollisionCheck;
-		UEdGraphPin* HighestPinA = FLocal::HighestPin(GraphHandlerCapture, &PinA, VisitedNodesCopyA, bHasEventNodeA, DepthToEventNodeA);
-		bool bHasEventNodeB = false;
-		int32 DepthToEventNodeB = 0;
-		auto VisitedNodesCopyB = NodesToCollisionCheck;
-		UEdGraphPin* HighestPinB = FLocal::HighestPin(GraphHandlerCapture, &PinB, VisitedNodesCopyB, bHasEventNodeB, DepthToEventNodeB);
-
-		if (HighestPinA == nullptr || HighestPinB == nullptr)
-		{
-			if (bHasEventNodeA != bHasEventNodeB)
-			{
-				return bHasEventNodeA > bHasEventNodeB;
-			}
-
-			return DepthToEventNodeA > DepthToEventNodeB;
-		}
-
-		const FVector2D PinPosA = FBAUtils::GetPinPos(GraphHandlerCapture, HighestPinA);
-		const FVector2D PinPosB = FBAUtils::GetPinPos(GraphHandlerCapture, HighestPinB);
-
-		if (PinPosA.X != PinPosB.X)
-		{
-			return PinPosA.X < PinPosB.X;
-		}
-
-		return PinPosA.Y < PinPosB.Y;
-	};
-
-	const EEdGraphPinDirection ParentDirection = ParentPin == nullptr ? EGPD_Output : ParentPin->Direction.GetValue();
-	TArray<EEdGraphPinDirection> Directions = { ParentDirection, UEdGraphPin::GetComplementaryDirection(ParentDirection) };
-	for (auto CurrentDirection : Directions)
-	{
-		TArray<UEdGraphPin*> Pins = FBAUtils::GetLinkedPins(CurrentNode, CurrentDirection)
-			.FilterByPredicate(FBAUtils::IsExecOrDelegatePin)
-			.FilterByPredicate(FBAUtils::IsPinLinked);
-
-		Pins.StableSort([&GraphHandler = GraphHandler](const UEdGraphPin& A, const UEdGraphPin& B)
-		{
-			return GraphHandler->GetPinY(&A) < GraphHandler->GetPinY(&B);
-		});
-
-		TArray<FPinLink> LinksToIterate;
-		for (UEdGraphPin* MyPin : Pins)
-		{
-			TArray<UEdGraphPin*> LinkedPins = MyPin->LinkedTo;
-
-			if (MyPin->Direction == EGPD_Input && UBASettings::Get().FormattingStyle == EBANodeFormattingStyle::Expanded)
-			{
-				LinkedPins.StableSort(LinkedToSorter);
-			}
-
-			for (int i = 0; i < LinkedPins.Num(); ++i)
-			{
-				UEdGraphPin* OtherPin = LinkedPins[i];
-				UEdGraphNode* OtherNode = OtherPin->GetOwningNode();
-				FPinLink Link(MyPin, OtherPin);
-
-
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("TRY Iterating (%s) %s"), *FBAUtils::GetNodeName(CurrentNode), *Link.ToString());
-				if (VisitedLinks.Contains(Link)
-					|| !NodePool.Contains(OtherNode)
-					|| FBAUtils::IsNodePure(OtherNode))
-				{
-					// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tSkipping"));
-					continue;
-				}
-
-				if (NodesToCollisionCheck.Contains(OtherNode))
-				{
-					// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tSkipping visited"));
-					continue;
-				}
-
-				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("INITIAL Iterating (%s) %s"), *FBAUtils::GetNodeName(CurrentNode), *Link.ToString());
-
-				VisitedLinks.Add(Link);
-				if (bFirstPin && (ParentPin == nullptr || MyPin->Direction == ParentPin->Direction))
-				{
-					// for (auto& VisitedLink : VisitedLinks)
-					// {
-					// 	UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t\t\t\t%s"), *VisitedLink.ToString());
-					// }
-					// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tSame row? %s"), *Link.ToString());
-					SameRowMapping.Add(Link, true);
-					SameRowMapping.Add(FPinLink(OtherPin, MyPin), true);
-					SameRowMappingDirect.Add(OtherPin, MyPin);
-					SameRowMappingDirect.Add(MyPin, OtherPin);
-					bFirstPin = false;
-				}
-
-				GetPinsOfSameHeight_Recursive(OtherNode, OtherPin, MyPin, NodesToCollisionCheck, VisitedLinks);
-			}
-		}
 	}
 }
 
@@ -1802,7 +1668,7 @@ void FEdGraphFormatter::ApplyCommentPaddingY_Recursive(TArray<UEdGraphNode*> Nod
 
 						// FBAUtils::PrintNodeArray(NodeAContains.Array());
 						// FBAUtils::PrintNodeArray(ParamFormatter->GetFormattedNodes().Array());
-						
+
 						if (Intersection.Num() > 0)
 						{
 							continue;
@@ -2047,6 +1913,19 @@ void FEdGraphFormatter::ApplyCommentPaddingAfterKnots_Recursive(TArray<UEdGraphN
 			{
 				const float Delta = BoundsA.Bottom + 1.0f - BoundsB.Top;
 
+				if (BA_DEBUG("DrawCommentCollision_AfterKnots"))
+				{
+					GraphHandler->GetGraphOverlay()->DrawBounds(BoundsA);
+					GraphHandler->GetGraphOverlay()->DrawBounds(BoundsB, FLinearColor::Red);
+
+					UE_LOG(LogBlueprintAssist, Log, TEXT("{%s} %d COLLISION {%s} %d"),
+						*FBAUtils::GetNodeName(NodeA),
+						CommentA != nullptr,
+						*FBAUtils::GetNodeName(NodeB),
+						CommentB != nullptr
+					);
+				}
+
 				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tCollision!"));
 				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t%s"), *BoundsA.ToString());
 				// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\t%s"), *BoundsB.ToString());
@@ -2237,7 +2116,7 @@ void FEdGraphFormatter::ApplyCommentPaddingX_Recursive(
 			{
 				continue;
 			}
-			
+
 			if (CommentA && CommentB)
 			{
 				if (AreCommentsIntersecting(CommentA, CommentB))
@@ -2250,7 +2129,7 @@ void FEdGraphFormatter::ApplyCommentPaddingX_Recursive(
 			bool bSkip = false;
 			if (CommentB && !CommentA)
 			{
-				// check our input links are not inside comment 
+				// check our input links are not inside comment
 				// for edge case where B is not in the comment but A and C are (A->B->C)
 				const TArray<UEdGraphNode*>& ContainsB = CommentHandler.ContainsGraph->GetNode(CommentB)->AllContainedNodes;
 				for (UEdGraphNode* InputNode : FBAUtils::GetLinkedNodes(NodeA, EGPD_Input))
@@ -2612,10 +2491,10 @@ TArray<UEdGraphNode*> FEdGraphFormatter::GetChildTree(TSharedPtr<FFormatXInfo> F
 			return false;
 		}
 
-		// skip if we have a same row mapping but it is not the same as the child mapping from format x info  
+		// skip if we have a same row mapping but it is not the same as the child mapping from format x info
 		const bool bSkip = SameRowMappingDirect[FBAGraphPinHandle(ToPin)] != FBAGraphPinHandle(FromPin);
 		// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("\tbSkip %d"), bSkip);
-		return bSkip; 
+		return bSkip;
 	};
 
 	return FormatXInfo->GetChildrenWithFilter(Filter);
@@ -2632,7 +2511,7 @@ TArray<UEdGraphNode*> FEdGraphFormatter::GetSameRowNodes(UEdGraphNode* Node)
 			OutNodes.Add(SameRowPin->GetPin()->GetOwningNode());
 		}
 	}
-	
+
 	return OutNodes;
 }
 
@@ -2710,7 +2589,10 @@ void FEdGraphFormatter::MoveChildrenX_Recursive(TSharedPtr<FFormatXInfo> Node, f
 		}
 	}
 
-	for (TSharedPtr<FFormatXInfo> ChildInfo : Node->Children)
+	TArray<TSharedPtr<FFormatXInfo>, TInlineAllocator<8>> Children;
+	Children.Append(Node->Children);
+
+	for (const TSharedPtr<FFormatXInfo>& ChildInfo : Children)
 	{
 		MoveChildrenX_Recursive(ChildInfo, DeltaX, Visited);
 	}
@@ -2718,7 +2600,12 @@ void FEdGraphFormatter::MoveChildrenX_Recursive(TSharedPtr<FFormatXInfo> Node, f
 
 bool FEdGraphFormatter::ShouldFormatNode(UEdGraphNode* Node) const
 {
-	return !FormatterParameters.IgnoredNodes.GetCachedNodes().Contains(Node) && GraphHandler->FilterSelectiveFormatting(Node, FormatterParameters.NodesToFormat.GetCachedNodes());
+	return FormatterParameters.IsValidNode(Node);
+}
+
+bool FEdGraphFormatter::ShouldFormatLink(const FPinLink& Link) const
+{
+	return FormatterParameters.IsValidLink(Link);
 }
 
 void FEdGraphFormatter::SetNodeY_KeepingSpacingVisited(UEdGraphNode* Node, float NewPosY, TSet<UEdGraphNode*>& VisitedNodes)
@@ -2739,7 +2626,7 @@ void FEdGraphFormatter::SetNodeY_KeepingSpacingVisited(UEdGraphNode* Node, float
 
 		VisitedNodes.Add(Current);
 
-		// only move impure nodes and knot nodes (params will be moved with refresh params, comments will auto move) 
+		// only move impure nodes and knot nodes (params will be moved with refresh params, comments will auto move)
 		if (FBAUtils::IsNodeImpure(Current) || FBAUtils::IsKnotNode(Current))
 		{
 			Current->NodePosY += Delta;
@@ -2859,19 +2746,276 @@ void FEdGraphFormatter::RemoveKnotNodes()
 	KnotTrackCreator.RemoveKnotNodes(NodeTree);
 }
 
-void FEdGraphFormatter::GetPinsOfSameHeight()
+void FEdGraphFormatter::InitSameRowMapping()
 {
-	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("FEdGraphFormatter::GetPinsOfSameHeight"), STAT_EdGraphFormatter_GetPinsOfSameHeight, STATGROUP_BA_EdGraphFormatter);
-	TSet<UEdGraphNode*> NodesToCollisionCheck;
-	TSet<FPinLink> VisitedLinks;
-	TSet<UEdGraphNode*> TempChildren;
-	GetPinsOfSameHeight_Recursive(GetRootNode(), nullptr, nullptr, NodesToCollisionCheck, VisitedLinks);
+	TSet<UEdGraphNode*> Visited;
+
+	TArray<UEdGraphNode*> CurrStack = { GetRootNode() };
+	TArray<TSharedPtr<FFPNodeRow>> NextRows;
+	TQueue<TSharedPtr<FFPNodeRow>> NextInputRows;
+
+	TSharedPtr<FFPNodeRow> CurrRow = MakeShared<FFPNodeRow>();
+
+	while (!CurrStack.IsEmpty() || !NextRows.IsEmpty() || !NextInputRows.IsEmpty())
+	{
+		UEdGraphNode* Next = nullptr;
+
+		// the curr stack iters the node in the curr row
+		if (!CurrStack.IsEmpty())
+		{
+			Next = CurrStack.Pop();
+			UE_LOG(LogSameRow, Log, TEXT("%hs - Iter current row %s"), __FUNCTION__, *FBAUtils::GetNodeName(Next));
+		}
+		// use the next pending row
+		else if (!NextRows.IsEmpty())
+		{
+			CurrRow = NextRows.Pop();
+
+			TSet<UEdGraphNode*> TmpVisited;
+			// if (UEdGraphNode* NextRoot = FindInputRoot(CurrRow->ParentLink.GetToNode(), Visited, TmpVisited))
+			if (UEdGraphNode* NextRoot = FindInputRoot(CurrRow->ParentLink.GetToNode(), Visited, TmpVisited))
+			{
+				// auto NextRoot = CurrRow->ParentLink.GetToNode();
+				UE_LOG(LogSameRow, Log, TEXT("%hs - Use new output row %s from %s"), __FUNCTION__, *FBAUtils::GetNodeName(NextRoot), *CurrRow->ParentLink.ToString());
+				CurrStack.Push(NextRoot);
+			}
+			else
+			{
+				UE_LOG(LogSameRow, Error, TEXT("Failed to find output root?"))
+			}
+
+			continue;
+		}
+		// use the next pending input row (need to iterate backwards to find the true root)
+		else if (!NextInputRows.IsEmpty())
+		{
+			NextInputRows.Dequeue(CurrRow);
+
+			TSet<UEdGraphNode*> TmpVisited;
+			if (UEdGraphNode* NextRoot = FindInputRoot(CurrRow->ParentLink.GetToNode(), Visited, TmpVisited))
+			{
+				UE_LOG(LogSameRow, Log, TEXT("%hs - Use new input row %s from %s"), __FUNCTION__, *FBAUtils::GetNodeName(NextRoot), *CurrRow->ParentLink.ToString());
+				CurrStack.Push(NextRoot);
+			}
+			else
+			{
+				UE_LOG(LogSameRow, Error, TEXT("Failed to find input root?"))
+			}
+
+			continue;
+		}
+
+		if (Visited.Contains(Next))
+		{
+			continue;
+		}
+
+		UE_LOG(LogSameRow, Log, TEXT("%hs - Iterate next %s"), __FUNCTION__, *FBAUtils::GetNodeName(Next));
+		// GraphHandler->GetGraphOverlay()->DrawNodeInQueue(Next);
+
+		CurrRow->Nodes.Add(Next);
+
+		Visited.Add(Next);
+
+		if (!AllNodeRows.Contains(CurrRow))
+		{
+			AllNodeRows.Add(CurrRow);
+
+			if (CurrRow->ParentRow)
+			{
+				CurrRow->ParentRow->ChildRows.Add(CurrRow);
+			}
+		}
+
+		TArray<FPinLink> FilteredLinks;
+		TArray<FPinLink> Links = FBAUtils::GetPinLinks(Next).FilterByPredicate(&FBAUtils::IsExecOrDelegatePinLink);
+		for (int i = 0; i < Links.Num(); ++i)
+		{
+			FPinLink& Link = Links[i];
+			UEdGraphNode* ToNode = Link.GetToNode();
+
+			if (!NodePool.Contains(ToNode))
+			{
+				continue;
+			}
+
+			// UE_LOG(LogTemp, Warning, TEXT("Checking %d %s %s"), i, *FBAUtils::GetNodeName(Next), *FBAUtils::GetNodeName(ToNode));
+
+			if (Visited.Contains(ToNode))
+			{
+				continue;
+			}
+
+			bool bIsLooping = LoopingLinks.Contains(Link);
+
+			if (bIsLooping)
+			{
+				continue;
+			}
+
+			if (CurrStack.Contains(ToNode))
+			{
+				continue;
+			}
+
+			FilteredLinks.Add(Link);
+		}
+
+		FilteredLinks.StableSort([&](const FPinLink& PinA, const FPinLink& PinB)
+		{
+			if (PinA.GetDirection() != PinB.GetDirection())
+			{
+				// output first
+				return PinA.GetDirection() > PinB.GetDirection();
+			}
+
+			return GraphHandler->GetPinY(PinA.From) < GraphHandler->GetPinY(PinB.From);
+		});
+
+		// UE_LOG(LogSameRow, Log, TEXT("%hs - LOG FILTERED LINKS %s"), __FUNCTION__, *FBAUtils::GetNodeName(Next));
+		// for (int i = FilteredLinks.Num() - 1; i >= 0; --i)
+		// {
+		// 	FPinLink& Link = FilteredLinks[i];
+		// 	UE_LOG(LogSameRow, Log, TEXT("%hs - FilteredLink Order %s"), __FUNCTION__, *Link.ToString());
+		// }
+
+		for (int i = FilteredLinks.Num() - 1; i >= 0; --i)
+		{
+			FPinLink& Link = FilteredLinks[i];
+			UEdGraphNode* ToNode = Link.GetToNode();
+			if (Visited.Contains(ToNode))
+			{
+				continue;
+			}
+
+			UE_LOG(LogSameRow, Log, TEXT("%hs - Link %s"), __FUNCTION__, *Link.ToString());
+
+			bool bIsLooping = LoopingLinks.Contains(Link);
+
+			if (Link.GetDirection() == EGPD_Output)
+			{
+				FBAUtils::StraightenPin(GraphHandler, Link);
+				FBAUtils::AlignTo8x8Grid(Link.GetToNode()->NodePosY);
+
+				// same row if it's the first pin (since we sorted by direction earlier, 0 will always be the first output pin)
+				if (i == 0)
+				{
+					UE_LOG(LogSameRow, Log, TEXT("%hs - Add curr row %s"), __FUNCTION__, *Link.ToString());
+					SameRowMapping.Add(Link, true);
+					SameRowMapping.Add(Link.MakeOppositeLink(), true);
+					SameRowMappingDirect.Add(Link.From, Link.To);
+					SameRowMappingDirect.Add(Link.To, Link.From);
+					CurrStack.Push(ToNode);
+				}
+				else
+				{
+					// make a new row
+					UE_LOG(LogSameRow, Log, TEXT("%hs - Add output row %s"), __FUNCTION__, *Link.ToString());
+					TSharedRef<FFPNodeRow> NewRow = MakeShared<FFPNodeRow>();
+					NewRow->ParentLink = Link;
+					NewRow->ParentRow = CurrRow;
+
+					NextRows.Push(NewRow);
+				}
+			}
+			else
+			{
+				if (!bIsLooping)
+				{
+					UE_LOG(LogSameRow, Log, TEXT("%hs - Add input row %s"), __FUNCTION__, *Link.ToString());
+					TSharedRef<FFPNodeRow> NewRow = MakeShared<FFPNodeRow>();
+					NewRow->ParentLink = Link;
+					NewRow->ParentRow = CurrRow;
+					NextInputRows.Enqueue(NewRow);
+				}
+			}
+		}
+	}
+}
+
+
+UEdGraphNode* FEdGraphFormatter::FindInputRoot(UEdGraphNode* Node, TSet<UEdGraphNode*>& OutVisited, TSet<UEdGraphNode*>& InVisited)
+{
+	// if (OutVisited.Contains(Node))
+	// {
+	// 	UE_LOG(LogSameRow, Log, TEXT("%hs - OutVisited contains %s, skipping"), __FUNCTION__, *FBAUtils::GetNodeName(Node));
+	// 	return nullptr;
+	// }
+
+	if (InVisited.Contains(Node))
+	{
+		UE_LOG(LogSameRow, Log, TEXT("%hs - InVisited contains %s, skipping"), __FUNCTION__, *FBAUtils::GetNodeName(Node));
+		return nullptr;
+	}
+
+	InVisited.Add(Node);
+
+	// GraphHandler->GetGraphOverlay()->DrawNodeInQueue(Node);
+	UE_LOG(LogSameRow, Log, TEXT("%hs - %s"), __FUNCTION__, *FBAUtils::GetNodeName(Node));
+
+	const auto InNodePool = [&](const FPinLink& Link)
+	{
+		return NodePool.Contains(Link.GetToNodeUnsafe()) && FBAUtils::IsExecOrDelegatePinLink(Link);
+	};
+
+	auto Links = FBAUtils::GetPinLinks(Node, EGPD_Input).FilterByPredicate(InNodePool);
+	Links.StableSort(FBAUtils::GetHighestPinLinkPredicate(GraphHandler));
+
+	TArray<FPinLink> FilteredInputLinks;
+	for (FPinLink& Link : Links)
+	{
+		if (OutVisited.Contains(Link.GetToNode()))
+		{
+			continue;
+		}
+
+		if (!NodePool.Contains(Link.GetToNode()))
+		{
+			continue;
+		}
+
+		// skip looping links
+		if (!LoopingLinks.Contains(Link))
+		{
+			FilteredInputLinks.Add(Link);
+		}
+	}
+
+	// root has no exec input links
+	if (FilteredInputLinks.Num() == 0)
+	{
+		UE_LOG(LogSameRow, Log, TEXT("%hs - No input links, returning %s"), __FUNCTION__, *FBAUtils::GetNodeName(Node));
+		return Node;
+	}
+
+	for (FPinLink& Link : FilteredInputLinks)
+	{
+		if (UEdGraphNode* Root = FindInputRoot(Link.GetToNode(), OutVisited, InVisited))
+		{
+			UE_LOG(LogSameRow, Log, TEXT("%hs - FOUND ROOT %s"), __FUNCTION__, *FBAUtils::GetNodeName(Root));
+			return Root;
+		}
+	}
+
+	return nullptr;
+}
+
+TSharedPtr<FFPNodeRow> FEdGraphFormatter::FindNodeRow(UEdGraphNode* Node)
+{
+	for (TSharedPtr<FFPNodeRow> Row : AllNodeRows)
+	{
+		if (Row->Nodes.Contains(Node))
+		{
+			return Row;
+		}
+	}
+
+	return nullptr;
 }
 
 void FEdGraphFormatter::FormatParameterNodes()
 {
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("FEdGraphFormatter::FormatParameterNodes"), STAT_EdGraphFormatter_FormatParameterNodes, STATGROUP_BA_EdGraphFormatter);
-	TArray<UEdGraphNode*> IgnoredNodes = GetFormatterParameters().IgnoredNodes.GetCachedNodes();
 
 	TArray<UEdGraphNode*> NodePoolCopy = NodePool;
 
@@ -2888,6 +3032,8 @@ void FEdGraphFormatter::FormatParameterNodes()
 
 	ParameterParentMap.Reset();
 
+	TSet<UEdGraphNode*> IgnoredNodes = GetFormatterParameters().IgnoredNodes.GetNodeObjs();
+
 	for (UEdGraphNode* MainNode : NodePoolCopy)
 	{
 		// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("Format parameters for node %s"), *FBAUtils::GetNodeName(MainNode));
@@ -2901,7 +3047,7 @@ void FEdGraphFormatter::FormatParameterNodes()
 		{
 			if (ParameterParentMap.Contains(NodeToCheck))
 			{
-				// if the node already has a parent, update the old parent by removing 
+				// if the node already has a parent, update the old parent by removing
 				TSharedPtr<FEdGraphParameterFormatter> ParentFormatter = ParameterParentMap[NodeToCheck];
 				ParentFormatter->FormattedOutputNodes.Remove(NodeToCheck);
 				ParentFormatter->AllFormattedNodes.Remove(NodeToCheck);
@@ -3004,18 +3150,19 @@ bool FEdGraphFormatter::IsFormattingRequired(const TArray<UEdGraphNode*>& NewNod
 
 TArray<UEdGraphNode*> FEdGraphFormatter::GetNodeTree(UEdGraphNode* InitialNode) const
 {
-	const auto& GraphHandlerCapture = GraphHandler;
-	const auto& FormatterParametersCapture = FormatterParameters;
-
 	const auto ExecFilter = [&](const FPinLink& Link)
 	{
-		return ShouldFormatNode(Link.GetToNodeUnsafe()) && FBAUtils::IsExecOrDelegatePinLink(Link) && GraphHandlerCapture->FilterDelegatePin(Link, FormatterParametersCapture.NodesToFormat.GetCachedNodes());
+		return ShouldFormatNode(Link.GetToNodeUnsafe())
+			&& FBAUtils::IsExecOrDelegatePinLink(Link)
+			&& ShouldFormatLink(Link);
 	};
 
 	const auto PureFilter = [&](const FPinLink& Link)
 	{
-		return ShouldFormatNode(Link.GetToNodeUnsafe()) && FBAUtils::IsNodePure(Link.GetToNodeUnsafe()) && GraphHandlerCapture->FilterDelegatePin(Link, FormatterParametersCapture.NodesToFormat.GetCachedNodes());
-	}; 
+		return ShouldFormatNode(Link.GetToNodeUnsafe())
+			&& FBAUtils::IsNodePure(Link.GetToNodeUnsafe())
+			&& ShouldFormatLink(Link);
+	};
 
 	TSet<UEdGraphNode*> ExecTree = FBAUtils::GetNodeTreeWithFilter(InitialNode, ExecFilter);
 
@@ -3119,7 +3266,7 @@ TSharedPtr<FEdGraphParameterFormatter> FEdGraphFormatter::GetParameterFormatter(
 	{
 		return Parent;
 	}
-	
+
 	if (!ParameterFormatterMap.Contains(Node))
 	{
 		ParameterFormatterMap.Add(Node, MakeShared<FEdGraphParameterFormatter>(GraphHandler, Node, SharedThis(this)));
@@ -3235,7 +3382,7 @@ bool FEdGraphFormatter::ShouldIgnoreComment(TSharedPtr<FBACommentContainsNode> C
 		return true;
 	}
 
-	// ignore if the comment contains a node which isn't going to be formatted 
+	// ignore if the comment contains a node which isn't going to be formatted
 	for (UEdGraphNode* Node : NodesUnderComment)
 	{
 		if (!FormattedNodes.Contains(Node))
@@ -3255,7 +3402,7 @@ bool FEdGraphFormatter::ShouldIgnoreComment(TSharedPtr<FBACommentContainsNode> C
 		}
 	}
 
-	// ignore if all nodes are not in the same node tree 
+	// ignore if all nodes are not in the same node tree
 	const auto IsUnderComment = [&NodesUnderComment](const FPinLink& PinLink)
 	{
 		return NodesUnderComment.Contains(PinLink.GetNode());
@@ -3291,18 +3438,51 @@ void FEdGraphFormatter::PostFormatting()
 	ConnectionValidator.CheckChanged(GraphHandler->GetFocusedEdGraph());
 
 	// draw path
-	for (auto Node : NodePool)
+	if (BA_DEBUG("Path"))
 	{
-		auto XInfo = GetFormatXInfo(Node);
-		GraphHandler->GetGraphOverlay()->DrawDebugPinLink("Path", XInfo->Link, FLinearColor::Green, 10.0f);
+		for (auto Node : NodePool)
+		{
+			auto XInfo = GetFormatXInfo(Node);
+			GraphHandler->GetGraphOverlay()->DrawDebugPinLink("Path", XInfo->Link, FLinearColor::Green, 10.0f);
+		}
 	}
 
-	for (auto& Elem : SameRowMapping)
+	if (BA_DEBUG("DrawSameRow"))
 	{
-		if (Elem.Value)
+		for (auto& Elem : SameRowMapping)
 		{
-			// UE_LOG(LogBlueprintAssist, VeryVerbose, TEXT("%s, %d"), *Link.ToStringConst(), bIsSameRow);
-			GraphHandler->GetGraphOverlay()->DrawDebugPinLink("DrawSameRow", Elem.Key, FLinearColor::Green, 4.0f);
+			if (Elem.Value)
+			{
+				UE_LOG(LogBlueprintAssist, Log, TEXT("Same Row %s"), *Elem.Key.ToStringConst());
+				GraphHandler->GetGraphOverlay()->DrawDebugPinLink("DrawSameRow", Elem.Key, FLinearColor::Green, 4.0f);
+			}
+		}
+	}
+
+	if (BA_DEBUG("DrawNodeRows"))
+	{
+		for (int i = 0; i < AllNodeRows.Num(); ++i)
+		{
+			TSharedPtr<FFPNodeRow>& Row = AllNodeRows[i];
+
+			UE_LOG(LogSameRow, Log, TEXT("%hs - Logging node row %s"), __FUNCTION__, *Row->ParentLink.ToString());
+			for (int NodeIndex = 0; NodeIndex < Row->Nodes.Num(); ++NodeIndex)
+			{
+				auto N = Row->Nodes[NodeIndex];
+				UE_LOG(LogSameRow, Log, TEXT("%hs - %s (%s)"), __FUNCTION__, *FBAUtils::GetNodeName(N), *N->NodeGuid.ToString());
+
+				if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetGraphNode(GraphHandler->GetGraphPanel(), N))
+				{
+					FBAGraphOverlayTextParams Params;
+					Params.Text = FText::FromString(FString::Printf(TEXT("%d.%d"), i, NodeIndex));
+					Params.Widget = GraphNode;
+					Params.WidgetBounds = FBAUtils::GetNodeBounds(GraphNode);
+					GraphHandler->GetGraphOverlay()->DrawTextOverWidget(Params);
+				}
+			}
+
+			FSlateRect Bounds = FBAUtils::GetCachedNodeArrayBounds(GraphHandler, Row->Nodes);
+			GraphHandler->GetGraphOverlay()->DrawBounds(Bounds, FLinearColor::MakeRandomColor());
 		}
 	}
 }

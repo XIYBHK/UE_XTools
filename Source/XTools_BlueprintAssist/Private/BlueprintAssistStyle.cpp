@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistStyle.h"
+#include "BlueprintAssistStyle.h"
 
 #include "BlueprintAssistGlobals.h"
 #include "Interfaces/IPluginManager.h"
@@ -66,15 +66,14 @@ void FBAStyle::InitBlueprintAssistStyleSet()
 
 	BlueprintAssistStyleSet = MakeShareable(new FSlateStyleSet("BlueprintAssistStyle"));
 
-	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools");
-	if (!Plugin.IsValid())
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("XTools")))
 	{
-		UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools plugin descriptor missing, fallback to project plugins resources"));
-		BlueprintAssistStyleSet->SetContentRoot(FPaths::ProjectPluginsDir() / TEXT("XTools/Resources"));
+		BlueprintAssistStyleSet->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
 	}
 	else
 	{
-		BlueprintAssistStyleSet->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools plugin descriptor missing; using the project plugin resource path."));
+		BlueprintAssistStyleSet->SetContentRoot(FPaths::ProjectPluginsDir() / TEXT("XTools/Resources"));
 	}
 
 	BlueprintAssistStyleSet->Set("BlueprintAssist.Lock", new BA_IMAGE_BRUSH(BlueprintAssistStyleSet, "Lock", FVector2D(64.0f/64.0f)));

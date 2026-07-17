@@ -13,6 +13,7 @@
 #include "GameFramework/Actor.h"
 #include "PhysicsEngine/BodyInstance.h"
 #include "XToolsErrorReporter.h"
+#include "XToolsVersionCompat.h"
 
 UAxisLockerComponent::UAxisLockerComponent()
 {
@@ -192,6 +193,10 @@ void UAxisLockerComponent::PopLockState()
 	const FAxisLockState State = LockStateStack.Last();
 	if (UAxisLockLibrary::ApplyLockState(Target, State))
 	{
+#if XTOOLS_ENGINE_5_8_OR_LATER
+		LockStateStack.Pop(EAllowShrinking::No);
+#else
 		LockStateStack.Pop(false);
+#endif
 	}
 }

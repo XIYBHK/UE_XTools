@@ -14,6 +14,7 @@ on:
           - '5.5'
           - '5.6'
           - '5.7'
+          - '5.8'
         default: 'all'
   push:
     tags:
@@ -31,7 +32,7 @@ jobs:
     - name: Verify MSVC Toolchain Installation
       shell: pwsh -ExecutionPolicy Bypass -File {0}
       run: |
-        Write-Host "==> Verify MSVC Toolchain for UE 5.3-5.7" -ForegroundColor Cyan
+        Write-Host "==> Verify MSVC Toolchain for UE 5.3-5.8" -ForegroundColor Cyan
 
         # Try to find VS using vswhere first (most reliable method)
         $vswherePath = "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -109,6 +110,7 @@ jobs:
           "5.5" = @{ Version = "14.36"; Reason = "UE 5.5 compatible with 14.36+ (ElementSize warnings may occur)" }
           "5.6" = @{ Version = "14.36"; Reason = "UE 5.6 compatible with 14.36+ (ElementSize warnings may occur)" }
           "5.7" = @{ Version = "14.38"; Reason = "UE 5.7 requires 14.38+ (Slate API FVector2D->FVector2f changes)" }
+          "5.8" = @{ Version = "14.44"; Reason = "UE 5.8 verified with MSVC 14.44.35207" }
         }
 
         $requirements = $msvcMinRequirements[$ueVersion]
@@ -157,8 +159,8 @@ jobs:
           Write-Host "Installed versions: $($versions -join ', ')" -ForegroundColor Yellow
           Write-Host ""
           Write-Host "To resolve:" -ForegroundColor Yellow
-          if ($ueVersion -eq "5.7") {
-            Write-Host "  - Install MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.38 or higher)" -ForegroundColor Cyan
+          if ($ueVersion -in @("5.7", "5.8")) {
+            Write-Host "  - Install MSVC v143 - VS 2022 C++ x64/x86 build tools (v$($requirements.Version) or higher)" -ForegroundColor Cyan
           } else {
             Write-Host "  - Latest available 14.44.35207 should work for all UE versions" -ForegroundColor Green
           }
@@ -167,7 +169,7 @@ jobs:
 
         # Check for UE 5.7 compatible versions
         Write-Host "Checking UE 5.7 compatibility..." -ForegroundColor Cyan
-        $ue5_7Versions = @("14.40.", "14.41.", "14.42.")
+        $ue5_7Versions = @("14.40.", "14.41.", "14.42.", "14.43.", "14.44.")
         $hasUE5_7Compatible = $false
         foreach ($version in $versions) {
           foreach ($ue5_7Ver in $ue5_7Versions) {
@@ -200,7 +202,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.ue_version }}" != "all" ]]; then
             echo "matrix=[\"${{ github.event.inputs.ue_version }}\"]" >> $GITHUB_OUTPUT
           else
-            echo "matrix=[\"5.3\",\"5.4\",\"5.5\",\"5.6\",\"5.7\"]" >> $GITHUB_OUTPUT
+            echo "matrix=[\"5.3\",\"5.4\",\"5.5\",\"5.6\",\"5.7\",\"5.8\"]" >> $GITHUB_OUTPUT
           fi
 
   build-windows-optimized:
@@ -231,11 +233,17 @@ jobs:
         
         # UE installation path
         $ue_version = "${{ matrix.ue_version }}"
-        $ue_path = "F:\Epic Games\UE_$ue_version"
+        $ue_candidates = @(
+          "F:\Epic Games\UE_$ue_version"
+          "D:\Program Files\Epic Games\UE_$ue_version"
+        )
+        $ue_path = $ue_candidates |
+          Where-Object { Test-Path -LiteralPath $_ } |
+          Select-Object -First 1
         Write-Host "UE Path: $ue_path"
         
-        if (-not (Test-Path $ue_path)) {
-          throw "UE installation not found: $ue_path"
+        if (-not $ue_path) {
+          throw "UE installation not found. Tried: $($ue_candidates -join ', ')"
         }
         
         # Verify key files

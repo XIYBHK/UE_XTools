@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -32,7 +32,7 @@ public:
 
 	static void ConvertSetToGet(const UEdGraph* Graph, UK2Node_VariableSet* VariableSetNode);
 
-	static void GoToDefinition(const UEdGraphPin* Pin);
+	static void GoToDefinition(const UEdGraphPin* Pin, bool bSyncBrowser = false);
 
 	static void GenerateCreateEventNode(const UEdGraphPin* Pin);
 

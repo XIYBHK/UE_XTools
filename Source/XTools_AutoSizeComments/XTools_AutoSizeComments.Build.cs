@@ -70,6 +70,7 @@ public class XTools_AutoSizeComments : ModuleRules
                 "JsonUtilities",
                 "EngineSettings",
                 "AssetRegistry",
+                "EditorSubsystem",
                 "SourceControl"
             }
             );

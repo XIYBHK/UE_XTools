@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 // duplicate of DefinePrivateMemberPtr.h in UE5.5 for backwards compatibility
 
 #pragma once
@@ -57,7 +57,13 @@ namespace BA::Private
 // Stuff.*GPrivateStuffValPtr = 7;
 // (Stuff.*GPrivateStuffLogVal)(); // Logs: "Val: 7"
 //
+#if BA_UE_VERSION_OR_LATER(5, 8)
+#define BA_REMOVE_OPTIONAL_PARENS(...) UE_REMOVE_OPTIONAL_PARENS(__VA_ARGS__)
+#else
+#define BA_REMOVE_OPTIONAL_PARENS(...) PREPROCESSOR_REMOVE_OPTIONAL_PARENS(__VA_ARGS__)
+#endif
+
 #define BA_DEFINE_PRIVATE_MEMBER_PTR(Type, Name, Class, Member) \
-TIdentity_T<PREPROCESSOR_REMOVE_OPTIONAL_PARENS(Type)> PREPROCESSOR_REMOVE_OPTIONAL_PARENS(Class)::* Name; \
-template struct BA::Private::TBAPrivateAccess<&Name, &PREPROCESSOR_REMOVE_OPTIONAL_PARENS(Class)::Member>
+TIdentity_T<BA_REMOVE_OPTIONAL_PARENS(Type)> BA_REMOVE_OPTIONAL_PARENS(Class)::* Name; \
+template struct BA::Private::TBAPrivateAccess<&Name, &BA_REMOVE_OPTIONAL_PARENS(Class)::Member>
 #endif

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -23,10 +23,12 @@ protected:
 
 	TUniqueFunction<void()> AsyncTaskFunc;
 	float TimeOut = 0.f;
+	float OriginTimeOut = 0.f;
 	bool bWithTimeOut = false;
+	bool bTimedOut = false;
 
 	ENamedThreads::Type ThreadType = ENamedThreads::AnyBackgroundThreadNormalTask;
-	TAtomic<bool> bIsAsyncTaskDone = false;
+	TSharedPtr<TAtomic<bool>, ESPMode::ThreadSafe> AsyncTaskDone;
 
 	bool Setup(TUniqueFunction<void()>&& InAsyncTaskFunc, float InTimeOut, EECFAsyncPrio InThreadPriority)
 	{
@@ -48,6 +50,7 @@ protected:
 			{
 				bWithTimeOut = true;
 				TimeOut = InTimeOut;
+				OriginTimeOut = InTimeOut;
 				SetMaxActionTime(TimeOut);
 			}
 			else
@@ -55,24 +58,34 @@ protected:
 				bWithTimeOut = false;
 			}
 
-			XTOOLS_ATOMIC_STORE(bIsAsyncTaskDone, false);
+			AsyncTaskDone = MakeShared<TAtomic<bool>, ESPMode::ThreadSafe>(false);
 
-			// 将任务函数按值 move 到 lambda 中，避免后台线程通过 TWeakObjectPtr 访问 UObject（非线程安全）
 			TUniqueFunction<void()> TaskCopy = MoveTemp(AsyncTaskFunc);
-			TAtomic<bool>* DoneFlag = &bIsAsyncTaskDone;
+			const TSharedRef<TAtomic<bool>, ESPMode::ThreadSafe> DoneFlag = AsyncTaskDone.ToSharedRef();
 			AsyncTask(ThreadType, [Task = MoveTemp(TaskCopy), DoneFlag]()
 			{
 				Task();
-				XTOOLS_ATOMIC_STORE(*DoneFlag, true);
+				XTOOLS_ATOMIC_STORE(DoneFlag.Get(), true);
 			});
 
 			return true;
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF Coroutine - Run Async Task and Wait failed to start. Are you sure the AsyncTask function is set properly?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF Coroutine [%s] - Run Async Task and Wait failed to start. Are you sure the AsyncTask function is set properly?"), *Settings.Label);
+#endif
 			return false;
 		}
+	}
+
+	bool Reset(bool bCallUpdate) override
+	{
+		if (bWithTimeOut)
+		{
+			TimeOut = OriginTimeOut;
+		}
+		return true;
 	}
 
 	void Tick(float DeltaTime) override
@@ -80,34 +93,33 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("RunAsyncAndWait - Tick"), STAT_ECFDETAILS_RUNASYNCANDWAIT, STATGROUP_ECFDETAILS);
 #endif
+
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - RunAsyncAndWait Tick");
+#endif
+
 		if (bWithTimeOut)
 		{
 			TimeOut -= DeltaTime;
 			if (TimeOut <= 0.f)
 			{
-				Complete(false);
+				bTimedOut = true;
 				MarkAsFinished();
+				Complete(false);
 				return;
 			}
 		}
 
-		if (XTOOLS_ATOMIC_LOAD(bIsAsyncTaskDone))
+		if (AsyncTaskDone.IsValid() && XTOOLS_ATOMIC_LOAD(*AsyncTaskDone))
 		{
-			Complete(false);
 			MarkAsFinished();
+			Complete(false);
 		}
 	}
 
 	void Complete(bool bStopped) override
 	{
-		// 修复：异步任务可能在 Owner 销毁后完成，需安全跳过
-		if (HasValidOwner())
-		{
-			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
-			{
-				CoroutineHandle.resume();
-			}
-		}
+		ResumeCoroutine(bStopped, bTimedOut);
 	}
 };
 

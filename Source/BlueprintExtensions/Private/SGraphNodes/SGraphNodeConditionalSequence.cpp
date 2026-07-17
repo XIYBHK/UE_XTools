@@ -12,6 +12,7 @@
 #include "K2Nodes/K2Node_ConditionalSequence.h"
 #include "KismetPins/SGraphPinExec.h"
 #include "NodeFactory.h"
+#include "Widgets/Images/SImage.h"
 
 class SGraphPinExecConditionalSequence : public SGraphPinExec
 {

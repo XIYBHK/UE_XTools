@@ -1,10 +1,10 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
 #include "ECFActionBase.h"
 #include "ECFCoroutine.h"
-#include "ECFSubsystem.h"
+#include "ECFLogs.h"
 #include "ECFCoroutineActionBase.generated.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
@@ -26,17 +26,36 @@ protected:
 
 	void BeginDestroy() override
 	{
-		// 协程 frame 由 Action 持有并负责销毁；Owner 提前失效时直接终止这条协程链。
-		if (bHasCoroutineHandle)
+		// A later await reassigns the same frame to a new action. Only its current action may destroy it.
+		if (bHasCoroutineHandle && CoroutineHandle &&
+			CoroutineHandle.promise().ActionHandle == HandleId)
 		{
-			if (CoroutineHandle)
-			{
-				CoroutineHandle.promise().bHasFinished = true;
-				CoroutineHandle.destroy();
-			}
-			bHasCoroutineHandle = false;
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+			UE_LOG(LogECF, Log, TEXT("Destroying coroutine frame for Handle: %s"), *HandleId.ToString());
+#endif
+			CoroutineHandle.promise().bHasFinished = true;
+			CoroutineHandle.destroy();
 		}
+		bHasCoroutineHandle = false;
 		Super::BeginDestroy();
+	}
+
+	void ResumeCoroutine(bool bStopped, bool bTimedOut = false)
+	{
+		if (!bHasCoroutineHandle || !CoroutineHandle || !HasValidOwner())
+		{
+			return;
+		}
+
+		FECFCoroutinePromise& Promise = CoroutineHandle.promise();
+		if (Promise.bHasFinished || Promise.ActionHandle != HandleId)
+		{
+			return;
+		}
+
+		Promise.bStopped = bStopped;
+		Promise.bTimedOut = bTimedOut;
+		CoroutineHandle.resume();
 	}
 
 private:
@@ -46,7 +65,12 @@ private:
 	{
 		UECFActionBase::SetAction(InOwner, InHandleId, {}, InSettings);
 		CoroutineHandle = InCoroutineHandle;
+		CoroutineHandle.promise().AssignHandle(InHandleId);
 		bHasCoroutineHandle = true;
+
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Log, TEXT("Sets Coroutine Action for Handle: %s"), *InHandleId.ToString());
+#endif
 	}
 };
 

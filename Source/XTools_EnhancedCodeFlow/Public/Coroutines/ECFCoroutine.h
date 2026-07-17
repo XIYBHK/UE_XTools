@@ -1,10 +1,14 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
-#ifdef __cpp_impl_coroutine
+#if defined(__cpp_impl_coroutine) && __has_include(<coroutine>)
+
+#define ECF_WITH_COROUTINES 1
 
 #include <coroutine>
+#include "ECFHandle.h"
+#include "ECFLogs.h"
 
 /**
  * Defining coroutine handlers and promises in order to get coroutines work.
@@ -20,21 +24,42 @@ struct FECFCoroutine : FECFCoroutineHandle
 
 struct FECFCoroutinePromise
 {
+	FECFCoroutinePromise()
+	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Log, TEXT("Coroutine Created"));
+#endif
+	}
+
+	~FECFCoroutinePromise()
+	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Log, TEXT("Coroutine Destroyed"));
+#endif
+	}
+
 	FECFCoroutine get_return_object() { return { FECFCoroutine::from_promise(*this) }; }
 	std::suspend_never initial_suspend() noexcept { return {}; }
-	// 将最终挂起交给外部所有者显式销毁，避免协程完成后句柄悬空。
 	std::suspend_always final_suspend() noexcept { return {}; }
-	void return_void() { bHasFinished = true; }
-	void unhandled_exception()
+	void return_void()
 	{
-		// 标记协程已结束，避免悬空引用
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Log, TEXT("Coroutine return_void with ActionHandle: %s"), *ActionHandle.ToString());
+#endif
 		bHasFinished = true;
-		bHasError = true;
-		// 注意：UE 默认禁用异常，此方法通常不会被调用
-		// 但为了防御性编程，仍然设置完成标志
 	}
+	void unhandled_exception() {}
 	bool bHasFinished = false;
-	bool bHasError = false;
+	bool bStopped = false;
+	bool bTimedOut = false;
+	FECFHandle ActionHandle;
+	void AssignHandle(const FECFHandle& NewHandle)
+	{
+		ActionHandle = NewHandle;
+		bHasFinished = false;
+		bStopped = false;
+		bTimedOut = false;
+	}
 };
 
 #else
@@ -43,22 +68,33 @@ struct FECFCoroutinePromise
  * Create dummy implementations of coroutine handles if coroutines are not supported by a compiler.
  */
 
+#include "ECFHandle.h"
+
+#define ECF_WITH_COROUTINES 0
+
 using FECFCoroutine = void;
 
 struct FECFCoroutinePromise
 {
 	bool bHasFinished = false;
+	bool bStopped = false;
+	bool bTimedOut = false;
+	FECFHandle ActionHandle;
+	void AssignHandle(const FECFHandle& NewHandle) {}
 };
 
-struct FECFCoroutineHandle 
+struct FECFCoroutineHandle
 {
 	void resume() {}
 	void destroy() {}
+	bool done() const { return CoroPromise.bHasFinished; }
+	explicit operator bool() const { return true; }
 
 	FECFCoroutinePromise CoroPromise;
 	FECFCoroutinePromise& promise() { return CoroPromise; }
 };
 
 #define co_await static_assert(false, "Trying to use co_await without coroutine support!")
+#define co_return static_assert(false, "Trying to use co_return without coroutine support!")
 
 #endif

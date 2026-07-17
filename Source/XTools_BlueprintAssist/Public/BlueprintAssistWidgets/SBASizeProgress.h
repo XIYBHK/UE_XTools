@@ -1,13 +1,12 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Styling/SlateBrush.h"
-#include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 
-class UTextureRenderTarget2D;
+class SImage;
+struct FSlateDynamicImageBrush;
 class FBAGraphHandler;
 class SOverlay;
 
@@ -20,8 +19,6 @@ class XTOOLS_BLUEPRINTASSIST_API SBASizeProgress final : public SCompoundWidget
 	virtual ~SBASizeProgress() override;
 
 public:
-	void RenderGraphToBrush();
-
 	bool IsSnapshotValid() const;
 
 	void ShowOverlay();
@@ -31,9 +28,7 @@ public:
 	bool bIsVisible = false;
 
 protected:
-	void DrawWidgetToRenderTarget(TSharedPtr<SWidget> Widget);
-
-	void DestroyRenderTarget();
+	void SnapshotWidget(TSharedPtr<SWidget> Widget);
 
 	FText GetCacheProgressText() const;
 
@@ -43,11 +38,7 @@ protected:
 
 	TSharedPtr<SOverlay> ProgressCenterPanel;
 
-	FSlateBrush GraphSnapshotBrush;
+	TSharedPtr<FSlateDynamicImageBrush> SnapshotBrush;
 
-	const FSlateBrush* CachedBorderBrush = nullptr;
-
-	bool bIsCachingOverlayVisible = false;
-
-	UTextureRenderTarget2D* RenderTarget = nullptr;
+	TSharedPtr<SImage> SnapshotImage;
 };

@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -46,4 +46,6 @@ public:
 	TArray<FBASettingsChange> GetChanges() const;
 	FString GetAllChangesAsString() const;
 	void ResetToDefault();
+
+	static void ReloadSettings(UClass* SettingsClass);
 };

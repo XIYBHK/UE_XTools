@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -10,6 +10,7 @@
 #include "Misc/AssertionMacros.h"
 #include "Engine/World.h"
 #include "GameFramework/WorldSettings.h"
+#include "ECFLogs.h"
 #include "ECFActionBase.generated.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
@@ -48,16 +49,21 @@ public:
 	}
 
 	// Returns this action instance id
-	FECFInstanceId GetInstanceId() const 
+	FECFInstanceId GetInstanceId() const
 	{
 		return InstanceId;
 	}
 
-	// Marks this action as finished. It makes it invalid. 
-	// This action will be deleted soon.
-	void MarkAsFinished()
+	// Returns this action Label
+	FString GetLabel() const
 	{
-		bHasFinished = true;
+		return Settings.Label;
+	}
+
+	// Checks if this action is paused
+	bool IsPaused() const
+	{
+		return bIsPaused;
 	}
 
 	// Checks if this action has this instance id.
@@ -79,7 +85,7 @@ protected:
 	// It is not a virtual function because any action will require different
 	// set of parameters.
 	bool Setup() { return true; }
-	
+
 	// Sets initial values for this action.
 	virtual void Init() {}
 
@@ -89,11 +95,34 @@ protected:
 	// Function called when the action is requested to be completed before it ends.
 	virtual void Complete(bool bStopped) {}
 
+	// Marks this action as finished. It makes it invalid.
+	// This action will be deleted soon.
+	void MarkAsFinished()
+	{
+		// Do not finish twice (to avoid weird logs).
+		if (bHasFinished)
+		{
+			return;
+		}
+
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Verbose, TEXT("Action of class %s marked as finished, Label: %s"), *GetName(), *GetLabel());
+#endif
+		bHasFinished = true;
+	}
+
 	// Function called when this action is instanced and something tried to call it again.
 	virtual void RetriggeredInstancedAction() {}
 
+	// Function called when this action is resetted. Have in mind that not every action has
+	// reset functionality.
+	// If bCallUpdate is true - the action should run an update event (if there is any)
+	// after it's reset.
+	// Return true if the action was resetted, false otherwise.
+	virtual bool Reset(bool bCallUpdate) { return false; }
+
 	// For any action that should last only the given time - set this function
-	// inside the action's Setup step. 
+	// inside the action's Setup step.
 	// WARNING! This is only to help ticker run ticks with proper delta times.
 	// It will not stop the action itself!
 	void SetMaxActionTime(float InMaxActionTime)
@@ -134,6 +163,24 @@ protected:
 		{
 			bIsPaused = true;
 		}
+	}
+
+	// Gets the action time. It's not CurrentTime, but the time value used by this action, like in delay or timeline.
+	virtual float GetActionTime() const
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("ECF - [%s] GetActionTime - this action does not support time tracking."), *Settings.Label);
+#endif
+		return -1.f;
+	}
+
+	// Sets the action time. It's not CurrentTime, but the time value used by this action, like in delay or timeline.
+	virtual bool SetActionTime(float NewTime, bool bCallUpdate)
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("ECF - [%s] SetActionTime - this action does not support time tracking."), *Settings.Label);
+#endif
+		return false;
 	}
 
 private:
@@ -180,7 +227,7 @@ private:
 			ActionDelayLeft -= DeltaTime;
 			return;
 		}
-	
+
 		// Append current action time with delta.
 		CurrentActionTime += DeltaTime;
 

@@ -18,7 +18,6 @@
 #include "SAssetSearchBox.h"
 #include "SlateOptMacros.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "Editor/ContentBrowser/Private/SFilterList.h"
 #include "Filters/SAssetFilterBar.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Materials/Material.h"
@@ -117,10 +116,16 @@ TOptional<FString> FBASearchMenuData::GetDetails()
 	return Out;
 }
 
-void SBASearchMenuRow::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView, TSharedPtr<FBASearchMenuData> InObject, const FText& InHighlightText)
+void SBASearchMenuRow::Construct(
+	const FArguments& InArgs,
+	const TSharedRef<STableViewBase>& InOwnerTableView,
+	TSharedPtr<class SBASearchMenu> InSearchMenu,
+	TSharedPtr<FBASearchMenuData> InObject,
+	const FText& InHighlightText)
 {
 	Object = InObject;
 	HighlightText = InHighlightText;
+	SearchMenu = InSearchMenu;
 
 	FSuperRowType::Construct(
 		FSuperRowType::FArguments().OnDragDetected(this, &SBASearchMenuRow::HandleDrag),
@@ -880,7 +885,7 @@ void SBASearchMenu::TryRefreshingSearch(const FText& InText)
 
 TSharedRef<ITableRow> SBASearchMenu::HandleListGenerateRow(TSharedPtr<FBASearchMenuData> ObjectPtr, const TSharedRef<STableViewBase>& OwnerTable)
 {
-	return SNew(SBASearchMenuRow, OwnerTable, ObjectPtr, SearchBox->GetText());
+	return SNew(SBASearchMenuRow, OwnerTable, SharedThis(this), ObjectPtr, SearchBox->GetText());
 }
 
 void SBASearchMenu::HandleListItemClicked(TSharedPtr<FBASearchMenuData> Item)

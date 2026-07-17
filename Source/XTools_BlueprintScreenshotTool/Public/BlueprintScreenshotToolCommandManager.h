@@ -4,6 +4,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Framework/Commands/UICommandList.h"
+#include "Framework/MultiBox/MultiBoxExtender.h"
+
+class FToolBarBuilder;
 
 class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API FBlueprintScreenshotToolCommandManager
 {

@@ -7,13 +7,17 @@
 #include "GenericPlatform/GenericPlatformMisc.h"
 #include "Misc/Paths.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Runtime/Launch/Resources/Version.h"
 
-// UE 5.0+ EditorStyleSet.h 已废弃，使用 Styling/AppStyle.h
-#if ENGINE_MAJOR_VERSION >= 5
 #include "Styling/AppStyle.h"
-#else
-#include "EditorStyleSet.h"
-#endif
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SSpacer.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/SWindow.h"
+#include "Widgets/Text/STextBlock.h"
 
 namespace
 {
@@ -40,7 +44,7 @@ void ENUpdatePopup::Register()
 
 	UpdateConfigPath /= "UpdateConfig.ini";
 	const FString UpdateConfigFile = FConfigCacheIni::NormalizeConfigIniPath(UpdateConfigPath);
-	const FString CurrentPluginVersion = "3.14";
+	const FString CurrentPluginVersion = "3.21";
 
 	UENUpdateConfig* ENUpdatePopupConfig = GetMutableDefault<UENUpdateConfig>();
 
@@ -60,7 +64,11 @@ void ENUpdatePopup::Register()
 
 		if (!GPostEngineInitPopupHandle.IsValid())
 		{
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8
+			GPostEngineInitPopupHandle = FCoreDelegates::GetOnPostEngineInit().AddStatic(&ENUpdatePopup::Open);
+#else
 			GPostEngineInitPopupHandle = FCoreDelegates::OnPostEngineInit.AddStatic(&ENUpdatePopup::Open);
+#endif
 		}
 	}
 }
@@ -69,7 +77,11 @@ void ENUpdatePopup::Unregister()
 {
 	if (GPostEngineInitPopupHandle.IsValid())
 	{
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8
+		FCoreDelegates::GetOnPostEngineInit().Remove(GPostEngineInitPopupHandle);
+#else
 		FCoreDelegates::OnPostEngineInit.Remove(GPostEngineInitPopupHandle);
+#endif
 		GPostEngineInitPopupHandle.Reset();
 	}
 }
@@ -107,7 +119,7 @@ void ENUpdatePopup::Open()
 		[
 			SNew(STextBlock)
 			.Font(HeadingFont)
-			.Text(FText::FromString("Electronic Nodes v3.14"))
+			.Text(FText::FromString("Electronic Nodes v3.21"))
 		]
 		+ SVerticalBox::Slot()
 		  .FillHeight(1.0)
@@ -115,11 +127,7 @@ void ENUpdatePopup::Open()
 		[
 			SNew(SBorder)
 			.Padding(10)
-#if ENGINE_MAJOR_VERSION >= 5
 			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-#else
-			.BorderImage(FEditorStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-#endif
 			[
 				SNew(SScrollBox)
 				+ SScrollBox::Slot()
@@ -160,13 +168,8 @@ But let's keep it short, here are the cool new features (and bugfixes) of versio
 
 <a id="browser" href="https://github.com/hugoattal/ElectronicNodes#changelog">See complete changelog</>
 )"))
-#if ENGINE_MAJOR_VERSION >= 5
 					.TextStyle(FAppStyle::Get(), "NormalText")
 					.DecoratorStyleSet(&FAppStyle::Get())
-#else
-					.TextStyle(FEditorStyle::Get(), "NormalText")
-					.DecoratorStyleSet(&FEditorStyle::Get())
-#endif
 					.AutoWrapText(true)
 					+ SRichTextBlock::HyperlinkDecorator(TEXT("browser"), FSlateHyperlinkRun::FOnClick::CreateStatic(&OnBrowserLinkClicked))
 				]

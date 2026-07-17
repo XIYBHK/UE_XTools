@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
+#include "Internationalization/Regex.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNaming, Log, All);
 

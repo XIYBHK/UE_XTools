@@ -17,10 +17,29 @@
 #include "Materials/MaterialAttributeDefinitionMap.h"
 //  引入常量定义
 #include "MaterialTools/X_MaterialConstants.h"
+#include "XToolsVersionCompat.h"
 
 namespace
 {
     int32 CalculateMatchScore(const FString& InputName, const FString& TargetName);
+
+    uint32 GetMaterialInputType(UMaterialExpression* Expression, int32 InputIndex)
+    {
+#if XTOOLS_ENGINE_5_8_OR_LATER
+        return static_cast<uint32>(Expression->GetInputValueType(InputIndex));
+#else
+        return Expression->GetInputType(InputIndex);
+#endif
+    }
+
+    uint32 GetMaterialOutputType(UMaterialExpression* Expression, int32 OutputIndex)
+    {
+#if XTOOLS_ENGINE_5_8_OR_LATER
+        return static_cast<uint32>(Expression->GetOutputValueType(OutputIndex));
+#else
+        return Expression->GetOutputType(OutputIndex);
+#endif
+    }
 
     bool TryGetExpressionOutputName(UMaterialExpression* Expression, int32 OutputIndex, FString& OutOutputName)
     {
@@ -247,7 +266,7 @@ namespace
                 continue;
             }
 
-            const uint32 TargetInputType = static_cast<uint32>(FunctionCall->GetInputType(InputIndex));
+            const uint32 TargetInputType = GetMaterialInputType(FunctionCall, InputIndex);
             if (!AreMaterialTypesCompatible(SourceType, TargetInputType))
             {
                 continue;
@@ -286,7 +305,7 @@ namespace
 
         for (int32 OutputIndex = 0; OutputIndex < FunctionCall->FunctionOutputs.Num(); ++OutputIndex)
         {
-            const uint32 SourceOutputType = static_cast<uint32>(FunctionCall->GetOutputType(OutputIndex));
+            const uint32 SourceOutputType = GetMaterialOutputType(FunctionCall, OutputIndex);
             if (TargetType != MCT_Unknown && !AreMaterialTypesCompatible(SourceOutputType, TargetType))
             {
                 continue;
@@ -314,7 +333,7 @@ namespace
         if (BestIndex == INDEX_NONE && PreferredOutputIndex != INDEX_NONE
             && FunctionCall->FunctionOutputs.IsValidIndex(PreferredOutputIndex))
         {
-            const uint32 PreferredType = static_cast<uint32>(FunctionCall->GetOutputType(PreferredOutputIndex));
+            const uint32 PreferredType = GetMaterialOutputType(FunctionCall, PreferredOutputIndex);
             if (TargetType == MCT_Unknown || AreMaterialTypesCompatible(PreferredType, TargetType))
             {
                 return PreferredOutputIndex;
@@ -341,19 +360,18 @@ namespace
             return false;
         }
 
-        TArrayView<FExpressionInput*> TargetInputs = TargetExpression->GetInputsView();
-        if (!TargetInputs.IsValidIndex(TargetInputIndex) || !TargetInputs[TargetInputIndex])
+        FExpressionInput* TargetInput = TargetExpression->GetInput(TargetInputIndex);
+        if (!TargetInput)
         {
             return false;
         }
 
-        FExpressionInput* TargetInput = TargetInputs[TargetInputIndex];
         UMaterialExpression* PreviousExpression = TargetInput->Expression;
         const int32 PreviousOutputIndex = (TargetInput->OutputIndex == INDEX_NONE) ? 0 : TargetInput->OutputIndex;
 
         if (PreviousExpression)
         {
-            const uint32 PreviousSourceType = static_cast<uint32>(PreviousExpression->GetOutputType(PreviousOutputIndex));
+            const uint32 PreviousSourceType = GetMaterialOutputType(PreviousExpression, PreviousOutputIndex);
             const int32 FunctionInputIndex = FindBestFunctionInputIndexBySemantic(
                 NewFunctionCall,
                 TargetInputSemantic,
@@ -366,7 +384,7 @@ namespace
             }
         }
 
-        const uint32 TargetInputType = static_cast<uint32>(TargetExpression->GetInputType(TargetInputIndex));
+        const uint32 TargetInputType = GetMaterialInputType(TargetExpression, TargetInputIndex);
         const int32 FunctionOutputIndex = FindBestFunctionOutputIndexBySemantic(
             NewFunctionCall,
             TargetInputSemantic,
@@ -722,7 +740,7 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         if (Input.Expression)
         {
             const int32 SourceOutputIndex = (Input.OutputIndex == INDEX_NONE) ? 0 : Input.OutputIndex;
-            const uint32 SourceOutputType = static_cast<uint32>(Input.Expression->GetOutputType(SourceOutputIndex));
+            const uint32 SourceOutputType = GetMaterialOutputType(Input.Expression, SourceOutputIndex);
             PropertyConnections.Add({&Input, Prop, SourceOutputIndex, SourceOutputType, Name, Aliases, false});
         }
     };
@@ -742,7 +760,7 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         const FFunctionExpressionInput& FunctionInput = FunctionInputs[FunctionInputIndex];
         const FExpressionInput& Input = FunctionInput.Input;
         const FString InputName = Input.InputName.ToString();
-        const uint32 TargetInputType = static_cast<uint32>(FunctionCall->GetInputType(FunctionInputIndex));
+        const uint32 TargetInputType = GetMaterialInputType(FunctionCall, FunctionInputIndex);
 
         if (IsIgnoredPinName(InputName))
         {
@@ -830,7 +848,7 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
 
             for (const auto& Target : Targets)
             {
-                const uint32 OutputType = static_cast<uint32>(FunctionCall->GetOutputType(OutputIndex));
+                const uint32 OutputType = GetMaterialOutputType(FunctionCall, OutputIndex);
                 const uint32 PropertyType = GetExpectedMaterialPropertyType(Target.P);
                 if (!AreMaterialTypesCompatible(OutputType, PropertyType))
                 {
@@ -1313,7 +1331,7 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
         }
 
         const int32 SourceOutputIndex = (SourceInput.OutputIndex == INDEX_NONE) ? 0 : SourceInput.OutputIndex;
-        const uint32 SourceOutputType = static_cast<uint32>(SourceInput.Expression->GetOutputType(SourceOutputIndex));
+        const uint32 SourceOutputType = GetMaterialOutputType(SourceInput.Expression, SourceOutputIndex);
         AvailableConnections.Add({SourceInput.Expression, SourceOutputIndex, SourceOutputType, Property, PropertyName, false});
     };
 
@@ -1401,7 +1419,7 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
             continue;
         }
 
-        const uint32 TargetInputType = static_cast<uint32>(FunctionCall->GetInputType(InputIndex));
+        const uint32 TargetInputType = GetMaterialInputType(FunctionCall, InputIndex);
         int32 BestScore = 0;
         int32 BestConnectionIndex = INDEX_NONE;
 
@@ -1556,14 +1574,13 @@ bool FX_MaterialFunctionConnector::ConnectToMaterialAttributesFunctionInputs(
 
     const TArray<FString> ExistingInputNames = UMaterialEditingLibrary::GetMaterialExpressionInputNames(ExistingFunctionCall);
     const TArray<FFunctionExpressionOutput>& NewOutputs = FunctionCall->FunctionOutputs;
-    TArrayView<FExpressionInput*> ExistingInputsView = ExistingFunctionCall->GetInputsView();
-
     int32 BestTargetInputIndex = INDEX_NONE;
     int32 BestTargetScore = -1;
 
     for (int32 InputIndex = 0; InputIndex < ExistingInputNames.Num(); ++InputIndex)
     {
-        if (!ExistingInputsView.IsValidIndex(InputIndex) || !ExistingInputsView[InputIndex])
+        FExpressionInput* ExistingInput = ExistingFunctionCall->GetInput(InputIndex);
+        if (!ExistingInput)
         {
             continue;
         }
@@ -1574,12 +1591,12 @@ bool FX_MaterialFunctionConnector::ConnectToMaterialAttributesFunctionInputs(
             continue;
         }
 
-        const uint32 CandidateInputType = static_cast<uint32>(ExistingFunctionCall->GetInputType(InputIndex));
+        const uint32 CandidateInputType = GetMaterialInputType(ExistingFunctionCall, InputIndex);
         int32 Score = 0;
 
         for (int32 NewOutputIndex = 0; NewOutputIndex < NewOutputs.Num(); ++NewOutputIndex)
         {
-            const uint32 NewOutputType = static_cast<uint32>(FunctionCall->GetOutputType(NewOutputIndex));
+            const uint32 NewOutputType = GetMaterialOutputType(FunctionCall, NewOutputIndex);
             if (!AreMaterialTypesCompatible(NewOutputType, CandidateInputType))
             {
                 continue;
@@ -1597,7 +1614,7 @@ bool FX_MaterialFunctionConnector::ConnectToMaterialAttributesFunctionInputs(
             Score += 25;
         }
 
-        if (ExistingInputsView[InputIndex]->Expression)
+        if (ExistingInput->Expression)
         {
             Score += 5;
         }
@@ -1609,7 +1626,7 @@ bool FX_MaterialFunctionConnector::ConnectToMaterialAttributesFunctionInputs(
         }
     }
 
-    if (BestTargetInputIndex == INDEX_NONE && ExistingInputsView.Num() > 0)
+    if (BestTargetInputIndex == INDEX_NONE && ExistingInputNames.Num() > 0)
     {
         BestTargetInputIndex = 0;
     }
@@ -1659,10 +1676,9 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
     UE_LOG(LogX_AssetEditor, Log, TEXT("尝试通用连接：函数 %s 到表达式 %s"), *FunctionName, *ExpressionClassName);
 
     const TArray<FString> InputNames = UMaterialEditingLibrary::GetMaterialExpressionInputNames(MaterialAttributesExpression);
-    TArrayView<FExpressionInput*> InputsView = MaterialAttributesExpression->GetInputsView();
     const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
 
-    if (InputNames.Num() == 0 || InputsView.Num() == 0)
+    if (InputNames.Num() == 0)
     {
         UE_LOG(LogX_AssetEditor, Warning, TEXT("表达式 %s 没有可用输入引脚"), *ExpressionClassName);
         return false;
@@ -1673,7 +1689,8 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
 
     for (int32 InputIndex = 0; InputIndex < InputNames.Num(); ++InputIndex)
     {
-        if (!InputsView.IsValidIndex(InputIndex) || !InputsView[InputIndex])
+        FExpressionInput* CandidateInput = MaterialAttributesExpression->GetInput(InputIndex);
+        if (!CandidateInput)
         {
             continue;
         }
@@ -1684,12 +1701,12 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
             continue;
         }
 
-        const uint32 CandidateType = static_cast<uint32>(MaterialAttributesExpression->GetInputType(InputIndex));
+        const uint32 CandidateType = GetMaterialInputType(MaterialAttributesExpression, InputIndex);
         int32 Score = 0;
 
         for (int32 OutputPinIndex = 0; OutputPinIndex < FunctionOutputs.Num(); ++OutputPinIndex)
         {
-            const uint32 OutputType = static_cast<uint32>(FunctionCall->GetOutputType(OutputPinIndex));
+            const uint32 OutputType = GetMaterialOutputType(FunctionCall, OutputPinIndex);
             if (!AreMaterialTypesCompatible(OutputType, CandidateType))
             {
                 continue;
@@ -1700,7 +1717,7 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
         }
 
         Score = FMath::Max(Score, CalculateMatchScore(FunctionName, CandidateName));
-        if (InputsView[InputIndex]->Expression)
+        if (CandidateInput->Expression)
         {
             Score += 5;
         }
@@ -1717,7 +1734,7 @@ bool FX_MaterialFunctionConnector::ConnectToGenericMaterialAttributesExpression(
         BestInputIndex = 0;
     }
 
-    if (!InputsView.IsValidIndex(BestInputIndex))
+    if (!MaterialAttributesExpression->GetInput(BestInputIndex))
     {
         UE_LOG(LogX_AssetEditor, Warning, TEXT("未找到可插入的表达式输入位: %s"), *ExpressionClassName);
         return false;
@@ -2123,7 +2140,7 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
 
             if (PreviousExpression)
             {
-                const uint32 PreviousSourceType = static_cast<uint32>(PreviousExpression->GetOutputType(PreviousOutputIndex));
+                const uint32 PreviousSourceType = GetMaterialOutputType(PreviousExpression, PreviousOutputIndex);
                 const FString PreserveSemantic = TargetSemantic.IsEmpty()
                     ? Output.OutputName.ToString()
                     : TargetSemantic;

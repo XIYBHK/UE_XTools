@@ -14,7 +14,7 @@
 
 ### 重要修复
 - **BlueprintExtensionsRuntime**: 完善追踪弹制导、末端捕获及组件状态恢复
-- **多版本兼容**: 修复 UE 5.3-5.7 BuildPlugin 编译问题
+- **多版本兼容**: [修复 UE 5.3-5.7 BuildPlugin 编译问题](../打包相关/UE_多版本插件打包_问题与解决方案.md)
 - **多模块**: 修复蓝图节点边界、对象生命周期和跨版本编译问题
 - **ObjectPool / EnhancedCodeFlow**: 完善对象池与异步流程生命周期管理
 

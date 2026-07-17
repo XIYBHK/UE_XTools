@@ -48,20 +48,33 @@ UAutoSizeCommentsSettings::UAutoSizeCommentsSettings(const FObjectInitializer& O
 
 	// define tagged preset
 	{
-		FPresetCommentStyle TodoPreset;
+		FPresetCommentButtonStyle TodoPreset;
 		TodoPreset.Color = FColor(0, 255, 255);
+		TodoPreset.PresetPrefix = "@TODO";
+		TodoPreset.PresetTooltip = TEXT("待办事项");
+		TodoPreset.bShowAsButton = false;
+		PresetStyles.Add(TodoPreset);
 		TaggedPresets.Add("@TODO", TodoPreset);
 
-		FPresetCommentStyle FixmePreset;
+		FPresetCommentButtonStyle FixmePreset;
 		FixmePreset.Color = FColor::Red;
+		FixmePreset.PresetPrefix = "@FIXME";
+		FixmePreset.PresetTooltip = TEXT("需要修复");
+		FixmePreset.bShowAsButton = false;
+		PresetStyles.Add(FixmePreset);
 		TaggedPresets.Add("@FIXME", FixmePreset);
 
-		FPresetCommentStyle InfoPreset;
+		FPresetCommentButtonStyle InfoPreset;
 		InfoPreset.Color = FColor::White;
 		InfoPreset.bSetHeader = true;
+		InfoPreset.PresetPrefix = "@INFO";
+		InfoPreset.PresetTooltip = TEXT("信息标题");
+		InfoPreset.bShowAsButton = false;
+		PresetStyles.Add(InfoPreset);
 		TaggedPresets.Add("@INFO", InfoPreset);
 	}
 	bAggressivelyUseDefaultColor = false;
+	bUseNodeSizeForBounds = true;
 	bUseCommentBubbleBounds = true;
 	bMoveEmptyCommentBoxes = false;
 	EmptyCommentBoxSpeed = 10;

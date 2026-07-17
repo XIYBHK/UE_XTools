@@ -15,7 +15,8 @@ public:
 	void SetOnDelayEnded(FBAOnDelayEnded OnDelayEnded);
 	void StartDelay(int32 NumTicks);
 
-	void Tick();
+	/* Returns true if the delegate has ended from ticking */
+	bool Tick();
 
 	bool IsComplete() const { return TicksRemaining == -1; }
 	bool IsActive() const { return TicksRemaining >= 0; }

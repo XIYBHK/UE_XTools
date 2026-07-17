@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -34,9 +34,16 @@ class XTOOLS_BLUEPRINTASSIST_API SBAWelcomeScreen : public SCompoundWidget
 	TSharedRef<SWidget> MakeCustomizePage();
 
 	TSharedRef<SWidget> MakePropertiesList(const TMap<UObject*, TArray<FName>>& Properties);
+	TSharedRef<SWidget> MakeProperty(UObject* Obj, FName PropName);
 
 	FBASettingsPropertyHook SettingsPropertyHook;
 
 	TArray<TSharedPtr<SCheckBox>> MenuEntries;
 	TSharedPtr<SWidgetSwitcher> WidgetSwitcher;
+
+	static FReply OnCreateNewCustomSettingsClicked();
+	static FReply OnSaveCustomSettingsClicked();
+	static FReply OnReloadCustomSettingsClicked();
+
+	static bool IsCustomSettingsPathValid();
 };

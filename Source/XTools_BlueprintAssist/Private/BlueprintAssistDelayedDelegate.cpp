@@ -12,7 +12,7 @@ void FBADelayedDelegate::StartDelay(int32 NumTicks)
 	TicksRemaining = NumTicks;
 }
 
-void FBADelayedDelegate::Tick()
+bool FBADelayedDelegate::Tick()
 {
 	if (TicksRemaining == 0)
 	{
@@ -23,6 +23,8 @@ void FBADelayedDelegate::Tick()
 	{
 		TicksRemaining -= 1;
 	}
+
+	return IsComplete();
 }
 
 void FBADelayedDelegate::Cancel()

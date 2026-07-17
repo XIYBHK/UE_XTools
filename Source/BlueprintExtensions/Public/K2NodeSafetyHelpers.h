@@ -11,6 +11,7 @@
 #include "BlueprintExtensions.h"
 
 class FKismetCompilerContext;
+class UEdGraphSchema_K2;
 
 /**
  * K2Node 安全验证帮助类

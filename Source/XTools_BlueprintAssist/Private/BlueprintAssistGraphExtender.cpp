@@ -1,8 +1,9 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistGraphExtender.h"
 
 #include "BlueprintAssistCache.h"
+#include "BlueprintAssistCommands.h"
 #include "BlueprintAssistGraphCommands.h"
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistInputProcessor.h"
@@ -20,11 +21,14 @@
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "ScopedTransaction.h"
+#include "SourceCodeNavigation.h"
+#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 #include "BlueprintAssistMisc/BAScopedRollbackTransaction.h"
 #include "Editor/Transactor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "HAL/FileManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
@@ -223,19 +227,29 @@ TSharedRef<FExtender> FBAGraphExtender::ExtendPin(const TSharedRef<FUICommandLis
 	{
 		static void AddGoToDefinition(FMenuBuilder& MenuBuilder, const UEdGraphPin* InPin)
 		{
-			FString ClassName = "Unknown";
 			TWeakObjectPtr<UObject> SubcategoryObject = InPin->PinType.PinSubCategoryObject;
 			if (SubcategoryObject.IsValid())
 			{
-				ClassName = SubcategoryObject->GetName();
-			}
+				FString ClassName = SubcategoryObject->GetName();
 
-			MenuBuilder.AddMenuEntry(
-				FText::FromString(FString::Printf(TEXT("Go To Definition (%s)"), *ClassName)),
-				FText::FromString(FString::Printf(TEXT("Navigate to the asset or cpp class (%s)"), *ClassName)),
-				FSlateIcon(),
-				FExecuteAction::CreateStatic(&FBAGraphExtender::GoToDefinition, InPin)
-			);
+				MenuBuilder.AddMenuEntry(
+					FText::FromString(FString::Printf(TEXT("Go To Definition (%s)"), *ClassName)),
+					FText::FromString(FString::Printf(TEXT("Navigate to the asset type (%s)"), *ClassName)),
+					FSlateIcon(),
+					FExecuteAction::CreateStatic(&FBAGraphExtender::GoToDefinition, InPin, false)
+				);
+
+				// open using package if it is an asset
+				if (SubcategoryObject->IsAsset())
+				{
+					MenuBuilder.AddMenuEntry(
+						FText::FromString(FString::Printf(TEXT("Browse to Definition (%s)"), *ClassName)),
+						FText::FromString(FString::Printf(TEXT("Browse the content browser to the asset type (%s)"), *ClassName)),
+						FSlateIcon(),
+						FExecuteAction::CreateStatic(&FBAGraphExtender::GoToDefinition, InPin, true)
+					);
+				}
+			}
 		}
 
 		static void AddGenerateCreateEventNode(FMenuBuilder& MenuBuilder, const UEdGraphPin* InPin)
@@ -262,15 +276,11 @@ TSharedRef<FExtender> FBAGraphExtender::ExtendPin(const TSharedRef<FUICommandLis
 	TWeakObjectPtr<UObject> SubCategoryObject = Pin->PinType.PinSubCategoryObject;
 	if (SubCategoryObject.IsValid())
 	{
-		UScriptStruct* Struct = Cast<UScriptStruct>(SubCategoryObject.Get());
-		if (!Struct) // don't know how to go to definition for structs
-		{
-			Extender->AddMenuExtension(
-				"EdGraphSchemaPinActions",
-				EExtensionHook::After,
-				CommandList,
-				FMenuExtensionDelegate::CreateStatic(&FLocal::AddGoToDefinition, Pin));
-		}
+		Extender->AddMenuExtension(
+			"EdGraphSchemaPinActions",
+			EExtensionHook::After,
+			CommandList,
+			FMenuExtensionDelegate::CreateStatic(&FLocal::AddGoToDefinition, Pin));
 	}
 
 	return Extender;
@@ -456,8 +466,6 @@ void FBAGraphExtender::ConvertGetToSet(const UEdGraph* Graph, UK2Node_VariableGe
 		return;
 	}
 
-	UEdGraph* MutGraph = VariableGetNode->GetGraph();
-
 	const UEdGraphSchema_K2* Schema = Cast<UEdGraphSchema_K2>(Graph->GetSchema());
 	if (!Schema)
 	{
@@ -467,6 +475,7 @@ void FBAGraphExtender::ConvertGetToSet(const UEdGraph* Graph, UK2Node_VariableGe
 	// Create the set node
 	auto NodePos = FVector2D(VariableGetNode->NodePosX, VariableGetNode->NodePosY);
 
+	UEdGraph* MutGraph = VariableGetNode->GetGraph();
 	UK2Node_VariableSet* SetNode = CreateVariableSetFromVariable(NodePos, MutGraph, VariableGetNode);
 	if (!SetNode)
 	{
@@ -474,32 +483,37 @@ void FBAGraphExtender::ConvertGetToSet(const UEdGraph* Graph, UK2Node_VariableGe
 		return;
 	}
 
-	UEdGraphPin* OutPin = SetNode->FindPin(TEXT("Output_Get"));
-
-	// Check if the self pin exists
-	TArray<UEdGraphPin*> OriginalSelfLinkedTo;
-	if (UEdGraphPin* OriginalSelfPin = Schema->FindSelfPin(*VariableGetNode, EGPD_Input))
+	FBANodePinHandle OutPin = SetNode->FindPin(TEXT("Output_Get"));
+	if (!OutPin.IsValid())
 	{
-		OriginalSelfLinkedTo = OriginalSelfPin->LinkedTo;
+		FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("Failed to convert, output get invalid"), SNotificationItem::CS_Fail);
+		return;
 	}
 
-	TArray<UEdGraphPin*> PinsToLinkTo = VariableGetNode->GetValuePin()->LinkedTo;
+	// Check if the self pin exists
+	TArray<FBANodePinHandle> OriginalSelfLinkedTo;
+	if (UEdGraphPin* OriginalSelfPin = Schema->FindSelfPin(*VariableGetNode, EGPD_Input))
+	{
+		OriginalSelfLinkedTo = FBANodePinHandle::ConvertArray(OriginalSelfPin->LinkedTo);
+	}
+
+	TArray<FBANodePinHandle> PinsToLinkTo = FBANodePinHandle::ConvertArray(VariableGetNode->GetValuePin()->LinkedTo);
 
 	// Delete the get node
 	FBAUtils::DeleteNode(VariableGetNode);
 
 	// replace links
-	for (UEdGraphPin* LinkedPin : PinsToLinkTo)
+	for (auto& LinkedPin : PinsToLinkTo)
 	{
-		Graph->GetSchema()->TryCreateConnection(OutPin, LinkedPin);
+		Schema->TryCreateConnection(OutPin.GetPin(), LinkedPin.GetPin());
 	}
 
 	// Link self pins
 	if (UEdGraphPin* NewSelfPin = Schema->FindSelfPin(*SetNode, EGPD_Input))
 	{
-		for (UEdGraphPin* Pin : OriginalSelfLinkedTo)
+		for (auto& Pin : OriginalSelfLinkedTo)
 		{
-			Graph->GetSchema()->TryCreateConnection(NewSelfPin, Pin);
+			Schema->TryCreateConnection(NewSelfPin, Pin.GetPin());
 		}
 	}
 }
@@ -532,15 +546,22 @@ void FBAGraphExtender::ConvertSetToGet(const UEdGraph* Graph, UK2Node_VariableSe
 		return;
 	}
 
-	UEdGraphPin* OutPin = GetNode->GetValuePin();
+	FBANodePinHandle OutPin = GetNode->GetValuePin();
 
-	TArray<UEdGraphPin*> PinsToLinkTo = VariableSetNode->FindPin(TEXT("Output_Get"))->LinkedTo;
+	UEdGraphPin* SetOut = VariableSetNode->FindPin(TEXT("Output_Get"));
+	if (!SetOut)
+	{
+		FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("Failed to convert, output get invalid"), SNotificationItem::CS_Fail);
+		return;
+	}
+
+	TArray<FBANodePinHandle> PinsToLinkTo = FBANodePinHandle::ConvertArray(SetOut->LinkedTo);
 
 	// Check if the self pin exists
-	TArray<UEdGraphPin*> OriginalSelfLinkedTo;
+	TArray<FBANodePinHandle> OriginalSelfLinkedTo;
 	if (UEdGraphPin* OriginalSelfPin = Schema->FindSelfPin(*VariableSetNode, EGPD_Input))
 	{
-		OriginalSelfLinkedTo = OriginalSelfPin->LinkedTo;
+		OriginalSelfLinkedTo = FBANodePinHandle::ConvertArray(OriginalSelfPin->LinkedTo);
 	}
 
 	// Delete the set node
@@ -549,49 +570,81 @@ void FBAGraphExtender::ConvertSetToGet(const UEdGraph* Graph, UK2Node_VariableSe
 	FBAUtils::DeleteNode(VariableSetNode);
 
 	// replace links for the get node
-	for (UEdGraphPin* LinkedPin : PinsToLinkTo)
+	for (FBANodePinHandle& LinkedPin : PinsToLinkTo)
 	{
-		Graph->GetSchema()->TryCreateConnection(OutPin, LinkedPin);
+		Schema->TryCreateConnection(OutPin.GetPin(), LinkedPin.GetPin());
 	}
 
 	// Link self pin
 	if (UEdGraphPin* NewSelfPin = Schema->FindSelfPin(*GetNode, EGPD_Input))
 	{
-		for (UEdGraphPin* Pin : OriginalSelfLinkedTo)
+		for (FBANodePinHandle& Pin : OriginalSelfLinkedTo)
 		{
-			Graph->GetSchema()->TryCreateConnection(NewSelfPin, Pin);
+			Schema->TryCreateConnection(NewSelfPin, Pin.GetPin());
 		}
 	}
 }
 
-void FBAGraphExtender::GoToDefinition(const UEdGraphPin* Pin)
+void FBAGraphExtender::GoToDefinition(const UEdGraphPin* Pin, bool bSyncBrowser)
 {
-	if (Pin)
+	if (!Pin)
 	{
-		TWeakObjectPtr<UObject> SubcategoryObject = Pin->PinType.PinSubCategoryObject;
-		if (SubcategoryObject.IsValid())
+		return;
+	}
+
+	TWeakObjectPtr<UObject> SubcategoryObject = Pin->PinType.PinSubCategoryObject;
+	if (!SubcategoryObject.IsValid())
+	{
+		return;
+	}
+
+	if (SubcategoryObject->IsAsset())
+	{
+		FAssetData AssetData(SubcategoryObject.Get(), false);
+		if (AssetData.IsValid())
 		{
-			// open using package if it is an asset
-			if (SubcategoryObject->IsAsset())
+			if (bSyncBrowser)
 			{
-				if (UPackage* Outer = Cast<UPackage>(SubcategoryObject->GetOuter()))
-				{
-					GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Outer->GetName());
-				}
+				GEditor->SyncBrowserToObjects({AssetData});
 			}
 			else
 			{
-				// TODO: why doesn't this work?
-				// if (UScriptStruct* Struct = Cast<UScriptStruct>(SubcategoryObject.Get()))
-				// {
-				// 	FString PathName = Pin->PinType.PinSubCategoryObject->GetFullName();
-				// 	GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(PathName);
-				// }
-				// else
-				{
-					GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(SubcategoryObject.Get());
-				}
+				GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(AssetData.ToSoftObjectPath());
 			}
+		}
+		else
+		{
+			FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("Unable to find asset type definition (invalid AssetData)"), SNotificationItem::CS_Fail);
+		}
+	}
+	else // cpp class
+	{
+		if (UClass* PropertyClass = Cast<UClass>(SubcategoryObject))
+		{
+			if (FSourceCodeNavigation::CanNavigateToClass(PropertyClass))
+			{
+				FSourceCodeNavigation::NavigateToClass(PropertyClass);
+			}
+		}
+		else if (UScriptStruct* Struct = Cast<UScriptStruct>(SubcategoryObject))
+		{
+			if (FSourceCodeNavigation::CanNavigateToStruct(Struct))
+			{
+				FSourceCodeNavigation::NavigateToStruct(Struct);
+			}
+		}
+		else if (UField* MyField = Cast<UField>(SubcategoryObject)) // other (mainly UEnum)
+		{
+			FString ClassHeaderPath;
+			if (FSourceCodeNavigation::FindClassHeaderPath(MyField, ClassHeaderPath) && IFileManager::Get().FileSize(*ClassHeaderPath) != INDEX_NONE)
+			{
+				FString AbsoluteHeaderPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*ClassHeaderPath);
+				FSourceCodeNavigation::OpenSourceFile(AbsoluteHeaderPath);
+			}
+		}
+		else
+		{
+			GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(SubcategoryObject.Get());
 		}
 	}
 }

@@ -15,7 +15,6 @@ FSimpleFormatter::FSimpleFormatter(TSharedPtr<FBAGraphHandler> InGraphHandler, c
 	, RootNode(nullptr)
 {
 	TrackSpacing = UBASettings::Get().BlueprintKnotTrackSpacing;
-	FormatterParameters.Init();
 }
 
 void FSimpleFormatter::ProcessSameRowMapping(const FPinLink& Link, TSet<UEdGraphNode*>& VisitedNodes)
@@ -136,7 +135,7 @@ void FSimpleFormatter::ProcessSameRowMapping(const FPinLink& Link, TSet<UEdGraph
 				// UE_LOG(LogTemp, Warning, TEXT("Checking linked %s %s"), *FBAUtils::GetPinName(MyPin), *FBAUtils::GetPinName(OtherPin));
 				UEdGraphNode* OtherNode = OtherPin->GetOwningNode();
 
-				if (!GraphHandler->FilterSelectiveFormatting(OtherNode, GetFormatterParameters().NodesToFormat.GetCachedNodes()))
+				if (!ShouldFormatNode(OtherNode))
 				{
 					// UE_LOG(LogTemp, Warning, TEXT("\tSkipping selective formatting"));
 					continue;
@@ -205,8 +204,9 @@ void FSimpleFormatter::FormatNode(UEdGraphNode* Node)
 
 	CommentHandler.Init(GraphHandler, AsShared());
 
-	int32 SavedNodePosX = RootNode->NodePosX;
-	int32 SavedNodePosY = RootNode->NodePosY;
+	NodeToKeepStill = FormatterParameters.NodeToKeepStill.IsValid() ? FormatterParameters.NodeToKeepStill.Get() : RootNode;
+	int32 SavedNodePosX = NodeToKeepStill->NodePosX;
+	int32 SavedNodePosY = NodeToKeepStill->NodePosY;
 
 	FormatX();
 
@@ -246,21 +246,13 @@ void FSimpleFormatter::FormatNode(UEdGraphNode* Node)
 	}
 
 	// reset root node position
-	const int32 DeltaX = SavedNodePosX - RootNode->NodePosX;
-	const int32 DeltaY = SavedNodePosY - RootNode->NodePosY;
+	const int32 DeltaX = SavedNodePosX - NodeToKeepStill->NodePosX;
+	const int32 DeltaY = SavedNodePosY - NodeToKeepStill->NodePosY;
 
 	for (UEdGraphNode* FormattedNode : FormattedNodes)
 	{
 		FormattedNode->NodePosX += DeltaX;
 		FormattedNode->NodePosY += DeltaY;
-
-		FBAVector2 NewPos(FormattedNode->NodePosX, FormattedNode->NodePosY);
-
-		if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetGraphNode(GraphHandler->GetGraphPanel(), FormattedNode))
-		{
-			TSet<TWeakPtr<SNodePanel::SNode>> NodeSet;
-			GraphNode->MoveTo(NewPos, NodeSet);
-		}
 	}
 }
 
@@ -524,7 +516,7 @@ int32 FSimpleFormatter::GetChildX(const FPinLink& Link)
 
 bool FSimpleFormatter::ShouldFormatNode(UEdGraphNode* Node) const
 {
-	return !FormatterParameters.IgnoredNodes.GetCachedNodes().Contains(Node) && GraphHandler->FilterSelectiveFormatting(Node, FormatterParameters.NodesToFormat.GetCachedNodes());
+	return FormatterParameters.IsValidNode(Node);
 }
 
 void FSimpleFormatter::SetNodeY_KeepingSpacingVisited(UEdGraphNode* Node, float NewPosY, TSet<UEdGraphNode*>& VisitedNodes)
@@ -576,9 +568,15 @@ TArray<UEdGraphNode*> FSimpleFormatter::GetSameRowNodes(UEdGraphNode* Node)
 	TArray<UEdGraphNode*> OutNodes;
 	for (UEdGraphPin* Pin : Node->Pins)
 	{
-		if (FBAGraphPinHandle* SameRowPin = SameRowMappingDirect.Find(Pin))
+		if (FBAGraphPinHandle* SameRowPinHandle = SameRowMappingDirect.Find(Pin))
 		{
-			OutNodes.Add(SameRowPin->GetPin()->GetOwningNode());
+			if (UEdGraphPin* SameRowPin = SameRowPinHandle->GetPin())
+			{
+				if (UEdGraphNode* SameRowNode = SameRowPin->GetOwningNodeUnchecked())
+				{
+					OutNodes.Add(SameRowNode);
+				}
+			}
 		}
 	}
 

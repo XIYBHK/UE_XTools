@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistMisc/BlueprintAssistInputProcessorState.h"
 
@@ -8,11 +8,16 @@
 #include "BlueprintAssistTabHandler.h"
 #include "BlueprintAssistUtils.h"
 #include "ContentBrowserDataSource.h"
+#include "GraphEditorDragDropAction.h"
 #include "IContentBrowserDataModule.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_MacroInstance.h"
 #include "K2Node_Variable.h"
 #include "SGraphActionMenu.h"
+#include "SGraphPanel.h"
+#include "BlueprintAssistActions/BlueprintAssistPinActions.h"
+#include "BlueprintAssistMisc/BAControlRigUtils.h"
+#include "BlueprintAssistMisc/BAGraphSchema.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 #include "Editor/ContentBrowser/Private/SContentBrowser.h"
 #include "Framework/Application/SlateApplication.h"
@@ -42,6 +47,11 @@ bool FBAInputProcessorState::OnKeyOrMouseDown(const FKey& Key)
 
 	TryFocusInDetailPanel();
 
+	if (TryInteractWithPin(Key))
+	{
+		return true;
+	}
+
 	return false;
 }
 
@@ -58,6 +68,14 @@ bool FBAInputProcessorState::OnKeyOrMouseUp(const FKey& Key)
 
 bool FBAInputProcessorState::TryCopyPastePinValue()
 {
+	if (TSharedPtr<FDragDropOperation> DragDropOp = FSlateApplication::Get().GetDragDroppingContent())
+	{
+		if (DragDropOp->IsOfType<FGraphEditorDragDropAction>())
+		{
+			return false;
+		}
+	}
+
 	const bool bCopy = FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().CopyPinValueChord);
 	const bool bPaste = FBAInputProcessor::Get().IsInputChordDown(UBASettings_EditorFeatures::Get().PastePinValueChord);
 	if (!bCopy && !bPaste)
@@ -83,8 +101,13 @@ bool FBAInputProcessorState::TryCopyPastePinValue()
 		return false;
 	}
 
-	// only unlinked input pins are viable for copy paste default value 
+	// only unlinked input pins are viable for copy paste default value
 	if (PinObj->LinkedTo.Num() > 0 || PinObj->Direction != EGPD_Input)
+	{
+		return false;
+	}
+
+	if (PinObj->bDefaultValueIsIgnored || PinObj->bDefaultValueIsReadOnly)
 	{
 		return false;
 	}
@@ -100,10 +123,10 @@ bool FBAInputProcessorState::TryCopyPastePinValue()
 
 		if (!ClipboardValue.IsEmpty())
 		{
-			FScopedTransaction Transaction(INVTEXT("Paste pin value"));
+			FBAScopedGraphAction Transaction(GraphHandler, "Paste pin value");
 			PinObj->Modify();
 
-			if (FBAUtils::TrySetDefaultPinValuesFromString(PinObj, ClipboardValue))
+			if (UBAGraphSchema::Get(GraphHandler).SetPinDefaultValue(PinObj, ClipboardValue))
 			{
 				const FText Message = INVTEXT("Pasted pin value");
 				FNotificationInfo Notification(Message);
@@ -115,7 +138,12 @@ bool FBAInputProcessorState::TryCopyPastePinValue()
 					// select the pin
 					GraphHandler->SetSelectedPin(PinObj);
 
-					HoveredNode->UpdateGraphNode();
+					if (!FBAControlRigUtils::IsControlRigGraph(GraphHandler->GetFocusedEdGraph()))
+					{
+						// certain graph nodes require updating after pin values changed
+						// doing this on control rig graph nodes breaks them for some reason
+						HoveredNode->UpdateGraphNode();
+					}
 				}
 			}
 		}
@@ -125,7 +153,7 @@ bool FBAInputProcessorState::TryCopyPastePinValue()
 
 	if (bCopy)
 	{
-		const FString PinDefault = FBAUtils::GetDefaultPinValue(PinObj);
+		const FString PinDefault = UBAGraphSchema::Get(GraphHandler).GetPinDefaultValue(PinObj);
 #if BA_UE_VERSION_OR_LATER(5, 3)
 		FPropertyEditorClipboard::ClipboardCopy(*PinDefault);
 #else
@@ -195,6 +223,111 @@ bool FBAInputProcessorState::TryFocusInDetailPanel()
 			if (TSharedPtr<SGraphActionMenu> ActionMenu = FBAUtils::GetGraphActionMenu())
 			{
 				ActionMenu->SelectItemByName(ItemName, ESelectInfo::OnKeyPress);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool FBAInputProcessorState::TryInteractWithPin(const FKey& Key)
+{
+	const bool bNoModifiers = !FSlateApplication::Get().GetModifierKeys().AnyModifiersDown();
+	const bool bShiftDown = FSlateApplication::Get().GetModifierKeys().IsShiftDown();
+	const bool bEnterCycles = UBASettings_EditorFeatures::Get().bEnterCyclesPinValues && (Key == EKeys::Enter) && bNoModifiers;
+	const bool bEnterInteracts = UBASettings_EditorFeatures::Get().bEnterInteractsWithPin && (Key == EKeys::Enter) && bNoModifiers;
+	const bool bTabCycles = UBASettings_EditorFeatures::Get().bTabCyclePinValues && (Key == EKeys::Tab) && (bNoModifiers || bShiftDown);
+
+	if (!bEnterCycles && !bTabCycles && !bEnterInteracts)
+	{
+		return false;
+	}
+
+	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
+	if (!GraphHandler)
+	{
+		return false;
+	}
+
+	TSharedPtr<SGraphPanel> GraphPanel = GraphHandler->GetGraphPanel();
+	if (!GraphPanel)
+	{
+		return false;
+	}
+
+	UEdGraphPin* SelectedPin = GraphHandler->GetSelectedPin();
+	TSharedPtr<SGraphPin> SelectedGraphPin = FBAUtils::GetGraphPin(GraphHandler->GetGraphPanel(), SelectedPin);
+	if (!SelectedGraphPin.IsValid())
+	{
+		return false;
+	}
+
+	// skip bp exec & delegate pins
+	const bool bSkipExec = FBAUtils::IsExecPin(SelectedPin) && FBAUtils::IsBlueprintGraph(GraphHandler->GetFocusedEdGraph());
+	if (bSkipExec || FBAUtils::IsDelegatePin(SelectedPin))
+	{
+		return false;
+	}
+
+	TSharedPtr<SWidget> CurrentFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+
+	// make sure pressing Enter doesn't mess with any other stuff by checking what currently has keyboard focus
+	const bool bHasValidFocus = !CurrentFocusedWidget.IsValid()
+		|| CurrentFocusedWidget == GraphPanel
+		|| FBAUtils::IsParentWidget(SelectedGraphPin, CurrentFocusedWidget);
+
+	if (!bHasValidFocus)
+	{
+		return false;
+	}
+
+	const bool bForwards = !(bTabCycles && bShiftDown);
+	const bool bCycle = bTabCycles;
+	const bool bSelectFirstPin = bEnterCycles;
+
+	TArray<TSharedPtr<SWidget>> EditableTextWidgets;
+	TArray<TSharedPtr<SWidget>> ClickableWidgets;
+	FBAUtils::GetEditableChildWidgets(SelectedGraphPin, EditableTextWidgets, ClickableWidgets);
+
+	bool bPinCurrentlyHasKeyboardFocus = EditableTextWidgets.Contains(FSlateApplication::Get().GetKeyboardFocusedWidget());
+
+	TWeakPtr<SWidget> FocusedWidget;
+	if (bEnterCycles || bTabCycles)
+	{
+		FocusedWidget = FBAPinActions::FocusNextWidgetInPin(GraphHandler, SelectedGraphPin, bForwards, bCycle, bSelectFirstPin);
+	}
+
+	if (!FocusedWidget.IsValid())
+	{
+		if (bPinCurrentlyHasKeyboardFocus)
+		{
+			// unlike tab, enter should clear focus when reaching the end
+			if (bEnterCycles)
+			{
+				GEditor->GetTimerManager()->SetTimerForNextTick([]
+				{
+					FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
+				});
+			}
+		}
+		else
+		{
+			// if we weren't able to focus any text input widgets, try to click the first widget
+			if (bEnterInteracts)
+			{
+				if (!ClickableWidgets.IsEmpty())
+				{
+					FBAUtils::InteractWithWidget(ClickableWidgets[0]);
+				}
+			}
+		}
+
+		// consume the tab key when cycling so the keyboard focus doesn't move
+		if (bTabCycles && bPinCurrentlyHasKeyboardFocus)
+		{
+			if (EditableTextWidgets.Num() == 1)
+			{
 				return true;
 			}
 		}
@@ -366,7 +499,7 @@ bool FBAInputProcessorState::BulkMoveItems(const TArray<FContentBrowserItem>& In
 	// 		{
 	// 			Node->CreateNewGuid();
 	// 			FVector2D MousePos = FBAUtils::ScreenSpaceToPanelCoord(GraphPanel, FSlateApplication::Get().GetCursorPos());
-	// 			Node->NodePosX = MousePos.X; 
+	// 			Node->NodePosX = MousePos.X;
 	// 			Node->NodePosY = MousePos.Y;
 	//
 	// 			// Update the selected node
@@ -388,7 +521,7 @@ bool FBAInputProcessorState::BulkMoveItems(const TArray<FContentBrowserItem>& In
 	// 				GraphHandler->SetReplaceNewNodeTransaction(Transaction);
 	// 			}
 	//
-	// 			
+	//
 	// 		}
 	//
 	// 		FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Pasted Node"))));
@@ -410,7 +543,7 @@ bool FBAInputProcessorState::BulkMoveItems(const TArray<FContentBrowserItem>& In
 	// // try copy / paste the hovered pin
 	// if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	// {
-	// 	
+	//
 	//
 	// }
 	// // paste

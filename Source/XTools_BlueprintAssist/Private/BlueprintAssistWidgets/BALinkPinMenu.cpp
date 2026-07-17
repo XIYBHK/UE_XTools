@@ -3,10 +3,9 @@
 #include "BlueprintAssistWidgets/BALinkPinMenu.h"
 
 #include "BlueprintAssistGraphHandler.h"
-#include "BlueprintAssistSettings.h"
 #include "BlueprintAssistUtils.h"
-#include "ScopedTransaction.h"
 #include "SGraphPanel.h"
+#include "BlueprintAssistMisc/BAGraphSchema.h"
 #include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
@@ -128,7 +127,7 @@ void SBALinkPinMenu::InitListItems(TArray<TSharedPtr<FPinLinkerStruct>>& Items)
 				FName PinName = Pin->GetFName();
 				SeenPinNames.FindOrAdd(PinName, 0) += 1;
 
-				FString PinUniqueName = FString::Printf(TEXT("%s_%d"), *PinName.ToString(), SeenPinNames[PinName]);
+				FString PinUniqueName = FString::Printf(TEXT("%s%d"), *PinName.ToString(), SeenPinNames[PinName]);
 
 				auto Item = MakeShareable(new FPinLinkerStruct(Pin,PinUniqueName));
 				Items.Add(Item);
@@ -186,7 +185,7 @@ void SBALinkPinMenu::SelectItem(TSharedPtr<FPinLinkerStruct> Item)
 		return;
 	}
 
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "LinkPinMenu", "Link Pin (Menu)"));
+	const FBAScopedGraphAction Transaction(GraphHandler, "Link Pin (Menu)");
 
 	FBAUtils::TryCreateConnectionUnsafe(SourcePin, Item->Pin, EBABreakMethod::Default);
 

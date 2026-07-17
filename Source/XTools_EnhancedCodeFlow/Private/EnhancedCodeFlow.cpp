@@ -1,31 +1,9 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #include "EnhancedCodeFlow.h"
 #include "ECFSubsystem.h"
-
-#include "CodeFlowActions/ECFTicker.h"
-#include "CodeFlowActions/ECFTicker_WithHandle.h"
-#include "CodeFlowActions/ECFDelay.h"
-#include "CodeFlowActions/ECFDelayTicks.h"
-#include "CodeFlowActions/ECFWaitAndExecute.h"
-#include "CodeFlowActions/ECFWaitAndExecute_WithDeltaTime.h"
-#include "CodeFlowActions/ECFWhileTrueExecute.h"
-#include "CodeFlowActions/ECFTimeline.h"
-#include "CodeFlowActions/ECFTimelineVector.h"
-#include "CodeFlowActions/ECFTimelineLinearColor.h"
-#include "CodeFlowActions/ECFCustomTimeline.h"
-#include "CodeFlowActions/ECFCustomTimelineVector.h"
-#include "CodeFlowActions/ECFCustomTimelineLinearColor.h"
-#include "CodeFlowActions/ECFTimeLock.h"
-#include "CodeFlowActions/ECFDoOnce.h"
-#include "CodeFlowActions/ECFDoNTimes.h"
-#include "CodeFlowActions/ECFDoNoMoreThanXTime.h"
-#include "CodeFlowActions/ECFRunAsyncThen.h"
-
-#include "CodeFlowActions/Coroutines/ECFWaitSeconds.h"
-#include "CodeFlowActions/Coroutines/ECFWaitTicks.h"
-#include "CodeFlowActions/Coroutines/ECFWaitUntil.h"
-#include "CodeFlowActions/Coroutines/ECFRunAsyncAndWait.h"
+#include "ECFActionsHeader.h"
+#include "ECFActionsHeaderCoroutine.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnhancedCodeFlow, Log, All);
 
@@ -39,6 +17,60 @@ bool FFlow::IsActionRunning(const UObject* WorldContextObject, const FECFHandle&
 		return ECF->HasAction(Handle);
 	else
 		return false;
+}
+
+TArray<FECFHandle> FEnhancedCodeFlow::GetActionsHandlesByClass(const UObject* WorldContextObject, TSubclassOf<UECFActionBase> Class)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->GetActionsHandlesByClass(Class);
+	return {};
+}
+
+TArray<FECFHandle> FEnhancedCodeFlow::GetActionsHandlesByLabel(const UObject* WorldContextObject, const FString& Label)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->GetActionsHandlesByLabel(Label);
+	return {};
+}
+
+TArray<UECFActionBase*> FEnhancedCodeFlow::GetAllActions(const UObject* WorldContextObject)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->GetAllActions();
+	return {};
+}
+
+int32 FEnhancedCodeFlow::GetActionsCount(const UObject* WorldContextObject)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->GetActionsCount();
+	return 0;
+}
+
+UECFActionBase* FEnhancedCodeFlow::GetActionFromHandle(const UObject* WorldContextObject, const FECFHandle& Handle)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->FindAction(Handle);
+	return nullptr;
+}
+
+FString FEnhancedCodeFlow::GetActionLabelFromHandle(const UObject* WorldContextObject, const FECFHandle& Handle)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+	{
+		if (UECFActionBase* FoundAction = ECF->FindAction(Handle))
+		{
+			return FoundAction->GetLabel();
+		}
+	}
+	return TEXT("");
+}
+
+UECFActionBase* FEnhancedCodeFlow::GetActionFromInstancedId(const UObject* WorldContextObject, const FECFInstanceId& InstancedId)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->GetInstancedAction(InstancedId);
+	return nullptr;
 }
 
 void FEnhancedCodeFlow::PauseAction(const UObject* WorldContextObject, const FECFHandle& Handle)
@@ -59,6 +91,13 @@ bool FEnhancedCodeFlow::IsActionPaused(const UObject* WorldContextObject, const 
 		return ECF->IsActionPaused(Handle, bIsPaused);
 	else
 		return false;
+}
+
+bool FEnhancedCodeFlow::ResetAction(const UObject* WorldContextObject, const FECFHandle& Handle, bool bCallUpdate)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->ResetAction(Handle, bCallUpdate);
+	return false;
 }
 
 void FEnhancedCodeFlow::SetPause(const UObject* WorldContextObject, bool bPaused)
@@ -95,7 +134,35 @@ void FFlow::StopAllActions(const UObject* WorldContextObject, bool bComplete/* =
 		ECF->RemoveAllActions(bComplete, InOwner);
 }
 
-/*^^^ 计时器 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+void FFlow::StopAllActionsOfClass(const UObject* WorldContextObject, TSubclassOf<UECFActionBase> Class, bool bComplete/* = false*/, UObject* InOwner/* = nullptr*/)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		ECF->RemoveActionsOfClass(Class, bComplete, InOwner);
+}
+
+void FFlow::StopAllActionsWithLabel(const UObject* WorldContextObject, const FString& Label, bool bComplete/* = false*/, UObject* InOwner/* = nullptr*/)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		ECF->RemoveActionsOfLabel(Label, bComplete, InOwner);
+}
+
+/*^^^ Timing mods ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+float FFlow::GetActionTime(const UObject* WorldContextObject, const FECFHandle& Handle)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->GetActionTime(Handle);
+	return -1.f;
+}
+
+bool FFlow::SetActionTime(const UObject* WorldContextObject, const FECFHandle& Handle, float NewTime, bool bCallUpdate)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->SetActionTime(Handle, NewTime, bCallUpdate);
+	return false;
+}
+
+/*^^^ Ticker ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::AddTicker(const UObject* InOwner, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, const FECFActionSettings& Settings/* = {}*/)
 {
@@ -136,7 +203,7 @@ FECFHandle FFlow::AddTicker(const UObject* InOwner, TUniqueFunction<void(float/*
 FECFHandle FFlow::AddTicker(const UObject* InOwner, float InTickingTime, TUniqueFunction<void(float/* DeltaTime*/, FECFHandle/* ActionHandle*/)>&& InTickFunc, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, const FECFActionSettings& Settings/* = {}*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTicker_WithHandle>(InOwner, Settings, FECFInstanceId(), InTickingTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc));
+		return ECF->AddAction<UECFTicker>(InOwner, Settings, FECFInstanceId(), InTickingTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc));
 	else
 		return FECFHandle();
 }
@@ -144,18 +211,14 @@ FECFHandle FFlow::AddTicker(const UObject* InOwner, float InTickingTime, TUnique
 FECFHandle FFlow::AddTicker(const UObject* InOwner, float InTickingTime, TUniqueFunction<void(float/* DeltaTime*/, FECFHandle/* ActionHandle*/)>&& InTickFunc, TUniqueFunction<void()>&& InCallbackFunc/* = nullptr*/, const FECFActionSettings& Settings/* = {}*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTicker_WithHandle>(InOwner, Settings, FECFInstanceId(), InTickingTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc));
+		return ECF->AddAction<UECFTicker>(InOwner, Settings, FECFInstanceId(), InTickingTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc));
 	else
 		return FECFHandle();
 }
 
 void FFlow::RemoveAllTickers(const UObject* WorldContextObject, bool bComplete/* = false*/, UObject* InOwner/* = nullptr*/)
 {
-	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
-	{
-		ECF->RemoveActionsOfClass<UECFTicker>(bComplete, InOwner);
-		ECF->RemoveActionsOfClass<UECFTicker_WithHandle>(bComplete, InOwner);
-	}
+	StopAllActionsOfClass<UECFTicker>(WorldContextObject, bComplete, InOwner);
 }
 
 /*^^^ 延迟 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
@@ -265,7 +328,7 @@ FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* 
 FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* bHasFinished*/(float/* DeltaTime*/)>&& InPredicate, TUniqueFunction<void(bool/* bTimedOut*/, bool/* bStopped*/)>&& InCallbackFunc, float InTimeOut, const FECFActionSettings& Settings)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFWaitAndExecute_WithDeltaTime>(InOwner, Settings, FECFInstanceId(), MoveTemp(InPredicate), MoveTemp(InCallbackFunc), InTimeOut);
+		return ECF->AddAction<UECFWaitAndExecute>(InOwner, Settings, FECFInstanceId(), MoveTemp(InPredicate), MoveTemp(InCallbackFunc), InTimeOut);
 	else
 		return FECFHandle();
 }
@@ -273,7 +336,7 @@ FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* 
 FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* bHasFinished*/(float/* DeltaTime*/)>&& InPredicate, TUniqueFunction<void(bool/* bTimedOut*/)>&& InCallbackFunc, float InTimeOut, const FECFActionSettings& Settings)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFWaitAndExecute_WithDeltaTime>(InOwner, Settings, FECFInstanceId(), MoveTemp(InPredicate), MoveTemp(InCallbackFunc), InTimeOut);
+		return ECF->AddAction<UECFWaitAndExecute>(InOwner, Settings, FECFInstanceId(), MoveTemp(InPredicate), MoveTemp(InCallbackFunc), InTimeOut);
 	else
 		return FECFHandle();
 }
@@ -281,7 +344,7 @@ FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* 
 FECFHandle FFlow::WaitAndExecute(const UObject* InOwner, TUniqueFunction<bool/* bHasFinished*/(float/* DeltaTime*/)>&& InPredicate, TUniqueFunction<void()>&& InCallbackFunc, float InTimeOut, const FECFActionSettings& Settings)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFWaitAndExecute_WithDeltaTime>(InOwner, Settings, FECFInstanceId(), MoveTemp(InPredicate), MoveTemp(InCallbackFunc), InTimeOut);
+		return ECF->AddAction<UECFWaitAndExecute>(InOwner, Settings, FECFInstanceId(), MoveTemp(InPredicate), MoveTemp(InCallbackFunc), InTimeOut);
 	else
 		return FECFHandle();
 }
@@ -291,7 +354,6 @@ void FFlow::RemoveAllWaitAndExecutes(const UObject* WorldContextObject, bool bCo
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
 	{
 		ECF->RemoveActionsOfClass<UECFWaitAndExecute>(bComplete, InOwner);
-		ECF->RemoveActionsOfClass<UECFWaitAndExecute_WithDeltaTime>(bComplete, InOwner);
 	}
 }
 
@@ -567,6 +629,24 @@ void FEnhancedCodeFlow::RemoveAllRunAsyncThen(const UObject* WorldContextObject,
 		ECF->RemoveActionsOfClass<UECFRunAsyncThen>(false, InOwner);
 }
 
+/*^^^ Load Objects Async ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+FECFHandle FEnhancedCodeFlow::LoadObjectsAsync(const UObject* InOwner, const TArray<FSoftObjectPath>& InObjectsToLoad, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc, const FECFActionSettings& Settings)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
+		return ECF->AddAction<UECFLoadObjectsAsync>(InOwner, Settings, FECFInstanceId(), InObjectsToLoad, MoveTemp(InCallbackFunc));
+	else
+		return FECFHandle();
+}
+
+FECFHandle FEnhancedCodeFlow::LoadObjectsAsync(const UObject* InOwner, const TArray<FSoftObjectPath>& InObjectsToLoad, TUniqueFunction<void()>&& InCallbackFunc, const FECFActionSettings& Settings)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
+		return ECF->AddAction<UECFLoadObjectsAsync>(InOwner, Settings, FECFInstanceId(), InObjectsToLoad, MoveTemp(InCallbackFunc));
+	else
+		return FECFHandle();
+}
+
 /*^^^ Wait Seconds (Coroutine) ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFCoroutineAwaiter_WaitSeconds FEnhancedCodeFlow::WaitSeconds(const UObject* InOwner, float InTime, const FECFActionSettings& Settings /*= {}*/)
@@ -600,10 +680,22 @@ FECFCoroutineAwaiter_WaitUntil FEnhancedCodeFlow::WaitUntil(const UObject* InOwn
 	return FECFCoroutineAwaiter_WaitUntil(InOwner, Settings, MoveTemp(InPredicate), InTimeOut);
 }
 
+FECFCoroutineAwaiter_WaitUntil FEnhancedCodeFlow::WaitUntil(const UObject* InOwner, TUniqueFunction<bool()>&& InPredicate, float InTimeOut, const FECFActionSettings& Settings)
+{
+	return FECFCoroutineAwaiter_WaitUntil(InOwner, Settings, MoveTemp(InPredicate), InTimeOut);
+}
+
 void FEnhancedCodeFlow::RemoveAllWaitUntil(const UObject* WorldContextObject, bool bComplete, UObject* InOwner)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
 		ECF->RemoveActionsOfClass<UECFWaitUntil>(bComplete, InOwner);
+}
+
+/*^^^ Wait For Flag (Coroutine) ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+FECFCoroutineAwaiter_WaitForFlag FEnhancedCodeFlow::WaitForFlag(const UObject* InOwner, bool* bInFlag, float InTimeOut /*= 0.f*/, const FECFActionSettings& Settings /*= {}*/)
+{
+	return FECFCoroutineAwaiter_WaitForFlag(InOwner, Settings, bInFlag, InTimeOut);
 }
 
 /*^^^ Run Async And Wait (Coroutine) ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
@@ -617,6 +709,25 @@ void FEnhancedCodeFlow::RemoveAllRunAsyncAndWait(const UObject* WorldContextObje
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
 		ECF->RemoveActionsOfClass<UECFRunAsyncAndWait>(bComplete, InOwner);
+}
+
+/*^^^ Wait Load Objects (Coroutine) ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+FECFCoroutineAwaiter_WaitLoadObjects FEnhancedCodeFlow::WaitLoadObjects(const UObject* InOwner, const TArray<FSoftObjectPath>& InObjectsToLoad, const FECFActionSettings& Settings)
+{
+	return FECFCoroutineAwaiter_WaitLoadObjects(InOwner, Settings, InObjectsToLoad);
+}
+
+FECFCoroutineAwaiter_WaitLoadObjects FEnhancedCodeFlow::WaitLoadObjects(const UObject* InOwner, const TArray<FPrimaryAssetId>& InPrimaryAssetsToLoad, const FECFActionSettings& Settings /*= {}*/)
+{
+	return FECFCoroutineAwaiter_WaitLoadObjects(InOwner, Settings, InPrimaryAssetsToLoad);
+}
+
+/*^^^ Loop And Wait (Coroutine) ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+FECFCoroutineAwaiter_LoopAndWait FEnhancedCodeFlow::LoopAndWait(const UObject* InOwner, TUniqueFunction<bool()>&& InPredicate, TUniqueFunction<void(float)>&& InTickFunc, float InTimeOut, const FECFActionSettings& Settings /*= {}*/)
+{
+	return FECFCoroutineAwaiter_LoopAndWait(InOwner, Settings, MoveTemp(InPredicate), MoveTemp(InTickFunc), InTimeOut);
 }
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION

@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistSettings_Advanced.h"
 
@@ -16,6 +16,7 @@ UBASettings_Advanced::UBASettings_Advanced(const FObjectInitializer& ObjectIniti
 	bSlowButAccurateSizeCaching = false;
 	CacheSaveLocation = EBACacheSaveLocation::Project;
 	bSaveBlueprintAssistCacheToFile = true;
+	bWriteSizeToEdGraphNode = true;
 
 	//~~~ Commands
 	bRemoveLoopingCausedBySwapping = true;
@@ -32,9 +33,9 @@ UBASettings_Advanced::UBASettings_Advanced(const FObjectInitializer& ObjectIniti
 	bForceRefreshGraphAfterFormatting = false;
 	bDisableBlueprintAssistPlugin = false;
 	bHighlightBadComments = false;
+	bImmediatelyShowGraphOverlay = false;
 
 	//~~~ Crash Reporter
-	// [XTools 集成] 默认 Never：禁用向第三方服务器上传崩溃报告
 	CrashReportingMethod = EBACrashReportingMethod::Never;
 	bDumpFormattingCrashNodes = true;
 	bIncludeNodesInCrashReport = false;
@@ -50,13 +51,6 @@ void UBASettings_Advanced::PostEditChangeProperty(struct FPropertyChangedEvent& 
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings_Advanced, CacheSaveLocation))
 	{
 		FBACache::Get().SaveCache();
-	}
-	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UBASettings_Advanced, CrashReportingMethod))
-	{
-		if (CrashReportingMethod == EBACrashReportingMethod::Ask)
-		{
-			FBACrashReporter::Get().ShowNotification();
-		}
 	}
 
 	UObject::PostEditChangeProperty(PropertyChangedEvent);

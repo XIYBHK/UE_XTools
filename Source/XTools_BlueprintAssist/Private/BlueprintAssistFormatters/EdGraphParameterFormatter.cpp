@@ -210,17 +210,15 @@ bool FEdGraphParameterFormatter::DoesHelixingApply()
 	TArray<UEdGraphNode*> NodeQueue;
 	NodeQueue.Add(RootNode);
 
-	const auto& IgnoredNodesCopy = IgnoredNodes;
-
 	TSet<UEdGraphNode*> GatheredInputNodes;
 
 	while (NodeQueue.Num() > 0)
 	{
 		UEdGraphNode* NextNode = NodeQueue.Pop();
 
-		const auto Pred = [&IgnoredNodesCopy](UEdGraphPin* Pin)
+		const auto Pred = [&](UEdGraphPin* Pin)
 		{
-			return FBAUtils::IsParameterPin(Pin) && !IgnoredNodesCopy.Contains(Pin->GetOwningNode());
+			return FBAUtils::IsParameterPin(Pin) && !IgnoredNodes.Contains(Pin->GetOwningNode());
 		};
 
 		TArray<UEdGraphPin*> LinkedToPinsInput = FBAUtils::GetLinkedToPins(NextNode, EGPD_Input).FilterByPredicate(Pred);
@@ -228,7 +226,7 @@ bool FEdGraphParameterFormatter::DoesHelixingApply()
 		TSet<UEdGraphNode*> LinkedToNodesInput;
 		for (UEdGraphPin* Pin : LinkedToPinsInput)
 		{
-			if (FBAUtils::IsNodePure(Pin->GetOwningNode()))
+			if (!UBASettings::Get().bDisableHelixingOnlyCountsParameters || FBAUtils::IsNodePure(Pin->GetOwningNode()))
 			{
 				LinkedToNodesInput.Add(Pin->GetOwningNode());
 			}
@@ -407,7 +405,7 @@ void FEdGraphParameterFormatter::ProcessSameRowMapping(UEdGraphNode* CurrentNode
 			{
 				UEdGraphNode* OtherNode = OtherPin->GetOwningNode();
 
-				if (!GraphHandler->FilterSelectiveFormatting(OtherNode, GraphFormatter->GetFormatterParameters().NodesToFormat.GetCachedNodes()))
+				if (!ShouldFormatNode(OtherNode))
 				{
 					continue;
 				}
@@ -675,7 +673,7 @@ void FEdGraphParameterFormatter::FormatX()
 				{
 					UEdGraphNode* LinkedNode = LinkedPin->GetOwningNodeUnchecked();
 
-					if (!GraphHandler->FilterSelectiveFormatting(LinkedNode, GraphFormatter->GetFormatterParameters().NodesToFormat.GetCachedNodes()))
+					if (!ShouldFormatNode(LinkedNode))
 					{
 						continue;
 					}
@@ -686,6 +684,11 @@ void FEdGraphParameterFormatter::FormatX()
 					}
 
 					FPinLink CurrentLink = FPinLink(Pin, LinkedPin);
+					if (!ShouldFormatLink(CurrentLink))
+					{
+						continue;
+					}
+
 					if (VisitedLinks.Contains(CurrentLink))
 					{
 						continue;
@@ -744,6 +747,11 @@ void FEdGraphParameterFormatter::FormatY(
 	if (UEdGraphNode* ParentNode = CurrentLink.GetFromNodeUnsafe())
 	{
 		NodeRelativeMapping.UpdateRelativeY(CurrentNode, ParentNode);
+	}
+
+	if (!NodeInfoMap.Contains(CurrentNode))
+	{
+		return;
 	}
 
 	const TArray<UEdGraphNode*> Children = NodeInfoMap[CurrentNode]->GetChildNodes();
@@ -814,7 +822,7 @@ void FEdGraphParameterFormatter::FormatY(
 			UEdGraphNode* ToNode = Link.To->GetOwningNode();
 
 			if (IgnoredNodes.Contains(ToNode) ||
-				!GraphHandler->FilterSelectiveFormatting(ToNode, GraphFormatter->GetFormatterParameters().NodesToFormat.GetCachedNodes()) ||
+				!ShouldFormatNode(ToNode) ||
 				!Children.Contains(ToNode) ||
 				// !Path.Contains(Link) ||
 				VisitedNodes.Contains(ToNode) ||
@@ -1782,6 +1790,16 @@ void FEdGraphParameterFormatter::ApplyCommentPaddingY_Recursive(TArray<UEdGraphN
 			}
 		}
 	}
+}
+
+bool FEdGraphParameterFormatter::ShouldFormatNode(UEdGraphNode* Node)
+{
+	return GetFormatterParameters().IsValidNode(Node);
+}
+
+bool FEdGraphParameterFormatter::ShouldFormatLink(const FPinLink& Link)
+{
+	return GetFormatterParameters().IsValidLink(Link);
 }
 
 FEdGraphFormatterParameters& FEdGraphParameterFormatter::GetFormatterParameters()

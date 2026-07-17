@@ -54,6 +54,7 @@ public class XTools_BlueprintScreenshotTool : ModuleRules
 				"InputCore",
 				"RenderCore",
 				"UMG",
+				"GraphEditor",
 			}
 		);
 	}

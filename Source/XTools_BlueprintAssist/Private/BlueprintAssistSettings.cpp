@@ -38,6 +38,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	SupportedAssetEditors = {
 		"SoundCueEditor",
 		"Niagara",
+		"NiagaraScriptEditor",
 		"BlueprintEditor",
 		"ControlRigEditor",
 		"MaterialEditor",
@@ -57,9 +58,9 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	};
 
 	SupportedGraphEditors = { "SGraphEditor", "SFlowGraphEditor" };
-
+	bEnablePlugin = true;
 	bEnableShakeNodeOffWire = true;
-	ShakeNodeOffWireTimeWindow = 0.3f;
+	ShakeNodeOffWireTimeWindow = 0.6f;
 
 	// ------------------- //
 	// Format all settings //
@@ -77,7 +78,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	ExecutionWiringStyle = EBAWiringStyle::AlwaysMerge;
 	ParameterWiringStyle = EBAWiringStyle::AlwaysMerge;
 
-	bGloballyDisableAutoFormatting = true;
+	bGloballyDisableAutoFormatting = false;
 	bSkipAutoFormattingAfterBreakingPins = true;
 
 	FormattingStyle = EBANodeFormattingStyle::Expanded;
@@ -89,6 +90,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	ParameterVerticalPinSpacing = 26;
 
 	bDisableHelixingWithMultiplePins = true;
+	bDisableHelixingOnlyCountsParameters = true;
 	DisableHelixingPinCount = 2;
 	bLimitHelixingHeight = true;
 	HelixingHeightMax = 500;
@@ -108,7 +110,6 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	BlueprintFormatterSettings.Padding = DefaultFormatterPaddingSize; 
 	BlueprintFormatterSettings.AutoFormatting = EBAAutoFormatting::FormatAllConnected; 
 	BlueprintFormatterSettings.FormatterDirection = EGPD_Output;
-	BlueprintFormatterSettings.RootNodes = { "K2Node_Tunnel" }; 
 	BlueprintFormatterSettings.ExecPinName = UEdGraphSchema_K2::PC_Exec; 
 	BlueprintFormatterSettings.ExecPinName = "exec";
 
@@ -170,7 +171,6 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 #else
 	ControlRigSettings.ExecPinName = "ControlRigExecuteContext";
 #endif
-	ControlRigSettings.bEnabled = false;
 	ControlRigSettings.Padding = DefaultFormatterPaddingSize;
 	ControlRigSettings.AutoFormatting = EBAAutoFormatting::Never;
 	ControlRigSettings.FormatterDirection = EGPD_Output;
@@ -274,7 +274,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	bExpandNodesAheadOfParameters = true;
 	bExpandNodesByHeight = true;
 	ExpandNodesMaxDist = 400;
-	bExpandParametersByHeight = true;
+	bExpandParametersByHeight = false;
 	ExpandParametersMaxDist = 160;
 
 	bSnapToGrid = false;
@@ -298,6 +298,7 @@ void UBASettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 	check(FBlueprintAssistModule::IsAvailable())
 
 	const FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+	const FName MemberName = (PropertyChangedEvent.MemberProperty != nullptr) ? PropertyChangedEvent.MemberProperty->GetFName() : NAME_None;
 
 	// when we change any formatting related setting, clear the formatting data
 	for (auto GH : FBATabHandler::Get().GetAllGraphHandlers())
@@ -305,6 +306,17 @@ void UBASettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		if (GH)
 		{
 			GH->ClearFormatters();
+		}
+	}
+
+	if (MemberName == GET_MEMBER_NAME_CHECKED(UBASettings, BlueprintFormatterSettings))
+	{
+		if (PropertyName == GET_MEMBER_NAME_CHECKED(FBAFormatterSettings, FormatterDirection))
+		{
+			if (BlueprintFormatterSettings.FormatterDirection != EGPD_Output)
+			{
+				BlueprintFormatterSettings.FormatterDirection = EGPD_Output;
+			}
 		}
 	}
 

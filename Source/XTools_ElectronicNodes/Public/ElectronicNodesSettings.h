@@ -5,6 +5,8 @@
 #pragma once
 
 #include "Engine/DeveloperSettings.h"
+#include "EdGraph/EdGraphSchema.h"
+#include "Templates/SubclassOf.h"
 #include "ElectronicNodesSettings.generated.h"
 
 UENUM(BlueprintType)
@@ -28,6 +30,14 @@ enum class EWirePriority : uint8
 	None UMETA(DisplayName = "无"),
 	Node UMETA(DisplayName = "节点优先"),
 	Pin UMETA(DisplayName = "引脚优先")
+};
+
+UENUM(BlueprintType)
+enum class ECrossingStyle : uint8
+{
+	Gap UMETA(DisplayName = "间隙"),
+	Arc UMETA(DisplayName = "跨线弧"),
+	Circle UMETA(DisplayName = "圆环")
 };
 
 UENUM(BlueprintType)
@@ -212,6 +222,20 @@ public:
 	/* Push the offset outside the node (instead of going for the middle). Default: false */
 	UPROPERTY(config, EditAnywhere, Category = "Ribbon Style (experimental)", meta = (EditCondition = "ActivateRibbon", DisplayName = "向外推", Tooltip = "将偏移推到节点外部（而不是向中间）。默认: false"))
 	bool RibbonPushOutside = false;
+
+	/* -----[ Crossing Style ] ----- */
+
+	/* Draw a visual marker where wire segments cross. Default: false */
+	UPROPERTY(config, EditAnywhere, Category = "Crossing", meta = (DisplayName = "显示连线交叉点", Tooltip = "在连线相交处绘制间隙、跨线弧或圆环。默认: 关闭"))
+	bool ActivateCrossing = false;
+
+	/* Style of wire crossing. Default: Gap */
+	UPROPERTY(config, EditAnywhere, Category = "Crossing", meta = (EditCondition = "ActivateCrossing", DisplayName = "交叉点样式", Tooltip = "连线交叉处的绘制样式。默认: 间隙"))
+	ECrossingStyle CrossingStyle = ECrossingStyle::Gap;
+
+	/* Size of the crossing. Default: 4 */
+	UPROPERTY(config, EditAnywhere, Category = "Crossing", meta = (EditCondition = "ActivateCrossing", ClampMin = "1.0", DisplayName = "交叉点大小", Tooltip = "交叉标记在图表空间中的大小。默认: 4"))
+	float CrossingSize = 4.0f;
 
 	/* -----[ Bubble Style ] ----- */
 

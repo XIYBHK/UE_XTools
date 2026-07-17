@@ -19,6 +19,9 @@ using FBSTVector2D = FVector2D;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintScreenshotTool, Log, All);
 
+class SGraphEditor;
+class UTextureRenderTarget2D;
+
 UCLASS(BlueprintType)
 class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API UBlueprintScreenshotToolHandler : public UObject
 {

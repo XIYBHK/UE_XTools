@@ -16,6 +16,8 @@
 #include "Sampling/FormationSamplingInternal.h"
 #include "Components/SplineComponent.h"
 #include "Algo/AnyOf.h"
+#include "Engine/Texture.h"
+#include "Engine/Texture2D.h"
 
 // ============================================================================
 // 辅助函数：坐标变换

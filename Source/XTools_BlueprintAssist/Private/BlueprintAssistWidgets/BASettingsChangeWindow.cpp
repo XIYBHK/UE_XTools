@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistWidgets/BASettingsChangeWindow.h"
 
@@ -103,7 +103,7 @@ TSharedRef<SWidget> SBASettingTableRow::GenerateWidgetForColumn(const FName& Col
 
 	if (!InnerContent)
 	{
-		InnerContent = SNew(STextBlock).Text(INVTEXT("错误 SBASettingsTableRow"));
+		InnerContent = SNew(STextBlock).Text(INVTEXT("SBASettingsTableRow 错误"));
 	}
 
 	return SNew(SBox).Padding(FMargin(4, 2)).ToolTipText(TooltipText)
@@ -155,7 +155,7 @@ void SBASettingsListView::Refresh(UBASettingsBase* NewSettings)
 	.FillWidth(100.f));
 
 	HeaderRowWidget->AddColumn(SHeaderRow::Column(ButtonHeaderName)
-	.DefaultLabel(INVTEXT("重置为默认值"))
+	.DefaultLabel(INVTEXT("恢复默认值"))
 	.FillWidth(100.f));
 
 	Rows.Empty();
@@ -218,6 +218,10 @@ void SBASettingsChangeWindow::Construct(const FArguments& InArgs)
 		SNew(SSpacer)
 	];
 
+	SidePanelBox->AddSlot().AutoHeight().AttachWidget(MakeSaveButton(EBASettingsLocation::PROJECT));
+	SidePanelBox->AddSlot().AutoHeight().AttachWidget(MakeSaveButton(EBASettingsLocation::ENGINE));
+	SidePanelBox->AddSlot().AutoHeight().AttachWidget(MakeSaveButton(EBASettingsLocation::GLOBAL));
+
 	ChildSlot
 	[
 		SNew(SHorizontalBox)
@@ -274,4 +278,105 @@ void SBASettingsChangeWindow::SetActiveSettings(UBASettingsBase* Settings)
 {
 	ActiveSetting = Settings;
 	SettingsList->Refresh(ActiveSetting);
+}
+
+void SBASettingsChangeWindow::SaveSettings(EBASettingsLocation Location)
+{
+	TArray<UObject*> Settings = {
+		&UBASettings::GetMutable(),
+		&UBASettings_Advanced::GetMutable(),
+		&UBASettings_EditorFeatures::GetMutable(),
+	};
+
+	FString IniPath = GetIniPath(Location);
+
+	if (!FBAMiscUtils::MakeFileWritable(IniPath))
+	{
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("[%hs] Unable to make file writable %s"), __FUNCTION__, *IniPath);
+		FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("无法将 ini 文件设为可写"), SNotificationItem::CS_Fail);
+		return;
+	}
+
+	bool bSuccess = true;
+	for (auto Set : Settings)
+	{
+		bSuccess &= Set->TryUpdateDefaultConfigFile(FConfigCacheIni::NormalizeConfigIniPath(IniPath));
+		if (!bSuccess)
+		{
+			UE_LOG(LogBlueprintAssist, Warning, TEXT("[%hs] Failed to save setting %s to %s"), __FUNCTION__, *GetNameSafe(Set), *IniPath);
+			FString Msg = FString::Printf(TEXT("Failed to save settings %s to %s"), *GetNameSafe(Set), *IniPath);
+			FBAMiscUtils::ShowSimpleSlateNotification(FText::FromString(Msg), SNotificationItem::CS_Fail);
+		}
+	}
+
+	if (bSuccess)
+	{
+		UE_LOG(LogBlueprintAssist, Log, TEXT("Saved settings to %s"), *IniPath);
+		FString Msg = FString::Printf(TEXT("Saved settings to %s"), *IniPath);
+		FBAMiscUtils::ShowSimpleSlateNotification(FText::FromString(Msg), SNotificationItem::CS_Success);
+	}
+}
+
+FString SBASettingsChangeWindow::GetIniPath(EBASettingsLocation Location)
+{
+	FString IniPath;
+
+	// all 3 setting classes should have the same ini location, so just select UBASettings
+	switch (Location)
+	{
+	case EBASettingsLocation::PROJECT:
+		{
+			IniPath = UBASettings::GetMutable().GetDefaultConfigFilename();
+			break;
+		}
+	case EBASettingsLocation::ENGINE:
+		{
+			IniPath = FPaths::ConvertRelativePathToFull(FPaths::EngineConfigDir()) + "BaseEditorPerProjectUserSettings.ini";
+			break;
+		}
+	case EBASettingsLocation::GLOBAL:
+		{
+			IniPath = UBASettings::GetMutable().GetGlobalUserConfigFilename();
+			break;
+		}
+	default: ;
+	}
+
+	return IniPath;
+}
+
+TSharedRef<SWidget> SBASettingsChangeWindow::MakeSaveButton(EBASettingsLocation Location)
+{
+	FText SettingLocationText = StaticEnum<EBASettingsLocation>()->GetDisplayNameTextByValue(static_cast<int64>(Location));
+
+	FString Info;
+	switch (Location)
+	{
+	case EBASettingsLocation::PROJECT:
+			Info = "local to project";
+			break;
+	case EBASettingsLocation::ENGINE:
+		{
+			Info = "shared between projects for this engine version";
+			break;
+		}
+	case EBASettingsLocation::GLOBAL:
+		{
+			Info = "shared between projects and engine versions";
+			break;
+		}
+	default: ;
+	}
+
+	FText TooltipText = FText::FromString(FString::Printf(TEXT("Save settings %s (%s)"), *Info, *GetIniPath(Location)));
+
+	return SNew(SButton)
+		.ButtonStyle(BA_STYLE_CLASS::Get(), "FlatButton")
+		.Text(FText::Format(INVTEXT("保存到 {Loc}"), {SettingLocationText}))
+		.ToolTipText(TooltipText)
+		.OnClicked_Lambda([&, Location]
+	{
+		SaveSettings(Location);
+		return FReply::Handled();
+	});
 }

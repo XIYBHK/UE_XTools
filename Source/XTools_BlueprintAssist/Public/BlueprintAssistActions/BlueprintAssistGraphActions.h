@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistTabActions.h"
@@ -28,12 +28,8 @@ public:
 	void OnOpenContextMenu();
 	void CreateRerouteNode();
 	void SaveAndFormat();
-	void Cleanup();
 
 	// Graph read only commands
 	TSharedPtr<FUICommandList> GraphReadOnlyCommands;
 	void FocusGraphPanel();
-
-protected:
-	FDelegateHandle SaveAndFormatHandle;
 };

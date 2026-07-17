@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 
 #include "BlueprintAssistMisc/BACrashUpload.h"
@@ -245,7 +245,7 @@ bool FBACrashUpload::SendCrashReport(const FString& CrashId, const FString& Data
 		{
 			if (Request)
 			{
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4
+#if BA_UE_VERSION_OR_LATER(5, 4)
 				UE_LOG(LogBlueprintAssist, Warning, TEXT("Failed to send crash report %s Reason=%s"), *CrashId, LexToString(Request->GetFailureReason()));
 #else
 				UE_LOG(LogBlueprintAssist, Warning, TEXT("Failed to send crash report %s"), *CrashId);
@@ -274,4 +274,3 @@ void FBACrashUpload::CancelRequest()
 		UploadRequest.Reset();
 	}
 }
-

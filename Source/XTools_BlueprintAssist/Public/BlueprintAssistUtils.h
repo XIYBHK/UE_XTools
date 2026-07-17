@@ -29,9 +29,10 @@ class FBAGraphHandler;
 class FBlueprintEditor;
 struct FPinLink;
 
-#define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass, false)
-#define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfType(Widget, #WidgetClass), #WidgetClass, false)
+#define CAST_SLATE_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(Widget, #WidgetClass)
+#define FIND_PARENT_WIDGET(Widget, WidgetClass) FBAUtils::CastWidgetByTypeName<WidgetClass>(FBAUtils::GetParentWidgetOfTypeFast(Widget, #WidgetClass), #WidgetClass)
 #define FIND_CHILD_WIDGET(Widget, WidgetClass) FBAUtils::GetChildWidgetCasted<WidgetClass>(Widget, #WidgetClass)
+#define FIND_CHILD_WIDGET_ALL_CHILDREN(Widget, WidgetClass) FBAUtils::GetChildWidgetCasted<WidgetClass>(Widget, #WidgetClass, true)
 
 UENUM()
 enum class EBARoundingMethod : uint8
@@ -138,6 +139,7 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	/** Get the pin position, using the cached offset in the graph handler */
 	static FVector2D GetPinPos(TSharedPtr<FBAGraphHandler> GraphHandler, UEdGraphPin* Pin);
 	static FVector2D GetPinPos(TSharedPtr<SGraphPin> Pin);
+	static FVector2D GetPinPos(TSharedPtr<SGraphPanel> Panel, UEdGraphPin* Pin);
 
 	/** Checks all nodes on the graph and sorts them depending on whether they are on the LHS or RHS of a given node */
 	static void SortNodesOnGraphByDistance(
@@ -187,6 +189,8 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static bool IsBlueprintGraph(UEdGraph* Graph, bool bCheckFormatterSettings = true);
 
+	static bool IsNiagaraGraph(UEdGraph* Graph);
+
 	static bool IsGraphNode(UEdGraphNode* Node);
 
 	static bool IsEventNode(UEdGraphNode* Node, EEdGraphPinDirection Direction = EGPD_Output);
@@ -233,6 +237,7 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	static bool IsLoopingPinLink(FPinLink& PinLink, EEdGraphPinDirection Direction = EGPD_Output);
 
 	static UEdGraphNode* GetExecutingNode(UEdGraphNode* Node);
+	static UEdGraphNode* GetExecutingNode_Impl(UEdGraphNode* Node, TSet<UEdGraphNode*> Visited);
 
 	static TSet<UEdGraphNode*> GetNodeTreeWithFilter(
 		UEdGraphNode* Node,
@@ -264,12 +269,18 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static TSet<UEdGraphNode*> GetExecutionTreeWithFilter(
 		UEdGraphNode* Node,
-		TFunctionRef<bool(UEdGraphNode*)> Pred,
+		TFunctionRef<bool(const FPinLink& Link)> Pred,
 		EEdGraphPinDirection Direction = EGPD_MAX,
 		bool bOnlyInitialDirection = false);
 
 	static TSet<UEdGraphNode*> GetParameterTree(
 		UEdGraphNode* Node,
+		EEdGraphPinDirection Direction = EGPD_MAX,
+		bool bOnlyInitialDirection = false);
+
+	static TSet<UEdGraphNode*> GetParameterTreeWithFilter(
+		UEdGraphNode* Node,
+		TFunctionRef<bool(const FPinLink& Link)> Pred,
 		EEdGraphPinDirection Direction = EGPD_MAX,
 		bool bOnlyInitialDirection = false);
 
@@ -365,10 +376,9 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	template <class WidgetClass>
 	static TSharedPtr<WidgetClass> CastWidgetByTypeName(
 		TSharedPtr<SWidget> Widget,
-		const FString& WidgetTypeName,
-		bool bCheckContains = false)
+		const FName& WidgetTypeName)
 	{
-		return IsWidgetOfType(Widget, WidgetTypeName, bCheckContains) ? StaticCastSharedPtr<WidgetClass>(Widget) : nullptr;
+		return IsWidgetOfTypeFast(Widget, WidgetTypeName) ? StaticCastSharedPtr<WidgetClass>(Widget) : nullptr;
 	}
 
 	static TSharedPtr<SWidget> GetChildWidget(
@@ -378,7 +388,8 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static TSharedPtr<SWidget> GetChildWidgetFast(
 		TSharedPtr<SWidget> Widget,
-		const FName& WidgetClassName);
+		const FName& WidgetClassName,
+		bool bCheckAllChildren = false);
 
 	static TSharedPtr<SWidget> GetChildWidgetByTypes(
 		TSharedPtr<SWidget> Widget,
@@ -401,10 +412,10 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	template <class WidgetClass> 
 	static TSharedPtr<WidgetClass> GetChildWidgetCasted(
 		TSharedPtr<SWidget> Widget,
-		const FString& WidgetClassName,
-		bool bCheckContains = false)
+		const FName& WidgetClassName,
+		bool bAllChildren = false)
 	{
-		if (TSharedPtr<SWidget> ChildWidget = GetChildWidget(Widget, WidgetClassName, bCheckContains))
+		if (TSharedPtr<SWidget> ChildWidget = GetChildWidgetFast(Widget, WidgetClassName, bAllChildren))
 		{
 			return StaticCastSharedPtr<WidgetClass>(ChildWidget);
 		}
@@ -445,6 +456,10 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 		const FString& ParentType,
 		bool bCheckContains = false);
 
+	static TSharedPtr<SWidget> GetParentWidgetOfTypeFast(
+		TSharedPtr<SWidget> Widget,
+		const FName& ParentType);
+
 	static TSharedPtr<SWidget> ScanParentContainersForTypes(
 		TSharedPtr<SWidget> Widget,
 		const TArray<FName>& Types,
@@ -454,10 +469,19 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 		TSharedPtr<SGraphPanel> GraphPanel,
 		UEdGraphNode* Node);
 
+	static TSharedPtr<SGraphNode> GetGraphNodeFast(
+		TSharedPtr<SGraphPanel> GraphPanel,
+		UEdGraphNode* Node);
+
 	static TSharedPtr<SCommentBubble> GetCommentBubble(TSharedPtr<SGraphNode> GraphNode);
 
 	static TSharedPtr<SGraphPin> GetGraphPin(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphPin* Pin);
 	static TSharedPtr<SGraphPin> GetGraphPin(TSharedPtr<SGraphNode> GraphNode, UEdGraphPin* Pin);
+
+	static TSharedPtr<SGraphPin> GetGraphPinFast(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphPin* Pin);
+
+	static bool IsPinVisible(TSharedPtr<SGraphPanel> Panel, UEdGraphPin* Pin);
+	static bool IsPinVisible(TSharedPtr<SGraphPin> GraphPin);
 
 	static TSharedPtr<SGraphPanel> GetHoveredGraphPanel();
 
@@ -479,9 +503,11 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	static FVector2D SnapToGrid(const FVector2D& Position);
 	static float AlignTo8x8Grid(const float& InFloat, EBARoundingMethod RoundingMethod = EBARoundingMethod::Ceil);
 
-	static bool IsUserInputWidget(TSharedPtr<SWidget> Widget);
+	static bool IsUserInputWidget(TSharedPtr<SWidget> Widget, bool* bIsMultiLine = nullptr);
 
 	static bool IsClickableWidget(TSharedPtr<SWidget> Widget);
+
+	static void GetEditableChildWidgets(TSharedPtr<SWidget> Widget, TArray<TSharedPtr<SWidget>>& EditableWidgets, TArray<TSharedPtr<SWidget>>& ClickableWidgets);
 
 	static bool IsComboWidget(TSharedPtr<SWidget> Widget);
 
@@ -496,13 +522,12 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	static FVector2D ScreenSpaceToPanelCoord(TSharedPtr<SGraphPanel> GraphPanel, const FVector2D& ScreenSpace);
 
 	static FName GetObjectClassName(const UObject* Obj);
-	static const UEdGraph* GetGraph(UEdGraphPin* Pin);
+	static UEdGraph* GetGraph(UEdGraphPin* Pin);
 	static const UEdGraphSchema* GetSchema(UEdGraphPin* Pin);
 	static const UEdGraphSchema* GetSchema(UEdGraphNode* Node);
 	static void SchemaBreakPinLinks(FBANodePinHandle& Pin, bool bSendsNotification = true, bool bModify = true);
 	static void SchemaBreakSinglePinLink(FBANodePinHandle& A, FBANodePinHandle& B, bool bModify = true);
 	static void SchemaBreakSinglePinLink(FPinLink& PinLink, bool bModify = true);
-	static void SchemaSetNodePos(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphNode* Node, const FBAVector2& NewPos);
 
 	/**
 	 * Use TryCreateConnection instead 
@@ -536,6 +561,11 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 		UEdGraphNode* Node,
 		EEdGraphPinDirection Direction,
 		TFunctionRef<bool (UEdGraphNode*)> Pred);
+
+	static UEdGraphNode* GetTopMostWithFilter(
+		UEdGraphNode* Node,
+		EEdGraphPinDirection Direction,
+		TFunctionRef<bool (const FPinLink&)> Pred);
 
 	static void SafeDelete(TSharedPtr<FBAGraphHandler> GraphHandler, UEdGraphNode* Node);
 
@@ -618,6 +648,8 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static IAssetEditorInstance* GetEditorFromActiveTab();
 
+	static bool IsParentWidget(TSharedPtr<SWidget> Parent, TSharedPtr<SWidget> Child, bool bOrSameAsParent = false);
+
 	static TSharedPtr<SDockTab> FindParentTabForWidget(TSharedPtr<SWidget> Widget);
 
 	static UBlueprint* GetBlueprintFromGraph(const UEdGraph* Graph);
@@ -642,12 +674,10 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 	static EEdGraphPinDirection GetOppositeDirection(EEdGraphPinDirection Direction);
 
 	static bool IsObjectPinType(const FName& PinCategory);
-	static FString GetDefaultPinValue(UEdGraphPin* Pin);
 	static FString AttachPropertyNamesToValue(const FString& DefaultValue, const UScriptStruct* StructType);
 	static bool CanSetDefaultPinValue(UEdGraphPin* Pin, const FString& NewDefaultValue, UObject* NewDefaultObject, const FText& NewDefaultTextValue, FString* OutError = nullptr);
 	static bool CanSetDefaultMaterialPinValue(UMaterialExpression* MaterialExpression, UEdGraphPin* Pin, const FString& NewDefaultValue);
 	static bool TrySetDefaultPinValues(UEdGraphPin* Pin, const FString& NewDefaultValue, UObject* NewDefaultObject, const FText& NewDefaultTextValue, FString* OutError = nullptr);
-	static bool TrySetDefaultPinValuesFromString(UEdGraphPin* Pin, const FString& NewDefault, FString* OutError = nullptr);
 
 	static UEdGraphPin* FindSelfPin(UEdGraphNode* Node);
 
@@ -655,8 +685,9 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAUtils
 
 	static bool GetPinOffset(TSharedPtr<SGraphPanel> GraphPanel, UEdGraphPin* Pin, FVector2D& OutPinOffset);
 	static TFunction<bool(UEdGraphPin&, UEdGraphPin&)> GetHighestPinPredicate(TSharedPtr<SGraphPanel> GraphPanel);
+	static TFunction<bool(UEdGraphPin&, UEdGraphPin&)> GetHighestPinPredicate(TSharedPtr<FBAGraphHandler> GraphHandler);
+	static TFunction<bool(const FPinLink&, const FPinLink&)> GetHighestPinLinkPredicate(TSharedPtr<FBAGraphHandler> GraphHandler);
 
-	static bool IsPinVisible(UEdGraphPin* Pin);
 	static FText GetNodeTitle(UEdGraphNode* Node);
 
 	static UPackage* GetPackage(UObject* Obj);

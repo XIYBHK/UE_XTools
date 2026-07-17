@@ -1,6 +1,9 @@
 // Copyright (c) 2024 Damian Nowakowski. All rights reserved.
 
 #include "Modules/ModuleManager.h"
+#include "ECFLogs.h"
+
+DEFINE_LOG_CATEGORY(LogECF);
 
 /**
  * 增强代码流模块类

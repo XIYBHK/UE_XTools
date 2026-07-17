@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "BlueprintAssistGlobals.h"
 #include "BlueprintAssistStyle.h"
 #include "BlueprintAssistStyle.h"
-#include "Styling/AppStyle.h"
+#include "EditorStyleSet.h"
 #include "SlateOptMacros.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Views/ITypedTableView.h"

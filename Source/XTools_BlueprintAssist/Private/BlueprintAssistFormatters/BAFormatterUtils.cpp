@@ -103,3 +103,16 @@ FSlateRect FBAFormatterUtils::GetFormatterArrayBounds(TArray<TSharedPtr<FFormatt
 
 	return FBAUtils::GetGroupedBounds(BoundsArray);
 }
+
+bool FBAFormatterUtils::FilterDelegateLink(const FPinLink& PinLink)
+{
+	// 1. if TreatDelegatesAsExecutionPins is enabled, delegate pins are always valid
+	// 2. if we aren't dealing with delegate links, then valid
+	if (UBASettings::Get().bTreatDelegatesAsExecutionPins || !FBAUtils::IsDelegatePin(PinLink.From))
+	{
+		return true;
+	}
+
+	// if a delegate pin is from a pure node, it must be also linked to a pure node
+	return FBAUtils::IsNodePure(PinLink.From->GetOwningNode()) || FBAUtils::IsNodePure(PinLink.To->GetOwningNode());
+}

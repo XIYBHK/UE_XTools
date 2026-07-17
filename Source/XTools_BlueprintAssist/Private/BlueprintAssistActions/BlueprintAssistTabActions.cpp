@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistActions/BlueprintAssistTabActions.h"
+#include "BlueprintAssistActions/BlueprintAssistTabActions.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings_EditorFeatures.h"

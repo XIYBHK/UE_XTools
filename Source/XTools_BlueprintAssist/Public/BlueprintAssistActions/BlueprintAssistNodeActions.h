@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistGraphActions.h"
@@ -22,7 +22,6 @@ class XTOOLS_BLUEPRINTASSIST_API FBANodeActions final : public FBANodeActionsBas
 public:
 	virtual void Init() override;
 
-	static void SmartWireNode(UEdGraphNode* Node);
 	static void DisconnectExecutionOfNodes(TArray<UEdGraphNode*> Nodes);
 	static UEdGraphNode* GetSingleHoveredOrSelectedNode();
 

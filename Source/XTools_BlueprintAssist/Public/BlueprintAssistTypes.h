@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -43,6 +43,7 @@ struct FBAGraphPinHandle
 	void SetPin(UEdGraphPin* Pin);
 
 	UEdGraphPin* GetPin(bool bFallbackOnPinName = true);
+	UEdGraphPin* GetPinConst(bool bFallbackOnPinName = true) const;
 
 	bool IsValid() const
 	{
@@ -136,7 +137,7 @@ struct FBANodePinHandle
 
 	friend inline uint32 GetTypeHash(const FBANodePinHandle& Handle)
 	{
-		return HashCombine(GetTypeHash(Handle.PinId), GetTypeHash(Handle.Node->NodeGuid));
+		return GetTypeHash(Handle.PinId);
 	}
 };
 
@@ -161,25 +162,41 @@ struct FBANodeMovementTransaction
 	void End(const EBADragMethod& InDragMethod);
 };
 
-struct FBANodeArray
+struct FBANodeSet
 {
-	void SetArray(const TArray<UEdGraphNode*>& Nodes);
-	TArray<TWeakObjectPtr<UEdGraphNode>>& GetNodesWeak() { return NodeArrayWeak; }
-	const TArray<TWeakObjectPtr<UEdGraphNode>>& GetNodesWeakConst() const { return NodeArrayWeak; }
-	TArray<UEdGraphNode*> GetNodes() const;
-	const TArray<UEdGraphNode*>& GetCachedNodes() const { return CachedNodes; }
+	void Append(const TArray<UEdGraphNode*>& Nodes)
+	{
+		for (auto Node : Nodes)
+		{
+			WeakNodes.Add(Node);
+		}
+	}
+
+	void Append(const TSet<UEdGraphNode*>& Nodes)
+	{
+		for (auto Node : Nodes)
+		{
+			Add(Node);
+		}
+	}
+
+	void Add(UEdGraphNode* Node);
+
 	void Empty();
-	void CacheNodes();
+
+	const TSet<TWeakObjectPtr<UEdGraphNode>>& Get() const { return WeakNodes; }
+	TSet<TWeakObjectPtr<UEdGraphNode>>& GetMut() { return WeakNodes; }
+
+	TSet<UEdGraphNode*> GetNodeObjs() const;
 
 private:
-	TArray<TWeakObjectPtr<UEdGraphNode>> NodeArrayWeak;
-	TArray<UEdGraphNode*> CachedNodes;
+	TSet<TWeakObjectPtr<UEdGraphNode>> WeakNodes;
 };
 
-class FBASettingsPropertyHook final : public FNotifyHook
+class FBASettingsPropertyHook : public FNotifyHook
 {
 public:
-	FBASettingsPropertyHook() {};
+	FBASettingsPropertyHook() {}
 	virtual ~FBASettingsPropertyHook() {};
 
 	virtual void NotifyPreChange(FProperty* PropertyAboutToChange) override;

@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistWidgets/BABlueprintActionMenu.h"
 
@@ -248,7 +248,7 @@ void SBABlueprintActionMenu::InitListItems(TArray<TSharedPtr<FBAActionMenuItem>>
 			| EContextTargetFlags::TARGET_NonImportedTypes;
 
 		// NOTE: cannot call GetGraphContextActions() during serialization and GC due to its use of FindObject()
-		if (!GIsSavingPackage && !IsGarbageCollecting() && FilterContext.Blueprints.Num() > 0)
+		if (!UE::IsSavingPackage() && !IsGarbageCollecting() && FilterContext.Blueprints.Num() > 0)
 		{
 			FBlueprintActionMenuUtils::MakeContextMenu(FilterContext, bContextSensitive, OriginalFlagsMask, MenuBuilder);
 		}

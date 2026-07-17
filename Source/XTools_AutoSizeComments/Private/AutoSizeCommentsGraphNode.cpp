@@ -9,6 +9,7 @@
 #include "AutoSizeCommentsSettings.h"
 #include "AutoSizeCommentsState.h"
 #include "AutoSizeCommentsStyle.h"
+#include "AutoSizeCommentsSubsystem.h"
 #include "AutoSizeCommentsUtils.h"
 #include "EdGraphNode_Comment.h"
 #include "Editor.h"
@@ -16,10 +17,10 @@
 #include "K2Node_Knot.h"
 #include "SCommentBubble.h"
 #include "SGraphPanel.h"
+#include "ScopedTransaction.h"
 #include "TutorialMetaData.h"
 #include "Framework/Application/SlateApplication.h"
 
-#define LOCTEXT_NAMESPACE "AutoSizeCommentsGraphNode"
 #include "MaterialGraph/MaterialGraphNode_Comment.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Runtime/Engine/Classes/EdGraph/EdGraph.h"
@@ -29,7 +30,8 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/SInlineEditableTextBlock.h"
 #include "Widgets/Text/STextBlock.h"
-//#include "ScopedTransaction.h"
+
+#define LOCTEXT_NAMESPACE "AutoSizeCommentsGraphNode"
 
 void SAutoSizeCommentsGraphNode::Construct(const FArguments& InArgs, class UEdGraphNode* InNode)
 {
@@ -516,6 +518,11 @@ void SAutoSizeCommentsGraphNode::Tick(const FGeometry& AllottedGeometry, const d
 	if (CurrentWidth != CachedWidth)
 	{
 		CachedWidth = CurrentWidth;
+	}
+
+	if (UAutoSizeCommentsSubsystem* Subsystem = UAutoSizeCommentsSubsystem::Get(); Subsystem && Subsystem->IsDirty(CommentNode))
+	{
+		UpdateCache();
 	}
 
 	// Otherwise update when cached values have changed
@@ -1067,9 +1074,9 @@ FReply SAutoSizeCommentsGraphNode::HandleRefreshButtonClicked()
 	return FReply::Handled();
 }
 
-FReply SAutoSizeCommentsGraphNode::HandlePresetButtonClicked(const FPresetCommentStyle Style)
+FReply SAutoSizeCommentsGraphNode::HandlePresetButtonClicked(const FPresetCommentButtonStyle Style)
 {
-	ApplyPresetStyle(Style);
+	ApplyPresetButtonStyle(Style);
 
 	if (UAutoSizeCommentsSettings::Get().ShouldResizeToFit())
 	{
@@ -1622,16 +1629,59 @@ void SAutoSizeCommentsGraphNode::ApplyPresetStyle(const FPresetCommentStyle& Sty
 	SetIsHeader(Style.bSetHeader, false);
 }
 
+void SAutoSizeCommentsGraphNode::ApplyPresetButtonStyle(const FPresetCommentButtonStyle& Style)
+{
+	FScopedTransaction Transaction(LOCTEXT("ApplyCommentPresetStyle", "应用注释预设样式"));
+	GetNodeObj()->Modify();
+
+	ApplyPresetStyle(Style);
+
+	for (const FPresetCommentButtonStyle& Preset : UAutoSizeCommentsSettings::Get().PresetStyles)
+	{
+		if (!Preset.PresetPrefix.IsEmpty() && GetNodeObj()->NodeComment.StartsWith(Preset.PresetPrefix))
+		{
+			GetNodeObj()->NodeComment.RemoveFromStart(Preset.PresetPrefix);
+			GetNodeObj()->NodeComment.RemoveFromStart(TEXT(" "));
+			break;
+		}
+	}
+
+	if (Style.bWritePrefix && !Style.PresetPrefix.IsEmpty())
+	{
+		FString NewComment = Style.PresetPrefix;
+		if (!GetNodeObj()->NodeComment.IsEmpty())
+		{
+			NewComment += TEXT(" ") + GetNodeObj()->NodeComment;
+		}
+		GetNodeObj()->NodeComment = MoveTemp(NewComment);
+	}
+}
+
 void SAutoSizeCommentsGraphNode::OnTitleChanged(const FString& OldTitle, const FString& NewTitle)
 {
 	// apply the preset style if the title starts with the correct prefix
 	bool bMatchesPreset = false;
-	for (const auto& Elem : UAutoSizeCommentsSettings::Get().TaggedPresets)
+	for (const FPresetCommentButtonStyle& Preset : UAutoSizeCommentsSettings::Get().PresetStyles)
 	{
-		if (NewTitle.StartsWith(Elem.Key))
+		if (!Preset.PresetPrefix.IsEmpty() && NewTitle.StartsWith(Preset.PresetPrefix))
 		{
-			ApplyPresetStyle(Elem.Value);
+			ApplyPresetButtonStyle(Preset);
 			bMatchesPreset = true;
+			break;
+		}
+	}
+
+	// Fall back to the old map so existing EditorPerProjectUserSettings remain valid.
+	if (!bMatchesPreset)
+	{
+		for (const auto& Elem : UAutoSizeCommentsSettings::Get().TaggedPresets)
+		{
+			if (NewTitle.StartsWith(Elem.Key))
+			{
+				ApplyPresetStyle(Elem.Value);
+				bMatchesPreset = true;
+				break;
+			}
 		}
 	}
 
@@ -1639,12 +1689,24 @@ void SAutoSizeCommentsGraphNode::OnTitleChanged(const FString& OldTitle, const F
 	{
 		// randomize our color if the old title was an auto applied preset
 		bool bShouldResetColor = false;
-		for (const auto& Elem : UAutoSizeCommentsSettings::Get().TaggedPresets)
+		for (const FPresetCommentButtonStyle& Preset : UAutoSizeCommentsSettings::Get().PresetStyles)
 		{
-			if (OldTitle.StartsWith(Elem.Key))
+			if (!Preset.PresetPrefix.IsEmpty() && OldTitle.StartsWith(Preset.PresetPrefix))
 			{
 				bShouldResetColor = true;
 				break;
+			}
+		}
+
+		if (!bShouldResetColor)
+		{
+			for (const auto& Elem : UAutoSizeCommentsSettings::Get().TaggedPresets)
+			{
+				if (OldTitle.StartsWith(Elem.Key))
+				{
+					bShouldResetColor = true;
+					break;
+				}
 			}
 		}
 
@@ -1827,7 +1889,7 @@ void SAutoSizeCommentsGraphNode::CreateColorControls()
 
 	const UAutoSizeCommentsSettings& ASCSettings = UAutoSizeCommentsSettings::Get();
 
-	const TArray<FPresetCommentStyle>& Presets = ASCSettings.PresetStyles;
+	const TArray<FPresetCommentButtonStyle>& Presets = ASCSettings.PresetStyles;
 	CachedNumPresets = Presets.Num();
 
 	if (!IsHeaderComment()) // header comments don't need color presets
@@ -1861,10 +1923,28 @@ void SAutoSizeCommentsGraphNode::CreateColorControls()
 
 		if (!ASCSettings.bHidePresets)
 		{
-			for (const FPresetCommentStyle& Preset : Presets)
+			for (int32 PresetIndex = 0; PresetIndex < Presets.Num(); ++PresetIndex)
 			{
+				const FPresetCommentButtonStyle& Preset = Presets[PresetIndex];
+				if (!Preset.bShowAsButton)
+				{
+					continue;
+				}
+
 				FLinearColor ColorWithoutOpacity = Preset.Color;
 				ColorWithoutOpacity.A = 1;
+
+				FString Tooltip = Preset.PresetTooltip;
+				if (!Preset.PresetPrefix.IsEmpty())
+				{
+					Tooltip = Tooltip.IsEmpty()
+						? Preset.PresetPrefix
+						: FString::Printf(TEXT("%s [%s]"), *Tooltip, *Preset.PresetPrefix);
+				}
+				if (Tooltip.IsEmpty())
+				{
+					Tooltip = FString::Printf(TEXT("预设 %d"), PresetIndex + 1);
+				}
 
 				TSharedRef<SButton> Button = SNew(SButton)
 					.ButtonStyle(ASC_STYLE_CLASS::Get(), "RoundButton")
@@ -1872,7 +1952,7 @@ void SAutoSizeCommentsGraphNode::CreateColorControls()
 					.OnClicked(this, &SAutoSizeCommentsGraphNode::HandlePresetButtonClicked, Preset)
 					.ContentPadding(FMargin(2, 2))
 					.IsEnabled(this, &SAutoSizeCommentsGraphNode::AreControlsEnabled)
-					.ToolTipText(LOCTEXT("SetPresetColorTooltip", "设置预设颜色"))
+					.ToolTipText(FText::FromString(Tooltip))
 					[
 						SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center).WidthOverride(16).HeightOverride(16)
 					];
@@ -2231,7 +2311,7 @@ bool SAutoSizeCommentsGraphNode::AreControlsEnabled() const
 
 bool SAutoSizeCommentsGraphNode::IsPresetStyle()
 {
-	for (const FPresetCommentStyle& Style : UAutoSizeCommentsSettings::Get().PresetStyles)
+	for (const FPresetCommentButtonStyle& Style : UAutoSizeCommentsSettings::Get().PresetStyles)
 	{
 		if (CommentNode->CommentColor == Style.Color && CommentNode->FontSize == Style.FontSize)
 		{
@@ -2451,7 +2531,20 @@ FSlateRect SAutoSizeCommentsGraphNode::GetNodeBounds(UEdGraphNode* Node)
 	if (LocalGraphNode.IsValid())
 	{
 		Pos = FASCUtils::GetNodePos(LocalGraphNode.Get());
-		Size = LocalGraphNode->GetDesiredSize();
+
+		// Blueprint Assist writes NodeWidth/NodeHeight for non-resizable nodes.
+		if (Node->bCanResizeNode ||
+			(UAutoSizeCommentsSettings::Get().bUseNodeSizeForBounds &&
+				FAutoSizeCommentsModule::IsBlueprintAssistEnabled() &&
+				Node->NodeWidth != 0 && Node->NodeHeight != 0))
+		{
+			Size.X = Node->NodeWidth;
+			Size.Y = Node->NodeHeight;
+		}
+		else
+		{
+			Size = LocalGraphNode->GetDesiredSize();
+		}
 
 		if (UAutoSizeCommentsSettings::Get().bUseCommentBubbleBounds && Node->bCommentBubbleVisible)
 		{

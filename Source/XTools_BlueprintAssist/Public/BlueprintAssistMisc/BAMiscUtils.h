@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -131,4 +131,6 @@ struct XTOOLS_BLUEPRINTASSIST_API FBAMiscUtils
 	static void ClipboardCopy(const FString& String);
 
 	static TSharedPtr<SNotificationItem> ShowSimpleSlateNotification(const FText& Msg, SNotificationItem::ECompletionState State, float ExpireDuration = 3.0f);
+
+	static bool MakeFileWritable(const FString& InFileToMakeWritable);
 };

@@ -33,8 +33,20 @@ void FAutoSizeCommentsModule::StartupModule()
 		}
 	}
 
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+	FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FAutoSizeCommentsModule::OnPostEngineInit);
+#else
 	FCoreDelegates::OnPostEngineInit.AddRaw(this, &FAutoSizeCommentsModule::OnPostEngineInit);
 #endif
+#endif
+}
+
+bool FAutoSizeCommentsModule::IsBlueprintAssistEnabled()
+{
+	static const bool bIsBlueprintAssistEnabled =
+		FModuleManager::Get().IsModuleLoaded(TEXT("XTools_BlueprintAssist")) ||
+		FModuleManager::Get().IsModuleLoaded(TEXT("BlueprintAssist"));
+	return bIsBlueprintAssistEnabled;
 }
 
 void FAutoSizeCommentsModule::OnPostEngineInit()
@@ -77,7 +89,11 @@ void FAutoSizeCommentsModule::ShutdownModule()
 #if ASC_ENABLED
 	UE_LOG(LogAutoSizeComments, Log, TEXT("Shutdown AutoSizeComments"));
 
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+	FCoreDelegates::GetOnPostEngineInit().RemoveAll(this);
+#else
 	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
+#endif
 
 	// Remove custom settings
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))

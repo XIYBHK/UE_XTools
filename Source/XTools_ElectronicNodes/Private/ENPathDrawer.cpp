@@ -3,6 +3,7 @@
 */
 
 #include "ENPathDrawer.h"
+#include "Lib/Utils.h"
 
 FENPathDrawer::FENPathDrawer(int32& LayerId, float& ZoomFactor, bool RightPriority, const FConnectionParams* Params, FSlateWindowElementList* DrawElementsList, FENConnectionDrawingPolicy* ConnectionDrawingPolicy)
 {
@@ -497,11 +498,57 @@ void FENPathDrawer::DrawOffset(FVector2D& Start, FVector2D& StartDirection, cons
 	Start = NewStart;
 }
 
-void FENPathDrawer::DrawLine(const FVector2D& Start, const FVector2D& End)
+void FENPathDrawer::DrawLine(const FVector2D& Start, const FVector2D& End, int32 MaxSplit)
 {
 	if (FMath::IsNearlyZero((End - Start).SizeSquared(), KINDA_SMALL_NUMBER))
 	{
 		return;
+	}
+
+	if (ElectronicNodesSettings.ActivateCrossing && MaxSplit > 0)
+	{
+		for (const ENCrossingConnection& CrossingConnection : ConnectionDrawingPolicy->CrossingConnections)
+		{
+			FVector2D IntersectionPoint;
+			if (!ENIntersectionHelpers::SegmentIntersection2D(
+				CrossingConnection.Start, CrossingConnection.End, Start, End, IntersectionPoint))
+			{
+				continue;
+			}
+
+			const float CrossingSize = ElectronicNodesSettings.CrossingSize * ZoomFactor;
+			const float MinOffset = 2.0f * CrossingSize + KINDA_SMALL_NUMBER;
+			if (FVector2D::Distance(IntersectionPoint, Start) < MinOffset ||
+				FVector2D::Distance(IntersectionPoint, End) < MinOffset)
+			{
+				continue;
+			}
+
+			const FVector2D Direction = (End - Start).GetSafeNormal();
+			const FVector2D BeforeIntersection = IntersectionPoint - Direction * CrossingSize;
+			const FVector2D AfterIntersection = IntersectionPoint + Direction * CrossingSize;
+
+			DrawLine(Start, BeforeIntersection, MaxSplit - 1);
+			DrawLine(AfterIntersection, End, MaxSplit - 1);
+
+			if (ElectronicNodesSettings.CrossingStyle != ECrossingStyle::Gap)
+			{
+				const float SafeZoomFactor = FMath::Max(ZoomFactor, KINDA_SMALL_NUMBER);
+				const FVector2D Normal = Direction.GetRotated(-90.0f) * CrossingSize / (10.0f * SafeZoomFactor);
+				DrawSpline(BeforeIntersection, Normal, AfterIntersection, -Normal);
+
+				if (ElectronicNodesSettings.CrossingStyle == ECrossingStyle::Circle)
+				{
+					DrawSpline(BeforeIntersection, -Normal, AfterIntersection, Normal);
+				}
+			}
+			return;
+		}
+	}
+
+	if (ElectronicNodesSettings.ActivateCrossing)
+	{
+		ConnectionDrawingPolicy->CrossingConnections.Emplace(Start, End);
 	}
 
 	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
@@ -525,6 +572,11 @@ void FENPathDrawer::DrawRadius(const FVector2D& Start, const FVector2D& StartDir
 	                                       Start, StartDirection * Tangent, End, EndDirection * Tangent,
 	                                       Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
 
+	if (ElectronicNodesSettings.ActivateCrossing)
+	{
+		ConnectionDrawingPolicy->CrossingConnections.Emplace(Start, End);
+	}
+
 	ConnectionDrawingPolicy->ENDrawBubbles(Start, StartDirection * Offset, End, EndDirection * Offset);
 }
 
@@ -535,6 +587,11 @@ void FENPathDrawer::DrawSpline(const FVector2D& Start, const FVector2D& StartDir
 	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
 	                                       Start, StartDirection * Tangent, End, EndDirection * Tangent,
 	                                       Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
+
+	if (ElectronicNodesSettings.ActivateCrossing)
+	{
+		ConnectionDrawingPolicy->CrossingConnections.Emplace(Start, End);
+	}
 
 	ConnectionDrawingPolicy->ENComputeClosestPointDefault(Start, StartDirection * Tangent, End, EndDirection * Tangent);
 	ConnectionDrawingPolicy->ENDrawBubbles(Start, StartDirection * Tangent, End, EndDirection * Tangent);

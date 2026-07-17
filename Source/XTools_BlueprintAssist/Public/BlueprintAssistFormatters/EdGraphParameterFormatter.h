@@ -24,7 +24,7 @@ class XTOOLS_BLUEPRINTASSIST_API FEdGraphParameterFormatter final
 	TSharedPtr<FEdGraphFormatter> GraphFormatter;
 
 public:
-	TArray<UEdGraphNode*> IgnoredNodes;
+	TSet<UEdGraphNode*> IgnoredNodes;
 	TSet<UEdGraphNode*> FormattedInputNodes;
 	TSet<UEdGraphNode*> FormattedOutputNodes;
 	TSet<UEdGraphNode*> AllFormattedNodes;
@@ -56,7 +56,10 @@ public:
 
 	virtual TSet<UEdGraphNode*> GetFormattedNodes() override;
 
-	void SetIgnoredNodes(TArray<UEdGraphNode*> InIgnoredNodes) { IgnoredNodes = InIgnoredNodes; }
+	void SetIgnoredNodes(TSet<UEdGraphNode*> InIgnoredNodes)
+	{
+		IgnoredNodes = MoveTemp(InIgnoredNodes);
+	}
 
 	FSlateRect GetBounds();
 
@@ -130,4 +133,7 @@ private:
 
 	void ApplyCommentPaddingY();
 	void ApplyCommentPaddingY_Recursive(TArray<UEdGraphNode*> NodeSet, TArray<TSharedPtr<FBACommentContainsNode>> ContainsNodes);
+
+	bool ShouldFormatNode(UEdGraphNode* Node);
+	bool ShouldFormatLink(const FPinLink& Link);
 };

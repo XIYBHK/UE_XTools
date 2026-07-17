@@ -7,6 +7,7 @@
 #pragma once
 
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Templates/SubclassOf.h"
 #include "BP/ECFHandleBP.h"
 #include "ECFActionSettings.h"
 #include "ECFTypes.h"
@@ -19,6 +20,8 @@ enum class ETimeLockOutputType : uint8
 	Exec UMETA(DisplayName = "执行"),
 	Locked UMETA(DisplayName = "已锁定")
 };
+
+class UECFActionBase;
 
 UCLASS()
 class XTOOLS_ENHANCEDCODEFLOW_API UECFBPLibrary : public UBlueprintFunctionLibrary
@@ -47,6 +50,15 @@ public:
 	UFUNCTION(BlueprintPure, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 动作是否运行中", Tooltip="检查指定句柄的动作是否正在运行", Category = "XTools|ECF|动作控制"))
 	static void ECFIsActionRunning(UPARAM(DisplayName = "正在运行") bool& bIsRunning, const UObject* WorldContextObject, const FECFHandleBP& Handle);
 
+	UFUNCTION(BlueprintPure, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 按类型查找动作句柄", Tooltip = "查找指定类型的所有运行中或待添加动作句柄", Category = "XTools|ECF|动作控制"))
+	static TArray<FECFHandleBP> GetActionsHandlesByClass(const UObject* WorldContextObject, TSubclassOf<UECFActionBase> Class);
+
+	UFUNCTION(BlueprintPure, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 按标签查找动作句柄", Tooltip = "查找指定标签的所有运行中或待添加动作句柄", Category = "XTools|ECF|动作控制"))
+	static TArray<FECFHandleBP> GetActionsHandlesByLabel(const UObject* WorldContextObject, const FString& Label);
+
+	UFUNCTION(BlueprintPure, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 获取动作标签", Tooltip = "获取句柄指向动作的标签，不存在时返回空字符串", Category = "XTools|ECF|动作控制"))
+	static FString GetActionLabelFromHandle(const UObject* WorldContextObject, const FECFHandleBP& Handle);
+
 	/**
 	 * 暂停正在运行的动作
 	 */
@@ -65,6 +77,9 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 动作是否暂停", Tooltip="检查指定句柄的动作是否处于暂停状态", Category = "XTools|ECF|动作控制"))
 	static void ECFIsActionPaused(UPARAM(DisplayName = "正在运行") bool& bIsRunning, UPARAM(DisplayName = "已暂停") bool& bIsPaused, const UObject* WorldContextObject, const FECFHandleBP& Handle);
+
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 重置动作", Tooltip = "重置指定动作的内部时间或计数", Category = "XTools|ECF|动作控制"))
+	static bool ECFResetAction(const UObject* WorldContextObject, const FECFHandleBP& Handle, UPARAM(DisplayName = "立即更新") bool bCallUpdate);
 	
 	/*^^^ 停止ECF动作函数 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
@@ -90,6 +105,18 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", AdvancedDisplay = "bComplete, InOwner", DisplayName = "ECF - 停止所有动作", Tooltip="停止所有运行中的动作，可指定所有者和是否执行完成回调", Category = "XTools|ECF|动作控制"))
 	static void ECFStopAllActions(const UObject* WorldContextObject, bool bComplete = false, UObject* InOwner = nullptr);
+
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", AdvancedDisplay = "bComplete, InOwner", DisplayName = "ECF - 按类型停止所有动作", Tooltip = "停止指定类型的所有动作", Category = "XTools|ECF|动作控制"))
+	static void ECFStopAllActionsOfClass(const UObject* WorldContextObject, TSubclassOf<UECFActionBase> Class, bool bComplete = false, UObject* InOwner = nullptr);
+
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", AdvancedDisplay = "bComplete, InOwner", DisplayName = "ECF - 按标签停止所有动作", Tooltip = "停止指定标签的所有动作", Category = "XTools|ECF|动作控制"))
+	static void ECFStopAllActionsWithLabel(const UObject* WorldContextObject, FString Label, bool bComplete = false, UObject* InOwner = nullptr);
+
+	UFUNCTION(BlueprintPure, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 获取动作时间", Tooltip = "获取动作内部时间，不支持时返回 -1", Category = "XTools|ECF|时间控制"))
+	static float GetActionTime(const UObject* WorldContextObject, const FECFHandleBP& Handle);
+
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 设置动作时间", Tooltip = "设置动作内部时间，可选是否立即调用更新回调", Category = "XTools|ECF|时间控制"))
+	static bool SetActionTime(const UObject* WorldContextObject, const FECFHandleBP& Handle, float NewTime, UPARAM(DisplayName = "立即更新") bool bCallUpdate);
 
 	/*^^^ 句柄和实例ID ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 	
@@ -255,6 +282,12 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, meta = (DisplayName = "ECF - 实例ID转字符串", Tooltip="将ECF实例ID转换为字符串格式", CompactNodeTitle = "->", BlueprintAutocast), Category = "XTools|ECF|转换")
 	static FString Conv_ECFInstanceIdToString(const FECFInstanceIdBP& InstanceId);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "ECF - 软对象转路径", Tooltip = "将软对象指针数组转换为异步加载使用的软对象路径数组", Category = "XTools|ECF|类型转换"))
+	static TArray<FSoftObjectPath> ConvertSoftObjectPtrToSoftPath(const TArray<TSoftObjectPtr<UObject>>& InSoftObjectPtrs);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "ECF - 软类转路径", Tooltip = "将软类指针数组转换为异步加载使用的软对象路径数组", Category = "XTools|ECF|类型转换"))
+	static TArray<FSoftObjectPath> ConvertSoftClassPtrToSoftPath(const TArray<TSoftClassPtr<UObject>>& InSoftClassPtrs);
 
 	/*^^^ 结束 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 };

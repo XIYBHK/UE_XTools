@@ -15,6 +15,7 @@
 #include "ISinglePropertyView.h"
 #include "LevelEditor.h"
 #include "BlueprintAssistMisc/FBAScopedPropertySetter.h"
+#include "Framework/Commands/InputBindingManager.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"

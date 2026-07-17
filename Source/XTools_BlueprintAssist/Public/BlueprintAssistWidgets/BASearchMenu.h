@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -50,13 +50,14 @@ public:
 		}
 	SLATE_END_ARGS()
 
-	void Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView, TSharedPtr<FBASearchMenuData> InObject, const FText& InHighlightText);
+	void Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView, TSharedPtr<class SBASearchMenu> InSearchMenu, TSharedPtr<FBASearchMenuData> InObject, const FText& InHighlightText);
 	virtual TSharedRef<SWidget> GenerateWidgetForColumn(const FName& ColumnName) override;
 
 	FReply HandleDrag(const FGeometry& Geometry, const FPointerEvent& PointerEvent);
 
 	TSharedPtr<FBASearchMenuData> Object;
 	FText HighlightText;
+	TSharedPtr<class SBASearchMenu> SearchMenu;
 };
 
 /**
@@ -75,7 +76,6 @@ public:
 		SLATE_ARGUMENT_DEFAULT(bool, AllowProperties) = true;
 	SLATE_END_ARGS()
 
-public:
 	virtual ~SBASearchMenu();
 
 	/**
@@ -85,10 +85,8 @@ public:
 	 */
 	void Construct(const FArguments& InArgs, const FVector2D& WidgetSize, EBASearchMenuType MenuType);
 
-public:
 	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
-private:
 	FText GetSearchBackgroundText() const;
 	FText GetStatusText() const;
 	FText GetAdvancedStatus() const;

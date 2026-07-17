@@ -6,6 +6,7 @@
 #endif
 #include "GameFramework/Actor.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "XToolsVersionCompat.h"
 
 namespace
 {
@@ -611,7 +612,11 @@ namespace
 		const int32 ExcessCount = State.DebugTrailPoints.Num() - MaxTrailPoints;
 		if (ExcessCount > 0)
 		{
+#if XTOOLS_ENGINE_5_8_OR_LATER
+			State.DebugTrailPoints.RemoveAt(0, ExcessCount, EAllowShrinking::No);
+#else
 			State.DebugTrailPoints.RemoveAt(0, ExcessCount, false);
+#endif
 		}
 	}
 

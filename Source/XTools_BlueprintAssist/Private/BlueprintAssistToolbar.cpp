@@ -34,87 +34,51 @@ FBAToolbarCommandsImpl::FBAToolbarCommandsImpl() : TCommands<FBAToolbarCommandsI
 
 void FBAToolbarCommandsImpl::RegisterCommands()
 {
-	UI_COMMAND(
-		AutoFormatting_Never,
-		"从不自动格式化",
-		"创建新节点时从不自动格式化",
+	UI_COMMAND(AutoFormatting_Never, "从不自动格式化", "创建新节点时从不自动格式化",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		AutoFormatting_FormatAll,
-		"总是格式化所有连接的节点",
-		"创建新节点时总是格式化所有连接的节点",
+	UI_COMMAND(AutoFormatting_FormatAll, "总是格式化所有连接的节点", "创建新节点时总是格式化所有连接的节点",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		AutoFormatting_FormatNewlyCreated,
-		"仅格式化新创建的节点",
-		"创建新节点时仅格式化新创建的节点",
+	UI_COMMAND(AutoFormatting_FormatNewlyCreated, "仅格式化新创建的节点", "创建新节点时仅格式化新创建的节点",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		FormattingStyle_Compact,
-		"紧凑样式",
-		"将格式化样式设置为紧凑",
+	UI_COMMAND(FormattingStyle_Compact, "紧凑样式", "将格式化样式设置为紧凑",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		FormattingStyle_Expanded,
-		"展开样式",
-		"将格式化样式设置为展开",
+	UI_COMMAND(FormattingStyle_Expanded, "展开样式", "将格式化样式设置为展开",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		ParameterStyle_LeftHandSide,
-		"左侧样式",
-		"格式化时参数将被定位在左侧",
+	UI_COMMAND(ParameterStyle_LeftHandSide, "左侧样式", "格式化时参数将被定位在左侧",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		ParameterStyle_Helixing,
-		"螺旋样式",
-		"格式化时参数节点将被定位在下方",
+	UI_COMMAND(ParameterStyle_Helixing, "螺旋样式", "格式化时参数节点将被定位在下方",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		FormatAllStyle_Simple,
-		"简单样式",
-		"将根节点定位为单列",
+	UI_COMMAND(FormatAllStyle_Simple, "简单样式", "将根节点定位为单列",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		FormatAllStyle_Smart,
-		"智能样式",
-		"根据节点位置将根节点定位为多列",
+	UI_COMMAND(FormatAllStyle_Smart, "智能样式", "根据节点位置将根节点定位为多列",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		FormatAllStyle_NodeType,
-		"节点类型样式",
-		"根据根节点类型将节点定位为列",
+	UI_COMMAND(FormatAllStyle_NodeType, "节点类型样式", "根据根节点类型将节点定位为列",
 		EUserInterfaceActionType::RadioButton,
 		FInputChord());
 
-	UI_COMMAND(
-		BlueprintAssistSettings,
-		"BlueprintAssist设置",
-		"打开BlueprintAssist设置",
+	UI_COMMAND(BlueprintAssistSettings, "BlueprintAssist设置", "打开BlueprintAssist设置",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 
-	UI_COMMAND(
-		DetectUnusedNodes,
-		"检测未使用节点",
-		"检测当前图表上的未使用节点并在消息日志中显示它们",
+	UI_COMMAND(DetectUnusedNodes, "检测未使用节点", "检测当前图表上的未使用节点并在消息日志中显示它们",
 		EUserInterfaceActionType::Button,
 		FInputChord());
 }
@@ -367,14 +331,14 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 
 	FMenuBuilder MenuBuilder(bShouldCloseWindowAfterMenuSelection, BlueprintAssistToolbarActions);
 
-	FText GlobalSettingsDescription = FText::FromString(FString::Printf(TEXT("Other")));
+	FText GlobalSettingsDescription = INVTEXT("其他设置");
 
 	TSharedPtr<FBAGraphHandler> GraphHandler = FBAUtils::GetCurrentGraphHandler();
 	if (GraphHandler.IsValid())
 	{
 		UEdGraph* Graph = GraphHandler->GetFocusedEdGraph();
 		FString GraphClassName = Graph ? Graph->GetClass()->GetName() : FString("Null");
-		const FText SectionName = FText::FromString(FString::Printf(TEXT("%s settings"), *GraphClassName));
+		const FText SectionName = FText::FromString(FString::Printf(TEXT("%s 设置"), *GraphClassName));
 		MenuBuilder.BeginSection("FormattingSettings", SectionName);
 		{
 			MenuBuilder.AddSubMenu(
@@ -447,7 +411,7 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 	}
 	else
 	{
-		GlobalSettingsDescription = FText::FromString(FString::Printf(TEXT("Settings hidden: Graph is not focused")));
+		GlobalSettingsDescription = INVTEXT("图表未聚焦，已隐藏图表设置");
 	}
 
 	// global settings
@@ -455,12 +419,12 @@ TSharedRef<SWidget> FBAToolbar::CreateToolbarWidget()
 	{
 		MenuBuilder.AddSubMenu(
 			INVTEXT("工具"),
-			INVTEXT("Blueprint Assist工具集合"),
+			INVTEXT("Blueprint Assist 工具集合"),
 			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeToolsSubMenu));
 
 		MenuBuilder.AddSubMenu(
 			INVTEXT("窗口"),
-			INVTEXT("Blueprint Assist窗口集合"),
+			INVTEXT("Blueprint Assist 窗口集合"),
 			FNewMenuDelegate::CreateRaw(this, &FBAToolbar::MakeWindowsSubMenu));
 
 		// open blueprint settings
@@ -528,7 +492,7 @@ void FBAToolbar::MakeToolsSubMenu(FMenuBuilder& InMenuBuilder)
 		}
 
 		// debug menu
-		InMenuBuilder.AddMenuEntry(INVTEXT("打开调试菜单"), INVTEXT("打开调试菜单以查看当前图表的信息"), FSlateIcon(), FExecuteAction::CreateLambda([]()
+		InMenuBuilder.AddMenuEntry(INVTEXT("打开调试菜单"), INVTEXT("打开调试菜单以查看当前图表信息"), FSlateIcon(), FExecuteAction::CreateLambda([]()
 		{
 			FGlobalTabmanager::Get()->TryInvokeTab(FName("BADebugMenu"));
 		}));
@@ -541,18 +505,18 @@ void FBAToolbar::MakeWindowsSubMenu(FMenuBuilder& InMenuBuilder)
 	InMenuBuilder.BeginSection("BlueprintAssistWindows", INVTEXT("窗口"));
 	{
 		// welcome screen
-		InMenuBuilder.AddMenuEntry(INVTEXT("打开欢迎屏幕"), INVTEXT("打开Blueprint Assist欢迎屏幕"), FSlateIcon(), FExecuteAction::CreateLambda([]()
+		InMenuBuilder.AddMenuEntry(INVTEXT("打开欢迎界面"), INVTEXT("打开 Blueprint Assist 欢迎界面"), FSlateIcon(), FExecuteAction::CreateLambda([]()
 		{
 			FGlobalTabmanager::Get()->TryInvokeTab(SBAWelcomeScreen::GetTabId());
 		}));
 
 		// hotkey list
-		InMenuBuilder.PushCommandList(FBAInputProcessor::Get().GlobalActions.GlobalCommands.ToSharedRef());
+		InMenuBuilder.PushCommandList(FBAInputProcessor::Get().GlobalActions->GlobalCommands.ToSharedRef());
 		InMenuBuilder.AddMenuEntry(FBACommands::Get().OpenBlueprintAssistHotkeySheet);
 		InMenuBuilder.PopCommandList();
 
 		// setting changes window
-		InMenuBuilder.AddMenuEntry(INVTEXT("设置更改"), INVTEXT("打开一个窗口显示Blueprint Assist设置的本地更改"), FSlateIcon(), FExecuteAction::CreateLambda([]()
+		InMenuBuilder.AddMenuEntry(INVTEXT("设置更改"), INVTEXT("显示 Blueprint Assist 设置相对默认值的本地更改"), FSlateIcon(), FExecuteAction::CreateLambda([]()
 		{
 			FGlobalTabmanager::Get()->TryInvokeTab(SBASettingsChangeWindow::GetTabId());
 		}));
@@ -566,7 +530,7 @@ void FBAToolbar::ExtendToolbar(FToolBarBuilder& ToolbarBuilder)
 	ToolbarBuilder.AddComboButton(
 		FUIAction(),
 		FOnGetContent::CreateRaw(this, &FBAToolbar::CreateToolbarWidget),
-		LOCTEXT("BlueprintAssist", "BlueprintAssist"),
+		LOCTEXT("BlueprintAssist", "BP Assist"),
 		FText::FromString("Blueprint Assist Settings"),
 		FSlateIcon(BA_GET_STYLE_SET_NAME(), "LevelEditor.GameSettings")
 	);

@@ -30,7 +30,7 @@ public:
 	float GetIntersectionOffset(const int32& AngleDeg = 0, bool Diagonal = false);
 
 	void DrawOffset(FVector2D& Start, FVector2D& StartDirection, const float& Offset, bool Backward = false);
-	void DrawLine(const FVector2D& Start, const FVector2D& End);
+	void DrawLine(const FVector2D& Start, const FVector2D& End, int32 MaxSplit = 32);
 	void DrawRadius(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection, const int32& AngleDeg);
 	void DrawSpline(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection);
 

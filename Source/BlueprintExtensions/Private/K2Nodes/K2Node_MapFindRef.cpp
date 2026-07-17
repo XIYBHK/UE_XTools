@@ -3,6 +3,9 @@
 
 // 编辑器功能
 #include "EdGraphSchema_K2.h"
+#include "Framework/Commands/UIAction.h"
+#include "ScopedTransaction.h"
+#include "ToolMenus.h"
 
 // 蓝图系统
 #include "BlueprintActionDatabaseRegistrar.h"

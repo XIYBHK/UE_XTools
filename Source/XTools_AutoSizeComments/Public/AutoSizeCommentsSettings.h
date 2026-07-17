@@ -98,6 +98,24 @@ struct FPresetCommentStyle
 };
 
 USTRUCT()
+struct FPresetCommentButtonStyle : public FPresetCommentStyle
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "显示为按钮", Tooltip = "是否在注释框控件中显示此预设按钮"))
+	bool bShowAsButton = true;
+
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "按钮提示", Tooltip = "鼠标悬停在预设按钮上时显示的说明"))
+	FString PresetTooltip;
+
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "标题前缀", Tooltip = "标题以此前缀开头时自动应用此预设"))
+	FString PresetPrefix;
+
+	UPROPERTY(EditAnywhere, config, Category = Default, meta = (DisplayName = "写入标题前缀", Tooltip = "点击预设按钮时是否将前缀写入注释标题"))
+	bool bWritePrefix = true;
+};
+
+USTRUCT()
 struct FASCGraphSettings
 {
 	GENERATED_BODY()
@@ -164,10 +182,10 @@ public:
 
 	/** Preset styles (each style will have its own button on the comment box) */
 	UPROPERTY(EditAnywhere, config, Category = Styles, meta = (DisplayName = "预设样式", Tooltip = "每个样式都会在注释框上有自己的按钮"))
-	TArray<FPresetCommentStyle> PresetStyles;
+	TArray<FPresetCommentButtonStyle> PresetStyles;
 
-	/** Preset style that will apply if the title starts with the according prefix */
-	UPROPERTY(EditAnywhere, config, Category = Styles, meta = (DisplayName = "标签预设", Tooltip = "如果标题以相应前缀开头，将应用的预设样式"))
+	/** Deprecated fallback for existing configurations. */
+	UPROPERTY(EditAnywhere, config, Category = "Styles|Deprecated", meta = (DeprecatedProperty, DeprecationMessage = "请改用预设样式中的标题前缀", DisplayName = "标签预设（旧版）", Tooltip = "仅用于兼容旧配置；新配置请使用预设样式中的标题前缀"))
 	TMap<FString, FPresetCommentStyle> TaggedPresets;
 
 	/** The title bar uses a minimal style when being edited (requires UE5 or later) */
@@ -229,6 +247,10 @@ public:
 	/** Comment text alignment */
 	UPROPERTY(EditAnywhere, config, Category = Misc, meta = (DisplayName = "注释文本对齐", Tooltip = "注释文本的对齐方式"))
 	TEnumAsByte<ETextJustify::Type> CommentTextAlignment;
+
+	/** If enabled, prefer node dimensions cached by Blueprint Assist when available. */
+	UPROPERTY(EditAnywhere, config, Category = Misc, meta = (DisplayName = "使用节点记录尺寸", Tooltip = "可用时优先使用节点记录的宽高计算注释边界，以兼容 Blueprint Assist 的节点尺寸缓存"))
+	bool bUseNodeSizeForBounds;
 
 	/** If enabled, add any containing node's comment bubble to the comment bounds */
 	UPROPERTY(EditAnywhere, config, Category = Misc, meta = (DisplayName = "使用注释气泡边界", Tooltip = "启用后，将包含节点的注释气泡添加到注释边界"))

@@ -3,6 +3,7 @@
 #include "BlueprintAssistFormatters/BehaviorTreeGraphFormatter.h"
 
 #include "BlueprintAssistGraphHandler.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistUtils.h"
 #include "Containers/Map.h"
 
@@ -13,7 +14,6 @@ FBehaviorTreeGraphFormatter::FBehaviorTreeGraphFormatter(
 	, FormatterParameters(InFormatterParameters)
 	, RootNode(nullptr)
 {
-	FormatterParameters.Init();
 	FormatterSettings = UBASettings::GetFormatterSettings(InGraphHandler->GetFocusedEdGraph());
 }
 
@@ -57,7 +57,10 @@ void FBehaviorTreeGraphFormatter::FormatNode(UEdGraphNode* InNode)
 void FBATidyTree::FormatTidyTree(UEdGraphNode* RootNode)
 {
 	TMap<UEdGraphNode*, FTidyNodePtr> Visited;
-	FTidyNodePtr TidyRoot = BuildTidyTree(RootNode, 0, Visited);
+	TArray<UEdGraphNode*> Path;
+	FTidyNodePtr TidyRoot = BuildTidyTree(RootNode, 0, Visited, Path);
+
+	BA_DEBUG_EARLY_EXIT("BuildTidyTree");
 
 	// Set the tree layer positions
 	for (int i = 0; i < Layers.Num(); ++i)
@@ -89,12 +92,28 @@ void FBATidyTree::FormatTidyTree(UEdGraphNode* RootNode)
 	}
 }
 
-TSharedPtr<FBATidyNode> FBATidyTree::BuildTidyTree(UEdGraphNode* CurrGraphNode, int32 Depth, TMap<UEdGraphNode*, FTidyNodePtr>& VisitedNodes)
+TSharedPtr<FBATidyNode> FBATidyTree::BuildTidyTree(UEdGraphNode* CurrGraphNode, int32 Depth, TMap<UEdGraphNode*, FTidyNodePtr>& VisitedNodes, TArray<UEdGraphNode*>& Path)
 {
+	if (Path.Contains(CurrGraphNode))
+	{
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("%hs - Found cycle at %s. This may cause issues as TidyTree formatting is intended for directed acyclic graphs."), __FUNCTION__, *FBAUtils::GetNodeName(CurrGraphNode));
+		return nullptr;
+	}
+
 	if (FTidyNodePtr FoundNode = VisitedNodes.FindRef(CurrGraphNode))
 	{
 		return FoundNode;
 	}
+
+	Path.Push(CurrGraphNode);
+
+#if 0
+	UE_LOG(LogBlueprintAssist, Warning, TEXT("\nPath:"))
+	for (auto Node : Path)
+	{
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("%s"), *Node->NodeComment);
+	}
+#endif
 
 	FTidyNodePtr NewTidyNode = MakeShared<FBATidyNode>();
 	NewTidyNode->GraphNode = CurrGraphNode;
@@ -128,12 +147,16 @@ TSharedPtr<FBATidyNode> FBATidyTree::BuildTidyTree(UEdGraphNode* CurrGraphNode, 
 	// Recursively build the tree
 	for (UEdGraphNode* ChildGraphNode : ChildGraphNodes)
 	{
-		FTidyNodePtr ChildTidyNode = BuildTidyTree(ChildGraphNode, Depth + 1, VisitedNodes);
-
-		// Setup child node connections
-		ChildTidyNode->Parent = NewTidyNode;
-		NewTidyNode->Children.Add(ChildTidyNode);
+		FTidyNodePtr ChildTidyNode = BuildTidyTree(ChildGraphNode, Depth + 1, VisitedNodes, Path);
+		if (ChildTidyNode)
+		{
+			// Setup child node connections
+			ChildTidyNode->Parent = NewTidyNode;
+			NewTidyNode->Children.Add(ChildTidyNode);
+		}
 	}
+
+	Path.Pop();
 
 	return NewTidyNode;
 }
@@ -276,8 +299,6 @@ void FBATidyTree::SecondPass_ApplyMods(FTidyNodePtr TidyNode, float ModSum) cons
 	{
 		return;
 	}
-
-	// 修复：添加Layers边界检查
 	if (!Layers.IsValidIndex(TidyNode->Depth))
 	{
 		UE_LOG(LogBlueprintAssist, Warning, TEXT("Invalid depth %d for node %s"),
@@ -305,9 +326,5 @@ TSharedPtr<FBATidyNode> FBATidyNode::GetLeftSibling() const
 	}
 
 	const int32 MyIndex = Parent->Children.IndexOfByKey(SharedThis(this));
-	if (MyIndex == INDEX_NONE || MyIndex == 0)
-	{
-		return nullptr;
-	}
 	return Parent->Children[MyIndex - 1];
 }

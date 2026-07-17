@@ -16,9 +16,12 @@ function Resolve-Engines {
   param([string[]]$Roots)
   if ($Roots -and $Roots.Count -gt 0) { return $Roots }
   $candidates = @(
+    "D:\\Program Files\\Epic Games\\UE_5.3",
     "D:\\Program Files\\Epic Games\\UE_5.4",
     "D:\\Program Files\\Epic Games\\UE_5.5",
     "D:\\Program Files\\Epic Games\\UE_5.6",
+    "D:\\Program Files\\Epic Games\\UE_5.7",
+    "D:\\Program Files\\Epic Games\\UE_5.8",
     "F:\\ProgramFiles\\UE_5.6"
   )
   return $candidates | Where-Object { Test-Path $_ }
@@ -87,7 +90,7 @@ function Invoke-BuildPlugin {
     return $proc.ExitCode
   }
   else {
-    & $uat @args
+    & $uat @args | Out-Host
     return $LASTEXITCODE
   }
 }
@@ -104,7 +107,7 @@ function New-SummaryRow {
 
 $engines = @((Resolve-Engines -Roots $EngineRoots))
 $engineList = @($engines)  # normalize to array
-if (-not $engineList -or $engineList.Count -eq 0) { throw "No UE engines found. Provide -EngineRoots or install UE_5.4/5.5/5.6." }
+if (-not $engineList -or $engineList.Count -eq 0) { throw "No UE engines found. Provide -EngineRoots or install UE_5.3-5.8." }
 
 Write-Host "Plugin:   $PluginUplugin" -ForegroundColor Green
 Write-Host "Out Base: $OutputBase" -ForegroundColor Green
@@ -114,7 +117,11 @@ $results = @()
 foreach ($e in $engineList) {
   $ver = Split-Path $e -Leaf
   $out = Join-Path $OutputBase ("XTools-" + $ver)
-  $code = Invoke-BuildPlugin -EngineRoot $e -PluginPath $PluginUplugin -OutDir $out -Platforms $TargetPlatforms -UseStrict:$StrictIncludes -UseNoHostProject:$NoHostProject -FollowLogs:$Follow
+  $useStrict = $StrictIncludes -and $ver -ne 'UE_5.3'
+  if ($StrictIncludes -and -not $useStrict) {
+    Write-Warning 'UE 5.3 BuildPlugin omits engine UHT include paths with -StrictIncludes; building without it.'
+  }
+  $code = Invoke-BuildPlugin -EngineRoot $e -PluginPath $PluginUplugin -OutDir $out -Platforms $TargetPlatforms -UseStrict:$useStrict -UseNoHostProject:$NoHostProject -FollowLogs:$Follow
   $results += (New-SummaryRow -Engine $ver -OutDir $out -Code $code)
 }
 

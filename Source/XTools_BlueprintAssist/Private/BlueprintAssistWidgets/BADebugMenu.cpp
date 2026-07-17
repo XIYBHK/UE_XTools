@@ -1,10 +1,11 @@
-﻿#include "BlueprintAssistWidgets/BADebugMenu.h"
+#include "BlueprintAssistWidgets/BADebugMenu.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistUtils.h"
 #include "PropertyEditorClipboard.h"
 #include "SGraphPanel.h"
 #include "SlateOptMacros.h"
+#include "UnrealEdMisc.h"
 #include "BlueprintAssistMisc/BACrashReporter.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 #include "Components/VerticalBox.h"
@@ -199,6 +200,14 @@ void SBADebugMenu::Construct(const FArguments& InArgs)
 				return FReply::Handled();
 			})
 		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SButton).Text(INVTEXT("Restart editor")).OnClicked_Lambda([]()
+			{
+				FUnrealEdMisc::Get().RestartEditor();
+				return FReply::Handled();
+			})
+		]
 	];
 }
 END_SLATE_FUNCTION_BUILD_OPTIMIZATION
@@ -236,22 +245,23 @@ void SBADebugMenu::Tick(const FGeometry& AllottedGeometry, const double InCurren
 	{
 		if (UEdGraph* EdGraph = GraphPanel->GetGraphObj())
 		{
-			GraphUnderCursor = FText::Format(INVTEXT("{0} ({1}) ({2})"), 
+			GraphUnderCursor = FText::Format(INVTEXT("{0} ({1}) ({2})"),
 					FText::FromString(EdGraph->GetClass()->GetName()),
 					FText::FromString(EdGraph->GraphGuid.ToString()),
 					FText::FromString(FBAUtils::GetGraphGuid(EdGraph).ToString()));
 		}
 
-		if (auto GraphNode = FBAUtils::GetHoveredGraphNode(GraphPanel))
+		if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetHoveredGraphNode(GraphPanel))
 		{
 			if (auto Node = GraphNode->GetNodeObj())
 			{
-				NodeUnderCursor = FText::Format(INVTEXT("{0} ({1}) ({2}) ({3}) ({4})"), 
+				NodeUnderCursor = FText::Format(INVTEXT("{0} ({1}) ({2}) ({3}) ({4}) ({5})"),
 					FText::FromString(Node->GetClass()->GetName()),
 					FText::FromString(GetNameSafe(Node)),
 					FText::FromString(FString::FromInt(Node->Pins.Num())),
 					FText::FromString(Node->NodeGuid.ToString()),
-					FText::FromString(FBAUtils::GetNodeGuid(Node).ToString()));
+					FText::FromString(FBAUtils::GetNodeGuid(Node).ToString()),
+					FText::FromString(FString::FromInt(GraphNode->GetSortDepth())));
 
 				NodeUnderCursorSize = FText::Format(INVTEXT("P:{0} S:{1})"),
 					FText::FromString(FBAUtils::GetGraphNodePos(GraphNode).ToString()),
@@ -277,7 +287,7 @@ void SBADebugMenu::Tick(const FGeometry& AllottedGeometry, const double InCurren
 
 	if (auto GH = FBAUtils::GetCurrentGraphHandler())
 	{
-		FString Tab = GH->GetTab().IsValid() ? GH->GetTab()->GetTabLabel().ToString() : "invalid"; 
+		FString Tab = GH->GetTab().IsValid() ? GH->GetTab()->GetTabLabel().ToString() : "invalid";
 		GraphHandlerObj = FText::FromString(FString::Printf(TEXT("Tab %s, Graph %s"), *Tab, *GetNameSafe(GH->GetFocusedEdGraph())));
 	}
 	else

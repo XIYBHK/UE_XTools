@@ -10,6 +10,7 @@
 #include "ISettingsModule.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Interfaces/IPluginManager.h"
+#include "UObject/Package.h"
 
 #define LOCTEXT_NAMESPACE "FBlueprintScreenshotToolModule"
 

@@ -8,6 +8,7 @@
 #include "X_AssetEditor.h"
 
 #include "Algo/Sort.h"
+#include "Algo/Find.h"
 #include "Curves/CurveFloat.h"
 #include "Curves/CurveLinearColor.h"
 #include "Curves/CurveVector.h"
@@ -20,6 +21,7 @@
 #include "EdGraphNode_Comment.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
+#include "GameFramework/Actor.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Engine/TimelineTemplate.h"
 #include "Framework/Application/SlateApplication.h"

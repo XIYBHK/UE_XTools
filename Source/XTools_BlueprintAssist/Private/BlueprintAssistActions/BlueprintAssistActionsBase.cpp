@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistActions/BlueprintAssistActionsBase.h"
+#include "BlueprintAssistActions/BlueprintAssistActionsBase.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistSettings_Advanced.h"

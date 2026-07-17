@@ -1,6 +1,6 @@
-## UE 多版本插件打包（5.3–5.6）问题与解决方案
+## UE 多版本插件打包（5.3–5.7）问题与解决方案
 
-适用范围：本仓库的 `XTools` 插件，使用 UE5.3–5.6 的 RunUAT BuildPlugin 在 Win64 平台打包。
+适用范围：本仓库的 `XTools` 插件，使用 UE5.3–5.7 的 RunUAT BuildPlugin 在 Win64 平台打包。
 
 ### 打包方式（推荐）
 - 使用各版本引擎的 `RunUAT.bat` 执行 BuildPlugin（无需新建工程）：
@@ -87,7 +87,7 @@ foreach ($e in $engines) {
 - 解决：从 `ObjectPool.Build.cs` 与 `XTools.uplugin` 移除 `Niagara`（若源码未用）。
 
 ### 版本差异处理策略
-- 优先“通用代码”兼容 5.3–5.6（严格包含、运行时与编辑器分层、无异常）。
+- 优先“通用代码”兼容 5.3–5.7（严格包含、运行时与编辑器分层、无异常）。
 - 只有遇到真实 API/类型差异时再加最小化版本宏：
 ```cpp
 #if ENGINE_MAJOR_VERSION==5 && ENGINE_MINOR_VERSION>=5
@@ -100,6 +100,9 @@ foreach ($e in $engines) {
 - [ ] 无 `try/catch`，异步用 `Async/Async.h`
 - [ ] Editor API 用 `WITH_EDITOR` 包裹（**关键：`RerunConstructionScripts` 等编辑器专用方法**）
 - [ ] 严格包含缺失的头已补齐（见上文列表）
+- [ ] 可能未定义的构建宏使用 `defined(Macro) && Macro` 判断
+- [ ] 跨版本引擎 API 已确认覆盖 UE 5.3–5.7，未使用目标版本中已移除的函数
+- [ ] Game 与 Editor Target 均已编译，避免仅在编辑器构建中掩盖运行时问题
 - [ ] `SpawnActorFromPool` 无不可达代码；失败返回 `nullptr`
 - [ ] 无不必要的第三方/引擎模块依赖
 - [ ] HostProject 源码已同步且清理了 `Intermediate/Binaries`
@@ -153,6 +156,42 @@ foreach ($e in $engines) {
 注意
 - `-StrictIncludes` 会要求源码符合 IWYU；本仓库已按“常见错误与修复”章节补全头文件。
 - 如果未安装某版本 UE，需在 `-EngineRoots` 中传入正确路径；否则脚本会报 `RunUAT not found`。
+
+### CI 发布故障记录（v1.9.6，2026-07-16）
+
+首次发布流水线 [CI #127](https://github.com/XIYBHK/UE_XTools/actions/runs/29491780443) 的 UE 5.3–5.7 五个矩阵任务均在 `Build Plugin with BuildPlugin Command` 阶段失败，Release 任务因此跳过。修复后，[CI #128](https://github.com/XIYBHK/UE_XTools/actions/runs/29494531968) 的五个版本全部通过，并成功创建包含五个版本 ZIP 的 Release。
+
+1. `ENABLE_DRAW_DEBUG` 未定义（UE 5.3/5.4）
+   - 文件：`Source/BlueprintExtensionsRuntime/Private/Libraries/BulletHomingLibrary.cpp`
+   - 症状：`error C4668: ENABLE_DRAW_DEBUG is not defined as a preprocessor macro`。
+   - 原因：关闭调试绘制的构建中宏可能不存在，而未定义标识符警告被视为错误。
+   - 修复：包含 `DrawDebugHelpers.h` 和调试实现处统一使用 `#if defined(ENABLE_DRAW_DEBUG) && ENABLE_DRAW_DEBUG`。
+
+2. 浮点比较 API 已移除（UE 5.5/5.6/5.7）
+   - 文件：四个延迟循环 K2Node：`K2Node_ForEachArrayReverse.cpp`、`K2Node_ForEachLoopWithDelay.cpp`、`K2Node_ForLoopWithDelay.cpp`、`K2Node_ForLoopWithDelayReverse.cpp`。
+   - 症状：`LessEqual_FloatFloat is not a member of UKismetMathLibrary`。
+   - 原因：`LessEqual_FloatFloat` 在 UE 5.5+ 已移除。
+   - 修复：改用 UE 5.3–5.7 均存在的 `UKismetMathLibrary::LessEqual_DoubleDouble`。
+
+3. `FTimerManager` 类型不完整（UE 5.3/5.4）
+   - 文件：`Source/ObjectPool/Private/ActorStateResetter.cpp`
+   - 症状：`error C2027: use of undefined type FTimerManager`。
+   - 原因：依赖传递包含，严格 IWYU 构建下缺少完整类型。
+   - 修复：显式包含 `TimerManager.h`。
+
+4. `NewObject` / `GetTransientPackage` 类型信息不足（UE 5.3/5.4）
+   - 文件：`Source/PointSampling/Private/Sampling/TextureSamplingHelper.cpp`
+   - 症状：`error C2672: NewObject: no matching overloaded function found`。
+   - 原因：严格 IWYU 构建下不可见 `UPackage` 的完整继承关系。
+   - 修复：显式包含 `UObject/Package.h`。
+
+5. Runtime 构建调用 Editor-only 材质 API（UE 5.3/5.4）
+   - 文件：`Source/PointSampling/Private/Sampling/MeshSamplingHelper.cpp`
+   - 症状：`GetTexturesInPropertyChain is not a member of UMaterialInterface`。
+   - 原因：该 API 受引擎头文件中的 `#if WITH_EDITOR` 保护，而 BuildPlugin 还会编译 `WITH_EDITOR=0` 的运行时目标。
+   - 修复：初始化输出指针，并将 BaseColor 属性链查询包裹在 `#if WITH_EDITOR` 中；非编辑器构建返回 `false`，继续使用材质纹理参数、`GetUsedTextures` 和材质颜色参数等既有回退路径。
+
+验证结果：本地 UE 5.4、5.5、5.6 的 Game 与 Editor Target 均编译通过；CI #128 的 UE 5.3、5.4、5.5、5.6、5.7 BuildPlugin 矩阵全部通过。发布完成条件应同时包含全部矩阵任务成功和 `Create GitHub Release` 成功，不能只以提交标签或单版本本地编译作为完成依据。
 
 
 ### 新增补充（2025-08）

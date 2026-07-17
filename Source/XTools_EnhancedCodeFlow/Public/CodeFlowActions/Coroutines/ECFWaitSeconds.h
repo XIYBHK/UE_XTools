@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -33,7 +33,9 @@ protected:
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF Coroutine - wait seconds failed to start. Are you sure the WaitTime is not negative?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF Coroutine [%s] - wait seconds failed to start. Are you sure the WaitTime is not negative?"), *Settings.Label);
+#endif
 			return false;
 		}
 	}
@@ -43,29 +45,52 @@ protected:
 		CurrentTime = 0;
 	}
 
+	bool Reset(bool bCallUpdate) override
+	{
+		CurrentTime = 0;
+		return true;
+	}
+
 	void Tick(float DeltaTime) override
 	{
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("WaitSeconds - Tick"), STAT_ECFDETAILS_WAITSECONDS, STATGROUP_ECFDETAILS);
 #endif
+
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - WaitSeconds Tick");
+#endif
+
 		CurrentTime += DeltaTime;
 		if (CurrentTime > WaitTime)
 		{
-			Complete(false);
 			MarkAsFinished();
+			Complete(false);
 		}
 	}
 
 	void Complete(bool bStopped) override
 	{
-		// 修复：协程恢复前检查 Owner 有效性
-		if (HasValidOwner())
+		ResumeCoroutine(bStopped);
+	}
+
+	float GetActionTime() const override
+	{
+		return CurrentTime;
+	}
+
+	bool SetActionTime(float NewTime, bool bCallUpdate) override
+	{
+		CurrentTime = NewTime;
+		if (bCallUpdate)
 		{
-			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
+			if (CurrentTime > WaitTime)
 			{
-				CoroutineHandle.resume();
+				MarkAsFinished();
+				Complete(false);
 			}
 		}
+		return true;
 	}
 };
 

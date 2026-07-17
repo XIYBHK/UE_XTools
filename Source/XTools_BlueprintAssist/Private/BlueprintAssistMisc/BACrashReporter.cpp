@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 
 #include "BlueprintAssistMisc/BACrashReporter.h"
@@ -103,7 +103,8 @@ namespace BAXmlUtils
 					if (FJsonSerializer::Deserialize(Reader, JsonObject))
 					{
 						FString FriendlyName;
-						if (JsonObject->TryGetStringField(TEXT("FriendlyName"), FriendlyName) && FriendlyName == "XTools")
+						if (JsonObject->TryGetStringField(TEXT("FriendlyName"), FriendlyName) &&
+							(FriendlyName == TEXT("XTools") || FriendlyName == TEXT("BlueprintAssist")))
 						{
 							if (JsonObject->TryGetStringField(TEXT("VersionName"), OutVersion))
 							{
@@ -377,6 +378,10 @@ void FBACrashReporter::HandleNever()
 
 void FBACrashReporter::SendReport(const FBACrashReport& Report)
 {
+	UE_LOG(LogBlueprintAssist, Warning, TEXT("Crash upload is disabled in the integrated XTools build."));
+	return;
+
+	// Kept for future upstream synchronization; the integrated build never reaches this path.
 	FString DataRouterUrl = FString::Printf(TEXT("https://blueprintassist.bugsplat.com/post/ue4/blueprintassist/%s"), *Report.Version);
 
 	if (BA_DEBUG("TestCrashReport"))
@@ -408,11 +413,11 @@ void FBACrashReporter::SendReport(const FBACrashReport& Report)
 
 void FBACrashReporter::CloseNotification()
 {
-	if (TSharedPtr<SNotificationItem> Notification = AskToSendNotification.Pin())
+	if (AskToSendNotification.IsValid())
 	{
-		Notification->SetExpireDuration(0.0f);
-		Notification->SetFadeOutDuration(0.5f);
-		Notification->ExpireAndFadeout();
+		AskToSendNotification.Pin()->SetExpireDuration(0.0f);
+		AskToSendNotification.Pin()->SetFadeOutDuration(0.5f);
+		AskToSendNotification.Pin()->ExpireAndFadeout();
 	}
 }
 
@@ -445,10 +450,7 @@ void FBACrashReporter::SendReports()
 	Info.ExpireDuration = 3.0f;
 	Info.ButtonDetails.Add(FNotificationButtonInfo(INVTEXT("Cancel"), FText(), FSimpleDelegate::CreateRaw(this, &FBACrashReporter::CancelSendingReports)));
 	ProgressNotification = FSlateNotificationManager::Get().AddNotification(Info);
-	if (TSharedPtr<SNotificationItem> Notification = ProgressNotification.Pin())
-	{
-		Notification->SetCompletionState(SNotificationItem::CS_Pending);
-	}
+	ProgressNotification.Pin()->SetCompletionState(SNotificationItem::CS_Pending);
 }
 
 TArray<FBACrashReport> FBACrashReporter::GetUnsentReports()
@@ -494,19 +496,19 @@ TArray<FBACrashReport> FBACrashReporter::GetUnsentReports()
 								{
 									if (UnsentReports.Num() < 5)
 									{
-											FBACrashReport Report(ReportId);
-											if (!BAXmlUtils::FindBlueprintAssistVersion(XmlFile, Report.Version))
+										FBACrashReport Report(ReportId);
+										if (!BAXmlUtils::FindBlueprintAssistVersion(XmlFile, Report.Version))
+										{
+											// fallback to the current plugin version
+											if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("XTools")))
 											{
-												// fallback to the current plugin version
-												if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools"))
-												{
-													Report.Version = Plugin->GetDescriptor().VersionName;
-												}
-												else
-												{
-													Report.Version = TEXT("Unknown");
-												}
+												Report.Version = Plugin->GetDescriptor().VersionName;
 											}
+											else
+											{
+												Report.Version = TEXT("Unknown");
+											}
+										}
 
 										UnsentReports.Add(Report);
 									}
@@ -541,20 +543,20 @@ void FBACrashReporter::HandleCrashUploadCompleted(const FString& ReportId, bool 
 	// if we don't have any reports to send then we are done
 	if (!SendNextReport())
 	{
-		if (TSharedPtr<SNotificationItem> Notification = ProgressNotification.Pin())
+		if (ProgressNotification.IsValid())
 		{
 			if (SuccessfullyParsed.Num())
 			{
-				Notification->SetText(INVTEXT("Sending crash reports complete"));
-				Notification->SetCompletionState(SNotificationItem::CS_Success);
+				ProgressNotification.Pin()->SetText(INVTEXT("Sending crash reports complete"));
+				ProgressNotification.Pin()->SetCompletionState(SNotificationItem::CS_Success);
 			}
 			else
 			{
-				Notification->SetText(INVTEXT("Sending crash reports failed"));
-				Notification->SetCompletionState(SNotificationItem::CS_Fail);
+				ProgressNotification.Pin()->SetText(INVTEXT("Sending crash reports failed"));
+				ProgressNotification.Pin()->SetCompletionState(SNotificationItem::CS_Fail);
 			}
 
-			Notification->ExpireAndFadeout();
+			ProgressNotification.Pin()->ExpireAndFadeout();
 			ProgressNotification.Reset();
 		}
 
@@ -595,11 +597,11 @@ void FBACrashReporter::CancelSendingReports()
 
 	PendingReports.Reset();
 
-	if (TSharedPtr<SNotificationItem> Notification = ProgressNotification.Pin())
+	if (ProgressNotification.IsValid())
 	{
-		Notification->SetText(INVTEXT("Sending crash report cancelled"));
-		Notification->SetCompletionState(SNotificationItem::CS_Fail);
-		Notification->ExpireAndFadeout();
+		ProgressNotification.Pin()->SetText(INVTEXT("Sending crash report cancelled"));
+		ProgressNotification.Pin()->SetCompletionState(SNotificationItem::CS_Fail);
+		ProgressNotification.Pin()->ExpireAndFadeout();
 		ProgressNotification.Reset();
 	}
 

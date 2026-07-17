@@ -13,16 +13,27 @@
 #include "BlueprintAssistToolbar.h"
 #include "BlueprintAssistUtils.h"
 #include "ContentBrowserModule.h"
+#include "EdGraph/EdGraph.h"
 #include "EdGraphNode_Comment.h"
 #include "IContentBrowserSingleton.h"
 #include "K2Node_DynamicCast.h"
 #include "SGraphPanel.h"
+#include "BlueprintAssistActions/BlueprintAssistBlueprintActions.h"
+#include "BlueprintAssistActions/BlueprintAssistGlobalActions.h"
+#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
+#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
+#include "BlueprintAssistActions/BlueprintAssistPinActions.h"
+#include "BlueprintAssistActions/BlueprintAssistTabActions.h"
+#include "BlueprintAssistActions/BlueprintAssistToolkitActions.h"
+#include "BlueprintAssistMisc/BAMiscUtils.h"
+#include "BlueprintAssistMisc/BlueprintAssistInputProcessorState.h"
 #include "BlueprintAssistObjects/BARootObject.h"
 #include "Editor/ContentBrowser/Private/SContentBrowser.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "ScopedTransaction.h"
 
 static TSharedPtr<FBAInputProcessor> BAInputProcessorInstance;
 
@@ -38,35 +49,43 @@ FBAInputProcessor& FBAInputProcessor::Get()
 }
 
 FBAInputProcessor::FBAInputProcessor()
+	: GlobalActions(MakeUnique<FBAGlobalActions>())
+	, TabActions(MakeUnique<FBATabActions>())
+	, ToolkitActions(MakeUnique<FBAToolkitActions>())
+	, GraphActions(MakeUnique<FBAGraphActions>())
+	, NodeActions(MakeUnique<FBANodeActions>())
+	, PinActions(MakeUnique<FBAPinActions>())
+	, BlueprintActions(MakeUnique<FBABlueprintActions>())
+	, ProcessorState(MakeUnique<FBAInputProcessorState>())
 {
-	GlobalActions.Init();
-	TabActions.Init();
-	ToolkitActions.Init();
-	GraphActions.Init();
-	NodeActions.Init();
-	PinActions.Init();
-	BlueprintActions.Init();
+	GlobalActions->Init();
+	TabActions->Init();
+	ToolkitActions->Init();
+	GraphActions->Init();
+	NodeActions->Init();
+	PinActions->Init();
+	BlueprintActions->Init();
 
 #if WITH_SLATE_DEBUGGING
-	SlateInputEventDelegateHandle = FSlateDebugging::InputEvent.AddRaw(this, &FBAInputProcessor::HandleSlateInputEvent);
+	FSlateDebugging::InputEvent.AddRaw(this, &FBAInputProcessor::HandleSlateInputEvent);
 #endif
 
-	AppActivationStateDelegateHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddRaw(this, &FBAInputProcessor::OnWindowFocusChanged);
+	FSlateApplication::Get().OnApplicationActivationStateChanged().AddRaw(this, &FBAInputProcessor::OnWindowFocusChanged);
 
 	CommandLists = {
-		GlobalActions.GlobalCommands,
-		TabActions.TabCommands,
-		TabActions.ActionMenuCommands,
-		ToolkitActions.ToolkitCommands,
-		GraphActions.GraphCommands,
-		GraphActions.GraphReadOnlyCommands,
-		NodeActions.SingleNodeCommands,
-		NodeActions.MultipleNodeCommands,
-		NodeActions.MultipleNodeCommandsIncludingComments,
-		NodeActions.MiscNodeCommands,
-		PinActions.PinCommands,
-		PinActions.PinEditCommands,
-		BlueprintActions.BlueprintCommands
+		GlobalActions->GlobalCommands,
+		TabActions->TabCommands,
+		TabActions->ActionMenuCommands,
+		ToolkitActions->ToolkitCommands,
+		GraphActions->GraphCommands,
+		GraphActions->GraphReadOnlyCommands,
+		NodeActions->SingleNodeCommands,
+		NodeActions->MultipleNodeCommands,
+		NodeActions->MultipleNodeCommandsIncludingComments,
+		NodeActions->MiscNodeCommands,
+		PinActions->PinCommands,
+		PinActions->PinEditCommands,
+		BlueprintActions->BlueprintCommands
 	};
 }
 
@@ -74,26 +93,10 @@ FBAInputProcessor::~FBAInputProcessor() {}
 
 void FBAInputProcessor::Cleanup()
 {
-	GraphActions.Cleanup();
-
 	if (FSlateApplication::IsInitialized())
 	{
-		if (AppActivationStateDelegateHandle.IsValid())
-		{
-			FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(AppActivationStateDelegateHandle);
-			AppActivationStateDelegateHandle.Reset();
-		}
-
 		FSlateApplication::Get().UnregisterInputPreProcessor(BAInputProcessorInstance);
 	}
-
-#if WITH_SLATE_DEBUGGING
-	if (SlateInputEventDelegateHandle.IsValid())
-	{
-		FSlateDebugging::InputEvent.Remove(SlateInputEventDelegateHandle);
-		SlateInputEventDelegateHandle.Reset();
-	}
-#endif
 
 	BAInputProcessorInstance.Reset();
 }
@@ -158,21 +161,21 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 			return true;
 		}
 
-		if (ProcessCommandBindings(GlobalActions.GlobalCommands, InKeyEvent))
+		if (ProcessCommandBindings(GlobalActions->GlobalCommands, InKeyEvent))
 		{
 			return true;
 		}
 
-		if (BlueprintActions.HasOpenBlueprintEditor())
+		if (BlueprintActions->HasOpenBlueprintEditor())
 		{
-			if (ProcessCommandBindings(BlueprintActions.BlueprintCommands, InKeyEvent))
+			if (ProcessCommandBindings(BlueprintActions->BlueprintCommands, InKeyEvent))
 			{
 				return true;
 			}
 		}
 
 		// try process toolkit hotkeys
-		if (ProcessCommandBindings(ToolkitActions.ToolkitCommands, InKeyEvent))
+		if (ProcessCommandBindings(ToolkitActions->ToolkitCommands, InKeyEvent))
 		{
 			return true;
 		}
@@ -181,24 +184,6 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		{
 			//UE_LOG(LogBlueprintAssist, Warning, TEXT("Invalid graph handler"));
 			return false;
-		}
-
-		// clear keyboard focus for single line editable text on Enter when editing a pin
-		if (InKeyEvent.GetKey() == EKeys::Enter && !InKeyEvent.GetModifierKeys().AnyModifiersDown())
-		{
-			if (TSharedPtr<SWidget> FocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget())
-			{
-				if (FBAUtils::IsUserInputWidget(FocusedWidget))
-				{
-					if (FBAUtils::GetParentWidgetOfType(FocusedWidget, "SGraphPin", true))
-					{
-						GEditor->GetTimerManager()->SetTimerForNextTick([]()
-						{
-							FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
-						});
-					}
-				}
-			}
 		}
 
 		// cancel graph handler ongoing processes
@@ -228,9 +213,9 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		TSharedPtr<SWindow> Menu = SlateApp.GetActiveTopLevelWindow();
 		if (Menu.IsValid())
 		{
-			if (GraphActions.HasOpenActionMenu())
+			if (GraphActions->HasOpenActionMenu())
 			{
-				if (ProcessCommandBindings(TabActions.ActionMenuCommands, InKeyEvent))
+				if (ProcessCommandBindings(TabActions->ActionMenuCommands, InKeyEvent))
 				{
 					return true;
 				}
@@ -248,11 +233,12 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		}
 
 		// process commands for when you are editing a user input widget
-		if (FBAUtils::IsUserInputWidget(KeyboardFocusedWidget))
+		bool bIsMultiLineWidget = false;
+		if (FBAUtils::IsUserInputWidget(KeyboardFocusedWidget, &bIsMultiLineWidget))
 		{
-			if (FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "SGraphPin", true).IsValid())
+			if (FBAUtils::GetParentWidgetOfType(KeyboardFocusedWidget, "GraphPin", true).IsValid())
 			{
-				if (ProcessCommandBindings(PinActions.PinEditCommands, InKeyEvent))
+				if (ProcessCommandBindings(PinActions->PinEditCommands, InKeyEvent))
 				{
 					return true;
 				}
@@ -263,7 +249,17 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 				SlateApp.SetKeyboardFocus(GraphHandler->GetGraphPanel());
 			}
 
-			return false;
+			// allow enter / escape to be processed later
+			const static TSet<FKey> AllowedKeys = {EKeys::Enter, EKeys::Escape };
+
+			// single line widgets are allowed to use up / down
+			const static TSet<FKey> AllowedSingleLineKeys = { EKeys::Up, EKeys::Down };
+			bool bAllowInput = AllowedKeys.Contains(InKeyEvent.GetKey()) || (!bIsMultiLineWidget && AllowedSingleLineKeys.Contains(InKeyEvent.GetKey()));
+
+			if (!bAllowInput)
+			{
+				return false;
+			}
 		}
 
 		// if keyboard focus is inside a node, don't try to run any commands when pressing tab
@@ -273,7 +269,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		}
 
 		// process commands for when the tab is open
-		if (ProcessCommandBindings(TabActions.TabCommands, InKeyEvent))
+		if (ProcessCommandBindings(TabActions->TabCommands, InKeyEvent))
 		{
 			return true;
 		}
@@ -304,7 +300,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		}
 
 		// process commands for when the graph exists but is read only
-		if (ProcessCommandBindings(GraphActions.GraphReadOnlyCommands, InKeyEvent))
+		if (ProcessCommandBindings(GraphActions->GraphReadOnlyCommands, InKeyEvent))
 		{
 			return true;
 		}
@@ -316,7 +312,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		}
 
 		// process general graph commands
-		if (ProcessCommandBindings(GraphActions.GraphCommands, InKeyEvent))
+		if (ProcessCommandBindings(GraphActions->GraphCommands, InKeyEvent))
 		{
 			return true;
 		}
@@ -324,13 +320,13 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		// process commands for which require a node to be selected
 		if (GraphHandler->GetSelectedPin() != nullptr || FBAUtils::GetHoveredGraphPin(GraphHandler->GetGraphPanel()).IsValid() || FBAUtils::GetHoveredPinLink(GraphHandler->GetGraphPanel()).HasBothPins())
 		{
-			if (ProcessCommandBindings(PinActions.PinCommands, InKeyEvent))
+			if (ProcessCommandBindings(PinActions->PinCommands, InKeyEvent))
 			{
 				return true;
 			}
 		}
 
-		if (ProcessCommandBindings(NodeActions.MiscNodeCommands, InKeyEvent))
+		if (ProcessCommandBindings(NodeActions->MiscNodeCommands, InKeyEvent))
 		{
 			return true;
 		}
@@ -339,7 +335,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		if (GraphHandler->GetSelectedNode() != nullptr)
 		{
 			//UE_LOG(LogBlueprintAssist, Warning, TEXT("Process node commands"));
-			if (ProcessCommandBindings(NodeActions.SingleNodeCommands, InKeyEvent))
+			if (ProcessCommandBindings(NodeActions->SingleNodeCommands, InKeyEvent))
 			{
 				return true;
 			}
@@ -353,7 +349,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		// process commands for which require multiple nodes to be selected
 		if (GraphHandler->GetSelectedNodes().Num() > 0)
 		{
-			if (ProcessCommandBindings(NodeActions.MultipleNodeCommands, InKeyEvent))
+			if (ProcessCommandBindings(NodeActions->MultipleNodeCommands, InKeyEvent))
 			{
 				return true;
 			}
@@ -367,7 +363,7 @@ bool FBAInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, const FK
 		// process commands for which require multiple nodes (incl comments) to be selected
 		if (GraphHandler->GetSelectedNodes(true).Num() > 0)
 		{
-			if (ProcessCommandBindings(NodeActions.MultipleNodeCommandsIncludingComments, InKeyEvent))
+			if (ProcessCommandBindings(NodeActions->MultipleNodeCommandsIncludingComments, InKeyEvent))
 			{
 				return true;
 			}
@@ -446,7 +442,12 @@ bool FBAInputProcessor::HandleMouseButtonDownEvent(FSlateApplication& SlateApp, 
 		{
 			if (GraphPanel->IsHovered())
 			{
-				return true;
+				// handle edge case for when you want to cancel editing a user input widget
+				TSharedPtr<SWidget> KeyboardFocusedWidget = SlateApp.GetKeyboardFocusedWidget();
+				if (!FBAUtils::IsUserInputWidget(KeyboardFocusedWidget))
+				{
+					return true;
+				}
 			}
 		}
 	}
@@ -516,7 +517,7 @@ void FBAInputProcessor::HandleSlateInputEvent(const FSlateDebuggingInputEventArg
 						if (SubcategoryObject.IsValid())
 						{
 							// open using package if it is an asset
-							if (SubcategoryObject->IsAsset()) 
+							if (SubcategoryObject->IsAsset())
 							{
 								if (UPackage* Outer = Cast<UPackage>(SubcategoryObject->GetOuter()))
 								{
@@ -549,13 +550,19 @@ bool FBAInputProcessor::BeginGroupMovement(const FKey& Key)
 		return false;
 	}
 
+	if (GIsTransacting) // when does this occur?!
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%hs - Failed to start group movement due to editor transacting"), __FUNCTION__);
+		return false;
+	}
+
 	// UE_LOG(LogTemp, Warning, TEXT("Hovered node %s"), *HoveredNode->ToString());
 
 	static const TSet<FName> BlockingWidgets = { "SButton", "SCheckBox" };
 
 	bool bBlocking = false;
 
-	// Select the node when pressing additional node drag chord
+	// Handle Group movement when LMB is pressed
 	if (Key == EKeys::LeftMouseButton)
 	{
 		TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes(true);
@@ -594,39 +601,60 @@ bool FBAInputProcessor::BeginGroupMovement(const FKey& Key)
 	// Select the node when pressing additional node drag chord
 	else if (IsAnyInputChordDown(UBASettings_EditorFeatures::Get().AdditionalDragNodesChords))
 	{
-		TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes(true);
-
+		// optionally select the hovered node
+		UEdGraphNode* HoveredNodeObj = nullptr;
 		TSharedPtr<SGraphNode> HoveredNode = FBAUtils::GetHoveredGraphNode(GraphPanel);
 		if (!HoveredNode.IsValid())
+		{
+			if (UBASettings_EditorFeatures::Get().bDragRequiresNodeUnderCursor)
+			{
+				return false;
+			}
+		}
+		else
+		{
+			const FBAVector2 MousePositionInNode = HoveredNode->GetCachedGeometry().AbsoluteToLocal(FSlateApplication::Get().GetCursorPos());
+			if (HoveredNode->CanBeSelected(MousePositionInNode))
+			{
+				if (!FBAUtils::ContainsWidgetInFront(HoveredNode, BlockingWidgets))
+				{
+					HoveredNodeObj = HoveredNode->GetNodeObj();
+
+					// select the hovered node if it's not already selected
+					if (!GraphHandler->GetSelectedNodes(true).Contains(HoveredNodeObj))
+					{
+						// add to selection with shift
+						if (FSlateApplication::Get().GetModifierKeys().IsShiftDown())
+						{
+							GraphPanel->SelectionManager.SetNodeSelection(HoveredNodeObj, true);
+						}
+						else
+						{
+							GraphPanel->SelectionManager.SelectSingleNode(HoveredNodeObj);
+						}
+
+						bBlocking = true;
+					}
+				}
+			}
+		}
+
+		TArray<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes(true).Array();
+		if (SelectedNodes.IsEmpty())
 		{
 			return false;
 		}
 
-		const FBAVector2 MousePositionInNode = HoveredNode->GetCachedGeometry().AbsoluteToLocal(FSlateApplication::Get().GetCursorPos());
-		if (HoveredNode->CanBeSelected(MousePositionInNode))
-		{
-			if (!FBAUtils::ContainsWidgetInFront(HoveredNode, BlockingWidgets))
-			{
-				UEdGraphNode* HoveredNodeObj = HoveredNode->GetNodeObj();
+		// set the anchor node for group movement
+		AnchorNode = HoveredNodeObj ? HoveredNodeObj : SelectedNodes[0];
+		LastAnchorPos = FVector2D(FBAUtils::GetGraphNodePos(FBAUtils::GetGraphNodeFast(GraphPanel, AnchorNode.Get())));
 
-				// also set the anchor node for group movement
-				AnchorNode = HoveredNodeObj;
-				LastAnchorPos = FVector2D(FBAUtils::GetGraphNodePos(HoveredNode));
+		TSet<UEdGraphNode*> NodeSet;
+		NodeSet.Append(GraphHandler->GetSelectedNodes(true));
+		NodeSet.Append(GraphHandler->GetGroupedNodes(GraphHandler->GetSelectedNodes()));
 
-				if (!SelectedNodes.Contains(HoveredNodeObj))
-				{
-					GraphHandler->SelectNode(HoveredNodeObj);
-					bBlocking = true;
-				}
-
-				TSet<UEdGraphNode*> NodeSet;
-				NodeSet.Append(GraphHandler->GetSelectedNodes(true));
-				NodeSet.Append(GraphHandler->GetGroupedNodes(GraphHandler->GetSelectedNodes()));
-
-				// begin transaction
-				DragNodeTransaction.Begin(NodeSet, INVTEXT("Move Node(s)"), EBADragMethod::AdditionalDragChord);
-			}
-		}
+		// begin transaction
+		DragNodeTransaction.Begin(NodeSet, INVTEXT("Move Node(s)"), EBADragMethod::AdditionalDragChord);
 	}
 
 	return bBlocking;
@@ -637,22 +665,7 @@ bool FBAInputProcessor::OnMouseDrag(FSlateApplication& SlateApp, const FVector2D
 	TSharedPtr<FBAGraphHandler> MyGraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
 
 	bool bBlocking = false;
-
-	// Try process shake node off wire event
-	if (AnchorNode.IsValid() && KeysDown.Contains(EKeys::LeftMouseButton))
-	{
-		// Create a dummy pointer event (the event parameter is not actually used in the function)
-		FPointerEvent DummyEvent(
-			0, // PointerIndex
-			MousePos,
-			MousePos - Delta,
-			TSet<FKey>(),
-			EKeys::LeftMouseButton,
-			0, // WheelDelta
-			FModifierKeysState()
-		);
-		TryProcessAsShakeNodeOffWireEvent(DummyEvent, AnchorNode.Get(), Delta);
-	}
+	TryProcessShakeNodeOffWire(Delta);
 
 	// process extra drag nodes
 	if (AnchorNode.IsValid())
@@ -679,6 +692,56 @@ bool FBAInputProcessor::OnMouseDrag(FSlateApplication& SlateApp, const FVector2D
 	return bBlocking;
 }
 
+bool FBAInputProcessor::TryProcessShakeNodeOffWire(const FVector2D& Delta)
+{
+	if (!UBASettings::Get().bEnableShakeNodeOffWire || !AnchorNode.IsValid() || Delta.SizeSquared() < FMath::Square(30.0f))
+	{
+		return false;
+	}
+
+	const double Now = FSlateApplication::Get().GetCurrentTime();
+	const float Window = FMath::Max(0.1f, UBASettings::Get().ShakeNodeOffWireTimeWindow);
+	if (ShakeTracking.Node.Get() != AnchorNode.Get() || Now - ShakeTracking.LastTime > Window)
+	{
+		ShakeTracking = {};
+		ShakeTracking.Node = AnchorNode;
+	}
+
+	const FVector2D Direction = Delta.GetSafeNormal();
+	if (!ShakeTracking.LastDirection.IsNearlyZero() && FVector2D::DotProduct(Direction, ShakeTracking.LastDirection) < -0.5f)
+	{
+		++ShakeTracking.Count;
+	}
+	else if (ShakeTracking.Count == 0)
+	{
+		ShakeTracking.Count = 1;
+	}
+	ShakeTracking.LastDirection = Direction;
+	ShakeTracking.LastTime = Now;
+
+	if (ShakeTracking.Count < 3)
+	{
+		return false;
+	}
+
+	UEdGraphNode* Node = AnchorNode.Get();
+	if (Node && Node->GetGraph() && Node->GetGraph()->GetSchema())
+	{
+		const FScopedTransaction Transaction(NSLOCTEXT("BlueprintAssist", "ShakeNodeOffWire", "断开节点所有连线"));
+		Node->Modify();
+		const UEdGraphSchema* Schema = Node->GetGraph()->GetSchema();
+		for (UEdGraphPin* Pin : Node->Pins)
+		{
+			if (Pin && Pin->LinkedTo.Num() > 0)
+			{
+				Schema->BreakPinLinks(*Pin, true);
+			}
+		}
+	}
+	ShakeTracking = {};
+	return true;
+}
+
 bool FBAInputProcessor::OnKeyOrMouseDown(FSlateApplication& SlateApp, const FKey& Key)
 {
 	KeysDown.Add(Key);
@@ -689,7 +752,18 @@ bool FBAInputProcessor::OnKeyOrMouseDown(FSlateApplication& SlateApp, const FKey
 		return false;
 	}
 
-	if (ProcessorState.OnKeyOrMouseDown(Key))
+	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
+	if (GraphHandler)
+	{
+		// give priority to the graph handler
+		if (GraphHandler->OnKeyDown(Key))
+		{
+			return true;
+		}
+	}
+
+
+	if (ProcessorState->OnKeyOrMouseDown(Key))
 	{
 		return true;
 	}
@@ -701,9 +775,18 @@ bool FBAInputProcessor::OnKeyOrMouseDown(FSlateApplication& SlateApp, const FKey
 
 bool FBAInputProcessor::OnKeyOrMouseUp(FSlateApplication& SlateApp, const FKey& Key)
 {
+	TSharedPtr<FBAGraphHandler> GraphHandler = FBATabHandler::Get().GetActiveGraphHandler();
+	if (GraphHandler.IsValid())
+	{
+		if (GraphHandler->OnKeyUp(Key))
+		{
+			return true;
+		}
+	}
+
 	bool bBlocking = false;
 
-	if (ProcessorState.OnKeyOrMouseUp(Key))
+	if (ProcessorState->OnKeyOrMouseUp(Key))
 	{
 		bBlocking = true;
 	}
@@ -805,12 +888,12 @@ void FBAInputProcessor::UpdateGroupMovement()
 	{
 		return;
 	}
-	
+
 	TSet<UEdGraphNode*> NodesToMove;
 	EEdGraphPinDirection Direction = EGPD_MAX;
 	bool bMoveGroupOrSubtree = false;
 	bool bMoveGraphHandledGroup = false;
-	
+
 	// Using right subtree movement key
 	if (IsAnyInputChordDown(UBASettings_EditorFeatures::Get().RightSubTreeMovementChords))
 	{
@@ -840,16 +923,18 @@ void FBAInputProcessor::UpdateGroupMovement()
 	{
 		return;
 	}
-	
+
 	// Group/subtree movement
 	if (bMoveGroupOrSubtree)
 	{
+		TSharedPtr<SGraphPanel> GraphPanel = GraphHandler->GetGraphPanel();
+
 		// Get the graph nodes in the desired direction(s)
 		for (UEdGraphNode* SelectedNode : SelectedNodes)
 		{
-			auto RelevantTree = FBAUtils::GetNodeTreeWithFilter(SelectedNode, [](UEdGraphPin* Pin)
+			auto RelevantTree = FBAUtils::GetNodeTreeWithFilter(SelectedNode, [GraphPanel](const FPinLink& PinLink)
 			{
-				return !FBAUtils::IsDelegatePinLinkedToCustomEvent(Pin);
+				return !FBAUtils::IsDelegatePinLinkedToCustomEvent(PinLink.To) && PinLink.ArePinsVisibleUnsafe(GraphPanel);
 			}, Direction);
 			NodesToMove.Append(RelevantTree);
 		}
@@ -859,15 +944,20 @@ void FBAInputProcessor::UpdateGroupMovement()
 			TSet<UEdGraphNode*> AdditionalNodesToMove;
 			for (UEdGraphNode* SelectedNode : NodesToMove)
 			{
-				auto LinkedNodes = FBAUtils::GetLinkedNodes(SelectedNode, EGPD_Input);
-				for (UEdGraphNode* Node : LinkedNodes)
+				for (FPinLink& PinLink : FBAUtils::GetPinLinks(SelectedNode, EGPD_Input))
 				{
-					auto ExecPins = FBAUtils::GetExecPins(Node, EGPD_Output);
+					if (!PinLink.ArePinsVisibleUnsafe(GraphPanel))
+					{
+						continue;
+					}
+
+					UEdGraphNode* Node = PinLink.GetToNode();
+					TArray<UEdGraphPin*> ExecPins = FBAUtils::GetExecPins(Node, EGPD_Output);
 					if (ExecPins.Num() == 0)
 					{
-						auto NonExecNodes = FBAUtils::GetNodeTreeWithFilter(Node, [](UEdGraphPin* Pin)
+						auto NonExecNodes = FBAUtils::GetNodeTreeWithFilter(Node, [GraphPanel](const FPinLink& PinLink)
 						{
-							return FBAUtils::IsNodePure(Pin->GetOwningNode());
+							return FBAUtils::IsNodePure(PinLink.GetToNodeUnsafe()) && PinLink.ArePinsVisibleUnsafe(GraphPanel);
 						}, EGPD_Input);
 						AdditionalNodesToMove.Append(NonExecNodes);
 					}
@@ -904,7 +994,7 @@ void FBAInputProcessor::GroupMoveSelectedNodes(const FVector2D& Delta)
 		if (!SelectedNodes.Contains(Node))
 		{
 			Node->Modify(false);
-			Node->NodePosX += Delta.X; 
+			Node->NodePosX += Delta.X;
 			Node->NodePosY += Delta.Y;
 		}
 	}
@@ -1018,18 +1108,24 @@ bool FBAInputProcessor::ProcessFolderBookmarkInput()
 			if (FIND_PARENT_WIDGET(FSlateApplication::Get().GetUserFocusedWidget(0), SContentBrowser))
 			{
 				IContentBrowserSingleton& ContentBrowser = IContentBrowserSingleton::Get();
-
+				if (ContentBrowser.GetCurrentPath().HasInternalPath())
+				{
 #if BA_UE_VERSION_OR_LATER(5, 0)
-				const FString FolderPath = ContentBrowser.GetCurrentPath().GetInternalPathString();
+					const FString FolderPath = ContentBrowser.GetCurrentPath().GetInternalPathString();
 #else
-				const FString FolderPath = ContentBrowser.GetCurrentPath();
+					const FString FolderPath = ContentBrowser.GetCurrentPath();
 #endif
-				FBACache::Get().SetBookmarkedFolder(FolderPath, i);
+					FBACache::Get().SetBookmarkedFolder(FolderPath, i);
 
-				FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Saved bookmark %s to %s"), *BookmarkKey.ToString().ToUpper(), *FolderPath)));
-				Notification.ExpireDuration = 3.0f;
-				FSlateNotificationManager::Get().AddNotification(Notification);
-				return true;
+					const FText Msg = FText::FromString(FString::Printf(TEXT("Saved bookmark %s to %s"), *BookmarkKey.ToString().ToUpper(), *FolderPath));
+					FBAMiscUtils::ShowSimpleSlateNotification(Msg, SNotificationItem::CS_Success);
+					return true;
+				}
+				else
+				{
+					FBAMiscUtils::ShowSimpleSlateNotification(INVTEXT("Unable to bookmark this path"), SNotificationItem::CS_Fail);
+					return false;
+				}
 			}
 		}
 
@@ -1119,128 +1215,6 @@ bool FBAInputProcessor::ProcessCommandBindings(TSharedPtr<FUICommandList> Comman
 					}
 				}
 			}
-		}
-	}
-
-	return false;
-}
-
-bool FBAInputProcessor::TryProcessAsShakeNodeOffWireEvent(
-	const FPointerEvent& MouseEvent,
-	UEdGraphNode* Node,
-	const FVector2D& Delta)
-{
-	if (!Node || !UBASettings::Get().bEnableShakeNodeOffWire)
-	{
-		return false;
-	}
-
-	// Check minimum shake distance (increased to prevent accidental triggers)
-	const float MinShakeDistance = 30.0f; // Minimum distance to count as a shake
-	if (Delta.Size() < MinShakeDistance)
-	{
-		return false;
-	}
-
-	// Find or create tracking info for this node
-	FShakeOffNodeTrackingInfo* TrackingInfo = nullptr;
-	int32 FreeSlotIndex = -1;
-	
-	for (int32 i = 0; i < ShakeOffNodeTracker.Num(); ++i)
-	{
-		if (!ShakeOffNodeTracker[i].Node.IsValid())
-		{
-			if (FreeSlotIndex == -1)
-			{
-				FreeSlotIndex = i;
-			}
-		}
-		else if (ShakeOffNodeTracker[i].Node == Node)
-		{
-			TrackingInfo = &ShakeOffNodeTracker[i];
-			break;
-		}
-	}
-
-	// Create new tracking info if needed
-	if (!TrackingInfo)
-	{
-		if (FreeSlotIndex != -1)
-		{
-			TrackingInfo = &ShakeOffNodeTracker[FreeSlotIndex];
-		}
-		else
-		{
-			ShakeOffNodeTracker.AddDefaulted();
-			TrackingInfo = &ShakeOffNodeTracker.Last();
-		}
-		
-		TrackingInfo->Node = Node;
-		TrackingInfo->RecentMovements.Empty();
-		TrackingInfo->MovementTimes.Empty();
-		TrackingInfo->ShakeCount = 0;
-		TrackingInfo->LastShakeTime = 0.0;
-	}
-
-	const double CurrentTime = FSlateApplication::Get().GetCurrentTime();
-	const float TimeWindow = UBASettings::Get().ShakeNodeOffWireTimeWindow;
-
-	// Clean up old movements outside time window
-	while (TrackingInfo->MovementTimes.Num() > 0 && 
-		   (CurrentTime - TrackingInfo->MovementTimes[0]) > TimeWindow)
-	{
-		TrackingInfo->RecentMovements.RemoveAt(0);
-		TrackingInfo->MovementTimes.RemoveAt(0);
-	}
-
-	// Add current movement
-	TrackingInfo->RecentMovements.Add(Delta);
-	TrackingInfo->MovementTimes.Add(CurrentTime);
-
-	// Need at least 2 movements to detect direction change
-	if (TrackingInfo->RecentMovements.Num() < 2)
-	{
-		return false;
-	}
-
-	// Check for direction reversal (shake detection)
-	const FVector2D& LastMovement = TrackingInfo->RecentMovements[TrackingInfo->RecentMovements.Num() - 2];
-	const FVector2D& CurrentMovement = Delta;
-
-	// Normalize vectors for dot product
-	FVector2D LastDir = LastMovement;
-	FVector2D CurrentDir = CurrentMovement;
-	LastDir.Normalize();
-	CurrentDir.Normalize();
-
-	// Calculate dot product to detect opposite direction
-	const float DotProduct = FVector2D::DotProduct(LastDir, CurrentDir);
-
-	// If movement is in significantly opposite direction (more strict threshold)
-	if (DotProduct < -0.5f) // Changed from < 0.0f to < -0.5f for more obvious reversal
-	{
-		TrackingInfo->ShakeCount++;
-		TrackingInfo->LastShakeTime = CurrentTime;
-
-		// If we've detected enough shakes in the time window, break all connections
-		if (TrackingInfo->ShakeCount >= 3)
-		{
-			// Break all connections
-			TArray<UEdGraphPin*> AllPins = Node->Pins;
-			for (UEdGraphPin* Pin : AllPins)
-			{
-				if (Pin && Pin->LinkedTo.Num() > 0)
-				{
-					Pin->BreakAllPinLinks();
-				}
-			}
-
-			// Reset tracking
-			TrackingInfo->RecentMovements.Empty();
-			TrackingInfo->MovementTimes.Empty();
-			TrackingInfo->ShakeCount = 0;
-
-			return true;
 		}
 	}
 

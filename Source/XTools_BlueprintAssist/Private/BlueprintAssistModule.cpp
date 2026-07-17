@@ -2,6 +2,7 @@
 
 #include "BlueprintAssistModule.h"
 
+#include "BASettings_Meta.h"
 #include "BlueprintAssistCache.h"
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistGlobals.h"
@@ -23,11 +24,14 @@
 #include "BlueprintAssistObjects/BARootObject.h"
 #include "BlueprintAssistWidgets/BADebugMenu.h"
 #include "BlueprintAssistWidgets/BASettingsChangeWindow.h"
+#include "BlueprintAssistWidgets/BAConfigViewer.h"
 #include "BlueprintAssistWidgets/BAWelcomeScreen.h"
 #include "Developer/Settings/Public/ISettingsModule.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "Modules/ModuleManager.h"
+#include "Interfaces/IPluginManager.h"
+#include "Styling/AppStyle.h"
 
 #if WITH_EDITOR
 #include "MessageLogInitializationOptions.h"
@@ -45,6 +49,16 @@
 void FBlueprintAssistModule::StartupModule()
 {
 #if BA_ENABLED
+	// Keep the integrated module idle when the Marketplace plugin is enabled.
+	if (const TSharedPtr<IPlugin> ExternalBAPlugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAssist")))
+	{
+		if (ExternalBAPlugin->IsEnabled())
+		{
+			UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools_BlueprintAssist: external BlueprintAssist is enabled; integrated module will remain idle."));
+			return;
+		}
+	}
+
 	if (!FSlateApplication::IsInitialized())
 	{
 		UE_LOG(LogBlueprintAssist, Log, TEXT("FBlueprintAssistModule: Slate App is not initialized, not loading the plugin"));
@@ -52,22 +66,19 @@ void FBlueprintAssistModule::StartupModule()
 	}
 
 	RegisterSettings();
+	bWereSettingsRegistered = true;
 
-	// Check if plugin is enabled in settings
-	if (UBASettings_Advanced::Get().bDisableBlueprintAssistPlugin)
+	if (!UBASettings::Get().bEnablePlugin || UBASettings_Advanced::Get().bDisableBlueprintAssistPlugin)
 	{
-		UE_LOG(LogBlueprintAssist, Log, TEXT("FBlueprintAssistModule: Blueprint Assist plugin disabled (setting DisableBlueprintAssistPlugin), not initializing"));
+		UE_LOG(LogBlueprintAssist, Log, TEXT("FBlueprintAssistModule: Blueprint Assist plugin disabled by settings, not initializing"));
 		return;
 	}
 
-	// Check if external BlueprintAssist plugin exists
-	if (FModuleManager::Get().IsModuleLoaded("BlueprintAssist"))
-	{
-		UE_LOG(LogBlueprintAssist, Warning, TEXT("FBlueprintAssistModule: External BlueprintAssist plugin detected, XTools integrated version will remain inactive"));
-		return;
-	}
-
+#if BA_UE_VERSION_OR_LATER(5, 8)
+	FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FBlueprintAssistModule::OnPostEngineInit);
+#else
 	FCoreDelegates::OnPostEngineInit.AddRaw(this, &FBlueprintAssistModule::OnPostEngineInit);
+#endif
 
 	IMainFrameModule::Get().OnMainFrameCreationFinished().AddRaw(this, &FBlueprintAssistModule::OnMainFrameCreationFinished);
 #endif
@@ -120,23 +131,30 @@ void FBlueprintAssistModule::OnPostEngineInit()
 	// display welcome screen
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBAWelcomeScreen::GetTabId(), FOnSpawnTab::CreateStatic(&SBAWelcomeScreen::CreateWelcomeScreenTab))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
-		.SetDisplayName(INVTEXT("BA Welcome Screen"))
+		.SetDisplayName(INVTEXT("BA 欢迎界面"))
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Help"))
-		.SetTooltipText(INVTEXT("Opens the Blueprint Assist Welcome Screen"));
+		.SetTooltipText(INVTEXT("打开 Blueprint Assist 欢迎界面"));
 
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBASettingsChangeWindow::GetTabId(), FOnSpawnTab::CreateStatic(&SBASettingsChangeWindow::CreateTab))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
-		.SetDisplayName(INVTEXT("BA Settings Changes"))
+		.SetDisplayName(INVTEXT("BA 设置更改"))
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Help"))
-		.SetTooltipText(INVTEXT("Opens a window where you can see the changes for Blueprint Assist settings"));
+		.SetTooltipText(INVTEXT("查看 Blueprint Assist 设置相对默认值的更改"));
+
+#if BA_UE_VERSION_OR_LATER(5, 4)
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SBAConfigViewer::GetTabId(), FOnSpawnTab::CreateStatic(&SBAConfigViewer::CreateTab))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
+		.SetDisplayName(INVTEXT("BA 配置查看器"))
+		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Help"))
+		.SetTooltipText(INVTEXT("查看配置设置及其所在的 ini 文件"));
+#endif
 
 	UE_LOG(LogBlueprintAssist, Log, TEXT("Finished loaded BlueprintAssist Module"));
 }
 
 void FBlueprintAssistModule::OnMainFrameCreationFinished(TSharedPtr<SWindow> InRootWindow, bool bIsRunningStartupDialog)
 {
-	// [XTools 集成] 禁用第三方 BugSplat 崩溃遥测：不在启动时初始化崩溃上报器，
-	// 避免向第三方服务器（blueprintassist.bugsplat.com）询问或上传用户机器信息。
+	// Crash upload is intentionally disabled for the integrated XTools build.
 	// FBACrashReporter::Get().Init();
 
 	if (UBASettings_EditorFeatures::Get().bShowWelcomeScreenOnLaunch)
@@ -148,6 +166,36 @@ void FBlueprintAssistModule::OnMainFrameCreationFinished(TSharedPtr<SWindow> InR
 void FBlueprintAssistModule::ShutdownModule()
 {
 #if BA_ENABLED
+#if BA_UE_VERSION_OR_LATER(5, 8)
+	FCoreDelegates::GetOnPostEngineInit().RemoveAll(this);
+#else
+	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
+#endif
+
+	if (IMainFrameModule* MainFrameModule = FModuleManager::GetModulePtr<IMainFrameModule>("MainFrame"))
+	{
+		MainFrameModule->OnMainFrameCreationFinished().RemoveAll(this);
+	}
+
+	if (bWereSettingsRegistered)
+	{
+		if (FPropertyEditorModule* PropertyEditorModule = FModuleManager::Get().GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
+		{
+			PropertyEditorModule->UnregisterCustomClassLayout(UBASettings::StaticClass()->GetFName());
+			PropertyEditorModule->UnregisterCustomClassLayout(UBASettings_Advanced::StaticClass()->GetFName());
+			PropertyEditorModule->UnregisterCustomClassLayout(UBASettings_EditorFeatures::StaticClass()->GetFName());
+		}
+
+		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+		{
+			SettingsModule->UnregisterSettings("Editor", "Plugins", "XTools_BlueprintAssist");
+			SettingsModule->UnregisterSettings("Editor", "Plugins", "XTools_BlueprintAssist_EditorFeatures");
+			SettingsModule->UnregisterSettings("Editor", "Plugins", "XTools_BlueprintAssist_Advanced");
+		}
+
+		bWereSettingsRegistered = false;
+	}
+
 	if (!bWasModuleInitialized)
 	{
 		return;
@@ -185,27 +233,15 @@ void FBlueprintAssistModule::ShutdownModule()
 		BANodeFactory.Reset();
 	}
 
-	if (FPropertyEditorModule* PropertyEditorModule = FModuleManager::Get().GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
-	{
-		PropertyEditorModule->UnregisterCustomClassLayout(UBASettings::StaticClass()->GetFName());
-		PropertyEditorModule->UnregisterCustomClassLayout(UBASettings_Advanced::StaticClass()->GetFName());
-		PropertyEditorModule->UnregisterCustomClassLayout(UBASettings_EditorFeatures::StaticClass()->GetFName());
-	}
-
-	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
-	{
-		SettingsModule->UnregisterSettings("Editor", "Plugins", "XTools_BlueprintAssist");
-		SettingsModule->UnregisterSettings("Editor", "Plugins", "XTools_BlueprintAssist_EditorFeatures");
-		SettingsModule->UnregisterSettings("Editor", "Plugins", "XTools_BlueprintAssist_Advanced");
-	}
-
 	FBACommands::Unregister();
 	FBAToolbarCommands::Unregister();
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SBAWelcomeScreen::GetTabId());
-
-	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
-	IMainFrameModule::Get().OnMainFrameCreationFinished().RemoveAll(this);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SBASettingsChangeWindow::GetTabId());
+#if BA_UE_VERSION_OR_LATER(5, 4)
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SBAConfigViewer::GetTabId());
+#endif
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(FName("BADebugMenu"));
 
 	FBAStyle::Shutdown();
 
@@ -241,15 +277,14 @@ void FBlueprintAssistModule::BindLiveCodingSound()
 void FBlueprintAssistModule::UnbindLiveCodingSound()
 {
 #if WITH_LIVE_CODING
-	if (LiveCodingDelegate.IsValid())
+	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
 	{
-		if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
+		if (LiveCodingDelegate.IsValid())
 		{
 			LiveCoding->GetOnPatchCompleteDelegate().Remove(LiveCodingDelegate);
+			LiveCodingDelegate.Reset();
+			UE_LOG(LogBlueprintAssist, Log, TEXT("Unbound sound from live coding complete"));
 		}
-
-		LiveCodingDelegate.Reset();
-		UE_LOG(LogBlueprintAssist, Log, TEXT("Unbound sound from live coding complete"));
 	}
 #endif
 }
@@ -264,8 +299,8 @@ void FBlueprintAssistModule::RegisterSettings()
 		"Editor",
 		"Plugins",
 		"XTools_BlueprintAssist",
-		INVTEXT("Blueprint Assist Formatting"),
-		INVTEXT("Configure the Blueprint Assist formatting settings"),
+		INVTEXT("Blueprint Assist 格式化"),
+		INVTEXT("配置 Blueprint Assist 格式化设置"),
 		&UBASettings::GetMutable()
 	);
 
@@ -278,8 +313,8 @@ void FBlueprintAssistModule::RegisterSettings()
 		"Editor",
 		"Plugins",
 		"XTools_BlueprintAssist_EditorFeatures",
-		INVTEXT("Blueprint Assist Editor Features"),
-		INVTEXT("Configure the Blueprint Assist editor features settings"),
+		INVTEXT("Blueprint Assist 编辑器功能"),
+		INVTEXT("配置 Blueprint Assist 编辑器功能设置"),
 		GetMutableDefault<UBASettings_EditorFeatures>()
 	);
 
@@ -288,10 +323,19 @@ void FBlueprintAssistModule::RegisterSettings()
 		"Editor",
 		"Plugins",
 		"XTools_BlueprintAssist_Advanced",
-		INVTEXT("Blueprint Assist Advanced"),
-		INVTEXT("Configure the Blueprint Assist advanced settings"),
+		INVTEXT("Blueprint Assist 高级设置"),
+		INVTEXT("配置 Blueprint Assist 高级设置"),
 		GetMutableDefault<UBASettings_Advanced>()
 	);
+
+	const FString& Path = FConfigCacheIni::NormalizeConfigIniPath(UBASettings_Meta::Get().CustomSettingsIniPath.FilePath);
+	if (FPaths::FileExists(Path))
+	{
+		UBASettings::GetMutable().LoadConfig(nullptr, *Path);
+		UBASettings_EditorFeatures::GetMutable().LoadConfig(nullptr, *Path);
+		UBASettings_Advanced::GetMutable().LoadConfig(nullptr, *Path);
+		UE_LOG(LogBlueprintAssist, Log, TEXT("Loaded custom settings from file: %s"), *Path)
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

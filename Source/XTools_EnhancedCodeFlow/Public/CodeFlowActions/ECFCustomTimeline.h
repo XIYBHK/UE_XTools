@@ -81,10 +81,25 @@ protected:
 		}, InPlayRate);
 	}
 
+	bool Reset(bool bCallUpdate) override
+	{
+		MyTimeline.SetPlaybackPosition(0.f, false, false);
+		CurrentTime = 0.f;
+		CurrentValue = CurveFloat->GetFloatValue(CurrentTime);
+		if (bCallUpdate && HasValidOwner() && TickFunc)
+		{
+			TickFunc(CurrentValue, CurrentTime);
+		}
+		return true;
+	}
+
 	void Tick(float DeltaTime) override
 	{
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("CustomTimeline - Tick"), STAT_ECFDETAILS_CUSTOMTIMELINE, STATGROUP_ECFDETAILS);
+#endif
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - CustomTimeline Tick");
 #endif
 		// 第一次Tick输出曲线起点值，与UE原生时间轴行为一致
 		// 从第二次Tick开始正常调用TickTimeline累加时间
@@ -113,6 +128,29 @@ protected:
 			CallbackFunc(CurrentValue, CurrentTime, bStopped);
 		}
 		// 注：Owner 已销毁时静默跳过回调，避免崩溃
+	}
+
+	float GetActionTime() const override
+	{
+		return CurrentTime;
+	}
+
+	bool SetActionTime(float NewTime, bool bCallUpdate) override
+	{
+		const float TimelineLength = MyTimeline.GetTimelineLength();
+		CurrentTime = FMath::Clamp(NewTime, 0.f, TimelineLength);
+		MyTimeline.SetPlaybackPosition(CurrentTime, false, false);
+		CurrentValue = CurveFloat->GetFloatValue(CurrentTime);
+		if (bCallUpdate && HasValidOwner() && TickFunc)
+		{
+			TickFunc(CurrentValue, CurrentTime);
+			if (!Settings.bLoop && CurrentTime >= TimelineLength)
+			{
+				MarkAsFinished();
+				Complete(false);
+			}
+		}
+		return true;
 	}
 
 private:
@@ -146,11 +184,8 @@ private:
 				TickFunc(CurrentValue, CurrentTime);
 			}
 		}
-		if (HasValidOwner())
-		{
-			Complete(false);
-		}
 		MarkAsFinished();
+		Complete(false);
 	}
 };
 

@@ -4,10 +4,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Algo/Transform.h"
+#include "TickableEditorObject.h"
 #include "UObject/Object.h"
 #include "BlueprintScreenshotToolWindowManager.generated.h"
 
 class SBlueprintDiff;
+class SGraphEditor;
+class SWidget;
+class SWindow;
 
 UCLASS()
 class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API UBlueprintScreenshotToolWindowManager : public UObject, public FTickableEditorObject

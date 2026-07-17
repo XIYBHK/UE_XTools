@@ -10,4 +10,5 @@ struct FBAFormatterUtils
 	static void StraightenRow(TSharedPtr<FBAGraphHandler> GraphHandler, const TMap<FPinLink, bool>& SameRowMapping, UEdGraphNode* Node);
 	static void StraightenRowWithFilter(TSharedPtr<FBAGraphHandler> GraphHandler, const TMap<FPinLink, bool>& SameRowMapping, UEdGraphNode* Node, TFunctionRef<bool(const FPinLink&)> Pred);
 	static FSlateRect GetFormatterArrayBounds(TArray<TSharedPtr<FFormatterInterface>> FormatterArray, TSharedPtr<FBAGraphHandler> GraphHandler, bool bUseCommentPadding);
+	static bool FilterDelegateLink(const FPinLink& PinLink);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -8,66 +8,111 @@
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
 UCLASS()
-class XTOOLS_ENHANCEDCODEFLOW_API UECFDelayTicks : public UECFActionBase {
-  GENERATED_BODY()
+class XTOOLS_ENHANCEDCODEFLOW_API UECFDelayTicks : public UECFActionBase
+{
+	GENERATED_BODY()
 
-  friend class UECFSubsystem;
+	friend class UECFSubsystem;
 
 protected:
-  TUniqueFunction<void(bool)> CallbackFunc;
-  TUniqueFunction<void()> CallbackFunc_NoStopped;
-  int32 DelayTicks = 0;
-  int32 CurrentTicks = 0;
 
-  bool Setup(int32 InDelayTicks, TUniqueFunction<void(bool)> &&InCallbackFunc) {
-    DelayTicks = InDelayTicks;
-    CallbackFunc = MoveTemp(InCallbackFunc);
+	TUniqueFunction<void(bool)> CallbackFunc;
+	TUniqueFunction<void()> CallbackFunc_NoStopped;
+	int32 DelayTicks = 0;
+	int32 CurrentTicks = 0;
 
-    if (CallbackFunc && DelayTicks >= 0) {
-      return true;
-    } else {
-      ensureMsgf(
-          false,
-          TEXT("ECF - delay ticks failed to start. Are you sure the DelayTicks "
-               "is not negative and Callback Function is set properly?"));
-      return false;
-    }
-  }
+	bool Setup(int32 InDelayTicks, TUniqueFunction<void(bool)>&& InCallbackFunc)
+	{
+		DelayTicks = InDelayTicks;
+		CallbackFunc = MoveTemp(InCallbackFunc);
 
-  bool Setup(int32 InDelayTicks, TUniqueFunction<void()> &&InCallbackFunc) {
-    CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
-    if (CallbackFunc_NoStopped) {
-      return Setup(InDelayTicks,
-                   [this](bool bStopped) { CallbackFunc_NoStopped(); });
-    } else {
-      ensureMsgf(false, TEXT("ECF - delay ticks failed to start. Are you sure "
-                             "the Callback Function is set properly?"));
-      return false;
-    }
-  }
-
-  void Init() override { CurrentTicks = 0; }
-
-  void Tick(float DeltaTime) override {
-#if STATS
-    DECLARE_SCOPE_CYCLE_COUNTER(TEXT("DelayTicks - Tick"),
-                                STAT_ECFDETAILS_DELAYTICKS,
-                                STATGROUP_ECFDETAILS);
+		if (CallbackFunc && DelayTicks >= 0)
+		{
+			return true;
+		}
+		else
+		{
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF - [%s] delay ticks failed to start. Are you sure the DelayTicks is not negative and Callback Function is set properly?"), *Settings.Label);
 #endif
-    CurrentTicks++;
-    if (CurrentTicks > DelayTicks) {
-      Complete(false);
-      MarkAsFinished();
-    }
-  }
+			return false;
+		}
+	}
 
-  void Complete(bool bStopped) override {
-    // 【防御性编程】：确保 Owner 仍然有效
-    if (HasValidOwner() && CallbackFunc) {
-      CallbackFunc(bStopped);
-    }
-    // 注：Owner 已销毁时静默跳过回调，避免崩溃
-  }
+	bool Setup(int32 InDelayTicks, TUniqueFunction<void()>&& InCallbackFunc)
+	{
+		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
+		if (CallbackFunc_NoStopped)
+		{
+			return Setup(InDelayTicks, [this](bool bStopped)
+			{
+				CallbackFunc_NoStopped();
+			});
+		}
+		else
+		{
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF - delay ticks failed to start. Are you sure the Callback Function is set properly?"));
+#endif
+			return false;
+		}
+	}
+
+	void Init() override
+	{
+		CurrentTicks = 0;
+	}
+
+	bool Reset(bool bCallUpdate) override
+	{
+		CurrentTicks = 0;
+		return true;
+	}
+
+	void Tick(float DeltaTime) override
+	{
+#if STATS
+		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("DelayTicks - Tick"), STAT_ECFDETAILS_DELAYTICKS, STATGROUP_ECFDETAILS);
+#endif
+
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - DelayTicks Tick");
+#endif
+
+		CurrentTicks++;
+		if (CurrentTicks > DelayTicks)
+		{
+			MarkAsFinished();
+			Complete(false);
+		}
+	}
+
+	void Complete(bool bStopped) override
+	{
+		if (HasValidOwner() && CallbackFunc)
+		{
+			CallbackFunc(bStopped);
+		}
+	}
+
+	float GetActionTime() const override
+	{
+		return (float)CurrentTicks;
+	}
+
+	bool SetActionTime(float NewTime, bool bCallUpdate) override
+	{
+		CurrentTicks = FMath::TruncToInt(NewTime);
+		if (bCallUpdate)
+		{
+			if (CurrentTicks > DelayTicks)
+			{
+				MarkAsFinished();
+				Complete(false);
+			}
+		}
+		return true;
+	}
 };
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION

@@ -50,9 +50,25 @@ void PersistEditorLanguageSettings(const FString& CultureName)
 
 void RefreshGraphSchemas()
 {
-	for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
+	static TArray<TWeakObjectPtr<UEdGraphSchema>> CachedSchemas;
+	const bool bNeedsRefresh = CachedSchemas.Num() == 0 || CachedSchemas.ContainsByPredicate(
+		[](const TWeakObjectPtr<UEdGraphSchema>& Schema) { return !Schema.IsValid(); });
+
+	if (bNeedsRefresh)
 	{
-		if (UEdGraphSchema* Schema = Cast<UEdGraphSchema>(ClassIt->GetDefaultObject()))
+		CachedSchemas.Reset();
+		for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
+		{
+			if (UEdGraphSchema* Schema = Cast<UEdGraphSchema>(ClassIt->GetDefaultObject()))
+			{
+				CachedSchemas.Add(Schema);
+			}
+		}
+	}
+
+	for (const TWeakObjectPtr<UEdGraphSchema>& Schema : CachedSchemas)
+	{
+		if (Schema.IsValid())
 		{
 			Schema->ForceVisualizationCacheClear();
 		}
@@ -85,11 +101,7 @@ void FXTools_SwitchLanguageModule::StartupModule()
 
 	// 绑定到主窗口
 	IMainFrameModule& MainFrame = FModuleManager::GetModuleChecked<IMainFrameModule>("MainFrame");
-#if ENGINE_MAJOR_VERSION >= 5
 	TSharedPtr<FUICommandList> MainFrameCommandsLocal = MainFrame.GetMainFrameCommandBindings();
-#else
-	TSharedRef<FUICommandList> MainFrameCommandsLocal = MainFrame.GetMainFrameCommands();
-#endif
 	MainFrameCommandsLocal->Append(PluginCommands.ToSharedRef());
 	MainFrameCommands = MainFrameCommandsLocal;
 

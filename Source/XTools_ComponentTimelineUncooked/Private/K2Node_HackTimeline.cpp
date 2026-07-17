@@ -192,7 +192,11 @@ void UK2Node_HackTimeline::DestroyNode()
 		FBlueprintEditorUtils::RemoveTimeline(Blueprint, Timeline, true);
 
 		// Move template object out of the way so that we can potentially create a timeline with the same name either through a paste or a new timeline action
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+		Timeline->Rename(NULL, GetTransientPackage(), REN_None);
+#else
 		Timeline->Rename(NULL, GetTransientPackage(), (Blueprint->bIsRegeneratingOnLoad ? REN_ForceNoResetLoaders : REN_None));
+#endif
 	}
 
 	UK2Node::DestroyNode();

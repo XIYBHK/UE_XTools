@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
+#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
 
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistGraphHandler.h"
@@ -96,7 +96,7 @@ void FBAGraphActions::OnFormatAllEvents() const
 {
 	if (auto GraphHandler = GetGraphHandler())
 	{
-		GraphHandler->FormatAllEvents();
+		GraphHandler->RequestFormatAll();
 	}
 }
 
@@ -349,53 +349,7 @@ void FBAGraphActions::CreateRerouteNode()
 
 void FBAGraphActions::SaveAndFormat()
 {
-	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
-	if (!GraphHandler)
-	{
-		return;
-	}
-
-	if (SaveAndFormatHandle.IsValid())
-	{
-		return;
-	}
-
-	GraphHandler->FormatAllEvents();
-
-	SaveAndFormatHandle = GraphHandler->OnPostFormatting.AddLambda([&]()
-	{
-		if (SaveAndFormatHandle.IsValid())
-		{
-			if (TSharedPtr<FBAGraphHandler> GH = GetGraphHandler())
-			{
-				GH->OnPostFormatting.Remove(SaveAndFormatHandle);
-				SaveAndFormatHandle.Reset();
-
-				if (UEdGraph* Graph = GH->GetFocusedEdGraph())
-				{
-					if (UPackage* Package = FBAUtils::GetPackage(Graph))
-					{
-						FEditorFileUtils::PromptForCheckoutAndSave({Package}, false, false);
-					}
-				}
-			}
-		}
-	});
-}
-
-void FBAGraphActions::Cleanup()
-{
-	if (!SaveAndFormatHandle.IsValid())
-	{
-		return;
-	}
-
-	if (TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler())
-	{
-		GraphHandler->OnPostFormatting.Remove(SaveAndFormatHandle);
-	}
-
-	SaveAndFormatHandle.Reset();
+	GetGraphHandler()->RequestFormatAllAndSave();
 }
 
 void FBAGraphActions::FocusGraphPanel()

@@ -1,8 +1,9 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistNodeActions.h"
 
+class SGraphPin;
 class FUICommandList;
 
 class XTOOLS_BLUEPRINTASSIST_API FBAPinActionsBase : public FBANodeActionsBase
@@ -37,4 +38,11 @@ public:
 	void SplitPin();
 	void RecombinePin();
 	void StraightenHoveredPin();
+
+	static TWeakPtr<SWidget> FocusNextWidgetInPin(
+		TSharedPtr<FBAGraphHandler> GraphHandler,
+		TSharedPtr<SGraphPin> GraphPin,
+		bool bForwards,
+		bool bCycleSelection,
+		bool bSelectFirstPin);
 };

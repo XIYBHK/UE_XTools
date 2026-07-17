@@ -9,6 +9,7 @@
 #include "EdGraphNode_Comment.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
 #include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
+#include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Editor/BlueprintGraph/Classes/K2Node_Knot.h"
 #include "Runtime/SlateCore/Public/Layout/SlateRect.h"
@@ -159,10 +160,45 @@ TArray<UEdGraphNode*> FNodeInfo::GetChildNodes()
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-void FEdGraphFormatterParameters::Init()
+bool FEdGraphFormatterParameters::IsValidNode(UEdGraphNode* Node) const
 {
-	NodesToFormat.CacheNodes();
-	IgnoredNodes.CacheNodes();
+	const bool bPassesLimitedNodes = LimitedNodes.Get().IsEmpty() || LimitedNodes.Get().Contains(Node);
+	return bPassesLimitedNodes && !IgnoredNodes.Get().Contains(Node);
+}
+
+void FEdGraphFormatterParameters::InitIgnoredPins(TSharedPtr<FBAGraphHandler> GraphHandler)
+{
+	if (TSharedPtr<SGraphPanel> GraphPanel = GraphHandler->GetGraphPanel())
+	{
+		for (auto Node : GraphHandler->GetFocusedEdGraph()->Nodes)
+		{
+			if (TSharedPtr<SGraphNode> GraphNode = FBAUtils::GetGraphNode(GraphPanel, Node))
+			{
+				for (UEdGraphPin* Pin : Node->Pins)
+				{
+					FBANodePinHandle PinHandle = FBANodePinHandle(Pin);
+					if (PinHandle.IsValid())
+					{
+						TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetGraphPin(GraphNode, Pin);
+						if (!GraphPin.IsValid())
+						{
+							IgnoredPins.Add(Pin);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+bool FEdGraphFormatterParameters::IsValidLink(const FPinLink& Link) const
+{
+	return !IgnoredPins.Contains(Link.GetFromPinUnsafe()) && !IgnoredPins.Contains(Link.GetToPinUnsafe());
+}
+
+bool FEdGraphFormatterParameters::IsValidPin(UEdGraphPin* Pin) const
+{
+	return !IgnoredPins.Contains(Pin);
 }
 
 UEdGraphPin* FPinLink::GetFromPin()
@@ -244,6 +280,16 @@ FString FPinLink::ToStringConst() const
 	);
 }
 
+bool FPinLink::ArePinsVisible(TSharedPtr<SGraphPanel> Panel)
+{
+	return FBAUtils::IsPinVisible(Panel, GetFromPin()) && FBAUtils::IsPinVisible(Panel, GetToPin());
+}
+
+bool FPinLink::ArePinsVisibleUnsafe(TSharedPtr<SGraphPanel> Panel) const
+{
+	return FBAUtils::IsPinVisible(Panel, From) && FBAUtils::IsPinVisible(Panel, To);
+}
+
 bool FPinLink::IsLinked(bool bDirectional)
 {
 	UEdGraphPin* FromPin = GetFromPin();
@@ -269,7 +315,10 @@ bool FPinLink::IsLinked(bool bDirectional)
 
 FFormatXInfo::FFormatXInfo(const FPinLink& InLink, TSharedPtr<FFormatXInfo> InParent)
 	: Link(InLink)
-	, Parent(InParent) {}
+	, Parent(InParent)
+	, Node(nullptr)
+{
+}
 
 UEdGraphNode* FFormatXInfo::GetNode() const
 {

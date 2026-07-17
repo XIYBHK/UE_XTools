@@ -55,7 +55,7 @@ struct FBATidyTree
 
 	void FormatTidyTree(UEdGraphNode* RootNode);
 
-	FTidyNodePtr BuildTidyTree(UEdGraphNode* CurrGraphNode, int32 Depth, TMap<UEdGraphNode*, FTidyNodePtr>& VisitedNodes);
+	FTidyNodePtr BuildTidyTree(UEdGraphNode* CurrGraphNode, int32 Depth, TMap<UEdGraphNode*, FTidyNodePtr>& VisitedNodes, TArray<UEdGraphNode*>& Path);
 	void FirstPass_Setup(FTidyNodePtr TidyNode) const;
 	void SecondPass_ApplyMods(FTidyNodePtr TidyNode, float ModSum) const;
 

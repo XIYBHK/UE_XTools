@@ -271,7 +271,7 @@ public:
     static SIZE_T GetSafeMemoryUsage()
     {
         // Win64 平台专用优化
-        #if PLATFORM_WINDOWS && PLATFORM_64BITS
+        #if PLATFORM_WINDOWS
             // 直接获取内存统计，不使用try-catch，因为UE的异常处理通常是针对特定情况的
             // 如果FPlatformMemory::GetStats()在非编辑器构建中不可用，它应该有自己的处理机制
             const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
@@ -285,7 +285,7 @@ public:
 
     static bool IsMemoryStatsAvailable()
     {
-        #if PLATFORM_WINDOWS && PLATFORM_64BITS
+        #if PLATFORM_WINDOWS
             return true;
         #else
             return false;

@@ -4,23 +4,35 @@
 
 #include "CoreMinimal.h"
 #include "BlueprintAssistTypes.h"
-#include "AssetRegistry/AssetData.h"
-#include "BlueprintAssistActions/BlueprintAssistBlueprintActions.h"
-#include "BlueprintAssistActions/BlueprintAssistGlobalActions.h"
-#include "BlueprintAssistActions/BlueprintAssistGraphActions.h"
-#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
-#include "BlueprintAssistActions/BlueprintAssistPinActions.h"
-#include "BlueprintAssistActions/BlueprintAssistTabActions.h"
-#include "BlueprintAssistActions/BlueprintAssistToolkitActions.h"
-#include "BlueprintAssistMisc/BlueprintAssistInputProcessorState.h"
+#include "BlueprintAssistMisc/IBAInputState.h"
 #include "Framework/Application/IInputProcessor.h"
 
+struct FSlateDebuggingInputEventArgs;
+class FUICommandList;
+class FUICommandInfo;
+class FBANodeActions;
+class FBAInputProcessorState;
+class FBABlueprintActions;
+class FBAPinActions;
+class FBAGraphActions;
+class FBAToolkitActions;
+class FBATabActions;
+class FBAGlobalActions;
 class UEdGraphNode;
 class SGraphPanel;
+
+struct FBAShakeTracking
+{
+	TWeakObjectPtr<UEdGraphNode> Node;
+	int32 Count = 0;
+	double LastTime = 0.0;
+	FVector2D LastDirection = FVector2D::ZeroVector;
+};
 
 class XTOOLS_BLUEPRINTASSIST_API FBAInputProcessor final
 	: public TSharedFromThis<FBAInputProcessor>
 	, public IInputProcessor
+	, public IBAInputState
 {
 public:
 	virtual ~FBAInputProcessor() override;
@@ -43,6 +55,7 @@ public:
 	virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override;
 
 	bool OnMouseDrag(FSlateApplication& SlateApp, const FVector2D& MousePos, const FVector2D& Delta);
+	bool TryProcessShakeNodeOffWire(const FVector2D& Delta);
 
 	bool OnKeyOrMouseDown(FSlateApplication& SlateApp, const FKey& Key);
 	bool OnKeyOrMouseUp(FSlateApplication& SlateApp, const FKey& Key);
@@ -72,49 +85,29 @@ public:
 
 	FBANodeMovementTransaction DragNodeTransaction;
 
-	// Shake node off wire tracking
-	struct FShakeOffNodeTrackingInfo
-	{
-		TWeakObjectPtr<UEdGraphNode> Node;
-		TArray<FVector2D> RecentMovements;
-		TArray<double> MovementTimes;
-		int32 ShakeCount;
-		double LastShakeTime;
+	virtual bool IsInputChordDown(const FInputChord& Chord) override;
+	virtual bool IsAnyInputChordDown(const TArray<FInputChord>& Chords) override;
+	virtual bool IsInputChordDown(const FInputChord& Chord, const FKey Key) override;
+	virtual bool IsAnyInputChordDown(const TArray<FInputChord>& Chords, const FKey Key) override;
+	virtual bool IsKeyDown(const FKey Key) override;
+	virtual double GetKeyDownDuration(const FKey Key) override;
 
-		FShakeOffNodeTrackingInfo()
-			: ShakeCount(0)
-			, LastShakeTime(0.0)
-		{
-		}
-	};
-	TArray<FShakeOffNodeTrackingInfo> ShakeOffNodeTracker;
-	bool TryProcessAsShakeNodeOffWireEvent(const FPointerEvent& MouseEvent, UEdGraphNode* Node, const FVector2D& Delta);
-
-	bool IsInputChordDown(const FInputChord& Chord);
-	bool IsAnyInputChordDown(const TArray<FInputChord>& Chords);
-	bool IsInputChordDown(const FInputChord& Chord, const FKey Key);
-	bool IsAnyInputChordDown(const TArray<FInputChord>& Chords, const FKey Key);
-	bool IsKeyDown(const FKey Key);
-	double GetKeyDownDuration(const FKey Key);
-
-	FBAGlobalActions GlobalActions;
-	FBATabActions TabActions;
-	FBAToolkitActions ToolkitActions;
-	FBAGraphActions GraphActions;
-	FBANodeActions NodeActions;
-	FBAPinActions PinActions;
-	FBABlueprintActions BlueprintActions;
+	TUniquePtr<FBAGlobalActions> GlobalActions;
+	TUniquePtr<FBATabActions> TabActions;
+	TUniquePtr<FBAToolkitActions> ToolkitActions;
+	TUniquePtr<FBAGraphActions> GraphActions;
+	TUniquePtr<FBANodeActions> NodeActions;
+	TUniquePtr<FBAPinActions> PinActions;
+	TUniquePtr<FBABlueprintActions> BlueprintActions;
 
 private:
 	TArray<TSharedPtr<FUICommandList>> CommandLists;
 
-	FDelegateHandle SlateInputEventDelegateHandle;
-	FDelegateHandle AppActivationStateDelegateHandle;
-
 	TSet<FKey> KeysDown;
 	TMap<FKey, double> KeysDownStartTime;
 
-	FBAInputProcessorState ProcessorState;
+	TUniquePtr<FBAInputProcessorState> ProcessorState;
+	FBAShakeTracking ShakeTracking;
 
 	FBAInputProcessor();
 

@@ -1,5 +1,7 @@
 #include "MaterialTools/X_MaterialFunctionOperation.h"
 
+#include "Editor.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstance.h"

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -10,30 +10,55 @@ class XTOOLS_ENHANCEDCODEFLOW_API FECFCoroutineAwaiter
 {
 public:
 
-	// Functions required by any coroutine awaiter.
-	void await_resume() {}
+	// Returns the state of the corotuine after it's resumed.
+	bool await_resume()
+	{
+		return CoroHandle.promise().bStopped;
+	}
+
+	// Required by the co-routine machinery, but we always want to suspend when co-routine is awaiting, so it just returns false.
 	bool await_ready() { return false; }
 
 protected:
 
 	// Helper function for adding coroutine actions to the ECF subsystem.
 	template<typename T, typename ... Ts>
-	bool AddCoroutineAction(const UObject* InOwner, FECFCoroutineHandle InCoroutineHandle, const FECFActionSettings& InSettings, Ts&& ... Args)
+	void AddCoroutineAction(const UObject* InOwner, FECFCoroutineHandle InCoroutineHandle, const FECFActionSettings& InSettings, Ts&& ... Args)
 	{
+		CoroHandle = InCoroutineHandle;
 		if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
 		{
-			return ECF->AddCoroutineAction<T>(InOwner, InCoroutineHandle, InSettings, Forward<Ts>(Args)...);
+			ECF->AddCoroutineAction<T>(InOwner, InCoroutineHandle, InSettings, Forward<Ts>(Args)...);
+			return;
 		}
 
 		ensureMsgf(false, TEXT("ECF Coroutine - failed to obtain subsystem, suspended coroutine will be resumed immediately."));
-		return false;
+		InCoroutineHandle.resume();
+		if (InCoroutineHandle.done())
+		{
+			InCoroutineHandle.destroy();
+		}
 	}
+
+	// Storing the actual coroutine handle.
+	FECFCoroutineHandle CoroHandle;
 
 	// Storing owner to pass it to the ECF subsystem later.
 	const UObject* Owner;
 
 	// Storing settings to pass them to the ECF subsystem later.
 	FECFActionSettings Settings;
+};
+
+struct FECFCoroutineAwaiter_ResultWithTimeout
+{
+	bool bStopped = false;
+	bool bTimedOut = false;
+	FECFCoroutineAwaiter_ResultWithTimeout(bool InStopped, bool InTimedOut) :
+		bStopped(InStopped),
+		bTimedOut(InTimedOut)
+	{
+	}
 };
 
 /*^^^ Wait Seconds Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
@@ -44,10 +69,10 @@ public:
 
 	// C-tor
 	FECFCoroutineAwaiter_WaitSeconds(const UObject* InOwner, const FECFActionSettings& InSettings, float InTime);
-	
+
 	// Called when the suspension begins
-	void await_suspend(FECFCoroutineHandle CoroHandle);
-	
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
+
 private:
 
 	// Storing values in order to use them when await_suspend is called
@@ -62,9 +87,9 @@ public:
 
 	// C-tor
 	FECFCoroutineAwaiter_WaitTicks(const UObject* InOwner, const FECFActionSettings& InSettings, int32 InTicks);
-	
+
 	// Called when the suspension begins
-	void await_suspend(FECFCoroutineHandle CoroHandle);
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
 
 private:
 
@@ -74,20 +99,64 @@ private:
 
 /*^^^ Wait Until Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
+enum class EECFWaitUntilPredicateType : uint8
+{
+	HasFinished,
+	HasFinished_Deltatime
+};
+
 class XTOOLS_ENHANCEDCODEFLOW_API FECFCoroutineAwaiter_WaitUntil : public FECFCoroutineAwaiter
 {
 public:
 
 	// C-tor
+	FECFCoroutineAwaiter_WaitUntil(const UObject* InOwner, const FECFActionSettings& InSettings, TUniqueFunction<bool()>&& InPredicate, float InTimeOut);
 	FECFCoroutineAwaiter_WaitUntil(const UObject* InOwner, const FECFActionSettings& InSettings, TUniqueFunction<bool(float)>&& InPredicate, float InTimeOut);
-	
+
 	// Called when the suspension begins
-	void await_suspend(FECFCoroutineHandle CoroHandle);
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
+
+	// Returns the state of the corotuine after it's resumed.
+	FECFCoroutineAwaiter_ResultWithTimeout await_resume()
+	{
+		return FECFCoroutineAwaiter_ResultWithTimeout(
+			CoroHandle.promise().bStopped,
+			CoroHandle.promise().bTimedOut);
+	}
 
 private:
 
 	// Storing values in order to use them when await_suspend is called
-	TUniqueFunction<bool(float)> Predicate;
+	EECFWaitUntilPredicateType PredicateType = EECFWaitUntilPredicateType::HasFinished;
+	TUniqueFunction<bool()> PredicateHasFinished;
+	TUniqueFunction<bool(float)> PredicateHasFinishedDeltaTime;
+	float TimeOut = 0.f;
+};
+
+/*^^^ Wait For Flag Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+class XTOOLS_ENHANCEDCODEFLOW_API FECFCoroutineAwaiter_WaitForFlag : public FECFCoroutineAwaiter
+{
+public:
+
+	// C-tor
+	FECFCoroutineAwaiter_WaitForFlag(const UObject* InOwner, const FECFActionSettings& InSettings, bool* bInFlag, float InTimeOut);
+
+	// Called when the suspension begins
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
+
+	// Returns the state of the corotuine after it's resumed.
+	FECFCoroutineAwaiter_ResultWithTimeout await_resume()
+	{
+		return FECFCoroutineAwaiter_ResultWithTimeout(
+			CoroHandle.promise().bStopped,
+			CoroHandle.promise().bTimedOut);
+	}
+
+private:
+
+	// Storing values in order to use them when await_suspend is called
+	bool* bFlag = nullptr;
 	float TimeOut = 0.f;
 };
 
@@ -101,7 +170,15 @@ public:
 	FECFCoroutineAwaiter_RunAsyncAndWait(const UObject* InOwner, const FECFActionSettings& InSettings, TUniqueFunction<void()>&& InAsyncTaskFunc, float InTimeOut, EECFAsyncPrio InThreadPriority);
 
 	// Called when the suspension begins
-	void await_suspend(FECFCoroutineHandle CoroHandle);
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
+
+	// Returns the state of the corotuine after it's resumed.
+	FECFCoroutineAwaiter_ResultWithTimeout await_resume()
+	{
+		return FECFCoroutineAwaiter_ResultWithTimeout(
+			CoroHandle.promise().bStopped,
+			CoroHandle.promise().bTimedOut);
+	}
 
 private:
 
@@ -111,3 +188,50 @@ private:
 	EECFAsyncPrio ThreadPriority = EECFAsyncPrio::Normal;
 };
 
+/*^^^ Wait Load Objects Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+class XTOOLS_ENHANCEDCODEFLOW_API FECFCoroutineAwaiter_WaitLoadObjects : public FECFCoroutineAwaiter
+{
+public:
+
+	// C-tor
+	FECFCoroutineAwaiter_WaitLoadObjects(const UObject* InOwner, const FECFActionSettings& InSettings, const TArray<FSoftObjectPath>& InObjectsToLoad);
+	FECFCoroutineAwaiter_WaitLoadObjects(const UObject* InOwner, const FECFActionSettings& InSettings, const TArray<FPrimaryAssetId>& InPrimaryAssetsToLoad);
+
+	// Called when the suspension begins
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
+
+private:
+
+	// Storing values in order to use them when await_suspend is called
+	TArray<FSoftObjectPath> ObjectsToLoad;
+	TArray<FPrimaryAssetId> PrimaryAssetsToLoad;
+};
+
+/*^^^ Wait And Loop Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
+class XTOOLS_ENHANCEDCODEFLOW_API FECFCoroutineAwaiter_LoopAndWait : public FECFCoroutineAwaiter
+{
+public:
+
+	// C-tor
+	FECFCoroutineAwaiter_LoopAndWait(const UObject* InOwner, const FECFActionSettings& InSettings, TUniqueFunction<bool()>&& InPredicate, TUniqueFunction<void(float)>&& InTickFunc, float InTimeOut);
+
+	// Called when the suspension begins
+	void await_suspend(FECFCoroutineHandle InCoroHandle);
+
+	// Returns the state of the corotuine after it's resumed.
+	FECFCoroutineAwaiter_ResultWithTimeout await_resume()
+	{
+		return FECFCoroutineAwaiter_ResultWithTimeout(
+			CoroHandle.promise().bStopped,
+			CoroHandle.promise().bTimedOut);
+	}
+
+private:
+
+	// Storing values in order to use them when await_suspend is called
+	TUniqueFunction<bool()> Predicate;
+	TUniqueFunction<void(float)> TickFunc;
+	float TimeOut = 0.f;
+};

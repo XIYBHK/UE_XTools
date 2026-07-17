@@ -16,6 +16,7 @@ public:
 	FEdGraphFormatterParameters FormatterParameters;
 	int TrackSpacing;
 	UEdGraphNode* RootNode;
+	UEdGraphNode* NodeToKeepStill;
 	virtual UEdGraphNode* GetRootNode() override { return RootNode; }
 	TSet<UEdGraphNode*> FormattedNodes;
 	TMap<UEdGraphNode*, TSharedPtr<FFormatXInfo>> FormatXInfoMap;

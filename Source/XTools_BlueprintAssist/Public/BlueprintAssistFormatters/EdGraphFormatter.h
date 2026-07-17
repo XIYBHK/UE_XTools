@@ -50,6 +50,17 @@ struct FFPNodeExpandStruct
 	}
 };
 
+struct FFPNodeRow : TSharedFromThis<FFPNodeRow>
+{
+	TArray<UEdGraphNode*> Nodes;
+	FPinLink ParentLink;
+	TSharedPtr<FFPNodeRow> ParentRow;
+	TArray<TSharedPtr<FFPNodeRow>> ChildRows;
+
+	UEdGraphNode* GetRootNode() { return Nodes[0]; }
+};
+
+
 class FEdGraphFormatter final
 	: public FFormatterInterface
 {
@@ -96,6 +107,12 @@ public:
 
 	virtual void PostFormatting() override;
 
+	virtual UEdGraphNode* GetRootNode() override
+	{
+		check(RootNodeWeakPtr.IsValid());
+		return RootNodeWeakPtr.Get();
+	}
+
 private:
 	TSharedPtr<FBAGraphHandler> GraphHandler;
 	TWeakObjectPtr<UEdGraphNode> RootNodeWeakPtr;
@@ -124,20 +141,17 @@ private:
 
 	TSharedPtr<FEdGraphParameterFormatter> MainParameterFormatter;
 
+	TSet<FPinLink> LoopingLinks;
+
 	TMap<FPinLink, bool> SameRowMapping;
 	TMap<FBAGraphPinHandle, FBAGraphPinHandle> SameRowMappingDirect;
+	TArray<TSharedPtr<FFPNodeRow>> AllNodeRows;
 
 	TMap<UEdGraphNode*, TSharedPtr<FEdGraphParameterFormatter>> ParameterParentMap;
 
 	FNodeRelativeMapping NodeRelativeMapping;
 
 	FFormatterConnectionValidator ConnectionValidator;
-
-	virtual UEdGraphNode* GetRootNode() override
-	{
-		check(RootNodeWeakPtr.IsValid());
-		return RootNodeWeakPtr.Get();
-	}
 
 	void SimpleRelativeFormatting();
 
@@ -148,6 +162,13 @@ private:
 	bool IsInitialNodeValid(UEdGraphNode* Node) const;
 
 	void InitNodePool();
+
+	void MarkLoopingLinks();
+	void MarkLoopingLinks_Recursive(
+		UEdGraphNode* CurrNode,
+		TSet<UEdGraphNode*>& Exploring,
+		TSet<UEdGraphNode*>& Visited,
+		TSet<FPinLink>& OutCycles);
 
 	void ExpandByHeight();
 
@@ -164,9 +185,8 @@ private:
 
 	UEdGraphNode* GetTopMostNodeToAvoid(FPinLink& Link, const TArray<FFPNodeExpandStruct>& WaitingToExpand, TSet<TSharedPtr<FFormatXInfo>>& Visited);
 
+	TArray<FFPNodeExpandStruct> FilterExpandX(TArray<FFPNodeExpandStruct>& InExpand);
 	TArray<FPinLink> ExpandX(const FPinLink& Link, UEdGraphNode* NodeToAvoid, bool bUseParameter);
-
-	TArray<FPinLink> GetNodesToExpand();
 
 	void FormatY_Recursive(
 		const FPinLink& CurrentLink,
@@ -189,13 +209,9 @@ private:
 
 	void RemoveKnotNodes();
 
-	void GetPinsOfSameHeight();
-	void GetPinsOfSameHeight_Recursive(
-		UEdGraphNode* CurrentNode,
-		UEdGraphPin* CurrentPin,
-		UEdGraphPin* ParentPin,
-		TSet<UEdGraphNode*>& NodesToCollisionCheck,
-		TSet<FPinLink>& VisitedLinks);
+	void InitSameRowMapping();
+	UEdGraphNode* FindInputRoot(UEdGraphNode* Node, TSet<UEdGraphNode*>& OutVisited, TSet<UEdGraphNode*>& InVisited);
+	TSharedPtr<FFPNodeRow> FindNodeRow(UEdGraphNode* Node);
 
 	bool LinkToSort(UEdGraphPin& PinA, UEdGraphPin& PinB, TSet<UEdGraphNode*>& VisitedNodes);
 
@@ -237,6 +253,7 @@ private:
 	void MoveChildrenX_Recursive(TSharedPtr<FFormatXInfo> Node, float DeltaX, TSet<TSharedPtr<FFormatXInfo>>& Visited);
 
 	bool ShouldFormatNode(UEdGraphNode* Node) const;
+	bool ShouldFormatLink(const FPinLink& Link) const;
 
 protected:
 	int32 GetChildX(const FPinLink& Link, bool bUseClusterNodes);

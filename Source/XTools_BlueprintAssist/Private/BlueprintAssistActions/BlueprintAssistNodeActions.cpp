@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
+#include "BlueprintAssistActions/BlueprintAssistNodeActions.h"
 
 #include "BlueprintAssistCache.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
@@ -10,19 +10,19 @@
 #include "EdGraphUtilities.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_DynamicCast.h"
-#include "K2Node_Knot.h"
 #include "K2Node_MacroInstance.h"
 #include "K2Node_Variable.h"
-#include "K2Node_VariableGet.h"
 #include "SCommentBubble.h"
-#include "ScopedTransaction.h"
 #include "SGraphActionMenu.h"
 #include "SGraphPanel.h"
 #include "Algo/Transform.h"
+#include "BAGraphHandler/BAGraphOperation_SmartWireNode.h"
+#include "BlueprintAssistMisc/BAGraphSchema.h"
 #include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UICommandList.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "RigVMModel/RigVMControllerActions.h"
 
 namespace MergeNodesTypes
 {
@@ -64,7 +64,7 @@ namespace MergeNodesTypes
 
 			TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes(false);
 
-			FScopedTransaction Transaction(INVTEXT("Merge nodes"));
+			FBAScopedGraphAction Transaction(GraphHandler, "Merge nodes");
 			for (UEdGraphNode* SelectedNode : SelectedNodes)
 			{
 				SelectedNode->Modify();
@@ -287,7 +287,7 @@ void FBANodeActions::Init()
 		FExecuteAction::CreateRaw(this, &FBANodeActions::DeleteAndLink),
 		FCanExecuteAction::CreateRaw(this, &FBANodeActions::HasMultipleNodesSelected)
 	);
-	
+
 	MultipleNodeCommands->MapAction(
 		FBACommands::Get().CutAndLink,
 		FExecuteAction::CreateRaw(this, &FBANodeActions::CutAndLink),
@@ -354,96 +354,6 @@ void FBANodeActions::Init()
 		FCanExecuteAction::CreateRaw(this, &FBANodeActions::HasHoveredOrSingleSelectedNode));
 }
 
-void FBANodeActions::SmartWireNode(UEdGraphNode* Node)
-{
-	auto GraphHandler = GetGraphHandler();
-	if (!GraphHandler)
-	{
-		return;
-	}
-
-	if (!FBAUtils::IsGraphNode(Node))
-	{
-		return;
-	}
-
-	UEdGraph* Graph = GraphHandler->GetFocusedEdGraph();
-	if (!Graph)
-	{
-		return;
-	}
-
-	TSet<UEdGraphNode*> LHSNodes, RHSNodes;
-	TSet<UEdGraphPin*> LHSPins, RHSPins;
-	FBAUtils::SortNodesOnGraphByDistance(Node, Graph, LHSNodes, RHSNodes, LHSPins, RHSPins);
-
-	TArray<TArray<UEdGraphPin*>> PinsByType;
-	TArray<UEdGraphPin*> ExecPins = FBAUtils::GetExecPins(Node);
-	TArray<UEdGraphPin*> ParamPins = FBAUtils::GetParameterPins(Node);
-	PinsByType.Add(ExecPins);
-	PinsByType.Add(ParamPins);
-	for (const TArray<UEdGraphPin*>& Pins : PinsByType)
-	{
-		for (UEdGraphPin* PinA : Pins)
-		{
-			// skip if pin is hidden or if the pin already is connected
-			if (PinA->bHidden || PinA->LinkedTo.Num() > 0 || PinA->Direction == EGPD_MAX)
-			{
-				continue;
-			}
-
-			FBANodePinHandle HandleA(PinA);
-
-			// check all pins to the left if we are an input pin
-			// check all pins to the right if we are an output pin
-			bool IsInputPin = PinA->Direction == EGPD_Input;
-			for (UEdGraphPin* PinB : IsInputPin ? LHSPins : RHSPins)
-			{
-				// skip if has connection
-				if (PinB->LinkedTo.Num() > 0)
-				{
-					continue;
-				}
-
-				// UE_LOG(LogBlueprintAssist, Warning, TEXT("Checking pins %s %s"), *FBAUtils::GetPinName(PinA), *FBAUtils::GetPinName(PinB));
-
-				//bool bShouldOverrideLink = FBlueprintAssistUtils::IsExecPin(PinA);
-				if (!FBAUtils::CanConnectPins(PinA, PinB, false, false, false))
-				{
-					// UE_LOG(LogBlueprintAssist, Warning, TEXT("\tSkipping"));
-					continue;
-				}
-
-				TSharedPtr<FScopedTransaction> Transaction = MakeShareable(
-					new FScopedTransaction(
-						NSLOCTEXT("UnrealEd", "ConnectUnlinkedPins", "Connect Unlinked Pins")
-					));
-
-				FBANodePinHandle HandleB(PinB);
-				FBAUtils::TryCreateConnection(HandleA, HandleB, EBABreakMethod::Default);
-
-				if (UBASettings::GetFormatterSettings(Graph).GetAutoFormatting() != EBAAutoFormatting::Never)
-				{
-					FEdGraphFormatterParameters FormatterParams;
-					if (UBASettings::GetFormatterSettings(Graph).GetAutoFormatting() == EBAAutoFormatting::FormatSingleConnected)
-					{
-						FormatterParams.NodesToFormat.GetNodesWeak().Add(HandleA.GetNode());
-						FormatterParams.NodesToFormat.GetNodesWeak().Add(HandleB.GetNode());
-					}
-
-					GraphHandler->AddPendingFormatNodes(HandleA.GetNode(), Transaction, FormatterParams);
-				}
-				else
-				{
-					Transaction.Reset();
-				}
-
-				return;
-			}
-		}
-	}
-}
-
 void FBANodeActions::DisconnectExecutionOfNodes(TArray<UEdGraphNode*> Nodes)
 {
 	TSharedPtr<FBAGraphHandler> GraphHandler = GetGraphHandler();
@@ -453,7 +363,7 @@ void FBANodeActions::DisconnectExecutionOfNodes(TArray<UEdGraphNode*> Nodes)
 	}
 
 	// TODO: Make this work for pure nodes
-	FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "DisconnectExecutionForNodes", "Disconnect Execution for Nodes"));
+	FBAScopedGraphAction Transaction(GraphHandler, "Disconnect Execution for Nodes");
 
 	if (Nodes.Num() == 0)
 	{
@@ -463,7 +373,7 @@ void FBANodeActions::DisconnectExecutionOfNodes(TArray<UEdGraphNode*> Nodes)
 
 	Nodes.Sort([](UEdGraphNode& A, UEdGraphNode& B)
 	{
-		return FBAUtils::IsNodeImpure(&A) > FBAUtils::IsNodeImpure(&B);  
+		return FBAUtils::IsNodeImpure(&A) > FBAUtils::IsNodeImpure(&B);
 	});
 
 	const int NumNodes = Nodes.Num();
@@ -484,7 +394,7 @@ void FBANodeActions::DisconnectExecutionOfNodes(TArray<UEdGraphNode*> Nodes)
 		};
 
 		TArray<UEdGraphNode*> FullNodeTree = FBAUtils::GetNodeTreeWithFilter(NextNode, PinFilter).Array();
-		bool bIsExecTree = FullNodeTree.ContainsByPredicate(FBAUtils::IsNodeImpure); 
+		bool bIsExecTree = FullNodeTree.ContainsByPredicate(FBAUtils::IsNodeImpure);
 
 		TArray<FPinLink> LeafOutput;
 		TArray<FPinLink> LeafInput;
@@ -579,14 +489,8 @@ UEdGraphNode* FBANodeActions::GetSingleHoveredOrSelectedNode()
 
 void FBANodeActions::OnSmartWireSelectedNode()
 {
-	UEdGraphNode* SelectedNode = GetGraphHandler()->GetSelectedNode();
-	if (SelectedNode == nullptr)
-	{
-		return;
-	}
-
-	//const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "SmartWire", "Smart Wire Node"));
-	SmartWireNode(SelectedNode);
+	TSharedPtr<FBAGraphHandler> GH = GetGraphHandlerChecked();
+	GH->BeginOperation(MakeShared<FBAGraphOperation_SmartWireNode>(GH));
 }
 
 void FBANodeActions::ZoomToNodeTree()
@@ -603,14 +507,20 @@ void FBANodeActions::ZoomToNodeTree()
 		return;
 	}
 
-	TSet<UEdGraphNode*> NodeTree = FBAUtils::GetNodeTree(SelectedNode);
+	TSharedPtr<SGraphPanel> GraphPanel = GraphHandler->GetGraphPanel();
 
-	// selecting a set of nodes requires the ptrs to be const
 	TSet<const UEdGraphNode*> ConstNodeTree;
-	for (UEdGraphNode* Node : NodeTree)
+
+	FBAUtils::IterateNodeTreeDepthFirst(SelectedNode, [&ConstNodeTree, GraphPanel](const FPinLink& PinLink)
 	{
-		ConstNodeTree.Add(Node);
-	}
+		bool bContinue = PinLink.ArePinsVisibleUnsafe(GraphPanel);
+		if (bContinue)
+		{
+			ConstNodeTree.Add(PinLink.GetToNodeUnsafe());
+		}
+
+		return bContinue;
+	});
 
 	TSharedPtr<SGraphEditor> GraphEditor = GraphHandler->GetGraphEditor();
 	GraphHandler->GetFocusedEdGraph()->SelectNodeSet(ConstNodeTree);
@@ -629,7 +539,7 @@ void FBANodeActions::DisconnectAllNodeLinks()
 	const UEdGraphSchema* Schema = GraphHandler->GetFocusedEdGraph()->GetSchema();
 	if (SelectedNode != nullptr)
 	{
-		const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "DisconnectAllNodeLinks", "Disconnect All Node Links"));
+		const FBAScopedGraphAction Transaction(GraphHandler, "Disconnect All Node Links");
 
 		Schema->BreakNodeLinks(*SelectedNode);
 	}
@@ -684,9 +594,7 @@ void FBANodeActions::SelectPinInDirection(int X, int Y) const
 		{
 			const auto& IsPinVisibleAsAdvanced = [&](UEdGraphPin* Pin)
 			{
-				TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetGraphPin(GraphHandler->GetGraphPanel(), Pin);
-				return GraphPin.IsValid() &&
-					GraphPin->IsPinVisibleAsAdvanced() == EVisibility::Visible;
+				return FBAUtils::IsPinVisible(GraphHandler->GetGraphPanel(), Pin);
 			};
 
 			if (X != 0) // x direction - switch to the opposite pins on the current node
@@ -825,10 +733,9 @@ void FBANodeActions::ReplaceNodeWith()
 	const FVector2D MenuLocation = FSlateApplication::Get().GetCursorPos();
 	const FVector2D SpawnLocation(SelectedNode->NodePosX, SelectedNode->NodePosY);
 
-	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "ReplaceNodeWith", "Replace Node With")));
-
 	FBAGraphActions::OpenContextMenu(MenuLocation, SpawnLocation);
 
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Replace Node With");
 	GraphHandler->SetNodeToReplace(SelectedNode, Transaction);
 
 	FSlateApplication& SlateApp = FSlateApplication::Get();
@@ -977,12 +884,12 @@ void FBANodeActions::FormatNodes()
 	}
 
 	TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes();
-	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "FormatNode", "Format Node")));
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Format Node");
 	for (UEdGraphNode* Node : SelectedNodes)
 	{
 		if (FBAUtils::IsGraphNode(Node))
 		{
-			GraphHandler->AddPendingFormatNodes(Node, Transaction);
+			GraphHandler->RequestFormatNode(Node, Transaction);
 		}
 	}
 }
@@ -996,7 +903,7 @@ void FBANodeActions::FormatNodesSelectively()
 	}
 
 	TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes();
-	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "FormatOnlySelectedNodes", "Format Only Selected Nodes")));
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Format Only Selected Nodes");
 
 	if (SelectedNodes.Num() == 1)
 	{
@@ -1015,13 +922,14 @@ void FBANodeActions::FormatNodesSelectively()
 		SelectedNodes = FBAUtils::GetNodeTree(SelectedNode, Direction, true);
 	}
 
+	FEdGraphFormatterParameters FormatterParameters;
+	FormatterParameters.LimitedNodes.Append(SelectedNodes);
+
 	for (UEdGraphNode* Node : SelectedNodes)
 	{
 		if (FBAUtils::IsGraphNode(Node))
 		{
-			FEdGraphFormatterParameters FormatterParameters;
-			FormatterParameters.NodesToFormat.SetArray(SelectedNodes.Array());
-			GraphHandler->AddPendingFormatNodes(Node, Transaction, FormatterParameters);
+			GraphHandler->RequestFormatNode(Node, Transaction, FormatterParameters);
 		}
 	}
 }
@@ -1035,14 +943,14 @@ void FBANodeActions::FormatNodesWithHelixing()
 	}
 
 	TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes();
-	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "FormatNodeHelixing", "Format Node with Helixing")));
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Format Node with Helixing");
 	for (UEdGraphNode* Node : SelectedNodes)
 	{
 		if (FBAUtils::IsGraphNode(Node))
 		{
 			FEdGraphFormatterParameters FormatterParameters;
 			FormatterParameters.OverrideFormattingStyle = MakeShareable(new EBAParameterFormattingStyle(EBAParameterFormattingStyle::Helixing));
-			GraphHandler->AddPendingFormatNodes(Node, Transaction, FormatterParameters);
+			GraphHandler->RequestFormatNode(Node, Transaction, FormatterParameters);
 		}
 	}
 }
@@ -1056,14 +964,14 @@ void FBANodeActions::FormatNodesWithLHS()
 	}
 
 	TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes();
-	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "FormatNodeLHS", "Format Node with LHS")));
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Format Node with LHS");
 	for (UEdGraphNode* Node : SelectedNodes)
 	{
 		if (FBAUtils::IsGraphNode(Node))
 		{
 			FEdGraphFormatterParameters FormatterParameters;
 			FormatterParameters.OverrideFormattingStyle = MakeShareable(new EBAParameterFormattingStyle(EBAParameterFormattingStyle::LeftSide));
-			GraphHandler->AddPendingFormatNodes(Node, Transaction, FormatterParameters);
+			GraphHandler->RequestFormatNode(Node, Transaction, FormatterParameters);
 		}
 	}
 }
@@ -1082,11 +990,24 @@ void FBANodeActions::LinkNodesBetweenWires()
 		return;
 	}
 
+	// get the main pin
 	FPinLink HoveredWire = FBAUtils::GetHoveredPinLink(GraphHandler->GetGraphPanel());
-	UEdGraphPin* PinForHoveredWire = HoveredWire.From;
-	if (!PinForHoveredWire)
+	UEdGraphPin* MainPin = HoveredWire.From;
+	if (!MainPin)
+	{
+		MainPin = FBAUtils::GetHoveredPin(GraphHandler->GetGraphPanel());
+	}
+
+	if (!MainPin)
 	{
 		return;
+	}
+
+	// optional secondary pin
+	UEdGraphPin* SecondaryPin = HoveredWire.To;
+	if (!SecondaryPin && MainPin->LinkedTo.Num() > 0)
+	{
+		SecondaryPin = MainPin->LinkedTo[0];
 	}
 
 	TArray<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes().Array();
@@ -1114,52 +1035,53 @@ void FBANodeActions::LinkNodesBetweenWires()
 		return SelectedNodes.Contains(Node);
 	};
 
-	UEdGraphNode* LeftMostNode =
-		FBAUtils::GetTopMostWithFilter(SelectedNodes[0], EGPD_Input, IsSelected);
+	UEdGraphNode* LeftMostNode = FBAUtils::GetTopMostWithFilter(SelectedNodes[0], EGPD_Input, IsSelected);
+	UEdGraphNode* RightMostNode = FBAUtils::GetTopMostWithFilter(SelectedNodes[0], EGPD_Output, IsSelected);
 
-	UEdGraphNode* RightMostNode =
-		FBAUtils::GetTopMostWithFilter(SelectedNodes[0], EGPD_Output, IsSelected);
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Link Nodes Between Wires");
 
-	TSharedPtr<FScopedTransaction> Transaction =
-		MakeShareable(
-			new FScopedTransaction(
-				NSLOCTEXT("UnrealEd", "LinkNodesBetweenWires", "Link Nodes Between Wires")));
+	// the main node is the node to be linked to the main pin
+	UEdGraphNode* MainNode = MainPin->Direction == EGPD_Output ? LeftMostNode : RightMostNode;
+	UEdGraphNode* SecondaryNode = MainPin->Direction == EGPD_Output ? RightMostNode : LeftMostNode;
 
-	UEdGraphNode* First = PinForHoveredWire->Direction == EGPD_Output
-		? LeftMostNode
-		: RightMostNode;
+	// UE_LOG(LogTemp, Log, TEXT("Main node: %s Secondary node: %s"), *FBAUtils::GetNodeName(MainNode), *FBAUtils::GetNodeName(SecondaryNode));
+	// UE_LOG(LogTemp, Log, TEXT("Main pin: %s (%d) Secondary pin: %s (%d)"),
+	// 	*FBAUtils::GetPinName(MainPin, true),
+	// 	(int) MainPin->Direction,
+	// 	*FBAUtils::GetPinName(SecondaryPin, true),
+	// 	(SecondaryPin ? (int) SecondaryPin->Direction : -1));
 
 	bool bCancelTransaction = true;
 
 	TArray<FPinLink> PendingLinks;
 	PendingLinks.Reserve(2);
 
-	for (UEdGraphPin* Pin : First->Pins)
+	for (UEdGraphPin* Pin : FBAUtils::GetPinsByDirection(MainNode, FBAUtils::GetOppositeDirection(MainPin->Direction)))
 	{
-		if (FBAUtils::CanConnectPins(PinForHoveredWire, Pin, true, false, false))
+		if (!FBAUtils::IsPinVisible(GraphHandler->GetGraphPanel(), Pin))
 		{
-			PendingLinks.Add(FPinLink(Pin, PinForHoveredWire));
+			continue;
+		}
+
+		if (FBAUtils::CanConnectPins(MainPin, Pin, true, false, false))
+		{
+			PendingLinks.Add(FPinLink(Pin, MainPin));
 			break;
 		}
 	}
 
-	UEdGraphPin* ConnectedPin = HoveredWire.To;
-
-	if (!ConnectedPin && PinForHoveredWire->LinkedTo.Num() > 0)
+	if (SecondaryPin != nullptr)
 	{
-		ConnectedPin = PinForHoveredWire->LinkedTo[0];
-	}
-
-	if (ConnectedPin != nullptr)
-	{
-		UEdGraphNode* ConnectedNode =
-			PinForHoveredWire->Direction == EGPD_Output ? RightMostNode : LeftMostNode;
-
-		for (UEdGraphPin* Pin : ConnectedNode->Pins)
+		for (UEdGraphPin* Pin : FBAUtils::GetPinsByDirection(SecondaryNode, FBAUtils::GetOppositeDirection(SecondaryPin->Direction)))
 		{
-			if (FBAUtils::CanConnectPins(ConnectedPin, Pin, true, false, false))
+			if (!FBAUtils::IsPinVisible(GraphHandler->GetGraphPanel(), Pin))
 			{
-				PendingLinks.Add(FPinLink(Pin, ConnectedPin));
+				continue;
+			}
+
+			if (FBAUtils::CanConnectPins(SecondaryPin, Pin, true, false, false))
+			{
+				PendingLinks.Add(FPinLink(Pin, SecondaryPin));
 				break;
 			}
 		}
@@ -1168,8 +1090,8 @@ void FBANodeActions::LinkNodesBetweenWires()
 	FEdGraphFormatterParameters FormatterParams;
 	if (UBASettings::GetFormatterSettings(Graph).GetAutoFormatting() == EBAAutoFormatting::FormatSingleConnected)
 	{
-		FormatterParams.NodesToFormat.GetNodesWeak().Append(SelectedNodes);
-		FormatterParams.NodesToFormat.GetNodesWeak().Add(PinForHoveredWire->GetOwningNode());
+		FormatterParams.LimitedNodes.Append(SelectedNodes);
+		FormatterParams.LimitedNodes.Add(MainPin->GetOwningNode());
 	}
 
 	for (FPinLink& Link : PendingLinks)
@@ -1179,8 +1101,8 @@ void FBANodeActions::LinkNodesBetweenWires()
 		{
 			if (UBASettings::GetFormatterSettings(Graph).GetAutoFormatting() != EBAAutoFormatting::Never)
 			{
-				GraphHandler->AddPendingFormatNodes(Link.GetFromNode(), Transaction, FormatterParams);
-				GraphHandler->AddPendingFormatNodes(Link.GetToNode(), Transaction, FormatterParams);
+				GraphHandler->RequestFormatNode(Link.GetFromNode(), Transaction, FormatterParams);
+				GraphHandler->RequestFormatNode(Link.GetToNode(), Transaction, FormatterParams);
 			}
 
 			bCancelTransaction = false;
@@ -1313,8 +1235,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		TArray<UEdGraphPin*> ExecLinks = FBAUtils::GetLinkedPins(SelectedNode, Direction).FilterByPredicate(FBAUtils::IsExecPin);
 		for (UEdGraphPin* Pin : ExecLinks)
 		{
-			// 修复：添加边界检查，避免空数组访问
-			if (Pin->LinkedTo.Num() == 0)
+			if (!Pin || Pin->LinkedTo.Num() == 0)
 			{
 				continue;
 			}
@@ -1382,8 +1303,7 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		TArray<UEdGraphPin*> NodeA_LinkedPins = FBAUtils::GetLinkedPins(NodeA, PinA->Direction).FilterByPredicate(FBAUtils::IsExecPin);
 		for (UEdGraphPin* Pin : NodeA_LinkedPins)
 		{
-			// 修复：添加边界检查
-			if (Pin->LinkedTo.Num() == 0)
+			if (!Pin || Pin->LinkedTo.Num() == 0)
 			{
 				continue;
 			}
@@ -1403,8 +1323,8 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 	TArray<FPinLink> PendingConnections;
 	TArray<FPinLink> PendingDisconnects;
 
-	const FText TransactionDesc = Direction == EGPD_Output ? INVTEXT("Swap Node(s) Right") : INVTEXT("Swap Node(s) Left"); 
-	TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(TransactionDesc));
+	const FString TransactionDesc = Direction == EGPD_Output ? "Swap Node(s) Right" : "Swap Node(s) Left";
+	TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, TransactionDesc);
 
 	FBANodePinHandle PinAInDirection;
 	{
@@ -1523,11 +1443,11 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		FEdGraphFormatterParameters FormatterParams;
 		if (AutoFormatting == EBAAutoFormatting::FormatSingleConnected)
 		{
-			FormatterParams.NodesToFormat.GetNodesWeak().Append(SelectedNodes);
-			FormatterParams.NodesToFormat.GetNodesWeak().Add(PinInDirection.GetNode());
+			FormatterParams.LimitedNodes.Append(SelectedNodes);
+			FormatterParams.LimitedNodes.Add(PinInDirection.GetNode());
 		}
 
-		GraphHandler->AddPendingFormatNodes(NodeInDirection, Transaction, FormatterParams);
+		GraphHandler->RequestFormatNode(NodeInDirection, Transaction, FormatterParams);
 	}
 
 	UEdGraphNode* SelectedNodeToUse = Direction == EGPD_Output ? NodeOpposite : NodeInDirection;
@@ -1547,24 +1467,18 @@ void FBANodeActions::SwapNodeInDirection(EEdGraphPinDirection Direction)
 		TArray<UEdGraphNode*> NodeAndParams = FBAUtils::GetNodeAndParameters(SelectedNode);
 		for (UEdGraphNode* Node : NodeAndParams)
 		{
-			FBAVector2 NewPos(Node->NodePosX + DeltaX_Selected, Node->NodePosY + DeltaY_Selected);
-			FBAUtils::SchemaSetNodePos(GraphHandler->GetGraphPanel(), Node, NewPos);
+			Transaction->GetSchema()->SetNodePosition(Node, Node->NodePosX + DeltaX_Selected, Node->NodePosY + DeltaY_Selected, GraphHandler->GetGraphPanel());
 		}
 	}
 
 	// NodeA: move node and parameters
 	for (UEdGraphNode* Node : FBAUtils::GetNodeAndParameters(NodeA))
 	{
-		FBAVector2 NewPos(Node->NodePosX + DeltaX_A, Node->NodePosY + DeltaY_A);
-		FBAUtils::SchemaSetNodePos(GraphHandler->GetGraphPanel(), Node, NewPos);
+		Transaction->GetSchema()->SetNodePosition(Node, Node->NodePosX + DeltaX_A, Node->NodePosY + DeltaY_A, GraphHandler->GetGraphPanel());
 	}
 
 	if (UBASettings_Advanced::Get().bRemoveLoopingCausedBySwapping)
 	{
-		// TODO the additional transaction does not work if auto-formatting is enabled since the previous transaction still exists in the graph handler
-		Transaction.Reset();
-		Transaction = MakeShareable(new FScopedTransaction(INVTEXT("Disconnect Looping Swap Nodes")));
-
 		for (TTuple<FBANodePinHandle, bool>& LoopingState : InitialLoopingState)
 		{
 			bool bOldLoopingState = LoopingState.Value;
@@ -1602,7 +1516,7 @@ void FBANodeActions::DeleteAndLink()
 	TArray<UEdGraphNode*> NodesToDelete = GraphHandler->GetSelectedNodes().Array().FilterByPredicate(ShouldDeleteNode);
 	if (NodesToDelete.Num() > 0)
 	{
-		const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "DeleteAndLink", "Delete and link"));
+		const FBAScopedGraphAction Transaction(GraphHandler, "Delete and link");
 
 		DisconnectExecutionOfNodes(NodesToDelete);
 		for (int i = NodesToDelete.Num() - 1; i >= 0; --i)
@@ -1628,7 +1542,7 @@ void FBANodeActions::CutAndLink()
 	TArray<UEdGraphNode*> NodesToCut = GraphHandler->GetSelectedNodes(true).Array().FilterByPredicate(ShouldCutNode);
 	if (NodesToCut.Num() > 0)
 	{
-		const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "CutAndLink", "Cut and link"));
+		const FBAScopedGraphAction Transaction(GraphHandler, "Cut and link");
 
 		DisconnectExecutionOfNodes(NodesToCut);
 
@@ -1639,12 +1553,12 @@ void FBANodeActions::CutAndLink()
 			NodesToCut[i]->PrepareForCopying();
 			NodesToCopy.Add(NodesToCut[i]);
 		}
-		
+
 		// Copy to clipboard
 		FString ExportedText;
 		FEdGraphUtilities::ExportNodesToText(NodesToCopy, ExportedText);
 		FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
-		
+
 		// Delete nodes
 		for (int i = NodesToCut.Num() - 1; i >= 0; --i)
 		{
@@ -1681,7 +1595,7 @@ void FBANodeActions::ToggleNodes()
 		return;
 	}
 
-	FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "ToggleNodes", "Toggle Nodes"));
+	FBAScopedGraphAction Transaction(GraphHandler, "Toggle Nodes");
 
 	bool bAllNodesDisabled = true;
 	for (UEdGraphNode* Node : FilteredNodes)
@@ -1773,7 +1687,7 @@ void FBANodeActions::MergeNodes()
 
 	TSet<UEdGraphNode*> SelectedNodes = GraphHandler->GetSelectedNodes(false);
 
-	FScopedTransaction Transaction(INVTEXT("Merge nodes"));
+	FBAScopedGraphAction Transaction(GraphHandler, "Merge nodes");
 	for (UEdGraphNode* SelectedNode : SelectedNodes)
 	{
 		SelectedNode->Modify();
@@ -1933,7 +1847,7 @@ void FBANodeActions::RefreshNodeSizes()
 
 	if (SelectedNodes.Num() > 0)
 	{
-		TSharedPtr<FScopedTransaction> Transaction = MakeShareable(new FScopedTransaction(NSLOCTEXT("UnrealEd", "RefreshNodeSize", "Refresh Node Size")));
+		TSharedPtr<FBAScopedGraphAction> Transaction = MakeShared<FBAScopedGraphAction>(GraphHandler, "Disconnect Looping Swap Nodes");
 
 		FEdGraphFormatterParameters FormatterParams;
 
@@ -1952,7 +1866,7 @@ void FBANodeActions::RefreshNodeSizes()
 				}
 			}
 
-			FormatterParams.NodesToFormat.SetArray(NodeSet.Array());
+			FormatterParams.LimitedNodes.Append(NodeSet);
 		}
 
 		for (UEdGraphNode* Node : SelectedNodes)
@@ -1961,7 +1875,7 @@ void FBANodeActions::RefreshNodeSizes()
 
 			if (AutoFormatting != EBAAutoFormatting::Never)
 			{
-				GraphHandler->AddPendingFormatNodes(Node, Transaction, FormatterParams);
+				GraphHandler->RequestFormatNode(Node, Transaction, FormatterParams);
 			}
 			else
 			{
@@ -2008,20 +1922,26 @@ void FBANodeActions::ExpandNodeTreeInDirection(EEdGraphPinDirection Direction)
 		return;
 	}
 
+	const auto FilterPinVisible = [GraphPanel](const FPinLink& Link)
+	{
+		return Link.ArePinsVisibleUnsafe(GraphPanel);
+	};
+
 	if (FBAUtils::IsNodeImpure(HoveredNode))
 	{
 		TSet<UEdGraphNode*> OriginalSelection = GraphHandler->GetSelectedNodes(true);
 
 		// expand execution nodes
 		TSet<UEdGraphNode*> NewExecSelection = OriginalSelection;
-		NewExecSelection.Append(FBAUtils::GetExecTree(HoveredNode, Direction));
+
+		NewExecSelection.Append(FBAUtils::GetExecutionTreeWithFilter(HoveredNode, FilterPinVisible, Direction));
 
 		TSet<UEdGraphNode*> NewSelection = NewExecSelection;
 
 		// add all parameter nodes
 		for (UEdGraphNode* Node : NewExecSelection)
 		{
-			NewSelection.Append(FBAUtils::GetParameterTree(Node));
+			NewSelection.Append(FBAUtils::GetParameterTreeWithFilter(Node, FilterPinVisible));
 		}
 
 		// TODO look into why subtract doesn't work here
@@ -2035,15 +1955,10 @@ void FBANodeActions::ExpandNodeTreeInDirection(EEdGraphPinDirection Direction)
 			GraphHandler->SelectNodes(NewSelection);
 		}
 	}
-	else
+	else // expand parameters nodes
 	{
 		TSet<UEdGraphNode*> OriginalSelection = GraphHandler->GetSelectedNodes(true);
-
-		// expand execution nodes
-		TSet<UEdGraphNode*> NewExecSelection = OriginalSelection;
-		NewExecSelection.Append(FBAUtils::GetParameterTree(HoveredNode, Direction, true));
-
-		TSet<UEdGraphNode*> NewSelection = NewExecSelection;
-		GraphHandler->SelectNodes(NewSelection);
+		OriginalSelection.Append(FBAUtils::GetParameterTreeWithFilter(HoveredNode, FilterPinVisible, Direction, true));
+		GraphHandler->SelectNodes(OriginalSelection);
 	}
 }

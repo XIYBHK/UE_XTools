@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistMisc/BlueprintAssistToolbar_BlueprintImpl.h"
+#include "BlueprintAssistMisc/BlueprintAssistToolbar_BlueprintImpl.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistUtils.h"

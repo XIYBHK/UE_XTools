@@ -6,7 +6,7 @@
 *
 * 用于处理不同UE版本之间的API差异，确保插件可以在多个UE版本中正常编译和运行。
 *
-* 当前支持版本：UE 5.3, 5.4, 5.5, 5.6+
+* 当前支持版本：UE 5.3-5.8
 *
 * 主要处理的API变化：
 * - TAtomic API (UE 5.3+支持直接赋值，5.0-5.2需要load/store)
@@ -43,6 +43,8 @@
 #define XTOOLS_ENGINE_5_4_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 4)
 #define XTOOLS_ENGINE_5_5_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 5)
 #define XTOOLS_ENGINE_5_6_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 6)
+#define XTOOLS_ENGINE_5_7_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 7)
+#define XTOOLS_ENGINE_5_8_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 8)
 
 // ===================================================================
 // API变更记录（文档参考）
@@ -56,6 +58,11 @@
 //
 // UE 5.6:
 //   - 编译器对弃用警告更严格（-Werror）
+// UE 5.7:
+//   - 部分 Slate 绘制接口从 FVector2D 切换为 FVector2f
+// UE 5.8:
+//   - 数组收缩参数使用 EAllowShrinking
+//   - 多个编辑器与材质 API 完成弃用迁移
 // ===================================================================
 
 /**

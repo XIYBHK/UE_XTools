@@ -33,6 +33,8 @@
 #include "Engine/Blueprint.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "GameFramework/Actor.h"
 
 #define LOCTEXT_NAMESPACE "X_MenuExtensionManager"
 

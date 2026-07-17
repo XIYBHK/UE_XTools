@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistEditorFeatures.h"
 
@@ -44,21 +44,21 @@ void UBAEditorFeatures::OnObjectTransacted(UObject* Object, const FTransactionOb
 						EFunctionFlags NetFlags = FUNC_None;
 
 						const FString NewTitle = EventNode->GetNodeTitle(ENodeTitleType::MenuTitle).ToString();
-						if (NewTitle.StartsWith(Settings->MulticastPrefix))
+						if (Settings->MulticastAffix.Matches(NewTitle))
 						{
 							NetFlags = FUNC_NetMulticast;
 						}
-						else if (NewTitle.StartsWith(Settings->ServerPrefix))
+						else if (Settings->ServerAffix.Matches(NewTitle))
 						{
 							NetFlags = FUNC_NetServer;
 						}
-						else if (NewTitle.StartsWith(Settings->ClientPrefix))
+						else if (Settings->ClientAffix.Matches(NewTitle))
 						{
 							NetFlags = FUNC_NetClient;
 						}
 
 						// don't update flags if we have no matching prefix and the setting to clear flags is disabled
-						const bool bDontUpdateFlags = (NetFlags == FUNC_None) && !GetDefault<UBASettings_EditorFeatures>()->bClearReplicationFlagsWhenRenamingWithNoPrefix;
+						const bool bDontUpdateFlags = (NetFlags == FUNC_None) && !GetDefault<UBASettings_EditorFeatures>()->bClearReplicationFlagsWhenRenaming;
 						if (!bDontUpdateFlags)
 						{
 							SetNodeNetFlags(EventNode, NetFlags);
@@ -68,35 +68,36 @@ void UBAEditorFeatures::OnObjectTransacted(UObject* Object, const FTransactionOb
 			}
 			else if (PropertyName == FunctionFlagsName)
 			{
-				if (Settings->bAddReplicationPrefixToCustomEventTitle)
+				if (Settings->bAddReplicationAffixToCustomEventTitle)
 				{
 					if (UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(Object))
 					{
-						const FString CurrentNodeTitle = CustomEvent->GetNodeTitle(ENodeTitleType::MenuTitle).ToString();
-						FString Prefix = "";
+						FBAStringAffix Affix;
 						if (CustomEvent->FunctionFlags & FUNC_NetMulticast)
 						{
-							Prefix = Settings->MulticastPrefix;
+							Affix = Settings->MulticastAffix;
 						}
 						else if (CustomEvent->FunctionFlags & FUNC_NetServer)
 						{
-							Prefix = Settings->ServerPrefix;
+							Affix = Settings->ServerAffix;
 						}
 						else if (CustomEvent->FunctionFlags & FUNC_NetClient)
 						{
-							Prefix = Settings->ClientPrefix;
+							Affix = Settings->ClientAffix;
 						}
 
-						FString NewTitle = CurrentNodeTitle;
-						if (!CurrentNodeTitle.StartsWith(Prefix))
+						FString NodeTitle = CustomEvent->GetNodeTitle(ENodeTitleType::MenuTitle).ToString();
+						if (!Affix.Matches(NodeTitle))
 						{
-							NewTitle.RemoveFromStart(Settings->MulticastPrefix);
-							NewTitle.RemoveFromStart(Settings->ServerPrefix);
-							NewTitle.RemoveFromStart(Settings->ClientPrefix);
+							// clear any existing affixes if they apply
+							Settings->MulticastAffix.RemoveAffix(NodeTitle);
+							Settings->ServerAffix.RemoveAffix(NodeTitle);
+							Settings->ClientAffix.RemoveAffix(NodeTitle);
 
-							NewTitle = Prefix + NewTitle;
+							// set the new affix
+							Affix.AddAffix(NodeTitle);
 
-							CustomEvent->OnRenameNode(NewTitle);
+							CustomEvent->OnRenameNode(NodeTitle);
 						}
 					}
 				}

@@ -1,7 +1,12 @@
 #include "SGraphPinStructPropertyName.h"
 #include "K2Node_SmartSort.h"
 #include "EdGraphSchema_K2.h"
+#include "XToolsVersionCompat.h"
+#if XTOOLS_ENGINE_5_8_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
 #include "Engine/UserDefinedStruct.h"
+#endif
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SComboBox.h"
 

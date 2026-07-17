@@ -33,6 +33,17 @@ struct ENRibbonConnection
 	}
 };
 
+struct ENCrossingConnection
+{
+	FVector2D Start;
+	FVector2D End;
+
+	ENCrossingConnection(const FVector2D& InStart, const FVector2D& InEnd)
+		: Start(InStart), End(InEnd)
+	{
+	}
+};
+
 struct FENConnectionDrawingPolicyFactory : public FGraphPanelPinConnectionFactory
 {
 	virtual ~FENConnectionDrawingPolicyFactory()
@@ -58,6 +69,8 @@ public:
 	void ENDrawArrow(const FVector2D& Start, const FVector2D& End);
 
 	void DrawDebugPoint(const FVector2D& Position, FLinearColor Color);
+
+	TArray<ENCrossingConnection> CrossingConnections;
 
 private:
 	const UElectronicNodesSettings& ElectronicNodesSettings = *GetDefault<UElectronicNodesSettings>();

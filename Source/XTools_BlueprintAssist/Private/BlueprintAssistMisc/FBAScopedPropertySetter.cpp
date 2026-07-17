@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistMisc/FBAScopedPropertySetter.h"
 
@@ -11,8 +11,13 @@ FBAScopedPropertySetter::FBAScopedPropertySetter(
 	EPropertyChangeType::Type InChangeType,
 	bool bInSaveConfig)
 {
-	Property = InProperty;
 	Object = InObject;
+	Property = InProperty;
+
+	if (!Object || !Property)
+	{
+		return;
+	}
 
 	if (!InTransaction.IsEmpty())
 	{
@@ -27,8 +32,29 @@ FBAScopedPropertySetter::FBAScopedPropertySetter(
 	Object->PreEditChange(PropertyChain);
 }
 
+FBAScopedPropertySetter::FBAScopedPropertySetter(
+	UObject* Object,
+	FName PropertyName,
+	FText InTransaction,
+	EPropertyChangeType::Type ChangeType,
+	bool bSaveConfig)
+		: Object(nullptr)
+		, Property(nullptr)
+		, ChangeType(EPropertyChangeType::ValueSet)
+{
+	if (FProperty* Prop = Object->GetClass()->FindPropertyByName(PropertyName))
+	{
+		FBAScopedPropertySetter(Object, Prop, InTransaction, ChangeType, bSaveConfig);
+	}
+}
+
 FBAScopedPropertySetter::~FBAScopedPropertySetter()
 {
+	if (!Object || !Property)
+	{
+		return;
+	}
+
 	FPropertyChangedEvent Event(Property, ChangeType);
 	Object->PostEditChangeProperty(Event);
 

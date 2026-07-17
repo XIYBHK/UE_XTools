@@ -9,6 +9,8 @@
 #include "Misc/AsciiSet.h"
 #include "Misc/Base64.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "HAL/FileManager.h"
+#include "HAL/PlatformFileManager.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
@@ -338,4 +340,9 @@ TSharedPtr<SNotificationItem> FBAMiscUtils::ShowSimpleSlateNotification(const FT
 	}
 
 	return Notif;
+}
+
+bool FBAMiscUtils::MakeFileWritable(const FString& InFileToMakeWritable)
+{
+	return FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*InFileToMakeWritable, false);
 }

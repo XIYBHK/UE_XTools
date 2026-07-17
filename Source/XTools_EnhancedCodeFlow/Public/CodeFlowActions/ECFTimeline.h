@@ -73,10 +73,24 @@ protected:
 		}, InBlendFunc, InBlendExp, InPlayRate);
 	}
 
+	bool Reset(bool bCallUpdate) override
+	{
+		CurrentTime = 0.f;
+		CurrentValue = StartValue;
+		if (bCallUpdate && HasValidOwner() && TickFunc)
+		{
+			TickFunc(CurrentValue, CurrentTime);
+		}
+		return true;
+	}
+
 	void Tick(float DeltaTime) override
 	{
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Timeline - Tick"), STAT_ECFDETAILS_TIMELINE, STATGROUP_ECFDETAILS);
+#endif
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - Timeline Tick");
 #endif
 		// 第一次 Tick 直接输出起点值，与 UE 时间轴首帧行为对齐。
 		if (bFirstTick)
@@ -140,8 +154,8 @@ protected:
 				CurrentValue = StopValue;
 				CurrentTime = Time;
 				TickFunc(CurrentValue, CurrentTime);
-				Complete(false);
 				MarkAsFinished();
+				Complete(false);
 			}
 		}
 		else
@@ -159,6 +173,36 @@ protected:
 			CallbackFunc(CurrentValue, CurrentTime, bStopped);
 		}
 		// 注：Owner 已销毁时静默跳过回调，避免崩溃
+	}
+
+	float GetActionTime() const override
+	{
+		return CurrentTime;
+	}
+
+	bool SetActionTime(float NewTime, bool bCallUpdate) override
+	{
+		CurrentTime = FMath::Clamp(NewTime, 0.f, Time);
+		const float Alpha = CurrentTime / Time;
+		switch (BlendFunc)
+		{
+		case EECFBlendFunc::ECFBlend_Linear: CurrentValue = FMath::Lerp(StartValue, StopValue, Alpha); break;
+		case EECFBlendFunc::ECFBlend_Cubic: CurrentValue = FMath::CubicInterp(StartValue, 0.f, StopValue, 0.f, Alpha); break;
+		case EECFBlendFunc::ECFBlend_EaseIn: CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, BlendExp)); break;
+		case EECFBlendFunc::ECFBlend_EaseOut: CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, 1.f / BlendExp)); break;
+		case EECFBlendFunc::ECFBlend_EaseInOut: CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, Alpha, BlendExp); break;
+		}
+
+		if (bCallUpdate && HasValidOwner() && TickFunc)
+		{
+			TickFunc(CurrentValue, CurrentTime);
+			if (!Settings.bLoop && CurrentTime >= Time)
+			{
+				MarkAsFinished();
+				Complete(false);
+			}
+		}
+		return true;
 	}
 };
 

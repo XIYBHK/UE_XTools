@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,7 @@ class XTOOLS_BLUEPRINTASSIST_API UBlueprintAssistSettings_Search : public UObjec
 	GENERATED_BODY()
 
 public:
+	/* Search settings */
 	UPROPERTY(config)
 	FString File_SavedPath;
 
@@ -22,6 +23,13 @@ public:
 
 	UPROPERTY(config)
 	FString Properties_LastSearch;
+
+	UPROPERTY(config)
+	bool bLargeThumbnail = false;
+
+	/* Config viewer settings */
+	UPROPERTY(config)
+	bool bReadConstructorDefaults;
 
 	static UBlueprintAssistSettings_Search& Get();
 };

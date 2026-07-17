@@ -86,5 +86,9 @@ public class XTools_EnhancedCodeFlow : ModuleRules
         {
             PublicDefinitions.Add("ECF_INSIGHT_PROFILING=0");
         }
+
+        // 默认输出错误日志，详细逐动作日志保持关闭。
+        PublicDefinitions.Add("ECF_LOGS=1");
+        PublicDefinitions.Add("ECF_LOGS_VERBOSE=0");
     }
 }

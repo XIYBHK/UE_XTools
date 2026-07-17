@@ -1,17 +1,23 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 
 #include "BlueprintAssistWidgets/BAWelcomeScreen.h"
 
+#include "BASettings_Meta.h"
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistSettings.h"
+#include "BlueprintAssistSettings_Advanced.h"
 #include "BlueprintAssistSettings_EditorFeatures.h"
 #include "BlueprintAssistStyle.h"
 #include "BlueprintAssistTypes.h"
+#include "DesktopPlatformModule.h"
+#include "EditorDirectories.h"
+#include "ISettingsEditorModule.h"
 #include "ISinglePropertyView.h"
 #include "BlueprintAssistMisc/BAMiscUtils.h"
+#include "BlueprintAssistMisc/FBAScopedPropertySetter.h"
 #include "Framework/Application/SlateApplication.h"
-#include "Framework/Commands/InputBindingManager.h"
+#include "Misc/FileHelper.h"
 #include "Modules/ModuleManager.h"
 #include "Widgets/SWindow.h"
 #include "Widgets/Docking/SDockTab.h"
@@ -149,20 +155,20 @@ TSharedRef<SWidget> SBAWelcomeScreen::MakeIntroPage()
 	};
 
 	const FText IntroText = INVTEXT(
-		"<LargeText>欢迎使用 Blueprint Assist 插件!</>"
-		"\n要了解插件功能概述,请从查看 <a id=\"browser\" href=\"https://blueprintassist.github.io/features/command-list\" style=\"Hyperlink\">wiki中的示例</> 和 "
-		"<a id=\"browser\" href=\"https://blueprintassist.github.io/features/editor-features/#auto-enable-instance-editable\" style=\"Hyperlink\">新编辑器功能概述</> 开始"
-		"\n打开蓝图或支持的图表时,你可以找到一个新的工具栏图标,这将允许快速访问一些有用的设置和菜单。"
+		"<LargeText>欢迎使用 Blueprint Assist 插件！</>"
+		"\n要了解插件功能，请先查看 <a id=\"browser\" href=\"https://blueprintassist.github.io/features/command-list\" style=\"Hyperlink\">Wiki 示例</> 和 "
+		"<a id=\"browser\" href=\"https://blueprintassist.github.io/features/editor-features/#auto-enable-instance-editable\" style=\"Hyperlink\">新版编辑器功能概览</>。"
+		"\n打开蓝图或受支持的图表后，工具栏中会显示快捷入口，可快速访问常用设置和菜单。"
 	);
 
 	const FText FeaturesText = FText::FormatOrdered(INVTEXT(
-			"<LargeText>插件的主要功能</>"
-			"\n\t- 使用 <NormalText.Important>箭头键</> 在节点上导航引脚"
-			"\n\t- 选中节点后,按 {0} 来布局节点"
-			"\n\t- 使用 {1} 调出节点创建菜单"
-			"\n\t- 使用 {2} 打开编辑器中所有选项卡和设置的菜单"
-			"\n\t- 使用 {3} 显示插件和编辑器中所有快捷键的菜单"
-			"\n\t- 使用 {4} 尝试通过距离连接选中节点上的任何未链接引脚")
+			"<LargeText>插件主要功能</>"
+			"\n\t- 使用 <NormalText.Important>方向键</> 在节点引脚之间导航"
+			"\n\t- 选中节点后按 {0} 布局节点"
+			"\n\t- 使用 {1} 打开节点创建菜单"
+			"\n\t- 使用 {2} 打开编辑器标签页和设置菜单"
+			"\n\t- 使用 {3} 查看插件和编辑器快捷键"
+			"\n\t- 使用 {4} 按距离连接选中节点上未连接的引脚")
 		, GetCommandText(FBACommands::Get().FormatNodes)
 		, GetCommandText(FBACommands::Get().OpenContextMenu)
 		, GetCommandText(FBACommands::Get().OpenWindow)
@@ -236,11 +242,50 @@ TSharedRef<SWidget> SBAWelcomeScreen::MakeCustomizePage()
 		]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
-			SNew(SRichTextBlock).AutoWrapText(true).WrappingPolicy(ETextWrappingPolicy::DefaultWrapping).Text(INVTEXT("<LargeText>杂项</>")).DecoratorStyleSet(&BA_STYLE_CLASS::Get())
+			SNew(SRichTextBlock).AutoWrapText(true).WrappingPolicy(ETextWrappingPolicy::DefaultWrapping).Text(INVTEXT("<LargeText>其他</>")).DecoratorStyleSet(&BA_STYLE_CLASS::Get())
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0, 12.0f)
 		[
 			MakePropertiesList(MiscProps)
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SRichTextBlock).AutoWrapText(true).WrappingPolicy(ETextWrappingPolicy::DefaultWrapping).Text(INVTEXT("<LargeText>设置文件</>")).DecoratorStyleSet(&BA_STYLE_CLASS::Get())
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0, 12.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(8.0f, 4.0f, 0.0f, 0.0f)
+			[
+				MakeProperty(GetMutableDefault<UBASettings_Meta>(), GET_MEMBER_NAME_CHECKED(UBASettings_Meta, CustomSettingsIniPath))
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(8.0f, 4.0f).HAlign(HAlign_Left)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(SButton)
+					.Text(INVTEXT("新建"))
+					.ToolTipText(INVTEXT("使用当前插件设置创建新的 ini 文件"))
+					.OnClicked_Static(&SBAWelcomeScreen::OnCreateNewCustomSettingsClicked)
+				]
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(SButton)
+					.Text(INVTEXT("保存设置"))
+					.ToolTipText(INVTEXT("使用当前设置覆盖 ini 文件"))
+					.IsEnabled_Static(&SBAWelcomeScreen::IsCustomSettingsPathValid)
+					.OnClicked_Static(&SBAWelcomeScreen::OnSaveCustomSettingsClicked)
+				]
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(SButton)
+					.Text(INVTEXT("重新加载"))
+					.ToolTipText(INVTEXT("将 ini 文件中的设置应用到当前项目"))
+					.IsEnabled_Static(&SBAWelcomeScreen::IsCustomSettingsPathValid)
+					.OnClicked_Static(&SBAWelcomeScreen::OnReloadCustomSettingsClicked)
+				]
+			]
 		];
 }
 
@@ -266,4 +311,94 @@ TSharedRef<SWidget> SBAWelcomeScreen::MakePropertiesList(const TMap<UObject*, TA
 	}
 
 	return PropBox;
+}
+
+TSharedRef<SWidget> SBAWelcomeScreen::MakeProperty(UObject* Obj, FName PropName)
+{
+	FPropertyEditorModule& EditModule = FModuleManager::Get().GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+
+	FSinglePropertyParams Params;
+	Params.NotifyHook = &SettingsPropertyHook;
+	Params.NamePlacement = EPropertyNamePlacement::Type::Inside;
+
+	return EditModule.CreateSingleProperty(Obj, PropName, Params).ToSharedRef();
+}
+
+FReply SBAWelcomeScreen::OnCreateNewCustomSettingsClicked()
+{
+	const FString Title = "Save Custom Settings INI File";
+	const FString DefaultPath = FPaths::ProjectDir();
+	const FString DefaultFile = "CustomBlueprintAssistSettings.ini";
+	const FString FileTypes = "INI files (*.ini)|*.ini";
+
+	TArray<FString> OutFileNames;
+	const bool bSelectedPath = FDesktopPlatformModule::Get()->SaveFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		Title,
+		FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_SAVE),
+		DefaultFile,
+		FileTypes,
+		EFileDialogFlags::None,
+		OutFileNames
+	);
+
+	if (bSelectedPath && OutFileNames.Num() > 0)
+	{
+		FString RelativePath = OutFileNames[0];
+		const bool bCreatedFile = FFileHelper::SaveStringToFile(TEXT(""), *RelativePath);
+		if (bCreatedFile)
+		{
+			FString FullPath = FPaths::ConvertRelativePathToFull(RelativePath);
+
+			UE_LOG(LogBlueprintAssist, Log, TEXT("Made custom settings file at %s"), *FullPath);
+			FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_SAVE, FPaths::GetPath(FullPath)); // Save path as default for next time.
+
+			{
+				FBAScopedPropertySetter(&UBASettings_Meta::GetMutable(), GET_MEMBER_NAME_CHECKED(UBASettings_Meta, CustomSettingsIniPath));
+				UBASettings_Meta::GetMutable().CustomSettingsIniPath.FilePath = FullPath;
+			}
+
+			OnSaveCustomSettingsClicked();
+		}
+	}
+
+	return FReply::Handled();
+}
+
+FReply SBAWelcomeScreen::OnSaveCustomSettingsClicked()
+{
+	const FString& Path = FConfigCacheIni::NormalizeConfigIniPath(UBASettings_Meta::Get().CustomSettingsIniPath.FilePath);
+	if (!Path.IsEmpty())
+	{
+		UE_LOG(LogBlueprintAssist, Log, TEXT("Saved settings to file: %s"), *Path);
+		UBASettings::GetMutable().TryUpdateDefaultConfigFile(*Path);
+		UBASettings_EditorFeatures::GetMutable().TryUpdateDefaultConfigFile(*Path);
+		UBASettings_Advanced::GetMutable().TryUpdateDefaultConfigFile(*Path);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SBAWelcomeScreen::OnReloadCustomSettingsClicked()
+{
+	const FString& Path = FConfigCacheIni::NormalizeConfigIniPath(UBASettings_Meta::Get().CustomSettingsIniPath.FilePath);
+	if (FPaths::FileExists(Path))
+	{
+		UE_LOG(LogBlueprintAssist, Log, TEXT("Reloaded custom settings from file: %s"), *Path);
+		UBASettingsBase::ReloadSettings(UBASettings::StaticClass());
+		UBASettingsBase::ReloadSettings(UBASettings_EditorFeatures::StaticClass());
+		UBASettingsBase::ReloadSettings(UBASettings_Advanced::StaticClass());
+
+		UBASettings::GetMutable().ReloadConfig(nullptr, *Path);
+		UBASettings_EditorFeatures::GetMutable().ReloadConfig(nullptr, *Path);
+		UBASettings_Advanced::GetMutable().ReloadConfig(nullptr, *Path);
+	}
+
+	return FReply::Handled();
+}
+
+bool SBAWelcomeScreen::IsCustomSettingsPathValid()
+{
+	const FString& Path = UBASettings_Meta::Get().CustomSettingsIniPath.FilePath;
+	return !Path.IsEmpty() && FPaths::FileExists(Path);
 }

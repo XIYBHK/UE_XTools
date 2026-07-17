@@ -59,29 +59,6 @@ void FBACache::Init()
 #endif
 }
 
-void FBACache::Cleanup()
-{
-	if (!bHasInitialized)
-	{
-		return;
-	}
-
-	if (FAssetRegistryModule* AssetRegistryModule = FModuleManager::GetModulePtr<FAssetRegistryModule>("AssetRegistry"))
-	{
-		AssetRegistryModule->Get().OnFilesLoaded().RemoveAll(this);
-	}
-
-	FCoreDelegates::OnPreExit.RemoveAll(this);
-
-#if BA_UE_VERSION_OR_LATER(5, 0)
-	FCoreUObjectDelegates::OnObjectPreSave.RemoveAll(this);
-#else
-	FCoreUObjectDelegates::OnObjectSaved.RemoveAll(this);
-#endif
-
-	bHasInitialized = false;
-}
-
 void FBACache::LoadCache()
 {
 	if (!UBASettings_Advanced::Get().bSaveBlueprintAssistCacheToFile)
@@ -179,6 +156,29 @@ void FBACache::DeleteCache()
 	}
 }
 
+void FBACache::Cleanup()
+{
+	if (!bHasInitialized)
+	{
+		return;
+	}
+
+	if (FAssetRegistryModule* AssetRegistryModule = FModuleManager::GetModulePtr<FAssetRegistryModule>("AssetRegistry"))
+	{
+		AssetRegistryModule->Get().OnFilesLoaded().RemoveAll(this);
+	}
+
+	FCoreDelegates::OnPreExit.RemoveAll(this);
+
+#if BA_UE_VERSION_OR_LATER(5, 0)
+	FCoreUObjectDelegates::OnObjectPreSave.RemoveAll(this);
+#else
+	FCoreUObjectDelegates::OnObjectSaved.RemoveAll(this);
+#endif
+
+	bHasInitialized = false;
+}
+
 void FBACache::CleanupFiles()
 {
 	// Get all assets
@@ -253,10 +253,10 @@ FString FBACache::GetProjectSavedCachePath(bool bFullPath)
 
 FString FBACache::GetPluginCachePath(bool bFullPath)
 {
-	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("XTools");
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
 	if (!Plugin.IsValid())
 	{
-		UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools plugin descriptor missing, fallback to project cache path"));
+		UE_LOG(LogBlueprintAssist, Warning, TEXT("XTools plugin descriptor missing; using the project cache path."));
 		return GetProjectSavedCachePath(bFullPath);
 	}
 
@@ -386,6 +386,11 @@ void FBAGraphData::CleanupGraph(UEdGraph* Graph)
 	TSet<FGuid> CurrentNodes;
 	for (UEdGraphNode* Node : Graph->Nodes)
 	{
+		if (!Node)
+		{
+			continue;
+		}
+
 		// Collect all node guids from the graph
 		CurrentNodes.Add(FBAUtils::GetNodeGuid(Node));
 

@@ -5,6 +5,7 @@
 
 #include "MeshSamplingHelper.h"
 #include "PointSamplingTypes.h"
+#include "XToolsVersionCompat.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #if WITH_EDITOR
@@ -14,7 +15,11 @@
 #include "Materials/MaterialExpressionVectorParameter.h"
 #endif
 #include "Materials/MaterialInterface.h"
+#if XTOOLS_ENGINE_5_8_OR_LATER
+#include "Materials/MaterialParameters.h"
+#else
 #include "MaterialTypes.h"
+#endif
 #include "PixelFormat.h"
 #include "Rendering/StaticMeshVertexBuffer.h"
 #include "StaticMeshResources.h"
@@ -583,7 +588,11 @@ namespace
 		}
 
 		TArray<UTexture*> UsedTextures;
+#if XTOOLS_ENGINE_5_8_OR_LATER
+		Material->GetUsedTextures(UsedTextures);
+#else
 		Material->GetUsedTextures(UsedTextures, EMaterialQualityLevel::Num, false, ERHIFeatureLevel::Num, true);
+#endif
 
 		UTexture2D* BestTexture = nullptr;
 		int32 BestScore = 0;

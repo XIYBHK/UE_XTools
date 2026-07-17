@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistActions/BlueprintAssistBlueprintActions.h"
+#include "BlueprintAssistActions/BlueprintAssistBlueprintActions.h"
 
 #include "BlueprintAssistCommands.h"
 #include "BlueprintAssistUtils.h"

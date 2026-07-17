@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
+#include "BlueprintAssistWidgets/BlueprintAssistGraphOverlay.h"
 
 #include "BlueprintAssistCache.h"
 #include "BlueprintAssistGraphHandler.h"
@@ -8,6 +8,7 @@
 #include "BlueprintAssistStyle.h"
 #include "BlueprintAssistUtils.h"
 #include "SGraphPanel.h"
+#include "BAGraphHandler/BAGraphOperation.h"
 #include "EdGraph/EdGraph.h"
 
 void FBADebugDraw_Line::Draw(TSharedPtr<SBlueprintAssistGraphOverlay> Overlay)
@@ -60,31 +61,34 @@ int32 SBlueprintAssistGraphOverlay::OnPaint(const FPaintArgs& Args, const FGeome
 	}
 
 	// highlight pins
-	for (auto Kvp : PinsToHighlight)
+	if (GraphPanel->GetCurrentLOD() > EGraphRenderingLOD::Type::LowestDetail)
 	{
-		FBAGraphPinHandle PinHandle = Kvp.Key;
-		FLinearColor Color = Kvp.Value;
-
-		if (UEdGraphPin* Pin = PinHandle.GetPin(false))
+		for (auto Kvp : PinsToHighlight)
 		{
-			if (TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetGraphPin(GraphPanel, Pin))
-			{
-				if (FBAUtils::IsPinVisible(GraphPin->GetPinObj()))
-				{
-					const FSlateRect PinBounds = FBAUtils::GetPinBounds(GraphPin);
-					if (GraphPanel->IsRectVisible(PinBounds.GetBottomRight(), PinBounds.GetTopLeft()))
-					{
-						const FPaintGeometry PaintGeometry = GraphPin->GetPaintSpaceGeometry().ToPaintGeometry();
+			FBAGraphPinHandle PinHandle = Kvp.Key;
+			FLinearColor Color = Kvp.Value;
 
-						// Draw a border around the pin
-						FSlateDrawElement::MakeBox(
-							OutDrawElements,
-							OutgoingLayer,
-							PaintGeometry,
-							CachedBorderBrush,
-							ESlateDrawEffect::None,
-							Color
-						);
+			if (UEdGraphPin* Pin = PinHandle.GetPin(false))
+			{
+				if (TSharedPtr<SGraphPin> GraphPin = FBAUtils::GetGraphPin(GraphPanel, Pin))
+				{
+					if (FBAUtils::IsPinVisible(GraphPin))
+					{
+						const FSlateRect PinBounds = FBAUtils::GetPinBounds(GraphPin);
+						if (GraphPanel->IsRectVisible(PinBounds.GetBottomRight(), PinBounds.GetTopLeft()))
+						{
+							const FPaintGeometry PaintGeometry = GraphPin->GetPaintSpaceGeometry().ToPaintGeometry();
+
+							// Draw a border around the pin
+							FSlateDrawElement::MakeBox(
+								OutDrawElements,
+								OutgoingLayer,
+								PaintGeometry,
+								CachedBorderBrush,
+								ESlateDrawEffect::None,
+								Color
+							);
+						}
 					}
 				}
 			}
@@ -179,6 +183,11 @@ int32 SBlueprintAssistGraphOverlay::OnPaint(const FPaintArgs& Args, const FGeome
 			DrawWidgetAsBox(OutDrawElements, OutgoingLayer - 1, GraphPanel, Param.Widget.Pin(), Param.WidgetBounds, FLinearColor::Black);
 			DrawTextOverWidget(OutDrawElements, OutgoingLayer + 1, GraphPanel, Param.Widget.Pin(), Param.WidgetBounds, Param.Text, FontInfo);
 		}
+	}
+
+	if (TSharedPtr<FBAGraphOperation> Operation = CurrentGraphHandler->GetCurrentOperation())
+	{
+		Operation->OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	}
 
 	return OutgoingLayer;
@@ -475,7 +484,10 @@ void SBlueprintAssistGraphOverlay::DrawDebugBounds(const FString& DebugChannel, 
 
 void SBlueprintAssistGraphOverlay::DrawNodeInQueue(UEdGraphNode* Node)
 {
-	NodeQueueToDraw.Enqueue(TWeakObjectPtr<UEdGraphNode>(Node));
+	if (Node)
+	{
+		NodeQueueToDraw.Enqueue(TWeakObjectPtr<UEdGraphNode>(Node));
+	}
 }
 
 void SBlueprintAssistGraphOverlay::DrawTextOverWidget(const FBAGraphOverlayTextParams& Params)

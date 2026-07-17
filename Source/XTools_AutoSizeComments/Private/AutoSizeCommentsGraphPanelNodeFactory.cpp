@@ -19,8 +19,7 @@ TSharedPtr<SGraphNode> FAutoSizeCommentsGraphPanelNodeFactory::CreateNode(class 
 
 	const UAutoSizeCommentsSettings& ASCSettings = UAutoSizeCommentsSettings::Get();
 
-	// Check if plugin is enabled (replaces old bDisableASCGraphNode)
-	if (!ASCSettings.bEnablePlugin)
+	if (!ASCSettings.bEnablePlugin || ASCSettings.bDisableASCGraphNode)
 	{
 		return nullptr;
 	}

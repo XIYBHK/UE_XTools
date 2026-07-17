@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -14,26 +14,53 @@ class XTOOLS_ENHANCEDCODEFLOW_API UECFDoOnce : public UECFActionBase {
   friend class UECFSubsystem;
 
 protected:
-  TUniqueFunction<void()> ExecFunc;
 
-  bool Setup(TUniqueFunction<void()> &&InExecFunc) {
-    ExecFunc = MoveTemp(InExecFunc);
+	TUniqueFunction<void()> ExecFunc;
+	bool bWasCalled = false;
 
-    if (ExecFunc) {
-      return true;
-    } else {
-      ensureMsgf(false, TEXT("ECF - do once failed to start. Are you sure the "
-                             "Exec Function is is set properly?"));
-      return false;
-    }
-  }
+	bool Setup(TUniqueFunction<void()>&& InExecFunc)
+	{
+		ExecFunc = MoveTemp(InExecFunc);
 
-  void Init() override {
-    // 【防御性编程】：确保 Owner 仍然有效
-    if (HasValidOwner() && ExecFunc) {
-      ExecFunc();
-    }
-  }
+		if (ExecFunc)
+		{
+			return true;
+		}
+		else
+		{
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF - [%s] do once failed to start. Are you sure the Exec Function is is set properly?"), *Settings.Label);
+#endif
+			return false;
+		}
+	}
+
+	void Init() override
+	{
+		bWasCalled = true;
+		if (HasValidOwner() && ExecFunc)
+		{
+			ExecFunc();
+		}
+	}
+
+	bool Reset(bool bCallUpdate) override
+	{
+		bWasCalled = false;
+		return true;
+	}
+
+	void RetriggeredInstancedAction() override
+	{
+		if (bWasCalled == false)
+		{
+			bWasCalled = true;
+			if (HasValidOwner() && ExecFunc)
+			{
+				ExecFunc();
+			}
+		}
+	}
 };
 
 ECF_PRAGMA_ENABLE_OPTIMIZATION

@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -12,6 +12,13 @@ struct FBAScopedPropertySetter
 	FBAScopedPropertySetter(
 		UObject* Object,
 		BA_PROPERTY* Property,
+		FText InTransaction = FText::GetEmpty(),
+		EPropertyChangeType::Type ChangeType = EPropertyChangeType::ValueSet,
+		bool bSaveConfig = true);
+
+	FBAScopedPropertySetter(
+		UObject* Object,
+		FName PropertyName,
 		FText InTransaction = FText::GetEmpty(),
 		EPropertyChangeType::Type ChangeType = EPropertyChangeType::ValueSet,
 		bool bSaveConfig = true);

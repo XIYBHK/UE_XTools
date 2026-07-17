@@ -12,6 +12,7 @@
 #include "K2Nodes/K2Node_MultiBranch.h"
 #include "KismetPins/SGraphPinExec.h"
 #include "NodeFactory.h"
+#include "Widgets/Images/SImage.h"
 
 class SGraphPinExecMultiBranch : public SGraphPinExec
 {

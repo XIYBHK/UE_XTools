@@ -1,13 +1,11 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistWidgets/SBASizeProgress.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistStyle.h"
-#include "RenderingThread.h"
 #include "SlateOptMacros.h"
-#include "Engine/TextureRenderTarget2D.h"
-#include "Slate/WidgetRenderer.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSpacer.h"
@@ -23,8 +21,7 @@ void SBASizeProgress::Construct(const FArguments& InArgs, TSharedPtr<FBAGraphHan
 		SNew(SOverlay)
 		+ SOverlay::Slot()
 		[
-			SNew(SImage)
-			.Image(&GraphSnapshotBrush)
+			SAssignNew(SnapshotImage, SImage)
 		]
 		+ SOverlay::Slot()
 		.VAlign(VAlign_Center).HAlign(HAlign_Center)
@@ -75,34 +72,15 @@ END_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
 SBASizeProgress::~SBASizeProgress()
 {
-	DestroyRenderTarget();
-}
-
-void SBASizeProgress::RenderGraphToBrush()
-{
-	TSharedPtr<SGraphEditor> GraphEditor = OwnerGraphHandler->GetGraphEditor();
-	DrawWidgetToRenderTarget(GraphEditor);
+	if (SnapshotBrush.IsValid())
+	{
+		SnapshotBrush->ReleaseResource();
+	}
 }
 
 bool SBASizeProgress::IsSnapshotValid() const
 {
-	UObject* ResourceObject = GraphSnapshotBrush.GetResourceObject();
-	if (!IsValid(ResourceObject))
-	{
-		return false;
-	}
-
-	if (ResourceObject->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
-	{
-		return false;
-	}
-
-	if (ResourceObject->IsUnreachable())
-	{
-		return false;
-	}
-
-	return true;
+	return SnapshotBrush.IsValid();
 }
 
 void SBASizeProgress::ShowOverlay()
@@ -117,12 +95,16 @@ void SBASizeProgress::ShowOverlay()
 		return;
 	}
 
-	RenderGraphToBrush();
+	UE_LOG(LogBlueprintAssist, Verbose, TEXT("[%hs] Show size progress overlay"), __FUNCTION__);
+
+	TSharedPtr<SGraphEditor> GraphEditor = OwnerGraphHandler->GetGraphEditor();
+	SnapshotWidget(GraphEditor);
+
 	SetVisibility(EVisibility::HitTestInvisible);
 
 	if (OwnerGraphHandler->GetNumberOfPendingNodesToCache() > UBASettings::Get().RequiredNodesToShowOverlayProgressBar)
 	{
-		ProgressCenterPanel->SetVisibility(EVisibility::Visible);
+		ProgressCenterPanel->SetVisibility(EVisibility::HitTestInvisible);
 	}
 	else
 	{
@@ -136,60 +118,67 @@ void SBASizeProgress::HideOverlay()
 {
 	if (bIsVisible || GetVisibility() != EVisibility::Collapsed)
 	{
+		UE_LOG(LogBlueprintAssist, Verbose, TEXT("[%hs] Hide size progress overlay"), __FUNCTION__);
 		bIsVisible = false;
 		SetVisibility(EVisibility::Collapsed);
 
-		// clear the graph snapshot brush
-		GraphSnapshotBrush = FSlateBrush();
+		SnapshotImage->SetImage(nullptr);
 
-		DestroyRenderTarget();
+		// clear the graph snapshot brush
+		if (SnapshotBrush.IsValid())
+		{
+			SnapshotBrush->ReleaseResource();
+			SnapshotBrush.Reset();
+		}
 	}
 }
 
-void SBASizeProgress::DrawWidgetToRenderTarget(TSharedPtr<SWidget> Widget)
+void SBASizeProgress::SnapshotWidget(TSharedPtr<SWidget> Widget)
 {
 	if (!Widget.IsValid())
 	{
 		return;
 	}
 
-	const FIntPoint RenderSize = Widget->GetTickSpaceGeometry().GetLocalSize().IntPoint();
-	if (RenderSize.SizeSquared() == 0)
+	TArray<FColor> ColorData;
+	FIntVector Size;
+	FSlateApplication::Get().TakeScreenshot(Widget.ToSharedRef(), ColorData, Size);
+
+	// see FWidgetSnapshotData::CreateBrushes
+	TArray<uint8> TextureDataAsBGRABytes;
+	TextureDataAsBGRABytes.Reserve(ColorData.Num() * 4);
+
+	// for some reason the screenshot is offset by 1 pixel, so skip the first row
+	constexpr int RowOffset = 1;
+	for (int32 i = RowOffset * Size.X; i < ColorData.Num(); ++i)
 	{
-		return;
+		const FColor& PixelColor = ColorData[i];
+		TextureDataAsBGRABytes.Add(PixelColor.B);
+		TextureDataAsBGRABytes.Add(PixelColor.G);
+		TextureDataAsBGRABytes.Add(PixelColor.R);
+		TextureDataAsBGRABytes.Add(PixelColor.A);
 	}
 
-	FWidgetRenderer* WidgetRenderer = new FWidgetRenderer(false, true);
-	if (!WidgetRenderer)
+	// Account for the initial offset by adding rows at the bottom
+	for (int32 i = 0; i < RowOffset * Size.X; ++i)
 	{
-		return;
+		TextureDataAsBGRABytes.Add(0);
+		TextureDataAsBGRABytes.Add(0);
+		TextureDataAsBGRABytes.Add(0);
+		TextureDataAsBGRABytes.Add(255);
 	}
 
-	RenderTarget = WidgetRenderer->DrawWidget(Widget.ToSharedRef(), RenderSize);
-	if (!RenderTarget)
+	static FName Name_BASizeProgressBrush("SBASizeProgress_Brush");
+	const FBAVector2 BrushSize(Size.X, Size.Y);
+	SnapshotBrush = FSlateDynamicImageBrush::CreateWithImageData(
+		Name_BASizeProgressBrush,
+		BrushSize,
+		TextureDataAsBGRABytes);
+
+	if (SnapshotBrush.IsValid())
 	{
-		return;
-	}
-
-	RenderTarget->AddToRoot();
-
-	FlushRenderingCommands();
-
-	BeginCleanup(WidgetRenderer);
-
-	GraphSnapshotBrush.SetResourceObject(RenderTarget);
-	GraphSnapshotBrush.SetImageSize(FVector2D(RenderTarget->SizeX, RenderTarget->SizeY));
-}
-
-void SBASizeProgress::DestroyRenderTarget()
-{
-	if (IsValid(RenderTarget) && !RenderTarget->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
-	{
-		RenderTarget->RemoveFromRoot();
-#if BA_UE_VERSION_OR_LATER(5, 0)
-		RenderTarget->MarkAsGarbage();
-#endif
-		RenderTarget = nullptr;
+		// for some reason the screenshot is offset by 1 pixel?
+		SnapshotImage->SetImage(SnapshotBrush.Get());
 	}
 }
 
@@ -202,4 +191,3 @@ TOptional<float> SBASizeProgress::GetCachingPercent() const
 {
 	return OwnerGraphHandler->GetPendingNodeSizeProgress();
 }
-

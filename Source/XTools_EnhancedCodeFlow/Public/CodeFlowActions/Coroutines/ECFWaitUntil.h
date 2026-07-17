@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -17,8 +17,11 @@ class XTOOLS_ENHANCEDCODEFLOW_API UECFWaitUntil : public UECFCoroutineActionBase
 protected:
 
 	TUniqueFunction<bool(float)> Predicate;
+	TUniqueFunction<bool()> Predicate_NoDeltaTime;
 	float TimeOut = 0.f;
+	float OriginTimeOut = 0.f;
 	bool bWithTimeOut = false;
+	bool bTimedOut = false;
 
 	bool Setup(TUniqueFunction<bool(float)>&& InPredicate, float InTimeOut)
 	{
@@ -29,12 +32,15 @@ protected:
 			// 首帧条件已满足时直接返回 false，由 await_suspend 统一 resume（避免双重 resume 未定义行为）
 			if (Predicate(0.f))
 			{
+				// Coroutine will resume after Setup has failed
 				return false;
 			}
 			if (InTimeOut > 0.f)
 			{
 				bWithTimeOut = true;
+				bTimedOut = false;
 				TimeOut = InTimeOut;
+				OriginTimeOut = InTimeOut;
 				SetMaxActionTime(TimeOut);
 			}
 			else
@@ -45,9 +51,39 @@ protected:
 		}
 		else
 		{
-			ensureMsgf(false, TEXT("ECF Coroutine - Wait Until failed to start. Are you sure the Predicate is set properly?"));
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF Coroutine [%s] - Wait Until failed to start. Are you sure the Predicate is set properly?"), *Settings.Label);
+#endif
 			return false;
 		}
+	}
+
+	bool Setup(TUniqueFunction<bool()>&& InPredicate, float InTimeOut)
+	{
+		Predicate_NoDeltaTime = MoveTemp(InPredicate);
+		if (Predicate_NoDeltaTime)
+		{
+			return Setup([this](float DeltaTime)
+			{
+				return Predicate_NoDeltaTime();
+			}, InTimeOut);
+		}
+		else
+		{
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("ECF Coroutine [%s] - Wait Until failed to start. Are you sure the Predicate is set properly?"), *Settings.Label);
+#endif
+			return false;
+		}
+	}
+
+	bool Reset(bool bCallUpdate) override
+	{
+		if (bWithTimeOut)
+		{
+			TimeOut = OriginTimeOut;
+		}
+		return true;
 	}
 
 	void Tick(float DeltaTime) override
@@ -55,33 +91,33 @@ protected:
 #if STATS
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("WaitUntil - Tick"), STAT_ECFDETAILS_WAITUNTIL, STATGROUP_ECFDETAILS);
 #endif
+
+#if ECF_INSIGHT_PROFILING
+		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - WaitUntil Tick");
+#endif
+
 		if (bWithTimeOut)
 		{
 			TimeOut -= DeltaTime;
 			if (TimeOut <= 0.f)
 			{
-				Complete(false);
+				bTimedOut = true;
 				MarkAsFinished();
+				Complete(false);
 				return;
 			}
 		}
 
 		if (Predicate(DeltaTime))
 		{
-			Complete(false);
 			MarkAsFinished();
+			Complete(false);
 		}
 	}
 
 	void Complete(bool bStopped) override
 	{
-		if (HasValidOwner())
-		{
-			if (bHasCoroutineHandle && !CoroutineHandle.promise().bHasFinished)
-			{
-				CoroutineHandle.resume();
-			}
-		}
+		ResumeCoroutine(bStopped, bTimedOut);
 	}
 };
 

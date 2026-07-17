@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistObjects/BABlueprintHandlerObject.h"
 
@@ -14,6 +14,7 @@
 #include "K2Node_Tunnel.h"
 #include "ScopedTransaction.h"
 #include "SGraphActionMenu.h"
+#include "BlueprintAssistMisc/IBAInputState.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Logging/MessageLog.h"
@@ -272,42 +273,18 @@ void UBABlueprintHandlerObject::OnVariableAdded(UBlueprint* Blueprint, FBPVariab
 {
 	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
 
-	// ignore event dispatchers when setting is false
-	if (!FeaturesSettings.bApplyVariableDefaultsToEventDispatchers && Variable.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
+	for (auto& [Key, Defaults] : FeaturesSettings.VariableDefaultsHotkeys)
 	{
-		return;
+		if (IBAInputState::Get().IsKeyDown(Key))
+		{
+			ApplyVariableDefaults(Blueprint, Variable, Defaults);
+			return;
+		}
 	}
 
 	if (FeaturesSettings.bEnableVariableDefaults)
 	{
-		if (FeaturesSettings.bDefaultVariableInstanceEditable)
-		{
-			FBlueprintEditorUtils::SetBlueprintOnlyEditableFlag(Blueprint, Variable.VarName, false);
-		}
-
-		if (FeaturesSettings.bDefaultVariableBlueprintReadOnly)
-		{
-			FBlueprintEditorUtils::SetBlueprintPropertyReadOnlyFlag(Blueprint, Variable.VarName, true);
-		}
-
-		if (FeaturesSettings.bDefaultVariableExposeOnSpawn)
-		{
-			FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_ExposeOnSpawn, TEXT("true"));
-		}
-
-		if (FeaturesSettings.bDefaultVariablePrivate)
-		{
-			FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Private, TEXT("true"));
-		}
-
-		if (FeaturesSettings.bDefaultVariableExposeToCinematics)
-		{
-			FBlueprintEditorUtils::SetInterpFlag(Blueprint, Variable.VarName, true);
-		}
-
-		FBlueprintEditorUtils::SetBlueprintVariableCategory(Blueprint, Variable.VarName, nullptr, FeaturesSettings.DefaultVariableCategory);
-
-		FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Tooltip, FeaturesSettings.DefaultVariableTooltip.ToString());
+		ApplyVariableDefaults(Blueprint, Variable, FeaturesSettings.VariableDefaults);
 	}
 }
 
@@ -361,10 +338,6 @@ void UBABlueprintHandlerObject::RenameGettersAndSetters(UBlueprint* Blueprint, c
 void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph* FunctionGraph)
 {
 	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
-	if (!FeaturesSettings.bEnableFunctionDefaults)
-	{
-		return;
-	}
 
 	TArray<UK2Node_FunctionEntry*> EntryNodes;
 	FunctionGraph->GetNodesOfClass(EntryNodes);
@@ -382,152 +355,131 @@ void UBABlueprintHandlerObject::OnFunctionAdded(UBlueprint* Blueprint, UEdGraph*
 		return;
 	}
 
+	for (auto& [Key, Defaults] : FeaturesSettings.FunctionDefaultsHotkeys)
+	{
+		if (IBAInputState::Get().IsKeyDown(Key))
+		{
+			ApplyFunctionDefaults(Blueprint, FunctionEntryNode, Function, Defaults);
+			return;
+		}
+	}
 
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "EditFunctionDefaults", "Edit Function Defaults"));
+	if (FeaturesSettings.bEnableFunctionDefaults)
+	{
+		ApplyFunctionDefaults(Blueprint, FunctionEntryNode, Function, FeaturesSettings.FunctionDefaults);
+	}
+}
 
-	Function->Modify();
-	FunctionEntryNode->Modify();
+void UBABlueprintHandlerObject::ApplyVariableDefaults(UBlueprint* Blueprint, FBPVariableDescription& Variable, const FBAVariableDefaults& Defaults)
+{
+	// ignore event dispatchers when setting is false
+	if (!Defaults.bApplyVariableDefaultsToEventDispatchers && Variable.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
+	{
+		return;
+	}
 
-	const bool bInsideInterface = Function->GetOuterUClass()->IsChildOf(UInterface::StaticClass());
-	
+	if (Defaults.bDefaultVariableInstanceEditable)
+	{
+		FBlueprintEditorUtils::SetBlueprintOnlyEditableFlag(Blueprint, Variable.VarName, false);
+	}
+
+	if (Defaults.bDefaultVariableBlueprintReadOnly)
+	{
+		FBlueprintEditorUtils::SetBlueprintPropertyReadOnlyFlag(Blueprint, Variable.VarName, true);
+	}
+
+	if (Defaults.bDefaultVariableExposeOnSpawn)
+	{
+		FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_ExposeOnSpawn, TEXT("true"));
+	}
+
+	if (Defaults.bDefaultVariablePrivate)
+	{
+		FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Private, TEXT("true"));
+	}
+
+	if (Defaults.bDefaultVariableExposeToCinematics)
+	{
+		FBlueprintEditorUtils::SetInterpFlag(Blueprint, Variable.VarName, true);
+	}
+
+	if (Defaults.bDefaultVariableTransient)
+	{
+		FBlueprintEditorUtils::SetVariableTransientFlag(Blueprint, Variable.VarName, true);
+	}
+
+	if (Defaults.bDefaultVariableSaveGame)
+	{
+		FBlueprintEditorUtils::SetVariableSaveGameFlag(Blueprint, Variable.VarName, true);
+	}
+
+	if (Defaults.bDefaultVariableAdvancedDisplay)
+	{
+		FBlueprintEditorUtils::SetVariableAdvancedDisplayFlag(Blueprint, Variable.VarName, true);
+	}
+
+	if (Defaults.bDefaultConfigVariable)
+	{
+		Variable.PropertyFlags |= CPF_Config;
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	}
+
+	FBlueprintEditorUtils::SetBlueprintVariableCategory(Blueprint, Variable.VarName, nullptr, Defaults.DefaultVariableCategory);
+
+	FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, Variable.VarName, nullptr, FBlueprintMetadata::MD_Tooltip, Defaults.DefaultVariableTooltip.ToString());
+}
+
+void UBABlueprintHandlerObject::ApplyCustomEventDefaults(UBlueprint* Blueprint, UK2Node_CustomEvent* CustomEventNode, const FBACustomEventDefaults& Defaults)
+{
+	const FScopedTransaction Transaction(INVTEXT("Edit Custom Event Defaults"), !GIsTransacting);
+
+	CustomEventNode->Modify();
+
+	if (Defaults.bDefaultEventNetReliable)
+	{
+		CustomEventNode->FunctionFlags |= FUNC_NetReliable;
+	}
+
+	// set custom event node access specifier (see FBlueprintGraphActionDetails::OnAccessSpecifierSelected)
 	EFunctionFlags AccessSpecifier = FUNC_Public;
-	if (!bInsideInterface)
+	switch (Defaults.DefaultEventAccessSpecifier)
 	{
-		switch (FeaturesSettings.DefaultFunctionAccessSpecifier)
-		{
-			case EBAFunctionAccessSpecifier::Public:
-				AccessSpecifier = FUNC_Public;
-			break;
-			case EBAFunctionAccessSpecifier::Protected:
-				AccessSpecifier = FUNC_Protected;
-			break;
-			case EBAFunctionAccessSpecifier::Private:
-				AccessSpecifier = FUNC_Private;
-			break;
-		}
+	case EBAFunctionAccessSpecifier::Public:
+		AccessSpecifier = FUNC_Public;
+		break;
+	case EBAFunctionAccessSpecifier::Protected:
+		AccessSpecifier = FUNC_Protected;
+		break;
+	case EBAFunctionAccessSpecifier::Private:
+		AccessSpecifier = FUNC_Private;
+		break;
 	}
 
-	const EFunctionFlags ClearAccessSpecifierMask = ~FUNC_AccessSpecifiers;
-	if (UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(FunctionEntryNode))
-	{
-		// Set const
-		if (FeaturesSettings.bDefaultFunctionConst)
-		{
-			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_Const);
-		}
-
-		// Set exec
-		if (FeaturesSettings.bDefaultFunctionExec)
-		{
-			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_Exec);
-		}
-
-		// Set pure
-		if (!bInsideInterface && FeaturesSettings.bDefaultFunctionPure)
-		{
-			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() ^ FUNC_BlueprintPure);
-		}
-
-		int32 ExtraFlags = EntryNode->GetExtraFlags();
-		ExtraFlags &= ClearAccessSpecifierMask;
-		ExtraFlags |= AccessSpecifier;
-		EntryNode->SetExtraFlags(ExtraFlags);
-	}
-	else if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(FunctionEntryNode))
-	{
-		EventNode->FunctionFlags &= ClearAccessSpecifierMask;
-		EventNode->FunctionFlags |= AccessSpecifier;
-	}
-
-	Function->FunctionFlags &= ClearAccessSpecifierMask;
-	Function->FunctionFlags |= AccessSpecifier;
-
-	if (FKismetUserDeclaredFunctionMetadata* Metadata = GetMetadataBlock(FunctionEntryNode))
-	{
-		// Set default keywords
-		const FText& DefaultKeywords = FeaturesSettings.DefaultFunctionKeywords;
-		// Remove excess whitespace and prevent keywords with just spaces
-		const FText& Keywords = FText::TrimPrecedingAndTrailing(DefaultKeywords);
-		if (!Keywords.EqualTo(Metadata->Keywords))
-		{
-			Metadata->Keywords = Keywords;
-			Function->SetMetaData(FBlueprintMetadata::MD_FunctionKeywords, *Keywords.ToString());
-		}
-
-		// Set default tooltip
-		const FText& DefaultDescription = FeaturesSettings.DefaultFunctionTooltip;
-		Metadata->ToolTip = DefaultDescription;
-		Function->SetMetaData(FBlueprintMetadata::MD_Tooltip, *DefaultDescription.ToString());
-
-		// Set default category
-		const FText& DefaultFunctionCategory = FeaturesSettings.DefaultFunctionCategory;
-		Metadata->Category = DefaultFunctionCategory;
-		if (Function)
-		{
-			check(!Function->IsNative()); // Should never get here with a native function, as we wouldn't have been able to find metadata for it
-			Function->Modify();
-			Function->SetMetaData(FBlueprintMetadata::MD_FunctionCategory, *DefaultFunctionCategory.ToString());
-		}
-		
-		// Refresh category in editor? See FBlueprintGraphActionDetails::OnCategoryTextCommitted | SMyBlueprint::Refresh
-		FBlueprintEditorUtils::ConformImplementedInterfaces(Blueprint);
-		if (TSharedPtr<SGraphActionMenu> GraphActionMenu = FBAUtils::GetGraphActionMenu())
-		{
-			GraphActionMenu->RefreshAllActions(true);
-		}
-	}
-
-	// Refresh the node after editing properties (from FBaseBlueprintGraphActionDetails::OnParamsChanged)
-	{
-		const bool bCurDisableOrphanSaving = FunctionEntryNode->bDisableOrphanPinSaving;
-		FunctionEntryNode->bDisableOrphanPinSaving = true;
-
-		FunctionEntryNode->ReconstructNode();
-
-		FunctionEntryNode->bDisableOrphanPinSaving = bCurDisableOrphanSaving;
-	}
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	K2Schema->HandleParameterDefaultValueChanged(FunctionEntryNode);
+	constexpr EFunctionFlags ClearAccessSpecifierMask = ~FUNC_AccessSpecifiers;
+	CustomEventNode->FunctionFlags &= ClearAccessSpecifierMask;
+	CustomEventNode->FunctionFlags |= AccessSpecifier;
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 }
 
 void UBABlueprintHandlerObject::OnNodeAdded(UBlueprint* Blueprint, UEdGraphNode* Node)
 {
-	const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
-
-	if (FeaturesSettings.bEnableEventDefaults)
+	if (UK2Node_CustomEvent* CustomEventNode = Cast<UK2Node_CustomEvent>(Node))
 	{
-		if (UK2Node_CustomEvent* CustomEventNode = Cast<UK2Node_CustomEvent>(Node))
+		const UBASettings_EditorFeatures& FeaturesSettings = UBASettings_EditorFeatures::Get();
+
+		for (auto& [Key, Defaults] : FeaturesSettings.CustomEventDefaultsHotkeys)
 		{
-			const FScopedTransaction Transaction(INVTEXT("Edit Custom Event Defaults"));
-			CustomEventNode->Modify();
-
-			if (FeaturesSettings.bDefaultEventNetReliable)
+			if (IBAInputState::Get().IsKeyDown(Key))
 			{
-				CustomEventNode->FunctionFlags |= FUNC_NetReliable;
+				ApplyCustomEventDefaults(Blueprint, CustomEventNode, Defaults);
+				return;
 			}
+		}
 
-			// set custom event node access specifier (see FBlueprintGraphActionDetails::OnAccessSpecifierSelected)
-			EFunctionFlags AccessSpecifier = FUNC_Public;
-			switch (FeaturesSettings.DefaultEventAccessSpecifier)
-			{
-			case EBAFunctionAccessSpecifier::Public:
-				AccessSpecifier = FUNC_Public;
-				break;
-			case EBAFunctionAccessSpecifier::Protected:
-				AccessSpecifier = FUNC_Protected;
-				break;
-			case EBAFunctionAccessSpecifier::Private:
-				AccessSpecifier = FUNC_Private;
-				break;
-			}
-
-			constexpr EFunctionFlags ClearAccessSpecifierMask = ~FUNC_AccessSpecifiers;
-			CustomEventNode->FunctionFlags &= ClearAccessSpecifierMask;
-			CustomEventNode->FunctionFlags |= AccessSpecifier;
-
-			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		if (FeaturesSettings.bEnableCustomEventDefaults)
+		{
+			ApplyCustomEventDefaults(Blueprint, CustomEventNode, FeaturesSettings.CustomEventDefaults);
 		}
 	}
 }
@@ -660,4 +612,125 @@ void UBABlueprintHandlerObject::DetectGraphIssues(UEdGraph* Graph)
 			}
 		}
 	}
+}
+
+void UBABlueprintHandlerObject::ApplyFunctionDefaults(UBlueprint* Blueprint, UK2Node_EditablePinBase* FunctionEntryNode, UFunction* Function, const FBAFunctionDefaults& Defaults)
+{
+	const FScopedTransaction Transaction(INVTEXT("Edit Function Defaults"), !GIsTransacting);
+
+	Function->Modify();
+	FunctionEntryNode->Modify();
+
+	const bool bInsideInterface = Function->GetOuterUClass()->IsChildOf(UInterface::StaticClass());
+
+	EFunctionFlags AccessSpecifier = FUNC_Public;
+	if (!bInsideInterface)
+	{
+		switch (Defaults.DefaultFunctionAccessSpecifier)
+		{
+			case EBAFunctionAccessSpecifier::Public:
+				AccessSpecifier = FUNC_Public;
+			break;
+			case EBAFunctionAccessSpecifier::Protected:
+				AccessSpecifier = FUNC_Protected;
+			break;
+			case EBAFunctionAccessSpecifier::Private:
+				AccessSpecifier = FUNC_Private;
+			break;
+		}
+	}
+
+	constexpr EFunctionFlags ClearAccessSpecifierMask = ~FUNC_AccessSpecifiers;
+	if (UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(FunctionEntryNode))
+	{
+		// Set const (FBlueprintGraphActionDetails::OnIsConstFunctionModified)
+		if (Defaults.bDefaultFunctionConst)
+		{
+			Function->FunctionFlags &= FUNC_Const;
+			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() & FUNC_Const);
+		}
+
+		// Set exec (FBlueprintGraphActionDetails::OnIsExecFunctionModified)
+		if (Defaults.bDefaultFunctionExec)
+		{
+			Function->FunctionFlags &= FUNC_Exec;
+			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() & FUNC_Exec);
+		}
+
+		// Set pure (FBlueprintGraphActionDetails::OnIsPureFunctionModified)
+		if (!bInsideInterface && Defaults.bDefaultFunctionPure)
+		{
+			Function->FunctionFlags &= FUNC_BlueprintPure;
+			EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() & FUNC_BlueprintPure);
+		}
+
+		// Set thread safe (FBlueprintGraphActionDetails::OnIsThreadSafeFunctionModified)
+		EntryNode->MetaData.bThreadSafe = Defaults.bDefaultFunctionThreadSafe;
+
+		// Set access specifier (FBlueprintGraphActionDetails::OnAccessSpecifierSelected)
+		{
+			int32 ExtraFlags = EntryNode->GetExtraFlags();
+			ExtraFlags &= ClearAccessSpecifierMask;
+			ExtraFlags |= AccessSpecifier;
+			EntryNode->SetExtraFlags(ExtraFlags);
+		}
+	}
+	else if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(FunctionEntryNode))
+	{
+		EventNode->FunctionFlags &= ClearAccessSpecifierMask;
+		EventNode->FunctionFlags |= AccessSpecifier;
+	}
+
+	Function->FunctionFlags &= ClearAccessSpecifierMask;
+	Function->FunctionFlags |= AccessSpecifier;
+
+	if (FKismetUserDeclaredFunctionMetadata* Metadata = GetMetadataBlock(FunctionEntryNode))
+	{
+		// Set default keywords
+		const FText& DefaultKeywords = Defaults.DefaultFunctionKeywords;
+		// Remove excess whitespace and prevent keywords with just spaces
+		const FText& Keywords = FText::TrimPrecedingAndTrailing(DefaultKeywords);
+		if (!Keywords.EqualTo(Metadata->Keywords))
+		{
+			Metadata->Keywords = Keywords;
+			Function->SetMetaData(FBlueprintMetadata::MD_FunctionKeywords, *Keywords.ToString());
+		}
+
+		// Set default tooltip
+		const FText& DefaultDescription = Defaults.DefaultFunctionTooltip;
+		Metadata->ToolTip = DefaultDescription;
+		Function->SetMetaData(FBlueprintMetadata::MD_Tooltip, *DefaultDescription.ToString());
+
+		// Set default category
+		const FText& DefaultFunctionCategory = Defaults.DefaultFunctionCategory;
+		Metadata->Category = DefaultFunctionCategory;
+		if (Function)
+		{
+			check(!Function->IsNative()); // Should never get here with a native function, as we wouldn't have been able to find metadata for it
+			Function->Modify();
+			Function->SetMetaData(FBlueprintMetadata::MD_FunctionCategory, *DefaultFunctionCategory.ToString());
+		}
+
+		// Refresh category in editor? See FBlueprintGraphActionDetails::OnCategoryTextCommitted | SMyBlueprint::Refresh
+		FBlueprintEditorUtils::ConformImplementedInterfaces(Blueprint);
+		if (TSharedPtr<SGraphActionMenu> GraphActionMenu = FBAUtils::GetGraphActionMenu())
+		{
+			GraphActionMenu->RefreshAllActions(true);
+		}
+	}
+
+	// Refresh the node after editing properties (from FBaseBlueprintGraphActionDetails::OnParamsChanged)
+	{
+		const bool bCurDisableOrphanSaving = FunctionEntryNode->bDisableOrphanPinSaving;
+		FunctionEntryNode->bDisableOrphanPinSaving = true;
+
+		FunctionEntryNode->ReconstructNode();
+
+		FunctionEntryNode->bDisableOrphanPinSaving = bCurDisableOrphanSaving;
+	}
+
+	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+	K2Schema->HandleParameterDefaultValueChanged(FunctionEntryNode);
+
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 }

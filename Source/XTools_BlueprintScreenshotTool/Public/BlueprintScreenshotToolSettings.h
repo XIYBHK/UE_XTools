@@ -5,6 +5,8 @@
 
 #include "CoreMinimal.h"
 #include "BlueprintScreenshotToolTypes.h"
+#include "Framework/Commands/InputChord.h"
+#include "Misc/Paths.h"
 #include "UObject/Object.h"
 #include "BlueprintScreenshotToolSettings.generated.h"
 

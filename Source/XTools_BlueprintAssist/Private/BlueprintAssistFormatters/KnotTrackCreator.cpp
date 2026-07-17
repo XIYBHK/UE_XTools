@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #include "BlueprintAssistFormatters/KnotTrackCreator.h"
 
@@ -8,6 +8,7 @@
 #include "BlueprintAssistStats.h"
 #include "BlueprintAssistUtils.h"
 #include "EdGraphNode_Comment.h"
+#include "Editor.h"
 #include "K2Node_GetClassDefaults.h"
 #include "K2Node_Knot.h"
 #include "BlueprintAssistFormatters/BlueprintAssistCommentHandler.h"
@@ -150,18 +151,6 @@ void FKnotTrackCreator::FormatKnotNodes()
 						continue;
 
 					RelativeMapping.FindOrAdd(Creation->CreatedKnot).Add(Other->CreatedKnot);
-				}
-
-				// make all creations related to their nodes
-				for (UEdGraphNode* RelatedNode : RelatedNodes)
-				{
-					RelativeMapping.FindOrAdd(Creation->CreatedKnot).Add(RelatedNode);
-
-					// for looping tracks also make the node related to the track
-					if (Track->bIsLoopingTrack)
-					{
-						RelativeMapping.FindOrAdd(Creation->CreatedKnot).Add(RelatedNode);
-					}
 				}
 			}
 		}
@@ -1406,14 +1395,74 @@ void FKnotTrackCreator::AddNomadKnotsIntoComments()
 	}
 }
 
+void FKnotTrackCreator::DirtyComments()
+{
+	FCommentHandler* CommentHandler = Formatter->GetCommentHandler();
+	if (!CommentHandler || !GEditor)
+	{
+		return;
+	}
+
+	const TCHAR* SubsystemClassPath = nullptr;
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("XTools_AutoSizeComments")))
+	{
+		SubsystemClassPath = TEXT("/Script/XTools_AutoSizeComments.AutoSizeCommentsSubsystem");
+	}
+	else if (FModuleManager::Get().IsModuleLoaded(TEXT("AutoSizeComments")))
+	{
+		SubsystemClassPath = TEXT("/Script/AutoSizeComments.AutoSizeCommentsSubsystem");
+	}
+
+	UClass* ASCSubsystemClass = SubsystemClassPath
+		? FindObject<UClass>(nullptr, SubsystemClassPath)
+		: nullptr;
+	UEditorSubsystem* ASCSubsystem = ASCSubsystemClass
+		? GEditor->GetEditorSubsystemBase(ASCSubsystemClass)
+		: nullptr;
+	UFunction* MarkDirtyFunc = ASCSubsystem
+		? ASCSubsystem->FindFunction(FName(TEXT("MarkNodeDirty")))
+		: nullptr;
+	if (!MarkDirtyFunc)
+	{
+		return;
+	}
+
+	for (UEdGraphNode_Comment* Comment : CommentHandler->GetComments())
+	{
+		struct
+		{
+			UEdGraphNode_Comment* Node;
+		} Params;
+
+		Params.Node = Comment;
+		ASCSubsystem->ProcessEvent(MarkDirtyFunc, &Params);
+	}
+}
+
 void FKnotTrackCreator::MakeKnotTrack()
 {
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("FKnotTrackCreator::MakeKnotTrack"), STAT_KnotTrackCreator_MakeKnotTrack, STATGROUP_BA_EdGraphFormatter);
 	const TSet<UEdGraphNode*> FormattedNodes = Formatter->GetFormattedNodes();
+	const FEdGraphFormatterParameters& FormatterParams = Formatter->GetFormatterParameters();
 
-	const auto& NotFormatted = [FormattedNodes](UEdGraphPin* Pin)
+	const auto& NotFormatted = [FormattedNodes, FormatterParams](UEdGraphPin* Pin)
 	{
-		return Pin != nullptr ? !FormattedNodes.Contains(Pin->GetOwningNode()) : true;
+		if (!Pin)
+		{
+			return true;
+		}
+
+		if (!FormatterParams.IsValidPin(Pin))
+		{
+			return true;
+		}
+
+		if (!FormattedNodes.Contains(Pin->GetOwningNode()))
+		{
+			return true;
+		}
+
+		return false;
 	};
 
 	// iterate across the pins of all nodes and determine if they require a knot track
@@ -1423,6 +1472,11 @@ void FKnotTrackCreator::MakeKnotTrack()
 		TArray<TSharedPtr<FKnotNodeTrack>> PreviousTracks;
 		for (UEdGraphPin* MyPin : FBAUtils::GetExecOrDelegatePins(MyNode, EGPD_Input))
 		{
+			if (!FormatterParams.IsValidPin(MyPin))
+			{
+				continue;
+			}
+
 			TArray<UEdGraphPin*> LinkedTo = MyPin->LinkedTo;
 			LinkedTo.RemoveAll(NotFormatted);
 			if (LinkedTo.Num() == 0)
@@ -1793,16 +1847,16 @@ TSharedPtr<FKnotNodeTrack> FKnotTrackCreator::MakeKnotTracksForParameterPins(UEd
 	}
 
 	// remove any pins which has the same height and no collision
-	for (UEdGraphPin* LinkedPin : LinkedPins)
-	{
-		const FVector2D LinkedPinPos = FBAUtils::GetPinPos(GraphHandler, LinkedPin);
-
-		const bool bSameHeight = FMath::Abs(LinkedPinPos.Y - ParentPinPos.Y) < 5.f;
-		if (bSameHeight && !AnyCollisionBetweenPins(ParentPin, LinkedPin))
-		{
-			KnotTrack->LinkedTo.Remove(LinkedPin);
-		}
-	}
+	// for (UEdGraphPin* LinkedPin : LinkedPins)
+	// {
+	// 	const FVector2D LinkedPinPos = FBAUtils::GetPinPos(GraphHandler, LinkedPin);
+	//
+	// 	const bool bSameHeight = FMath::Abs(LinkedPinPos.Y - ParentPinPos.Y) < 5.f;
+	// 	if (bSameHeight && !AnyCollisionBetweenPins(ParentPin, LinkedPin))
+	// 	{
+	// 		KnotTrack->LinkedTo.Remove(LinkedPin);
+	// 	}
+	// }
 
 	if (KnotTrack->LinkedTo.Num() == 0)
 	{

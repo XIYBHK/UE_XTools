@@ -22,6 +22,7 @@
 #include "Editor.h"
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
+#include "XToolsVersionCompat.h"
 
 #define LOCTEXT_NAMESPACE "X_MaterialFunctionParamDialog"
 
@@ -194,7 +195,12 @@ void SX_MaterialFunctionParamDialog::Construct(const FArguments& InArgs, TWeakPt
 
 FReply SX_MaterialFunctionParamDialog::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
-	if (InKeyEvent.GetKey() == EKeys::Enter || InKeyEvent.GetKey() == EKeys::Virtual_Accept)
+	if (InKeyEvent.GetKey() == EKeys::Enter ||
+#if XTOOLS_ENGINE_5_8_OR_LATER
+		InKeyEvent.GetKey() == EKeys::Virtual_Gamepad_Accept.GetVirtualKey())
+#else
+		InKeyEvent.GetKey() == EKeys::Virtual_Accept)
+#endif
 	{
 		return CanConfirm() ? ConfirmAndClose() : FReply::Handled();
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -51,9 +51,9 @@ protected:
       }
       return true;
     } else {
-      ensureMsgf(false,
-                 TEXT("ECF - While True Execute failed to start. Are you sure "
-                      "the Predicate and Function are set properly?"));
+#if ECF_LOGS
+      UE_LOG(LogECF, Error, TEXT("ECF - [%s] While True Execute failed to start. Check the predicate and callbacks."), *Settings.Label);
+#endif
       return false;
     }
   }
@@ -88,19 +88,28 @@ protected:
         InTimeOut, bEvaluatePredicateOnSetup);
   }
 
+  bool Reset(bool bCallUpdate) override {
+    CurrentTime = 0.f;
+    bTimedOut = false;
+    return true;
+  }
+
   void Tick(float DeltaTime) override {
 #if STATS
     DECLARE_SCOPE_CYCLE_COUNTER(TEXT("WhileTrueExecute - Tick"),
                                 STAT_ECFDETAILS_WHILETRUEEXECUTE,
                                 STATGROUP_ECFDETAILS);
 #endif
+#if ECF_INSIGHT_PROFILING
+    TRACE_CPUPROFILER_EVENT_SCOPE("ECF - WhileTrueExecute Tick");
+#endif
     // 修复：使用累加方式代替递减，与其他Action保持一致
     if (bWithTimeOut) {
       CurrentTime += DeltaTime;
       if (CurrentTime >= TimeOut) {
         bTimedOut = true;
-        Complete(false);
         MarkAsFinished();
+        Complete(false);
         return;
       }
     }
@@ -108,8 +117,8 @@ protected:
     if (Predicate()) {
       TickFunc(DeltaTime);
     } else {
-      Complete(false);
       MarkAsFinished();
+      Complete(false);
     }
   }
 

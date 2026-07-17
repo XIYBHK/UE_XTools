@@ -1,4 +1,4 @@
-﻿// Copyright fpwong. All Rights Reserved.
+// Copyright fpwong. All Rights Reserved.
 
 #pragma once
 
@@ -17,6 +17,8 @@ public:
 	bool TryCopyPastePinValue();
 
 	bool TryFocusInDetailPanel();
+
+	bool TryInteractWithPin(const FKey& Key);
 
 	bool CutSelectedAssets();
 

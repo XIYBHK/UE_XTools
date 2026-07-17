@@ -1,4 +1,4 @@
-﻿#include "BlueprintAssistSettings_EditorFeatures.h"
+#include "BlueprintAssistSettings_EditorFeatures.h"
 
 #include "BlueprintAssistGraphHandler.h"
 #include "BlueprintAssistModule.h"
@@ -8,15 +8,45 @@
 #include "InputCoreTypes.h"
 #include "Framework/Commands/InputChord.h"
 
+FBAVariableDefaults::FBAVariableDefaults()
+	: bDefaultVariablePrivate(false)
+	, bDefaultVariableInstanceEditable(false)
+	, bDefaultVariableBlueprintReadOnly(false)
+	, bDefaultVariableExposeOnSpawn(false)
+	, bDefaultVariableExposeToCinematics(false)
+	, bDefaultVariableTransient(false)
+	, bDefaultVariableSaveGame(false)
+	, bDefaultVariableAdvancedDisplay(false)
+	, bDefaultConfigVariable(false)
+	, DefaultVariableName("VarName")
+	, bApplyVariableDefaultsToEventDispatchers(false)
+{
+}
+
+FBAFunctionDefaults::FBAFunctionDefaults()
+	: DefaultFunctionAccessSpecifier(EBAFunctionAccessSpecifier::Public)
+	, bDefaultFunctionPure(false)
+	, bDefaultFunctionConst(false)
+	, bDefaultFunctionExec(false)
+	, bDefaultFunctionThreadSafe(false)
+{
+}
+
+FBACustomEventDefaults::FBACustomEventDefaults()
+	: DefaultEventAccessSpecifier(EBAFunctionAccessSpecifier::Public)
+	, bDefaultEventNetReliable(false)
+{
+}
+
 UBASettings_EditorFeatures::UBASettings_EditorFeatures(const FObjectInitializer& ObjectInitializer)
 {
 	//~~~ CustomEventReplication
 	bSetReplicationFlagsAfterRenaming = true;
-	bClearReplicationFlagsWhenRenamingWithNoPrefix = false;
-	bAddReplicationPrefixToCustomEventTitle = true;
-	MulticastPrefix = "Multicast_";
-	ServerPrefix = "Server_";
-	ClientPrefix = "Client_";
+	bClearReplicationFlagsWhenRenaming = false;
+	bAddReplicationAffixToCustomEventTitle = true;
+	MulticastAffix = FBAStringAffix("Multicast_");
+	ServerAffix = FBAStringAffix("Server_");
+	ClientAffix = FBAStringAffix("Client_");
 
 	//~~~ NodeGroup
 	bDrawNodeGroupOutline = true;
@@ -30,6 +60,7 @@ UBASettings_EditorFeatures::UBASettings_EditorFeatures(const FObjectInitializer&
 
 	//~~~ Mouse Features
 	GroupMovementChords.Add(FInputChord(EKeys::SpaceBar));
+	bDragRequiresNodeUnderCursor = false;
 
 	//~~~ Graph
 	ShiftCameraDistance = 400;
@@ -56,53 +87,22 @@ UBASettings_EditorFeatures::UBASettings_EditorFeatures(const FObjectInitializer&
 	bAutoRenameGettersAndSetters = true;
 	bMergeGenerateGetterAndSetterButton = false;
 
+	//~~~ Defaults
+	bEnableVariableDefaults = false;
+	bEnableFunctionDefaults = false;
+	bEnableCustomEventDefaults = false;
+
 	//~~~ Misc
 	bDisplayAllHotkeys = false;
-	bShowWelcomeScreenOnLaunch = false;
+	bShowWelcomeScreenOnLaunch = true;
 
 	CopyPinValueChord = FInputChord(EKeys::RightMouseButton, EModifierKey::Shift);
 	PastePinValueChord = FInputChord(EKeys::LeftMouseButton, EModifierKey::Shift);
 	FocusInDetailsPanelChord = FInputChord();
-
-	// ------------------------ //
-	// Create variable defaults //
-	// ------------------------ //
-
-	bEnableVariableDefaults = false;
-	bApplyVariableDefaultsToEventDispatchers = false;
-	bDefaultVariableInstanceEditable = false;
-	bDefaultVariableBlueprintReadOnly = false;
-	bDefaultVariableExposeOnSpawn = false;
-	bDefaultVariablePrivate = false;
-	bDefaultVariableExposeToCinematics = false;
-	DefaultVariableName = TEXT("VarName");
-	DefaultVariableTooltip = FText::FromString(TEXT(""));
-	DefaultVariableCategory = FText::FromString(TEXT(""));
-
-	// ----------------- //
-	// Function defaults //
-	// ----------------- //
-
-	bEnableFunctionDefaults = false;
-	DefaultFunctionAccessSpecifier = EBAFunctionAccessSpecifier::Public;
-	bDefaultFunctionPure = false;
-	bDefaultFunctionConst = false;
-	bDefaultFunctionExec = false;
-	DefaultFunctionTooltip = FText::FromString(TEXT(""));
-	DefaultFunctionKeywords = FText::FromString(TEXT(""));
-	DefaultFunctionCategory = FText::FromString(TEXT(""));
-
-	// --------------------- //
-	// Custom event defaults //
-	// --------------------- //
-
-	bEnableEventDefaults = false;
-	DefaultEventAccessSpecifier = EBAFunctionAccessSpecifier::Public;
-	bDefaultEventNetReliable = false;
-
-	// ------------------------ //
-	// Misc                     //
-	// ------------------------ //
+	AllowConversionConnectionsModifier = EKeys::LeftShift;
+	bEnterCyclesPinValues = true;
+	bEnterInteractsWithPin = true;
+	bTabCyclePinValues = true;
 
 	DefaultGeneratedGettersCategory = INVTEXT("Generated|Getters");
 	DefaultGeneratedSettersCategory = INVTEXT("Generated|Setters");
@@ -129,7 +129,7 @@ void UBASettings_EditorFeatures::PostEditChangeProperty(struct FPropertyChangedE
 	UObject::PostEditChangeProperty(PropertyChangedEvent);
 
 	const FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
-	
+
 	TSharedPtr<FBAGraphHandler> GraphHandler = FBAUtils::GetCurrentGraphHandler();
 	if (GraphHandler.IsValid())
 	{

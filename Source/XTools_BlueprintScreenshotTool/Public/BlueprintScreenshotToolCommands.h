@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Framework/Commands/Commands.h"
 
 class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API FBlueprintScreenshotToolCommands : public TCommands<FBlueprintScreenshotToolCommands>
 {

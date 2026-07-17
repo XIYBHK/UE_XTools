@@ -6,6 +6,7 @@
 
 #include "BlueprintAssistSettings.h"
 #include "BlueprintAssistTypes.h"
+#include "GraphFormatterTypes.h"
 #include "SGraphPin.h"
 #include "EdGraph/EdGraphNode.h"
 
@@ -23,8 +24,10 @@ struct FEdGraphFormatterParameters
 {
 	TSharedPtr<EBAParameterFormattingStyle> OverrideFormattingStyle;
 
-	FBANodeArray NodesToFormat;
-	FBANodeArray IgnoredNodes;
+	FBANodeSet IgnoredNodes;
+	FBANodeSet LimitedNodes;
+	TSet<FBANodePinHandle> IgnoredPins;
+
 	TWeakObjectPtr<UEdGraphNode> NodeToKeepStill;
 
 	EBAAutoFormatting FormattingMethod;
@@ -35,14 +38,20 @@ struct FEdGraphFormatterParameters
 		Reset();
 	}
 
-	void Init();
+	bool IsValidNode(UEdGraphNode* Node) const;
+
+	void InitIgnoredPins(TSharedPtr<FBAGraphHandler> GraphHandler);
+
+	bool IsValidLink(const struct FPinLink& Link) const;
+
+	bool IsValidPin(UEdGraphPin* Pin) const;
 
 	void Reset()
 	{
 		FormattingMethod = EBAAutoFormatting::FormatAllConnected;
 		OverrideFormattingStyle = nullptr;
-		NodesToFormat.Empty();
 		IgnoredNodes.Empty();
+		LimitedNodes.Empty();
 		MasterContainsGraph.Reset();
 		NodeToKeepStill.Reset();
 	}
@@ -121,6 +130,9 @@ struct XTOOLS_BLUEPRINTASSIST_API FPinLink
 	FString ToStringConst() const;
 
 	FPinLink MakeOppositeLink() const { return FPinLink(To, From); }
+
+	bool ArePinsVisible(TSharedPtr<SGraphPanel> Panel);
+	bool ArePinsVisibleUnsafe(TSharedPtr<SGraphPanel> Panel) const;
 
 	bool IsLinked(bool bDirectional = true);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -30,10 +30,9 @@ protected:
     if (ExecFunc && LockTime > 0 && MaxExecsEnqueued > 0) {
       return true;
     } else {
-      ensureMsgf(false,
-                 TEXT("ECF - Do No More Than Times failed to start. Are you "
-                      "sure the Lock time and Max Execs Eneueud are greater "
-                      "than 0 and the Exec Function is set properly?"));
+#if ECF_LOGS
+      UE_LOG(LogECF, Error, TEXT("ECF - [%s] Do No More Than X Times failed to start. Check the lock time, queue limit, and callback."), *Settings.Label);
+#endif
       return false;
     }
   }
@@ -45,6 +44,15 @@ protected:
     if (HasValidOwner() && ExecFunc) {
       ExecFunc();
     }
+  }
+
+  bool Reset(bool bCallUpdate) override {
+    CurrentTime = 0.f;
+    ExecsEnqueued = 0;
+    if (bCallUpdate && HasValidOwner() && ExecFunc) {
+      ExecFunc();
+    }
+    return true;
   }
 
   void RetriggeredInstancedAction() override {
@@ -66,6 +74,9 @@ protected:
     DECLARE_SCOPE_CYCLE_COUNTER(TEXT("DoNoMoreThanXTime - Tick"),
                                 STAT_ECFDETAILS_DONOMORETHANXTIMES,
                                 STATGROUP_ECFDETAILS);
+#endif
+#if ECF_INSIGHT_PROFILING
+    TRACE_CPUPROFILER_EVENT_SCOPE("ECF - DoNoMoreThanXTime Tick");
 #endif
     // 队列为空且当前锁窗已结束时，动作自然完成，避免永久常驻 Tick。
     if ((ExecsEnqueued <= 0) && (CurrentTime >= LockTime)) {

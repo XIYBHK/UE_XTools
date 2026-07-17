@@ -40,7 +40,8 @@ public class XTools_ElectronicNodes : ModuleRules
 				// 注意：以下三个 Private 路径是 ElectronicNodes 的核心机制（用于绘制自定义连线），每次升级 UE 版本需验证这些 Private 路径仍存在
 				Path.Combine(enginePath, "Source/Editor/AnimationBlueprintEditor/Private/"),
 				Path.Combine(enginePath, "Source/Editor/BehaviorTreeEditor/Private/"),
-				Path.Combine(enginePath, "Source/Editor/GraphEditor/Private/")
+				Path.Combine(enginePath, "Source/Editor/GraphEditor/Private/"),
+				Path.Combine(enginePath, "Source/Editor/MaterialEditor/Private/")
 			}
 		);
 
@@ -63,6 +64,7 @@ public class XTools_ElectronicNodes : ModuleRules
 				"Projects",
 				"UnrealEd",
 				"GraphEditor",
+				"MaterialEditor",
 				"BlueprintGraph",
 				"AnimGraph",
 				"AnimationBlueprintEditor",

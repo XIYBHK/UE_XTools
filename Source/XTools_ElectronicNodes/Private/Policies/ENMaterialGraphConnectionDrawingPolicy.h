@@ -5,13 +5,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
-// UE 5.6 兼容性：MaterialGraphConnectionDrawingPolicy.cpp 在 UE 5.6 中可能不存在或路径改变
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-// UE 5.6: 暂时禁用 Material Graph 连接绘制增强（等待引擎 API 稳定）
-#warning "ElectronicNodes: Material Graph connection drawing is disabled in UE 5.6 (MaterialGraphConnectionDrawingPolicy.cpp not found)"
-#else
-// UE 5.5-: 包含 .cpp 文件（UE 引擎的特殊做法）
+#include "Runtime/Launch/Resources/Version.h"
 #include "MaterialGraphConnectionDrawingPolicy.cpp"
 #include "ENConnectionDrawingPolicy.h"
 
@@ -24,10 +18,18 @@ public:
 		this->ConnectionDrawingPolicy = new FENConnectionDrawingPolicy(InBackLayerID, InFrontLayerID, ZoomFactor, InClippingRect, InDrawElements, InGraphObj);
 	}
 
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+	virtual void DrawConnection(int32 LayerId, const FVector2f& Start, const FVector2f& End, const FConnectionParams& Params) override
+#else
 	virtual void DrawConnection(int32 LayerId, const FVector2D& Start, const FVector2D& End, const FConnectionParams& Params) override
+#endif
 	{
 		this->ConnectionDrawingPolicy->SetMousePosition(LocalMousePosition);
+	#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+		this->ConnectionDrawingPolicy->DrawConnection(LayerId, FVector2D(Start), FVector2D(End), Params);
+	#else
 		this->ConnectionDrawingPolicy->DrawConnection(LayerId, Start, End, Params);
+	#endif
 		SplineOverlapResult = FGraphSplineOverlapResult(this->ConnectionDrawingPolicy->SplineOverlapResult);
 	}
 	
@@ -39,4 +41,3 @@ public:
 private:
 	FENConnectionDrawingPolicy* ConnectionDrawingPolicy;
 };
-#endif  // UE 5.5-

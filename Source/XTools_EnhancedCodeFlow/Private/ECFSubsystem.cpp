@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #include "ECFSubsystem.h"
 #include "ECFActionBase.h"
@@ -99,12 +99,23 @@ UECFSubsystem* UECFSubsystem::Get(const UObject* WorldContextObject)
 	if (ThisWorld)
 	{
 		UGameInstance* GameInstance = ThisWorld->GetGameInstance();
-
 		ensureAlwaysMsgf(GameInstance, TEXT("Can't obtain GameInstance from WorldContextObject in ECF!"));
 		if (GameInstance)
 		{
 			return GameInstance->GetSubsystem<UECFSubsystem>();
 		}
+		else
+		{
+#if ECF_LOGS
+			UE_LOG(LogECF, Error, TEXT("Can't obtain GameInstance from WorldContextObject in ECF!"));
+#endif
+		}
+	}
+	else
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("Can't obtain ThisWorld from WorldContextObject in ECF!"));
+#endif
 	}
 
 	return nullptr;
@@ -123,7 +134,7 @@ void UECFSubsystem::Tick(float DeltaTime)
 #endif
 
 #if ECF_INSIGHT_PROFILING
-	TRACE_CPUPROFILER_EVENT_SCOPE_STR("ECF-Actions-Tick");
+	TRACE_CPUPROFILER_EVENT_SCOPE("ECF - Subsystem Tick");
 #endif
 
 	// 首先移除所有过期的动作
@@ -173,11 +184,86 @@ UECFActionBase* UECFSubsystem::FindAction(const FECFHandle& HandleId) const
 	return nullptr;
 }
 
+TArray<FECFHandle> UECFSubsystem::GetActionsHandlesByClass(TSubclassOf<UECFActionBase> Class) const
+{
+	TArray<FECFHandle> Result;
+	if (Class == nullptr)
+	{
+		return Result;
+	}
+	// Search in active actions
+	for (UECFActionBase* Action : Actions)
+	{
+		if (IsActionValid(Action) && Action->IsA(Class))
+		{
+			Result.Add(Action->GetHandleId());
+		}
+	}
+	// Search in pending actions
+	for (UECFActionBase* PendingAction : PendingAddActions)
+	{
+		if (IsActionValid(PendingAction) && PendingAction->IsA(Class))
+		{
+			Result.Add(PendingAction->GetHandleId());
+		}
+	}
+	return Result;
+}
+
+TArray<FECFHandle> UECFSubsystem::GetActionsHandlesByLabel(const FString& Label) const
+{
+	TArray<FECFHandle> Result;
+	if (Label.IsEmpty())
+	{
+		return Result;
+	}
+	// Search in active actions
+	for (UECFActionBase* Action : Actions)
+	{
+		if (IsActionValid(Action) && (Action->Settings.Label == Label))
+		{
+			Result.Add(Action->GetHandleId());
+		}
+	}
+	// Search in pending actions
+	for (UECFActionBase* PendingAction : PendingAddActions)
+	{
+		if (IsActionValid(PendingAction) && (PendingAction->Settings.Label == Label))
+		{
+			Result.Add(PendingAction->GetHandleId());
+		}
+	}
+	return Result;
+}
+
+TArray<UECFActionBase*> UECFSubsystem::GetAllActions() const
+{
+	TArray<UECFActionBase*> Result;
+	Result.Reserve(GetActionsCount());
+	Result.Append(Actions);
+	Result.Append(PendingAddActions);
+	return Result;
+}
+
+int32 UECFSubsystem::GetActionsCount() const
+{
+	return Actions.Num() + PendingAddActions.Num();
+}
+
 void UECFSubsystem::PauseAction(const FECFHandle& HandleId)
 {
 	if (UECFActionBase* ActionFound = FindAction(HandleId))
 	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Verbose, TEXT("Paused Action of class: %s, Label: %s"), *ActionFound->GetName(), *ActionFound->GetLabel());
+#endif
 		ActionFound->bIsPaused = true;
+	}
+	else
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("Can't find Action of id %s to pause"), *HandleId.ToString());
+#endif
 	}
 }
 
@@ -185,7 +271,16 @@ void UECFSubsystem::ResumeAction(const FECFHandle& HandleId)
 {
 	if (UECFActionBase* ActionFound = FindAction(HandleId))
 	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Verbose, TEXT("Resume Action of class: %s, Label: %s"), *ActionFound->GetName(), *ActionFound->GetLabel());
+#endif
 		ActionFound->bIsPaused = false;
+	}
+	else
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("Can't find Action of id %s to resume"), *HandleId.ToString());
+#endif
 	}
 }
 
@@ -199,18 +294,59 @@ bool UECFSubsystem::IsActionPaused(const FECFHandle& HandleId, bool& bIsPaused) 
 	return false;
 }
 
+bool UECFSubsystem::ResetAction(const FECFHandle& HandleId, bool bCallUpdate)
+{
+	if (UECFActionBase* ActionFound = FindAction(HandleId))
+	{
+		if (IsActionValid(ActionFound))
+		{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+			UE_LOG(LogECF, Verbose, TEXT("Reset Action of class: %s, Label: %s"), *ActionFound->GetName(), *ActionFound->GetLabel());
+#endif
+			return ActionFound->Reset(bCallUpdate);
+		}
+	}
+
+#if ECF_LOGS
+	UE_LOG(LogECF, Error, TEXT("Can't find Action of id %s to reset"), *HandleId.ToString());
+#endif
+
+	return false;
+}
+
 void UECFSubsystem::RemoveAction(FECFHandle& HandleId, bool bComplete)
 {
 	if (UECFActionBase* ActionFound = FindAction(HandleId))
 	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Verbose, TEXT("Remove Action of class: %s, Label: %s"), *ActionFound->GetName(), *ActionFound->GetLabel());
+#endif
 		FinishAction(ActionFound, bComplete);
 		HandleId.Invalidate();
+	}
+	else
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("Can't find Action of id %s to remove"), *HandleId.ToString());
+#endif
 	}
 }
 
 void UECFSubsystem::RemoveActionsOfClass(TSubclassOf<UECFActionBase> ActionClass, bool bComplete, UObject* InOwner)
 {
-	// 查找分配给特定所有者（如果指定）的给定类的运行中动作并将其设置为已完成
+	if (ActionClass == nullptr)
+	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Warning, TEXT("Trying to remove Actions of empty class!"));
+#endif
+		return;
+	}
+
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+	UE_LOG(LogECF, Verbose, TEXT("Removing Actions of class: %s"), *ActionClass->GetName());
+#endif
+
+	// Find running actions of given class assigned to a specific owner (if specified) and set it as finished.
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))
@@ -241,9 +377,58 @@ void UECFSubsystem::RemoveActionsOfClass(TSubclassOf<UECFActionBase> ActionClass
 	}
 }
 
+void UECFSubsystem::RemoveActionsOfLabel(const FString& Label, bool bComplete, UObject* InOwner)
+{
+	if (Label.IsEmpty())
+	{
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+		UE_LOG(LogECF, Warning, TEXT("Trying to remove Actions of Label, but Label is empty!"));
+#endif
+		return;
+	}
+
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+	UE_LOG(LogECF, Verbose, TEXT("Removing Actions of Label: %s"), *Label);
+#endif
+
+	// Find running actions of given class assigned to a specific owner (if specified) and set it as finished.
+	for (UECFActionBase* Action : Actions)
+	{
+		if (IsActionValid(Action))
+		{
+			if (Action->GetLabel() == Label)
+			{
+				if (InOwner == nullptr || InOwner == Action->Owner)
+				{
+					FinishAction(Action, bComplete);
+				}
+			}
+		}
+	}
+
+	// Also check pending actions to prevent from launching it.
+	for (UECFActionBase* PendingAction : PendingAddActions)
+	{
+		if (IsActionValid(PendingAction))
+		{
+			if (PendingAction->GetLabel() == Label)
+			{
+				if (InOwner == nullptr || InOwner == PendingAction->Owner)
+				{
+					FinishAction(PendingAction, bComplete);
+				}
+			}
+		}
+	}
+}
+
 void UECFSubsystem::RemoveInstancedAction(const FECFInstanceId& InstanceId, bool bComplete)
 {
-	// 停止所有具有给定实例ID的运行中和待添加的动作
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+	UE_LOG(LogECF, Verbose, TEXT("Removing Instanced Action of InstanceId: %s"), *InstanceId.ToString());
+#endif
+
+	// Stop all running and pending actions with the given InstanceId.
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))
@@ -268,7 +453,11 @@ void UECFSubsystem::RemoveInstancedAction(const FECFInstanceId& InstanceId, bool
 
 void UECFSubsystem::RemoveAllActions(bool bComplete, UObject* InOwner)
 {
-	// 停止所有运行中和待添加的动作
+#if (ECF_LOGS && ECF_LOGS_VERBOSE)
+	UE_LOG(LogECF, Verbose, TEXT("Removing All Actions"));
+#endif
+
+	// Stop all running and pending actions.
 	for (UECFActionBase* Action : Actions)
 	{
 		if (IsActionValid(Action))
@@ -291,6 +480,36 @@ void UECFSubsystem::RemoveAllActions(bool bComplete, UObject* InOwner)
 	}
 }
 
+float UECFSubsystem::GetActionTime(const FECFHandle& HandleId)
+{
+	if (UECFActionBase* ActionFound = FindAction(HandleId))
+	{
+		return ActionFound->GetActionTime();
+	}
+	else
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("GetActionTime can't be called, because of action that can't be found. Id: %s"), *HandleId.ToString());
+#endif
+		return -1.f;
+	}
+}
+
+bool UECFSubsystem::SetActionTime(const FECFHandle& HandleId, float NewTime, bool bCallUpdate)
+{
+	if (UECFActionBase* ActionFound = FindAction(HandleId))
+	{
+		return ActionFound->SetActionTime(NewTime, bCallUpdate);
+	}
+	else
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("SetActionTime can't be called, because of action that can't be found. Id: %s"), *HandleId.ToString());
+#endif
+		return false;
+	}
+}
+
 bool UECFSubsystem::HasAction(const FECFHandle& HandleId) const
 {
 	if (UECFActionBase* ActionFound = FindAction(HandleId))
@@ -300,7 +519,7 @@ bool UECFSubsystem::HasAction(const FECFHandle& HandleId) const
 	return false;
 }
 
-UECFActionBase* UECFSubsystem::GetInstancedAction(const FECFInstanceId& InstanceId) const
+UECFActionBase* UECFSubsystem::GetInstancedAction(const FECFInstanceId& InstanceId, bool bPrintErrorIfFailed/* = true*/) const
 {
 	if (InstanceId.IsValid())
 	{
@@ -314,6 +533,13 @@ UECFActionBase* UECFSubsystem::GetInstancedAction(const FECFInstanceId& Instance
 		}
 	}
 
+	if (bPrintErrorIfFailed)
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("Failed to Get Instanced Action from InstanceId: %s"), *InstanceId.ToString());
+#endif
+	}
+
 	return nullptr;
 }
 
@@ -321,11 +547,11 @@ void UECFSubsystem::FinishAction(UECFActionBase* Action, bool bComplete)
 {
 	if (IsActionValid(Action))
 	{
+		Action->MarkAsFinished();
 		if (bComplete)
 		{
 			Action->Complete(true);
 		}
-		Action->MarkAsFinished();
 	}
 }
 
