@@ -15,6 +15,7 @@
 //  添加MakeMaterialAttributes支持
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Materials/MaterialAttributeDefinitionMap.h"
+#include "Containers/Queue.h"
 //  引入常量定义
 #include "MaterialTools/X_MaterialConstants.h"
 #include "XToolsVersionCompat.h"

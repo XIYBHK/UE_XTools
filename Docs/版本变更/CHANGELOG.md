@@ -14,7 +14,8 @@
 ### 重要修复
 - **AutoSizeComments / BlueprintScreenshotTool**: 修复空载集成模块误清理外部插件状态
 - **EnhancedCodeFlow**: 修复异步完成标志悬空写入
-- **BlueprintAssist**: 修复 UE 5.3 编译兼容并补齐引擎插件依赖
+- **BlueprintAssist**: 修复 UE 5.3-5.4 编译兼容并补齐引擎插件依赖
+- **多模块严格包含**: 补齐 UE 5.4 下 Slate、Queue 与 SlateApplication 头文件
 
 ### 兼容性优化
 - **UE版本兼容**: 保持单份源码兼容 UE 5.3-5.8，并将 CI 构建矩阵扩展至 UE 5.8

@@ -6,6 +6,7 @@
 #include "BlueprintScreenshotToolSettings.h"
 #include "SBlueprintDiff.h"
 #include "Algo/RemoveIf.h"
+#include "Framework/Application/SlateApplication.h"
 
 namespace
 {

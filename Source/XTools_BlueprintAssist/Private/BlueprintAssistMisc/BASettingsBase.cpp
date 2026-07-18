@@ -182,7 +182,7 @@ void UBASettingsBase::ReloadSettings(UClass* SettingsClass)
 			// refer to the console command "RELOADCONFIG"
 			{
 				// unload the branch so next access will load the static and dynamic layers
-#if BA_UE_VERSION_OR_LATER(5, 4)
+#if BA_UE_VERSION_OR_LATER(5, 5)
 				GConfig->SafeUnloadBranch(*ObjectToReload->GetClass()->GetConfigName());
 #endif
 

@@ -133,7 +133,9 @@ FReply SBAConfigFileRow::OnReloadSettings()
 			// refer to the console command "RELOADCONFIG"
 			{
 				// unload the branch so next access will load the static and dynamic layers
+#if BA_UE_VERSION_OR_LATER(5, 5)
 				GConfig->SafeUnloadBranch(*ObjectToReload->GetClass()->GetConfigName());
+#endif
 
 				// now updates all the class properties now that the config was reloaded from disk
 				ObjectToReload->ReloadConfig();
@@ -171,7 +173,9 @@ void SBAConfigViewer::Construct(const FArguments& InArgs)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
+#if BA_UE_VERSION_OR_LATER(5, 5)
 				.MinWidth(100.0f)
+#endif
 				.FillWidth(1.0f)
 				.VAlign(VAlign_Center)
 				[
@@ -248,8 +252,12 @@ void SBAConfigViewer::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight().Padding(5)
 			+ SVerticalBox::Slot().AutoHeight().Padding(5, 2)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().MinWidth(100.0f).FillWidth(1.0f)
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+#if BA_UE_VERSION_OR_LATER(5, 5)
+				.MinWidth(100.0f)
+#endif
+				.FillWidth(1.0f)
 				[
 					SAssignNew(PropertySearchBox, SSearchBox)
 					.HintText(INVTEXT("搜索属性..."))
@@ -330,6 +338,7 @@ void SBAConfigViewer::RefreshSourceFiles()
 	// }
 	// FConfigCacheIni* PlatformConfigCache = FConfigCacheIni::ForPlatform(Platform);
 
+#if BA_UE_VERSION_OR_LATER(5, 5)
 	FConfigCacheIni* PlatformConfigCache = GConfig;
 	if (!PlatformConfigCache)
 	{
@@ -381,6 +390,9 @@ void SBAConfigViewer::RefreshSourceFiles()
 		auto Msg = FText::FromString(FString::Printf(TEXT("未找到配置分支：%s"), *ClassConfigName));
 		FBAMiscUtils::ShowSimpleSlateNotification(Msg, SNotificationItem::CS_Fail);
 	}
+#else
+	// UE 5.4 does not expose config branch enumeration; retain property refresh without source-file listing.
+#endif
 
 	ApplyFileFilter();
 }

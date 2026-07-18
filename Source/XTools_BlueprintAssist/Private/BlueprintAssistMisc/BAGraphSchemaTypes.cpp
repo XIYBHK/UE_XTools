@@ -131,7 +131,7 @@ void UBAGraphSchema_ControlRig::SetNodePosition(UEdGraphNode* Node, int32 X, int
 
 bool UBAGraphSchema_ControlRig::SetPinDefaultValue(UEdGraphPin* Pin, const FString& NewDefault, FString* OutError) const
 {
-#if BA_UE_VERSION_OR_LATER(5, 4)
+#if BA_UE_VERSION_OR_LATER(5, 5)
 	if (auto Controller = FBAControlRigUtils::GetVMController(Pin))
 	{
 		if (auto VMPin = FBAControlRigUtils::GetVMPin(Pin))
@@ -149,7 +149,7 @@ bool UBAGraphSchema_ControlRig::SetPinDefaultValue(UEdGraphPin* Pin, const FStri
 
 FString UBAGraphSchema_ControlRig::GetPinDefaultValue(UEdGraphPin* Pin) const
 {
-#if BA_UE_VERSION_OR_LATER(5, 4)
+#if BA_UE_VERSION_OR_LATER(5, 5)
 	if (auto Controller = FBAControlRigUtils::GetVMController(Pin))
 	{
 		if (auto VMPin = FBAControlRigUtils::GetVMPin(Pin))

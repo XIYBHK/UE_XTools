@@ -13,6 +13,7 @@
 #include "KismetPins/SGraphPinExec.h"
 #include "NodeFactory.h"
 #include "Widgets/Images/SImage.h"
+#include "Widgets/SBoxPanel.h"
 
 class SGraphPinExecConditionalSequence : public SGraphPinExec
 {
