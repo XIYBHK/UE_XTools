@@ -1,5 +1,100 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.7 (2026-07-18)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 新增功能
+- **AutoSizeComments**: 新增注释预设按钮样式与节点边界计算模式
+- **ElectronicNodes**: 新增三种连线交叉样式
+- **EnhancedCodeFlow**: 集成 3.9 动作、协程及异步资源加载能力
+- **BlueprintAssist**: 集成 4.9.1 图任务架构
+
+### 重要修复
+- **AutoSizeComments / BlueprintScreenshotTool**: 修复空载集成模块误清理外部插件状态
+- **EnhancedCodeFlow**: 修复异步完成标志悬空写入
+- **BlueprintAssist**: 修复 UE 5.3 编译兼容并补齐引擎插件依赖
+
+### 兼容性优化
+- **UE版本兼容**: 保持单份源码兼容 UE 5.3-5.8，并将 CI 构建矩阵扩展至 UE 5.8
+- **SwitchLanguage**: 优化 Schema 缓存失效后的重建流程
+
+</details>
+
+<details>
+<summary><strong>AutoSizeComments</strong></summary>
+
+- 新增 注释预设按钮样式
+- 新增 节点边界计算模式
+- 优化 子系统与插件检测
+- 修复 空载模块误清理外部插件
+
+</details>
+
+<details>
+<summary><strong>BlueprintScreenshotTool</strong></summary>
+
+- 修复 空载模块误注销外部设置
+
+</details>
+
+<details>
+<summary><strong>ElectronicNodes</strong></summary>
+
+- 新增 三种连线交叉样式
+- 优化 交叉线段绘制
+
+</details>
+
+<details>
+<summary><strong>EnhancedCodeFlow</strong></summary>
+
+- 集成 3.9 动作与协程能力
+- 新增 异步资源加载流程
+- 优化 动作查询与时间控制
+- 修复 异步完成标志悬空写入
+
+</details>
+
+<details>
+<summary><strong>BlueprintAssist</strong></summary>
+
+- 集成 4.9.1 图任务架构
+- 保留 晃动断开全部连线
+- 保留 中文命令与本地防护
+- 修复 UE 5.3 编译兼容
+- 补齐 上游引擎插件依赖
+
+</details>
+
+<details>
+<summary><strong>SwitchLanguage</strong></summary>
+
+- 优化 Schema 缓存失效重建
+
+</details>
+
+<details>
+<summary><strong>UE版本兼容</strong></summary>
+
+- 新增 UE 5.8 源码兼容
+- 清理 UE 5.8 弃用接口
+- 保持 UE 5.3-5.8 单份源码
+- 扩展 CI 构建矩阵至 UE 5.8
+- 修复 UE 5.3 严格包含构建
+
+</details>
+
+<details>
+<summary><strong>文档</strong></summary>
+
+- 完成 UE 5.8 适配与验证记录
+
+</details>
+
+---
+
 ## 版本 v1.9.6 (2026-07-16)
 
 <details>

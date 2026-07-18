@@ -17,6 +17,7 @@ private:
 	TSharedPtr<FBlueprintScreenshotToolCommandManager> CommandManager;
 	TStrongObjectPtr<UBlueprintScreenshotToolWindowManager> WindowManager;
 	bool bIsPluginInitialized = false;
+	bool bWereSettingsRegistered = false;
 
 public:
 	/** IModuleInterface implementation */

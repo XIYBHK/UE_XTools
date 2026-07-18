@@ -54,7 +54,11 @@ void FBlueprintScreenshotToolModule::ShutdownModule()
 		UnregisterCommands();
 		bIsPluginInitialized = false;
 	}
-	UnregisterSettings();
+	if (bWereSettingsRegistered)
+	{
+		UnregisterSettings();
+		bWereSettingsRegistered = false;
+	}
 }
 
 void FBlueprintScreenshotToolModule::RegisterStyle()
@@ -79,6 +83,7 @@ void FBlueprintScreenshotToolModule::RegisterSettings()
 			LOCTEXT("BlueprintScreenshotTool_Description", "配置蓝图截图工具插件的行为和快捷键"),
 			GetMutableDefault<UBlueprintScreenshotToolSettings>()
 		);
+		bWereSettingsRegistered = true;
 	}
 }
 

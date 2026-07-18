@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.6），提供蓝图节点和 C++ 功能库。插件采用多模块架构（23个模块），每个模块独立编译和打包。
+XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.7），提供蓝图节点和 C++ 功能库。插件采用多模块架构（23个模块），每个模块独立编译和打包。
 
 **核心设计原则**：
 - 单一职责原则：每个模块专注于一个特定功能领域
 - 蓝图友好：所有功能通过 `UFUNCTION(BlueprintCallable/Pure)` 暴露
 - 中文优先：所有元数据、注释、文档使用中文
-- 跨版本兼容：支持 UE 5.3-5.7，零警告编译
+- 跨版本兼容：支持 UE 5.3-5.8，零警告编译
 - 性能优先：包含 Unreal Insights 跟踪和性能优化
 
 ## 构建和编译
@@ -53,7 +53,7 @@ XTools 是一个为 Unreal Engine 5.3-5.7 设计的模块化插件系统（v1.9.
 ```
 核心层（Runtime, PreDefault）
 └─ XToolsCore                          # 跨版本兼容性层、统一错误处理、版本宏
-   ├─ XToolsVersionCompat.h            # UE 5.3-5.7 版本兼容性宏
+   ├─ XToolsVersionCompat.h            # UE 5.3-5.8 版本兼容性宏
    ├─ XToolsErrorReporter.h            # 统一日志/错误处理
    └─ XToolsDefines.h                  # 插件版本和通用宏
 

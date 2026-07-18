@@ -1,9 +1,9 @@
 # XTools - Unreal Engine 5.3+ 实用工具插件
 
-[![UE Version](https://img.shields.io/badge/UE-5.3--5.7-blue.svg)](https://www.unrealengine.com/)
+[![UE Version](https://img.shields.io/badge/UE-5.3--5.8-blue.svg)](https://www.unrealengine.com/)
 [![License](https://img.shields.io/badge/License-Internal-red.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-1.9.6-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
+[![Version](https://img.shields.io/badge/Version-1.9.7-brightgreen.svg)](https://github.com/XIYBHK/UE_XTools)
 
 XTools 是一个为 Unreal Engine 5.3+ 设计的模块化工具插件，提供丰富的蓝图节点和 C++ 功能库，显著提升开发效率。
 
@@ -29,7 +29,7 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 
 | 模块 | 功能 | 主要用途 |
 |------|------|----------|
-| **XToolsCore** | 跨版本兼容性层 | 提供 UE 5.3-5.7 版本兼容性和统一错误处理 |
+| **XToolsCore** | 跨版本兼容性层 | 提供 UE 5.3-5.8 版本兼容性和统一错误处理 |
 | **Sort** | 智能排序系统 | 支持基础类型、向量、Actor、通用结构体的排序和数组操作 |
 | **RandomShuffles** | PRD 随机系统 | 基于 DOTA2 算法的伪随机分布，提供更公平的随机体验 |
 | **EnhancedCodeFlow** | 异步流程控制 | 延迟执行、时间轴动画、协程支持、性能分析 |
@@ -107,7 +107,7 @@ Clean Build
 
 ### 自动化脚本
 ```powershell
-# 多版本打包（UE 5.3-5.7）
+# 多版本打包（UE 5.3-5.8）
 .\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.3","UE_5.4" -Follow
 
 # 清理插件

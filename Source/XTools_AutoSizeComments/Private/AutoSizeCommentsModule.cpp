@@ -71,6 +71,7 @@ void FAutoSizeCommentsModule::OnPostEngineInit()
 
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.RegisterCustomClassLayout(UAutoSizeCommentsSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FASCSettingsDetails::MakeInstance));
+		bWereSettingsRegistered = true;
 	}
 
 	FASCCommands::Register();
@@ -82,6 +83,7 @@ void FAutoSizeCommentsModule::OnPostEngineInit()
 	FAutoSizeCommentsNotifications::Get().Initialize();
 
 	FASCStyle::Initialize();
+	bWasModuleInitialized = true;
 }
 
 void FAutoSizeCommentsModule::ShutdownModule()
@@ -95,15 +97,24 @@ void FAutoSizeCommentsModule::ShutdownModule()
 	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
 #endif
 
-	// Remove custom settings
-	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	if (bWereSettingsRegistered)
 	{
-		SettingsModule->UnregisterSettings("Editor", "Plugins", "AutoSizeComments");
+		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+		{
+			SettingsModule->UnregisterSettings("Editor", "Plugins", "AutoSizeComments");
+		}
 
 		if (FPropertyEditorModule* PropertyModule = FModuleManager::GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
 		{
 			PropertyModule->UnregisterCustomClassLayout(UAutoSizeCommentsSettings::StaticClass()->GetFName());
 		}
+
+		bWereSettingsRegistered = false;
+	}
+
+	if (!bWasModuleInitialized)
+	{
+		return;
 	}
 
 	// Unregister the graph node factory
@@ -127,6 +138,7 @@ void FAutoSizeCommentsModule::ShutdownModule()
 	FASCStyle::Shutdown();
 
 	FASCCommands::Unregister();
+	bWasModuleInitialized = false;
 #endif
 }
 

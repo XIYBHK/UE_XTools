@@ -34,6 +34,9 @@ public:
 	static bool IsBlueprintAssistEnabled();
 
 private:
+	bool bWasModuleInitialized = false;
+	bool bWereSettingsRegistered = false;
+
 	TSharedPtr<FAutoSizeCommentsGraphPanelNodeFactory> ASCNodeFactory;
 
 	void OnPostEngineInit();
