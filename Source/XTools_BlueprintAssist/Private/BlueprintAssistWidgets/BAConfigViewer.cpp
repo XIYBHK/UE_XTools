@@ -132,9 +132,13 @@ FReply SBAConfigFileRow::OnReloadSettings()
 		{
 			// refer to the console command "RELOADCONFIG"
 			{
-				// unload the branch so next access will load the static and dynamic layers
+				// refresh the selected source file and the combined config before reloading properties
+				GConfig->LoadFile(FConfigCacheIni::NormalizeConfigIniPath(Item->FullPath));
 #if BA_UE_VERSION_OR_LATER(5, 5)
 				GConfig->SafeUnloadBranch(*ObjectToReload->GetClass()->GetConfigName());
+#else
+				FString ConfigFilename;
+				FConfigCacheIni::LoadGlobalIniFile(ConfigFilename, *ObjectToReload->GetClass()->GetConfigName(), nullptr, true);
 #endif
 
 				// now updates all the class properties now that the config was reloaded from disk
@@ -338,7 +342,6 @@ void SBAConfigViewer::RefreshSourceFiles()
 	// }
 	// FConfigCacheIni* PlatformConfigCache = FConfigCacheIni::ForPlatform(Platform);
 
-#if BA_UE_VERSION_OR_LATER(5, 5)
 	FConfigCacheIni* PlatformConfigCache = GConfig;
 	if (!PlatformConfigCache)
 	{
@@ -347,10 +350,12 @@ void SBAConfigViewer::RefreshSourceFiles()
 	}
 
 	FString ClassConfigName = SelectedClass->ClassConfigName.ToString();
+	TArray<FString> PotentialPaths;
+	FString FinalIniPath;
+
+#if BA_UE_VERSION_OR_LATER(5, 5)
 	if (FConfigBranch* Branch = PlatformConfigCache->FindBranch(*ClassConfigName, ClassConfigName))
 	{
-		TArray<FString> PotentialPaths;
-
 #if BA_UE_VERSION_OR_LATER(5, 7)
 		TArray<FUtf8String> Utf8Paths;
 		Branch->Hierarchy.GenerateValueArray(Utf8Paths);
@@ -364,25 +369,8 @@ void SBAConfigViewer::RefreshSourceFiles()
 
 		if (bIncludeFinalIni)
 		{
-			PotentialPaths.Add(Branch->IniPath);
-		}
-
-#if BA_UE_VERSION_OR_LATER(5, 7)
-		FString SectionName = GetClassPathName(SelectedClass);
-#else
-		FString SectionName = SelectedClass->GetPathName();
-#endif
-
-		for (const FString& Path : PotentialPaths)
-		{
-			TSharedPtr<FBAConfigFileItem> Item = MakeShared<FBAConfigFileItem>();
-			Item->SettingClass = SelectedClass;
-			Item->FullPath = FPaths::ConvertRelativePathToFull(Path);
-			Item->Name = FPaths::GetCleanFilename(Path);
-			Item->bExists = FPaths::FileExists(Item->FullPath);
-			Item->bHasSection = Item->bExists && PlatformConfigCache->DoesSectionExist(*SectionName, FConfigCacheIni::NormalizeConfigIniPath(Item->FullPath));
-			Item->bIsFinalIni = Path == Branch->IniPath;
-			FullSourceFiles.Add(Item);
+			FinalIniPath = Branch->IniPath;
+			PotentialPaths.Add(FinalIniPath);
 		}
 	}
 	else
@@ -391,8 +379,34 @@ void SBAConfigViewer::RefreshSourceFiles()
 		FBAMiscUtils::ShowSimpleSlateNotification(Msg, SNotificationItem::CS_Fail);
 	}
 #else
-	// UE 5.4 does not expose config branch enumeration; retain property refresh without source-file listing.
+	FConfigFile PlatformIniFile;
+	if (FConfigCacheIni::LoadLocalIniFile(PlatformIniFile, *ClassConfigName, true, nullptr))
+	{
+		PlatformIniFile.SourceIniHierarchy.GenerateValueArray(PotentialPaths);
+		if (bIncludeFinalIni && FConfigCacheIni::LoadGlobalIniFile(FinalIniPath, *ClassConfigName))
+		{
+			PotentialPaths.Add(FinalIniPath);
+		}
+	}
+	else
+	{
+		auto Msg = FText::FromString(FString::Printf(TEXT("未找到配置文件：%s"), *ClassConfigName));
+		FBAMiscUtils::ShowSimpleSlateNotification(Msg, SNotificationItem::CS_Fail);
+	}
 #endif
+
+	FString SectionName = GetClassPathName(SelectedClass);
+	for (const FString& Path : PotentialPaths)
+	{
+		TSharedPtr<FBAConfigFileItem> Item = MakeShared<FBAConfigFileItem>();
+		Item->SettingClass = SelectedClass;
+		Item->FullPath = FPaths::ConvertRelativePathToFull(Path);
+		Item->Name = FPaths::GetCleanFilename(Path);
+		Item->bExists = FPaths::FileExists(Item->FullPath);
+		Item->bHasSection = Item->bExists && PlatformConfigCache->DoesSectionExist(*SectionName, FConfigCacheIni::NormalizeConfigIniPath(Item->FullPath));
+		Item->bIsFinalIni = Path == FinalIniPath;
+		FullSourceFiles.Add(Item);
+	}
 
 	ApplyFileFilter();
 }

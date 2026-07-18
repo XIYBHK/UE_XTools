@@ -6,6 +6,7 @@
 #include "AssetToolsModule.h"
 #include "BlueprintAssistGlobals.h"
 #include "JsonObjectConverter.h"
+#include "Misc/ConfigCacheIni.h"
 #include "ScopedTransaction.h"
 #include "BlueprintAssistMisc/FBAScopedPropertySetter.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
@@ -181,9 +182,12 @@ void UBASettingsBase::ReloadSettings(UClass* SettingsClass)
 		{
 			// refer to the console command "RELOADCONFIG"
 			{
-				// unload the branch so next access will load the static and dynamic layers
+				// refresh the combined config from disk before reloading properties
 #if BA_UE_VERSION_OR_LATER(5, 5)
 				GConfig->SafeUnloadBranch(*ObjectToReload->GetClass()->GetConfigName());
+#else
+				FString ConfigFilename;
+				FConfigCacheIni::LoadGlobalIniFile(ConfigFilename, *ObjectToReload->GetClass()->GetConfigName(), nullptr, true);
 #endif
 
 				// now updates all the class properties now that the config was reloaded from disk

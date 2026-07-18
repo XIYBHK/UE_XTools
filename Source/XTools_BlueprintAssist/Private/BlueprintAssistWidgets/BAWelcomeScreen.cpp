@@ -389,6 +389,7 @@ FReply SBAWelcomeScreen::OnReloadCustomSettingsClicked()
 		UBASettingsBase::ReloadSettings(UBASettings_EditorFeatures::StaticClass());
 		UBASettingsBase::ReloadSettings(UBASettings_Advanced::StaticClass());
 
+		GConfig->LoadFile(Path);
 		UBASettings::GetMutable().ReloadConfig(nullptr, *Path);
 		UBASettings_EditorFeatures::GetMutable().ReloadConfig(nullptr, *Path);
 		UBASettings_Advanced::GetMutable().ReloadConfig(nullptr, *Path);

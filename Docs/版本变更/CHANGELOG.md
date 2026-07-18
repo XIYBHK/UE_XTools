@@ -1,6 +1,6 @@
 # XTools 更新日志 (CHANGELOG)
 
-## 版本 v1.9.7 (2026-07-18)
+## 版本 v1.9.7 (2026-07-19)
 
 <details>
 <summary><strong>主要更新</strong></summary>
@@ -15,6 +15,7 @@
 - **AutoSizeComments / BlueprintScreenshotTool**: 修复空载集成模块误清理外部插件状态
 - **EnhancedCodeFlow**: 修复异步完成标志悬空写入
 - **BlueprintAssist**: 修复 UE 5.3-5.4 编译兼容并补齐引擎插件依赖
+- **BlueprintAssist**: 恢复 UE 5.4 配置层级查看并修复磁盘配置重载
 - **多模块严格包含**: 补齐 UE 5.4 下 Slate、Queue 与 SlateApplication 头文件
 
 ### 兼容性优化
@@ -65,6 +66,8 @@
 - 保留 晃动断开全部连线
 - 保留 中文命令与本地防护
 - 修复 UE 5.3 编译兼容
+- 修复 UE 5.4 配置查看器空白
+- 修复 配置文件磁盘重载
 - 补齐 上游引擎插件依赖
 
 </details>
