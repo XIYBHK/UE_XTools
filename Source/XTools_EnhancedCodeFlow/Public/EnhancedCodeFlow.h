@@ -594,6 +594,12 @@ public:
 	/**
 	 * Suspends running coroutine function until the given flag won't return true.
 	 * @param InFlag				- a pointer to a boolean flag that decides if the suspended function should be resumed.
+	 *	  							  LIFETIME CONTRACT: The pointed-to bool is dereferenced every Tick until the wait completes.
+	 *	  							  It MUST remain valid for the entire suspension duration. Safe sources:
+	 *	  							  - A local variable in the coroutine frame (lives as long as the coroutine).
+	 *	  							  - A member of an object guaranteed to outlive the wait.
+	 *	  							  Unsafe: stack variables of a non-coroutine caller, or members of UObjects
+	 *	  							  that may be GC'd/destroyed before the wait completes.
 	 * @param InTimeOut				- if greater than 0.f it will apply timeout to this action. After this timeout the suspended function will be resumed.
 	 * @param Settings [optional]	- an extra settings to apply to this action.
 	 */

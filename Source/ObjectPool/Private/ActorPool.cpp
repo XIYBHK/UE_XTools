@@ -109,57 +109,57 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
     ++TotalRequests;
     AActor* ResultActor = nullptr;
 
-    // 从可用列表获取Actor
+    // 从可用列表获取Actor，登记 Activating 过渡状态
     {
         FWriteScopeLock WriteLock(PoolLock);
         PeriodicCleanup_RequiresLock();
         ResultActor = TakeFromAvailable_RequiresLock();
+        if (ResultActor)
+        {
+            ActivatingActors.Add(ResultActor);
+        }
     }
 
     // 锁外激活复用的Actor
     if (ResultActor)
     {
-        if (IsValid(ResultActor) && FObjectPoolUtils::ActivateActorFromPool(ResultActor, SpawnTransform))
+        const bool bActivateOk = IsValid(ResultActor) && FObjectPoolUtils::ActivateActorFromPool(ResultActor, SpawnTransform);
+
+        // 回调后复核：确认 Activating 状态仍有效（ClearPool 可能已清除，Actor 可能已被销毁）
+        bool bCommitOk = false;
         {
             FWriteScopeLock WriteLock(PoolLock);
-            ActiveActors.Add(ResultActor);
-            // Actor 已在 AllActorsSet 中（从 AvailableActors 移动），无需重复添加
-            UpdateStats(true);
-            if (Preallocator.IsValid())
+            const bool bStillActivating = (ActivatingActors.Remove(ResultActor) > 0);
+            const bool bStillOwned = AllActorsSet.Contains(ResultActor);
+
+            if (bStillActivating && bStillOwned && IsValid(ResultActor) && bActivateOk)
             {
-                Preallocator->RecordUsagePattern(ActiveActors.Num());
+                ActiveActors.Add(ResultActor);
+                UpdateStats(true);
+                if (Preallocator.IsValid())
+                {
+                    Preallocator->RecordUsagePattern(ActiveActors.Num());
+                }
+                ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
+                bCommitOk = true;
             }
-            ACTORPOOL_DEBUG(TEXT("从池获取Actor: %s"), *ResultActor->GetName());
+            else
+            {
+                // 回调期间池状态已变更或激活失败，确保不残留 AllActorsSet 引用
+                AllActorsSet.Remove(ResultActor);
+                ACTORPOOL_LOG(Warning, TEXT("GetActor: 激活后复核失败，放弃提交: %s"), *ResultActor->GetName());
+            }
+        }
+
+        if (bCommitOk)
+        {
             return ResultActor;
         }
 
-        // 修复：激活失败时的处理
-        // Actor 已从 AvailableActors 移除，但激活失败
-        // 选择：重新放回池中（如果可能）或销毁
-        bool bShouldDestroyFailedActor = false;
+        // 激活失败或复核失败：复核失败时 AllActorsSet 已移除，Actor 不再由池管理，直接销毁
+        if (IsValid(ResultActor))
         {
-            FWriteScopeLock WriteLock(PoolLock);
-            if (IsValid(ResultActor))
-            {
-                // 尝试重置状态后放回池中
-                if (FObjectPoolUtils::ResetActorForPooling(ResultActor))
-                {
-                    AvailableActors.Add(ResultActor);
-                    // Actor 已在 AllActorsSet 中，无需重复添加
-                    ACTORPOOL_LOG(Warning, TEXT("Actor激活失败，已重置并放回池: %s"), *ResultActor->GetName());
-                }
-                else
-                {
-                    // 无法重置，从索引中移除并在锁外销毁，避免锁内重操作
-                    AllActorsSet.Remove(ResultActor);
-                    bShouldDestroyFailedActor = true;
-                }
-            }
-        }
-
-        if (bShouldDestroyFailedActor && IsValid(ResultActor))
-        {
-            ACTORPOOL_LOG(Warning, TEXT("Actor激活失败且无法重置，已销毁: %s"), *ResultActor->GetName());
+            ACTORPOOL_LOG(Warning, TEXT("Actor激活失败且无法恢复，已销毁: %s"), *ResultActor->GetName());
             ResultActor->Destroy();
         }
         ResultActor = nullptr;
@@ -169,22 +169,51 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
     if (CanCreateMoreActors())
     {
         AActor* NewActor = CreateNewActor(World);
-        if (NewActor && FObjectPoolUtils::ActivateActorFromPool(NewActor, SpawnTransform))
+        if (NewActor)
         {
-            FWriteScopeLock WriteLock(PoolLock);
-            ActiveActors.Add(NewActor);
-            AllActorsSet.Add(NewActor);
-            UpdateStats(false);
-            if (Preallocator.IsValid())
+            // 先登记 AllActorsSet + Activating，保证回调期间 ClearPool 能找到它
             {
-                Preallocator->RecordUsagePattern(ActiveActors.Num());
+                FWriteScopeLock WriteLock(PoolLock);
+                AllActorsSet.Add(NewActor);
+                ActivatingActors.Add(NewActor);
             }
-            ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
-            return NewActor;
-        }
-        if (IsValid(NewActor))
-        {
-            NewActor->Destroy();
+
+            const bool bActivateOk = FObjectPoolUtils::ActivateActorFromPool(NewActor, SpawnTransform);
+
+            // 回调后复核
+            bool bCommitOk = false;
+            {
+                FWriteScopeLock WriteLock(PoolLock);
+                const bool bStillActivating = (ActivatingActors.Remove(NewActor) > 0);
+                const bool bStillOwned = AllActorsSet.Contains(NewActor);
+
+                if (bStillActivating && bStillOwned && IsValid(NewActor) && bActivateOk)
+                {
+                    ActiveActors.Add(NewActor);
+                    UpdateStats(false);
+                    if (Preallocator.IsValid())
+                    {
+                        Preallocator->RecordUsagePattern(ActiveActors.Num());
+                    }
+                    ACTORPOOL_DEBUG(TEXT("创建新Actor: %s"), *NewActor->GetName());
+                    bCommitOk = true;
+                }
+                else
+                {
+                    AllActorsSet.Remove(NewActor);
+                    ACTORPOOL_LOG(Warning, TEXT("GetActor: 新建Actor激活后复核失败: %s"), *NewActor->GetName());
+                }
+            }
+
+            if (bCommitOk)
+            {
+                return NewActor;
+            }
+
+            if (IsValid(NewActor))
+            {
+                NewActor->Destroy();
+            }
         }
     }
 
@@ -208,6 +237,11 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
         FWriteScopeLock WriteLock(PoolLock);
         PeriodicCleanup_RequiresLock();
         ResultActor = TakeFromAvailable_RequiresLock();
+        if (ResultActor)
+        {
+            // 复用实例也登记 Pending，确保 FinalizeDeferred 可验证来源
+            PendingDeferredActors.Add(ResultActor);
+        }
     }
 
     if (ResultActor)
@@ -226,6 +260,10 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
         AActor* NewActor = CreateNewActor(World);
         if (NewActor)
         {
+            // 新建时即登记 AllActorsSet 和 Pending，确保 IsActorPooled 可查且容量计数正确
+            FWriteScopeLock WriteLock(PoolLock);
+            AllActorsSet.Add(NewActor);
+            PendingDeferredActors.Add(NewActor);
             UpdateStats(false);
             if (Preallocator.IsValid())
             {
@@ -248,19 +286,29 @@ bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransfor
         return false;
     }
 
-    // 如果是延迟构造的Actor，需要完成构造
+    // 原子消费 Pending 状态并转入 Finalizing，保证回调期间 Actor 始终属于某个状态集合。
+    // 重入 Finalize 会因 Pending 已被消费而拒绝。
+    {
+        FWriteScopeLock WriteLock(PoolLock);
+        if (PendingDeferredActors.Remove(Actor) == 0)
+        {
+            ACTORPOOL_LOG(Warning, TEXT("FinalizeDeferred: Actor不处于Pending状态，拒绝Finalize: %s"), *Actor->GetName());
+            return false;
+        }
+        FinalizingActors.Add(Actor);
+    }
+
+    // 锁外执行构造/蓝图回调
     if (!Actor->IsActorInitialized())
     {
         ACTORPOOL_LOG(VeryVerbose, TEXT("FinalizeDeferred: FinishSpawning: %s"), *Actor->GetName());
         Actor->FinishSpawning(SpawnTransform);
-        // 首次创建完成后，触发生命周期“创建”事件
         if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
         {
             IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
         }
     }
-    // 对于复用实例（已初始化），在激活前先重跑Construction Script，确保其读取的是本次ExposeOnSpawn赋的值
-    if (Actor->IsActorInitialized())
+    else
     {
         ACTORPOOL_LOG(VeryVerbose, TEXT("FinalizeDeferred: 复用实例激活前重跑ConstructionScripts: %s"), *Actor->GetName());
 #if WITH_EDITOR
@@ -268,12 +316,25 @@ bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransfor
 #endif
     }
 
-    // 统一激活（内部会根据是否已初始化决定是否FinishSpawning/应用Transform/启用组件）
-    FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+    // 激活（内部触发生命周期回调，可能调用 ClearPool 或销毁 Actor）
+    const bool bActivateOk = FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
 
-    // 加入活跃列表
+    // 回调后复核并提交
     {
         FWriteScopeLock WriteLock(PoolLock);
+
+        const bool bStillFinalizing = (FinalizingActors.Remove(Actor) > 0);
+        const bool bStillOwned = AllActorsSet.Contains(Actor);
+
+        if (!bStillFinalizing || !bStillOwned || !IsValid(Actor) || !bActivateOk)
+        {
+            // 回调期间池状态已变更（ClearPool / Actor 被销毁 / 激活失败），放弃提交。
+            // 同步移除 AllActorsSet，避免残留弱引用（Finalizing 已移除，Cleanup 无法再触及）。
+            AllActorsSet.Remove(Actor);
+            ACTORPOOL_LOG(Warning, TEXT("FinalizeDeferred: 回调后复核失败，放弃提交: %s"), *Actor->GetName());
+            return false;
+        }
+
         ActiveActors.Add(Actor);
     }
 
@@ -290,48 +351,81 @@ bool FActorPool::ReturnActor(AActor* Actor)
         return false;
     }
 
-    FWriteScopeLock WriteLock(PoolLock);
-
-    //  从活跃列表中移除
-    bool bFoundInActive = ActiveActors.RemoveSwap(Actor) > 0;
-
-    if (!bFoundInActive)
+    // Phase 1: 锁内摘除 — 校验归属与活跃状态，从 Active 移除，登记 Returning 状态
     {
-        ACTORPOOL_DEBUG(TEXT("Actor不在活跃列表中: %s"), *Actor->GetName());
-        // 仍然尝试重置和添加到池中
-    }
+        FWriteScopeLock WriteLock(PoolLock);
 
-    //  使用工具类重置Actor状态
-    if (!FObjectPoolUtils::ResetActorForPooling(Actor))
-    {
-        ACTORPOOL_LOG(Warning, TEXT("重置Actor状态失败: %s"), *Actor->GetName());
-        return false;
-    }
-
-    //  检查池是否已满
-    if (AvailableActors.Num() >= MaxPoolSize)
-    {
-        ACTORPOOL_DEBUG(TEXT("池已满，销毁Actor: %s"), *Actor->GetName());
-        if (IsValid(Actor))
+        // 归属校验：Actor 必须属于本池
+        if (!AllActorsSet.Contains(Actor))
         {
-            AllActorsSet.Remove(Actor);
-            Actor->Destroy();
+            ACTORPOOL_LOG(Warning, TEXT("ReturnActor: Actor不属于本池: %s"), *Actor->GetName());
+            return false;
         }
-        return true; // 仍然算作成功归还
+
+        // 必须处于活跃状态才能归还（防止重复归还及 Activated 回调中提前归还）
+        if (ActiveActors.RemoveSwap(Actor) == 0)
+        {
+            ACTORPOOL_LOG(Warning, TEXT("ReturnActor: Actor不在活跃列表中，拒绝归还: %s"), *Actor->GetName());
+            return false;
+        }
+
+        // 登记 Returning 状态，供 Phase 3 回调后复核
+        ReturningActors.Add(Actor);
     }
 
-    //  添加到可用列表
-    AvailableActors.Add(Actor);
+    // Phase 2: 锁外重置 — 生命周期回调（OnReturnToPool）在锁外触发，避免蓝图重入对象池 API 时死锁
+    bool bResetOk = FObjectPoolUtils::ResetActorForPooling(Actor);
 
-    // 修复：更新归还统计信息
-    ++TotalReturned;
-    if (Preallocator.IsValid())
+    // Phase 3: 锁内复核并提交 — 回调可能销毁 Actor 或调用 ClearPool，必须重新验证状态
+    bool bShouldDestroy = false;
+    bool bReturnSucceeded = false;
     {
-        Preallocator->RecordUsagePattern(ActiveActors.Num());
+        FWriteScopeLock WriteLock(PoolLock);
+
+        // 复核：确认 Returning 状态仍有效（ClearPool 可能已清除，Actor 可能已被销毁）
+        const bool bStillReturning = (ReturningActors.Remove(Actor) > 0);
+        const bool bStillOwned = AllActorsSet.Contains(Actor);
+
+        if (!bStillReturning || !bStillOwned || !IsValid(Actor))
+        {
+            // 回调期间池状态已变更（如 ClearPool 或 Actor 被销毁），放弃提交。
+            // 确保不残留 AllActorsSet 弱引用（幂等，ClearPool 可能已清除）。
+            AllActorsSet.Remove(Actor);
+            ACTORPOOL_LOG(Warning, TEXT("ReturnActor: 回调后复核失败，放弃提交: %s"), *Actor->GetName());
+        }
+        else if (!bResetOk)
+        {
+            ACTORPOOL_LOG(Warning, TEXT("重置Actor状态失败，移出池: %s"), *Actor->GetName());
+            AllActorsSet.Remove(Actor);
+            bShouldDestroy = true;
+        }
+        else if (GetManagedActorCount_RequiresLock() >= MaxPoolSize)
+        {
+            ACTORPOOL_DEBUG(TEXT("池已满，销毁Actor: %s"), *Actor->GetName());
+            AllActorsSet.Remove(Actor);
+            bShouldDestroy = true;
+            bReturnSucceeded = true; // 归还流程正常完成，仅因容量满而销毁
+        }
+        else
+        {
+            AvailableActors.Add(Actor);
+            ++TotalReturned;
+            bReturnSucceeded = true;
+            if (Preallocator.IsValid())
+            {
+                Preallocator->RecordUsagePattern(ActiveActors.Num());
+            }
+            ACTORPOOL_DEBUG(TEXT("Actor归还到池: %s"), *Actor->GetName());
+        }
     }
 
-    ACTORPOOL_DEBUG(TEXT("Actor归还到池: %s"), *Actor->GetName());
-    return true;
+    // Phase 4: 锁外销毁
+    if (bShouldDestroy && IsValid(Actor))
+    {
+        Actor->Destroy();
+    }
+
+    return bReturnSucceeded;
 }
 
 void FActorPool::PrewarmPool(UWorld* World, int32 Count)
@@ -346,8 +440,7 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
     int32 ActualCount = 0;
     {
         FReadScopeLock ReadLock(PoolLock);
-        //  直接计算池大小，避免调用GetPoolSize()导致的嵌套锁死锁
-        const int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
+        const int32 CurrentPoolSize = GetManagedActorCount_RequiresLock();
         ActualCount = FMath::Min(Count, MaxPoolSize - CurrentPoolSize);
     }
 
@@ -383,8 +476,7 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
             bool bAddedToPool = false;
             {
                 FWriteScopeLock WriteLock(PoolLock);
-                const int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
-                if (CurrentPoolSize < MaxPoolSize)
+                if (GetManagedActorCount_RequiresLock() < MaxPoolSize)
                 {
                     AvailableActors.Add(NewActor);
                     AllActorsSet.Add(NewActor);
@@ -423,7 +515,7 @@ FObjectPoolStats FActorPool::GetStats() const
     Stats.TotalCreated = TotalCreated;
     Stats.CurrentActive = ActiveActors.Num();
     Stats.CurrentAvailable = AvailableActors.Num();
-    Stats.PoolSize = Stats.CurrentActive + Stats.CurrentAvailable;
+    Stats.PoolSize = GetManagedActorCount_RequiresLock();
     Stats.ActorClassName = ActorClass ? ActorClass->GetName() : TEXT("Unknown");
 
     // 修复：填充获取和归还统计信息
@@ -458,7 +550,7 @@ int32 FActorPool::GetActiveCount() const
 int32 FActorPool::GetPoolSize() const
 {
     FReadScopeLock ReadLock(PoolLock);
-    return ActiveActors.Num() + AvailableActors.Num();
+    return GetManagedActorCount_RequiresLock();
 }
 
 bool FActorPool::IsEmpty() const
@@ -470,9 +562,7 @@ bool FActorPool::IsEmpty() const
 bool FActorPool::IsFull() const
 {
     FReadScopeLock ReadLock(PoolLock);
-    //  直接计算池大小，避免嵌套锁调用
-    int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
-    return CurrentPoolSize >= MaxPoolSize;
+    return GetManagedActorCount_RequiresLock() >= MaxPoolSize;
 }
 
 bool FActorPool::ContainsActor(const AActor* Actor) const
@@ -497,16 +587,17 @@ void FActorPool::ClearPool()
         return;
     }
 
-    TArray<AActor*> ActorsToDestroy;
+    // 按状态分组收集，锁外按状态区分生命周期事件
+    TArray<AActor*> NormalActors;    // Active/Available：触发 OnReturnToPool
+    TArray<AActor*> TransitionActors; // Pending/Finalizing/Returning：不触发生命周期事件
     {
         FWriteScopeLock WriteLock(PoolLock);
 
-        // 先收集，后在锁外执行销毁和生命周期事件，避免锁内重操作
         for (const TWeakObjectPtr<AActor>& ActorPtr : AvailableActors)
         {
             if (AActor* Actor = ActorPtr.Get())
             {
-                ActorsToDestroy.Add(Actor);
+                NormalActors.Add(Actor);
             }
         }
 
@@ -514,13 +605,51 @@ void FActorPool::ClearPool()
         {
             if (AActor* Actor = ActorPtr.Get())
             {
-                ActorsToDestroy.Add(Actor);
+                NormalActors.Add(Actor);
+            }
+        }
+
+        // 过渡状态：未初始化 Pending 不应执行蓝图事件；Returning 已处于 OnReturnToPool 中；
+        // Finalizing 正在执行激活回调。均不重复触发生命周期事件。
+        for (const TWeakObjectPtr<AActor>& ActorPtr : PendingDeferredActors)
+        {
+            if (AActor* Actor = ActorPtr.Get())
+            {
+                TransitionActors.AddUnique(Actor);
+            }
+        }
+
+        for (const TWeakObjectPtr<AActor>& ActorPtr : FinalizingActors)
+        {
+            if (AActor* Actor = ActorPtr.Get())
+            {
+                TransitionActors.AddUnique(Actor);
+            }
+        }
+
+        for (const TWeakObjectPtr<AActor>& ActorPtr : ActivatingActors)
+        {
+            if (AActor* Actor = ActorPtr.Get())
+            {
+                TransitionActors.AddUnique(Actor);
+            }
+        }
+
+        for (const TWeakObjectPtr<AActor>& ActorPtr : ReturningActors)
+        {
+            if (AActor* Actor = ActorPtr.Get())
+            {
+                TransitionActors.AddUnique(Actor);
             }
         }
 
         AvailableActors.Empty();
         ActiveActors.Empty();
         AllActorsSet.Empty();
+        PendingDeferredActors.Empty();
+        FinalizingActors.Empty();
+        ActivatingActors.Empty();
+        ReturningActors.Empty();
 
         // 重置统计
         TotalRequests = 0;
@@ -530,18 +659,29 @@ void FActorPool::ClearPool()
     }
 
     // 锁外执行销毁，降低回调重入风险
-    for (AActor* Actor : ActorsToDestroy)
+    // 正常 Active/Available：仅对已完成构造的 Actor 触发生命周期事件
+    for (AActor* Actor : NormalActors)
     {
         if (!IsValid(Actor))
         {
             continue;
         }
 
-        if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+        // PrewarmPool 创建的 Actor 可能未 FinishSpawning，不应触发蓝图事件
+        if (Actor->IsActorInitialized() && IObjectPoolInterface::DoesActorImplementInterface(Actor))
         {
             IObjectPoolInterface::Execute_OnReturnToPool(Actor);
         }
         Actor->Destroy();
+    }
+
+    // 过渡状态：直接销毁，不触发生命周期事件
+    for (AActor* Actor : TransitionActors)
+    {
+        if (IsValid(Actor))
+        {
+            Actor->Destroy();
+        }
     }
 
     ACTORPOOL_LOG(Log, TEXT("清空池: %s"), ActorClass ? *ActorClass->GetName() : TEXT("Unknown"));
@@ -562,8 +702,8 @@ void FActorPool::SetMaxSize(int32 NewMaxSize)
         OldMaxSize = MaxPoolSize;
         MaxPoolSize = NewMaxSize;
 
-        //  直接计算池大小，避免嵌套锁调用
-        int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
+        //  统一容量计数
+        int32 CurrentPoolSize = GetManagedActorCount_RequiresLock();
     
         // 如果新大小小于当前池大小，需要移除多余的Actor
         if (NewMaxSize < CurrentPoolSize)
@@ -670,9 +810,14 @@ int64 FActorPool::CalculateMemoryUsage() const
     // 活跃和可用Actor容器的内存
     MemoryUsage += ActiveActors.GetAllocatedSize();
     MemoryUsage += AvailableActors.GetAllocatedSize();
+    MemoryUsage += PendingDeferredActors.GetAllocatedSize();
+    MemoryUsage += FinalizingActors.GetAllocatedSize();
+    MemoryUsage += ActivatingActors.GetAllocatedSize();
+    MemoryUsage += ReturningActors.GetAllocatedSize();
+    MemoryUsage += AllActorsSet.GetAllocatedSize();
     
-    // 估算每个Actor的内存使用（简化计算）
-    int32 TotalActors = ActiveActors.Num() + AvailableActors.Num();
+    // 估算每个Actor的内存使用（简化计算，计入所有状态）
+    int32 TotalActors = GetManagedActorCount_RequiresLock();
     MemoryUsage += TotalActors * 1024; // 假设每个Actor约1KB
     
     return MemoryUsage;
@@ -699,6 +844,43 @@ void FActorPool::CleanupInvalidActors()
         {
             AllActorsSet.Remove(ActiveActors[i]);
             ActiveActors.RemoveAtSwap(i);
+        }
+    }
+
+    // 清理过渡状态集合中的无效引用
+    for (auto It = PendingDeferredActors.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid())
+        {
+            AllActorsSet.Remove(*It);
+            It.RemoveCurrent();
+        }
+    }
+
+    for (auto It = ReturningActors.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid())
+        {
+            AllActorsSet.Remove(*It);
+            It.RemoveCurrent();
+        }
+    }
+
+    for (auto It = FinalizingActors.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid())
+        {
+            AllActorsSet.Remove(*It);
+            It.RemoveCurrent();
+        }
+    }
+
+    for (auto It = ActivatingActors.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid())
+        {
+            AllActorsSet.Remove(*It);
+            It.RemoveCurrent();
         }
     }
 
@@ -740,9 +922,12 @@ void FActorPool::PeriodicCleanup_RequiresLock()
 bool FActorPool::CanCreateMoreActors() const
 {
     FReadScopeLock ReadLock(PoolLock);
-    //  直接计算池大小，避免嵌套锁调用
-    int32 CurrentPoolSize = ActiveActors.Num() + AvailableActors.Num();
-    return CurrentPoolSize < MaxPoolSize;
+    return GetManagedActorCount_RequiresLock() < MaxPoolSize;
+}
+
+int32 FActorPool::GetManagedActorCount_RequiresLock() const
+{
+    return ActiveActors.Num() + AvailableActors.Num() + PendingDeferredActors.Num() + FinalizingActors.Num() + ActivatingActors.Num() + ReturningActors.Num();
 }
 
 void FActorPool::InitializePool(UWorld* World)

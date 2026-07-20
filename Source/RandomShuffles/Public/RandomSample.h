@@ -96,11 +96,13 @@ Out RandomSample(It begin, It end, Wt weightBegin, Out out, int32 count, Rand ra
     MinIndexQueue H(sampleSize);
 
     // 将所有有效元素推入优先队列
+    // 竞争泊松过程（有放回加权采样）：初始键 = -ln(U)/weight
+    // 权重越大 → 初始事件时间越早 → ExtractMin 优先选中
     for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = weights[idx];
         if (weight > 0.0f) {
-            float U = randFunc(0.0f, 1.0f);
-            float R = FMath::Pow(U, 1.0f/weight);  // 使用UE数学函数
+            float U = FMath::Max(randFunc(0.0f, 1.0f), UE_SMALL_NUMBER);
+            float R = -FMath::Loge(U) / weight;
             H.Push(R, idx);
         }
     }
@@ -110,14 +112,17 @@ Out RandomSample(It begin, It end, Wt weightBegin, Out out, int32 count, Rand ra
     indices.Reserve(count);
     
     for(int32 sampleIdx = 0; sampleIdx < count; ++sampleIdx) {
+        // 取出当前最小键（绝对事件时间）
+        float selectedKey = H.MinimumKey();
         int32 selectedIndex = H.ExtractMin();
         indices.Add(selectedIndex);  // 使用UE容器方法
         
-        // 重新计算该索引的R值并放回队列
+        // 推进该元素的下一次绝对事件时间：NextKey = SelectedKey + Exp(1)/weight
+        // 维护竞争泊松过程，保证长期选中概率正比于权重
         float weight = weights[selectedIndex];
-        float U = randFunc(0.0f, 1.0f);
-        float R = FMath::Pow(U, 1.0f/weight);  // 使用UE数学函数
-        H.Push(R, selectedIndex);
+        float U = FMath::Max(randFunc(0.0f, 1.0f), UE_SMALL_NUMBER);
+        float nextKey = selectedKey + (-FMath::Loge(U) / weight);
+        H.Push(nextKey, selectedIndex);
     }
 
     // 输出结果

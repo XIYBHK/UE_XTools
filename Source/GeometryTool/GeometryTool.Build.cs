@@ -11,6 +11,9 @@ public class GeometryTool : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+        // 与仓库其他模块保持一致：显式关闭 Unity Build（UBT 默认允许），确保 IWYU 包含质量
+        bUseUnity = false;
+
         PublicDependencyModuleNames.AddRange(new string[]
         {
             "Core",

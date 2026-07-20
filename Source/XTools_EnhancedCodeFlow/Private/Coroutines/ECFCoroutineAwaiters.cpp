@@ -115,6 +115,7 @@ FECFCoroutineAwaiter_WaitLoadObjects::FECFCoroutineAwaiter_WaitLoadObjects(const
 	Owner = InOwner;
 	Settings = InSettings;
 	PrimaryAssetsToLoad = InPrimaryAssetsToLoad;
+	bUsedPrimaryAssets = true;
 }
 
 void FECFCoroutineAwaiter_WaitLoadObjects::await_suspend(FECFCoroutineHandle InCoroHandle)
@@ -129,11 +130,19 @@ void FECFCoroutineAwaiter_WaitLoadObjects::await_suspend(FECFCoroutineHandle InC
 	}
 	else
 	{
-#if ECF_LOGS
-		UE_LOG(LogECF, Error, TEXT("ECF Coroutine [%s] - wait load objects failed to start. Objects or Assets Id array is empty."), *Settings.Label);
-#endif
-		// If no objects or primary assets to load, we can immediately resume the coroutine, so it won't stuck in a suspended state.
-		InCoroHandle.resume();
+		// Route through AddCoroutineAction even with empty arrays. Setup will fail,
+		// but the new Action takes ownership of the coroutine handle (updates ActionHandle),
+		// preventing the previous Action from double-destroying the frame in BeginDestroy.
+		// The failed Action will be GC'd and its BeginDestroy will destroy the frame
+		// only if it is still the current owner (ActionHandle == HandleId).
+		if (bUsedPrimaryAssets)
+		{
+			AddCoroutineAction<UECFWaitLoadObjects>(Owner, InCoroHandle, Settings, PrimaryAssetsToLoad);
+		}
+		else
+		{
+			AddCoroutineAction<UECFWaitLoadObjects>(Owner, InCoroHandle, Settings, ObjectsToLoad);
+		}
 	}
 }
 

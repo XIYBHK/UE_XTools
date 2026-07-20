@@ -16,9 +16,6 @@
 *.dylib
 *.dll
 
-# 允许 CoACD ThirdParty DLL 文件被跟踪
-!Plugins/UE_XTools/ThirdParty/CoACD/DLL/*.dll
-
 # Fortran module files
 *.mod
 

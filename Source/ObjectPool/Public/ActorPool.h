@@ -228,6 +228,18 @@ private:
     /** 快速查找索引（用于ContainsActor O(1)查找） */
     TSet<TWeakObjectPtr<AActor>> AllActorsSet;
 
+    /** 延迟构造待完成集合（AcquireDeferred → FinalizeDeferred 之间的过渡状态） */
+    TSet<TWeakObjectPtr<AActor>> PendingDeferredActors;
+
+    /** 完成中集合（FinalizeDeferred 执行构造/蓝图回调期间的过渡状态） */
+    TSet<TWeakObjectPtr<AActor>> FinalizingActors;
+
+    /** 激活中集合（GetActor 锁外执行 ActivateActorFromPool 期间的过渡状态） */
+    TSet<TWeakObjectPtr<AActor>> ActivatingActors;
+
+    /** 归还中集合（ReturnActor 锁外重置期间的过渡状态，用于回调后复核） */
+    TSet<TWeakObjectPtr<AActor>> ReturningActors;
+
     /** 读写锁，优化并发访问 */
     mutable FRWLock PoolLock;
 
@@ -247,6 +259,12 @@ private:    //  内部辅助方法
      * @return 创建的Actor，失败时返回nullptr
      */
     AActor* CreateNewActor(UWorld* World);
+
+    /**
+     * 统一容量计数（调用者必须持有锁）
+     * 计入所有状态的 Actor：Active + Available + Pending + Finalizing + Activating + Returning
+     */
+    int32 GetManagedActorCount_RequiresLock() const;
 
     /**
      * 验证Actor是否有效且属于正确类型

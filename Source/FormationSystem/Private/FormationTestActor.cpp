@@ -2,6 +2,7 @@
 #include "FormationSystem.h"
 #include "FormationLog.h"
 #include "FormationLibrary.h"
+#include "XToolsErrorReporter.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Components/StaticMeshComponent.h"
@@ -25,22 +26,25 @@ AFormationTestActor::AFormationTestActor()
 void AFormationTestActor::BeginPlay()
 {
     Super::BeginPlay();
-    
-    // 延迟初始化，确保所有组件都已准备好
-    GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+
+    // 延迟初始化，确保所有组件都已准备好。
+    // 使用对象方法重载（内部经 CreateUObject 绑定弱引用），Actor 销毁后回调自动失效，避免悬空调用。
+    GetWorld()->GetTimerManager().SetTimerForNextTick(this, &AFormationTestActor::InitializeOnNextTick);
+}
+
+void AFormationTestActor::InitializeOnNextTick()
+{
+    if (!bInitialized)
     {
-        if (!bInitialized)
+        InitializePredefinedFormations();
+        bInitialized = true;
+
+        // 如果没有测试单位，自动创建一些
+        if (TestUnits.Num() == 0)
         {
-            InitializePredefinedFormations();
-            bInitialized = true;
-            
-            // 如果没有测试单位，自动创建一些
-            if (TestUnits.Num() == 0)
-            {
-                CreateTestUnits(16);
-            }
+            CreateTestUnits(16);
         }
-    });
+    }
 }
 
 void AFormationTestActor::Tick(float DeltaTime)
@@ -102,7 +106,7 @@ void AFormationTestActor::SwitchToNextFormation()
 {
     if (PredefinedFormations.Num() == 0)
     {
-        UE_LOG(LogFormationSystem, Warning, TEXT("FormationTestActor: 没有可用的预定义阵型"));
+        XTOOLS_LOG_WARNING(LogFormationSystem, TEXT("FormationTestActor: 没有可用的预定义阵型"));
         return;
     }
 
@@ -114,13 +118,13 @@ void AFormationTestActor::SwitchToFormation(int32 FormationIndex)
 {
     if (!PredefinedFormations.IsValidIndex(FormationIndex))
     {
-        UE_LOG(LogFormationSystem, Warning, TEXT("FormationTestActor: 无效的阵型索引 %d"), FormationIndex);
+        XTOOLS_LOG_WARNING(LogFormationSystem, FString::Printf(TEXT("FormationTestActor: 无效的阵型索引 %d"), FormationIndex));
         return;
     }
 
     if (TestUnits.Num() == 0)
     {
-        UE_LOG(LogFormationSystem, Warning, TEXT("FormationTestActor: 没有测试单位"));
+        XTOOLS_LOG_WARNING(LogFormationSystem, TEXT("FormationTestActor: 没有测试单位"));
         return;
     }
 
@@ -172,7 +176,7 @@ void AFormationTestActor::SwitchToFormation(int32 FormationIndex)
     }
     else
     {
-        UE_LOG(LogFormationSystem, Error, TEXT("FormationTestActor: 阵型变换启动失败"));
+        XTOOLS_LOG_ERROR(LogFormationSystem, TEXT("FormationTestActor: 阵型变换启动失败"));
     }
 }
 
@@ -211,25 +215,13 @@ void AFormationTestActor::CreateTestUnits(int32 UnitCount, TSubclassOf<AActor> U
             NewUnit = CreateDefaultUnit(SpawnLocation);
         }
 
-        #if WITH_EDITOR
-        #if WITH_EDITOR
         if (NewUnit)
         {
+#if WITH_EDITOR
             NewUnit->SetActorLabel(FString::Printf(TEXT("TestUnit_%d"), i));
-            TestUnits.Add(NewUnit);
-        }
-#else
-        if (NewUnit)
-        {
-            TestUnits.Add(NewUnit);
-        }
 #endif
-#else
-        if (NewUnit)
-        {
             TestUnits.Add(NewUnit);
         }
-#endif
     }
 
     UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 创建了 %d 个测试单位"), TestUnits.Num());

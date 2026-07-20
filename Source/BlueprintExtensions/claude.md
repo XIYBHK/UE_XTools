@@ -10,7 +10,7 @@
 
 ## 2. ExpandNode 骨架（强制）
 - 入口先调用 `K2NodeHelpers::BeginExpandNode(...)` 校验必需引脚。
-- 中间节点展开期间，不调用 `Super::ExpandNode(...)`（避免基类提前断链）。
+- 当前节点直接继承 `UK2Node`，可省略无额外行为的 `Super::ExpandNode(...)`；不要依赖父类调用完成断链。
 - 末尾统一调用 `K2NodeHelpers::EndExpandNode(this)` 收尾断链。
 - 失败分支（如关键输入未连接）要记录 `MessageLog`，并终止展开。
 

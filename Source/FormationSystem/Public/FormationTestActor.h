@@ -148,6 +148,9 @@ private:
     /** 更新自动循环逻辑 */
     void UpdateAutoLoop(float DeltaTime);
 
+    /** 延迟到下一帧的初始化回调（绑定 UObject 生命周期，Actor 销毁后自动失效） */
+    void InitializeOnNextTick();
+
     /** 生成默认单位Actor */
     AActor* CreateDefaultUnit(FVector Location);
 };

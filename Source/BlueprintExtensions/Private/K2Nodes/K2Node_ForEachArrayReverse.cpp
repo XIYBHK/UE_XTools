@@ -91,8 +91,7 @@ TSharedPtr<SWidget> UK2Node_ForEachArrayReverse::CreateNodeImage() const {
 
 void UK2Node_ForEachArrayReverse::ExpandNode(
     FKismetCompilerContext &CompilerContext, UEdGraph *SourceGraph) {
-  // 【参考 K2Node_SmartSort 实现模式】
-  // 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+  // 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
   if (!K2NodeHelpers::IsLatentGraphCompatible(SourceGraph)) {
     CompilerContext.MessageLog.Error(
         *LOCTEXT("LatentGraphOnly",

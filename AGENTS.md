@@ -117,8 +117,8 @@ XTOOLS_CHECK_VALID(Actor, false);
 
 | 禁止 | 原因 | 替代 |
 |------|------|------|
-| `MakeLinkTo()` (K2Node) | 绕过Schema校验 | `K2NodeHelpers::TryConnect()` |
-| `Super::ExpandNode()` (K2Node) | 基类提前断链 | 跳过，末尾用 `EndExpandNode()` |
+| K2Node 展开时直接使用 `MakeLinkTo()` | 跳过 Schema 的方向、类型和连接响应校验 | 优先使用 `K2NodeHelpers::TryConnect()`；其他 Editor 模块使用等价的 `Schema->TryCreateConnection()` 并检查返回值 |
+| 假定 `Super::ExpandNode()` 会自动断链 | `UK2Node` 基类不负责断链；实际行为取决于直接父类 | 按父类契约决定是否调用，并在完成引脚迁移后显式 `BreakAllNodeLinks()` / `EndExpandNode()` |
 | 重建后复用旧Pin指针 | 悬空指针→崩溃 | `K2NodeHelpers::ReconstructAndFindPin()` |
 | `UE_LOG` 用于用户错误 | 不统一 | `FXToolsErrorReporter` / `XTOOLS_LOG_*` |
 | Runtime 模块依赖 Editor | 打包失败 | 拆分 Runtime/Editor 模块 |

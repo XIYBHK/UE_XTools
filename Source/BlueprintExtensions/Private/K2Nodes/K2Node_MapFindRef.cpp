@@ -72,8 +72,7 @@ TSharedPtr<SWidget> UK2Node_MapFindRef::CreateNodeImage() const
 // 因为KCST_MapFindOutRef在标准UE中不存在
 void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	// 【UE 最佳实践】不调用 Super::ExpandNode()，因为基类会提前断开所有链接
-	// Super::ExpandNode(CompilerContext, SourceGraph);
+	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
 	// 【最佳实践 3.1】：在开头检查所有必要的输入连接
 	UEdGraphPin* MapPin = GetMapPin();

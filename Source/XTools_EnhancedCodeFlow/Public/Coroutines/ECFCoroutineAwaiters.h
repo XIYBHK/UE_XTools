@@ -206,6 +206,10 @@ private:
 	// Storing values in order to use them when await_suspend is called
 	TArray<FSoftObjectPath> ObjectsToLoad;
 	TArray<FPrimaryAssetId> PrimaryAssetsToLoad;
+
+	// Tracks which constructor overload was used, so the empty-array fallback
+	// routes to the correct Setup overload for accurate error messages.
+	bool bUsedPrimaryAssets = false;
 };
 
 /*^^^ Wait And Loop Coroutine Awaiter ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/

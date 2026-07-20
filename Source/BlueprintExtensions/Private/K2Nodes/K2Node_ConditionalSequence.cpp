@@ -76,7 +76,7 @@ void UK2Node_ConditionalSequence::ReallocatePinsDuringReconstruction(TArray<UEdG
 
 void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	// 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
 	TArray<CasePinPair> CasePairs = GetCasePinPairs();
 

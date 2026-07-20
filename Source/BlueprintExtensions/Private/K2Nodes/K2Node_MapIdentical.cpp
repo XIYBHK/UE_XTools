@@ -80,8 +80,7 @@ TSharedPtr<SWidget> UK2Node_MapIdentical::CreateNodeImage() const
 
 void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	// 【UE 最佳实践】不调用 Super::ExpandNode()，因为基类会提前断开所有链接
-	// Super::ExpandNode(CompilerContext, SourceGraph);
+	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
 	// 【最佳实践 3.1】：验证输入类型
 	if(GetMapAPin()->PinType != GetMapBPin()->PinType)

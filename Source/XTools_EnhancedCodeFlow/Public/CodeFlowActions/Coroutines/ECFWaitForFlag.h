@@ -16,6 +16,8 @@ class XTOOLS_ENHANCEDCODEFLOW_API UECFWaitForFlag : public UECFCoroutineActionBa
 
 protected:
 
+	// Non-owning pointer to the flag. LIFETIME CONTRACT: caller must ensure
+	// the pointed-to bool outlives this Action (see FEnhancedCodeFlow::WaitForFlag docs).
 	bool* bFlag = nullptr;
 	float TimeOut = 0.f;
 	float OriginTimeOut = 0.f;

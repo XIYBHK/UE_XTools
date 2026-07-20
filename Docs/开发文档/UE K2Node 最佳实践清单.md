@@ -34,7 +34,9 @@
 
 - [ ] **中间节点**: 始终使用 `CompilerContext.SpawnIntermediateNode` 来创建函数调用节点。
 
-- [ ] **移动连接**: 使用 `CompilerContext.MovePinLinksToIntermediate()` 来转移引脚连接，而不是手动 MakeLinkTo。
+- [ ] **迁移原节点连接**: 使用 `CompilerContext.MovePinLinksToIntermediate()` / `CopyPinLinksToIntermediate()` 迁移原节点已有连接。
+
+- [ ] **连接中间节点**: 优先使用 Schema 的 `TryCreateConnection()`（或项目等价 Helper）连接中间节点，并检查返回值；不要默认使用跳过校验的 `MakeLinkTo()`。
 
 - [ ] **清理节点**: 在 ExpandNode 的末尾，必须调用 `BreakAllNodeLinks()` 清理自身，因为它已被中间节点替换。
 

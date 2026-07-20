@@ -85,7 +85,7 @@ UK2Node_ForLoopWithDelayReverse::GetIconAndTint(FLinearColor &OutColor) const {
 void UK2Node_ForLoopWithDelayReverse::ExpandNode(
     FKismetCompilerContext &CompilerContext, UEdGraph *SourceGraph) {
   // 【参考 K2Node_ForLoopWithDelay 实现模式，修改为倒序】
-  // 不调用 Super::ExpandNode()，因为基类会提前断开所有链接
+  // 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
   if (!K2NodeHelpers::IsLatentGraphCompatible(SourceGraph)) {
     CompilerContext.MessageLog.Error(

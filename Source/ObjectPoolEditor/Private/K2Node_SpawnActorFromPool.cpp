@@ -261,7 +261,14 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
     }
 
     // 连接Actor从Acquire到Finalize（对应原生第566行）
-    CallAcquireResult->MakeLinkTo(CallFinalizeActor);
+    if (!K2Schema || !K2Schema->TryCreateConnection(CallAcquireResult, CallFinalizeActor))
+    {
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_AcquireFinalizeConnectionFailed", "@@ 无法连接对象池获取结果与完成节点。").ToString(),
+            this);
+        BreakAllNodeLinks();
+        return;
+    }
 
     // 移动返回值连接 - 应该连接到AcquireResult（Actor），而不是FinalizeResult（bool）
     if (ThisReturn && CallAcquireResult)
@@ -276,7 +283,14 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
         CompilerContext, SourceGraph, CallAcquireNode, this, CallAcquireResult, ClassToSpawn);
 
     // 连接赋值链到Finalize（完全对应原生第579行）
-    LastThen->MakeLinkTo(CallFinalizeExec);
+    if (!LastThen || !K2Schema || !K2Schema->TryCreateConnection(LastThen, CallFinalizeExec))
+    {
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_AssignmentFinalizeConnectionFailed", "@@ 无法连接属性赋值链与完成节点。").ToString(),
+            this);
+        BreakAllNodeLinks();
+        return;
+    }
 
     // 断开原节点所有连接（对应原生第582行）
     BreakAllNodeLinks();
