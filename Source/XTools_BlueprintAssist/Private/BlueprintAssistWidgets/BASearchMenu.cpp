@@ -139,50 +139,76 @@ TSharedRef<SWidget> SBASearchMenuRow::GenerateWidgetForColumn(const FName& Colum
 
 	if (ColumnName == NAME_BASearchName)
 	{
-		// FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools");
+		TSharedPtr<SWidget> IconWidget;
+		if (SearchMenu->MenuType == EBASearchMenuType::File && UBlueprintAssistSettings_Search::Get().bLargeThumbnail)
+		{
+			FSoftObjectPath ReferencePath(Object->GetNode()->GetObjectPath());
+			if (UObject* LoadedAsset = ReferencePath.TryLoad())
+			{
+				constexpr int32 ThumbnailSize = 48;
+				TSharedRef<FAssetThumbnail> Thumbnail = MakeShareable(new FAssetThumbnail(LoadedAsset, ThumbnailSize, ThumbnailSize, UThumbnailManager::Get().GetSharedThumbnailPool()));
+				FAssetThumbnailConfig ThumbnailConfig;
+				ThumbnailConfig.bAllowFadeIn = false;
+				ThumbnailConfig.bAllowHintText = false;
+				ThumbnailConfig.bAllowRealTimeOnHovered = false;
+				ThumbnailConfig.bForceGenericThumbnail = false;
 
-		// TSharedPtr<SWidget> IconWidget;
-		// if (Object->ObjNode)
-		// {
-		// 	Object->PropNode->GetObjectPath();
-		// 	
-		// 	if (UClass* ObjectClass = UClass::TryFindTypeSlow<UClass>(*Object->ObjNode->object_native_class, EFindFirstObjectOptions::ExactClass))
-		// 	{
-		// 		FSlateIcon ClassIcon = FSlateIconFinder::FindIconForClass(ObjectClass);
-		// 		if (ClassIcon.IsSet())
-		// 		{
-		// 			IconWidget = SNew(SImage)
-		// 				.Image(ClassIcon.GetIcon());
-		// 		}
-		// 	}
-		// }
-		// else if (Object->ParentNode)
-		// {
-		// 	if (UClass* ObjectClass = UClass::TryFindTypeSlow<UClass>(Object->ParentNode->AssetClass, EFindFirstObjectOptions::ExactClass))
-		// 	{
-		// 		TSharedPtr<IAssetTypeActions> AssetActions = AssetToolsModule.Get().GetAssetTypeActionsForClass(ObjectClass).Pin();
-		//
-		// 		FSlateIcon ClassIcon = FSlateIconFinder::FindIconForClass(ObjectClass);
-		// 		if (ClassIcon.IsSet())
-		// 		{
-		// 			IconWidget = SNew(SImage)
-		// 				.Image(ClassIcon.GetIcon())
-		// 				.ColorAndOpacity(AssetActions.IsValid() ? AssetActions->GetTypeColor() : FColor::White);
-		// 		}
-		// 	}
-		// }
-		//
-		// if (IconWidget.IsValid())
-		// {
-		// 	HorizBox->AddSlot()
-		// 	        .VAlign(VAlign_Center)
-		// 	        .AutoWidth()
-		// 	        .Padding(0, 0, 4, 0)
-		// 	[
-		// 		IconWidget.ToSharedRef()
-		// 	];
-		// }
-		
+				TSharedRef<SOverlay> ItemContentsOverlay = SNew(SOverlay);
+				ItemContentsOverlay->AddSlot()
+				[
+					Thumbnail->MakeThumbnailWidget(ThumbnailConfig)
+				];
+
+				IconWidget = SNew(SBox)
+					.Padding(0)
+					.WidthOverride(ThumbnailSize)
+					.HeightOverride(ThumbnailSize)
+					[
+						ItemContentsOverlay
+					];
+			}
+		}
+		else
+		{
+			if (Object->ParentNode)
+			{
+				if (UClass* ObjectClass = UClass::TryFindTypeSlow<UClass>(*Object->ParentNode->AssetClass, EFindFirstObjectOptions::ExactClass))
+				{
+					FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools");
+					TSharedPtr<IAssetTypeActions> AssetActions = AssetToolsModule.Get().GetAssetTypeActionsForClass(ObjectClass).Pin();
+
+					FSlateIcon ClassIcon = FSlateIconFinder::FindIconForClass(ObjectClass);
+					if (ClassIcon.IsSet())
+					{
+						IconWidget = SNew(SImage)
+							.Image(ClassIcon.GetIcon())
+							.ColorAndOpacity(AssetActions.IsValid() ? AssetActions->GetTypeColor() : FColor::White);
+					}
+				}
+			}
+			else if (Object->ObjNode)
+			{
+				if (UClass* ObjectClass = UClass::TryFindTypeSlow<UClass>(*Object->ObjNode->object_native_class, EFindFirstObjectOptions::ExactClass))
+				{
+					FSlateIcon ClassIcon = FSlateIconFinder::FindIconForClass(ObjectClass);
+					if (ClassIcon.IsSet())
+					{
+						IconWidget = SNew(SImage).Image(ClassIcon.GetIcon());
+					}
+				}
+			}
+		}
+
+		if (IconWidget.IsValid())
+		{
+			HorizBox->AddSlot()
+				.VAlign(VAlign_Center)
+				.AutoWidth()
+				.Padding(0, 0, 4, 0)
+				[
+					IconWidget.ToSharedRef()
+				];
+		}
 
 		HorizBox->AddSlot()
 		        .Padding(4)
@@ -449,44 +475,36 @@ void SBASearchMenu::Construct(const FArguments& InArgs, const FVector2D& WidgetS
 				.Padding(0, 0, 0, 1)
 				[
 					SNew(SHorizontalBox)
-
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
-					.VAlign(VAlign_Center)
-					.Padding(8, 0)
-					[
-						SNew(SImage)
-						// .Image(FSearchStyle::Get().GetBrush("Stats"))
-						// .Image(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.StatsViewer")
-						            .Image(BA_STYLE_CLASS::Get().GetBrush("LevelEditor.Tabs.StatsViewer"))
-						            .ToolTip(
-							            SNew(SToolTip)
-							            [
-								            SNew(SVerticalBox)
-
-								            + SVerticalBox::Slot()
-								            .AutoHeight()
-								            [
-									            SNew(STextBlock)
-									            .Text(this, &SBASearchMenu::GetAdvancedStatus)
-								            ]
-							            ]
-						            )
-					]
-
-					// Asset Stats 
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.f)
 					.VAlign(VAlign_Center)
 					.Padding(2, 0)
 					[
-						SNew(STextBlock)
-						.Text(this, &SBASearchMenu::GetStatusText)
+						SNew(SCheckBox)
+						.Content()
+						[
+							SNew(STextBlock).Text(INVTEXT("Large Thumbnail"))
+						]
+						.IsEnabled_Lambda([&]()
+						{
+							return MenuType == EBASearchMenuType::File;
+						})
+						.IsChecked_Lambda([]()
+						{
+							return UBlueprintAssistSettings_Search::Get().bLargeThumbnail ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+						})
+						.OnCheckStateChanged_Lambda([&](ECheckBoxState NewState)
+						{
+							auto& BASettings = UBlueprintAssistSettings_Search::Get();
+							BASettings.bLargeThumbnail = (NewState == ECheckBoxState::Checked);
+							BASettings.PostEditChange();
+							BASettings.SaveConfig();
+							RefreshList();
+						})
 					]
-
-					// Index unindexed items
 					+ SHorizontalBox::Slot()
-					.AutoWidth()
+					.FillWidth(1.0)
+					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					[
 						SNew(SHyperlink)
@@ -494,6 +512,35 @@ void SBASearchMenu::Construct(const FArguments& InArgs, const FVector2D& WidgetS
 						.ToolTipText(LOCTEXT("AssetsNeedIndexingTooltip", "Click this to open and index the assets that are don't have any index data or their index data was found to be out of date."))
 						.Visibility(EVisibility::Visible)
 						.OnNavigate(this, &SBASearchMenu::HandleForceIndexOfAssetsMissingIndex)
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(8, 0)
+					[
+						SNew(SImage)
+						.Image(BA_STYLE_CLASS::Get().GetBrush("LevelEditor.Tabs.StatsViewer"))
+						.ToolTip(
+							SNew(SToolTip)
+							[
+								SNew(SVerticalBox)
+
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								[
+									SNew(STextBlock)
+									.Text(this, &SBASearchMenu::GetAdvancedStatus)
+								]
+							]
+						)
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(2, 0)
+					[
+						SNew(STextBlock)
+						.Text(this, &SBASearchMenu::GetStatusText)
 					]
 				]
 			]

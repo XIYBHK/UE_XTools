@@ -7,11 +7,18 @@
 #include "CoreMinimal.h"
 #include "EdGraphUtilities.h"
 #include "ConnectionDrawingPolicy.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "../Public/ElectronicNodesSettings.h"
 
 #include "BlueprintConnectionDrawingPolicy.h"
 
 class FENPathDrawer;
+
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+using FENGraphVector2D = FVector2f;
+#else
+using FENGraphVector2D = FVector2D;
+#endif
 
 struct ENRibbonConnection
 {
@@ -61,7 +68,7 @@ public:
 	{
 	}
 
-	virtual void DrawConnection(int32 LayerId, const FVector2D& Start, const FVector2D& End, const FConnectionParams& Params) override;
+	virtual void DrawConnection(int32 LayerId, const FENGraphVector2D& Start, const FENGraphVector2D& End, const FConnectionParams& Params) override;
 
 	void ENComputeClosestPoint(const FVector2D& Start, const FVector2D& End);
 	void ENComputeClosestPointDefault(const FVector2D& Start, const FVector2D& StartTangent, const FVector2D& End, const FVector2D& EndTangent);
@@ -73,6 +80,8 @@ public:
 	TArray<ENCrossingConnection> CrossingConnections;
 
 private:
+	void DrawConnectionInternal(int32 LayerId, const FVector2D& Start, const FVector2D& End, const FConnectionParams& Params);
+
 	const UElectronicNodesSettings& ElectronicNodesSettings = *GetDefault<UElectronicNodesSettings>();
 	bool ReversePins;
 	float MinXOffset;

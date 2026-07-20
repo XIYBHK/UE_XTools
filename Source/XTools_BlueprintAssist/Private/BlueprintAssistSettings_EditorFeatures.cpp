@@ -94,7 +94,7 @@ UBASettings_EditorFeatures::UBASettings_EditorFeatures(const FObjectInitializer&
 
 	//~~~ Misc
 	bDisplayAllHotkeys = false;
-	bShowWelcomeScreenOnLaunch = true;
+	bShowWelcomeScreenOnLaunch = false;
 
 	CopyPinValueChord = FInputChord(EKeys::RightMouseButton, EModifierKey::Shift);
 	PastePinValueChord = FInputChord(EKeys::LeftMouseButton, EModifierKey::Shift);

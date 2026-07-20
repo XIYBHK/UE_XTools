@@ -104,7 +104,12 @@ FConnectionDrawingPolicy* FENConnectionDrawingPolicyFactory::CreateConnectionPol
 	return nullptr;
 }
 
-void FENConnectionDrawingPolicy::DrawConnection(int32 LayerId, const FVector2D& Start, const FVector2D& End, const FConnectionParams& Params)
+void FENConnectionDrawingPolicy::DrawConnection(int32 LayerId, const FENGraphVector2D& Start, const FENGraphVector2D& End, const FConnectionParams& Params)
+{
+	DrawConnectionInternal(LayerId, FVector2D(Start), FVector2D(End), Params);
+}
+
+void FENConnectionDrawingPolicy::DrawConnectionInternal(int32 LayerId, const FVector2D& Start, const FVector2D& End, const FConnectionParams& Params)
 {
 	const bool RightPriority = ENIsRightPriority(Params);
 
