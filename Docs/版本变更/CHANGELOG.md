@@ -1,5 +1,75 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.8 (2026-07-21)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 重要修复
+- **ObjectPool**: 修复获取、延迟完成和归还状态机，避免锁内蓝图回调与重复入池
+- **BlueprintExtensions / ObjectPoolEditor**: 修正 Map 查找值语义、Schema 连接与旧节点 Pin 迁移
+- **PointSampling / Sort**: 修复 3D 球体泊松分布、数值溢出和采样输入边界
+- **FieldSystemExtensions**: 改用定向 Field 命令，避免重建 Chaos 状态
+- **编辑器模块**: 补齐异步回调、Ticker、Slate 委托和热补丁卸载生命周期
+
+### 兼容性优化
+- **ElectronicNodes**: 恢复 UE 5.6+ Slate 向量接口下的连线绘制
+- **BlueprintAssist**: 对齐 UE 5.4+ 搜索菜单并默认关闭启动欢迎弹窗
+
+</details>
+
+<details>
+<summary><strong>ObjectPool / EnhancedCodeFlow / RandomShuffles</strong></summary>
+
+- 修复 对象池六状态生命周期与容量统计
+- 调整 Actor 生命周期接口仅限游戏线程
+- 修复 空资源协程句柄所有权
+- 修复 加权采样竞争泊松过程
+
+</details>
+
+<details>
+<summary><strong>BlueprintExtensions / ObjectPoolEditor</strong></summary>
+
+- 修复 Map 查找节点伪引用语义
+- 修复 K2Node Schema 连接校验
+- 修复 对象池旧节点隐藏连接迁移
+- 优化 蓝图清理事务与失败回滚
+
+</details>
+
+<details>
+<summary><strong>PointSampling / Sort / FormationSystem</strong></summary>
+
+- 修复 3D 球体泊松采样各向异性
+- 优化 球体泊松稀疏网格内存
+- 修复 排序与数学函数数值边界
+- 修复 Formation next-tick 生命周期
+
+</details>
+
+<details>
+<summary><strong>FieldSystemExtensions</strong></summary>
+
+- 修复 动态注册 Field 重置 Chaos 状态
+- 优化 Construction Field 定向派发
+
+</details>
+
+<details>
+<summary><strong>编辑器与第三方集成</strong></summary>
+
+- 修复 异步截图完成回调与模块卸载
+- 修复 AutoSizeComments 延迟回调生命周期
+- 修复 BlueprintAssist Slate 委托清理
+- 修复 ElectronicNodes 热补丁卸载恢复
+- 修复 X_AssetEditor 延迟 Ticker 清理
+- 优化 UE 5.4+ 搜索与 UE 5.6+ 绘制兼容
+
+</details>
+
+---
+
 ## 版本 v1.9.7 (2026-07-19)
 
 <details>
