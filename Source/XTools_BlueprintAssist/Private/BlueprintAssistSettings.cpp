@@ -78,7 +78,7 @@ UBASettings::UBASettings(const FObjectInitializer& ObjectInitializer)
 	ExecutionWiringStyle = EBAWiringStyle::AlwaysMerge;
 	ParameterWiringStyle = EBAWiringStyle::AlwaysMerge;
 
-	bGloballyDisableAutoFormatting = false;
+	bGloballyDisableAutoFormatting = true;
 	bSkipAutoFormattingAfterBreakingPins = true;
 
 	FormattingStyle = EBANodeFormattingStyle::Expanded;
