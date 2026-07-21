@@ -8,6 +8,9 @@
 ### XTools_BlueprintAssist
 - **调整** 默认全局禁用自动格式化
 
+### PointSampling
+- **新增** 矩形网格独立横纵间距节点
+
 ## 日志格式说明
 
 ### 模块分类

@@ -37,6 +37,31 @@ public:
 	// ============================================================================
 
 	/**
+	 * 生成中心对齐的二维矩形网格点阵
+	 * @param RowCount 行数
+	 * @param ColumnCount 列数
+	 * @param HorizontalSpacing 横向（X轴）点间距
+	 * @param VerticalSpacing 纵向（Y轴）点间距
+	 * @param CenterLocation 中心位置
+	 * @param Rotation 旋转（世界空间时生效）
+	 * @param CoordinateSpace 坐标空间
+	 * @return 点位数组，按行优先顺序排列
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|矩形",
+		meta = (DisplayName = "生成矩形网格点阵",
+			ToolTip = "生成中心对齐的二维矩形网格点阵，可分别设置横向和纵向点间距。",
+			Keywords = "矩形 网格 点阵 横向间距 纵向间距 rectangle grid spacing"))
+	static TArray<FVector> GenerateRectangleGrid(
+		UPARAM(DisplayName = "行数", meta = (ClampMin = "1", UIMin = "1")) int32 RowCount = 5,
+		UPARAM(DisplayName = "列数", meta = (ClampMin = "1", UIMin = "1")) int32 ColumnCount = 5,
+		UPARAM(DisplayName = "横向间距", meta = (ClampMin = "0.001", UIMin = "1.0")) float HorizontalSpacing = 100.0f,
+		UPARAM(DisplayName = "纵向间距", meta = (ClampMin = "0.001", UIMin = "1.0")) float VerticalSpacing = 100.0f,
+		UPARAM(DisplayName = "中心位置") FVector CenterLocation = FVector::ZeroVector,
+		UPARAM(DisplayName = "旋转") FRotator Rotation = FRotator::ZeroRotator,
+		UPARAM(DisplayName = "坐标空间") EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local
+	);
+
+	/**
 	 * 生成实心矩形点阵
 	 * @param PointCount 总点数
 	 * @param CenterLocation 中心位置

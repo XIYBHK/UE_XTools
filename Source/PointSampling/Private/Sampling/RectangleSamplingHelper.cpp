@@ -7,6 +7,45 @@
 #include "FormationSamplingInternal.h"
 #include "Math/UnrealMathUtility.h"
 
+TArray<FVector> FRectangleSamplingHelper::GenerateRectangleGrid(
+	int32 RowCount,
+	int32 ColumnCount,
+	float HorizontalSpacing,
+	float VerticalSpacing)
+{
+	TArray<FVector> Points;
+	if (RowCount <= 0 || ColumnCount <= 0 ||
+		!FMath::IsFinite(HorizontalSpacing) || !FMath::IsFinite(VerticalSpacing) ||
+		HorizontalSpacing <= 0.0f || VerticalSpacing <= 0.0f)
+	{
+		return Points;
+	}
+
+	const int64 PointCount = static_cast<int64>(RowCount) * static_cast<int64>(ColumnCount);
+	if (PointCount >= MAX_int32)
+	{
+		return Points;
+	}
+
+	Points.Reserve(static_cast<int32>(PointCount));
+
+	const double StartX = -static_cast<double>(ColumnCount - 1) * HorizontalSpacing * 0.5;
+	const double StartY = -static_cast<double>(RowCount - 1) * VerticalSpacing * 0.5;
+
+	for (int32 Row = 0; Row < RowCount; ++Row)
+	{
+		for (int32 Column = 0; Column < ColumnCount; ++Column)
+		{
+			Points.Emplace(
+				StartX + static_cast<double>(Column) * HorizontalSpacing,
+				StartY + static_cast<double>(Row) * VerticalSpacing,
+				0.0);
+		}
+	}
+
+	return Points;
+}
+
 TArray<FVector> FRectangleSamplingHelper::GenerateSolidRectangle(
 	int32 PointCount,
 	float Spacing,

@@ -204,6 +204,22 @@ namespace FormationSamplingInternal
 // 矩形类阵型实现
 // ============================================================================
 
+TArray<FVector> UFormationSamplingLibrary::GenerateRectangleGrid(
+	int32 RowCount,
+	int32 ColumnCount,
+	float HorizontalSpacing,
+	float VerticalSpacing,
+	FVector CenterLocation,
+	FRotator Rotation,
+	EPoissonCoordinateSpace CoordinateSpace)
+{
+	const TArray<FVector> LocalPoints = FRectangleSamplingHelper::GenerateRectangleGrid(
+		RowCount, ColumnCount, HorizontalSpacing, VerticalSpacing);
+
+	return FormationSamplingInternal::TransformPoints(
+		LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+}
+
 TArray<FVector> UFormationSamplingLibrary::GenerateSolidRectangle(
 	int32 PointCount,
 	FVector CenterLocation,

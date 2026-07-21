@@ -20,6 +20,16 @@ class FRectangleSamplingHelper
 {
 public:
 	/**
+	 * 生成中心对齐的二维矩形网格点阵（局部坐标）
+	 */
+	static TArray<FVector> GenerateRectangleGrid(
+		int32 RowCount,
+		int32 ColumnCount,
+		float HorizontalSpacing,
+		float VerticalSpacing
+	);
+
+	/**
 	 * 生成实心矩形点阵（局部坐标）
 	 * @return 相对于中心的点位数组
 	 */
