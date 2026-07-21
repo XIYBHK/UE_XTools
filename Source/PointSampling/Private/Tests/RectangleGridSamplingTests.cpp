@@ -11,7 +11,7 @@
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRectangleGridSampling_GeneratesIndependentSpacing,
 	"XTools.PointSampling.RectangleGrid.GeneratesIndependentSpacing",
-	EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FRectangleGridSampling_GeneratesIndependentSpacing::RunTest(const FString& Parameters)
 {
@@ -47,7 +47,7 @@ bool FRectangleGridSampling_GeneratesIndependentSpacing::RunTest(const FString& 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRectangleGridSampling_AppliesTransformAndRejectsInvalidInput,
 	"XTools.PointSampling.RectangleGrid.AppliesTransformAndRejectsInvalidInput",
-	EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FRectangleGridSampling_AppliesTransformAndRejectsInvalidInput::RunTest(const FString& Parameters)
 {
