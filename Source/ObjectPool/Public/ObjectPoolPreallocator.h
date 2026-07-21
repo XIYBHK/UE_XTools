@@ -37,7 +37,7 @@ class FActorPool;
  * - 单一职责：只负责预分配相关功能
  * - 松耦合：通过接口与FActorPool交互
  * - 可配置：支持多种预分配策略
- * - 线程安全：支持多线程环境
+ * - 游戏线程：由Ticker驱动，涉及Actor的操作不支持从工作线程调用
  */
 class OBJECTPOOL_API FObjectPoolPreallocator
 {

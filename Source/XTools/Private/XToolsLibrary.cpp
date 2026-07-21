@@ -78,10 +78,7 @@ namespace XToolsConfig
     // PRD 测试配置
     constexpr int32 PRD_MAX_FAILURE_COUNT = 12;
     constexpr int32 PRD_ARRAY_SIZE = PRD_MAX_FAILURE_COUNT + 1;
-    constexpr int32 PRD_TARGET_SUCCESSES = 10000;
-    constexpr double PRD_TEST_MARGIN_MULTIPLIER = 2.0;
-    constexpr int32 PRD_MIN_TEST_MULTIPLIER = 100;
-    constexpr int32 PRD_MAX_TOTAL_TESTS_CAP = 100000000;
+    constexpr int32 PRD_TOTAL_TESTS = 10000;
 
     // 性能测试配置
     constexpr int32 PERF_TEST_ARRAY_COUNT = 100;
@@ -692,22 +689,11 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     float ActualChance = 0.0f;
     int32 TotalSuccesses = 0;
     int32 TotalTests = 0;
-    bool bReachedTestLimit = false;
-
     //  获取线程安全的 PRD 测试器
     FThreadSafePRDTester& PRDTester = FThreadSafePRDTester::Get();
 
-    // 基于输入概率动态估算安全测试上限，避免低概率输入被固定阈值过早截断。
-    const double SafeBaseChance = FMath::Max(static_cast<double>(BaseChance), UE_DOUBLE_SMALL_NUMBER);
-    const double EstimatedTestsForTargetSuccesses = static_cast<double>(PRD_TARGET_SUCCESSES) / SafeBaseChance;
-    const double DynamicMaxTotalTests = FMath::CeilToDouble(EstimatedTestsForTargetSuccesses * PRD_TEST_MARGIN_MULTIPLIER);
-    const int32 MaxTotalTests = FMath::Clamp(
-        static_cast<int32>(FMath::Min(DynamicMaxTotalTests, static_cast<double>(MAX_int32))),
-        PRD_TARGET_SUCCESSES * PRD_MIN_TEST_MULTIPLIER,
-        PRD_MAX_TOTAL_TESTS_CAP);
-
-    //  优化的测试循环 - 使用配置常量和线程安全
-    while (TotalSuccesses < PRD_TARGET_SUCCESSES && TotalTests < MaxTotalTests)
+    // BlueprintCallable 入口保持固定工作量，避免低概率输入长时间阻塞调用线程。
+    while (TotalTests < PRD_TOTAL_TESTS)
     {
         ++TotalTests;
 
@@ -733,16 +719,6 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
 
         CurrentFailureCount = NextFailureCount;
 
-        //  检查是否达到最大测试次数
-        if (TotalTests >= MaxTotalTests)
-        {
-            bReachedTestLimit = true;
-            FXToolsErrorReporter::Warning(LogXTools,
-                FString::Printf(TEXT("TestPRDDistribution: 达到动态最大测试次数限制 (%d)，提前停止。成功次数: %d/%d，结果可能不完整。"),
-                    MaxTotalTests, TotalSuccesses, PRD_TARGET_SUCCESSES),
-                TEXT("TestPRDDistribution"));
-            break;
-        }
     }
 
     //  优化的日志输出 - 减少字符串操作
@@ -781,13 +757,6 @@ TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
     }
 
     FXToolsErrorReporter::Info(LogXTools, TEXT("=== 测试完成 ==="), TEXT("TestPRDDistribution"));
-    if (bReachedTestLimit || TotalSuccesses < PRD_TARGET_SUCCESSES)
-    {
-        FXToolsErrorReporter::Warning(LogXTools,
-            FString::Printf(TEXT("TestPRDDistribution: 本次结果为部分样本。已收集成功次数: %d/%d。"),
-                TotalSuccesses, PRD_TARGET_SUCCESSES),
-            TEXT("TestPRDDistribution"));
-    }
 
     return Distribution;
 }

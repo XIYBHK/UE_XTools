@@ -93,13 +93,22 @@ namespace PoissonSamplingHelpers
     class FOptimizedPoissonSampler
     {
     public:
-        FOptimizedPoissonSampler(float InRadius, const FVector& InBoundsMin, const FVector& InBoundsMax, const FRandomStream* InRandomStream = nullptr)
+        FOptimizedPoissonSampler(
+            float InRadius,
+            const FVector& InBoundsMin,
+            const FVector& InBoundsMax,
+            const FRandomStream* InRandomStream = nullptr,
+            TFunction<bool(const FVector&)> InDomainPredicate = TFunction<bool(const FVector&)>(),
+            int32 InMaxSampleCount = 0)
             : Radius(InRadius)
             , RadiusSquared(InRadius * InRadius)
             , BoundsMin(InBoundsMin)
             , BoundsMax(InBoundsMax)
             , RandomStream(InRandomStream)
             , GridSize(ForceInit)
+            , DomainPredicate(MoveTemp(InDomainPredicate))
+            , MaxSampleCount(InMaxSampleCount)
+            , bUseSparseGrid(InMaxSampleCount > 0)
         {
             // 计算网格单元尺寸 (网格边长 = r / sqrt(d), d为维度)
             const int32 Dimensions = (BoundsMax.Z - BoundsMin.Z > 0.0f) ? 3 : 2;
@@ -112,9 +121,16 @@ namespace PoissonSamplingHelpers
                 (Dimensions == 3) ? FMath::CeilToInt((BoundsMax.Z - BoundsMin.Z) / CellSize) + 1 : 1
             );
 
-            // 初始化网格 (-1表示空单元格)
-            const int32 TotalCells = GridSize.X * GridSize.Y * GridSize.Z;
-            Grid.Init(-1, TotalCells);
+            if (bUseSparseGrid)
+            {
+                SparseGrid.Reserve(FMath::Min(MaxSampleCount, 10000));
+            }
+            else
+            {
+                // 完整区域采样保留稠密网格；有数量上限的采样使用稀疏网格避免按区域体积分配。
+                const int32 TotalCells = GridSize.X * GridSize.Y * GridSize.Z;
+                Grid.Init(-1, TotalCells);
+            }
         }
 
         /**
@@ -124,22 +140,44 @@ namespace PoissonSamplingHelpers
         {
             TArray<FVector> Samples;
             TArray<FVector> ActiveList;
-		// 预估最大样本数量并预分配内存
-			const float BoundsVolume = (BoundsMax.X - BoundsMin.X) *
-									  (BoundsMax.Y - BoundsMin.Y) *
-									  FMath::Max(BoundsMax.Z - BoundsMin.Z, 1.0f);
-			const int32 EstimatedMaxSamples = FMath::CeilToInt(BoundsVolume / (Radius * Radius * Radius) * 2.0f);
+			int32 ReserveCount = FMath::Min(MaxSampleCount, 10000);
+			if (MaxSampleCount <= 0)
+			{
+				// 预估最大样本数量并预分配内存
+				const float BoundsVolume = (BoundsMax.X - BoundsMin.X) *
+					(BoundsMax.Y - BoundsMin.Y) *
+					FMath::Max(BoundsMax.Z - BoundsMin.Z, 1.0f);
+				const int32 EstimatedMaxSamples = FMath::CeilToInt(
+					BoundsVolume / (Radius * Radius * Radius) * 2.0f);
+				ReserveCount = FMath::Min(EstimatedMaxSamples, 10000);
+			}
 
-			Samples.Reserve(FMath::Min(EstimatedMaxSamples, 10000));
-			ActiveList.Reserve(FMath::Min(EstimatedMaxSamples, 1000));
+			Samples.Reserve(ReserveCount);
+			ActiveList.Reserve(FMath::Min(ReserveCount, 1000));
 
             // 生成第一个样本
-            FVector FirstSample = GenerateRandomPoint();
+            FVector FirstSample = FVector::ZeroVector;
+            bool bFoundFirstSample = false;
+            for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
+            {
+                FirstSample = GenerateRandomPoint();
+                if (!DomainPredicate || DomainPredicate(FirstSample))
+                {
+                    bFoundFirstSample = true;
+                    break;
+                }
+            }
+
+            if (!bFoundFirstSample)
+            {
+                return Samples;
+            }
+
             Samples.Add(FirstSample);
             ActiveList.Add(FirstSample);
             InsertIntoGrid(FirstSample, 0);
 
-            while (!ActiveList.IsEmpty())
+            while (!ActiveList.IsEmpty() && (MaxSampleCount <= 0 || Samples.Num() < MaxSampleCount))
             {
                 // 随机选择活跃点
                 const int32 RandomIndex = GetRandomInt(0, ActiveList.Num() - 1, RandomStream);
@@ -181,6 +219,10 @@ namespace PoissonSamplingHelpers
         const FRandomStream* RandomStream;
         FIntVector GridSize;
         TArray<int32> Grid; // 网格，每个单元格存储样本索引（-1表示空）
+        TMap<FIntVector, int32> SparseGrid;
+        TFunction<bool(const FVector&)> DomainPredicate;
+        int32 MaxSampleCount;
+        bool bUseSparseGrid;
 
         /**
          * 生成随机点
@@ -249,6 +291,11 @@ namespace PoissonSamplingHelpers
                 return false;
             }
 
+            if (DomainPredicate && !DomainPredicate(Candidate))
+            {
+                return false;
+            }
+
             // 检查网格内的最近邻
             const FIntVector GridCoord = PointToGridCoord(Candidate);
             const int32 StartX = FMath::Max(0, GridCoord.X - 2);
@@ -264,10 +311,22 @@ namespace PoissonSamplingHelpers
                 {
                     for (int32 X = StartX; X <= EndX; ++X)
                     {
-                        const int32 GridIndex = GetGridIndex(X, Y, Z);
-                        if (Grid[GridIndex] != -1)
+                        int32 SampleIndex = INDEX_NONE;
+                        if (bUseSparseGrid)
                         {
-                            const FVector& Sample = Samples[Grid[GridIndex]];
+                            if (const int32* FoundIndex = SparseGrid.Find(FIntVector(X, Y, Z)))
+                            {
+                                SampleIndex = *FoundIndex;
+                            }
+                        }
+                        else
+                        {
+                            SampleIndex = Grid[GetGridIndex(X, Y, Z)];
+                        }
+
+                        if (SampleIndex != INDEX_NONE)
+                        {
+                            const FVector& Sample = Samples[SampleIndex];
                             if (FVector::DistSquared(Candidate, Sample) < RadiusSquared)
                             {
                                 return false;
@@ -286,8 +345,15 @@ namespace PoissonSamplingHelpers
         void InsertIntoGrid(const FVector& Point, int32 SampleIndex)
         {
             const FIntVector GridCoord = PointToGridCoord(Point);
-            const int32 GridIndex = GetGridIndex(GridCoord.X, GridCoord.Y, GridCoord.Z);
-            Grid[GridIndex] = SampleIndex;
+            if (bUseSparseGrid)
+            {
+                SparseGrid.Add(GridCoord, SampleIndex);
+            }
+            else
+            {
+                const int32 GridIndex = GetGridIndex(GridCoord.X, GridCoord.Y, GridCoord.Z);
+                Grid[GridIndex] = SampleIndex;
+            }
         }
 
         /**
@@ -1179,6 +1245,35 @@ namespace PoissonSamplingHelpers
             FVector(Width, Height, Depth),
             Stream
         );
+
+        return Sampler.Sample(MaxAttempts);
+    }
+
+    TArray<FVector> GenerateOptimizedPoisson3DInSphere(
+        float SphereRadius,
+        float MinDistance,
+        int32 TargetPointCount,
+        int32 MaxAttempts,
+        const FRandomStream* Stream)
+    {
+        if (SphereRadius <= 0.0f || MinDistance <= 0.0f || TargetPointCount <= 0 || MaxAttempts <= 0)
+        {
+            return TArray<FVector>();
+        }
+
+        const float Diameter = SphereRadius * 2.0f;
+        const FVector Center(SphereRadius);
+        const float RadiusSquared = SphereRadius * SphereRadius;
+        FOptimizedPoissonSampler Sampler(
+            MinDistance,
+            FVector::ZeroVector,
+            FVector(Diameter),
+            Stream,
+            [Center, RadiusSquared](const FVector& Point)
+            {
+                return FVector::DistSquared(Point, Center) <= RadiusSquared;
+            },
+            TargetPointCount);
 
         return Sampler.Sample(MaxAttempts);
     }

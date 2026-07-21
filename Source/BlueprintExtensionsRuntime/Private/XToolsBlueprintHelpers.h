@@ -162,16 +162,32 @@ namespace XToolsBlueprintHelpers
 	 * @return 缓存的枚举值
 	 */
 	template<typename TEnum>
-	inline TEnum GetCachedEnum(TMap<FString, TEnum>& Cache, const FString& Key, UEnum* StaticEnum)
+	inline bool TryGetCachedEnum(TMap<FString, TEnum>& Cache, const FString& Key, UEnum* StaticEnum, TEnum& OutResult)
 	{
+		if (!StaticEnum)
+		{
+			return false;
+		}
+
 		if (const TEnum* CachedValue = Cache.Find(Key))
 		{
-			return *CachedValue;
+			const int64 Value = static_cast<int64>(*CachedValue);
+			if (Value < 0 || Value >= StaticEnum->GetMaxEnumValue())
+			{
+				return false;
+			}
+			OutResult = *CachedValue;
+			return true;
 		}
 
 		const int64 EnumValue = StaticEnum->GetValueByName(FName(*Key));
-		const TEnum Result = static_cast<TEnum>(EnumValue);
-		Cache.Add(Key, Result);
-		return Result;
+		if (EnumValue < 0 || EnumValue >= StaticEnum->GetMaxEnumValue())
+		{
+			return false;
+		}
+
+		OutResult = static_cast<TEnum>(EnumValue);
+		Cache.Add(Key, OutResult);
+		return true;
 	}
 }

@@ -182,104 +182,100 @@ TArray<int32> UFormationManagerComponent::SolveAssignmentGreedy(const TArray<TAr
 
 TArray<int32> UFormationManagerComponent::SolveAssignmentHungarian(const TArray<TArray<float>>& CostMatrix)
 {
-    int32 n = CostMatrix.Num();
+    const int32 n = CostMatrix.Num();
     TArray<int32> Assignment;
-    Assignment.SetNum(n);
+    Assignment.Init(INDEX_NONE, n);
 
     if (n == 0)
     {
         return Assignment;
     }
 
-    // 性能优化：预分配内存避免重复分配
-    TArray<TArray<float>> Matrix;
-    Matrix.Reserve(n);
-    Matrix.SetNum(n);
-    for (int32 i = 0; i < n; i++)
+    for (const TArray<float>& Row : CostMatrix)
     {
-        Matrix[i].Reserve(n);
-        Matrix[i] = CostMatrix[i];
-    }
-
-    // 步骤1：行约简
-    for (int32 i = 0; i < n; i++)
-    {
-        float MinVal = Matrix[i][0];
-        for (int32 j = 1; j < n; j++)
+        if (Row.Num() != n)
         {
-            MinVal = FMath::Min(MinVal, Matrix[i][j]);
-        }
-        for (int32 j = 0; j < n; j++)
-        {
-            Matrix[i][j] -= MinVal;
+            UE_LOG(LogFormationSystem, Warning, TEXT("匈牙利算法要求方阵，当前矩阵不是 %d×%d"), n, n);
+            return Assignment;
         }
     }
 
-    // 步骤2：列约简
-    for (int32 j = 0; j < n; j++)
-    {
-        float MinVal = Matrix[0][j];
-        for (int32 i = 1; i < n; i++)
-        {
-            MinVal = FMath::Min(MinVal, Matrix[i][j]);
-        }
-        for (int32 i = 0; i < n; i++)
-        {
-            Matrix[i][j] -= MinVal;
-        }
-    }
+    // 1-based Kuhn-Munkres potentials implementation, O(n^3).
+    TArray<double> RowPotential;
+    TArray<double> ColumnPotential;
+    TArray<int32> MatchedRow;
+    TArray<int32> PreviousColumn;
+    RowPotential.Init(0.0, n + 1);
+    ColumnPotential.Init(0.0, n + 1);
+    MatchedRow.Init(0, n + 1);
+    PreviousColumn.Init(0, n + 1);
 
-    // 简化版分配：寻找零元素进行分配
-    TArray<bool> RowUsed, ColUsed;
-    RowUsed.SetNum(n);
-    ColUsed.SetNum(n);
-    for (int32 i = 0; i < n; i++)
+    for (int32 Row = 1; Row <= n; ++Row)
     {
-        RowUsed[i] = false;
-        ColUsed[i] = false;
-        Assignment[i] = -1;
-    }
+        MatchedRow[0] = Row;
+        int32 CurrentColumn = 0;
+        TArray<double> MinReducedCost;
+        TArray<bool> UsedColumns;
+        MinReducedCost.Init(TNumericLimits<double>::Max(), n + 1);
+        UsedColumns.Init(false, n + 1);
 
-    // 贪心地分配零元素
-    for (int32 i = 0; i < n; i++)
-    {
-        for (int32 j = 0; j < n; j++)
+        do
         {
-            if (FMath::IsNearlyZero(Matrix[i][j]) && !RowUsed[i] && !ColUsed[j])
+            UsedColumns[CurrentColumn] = true;
+            const int32 CurrentRow = MatchedRow[CurrentColumn];
+            double Delta = TNumericLimits<double>::Max();
+            int32 NextColumn = 0;
+
+            for (int32 Column = 1; Column <= n; ++Column)
             {
-                Assignment[i] = j;
-                RowUsed[i] = true;
-                ColUsed[j] = true;
-                break;
-            }
-        }
-    }
-
-    // 为未分配的行找到最佳分配
-    for (int32 i = 0; i < n; i++)
-    {
-        if (Assignment[i] == -1)
-        {
-            int32 BestCol = -1;
-            float BestCost = FLT_MAX;
-            for (int32 j = 0; j < n; j++)
-            {
-                if (!ColUsed[j] && Matrix[i][j] < BestCost)
+                if (UsedColumns[Column])
                 {
-                    BestCost = Matrix[i][j];
-                    BestCol = j;
+                    continue;
+                }
+
+                const double ReducedCost = static_cast<double>(CostMatrix[CurrentRow - 1][Column - 1])
+                    - RowPotential[CurrentRow] - ColumnPotential[Column];
+                if (ReducedCost < MinReducedCost[Column])
+                {
+                    MinReducedCost[Column] = ReducedCost;
+                    PreviousColumn[Column] = CurrentColumn;
+                }
+                if (MinReducedCost[Column] < Delta)
+                {
+                    Delta = MinReducedCost[Column];
+                    NextColumn = Column;
                 }
             }
-            if (BestCol != -1)
+
+            for (int32 Column = 0; Column <= n; ++Column)
             {
-                Assignment[i] = BestCol;
-                ColUsed[BestCol] = true;
+                if (UsedColumns[Column])
+                {
+                    RowPotential[MatchedRow[Column]] += Delta;
+                    ColumnPotential[Column] -= Delta;
+                }
+                else
+                {
+                    MinReducedCost[Column] -= Delta;
+                }
             }
-            else
-            {
-                Assignment[i] = i; // 后备方案
-            }
+
+            CurrentColumn = NextColumn;
         }
+        while (MatchedRow[CurrentColumn] != 0);
+
+        do
+        {
+            const int32 Previous = PreviousColumn[CurrentColumn];
+            MatchedRow[CurrentColumn] = MatchedRow[Previous];
+            CurrentColumn = Previous;
+        }
+        while (CurrentColumn != 0);
+    }
+
+    for (int32 Column = 1; Column <= n; ++Column)
+    {
+        Assignment[MatchedRow[Column] - 1] = Column - 1;
     }
 
     return Assignment;
@@ -372,14 +368,14 @@ TArray<int32> UFormationManagerComponent::CalculatePathAwareAssignment(
             int32 Target1 = InitialAssignment[Unit1];
             int32 Target2 = InitialAssignment[Unit2];
             
-            // 增加冲突路径的成本
-            if (CostMatrix.IsValidIndex(Unit1) && CostMatrix[Unit1].IsValidIndex(Target2))
+            // 惩罚当前发生冲突的两条路径，让重新求解选择非冲突目标。
+            if (CostMatrix.IsValidIndex(Unit1) && CostMatrix[Unit1].IsValidIndex(Target1))
             {
-                CostMatrix[Unit1][Target2] += 1000.0f;
+                CostMatrix[Unit1][Target1] += 1000.0f;
             }
-            if (CostMatrix.IsValidIndex(Unit2) && CostMatrix[Unit2].IsValidIndex(Target1))
+            if (CostMatrix.IsValidIndex(Unit2) && CostMatrix[Unit2].IsValidIndex(Target2))
             {
-                CostMatrix[Unit2][Target1] += 1000.0f;
+                CostMatrix[Unit2][Target2] += 1000.0f;
             }
         }
     }

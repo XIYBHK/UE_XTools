@@ -93,8 +93,18 @@ FBAInputProcessor::~FBAInputProcessor() {}
 
 void FBAInputProcessor::Cleanup()
 {
+	if (!BAInputProcessorInstance.IsValid())
+	{
+		return;
+	}
+
+#if WITH_SLATE_DEBUGGING
+	FSlateDebugging::InputEvent.RemoveAll(BAInputProcessorInstance.Get());
+#endif
+
 	if (FSlateApplication::IsInitialized())
 	{
+		FSlateApplication::Get().OnApplicationActivationStateChanged().RemoveAll(BAInputProcessorInstance.Get());
 		FSlateApplication::Get().UnregisterInputPreProcessor(BAInputProcessorInstance);
 	}
 

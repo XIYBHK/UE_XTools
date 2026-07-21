@@ -930,16 +930,29 @@ FX_PivotOperationResult FX_PivotManager::RestorePivotSnapshotsForActors(const TA
 
 void FX_PivotManager::ClearPivotSnapshots()
 {
-    int32 Count = PivotSnapshots.Num();
-    PivotSnapshots.Empty();
-    
-    // 删除磁盘文件
-    FString FilePath = GetSnapshotFilePath();
+    const int32 Count = PivotSnapshots.Num();
+    const FString FilePath = GetSnapshotFilePath();
     if (FPaths::FileExists(FilePath))
     {
-        IFileManager::Get().Delete(*FilePath);
+        if (!IFileManager::Get().Delete(*FilePath))
+        {
+            const FText ErrorMessage = FText::Format(
+                LOCTEXT("ClearSnapshotsDeleteFailed", "无法删除 Pivot 快照文件：{0}"),
+                FText::FromString(FilePath));
+            FNotificationInfo ErrorInfo(ErrorMessage);
+            ErrorInfo.ExpireDuration = 5.0f;
+            if (const TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(ErrorInfo))
+            {
+                Notification->SetCompletionState(SNotificationItem::CS_Fail);
+            }
+            LogOperation(FString::Printf(TEXT("删除快照文件失败: %s"), *FilePath), true);
+            return;
+        }
+
         LogOperation(FString::Printf(TEXT("已删除快照文件: %s"), *FilePath));
     }
+
+    PivotSnapshots.Empty();
     
     FText Message = FText::Format(
         LOCTEXT("ClearSnapshotsSuccess", "已清除 {0} 个 Pivot 快照"),

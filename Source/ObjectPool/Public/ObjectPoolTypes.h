@@ -126,7 +126,7 @@ struct OBJECTPOOL_API FObjectPoolConfig
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "基础配置", meta = (ClampMin = "0"))
     int32 InitialSize = 10;
 
-    /** 池的硬性上限，0表示无限制 */
+    /** 池的硬性上限，0使用默认上限100 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "基础配置", meta = (ClampMin = "0"))
     int32 HardLimit = 0;
 

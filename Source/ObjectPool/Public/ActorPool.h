@@ -36,6 +36,7 @@ DECLARE_CYCLE_STAT_EXTERN(TEXT("ActorPool_CreateActor"), STAT_ActorPool_CreateAc
  *
  * 负责特定Actor类的对象生命周期管理，包括预热、分配、回收和销毁。
  * 支持灵活的策略调整和详细的统计信息。
+ * 所有涉及Actor生命周期的公开操作均遵循游戏线程契约；内部锁仅用于维护状态一致性。
  */
 class OBJECTPOOL_API FActorPool
 {
@@ -44,14 +45,14 @@ public:
      * 构造函数
      * @param InActorClass 要池化的Actor类
      * @param InInitialSize 初始池大小
-     * @param InHardLimit 池的硬限制（0表示无限制）
+     * @param InHardLimit 池的硬限制（0使用默认上限100）
      */
     explicit FActorPool(UClass* InActorClass, int32 InInitialSize = 10, int32 InHardLimit = 0);
 
     /** 析构函数 */
     ~FActorPool();
 
-    //  禁用拷贝构造和赋值，确保线程安全
+    //  禁用拷贝构造和赋值，确保池实例唯一所有权
     FActorPool(const FActorPool&) = delete;
     FActorPool& operator=(const FActorPool&) = delete;
 
@@ -240,7 +241,7 @@ private:
     /** 归还中集合（ReturnActor 锁外重置期间的过渡状态，用于回调后复核） */
     TSet<TWeakObjectPtr<AActor>> ReturningActors;
 
-    /** 读写锁，优化并发访问 */
+    /** 读写锁，用于维护容器和生命周期回调重入期间的状态一致性 */
     mutable FRWLock PoolLock;
 
     /** GC委托句柄 - 用于安全清理GC回调 */

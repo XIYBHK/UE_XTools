@@ -1,6 +1,7 @@
 #include "FormationLibrary.h"
 #include "FormationMathUtils.h"
 #include "FormationLog.h"
+#include "XToolsErrorReporter.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -607,6 +608,12 @@ FFormationData UFormationLibrary::ResizeFormation(const FFormationData& Formatio
             // 对于自定义阵型，按比例调整
             FFormationData ResizedFormation = Formation;
             int32 OriginalCount = Formation.Positions.Num();
+
+            if (OriginalCount == 0)
+            {
+                XTOOLS_LOG_WARNING(LogFormationSystem, TEXT("ResizeFormation: 无法扩展空的自定义阵型"));
+                return ResizedFormation;
+            }
 
             if (NewUnitCount > OriginalCount)
             {

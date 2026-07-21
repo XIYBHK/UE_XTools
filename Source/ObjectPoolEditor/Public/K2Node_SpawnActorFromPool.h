@@ -27,6 +27,7 @@ public:
     virtual void PinDefaultValueChanged(UEdGraphPin* Pin) override;
     virtual void NotifyPinConnectionListChanged(UEdGraphPin* Pin) override;
     virtual void ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins) override;
+    virtual void PostReconstructNode() override;
     
     // 仅重写 Expand，复用父类的引脚分配与动态重建逻辑
     virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, class UEdGraph* SourceGraph) override;
@@ -34,6 +35,7 @@ public:
 private:
     // 更新返回值引脚类型的辅助方法
     void UpdateReturnValueType();
+    void ConfigureUnsupportedSpawnPins();
     
     /** Cached node title */
     mutable FNodeTextCache CachedNodeTitle;

@@ -93,8 +93,12 @@ void USplineExtensionsLibrary::SimplifySpline(USplineComponent* SplineComponent,
 			FVector ArriveTangent = (CurrentLocation - PrevLocation) / 2.0f;
 			FVector LeaveTangent = (NextLocation - CurrentLocation) / 2.0f;
 
-			SplineComponent->SetTangentAtSplinePoint(i, ArriveTangent, ESplineCoordinateSpace::World, true);
-			SplineComponent->SetTangentAtSplinePoint(i, LeaveTangent, ESplineCoordinateSpace::World, false);
+			SplineComponent->SetTangentsAtSplinePoint(
+				i,
+				ArriveTangent,
+				LeaveTangent,
+				ESplineCoordinateSpace::World,
+				false);
 		}
 	}
 

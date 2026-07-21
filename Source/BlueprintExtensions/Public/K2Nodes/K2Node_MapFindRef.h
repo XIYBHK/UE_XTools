@@ -80,10 +80,10 @@ public:
     virtual void NotifyPinConnectionListChanged(UEdGraphPin* Pin) override;
     virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const override;
 
-    UEdGraphPin* GetMapPin() const { return Pins[0]; }
-    UEdGraphPin* GetKeyPin() const { return Pins[1]; }
-    UEdGraphPin* GetValuePin() const { return Pins[2]; }
-    UEdGraphPin* GetFoundResultPin() const { return Pins[3]; }
+    UEdGraphPin* GetMapPin() const { return FindPin(TEXT("Map"), EGPD_Input); }
+    UEdGraphPin* GetKeyPin() const { return FindPin(TEXT("Key"), EGPD_Input); }
+    UEdGraphPin* GetValuePin() const { return FindPin(TEXT("Value"), EGPD_Output); }
+    UEdGraphPin* GetFoundResultPin() const { return FindPin(TEXT("Found"), EGPD_Output); }
     
 #pragma endregion
     
@@ -93,7 +93,6 @@ public:
     void SetDesiredReturnType(bool bAsReference);
 
 private:
-    void ToggleReturnPin();
     void PropagatePinType();
     bool IsSetToReturnRef() const;
     

@@ -230,6 +230,17 @@ TArray<FTransform> UGeometryInstance::GetPointsByCircle(
         return FTransforms;
     }
 
+    const int64 RingCount = static_cast<int64>(Level - 1) * Level / 2;
+    const int64 MaxRingPointCount = (GeometryToolInternal::MaxPointBudget - 1) / InitCount;
+    const int64 TotalPointCount = RingCount > MaxRingPointCount
+        ? GeometryToolInternal::MaxPointBudget + 1
+        : 1 + RingCount * InitCount;
+    if (GeometryToolInternal::ExceedsPointBudget(TotalPointCount))
+    {
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 圆形采样点数过大，已取消生成。InitCount=%d, Level=%d"), InitCount, Level);
+        return FTransforms;
+    }
+
     float CurtAngle = InitAngle;
     float CurtRadius = 0.0f;
     int32 CurtCount = InitCount;

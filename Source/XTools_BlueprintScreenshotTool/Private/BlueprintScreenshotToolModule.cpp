@@ -16,6 +16,8 @@
 
 void FBlueprintScreenshotToolModule::StartupModule()
 {
+	UBlueprintScreenshotToolHandler::SetAsyncDriverAvailable(false);
+
 	// 如果项目中已启用 Marketplace 版本的 BlueprintScreenshotTool 插件，则集成版保持空载，避免重复初始化和工具栏冲突
 	if (const TSharedPtr<IPlugin> ExternalBSTPlugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintScreenshotTool")))
 	{
@@ -115,12 +117,15 @@ void FBlueprintScreenshotToolModule::InitializeAsyncScreenshot()
 	if (GIsEditor && FSlateApplication::IsInitialized())
 	{
 		FSlateApplication::Get().OnPostTick().AddRaw(this, &FBlueprintScreenshotToolModule::OnPostTick);
+		UBlueprintScreenshotToolHandler::SetAsyncDriverAvailable(true);
 	}
 #endif
 }
 
 void FBlueprintScreenshotToolModule::ShutdownAsyncScreenshot()
 {
+	UBlueprintScreenshotToolHandler::SetAsyncDriverAvailable(false);
+
 #if WITH_EDITOR
 	if (FSlateApplication::IsInitialized())
 	{

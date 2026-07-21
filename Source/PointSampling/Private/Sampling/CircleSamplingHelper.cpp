@@ -7,6 +7,7 @@
 #include "FormationSamplingInternal.h"
 #include "Math/UnrealMathUtility.h"
 #include "Algorithms/PoissonDiskSampling.h"
+#include "Algorithms/PoissonSamplingHelpers.h"
 
 // 黄金角常量（137.5077640500378546463487度）
 static constexpr float GOLDEN_ANGLE = 137.5077640500378546463487f;
@@ -387,37 +388,14 @@ TArray<FVector> FCircleSamplingHelper::GeneratePoisson(
 	// 使用Robert Bridson's Fast Poisson Disk Sampling算法，适配圆形/球体区域
 	if (bIs3D)
 	{
-		// 3D球体泊松采样 - 使用FPoissonDiskSampling::GeneratePoisson3D，然后筛选球体内的点
-		// 计算包围球体的立方体大小
-		float CubeSize = Radius * 2.0f;
-		
-		// 生成立方体泊松采样
-		TArray<FVector2D> Poisson2D = FPoissonDiskSampling::GeneratePoisson2D(CubeSize, CubeSize, MinDistance, 30);
-		
-		// 将2D点转换为3D点，并筛选球体内的点
-		for (const FVector2D& Point2D : Poisson2D)
+		// 在球体域内执行真正的3D Bridson采样，并以目标点数提前停止。
+		const TArray<FVector> Poisson3D = PoissonSamplingHelpers::GenerateOptimizedPoisson3DInSphere(
+			Radius, MinDistance, PointCount, 30, &RandomStream);
+
+		for (const FVector& Point3D : Poisson3D)
 		{
-			// 在球体内部随机生成Z坐标
-			float X = Point2D.X - Radius;
-			float Y = Point2D.Y - Radius;
-			
-			// 计算该XY平面上球体能容纳的Z范围
-			float R2 = Radius * Radius;
-			float XY2 = X * X + Y * Y;
-			
-			if (XY2 < R2)
-			{
-				float MaxZ = FMath::Sqrt(R2 - XY2);
-				float Z = RandomStream.FRandRange(-MaxZ, MaxZ);
-				
-				FVector Point3D(X, Y, Z);
-				Points.Add(Point3D);
-				
-				if (Points.Num() >= PointCount)
-				{
-					break;
-				}
-			}
+			const FVector CenteredPoint = Point3D - FVector(Radius);
+			Points.Add(CenteredPoint);
 		}
 	}
 	else

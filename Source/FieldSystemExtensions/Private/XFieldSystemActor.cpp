@@ -65,6 +65,14 @@ void AXFieldSystemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		UnregisterSpawnListener();
 	}
 
+	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakGC : CachedGeometryCollections)
+	{
+		if (UGeometryCollectionComponent* GC = WeakGC.Get())
+		{
+			GC->InitializationFields.Remove(this);
+		}
+	}
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -380,6 +388,10 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 
 		// 添加到InitializationFields
 		GC->InitializationFields.Add(this);
+		if (GC->IsPhysicsStateCreated())
+		{
+			ApplyCurrentFieldsToGeometryCollection(GC);
+		}
 		RegisteredCount++;
 
 		const AActor* OwnerActor = GC->GetOwner();
@@ -416,66 +428,62 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 	}
 
 	int32 TotalApplied = 0;
-
-	// 遍历每个GC
 	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakGC : CachedGeometryCollections)
 	{
-		UGeometryCollectionComponent* GC = WeakGC.Get();
-		if (!GC)
+		if (UGeometryCollectionComponent* GC = WeakGC.Get())
 		{
-			continue;
-		}
-
-		FGeometryCollectionPhysicsProxy* PhysicsProxy = GC->GetPhysicsProxy();
-		if (!PhysicsProxy)
-		{
-			continue;
-		}
-
-		auto Solver = PhysicsProxy->GetSolver<Chaos::FPBDRigidsSolver>();
-		if (!Solver)
-		{
-			continue;
-		}
-
-		// 应用所有命令到此GC
-		for (const FFieldSystemCommand& Command : ConstructionFields)
-		{
-			if (!Command.RootNode)
-			{
-				continue;
-			}
-
-			// 修复：先存储 GetOwner() 结果，避免两次调用可能的竞态条件
-			const FName OwnerName = [GC]() -> FName
-			{
-				if (AActor* OwnerActor = GC->GetOwner())
-				{
-					return FName(*OwnerActor->GetName());
-				}
-				return NAME_None;
-			}();
-
-			FFieldSystemCommand LocalCommand = Command;
-			LocalCommand.InitFieldNodes(Solver->GetSolverTime(), OwnerName);
-
-			// 提交命令到Solver
-			Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
-			{
-				// UE 5.5+ BufferCommand已弃用，使用BufferFieldCommand_Internal
-#if XTOOLS_ENGINE_5_5_OR_LATER
-				PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
-#else
-				PhysicsProxy->BufferCommand(Solver, NewCommand);
-#endif
-			});
-
-			TotalApplied++;
+			TotalApplied += ApplyCurrentFieldsToGeometryCollection(GC);
 		}
 	}
 
-	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Applied %d construction fields to %d GeometryCollections"), 
-		ConstructionFields.Num(), CachedGeometryCollections.Num());
+	UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Applied %d construction fields to %d GeometryCollections"),
+		TotalApplied, CachedGeometryCollections.Num());
+}
+
+int32 AXFieldSystemActor::ApplyCurrentFieldsToGeometryCollection(UGeometryCollectionComponent* GC)
+{
+	UFieldSystemComponent* FieldComp = GetFieldSystemComponent();
+	if (!GC || !FieldComp)
+	{
+		return 0;
+	}
+
+	FGeometryCollectionPhysicsProxy* PhysicsProxy = GC->GetPhysicsProxy();
+	if (!PhysicsProxy)
+	{
+		return 0;
+	}
+
+	auto Solver = PhysicsProxy->GetSolver<Chaos::FPBDRigidsSolver>();
+	if (!Solver)
+	{
+		return 0;
+	}
+
+	const AActor* OwnerActor = GC->GetOwner();
+	const FName OwnerName = OwnerActor ? FName(*OwnerActor->GetName()) : NAME_None;
+	int32 AppliedCount = 0;
+	for (const FFieldSystemCommand& Command : FieldComp->GetConstructionFields())
+	{
+		if (!Command.RootNode)
+		{
+			continue;
+		}
+
+		FFieldSystemCommand LocalCommand = Command;
+		LocalCommand.InitFieldNodes(Solver->GetSolverTime(), OwnerName);
+		Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
+		{
+#if XTOOLS_ENGINE_5_5_OR_LATER
+			PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
+#else
+			PhysicsProxy->BufferCommand(Solver, NewCommand);
+#endif
+		});
+		++AppliedCount;
+	}
+
+	return AppliedCount;
 }
 
 void AXFieldSystemActor::ApplyRuntimeFiltering()
@@ -518,6 +526,10 @@ void AXFieldSystemActor::ApplyRuntimeFiltering()
 				if (bAutoRegisterToGCs && !GC->InitializationFields.Contains(this))
 				{
 					GC->InitializationFields.Add(this);
+					if (GC->IsPhysicsStateCreated())
+					{
+						ApplyCurrentFieldsToGeometryCollection(GC);
+					}
 				}
 			}
 			continue;
@@ -601,6 +613,10 @@ void AXFieldSystemActor::OnActorSpawned(AActor* SpawnedActor)
 			if (bAutoRegisterToGCs && !GC->InitializationFields.Contains(this))
 			{
 				GC->InitializationFields.Add(this);
+				if (GC->IsPhysicsStateCreated())
+				{
+					ApplyCurrentFieldsToGeometryCollection(GC);
+				}
 			}
 
 			UE_LOG(LogFieldSystemExtensions, Verbose, TEXT("XFieldSystemActor: Added spawned GeometryCollection from '%s'"), 

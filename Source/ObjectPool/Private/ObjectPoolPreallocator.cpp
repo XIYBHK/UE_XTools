@@ -10,6 +10,7 @@
 //  UE核心依赖
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Components/PrimitiveComponent.h"
 #include "HAL/PlatformFilemanager.h"
 
 //  对象池模块依赖
@@ -140,8 +141,9 @@ void FObjectPoolPreallocator::Tick(float DeltaTime)
 
     AccumulatedTime += DeltaTime;
 
-    //  检查延迟时间
-    if (AccumulatedTime < Config.PreallocationDelay)
+    // Tick DeltaTime 使用秒，配置面板中的 PreallocationDelay 使用毫秒。
+    const float PreallocationDelaySeconds = Config.PreallocationDelay / 1000.0f;
+    if (AccumulatedTime < PreallocationDelaySeconds)
     {
         return;
     }
@@ -356,6 +358,11 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
         return false;
     }
 
+    if (!OwnerPool->CanCreateMoreActors())
+    {
+        return false;
+    }
+
     double StartTime = FPlatformTime::Seconds();
 
     //  通过对象池创建Actor
@@ -363,11 +370,31 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
 
     if (NewActor)
     {
-        // 将创建的 Actor 注册到池列表，避免"幽灵 Actor"
+        bool bRegistered = false;
+
+        // 与普通 PrewarmPool 保持一致：在锁外停用延迟构造 Actor，避免原生组件提前注册后参与场景。
+        NewActor->SetActorHiddenInGame(true);
+        NewActor->SetActorTickEnabled(false);
+        if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(NewActor->GetRootComponent()))
+        {
+            RootPrimitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            RootPrimitive->SetSimulatePhysics(false);
+        }
+        // Spawn 在锁外执行，登记前再次检查容量，避免并发获取路径填满池。
         {
             FWriteScopeLock WriteLock(OwnerPool->PoolLock);
-            OwnerPool->AvailableActors.Add(NewActor);
-            OwnerPool->AllActorsSet.Add(NewActor);
+            if (OwnerPool->GetManagedActorCount_RequiresLock() < OwnerPool->MaxPoolSize)
+            {
+                OwnerPool->AvailableActors.Add(NewActor);
+                OwnerPool->AllActorsSet.Add(NewActor);
+                bRegistered = true;
+            }
+        }
+
+        if (!bRegistered)
+        {
+            NewActor->Destroy();
+            return false;
         }
 
         double EndTime = FPlatformTime::Seconds();

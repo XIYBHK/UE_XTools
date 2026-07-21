@@ -190,6 +190,14 @@ void FX_AssetNamingDelegates::Shutdown()
 		CoreTicker.RemoveTicker(ModeBindingTickerHandle);
 		ModeBindingTickerHandle.Reset();
 	}
+	for (FTSTicker::FDelegateHandle& Handle : PendingAssetRenameTickerHandles)
+	{
+		if (Handle.IsValid())
+		{
+			CoreTicker.RemoveTicker(Handle);
+		}
+	}
+	PendingAssetRenameTickerHandles.Reset();
 
 	// 清空重入标志和缓存
 	bIsAssetRegistryReady = false;
@@ -253,13 +261,28 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 	}
 
 	TWeakPtr<FX_AssetNamingDelegates> WeakSelf = AsShared();
+	TSharedRef<FTSTicker::FDelegateHandle> PendingTickerHandle = MakeShared<FTSTicker::FDelegateHandle>();
 
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, AssetData](float DeltaTime) -> bool
+	*PendingTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakSelf, AssetData, PendingTickerHandle](float DeltaTime) -> bool
 	{
 		TSharedPtr<FX_AssetNamingDelegates> SharedThis = WeakSelf.Pin();
-		if (!SharedThis.IsValid() || !SharedThis->bIsActive || !SharedThis->RenameCallback.IsBound())
+		if (!SharedThis.IsValid())
 		{
 			return false;
+		}
+
+		const auto FinishTicker = [&SharedThis, &PendingTickerHandle](bool bContinue)
+		{
+			if (!bContinue)
+			{
+				SharedThis->PendingAssetRenameTickerHandles.RemoveSingleSwap(*PendingTickerHandle);
+			}
+			return bContinue;
+		};
+
+		if (!SharedThis->bIsActive || !SharedThis->RenameCallback.IsBound())
+		{
+			return FinishTicker(false);
 		}
 
 		// OnAssetAdded 仍以“手动新建意图”为高置信度信号。
@@ -272,7 +295,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("跳过 OnAssetAdded（无手动新建意图令牌）: %s"),
 				*AssetData.AssetName.ToString());
-			return false;
+			return FinishTicker(false);
 		}
 
 		if (!SharedThis->HasActiveManualCreateIntent())
@@ -281,7 +304,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 				TEXT("跳过 OnAssetAdded（手动新建意图已过期）: %s"),
 				*AssetData.AssetName.ToString());
 			SharedThis->ResetManualCreateIntent();
-			return false;
+			return FinishTicker(false);
 		}
 
 		const double TimeSinceLastCreateIntent = FPlatformTime::Seconds() - SharedThis->LastManualCreateIntentTime;
@@ -291,7 +314,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("跳过 OnAssetAdded（手动新建工厂支持类无效）: %s"), *AssetData.AssetName.ToString());
 			SharedThis->ResetManualCreateIntent();
-			return false;
+			return FinishTicker(false);
 		}
 
 		UClass* FactoryClass = SharedThis->LastManualCreateSupportedClass.Get();
@@ -308,7 +331,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		{
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("延迟重试 OnAssetAdded（暂时无法解析资产类）: %s"), *AssetData.AssetName.ToString());
-			return SharedThis->HasActiveManualCreateIntent();
+			return FinishTicker(SharedThis->HasActiveManualCreateIntent());
 		}
 
 		if (!AssetClass->IsChildOf(FactoryClass))
@@ -318,7 +341,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 				*AssetData.AssetName.ToString(),
 				*AssetClass->GetName(),
 				*FactoryClass->GetName());
-			return false;
+			return FinishTicker(false);
 		}
 
 		if (SharedThis->IsInSpecialEditorMode())
@@ -326,7 +349,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("跳过 OnAssetAdded（特殊编辑模式）: %s"), *AssetData.AssetName.ToString());
 			SharedThis->ResetManualCreateIntent();
-			return false;
+			return FinishTicker(false);
 		}
 
 		if (!SharedThis->DetectUserOperationContext())
@@ -334,7 +357,7 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 			UE_LOG(LogX_AssetNamingDelegates, Verbose,
 				TEXT("跳过 OnAssetAdded（非用户交互上下文）: %s"), *AssetData.AssetName.ToString());
 			SharedThis->ResetManualCreateIntent();
-			return false;
+			return FinishTicker(false);
 		}
 
 		UE_LOG(LogX_AssetNamingDelegates, Log,
@@ -346,8 +369,9 @@ void FX_AssetNamingDelegates::OnAssetAdded(const FAssetData& AssetData)
 		SharedThis->RenameCallback.Execute(AssetData);
 		SharedThis->ResetManualCreateIntent();
 
-		return false;
+		return FinishTicker(false);
 	}), 0.1f);
+	PendingAssetRenameTickerHandles.Add(*PendingTickerHandle);
 }
 
 void FX_AssetNamingDelegates::OnConfigureNewAssetProperties(UFactory* Factory)
@@ -528,7 +552,9 @@ bool FX_AssetNamingDelegates::ShouldProcessAsset(const FAssetData& AssetData) co
 	// 【修复】/Game 根目录的资产，其 PackagePath 是 "/Game"（无末尾斜杠）
 	// 所以检查时不应包含末尾斜杠，否则根目录资产会被错误排除
 	// 【安全】同时排除 /Game/Developers 等特殊路径
-	if (!PackagePath.StartsWith(TEXT("/Game")) || PackagePath.StartsWith(TEXT("/Game/Developers")))
+	const bool bIsGamePath = PackagePath == TEXT("/Game") || PackagePath.StartsWith(TEXT("/Game/"));
+	const bool bIsDeveloperPath = PackagePath == TEXT("/Game/Developers") || PackagePath.StartsWith(TEXT("/Game/Developers/"));
+	if (!bIsGamePath || bIsDeveloperPath)
 	{
 		UE_LOG(LogX_AssetNamingDelegates, Verbose, 
 			TEXT("资产不在 /Game 路径下或在特殊路径中，跳过: %s (路径: %s)"),

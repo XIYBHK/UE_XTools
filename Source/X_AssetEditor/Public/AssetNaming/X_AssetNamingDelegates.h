@@ -83,6 +83,7 @@ private:
 	FTSTicker::FDelegateHandle DelayedActivationTickerHandle;
 	FTSTicker::FDelegateHandle SecondaryActivationTickerHandle;
 	FTSTicker::FDelegateHandle ModeBindingTickerHandle;
+	TArray<FTSTicker::FDelegateHandle> PendingAssetRenameTickerHandles;
 
 	/** 激活状态 */
 	bool bIsActive = false;

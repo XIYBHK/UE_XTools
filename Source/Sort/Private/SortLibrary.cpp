@@ -27,19 +27,43 @@ struct FNaturalSortComparator
             // 如果两者都是数字，则按数值比较
             if (FChar::IsDigit(A[IndexA]) && FChar::IsDigit(B[IndexB]))
             {
-                int64 NumA = 0, NumB = 0;
+                const int32 NumberStartA = IndexA;
+                const int32 NumberStartB = IndexB;
                 while (IndexA < A.Len() && FChar::IsDigit(A[IndexA]))
                 {
-                    NumA = NumA * 10 + (A[IndexA++] - '0');
+                    ++IndexA;
                 }
                 while (IndexB < B.Len() && FChar::IsDigit(B[IndexB]))
                 {
-                    NumB = NumB * 10 + (B[IndexB++] - '0');
+                    ++IndexB;
                 }
 
-                if (NumA != NumB)
+                int32 SignificantStartA = NumberStartA;
+                int32 SignificantStartB = NumberStartB;
+                while (SignificantStartA < IndexA && A[SignificantStartA] == '0')
                 {
-                    return NumA < NumB ? -1 : 1;
+                    ++SignificantStartA;
+                }
+                while (SignificantStartB < IndexB && B[SignificantStartB] == '0')
+                {
+                    ++SignificantStartB;
+                }
+
+                const int32 SignificantLengthA = IndexA - SignificantStartA;
+                const int32 SignificantLengthB = IndexB - SignificantStartB;
+                if (SignificantLengthA != SignificantLengthB)
+                {
+                    return SignificantLengthA < SignificantLengthB ? -1 : 1;
+                }
+
+                for (int32 DigitIndex = 0; DigitIndex < SignificantLengthA; ++DigitIndex)
+                {
+                    const TCHAR DigitA = A[SignificantStartA + DigitIndex];
+                    const TCHAR DigitB = B[SignificantStartB + DigitIndex];
+                    if (DigitA != DigitB)
+                    {
+                        return DigitA < DigitB ? -1 : 1;
+                    }
                 }
             }
             else
@@ -87,9 +111,7 @@ namespace
              CastField<FBoolProperty>(Property) ||
              CastField<FNameProperty>(Property) ||
              CastField<FStrProperty>(Property) ||
-#if WITH_EDITOR
              CastField<FTextProperty>(Property) ||
-#endif
              CastField<FEnumProperty>(Property));
     }
 }
@@ -1157,6 +1179,11 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
         return false;
     }
 
+    if (!bAscending)
+    {
+        return ComparePropertyValues(Property, RightValuePtr, LeftValuePtr, true);
+    }
+
     bool bResult = false;
 
     // 根据属性类型进行比较
@@ -1208,14 +1235,12 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
         const FString& RightValue = StringProp->GetPropertyValue(RightValuePtr);
         bResult = FNaturalSortComparator::Compare(LeftValue, RightValue) < 0;
     }
-    #if WITH_EDITOR
     else if (const FTextProperty* TextProp = CastField<FTextProperty>(Property))
     {
         const FString LeftValue = TextProp->GetPropertyValue(LeftValuePtr).ToString();
         const FString RightValue = TextProp->GetPropertyValue(RightValuePtr).ToString();
         bResult = FNaturalSortComparator::Compare(LeftValue, RightValue) < 0;
     }
-    #endif
     else if (const FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
     {
         const FNumericProperty* UnderlyingProp = EnumProp->GetUnderlyingProperty();
@@ -1259,7 +1284,7 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
         return false;
     }
 
-    return bResult == bAscending;
+    return bResult;
 }
 
 // 成员静态函数，避免 TFunction 堆分配与间接调用（需访问 USortLibrary 的私有属性辅助函数）
@@ -1267,26 +1292,26 @@ void USortLibrary::HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty*
     TArray<int32>& Indices, int32 Root, int32 End, int32 Low, bool bAscending)
 {
     int32 Largest = Root;
-    int32 Left = 2 * Root + 1 - Low;
-    int32 Right = 2 * Root + 2 - Low;
+    const int32 Left = Low + 2 * (Root - Low) + 1;
+    const int32 Right = Left + 1;
 
-    if (Left <= End - Low)
+    if (Left <= End)
     {
-        void* LeftValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Left + Low]);
+        void* LeftValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Left]);
         void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
         if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, LeftValue, bAscending))
         {
-            Largest = Left + Low;
+            Largest = Left;
         }
     }
 
-    if (Right <= End - Low)
+    if (Right <= End)
     {
-        void* RightValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Right + Low]);
+        void* RightValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Right]);
         void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
         if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, RightValue, bAscending))
         {
-            Largest = Right + Low;
+            Largest = Right;
         }
     }
 
@@ -1299,7 +1324,8 @@ void USortLibrary::HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty*
 
 void USortLibrary::HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
 {    // Build heap
-    for (int32 i = (High - Low) / 2 - 1 + Low; i >= Low; --i)
+    const int32 Count = High - Low + 1;
+    for (int32 i = Low + Count / 2 - 1; i >= Low; --i)
     {
         HeapifyByProperty(ArrayHelper, InnerProp, SortProp, Indices, i, High, Low, bAscending);
     }
@@ -1314,6 +1340,11 @@ void USortLibrary::HeapSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty
 
 void USortLibrary::QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, int32 DepthLimit)
 {
+    if (Low >= High)
+    {
+        return;
+    }
+
     // 深度限制保护：防止栈溢出
     if (DepthLimit == 0)
     {
@@ -1322,12 +1353,9 @@ void USortLibrary::QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FPropert
         return;
     }
 
-    if (Low < High)
-    {
-        const int32 PivotIndex = PartitionByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, High, bAscending);
-        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, PivotIndex - 1, bAscending, DepthLimit - 1);
-        QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, PivotIndex + 1, High, bAscending, DepthLimit - 1);
-    }
+    const int32 PivotIndex = PartitionByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, High, bAscending);
+    QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, Low, PivotIndex - 1, bAscending, DepthLimit - 1);
+    QuickSortByProperty(ArrayHelper, InnerProp, SortProp, Indices, PivotIndex + 1, High, bAscending, DepthLimit - 1);
 }
 
 int32 USortLibrary::PartitionByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)

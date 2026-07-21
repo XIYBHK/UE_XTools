@@ -99,6 +99,8 @@ private:
 	void UpdateContainingComments(TWeakObjectPtr<UEdGraphNode> Node);
 
 	void RefreshGraphVisualRefresh(TWeakPtr<SGraphPanel> GraphPanel);
+	void UpdateGraphPanel(TWeakPtr<SGraphPanel> GraphPanel);
+	void ResetAltReleaseState();
 
 	EASCResizingMode GetResizingMode(UEdGraph* Graph) const;
 

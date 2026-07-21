@@ -17,13 +17,14 @@
  * - 基于UE内置FObjectPool基础设施，不重新实现
  * - 提供蓝图友好的极简API接口
  * - 支持Actor生命周期管理和自动状态重置
- * - 遵循UE线程安全和性能优化最佳实践
+ * - 遵循UE UObject/Actor游戏线程和性能优化最佳实践
  * 
  * 核心特性：
  * - 极简API：仅3个核心函数 (RegisterActorClass, SpawnActorFromPool, ReturnActorToPool)
  * - 永不失败：自动回退机制，池为空时自动创建新Actor
  * - 生命周期接口：支持OnPoolActorCreated, OnPoolActorActivated, OnReturnToPool事件
- * - 线程安全：使用FRWLock读写锁优化并发访问
+ * - 游戏线程契约：Actor创建、激活、归还和销毁仅在游戏线程执行
+ * - 状态一致性：内部锁保护容器和生命周期回调重入，不提供跨线程Actor访问能力
  * - 性能监控：内置统计和分析功能
  */
 class FObjectPoolModule : public IModuleInterface

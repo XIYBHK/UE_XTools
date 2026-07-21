@@ -129,7 +129,8 @@ TArray<FVector> FGeometricFormationHelper::GenerateLogarithmicSpiral(
 
 {
 	TArray<FVector> Points;
-	if (PointCount <= 0)
+	if (PointCount <= 0 || !FMath::IsFinite(GrowthFactor) || GrowthFactor <= 0.0f ||
+		!FMath::IsFinite(AngleStep) || FMath::IsNearlyZero(AngleStep))
 	{
 		return Points;
 	}
@@ -144,6 +145,11 @@ TArray<FVector> FGeometricFormationHelper::GenerateLogarithmicSpiral(
 	{
 		float Angle = i * AngleIncrement;
 		float Radius = FMath::Exp(B * Angle);
+		if (!FMath::IsFinite(Radius))
+		{
+			Points.Reset();
+			return Points;
+		}
 
 		FVector Position = FormationSamplingInternal::PolarToCartesian(Radius, Angle);
 
@@ -194,13 +200,21 @@ TArray<FVector> FGeometricFormationHelper::GenerateFlowerFormation(
 
 	Points.Reserve(PointCount);
 
-	// 花瓣曲线：每个花瓣的参数化生成
-	const int32 PointsPerPetal = PointCount / PetalCount;
-	const float AngleStep = 2.0f * PI / PointsPerPetal;
+	// 花瓣曲线：余数依次分配给前面的花瓣，确保返回请求的点数
+	const int32 BasePointsPerPetal = PointCount / PetalCount;
+	const int32 RemainingPoints = PointCount % PetalCount;
+	const int32 PetalsToGenerate = FMath::Min(PetalCount, PointCount);
 
-	for (int32 PetalIndex = 0; PetalIndex < PetalCount; ++PetalIndex)
+	for (int32 PetalIndex = 0; PetalIndex < PetalsToGenerate; ++PetalIndex)
 	{
-		for (int32 i = 0; i < PointsPerPetal && Points.Num() < PointCount; ++i)
+		const int32 PointsOnPetal = BasePointsPerPetal + (PetalIndex < RemainingPoints ? 1 : 0);
+		if (PointsOnPetal == 0)
+		{
+			continue;
+		}
+
+		const float AngleStep = 2.0f * PI / PointsOnPetal;
+		for (int32 i = 0; i < PointsOnPetal; ++i)
 		{
 			float t = i * AngleStep;
 			FVector Position = FlowerPetalPoint(t, PetalIndex, PetalCount, OuterRadius, InnerRadius);

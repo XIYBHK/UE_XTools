@@ -38,6 +38,9 @@ DEFINE_LOG_CATEGORY(LogBlueprintScreenshotTool);
 struct FWidgetSnapshotTextureData;
 
 bool UBlueprintScreenshotToolHandler::bTakingScreenshot = false;
+bool UBlueprintScreenshotToolHandler::bAsyncDriverAvailable = false;
+bool UBlueprintScreenshotToolHandler::bPendingShowNotification = false;
+FOnBlueprintScreenshotCompleted UBlueprintScreenshotToolHandler::PendingCompletion;
 static TArray<TWeakPtr<SGraphEditor>> CachedGraphEditorsForWarmup;
 static TUniquePtr<FWidgetRenderer> CachedWarmupRenderer;
 
@@ -147,6 +150,8 @@ void UBlueprintScreenshotToolHandler::PrepareForScreenshot()
 void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
 {
 	bTakingScreenshot = false;
+	const bool bShowNotification = bPendingShowNotification;
+	bPendingShowNotification = false;
 	
 	TSet<TSharedPtr<SGraphEditor>> GraphEditors;
 	if (CachedGraphEditorsForWarmup.Num() > 0)
@@ -169,6 +174,7 @@ void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
 	if (GraphEditors.Num() <= 0)
 	{
 		CachedWarmupRenderer.Reset();
+		CompletePendingScreenshot(TArray<FString>());
 		return;
 	}
 
@@ -198,17 +204,18 @@ void UBlueprintScreenshotToolHandler::ExecuteAsyncScreenshot()
 
 	CachedWarmupRenderer.Reset();
 
-	if (Paths.Num() > 0)
+	if (bShowNotification && Paths.Num() > 0)
 	{
 		ShowNotification(Paths);
 	}
 	
-	if (FailedCount > 0 && Paths.Num() == 0)
+	if (bShowNotification && FailedCount > 0 && Paths.Num() == 0)
 	{
 		ShowSaveFailedNotification(FString::Printf(TEXT("%d"), FailedCount));
 	}
 
 	UpdateScreenshotState(false);
+	CompletePendingScreenshot(Paths);
 }
 
 void UBlueprintScreenshotToolHandler::OnPostTick(float DeltaTime)
@@ -219,6 +226,28 @@ void UBlueprintScreenshotToolHandler::OnPostTick(float DeltaTime)
 	}
 }
 
+void UBlueprintScreenshotToolHandler::SetAsyncDriverAvailable(bool bIsAvailable)
+{
+	bAsyncDriverAvailable = bIsAvailable;
+	if (bIsAvailable)
+	{
+		return;
+	}
+
+	bTakingScreenshot = false;
+	bPendingShowNotification = false;
+	CachedGraphEditorsForWarmup.Reset();
+	CachedWarmupRenderer.Reset();
+	CompletePendingScreenshot(TArray<FString>());
+}
+
+void UBlueprintScreenshotToolHandler::CompletePendingScreenshot(const TArray<FString>& Paths)
+{
+	FOnBlueprintScreenshotCompleted Completion = MoveTemp(PendingCompletion);
+	PendingCompletion.Unbind();
+	Completion.ExecuteIfBound(Paths);
+}
+
 void UBlueprintScreenshotToolHandler::UpdateScreenshotState(bool bIsProcessing)
 {
 }
@@ -227,8 +256,36 @@ void UBlueprintScreenshotToolHandler::UpdateScreenshotState(bool bIsProcessing)
 
 TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithNotification()
 {
-	TakeScreenshotWithPaths();
+	TakeScreenshotAsync(FOnBlueprintScreenshotCompleted(), true);
 	return {};
+}
+
+void UBlueprintScreenshotToolHandler::TakeScreenshotAsync(
+	const FOnBlueprintScreenshotCompleted& Completion,
+	bool bShowNotification)
+{
+	if (!bAsyncDriverAvailable)
+	{
+		UE_LOG(LogBlueprintScreenshotTool, Warning, TEXT("异步截图驱动不可用，请确认插件已启用且 Slate 已初始化。"));
+		Completion.ExecuteIfBound(TArray<FString>());
+		return;
+	}
+
+	if (bTakingScreenshot)
+	{
+		UE_LOG(LogBlueprintScreenshotTool, Warning, TEXT("截图正在处理中，忽略重复请求。"));
+		Completion.ExecuteIfBound(TArray<FString>());
+		return;
+	}
+
+	PendingCompletion = Completion;
+	bPendingShowNotification = bShowNotification;
+	PrepareForScreenshot();
+	if (!bTakingScreenshot)
+	{
+		bPendingShowNotification = false;
+		CompletePendingScreenshot(TArray<FString>());
+	}
 }
 
 void UBlueprintScreenshotToolHandler::TakeScreenshot()
@@ -532,6 +589,6 @@ FString UBlueprintScreenshotToolHandler::GenerateScreenshotName(TSharedPtr<SGrap
 
 TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithPaths()
 {
-	PrepareForScreenshot();
+	TakeScreenshotAsync(FOnBlueprintScreenshotCompleted(), false);
 	return {};
 }

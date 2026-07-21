@@ -9,9 +9,10 @@
 #include "ToolMenus.h"
 #include "Kismet/KismetInternationalizationLibrary.h"
 #include "Interfaces/IMainFrameModule.h"
-#include "Kismet2/BlueprintEditorUtils.h"
 #include "Interfaces/IPluginManager.h"
+#include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphSchema.h"
+#include "Engine/Blueprint.h"
 #include "Internationalization/Culture.h"
 #include "Internationalization/Internationalization.h"
 #include "Internationalization/TextLocalizationManager.h"
@@ -179,7 +180,16 @@ void FXTools_SwitchLanguageModule::RefreshBlueprints()
 			TWeakObjectPtr<UBlueprint> Blueprint = Cast<UBlueprint>(Data);
 			if (Blueprint.IsValid())
 			{
-				FBlueprintEditorUtils::RefreshAllNodes(Blueprint.Get());
+				TArray<UEdGraph*> Graphs;
+				Blueprint->GetAllGraphs(Graphs);
+				for (UEdGraph* Graph : Graphs)
+				{
+					if (Graph)
+					{
+						Graph->NotifyGraphChanged();
+					}
+				}
+				Blueprint->BroadcastChanged();
 			}
 		}
 	}

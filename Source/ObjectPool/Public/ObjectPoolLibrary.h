@@ -53,7 +53,7 @@ public:
      * @param WorldContext 世界上下文
      * @param ActorClass 要池化的Actor类
      * @param InitialSize 初始池大小
-     * @param HardLimit 池的最大限制 (0表示无限制)
+     * @param HardLimit 池的最大限制（0使用默认上限100）
      * @return true if registration successful
      */
 	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (

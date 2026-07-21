@@ -76,6 +76,10 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         float DrawTime
     )
     {
+		Block = false;
+		ImpactPoint = FVector::ZeroVector;
+		OutHit = FHitResult();
+
         UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
         if (!World) return;
 
@@ -85,11 +89,21 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         Params.AddIgnoredActors(ActorsToIgnore);
 
         // Use Cache for TraceChannelType -> Enum
-        const ETraceTypeQuery TraceChannelEnum = XToolsBlueprintHelpers::GetCachedEnum<ETraceTypeQuery>(
-            CachedTraceChannels, TraceChannelType, StaticEnum<ETraceTypeQuery>());
+        ETraceTypeQuery TraceChannelEnum;
+        const ECollisionChannel CollisionChannel = XToolsBlueprintHelpers::TryGetCachedEnum(
+            CachedTraceChannels, TraceChannelType, StaticEnum<ETraceTypeQuery>(), TraceChannelEnum)
+            ? UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum)
+            : ECC_MAX;
+        if (CollisionChannel >= ECC_MAX)
+        {
+            Block = false;
+            ImpactPoint = FVector::ZeroVector;
+            OutHit = FHitResult();
+            return;
+        }
 
         // 执行射线检测
-        bool bHit = World->LineTraceSingleByChannel(OutHit, Start, End, UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum), Params);
+        bool bHit = World->LineTraceSingleByChannel(OutHit, Start, End, CollisionChannel, Params);
 
         // 设置输出参数
         Block = bHit;
@@ -200,6 +214,10 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         float DrawTime
     )
     {
+		Block = false;
+		ImpactPoint = FVector::ZeroVector;
+		OutHit = FHitResult();
+
         UWorld* World = XToolsBlueprintHelpers::GetValidWorld(WorldContextObject);
         if (!World) return;
 
@@ -211,10 +229,25 @@ TMap<FString, EObjectTypeQuery> UTraceExtensionsLibrary::CachedObjectTypes;
         FCollisionObjectQueryParams ObjectParams;
         for (const FString& TraceChannel : TraceObjectType)
         {
-            const EObjectTypeQuery ObjectTypeEnum = XToolsBlueprintHelpers::GetCachedEnum<EObjectTypeQuery>(
-                CachedObjectTypes, TraceChannel, StaticEnum<EObjectTypeQuery>());
+            EObjectTypeQuery ObjectTypeEnum;
+            if (!XToolsBlueprintHelpers::TryGetCachedEnum(
+                CachedObjectTypes, TraceChannel, StaticEnum<EObjectTypeQuery>(), ObjectTypeEnum))
+            {
+                Block = false;
+                ImpactPoint = FVector::ZeroVector;
+                OutHit = FHitResult();
+                return;
+            }
 
-            ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum));
+            const ECollisionChannel CollisionChannel = UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum);
+            if (CollisionChannel >= ECC_MAX)
+            {
+                Block = false;
+                ImpactPoint = FVector::ZeroVector;
+                OutHit = FHitResult();
+                return;
+            }
+            ObjectParams.AddObjectTypesToQuery(CollisionChannel);
         }
 
         // 执行射线检测
@@ -263,6 +296,10 @@ void UTraceExtensionsLibrary::TraceSphereChannel(
     float DrawTime
 )
 {
+	Block = false;
+	ImpactPoint = FVector::ZeroVector;
+	OutHit = FHitResult();
+
     if (!WorldContextObject) return;
 
     UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
@@ -275,19 +312,26 @@ void UTraceExtensionsLibrary::TraceSphereChannel(
 
     // Use Cache for TraceChannelType -> Enum
     ETraceTypeQuery TraceChannelEnum;
-    if (const ETraceTypeQuery* CachedEnum = CachedTraceChannels.Find(TraceChannelType))
+    if (!XToolsBlueprintHelpers::TryGetCachedEnum(
+        CachedTraceChannels, TraceChannelType, StaticEnum<ETraceTypeQuery>(), TraceChannelEnum))
     {
-        TraceChannelEnum = *CachedEnum;
+        Block = false;
+        ImpactPoint = FVector::ZeroVector;
+        OutHit = FHitResult();
+        return;
     }
-    else
+
+    const ECollisionChannel CollisionChannel = UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum);
+    if (CollisionChannel >= ECC_MAX)
     {
-        int64 EnumValue = StaticEnum<ETraceTypeQuery>()->GetValueByName(FName(*TraceChannelType));
-        TraceChannelEnum = static_cast<ETraceTypeQuery>(EnumValue);
-        CachedTraceChannels.Add(TraceChannelType, TraceChannelEnum);
+        Block = false;
+        ImpactPoint = FVector::ZeroVector;
+        OutHit = FHitResult();
+        return;
     }
 
     // 执行球体检测
-    bool bHit = World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, UEngineTypes::ConvertToCollisionChannel(TraceChannelEnum), FCollisionShape::MakeSphere(Radius), Params);
+    bool bHit = World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeSphere(Radius), Params);
 
     // 设置输出参数
     Block = bHit;
@@ -330,6 +374,10 @@ void UTraceExtensionsLibrary::TraceSphereObject(
     float DrawTime
 )
 {
+	Block = false;
+	ImpactPoint = FVector::ZeroVector;
+	OutHit = FHitResult();
+
     if (!WorldContextObject) return;
 
     UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
@@ -344,18 +392,24 @@ void UTraceExtensionsLibrary::TraceSphereObject(
     for (const FString& TraceChannel : TraceObjectType)
     {
         EObjectTypeQuery ObjectTypeEnum;
-        if (const EObjectTypeQuery* CachedEnum = CachedObjectTypes.Find(TraceChannel))
+        if (!XToolsBlueprintHelpers::TryGetCachedEnum(
+            CachedObjectTypes, TraceChannel, StaticEnum<EObjectTypeQuery>(), ObjectTypeEnum))
         {
-            ObjectTypeEnum = *CachedEnum;
-        }
-        else
-        {
-            int64 EnumValue = StaticEnum<EObjectTypeQuery>()->GetValueByName(FName(*TraceChannel));
-            ObjectTypeEnum = static_cast<EObjectTypeQuery>(EnumValue);
-            CachedObjectTypes.Add(TraceChannel, ObjectTypeEnum);
+            Block = false;
+            ImpactPoint = FVector::ZeroVector;
+            OutHit = FHitResult();
+            return;
         }
 
-        ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum));
+        const ECollisionChannel CollisionChannel = UEngineTypes::ConvertToCollisionChannel(ObjectTypeEnum);
+        if (CollisionChannel >= ECC_MAX)
+        {
+            Block = false;
+            ImpactPoint = FVector::ZeroVector;
+            OutHit = FHitResult();
+            return;
+        }
+        ObjectParams.AddObjectTypesToQuery(CollisionChannel);
     }
 
     // 执行球体检测

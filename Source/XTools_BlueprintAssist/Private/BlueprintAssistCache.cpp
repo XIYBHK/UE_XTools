@@ -169,6 +169,10 @@ void FBACache::Cleanup()
 	}
 
 	FCoreDelegates::OnPreExit.RemoveAll(this);
+	if (GEditor)
+	{
+		GEditor->GetTimerManager()->ClearAllTimersForObject(this);
+	}
 
 #if BA_UE_VERSION_OR_LATER(5, 0)
 	FCoreUObjectDelegates::OnObjectPreSave.RemoveAll(this);

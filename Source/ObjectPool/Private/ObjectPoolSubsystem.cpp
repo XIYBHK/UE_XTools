@@ -16,6 +16,7 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
+#include "CoreGlobals.h"
 #include "UObject/UObjectGlobals.h"
 #include "TimerManager.h"
 
@@ -82,8 +83,7 @@ void UObjectPoolSubsystem::Deinitialize()
         //  清理延迟预热Timer和队列
         ClearDelayedPrewarmTimer();
 
-        //  确保线程安全的清理
-        // 清空所有池（内部已有锁保护）
+        // 清空所有池（游戏线程执行，内部锁维护状态一致性）
         ClearAllPools();
 
         // 清理工具类（在主线程中执行，无需额外锁）
@@ -139,6 +139,8 @@ bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, int32 InitialSize, int32 HardLimit)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::RegisterActorClass 只能在游戏线程调用"));
+
     if (!ValidateActorClass(ActorClass))
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("RegisterActorClass: 无效的Actor类"));
@@ -161,7 +163,11 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
     // 设置配置（如果配置管理器存在）
     if (ConfigManager.IsValid())
     {
-        ConfigManager->SetConfig(ActorClass, Config);
+        if (!ConfigManager->SetConfig(ActorClass, Config))
+        {
+            OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("RegisterActorClass: 配置无效: %s"), *ActorClass->GetName());
+            return false;
+        }
     }
 
     // 创建池
@@ -174,7 +180,13 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
 
     if (ConfigManager.IsValid())
     {
-        ConfigManager->ApplyConfigToPool(*NewPool, Config);
+        if (!ConfigManager->ApplyConfigToPool(*NewPool, Config))
+        {
+            ClearPoolByClass(ActorClass);
+            ConfigManager->RemoveConfig(ActorClass);
+            OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("RegisterActorClass: 应用配置失败: %s"), *ActorClass->GetName());
+            return false;
+        }
     }
 
     if (UWorld* World = GetWorld())
@@ -203,6 +215,7 @@ bool UObjectPoolSubsystem::RegisterActorClass(TSubclassOf<AActor> ActorClass, in
 
 AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTransform& SpawnTransform)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::SpawnActorFromPool 只能在游戏线程调用"));
     SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_SpawnActor);
 
     //  更新统计信息
@@ -263,6 +276,8 @@ AActor* UObjectPoolSubsystem::SpawnActorFromPool(UClass* ActorClass, const FTran
 
 AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::AcquireDeferredFromPool 只能在游戏线程调用"));
+
     if (!ValidateActorClass(ActorClass))
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("AcquireDeferredFromPool: 无效的Actor类"));
@@ -287,6 +302,8 @@ AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
 
 bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform& SpawnTransform)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::FinalizeSpawnFromPool 只能在游戏线程调用"));
+
     if (!IsValid(Actor))
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("FinalizeSpawnFromPool: Actor无效"));
@@ -314,6 +331,7 @@ bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform
 
 bool UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::ReturnActorToPool 只能在游戏线程调用"));
     SCOPE_CYCLE_COUNTER(STAT_ObjectPoolSubsystem_ReturnActor);
 
     //  更新统计信息
@@ -350,6 +368,8 @@ bool UObjectPoolSubsystem::ReturnActorToPool(AActor* Actor)
 
 int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::PrewarmPool 只能在游戏线程调用"));
+
     if (!ValidateActorClass(ActorClass) || Count <= 0)
     {
         return 0;
@@ -368,13 +388,15 @@ int32 UObjectPoolSubsystem::PrewarmPool(UClass* ActorClass, int32 Count)
         return 0;
     }
 
+    const int32 AvailableBeforePrewarm = Pool->GetAvailableCount();
+
     //  标准对象池预热机制 - 安全的组件处理
     Pool->PrewarmPool(World, Count);
     
     OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("子系统预热池完成: %s, 预热数量=%d"), 
         *ActorClass->GetName(), Count);
     
-    return Pool->GetAvailableCount();
+    return FMath::Max(0, Pool->GetAvailableCount() - AvailableBeforePrewarm);
 }
 
 //  池管理功能实现
@@ -461,6 +483,8 @@ TSharedPtr<FActorPool> UObjectPoolSubsystem::GetPool(UClass* ActorClass) const
 
 bool UObjectPoolSubsystem::ClearPoolByClass(UClass* ActorClass)
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::ClearPoolByClass 只能在游戏线程调用"));
+
     if (!ActorClass)
     {
         return false;
@@ -493,6 +517,8 @@ bool UObjectPoolSubsystem::ClearPoolByClass(UClass* ActorClass)
 
 void UObjectPoolSubsystem::ClearAllPools()
 {
+    checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::ClearAllPools 只能在游戏线程调用"));
+
     TArray<UClass*> DestroyedClasses;
     TArray<TSharedPtr<FActorPool>> PoolsToClear;
     {
@@ -921,6 +947,17 @@ void UObjectPoolSubsystem::ProcessDelayedPrewarmQueue()
     {
         DelayedPrewarmTimerHandle.Invalidate();
         OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("延迟预热队列全部处理完成"));
+    }
+    else if (UWorld* World = GetWorld())
+    {
+        // 单个队列项耗尽本帧预算时，for 循环不会再次进入顶部检查，
+        // 因此必须在循环结束后显式续调度。
+        World->GetTimerManager().SetTimer(
+            DelayedPrewarmTimerHandle,
+            this,
+            &UObjectPoolSubsystem::ProcessDelayedPrewarmQueue,
+            0.016f,
+            false);
     }
 }
 

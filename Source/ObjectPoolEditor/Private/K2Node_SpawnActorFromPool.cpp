@@ -92,6 +92,7 @@ void UK2Node_SpawnActorFromPool::AllocateDefaultPins()
 {
     // 调用父类分配默认引脚
     Super::AllocateDefaultPins();
+    ConfigureUnsupportedSpawnPins();
     
     // 更新返回值类型
     UpdateReturnValueType();
@@ -123,9 +124,38 @@ void UK2Node_SpawnActorFromPool::ReallocatePinsDuringReconstruction(TArray<UEdGr
 {
     // 调用父类的方法
     Super::ReallocatePinsDuringReconstruction(OldPins);
-    
+
     // 确保返回值引脚类型正确
     UpdateReturnValueType();
+}
+
+void UK2Node_SpawnActorFromPool::PostReconstructNode()
+{
+    Super::PostReconstructNode();
+
+    // ReallocatePinsDuringReconstruction 执行时旧链接尚未恢复；必须在重连后再决定兼容 Pin 是否可见。
+    ConfigureUnsupportedSpawnPins();
+    UpdateReturnValueType();
+}
+
+void UK2Node_SpawnActorFromPool::ConfigureUnsupportedSpawnPins()
+{
+    static const FName UnsupportedPinNames[] = {
+        TEXT("CollisionHandlingOverride"),
+        TEXT("TransformScaleMethod"),
+        TEXT("Owner")
+    };
+
+    for (const FName PinName : UnsupportedPinNames)
+    {
+        if (UEdGraphPin* Pin = FindPin(PinName, EGPD_Input))
+        {
+            // 新节点不再暴露 Runtime API 无法兑现的参数；旧资产保留已连接 Pin，
+            // 让 ExpandNode 给出迁移警告，而不是静默改变已有图表。
+            Pin->bHidden = Pin->LinkedTo.Num() == 0;
+            Pin->bNotConnectable = true;
+        }
+    }
 }
 
 void UK2Node_SpawnActorFromPool::UpdateReturnValueType()
@@ -268,6 +298,22 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
             this);
         BreakAllNodeLinks();
         return;
+    }
+
+    static const FName UnsupportedPinNames[] = {
+        TEXT("CollisionHandlingOverride"),
+        TEXT("TransformScaleMethod"),
+        TEXT("Owner")
+    };
+    for (const FName PinName : UnsupportedPinNames)
+    {
+        if (UEdGraphPin* UnsupportedPin = FindPin(PinName, EGPD_Input);
+            UnsupportedPin && UnsupportedPin->LinkedTo.Num() > 0)
+        {
+            CompilerContext.MessageLog.Warning(
+                *FString::Printf(TEXT("@@ 不支持引脚 '%s'，该旧连接将被忽略，请改在生成后显式设置。"), *PinName.ToString()),
+                this);
+        }
     }
 
     // 移动返回值连接 - 应该连接到AcquireResult（Actor），而不是FinalizeResult（bool）

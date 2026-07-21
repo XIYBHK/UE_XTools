@@ -5,6 +5,7 @@
 
 #include "MeshSamplingHelper.h"
 #include "PointSamplingTypes.h"
+#include "XToolsErrorReporter.h"
 #include "XToolsVersionCompat.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
@@ -759,6 +760,7 @@ namespace
 		const void* RawData = Mip0.BulkData.LockReadOnly();
 		if (!RawData)
 		{
+			Mip0.BulkData.Unlock();
 			return false;
 		}
 
@@ -1400,6 +1402,21 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
 	}
 
 	FStaticMeshLODResources& LOD = RenderData->LODResources[LODLevel];
+	const FPositionVertexBuffer& VertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
+	bool bHasReadableCpuData = VertexBuffer.GetVertexData() != nullptr && IndexBuffer.GetIndexDataSize() > 0;
+#if !WITH_EDITOR
+	bHasReadableCpuData = bHasReadableCpuData
+		&& VertexBuffer.GetAllowCPUAccess()
+		&& IndexBuffer.GetAllowCPUAccess();
+#endif
+	if (!bHasReadableCpuData)
+	{
+		XTOOLS_LOG_WARNING(LogPointSampling,
+			FString::Printf(TEXT("[网格采样] StaticMesh '%s' 的LOD%d没有CPU可读顶点/索引数据。运行时使用请在资产中启用Allow CPU Access。"),
+				*StaticMesh->GetName(), LODLevel));
+		return Points;
+	}
 
 	return bBoundaryVerticesOnly
 		? GenerateBoundaryVertices(LOD, Transform, MaxPoints)
@@ -2141,6 +2158,10 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 		const FVector V2(VertexBuffer.VertexPosition(Index2));
 
 		const float Area = FVector::CrossProduct(V1 - V0, V2 - V0).Size() * 0.5f;
+		if (Area <= UE_SMALL_NUMBER)
+		{
+			continue;
+		}
 
 		TriangleAreas.Add(Area);
 		ValidTriangleIndices.Add(TriangleIndex);
@@ -2162,41 +2183,51 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromMeshTriangles(
 
 	FRandomStream RandomStream(FMath::Rand());
 
-	for (int32 ValidIndex = 0; ValidIndex < ValidTriangleCount && Points.Num() < TargetPoints; ++ValidIndex)
+	float CumulativeArea = 0.0f;
+	for (float& TriangleArea : TriangleAreas)
 	{
-		const float TriangleArea = TriangleAreas[ValidIndex];
-		if (TriangleArea <= 0.0f)
+		CumulativeArea += TriangleArea;
+		TriangleArea = CumulativeArea;
+	}
+
+	for (int32 PointIndex = 0; PointIndex < TargetPoints; ++PointIndex)
+	{
+		const float AreaSample = RandomStream.FRand() * TotalArea;
+		int32 Low = 0;
+		int32 High = ValidTriangleCount - 1;
+		while (Low < High)
 		{
-			continue;
-		}
-
-		const int32 PointsForThisTriangle = FMath::Max(1, FMath::RoundToInt((TriangleArea / TotalArea) * TargetPoints));
-		const int32 TriangleIndex = ValidTriangleIndices[ValidIndex];
-
-		for (int32 PointIndex = 0; PointIndex < PointsForThisTriangle && Points.Num() < TargetPoints; ++PointIndex)
-		{
-			float U = RandomStream.FRand();
-			float V = RandomStream.FRand();
-
-			if (U + V > 1.0f)
+			const int32 Mid = Low + (High - Low) / 2;
+			if (TriangleAreas[Mid] < AreaSample)
 			{
-				U = 1.0f - U;
-				V = 1.0f - V;
+				Low = Mid + 1;
 			}
-
-			const float W = 1.0f - U - V;
-
-			const int32 Index0 = IndexBuffer.GetIndex(TriangleIndex * 3);
-			const int32 Index1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
-			const int32 Index2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
-
-			const FVector V0(VertexBuffer.VertexPosition(Index0));
-			const FVector V1(VertexBuffer.VertexPosition(Index1));
-			const FVector V2(VertexBuffer.VertexPosition(Index2));
-
-			const FVector LocalPoint = V0 * W + V1 * U + V2 * V;
-			Points.Add(Transform.TransformPosition(LocalPoint));
+			else
+			{
+				High = Mid;
+			}
 		}
+
+		const int32 TriangleIndex = ValidTriangleIndices[Low];
+		float U = RandomStream.FRand();
+		float V = RandomStream.FRand();
+
+		if (U + V > 1.0f)
+		{
+			U = 1.0f - U;
+			V = 1.0f - V;
+		}
+
+		const float W = 1.0f - U - V;
+		const int32 Index0 = IndexBuffer.GetIndex(TriangleIndex * 3);
+		const int32 Index1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
+		const int32 Index2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
+
+		const FVector V0(VertexBuffer.VertexPosition(Index0));
+		const FVector V1(VertexBuffer.VertexPosition(Index1));
+		const FVector V2(VertexBuffer.VertexPosition(Index2));
+		const FVector LocalPoint = V0 * W + V1 * U + V2 * V;
+		Points.Add(Transform.TransformPosition(LocalPoint));
 	}
 
 	UE_LOG(LogPointSampling, Log, TEXT("[网格采样] 完成，生成 %d 个点"), Points.Num());
@@ -2246,6 +2277,12 @@ TArray<FVector> FMeshSamplingHelper::GenerateBoundaryVertices(
 			BoundaryVertexIndices.Add(EdgeCount.Key.Key);
 			BoundaryVertexIndices.Add(EdgeCount.Key.Value);
 		}
+	}
+
+	if (BoundaryVertexIndices.Num() == 0)
+	{
+		UE_LOG(LogPointSampling, Verbose, TEXT("[网格采样] 网格没有开放边界顶点"));
+		return Points;
 	}
 
 	const int32 MaxBoundaryPoints = (MaxPoints > 0) ? MaxPoints : BoundaryVertexIndices.Num();

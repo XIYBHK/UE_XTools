@@ -1,6 +1,6 @@
 # ObjectPool - Actor 对象池子系统
 
-Runtime 模块。WorldSubsystem 架构，never-fail 设计，线程安全。
+Runtime 模块。WorldSubsystem 架构，never-fail 设计，Actor 操作仅限游戏线程。
 
 ## KEY CLASSES
 
@@ -27,10 +27,11 @@ GetPoolStats / DisplayPoolStats
 
 池空 → 自动 fallback 到 SpawnActor，返回 `EPoolOpResult::FallbackSpawned`。不会崩溃或返回 null。
 
-## THREAD SAFETY
+## THREADING CONTRACT
 
-- `FRWLock PoolsRWLock` 保护池 Map
-- `FCriticalSection CacheLock` 保护最近访问缓存
+- 创建、获取、归还、预热和清理 Actor 的接口必须在游戏线程调用
+- `FRWLock PoolsRWLock` 和池内锁用于维护容器及蓝图回调重入期间的状态一致性，不代表支持跨线程 Actor 操作
+- `FCriticalSection CacheLock` 保护最近访问缓存，但不放宽 UObject/Actor 的游戏线程约束
 - `TWeakObjectPtr` 防悬空
 
 ## GOTCHAS

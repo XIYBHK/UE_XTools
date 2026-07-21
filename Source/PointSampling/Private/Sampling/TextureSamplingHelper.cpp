@@ -80,6 +80,7 @@ FLinearColor FTextureSamplingHelper::SampleTexturePixel(UTexture2D *Texture,
   // TODO: 使用 RAII 封装 BulkData 的锁定/解锁，避免异常安全问题
   const void *RawData = Mip0.BulkData.LockReadOnly();
   if (!RawData) {
+    Mip0.BulkData.Unlock();
     UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 无法锁定纹理数据"));
     return FLinearColor::White;
   }
@@ -895,6 +896,7 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
   FTexture2DMipMap &Mip0 = PlatformData->Mips[0];
   const void *RawData = Mip0.BulkData.LockReadOnly();
   if (!RawData) {
+    Mip0.BulkData.Unlock();
     UE_LOG(LogPointSampling, Warning, TEXT("[纹理采样] 无法锁定纹理数据"));
     return Points;
   }
@@ -902,7 +904,33 @@ TArray<FVector> FTextureSamplingHelper::GenerateFromTexturePlatformData(
   // 计算BytesPerPixel
   const int64 PixelCount64 = (int64)OriginalWidth * (int64)OriginalHeight;
   const int64 DataSize64 = (int64)Mip0.BulkData.GetBulkDataSize();
+  if (PixelCount64 <= 0 || DataSize64 <= 0 ||
+      (DataSize64 % PixelCount64) != 0) {
+    Mip0.BulkData.Unlock();
+    UE_LOG(LogPointSampling, Warning,
+           TEXT("[纹理采样] 纹理数据大小异常: Data=%lld, Pixels=%lld"),
+           DataSize64, PixelCount64);
+    return Points;
+  }
+
   uint32 BytesPerPixel = (uint32)(DataSize64 / PixelCount64);
+  if ((PixelFormat == PF_B8G8R8A8 || PixelFormat == PF_R8G8B8A8 ||
+       PixelFormat == PF_A8R8G8B8) &&
+      BytesPerPixel != 4) {
+    Mip0.BulkData.Unlock();
+    UE_LOG(LogPointSampling, Warning,
+           TEXT("[纹理采样] 8位纹理BytesPerPixel应为4，当前=%u"),
+           BytesPerPixel);
+    return Points;
+  }
+  if (PixelFormat == PF_FloatRGBA &&
+      (BytesPerPixel != 8 && BytesPerPixel != 16)) {
+    Mip0.BulkData.Unlock();
+    UE_LOG(LogPointSampling, Warning,
+           TEXT("[纹理采样] FloatRGBA纹理BytesPerPixel应为8或16，当前=%u"),
+           BytesPerPixel);
+    return Points;
+  }
 
   const uint8 *PixelData = static_cast<const uint8 *>(RawData);
 
@@ -1060,6 +1088,7 @@ FTextureSamplingHelper::GenerateFromTexturePlatformDataWithPoisson(
   FTexture2DMipMap &Mip0 = PlatformData->Mips[0];
   const void *RawData = Mip0.BulkData.LockReadOnly();
   if (!RawData) {
+    Mip0.BulkData.Unlock();
     UE_LOG(LogPointSampling, Warning, TEXT("[纹理密度采样] 无法锁定纹理数据"));
     return Points;
   }

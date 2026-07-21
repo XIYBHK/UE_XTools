@@ -3,8 +3,6 @@
 
 // 编辑器功能
 #include "EdGraphSchema_K2.h"
-#include "Framework/Commands/UIAction.h"
-#include "ScopedTransaction.h"
 #include "ToolMenus.h"
 
 // 蓝图系统
@@ -33,17 +31,17 @@ struct FLinearColor;
 
 FText UK2Node_MapFindRef::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
-	return LOCTEXT("NodeTitle", "查找引用");
+	return LOCTEXT("NodeTitle", "查找值");
 }
 
 FText UK2Node_MapFindRef::GetCompactNodeTitle() const
 {
-	return LOCTEXT("CompactNodeTitle", "查找引用");
+	return LOCTEXT("CompactNodeTitle", "查找值");
 }
 
 FText UK2Node_MapFindRef::GetTooltipText() const
 {
-	return LOCTEXT("TooltipText", "根据键查找Map中的项并返回引用\n可以直接操作该项，修改会反映到Map中");
+	return LOCTEXT("TooltipText", "根据键查找Map中的项并返回值副本\n修改输出不会回写Map");
 }
 
 FText UK2Node_MapFindRef::GetMenuCategory() const
@@ -80,31 +78,24 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	UEdGraphPin* ValuePin = GetValuePin();
 	UEdGraphPin* FoundPin = GetFoundResultPin();
 
-	// 【最佳实践 5.2】：空指针检查
-	if (!MapPin || !KeyPin || !ValuePin || !FoundPin)
-			{
-		// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-		CompilerContext.MessageLog.Warning(*LOCTEXT("InvalidPins", "MapFindRef node has invalid pins @@").ToString(), this);
-		// 【最佳实践 3.1】：错误后必须调用BreakAllNodeLinks
-		BreakAllNodeLinks();
-					return;
-				}
+	if (!K2NodeHelpers::BeginExpandNode(
+		CompilerContext,
+		this,
+		{MapPin, KeyPin, ValuePin, FoundPin},
+		LOCTEXT("InvalidPins", "MapFind node has invalid pins @@")))
+	{
+		K2NodeHelpers::EndExpandNode(this);
+		return;
+	}
 
-	// 【最佳实践 3.1】：验证必要输入
+	// 【最佳实践 3.1】：Map 必须连接；Key 允许使用默认字面量
 	// 【UE 最佳实践】用户输入错误使用 Warning 而非 Error，避免触发 EdGraphNode.h:563 断言崩溃
 	if (MapPin->LinkedTo.Num() == 0)
 	{
 		CompilerContext.MessageLog.Warning(*LOCTEXT("MapNotConnected", "MapFindRef requires a Map connection @@").ToString(), this);
-		BreakAllNodeLinks();
-							return;
-						}
-
-	if (KeyPin->LinkedTo.Num() == 0)
-			{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("KeyNotConnected", "MapFindRef requires a Key connection @@").ToString(), this);
-		BreakAllNodeLinks();
-				return;
-			}
+		K2NodeHelpers::EndExpandNode(this);
+		return;
+	}
 
 	// 【最佳实践 3.2】：使用SpawnIntermediateNode创建中间节点
 	UK2Node_CallFunction* CallFindNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -121,11 +112,11 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CallKeyPin->PinType.ContainerType = EPinContainerType::None;
 	CompilerContext.MovePinLinksToIntermediate(*KeyPin, *CallKeyPin);
 
-	// 处理Value输出引脚（支持引用返回）
+	// UBlueprintMapLibrary::Map_Find 始终将值复制到输出，不能伪造引用语义。
 	UEdGraphPin* CallValuePin = CallFindNode->FindPinChecked(TEXT("Value"), EGPD_Output);
 	CallValuePin->PinType = ValuePin->PinType;
 	CallValuePin->PinType.ContainerType = EPinContainerType::None;
-	CallValuePin->PinType.bIsReference = IsSetToReturnRef();
+	CallValuePin->PinType.bIsReference = false;
 	CompilerContext.MovePinLinksToIntermediate(*ValuePin, *CallValuePin);
 
 	// 连接Found返回值
@@ -133,35 +124,12 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CompilerContext.MovePinLinksToIntermediate(*FoundPin, *CallFoundPin);
 
 	// 【最佳实践 3.4】：在末尾必须调用BreakAllNodeLinks清理节点
-	BreakAllNodeLinks();
+	K2NodeHelpers::EndExpandNode(this);
 }
-
-	namespace K2Node_MapFindRef_Impl
-	{
-		static bool SupportsReturnByRef(const FEdGraphPinType& PinType)
-		{
-			return !(PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
-				PinType.PinCategory == UEdGraphSchema_K2::PC_Class ||
-				PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject ||
-				PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass ||
-				PinType.PinCategory == UEdGraphSchema_K2::PC_Interface);
-		}
-
-		static bool SupportsReturnByRef(const UK2Node_MapFindRef* Node)
-		{
-			return (Node->Pins.Num() == 0) || SupportsReturnByRef(Node->GetMapPin()->PinType);
-		}
-
-		static FText GetToggleTooltip(bool bIsOutputRef)
-		{
-			return bIsOutputRef ? LOCTEXT("ConvToValTooltip", "Changing this node to return a copy will make it so it returns a temporary duplicate of the item in the map (changes to this item will NOT be propagated back to the map)") :
-				LOCTEXT("ConvToRefTooltip", "Changing this node to return by reference will make it so it returns the same item that's in the map (meaning you can operate directly on that item, and changes will be reflected in the map)");
-		}
-	}
 
 	UK2Node_MapFindRef::UK2Node_MapFindRef(const FObjectInitializer& ObjectInitializer)
 		: Super(ObjectInitializer)
-		, bReturnByRefDesired(true)
+		, bReturnByRefDesired(false)
 	{
 	}
 
@@ -185,28 +153,6 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	void UK2Node_MapFindRef::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
 	{
 		Super::GetNodeContextMenuActions(Menu, Context);
-
-		const bool bReturnIsRef = IsSetToReturnRef();
-		FText ToggleTooltip = K2Node_MapFindRef_Impl::GetToggleTooltip(bReturnIsRef);
-
-		const bool bCannotReturnRef = !bReturnIsRef && bReturnByRefDesired;
-		if (bCannotReturnRef)
-		{
-			UEdGraphPin* OutputPin = GetValuePin();
-			ToggleTooltip = FText::Format(LOCTEXT("CannotToggleTooltip", "Cannot return by ref using '{0}' pins"), UEdGraphSchema_K2::TypeToText(OutputPin->PinType));
-		}
-
-		{
-			FToolMenuSection& Section = Menu->AddSection("Map", LOCTEXT("MapHeader", "Map Find Out Ref Node"));
-			Section.AddMenuEntry(
-				"ToggleReturnPin",
-				bReturnIsRef ? LOCTEXT("ChangeNodeToRef", "Change to return a copy") : LOCTEXT("ChangeNodeToVal", "Change to return a reference"),
-				ToggleTooltip,
-				FSlateIcon(),
-				FUIAction(FExecuteAction::CreateUObject(const_cast<UK2Node_MapFindRef*>(this), &UK2Node_MapFindRef::ToggleReturnPin),
-					FCanExecuteAction::CreateLambda([bCannotReturnRef]()->bool { return !bCannotReturnRef; }))
-			);
-		}
 	}
 
 	FBlueprintNodeSignature UK2Node_MapFindRef::GetSignature() const
@@ -214,27 +160,26 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 		FBlueprintNodeSignature NodeSignature = Super::GetSignature();
 
 		static const FName NodeRetByRefKey(TEXT("ReturnByRef"));
-		NodeSignature.AddNamedValue(NodeRetByRefKey, IsSetToReturnRef() ? TEXT("true") : TEXT("false"));
+		NodeSignature.AddNamedValue(NodeRetByRefKey, TEXT("false"));
 
 		return NodeSignature;
 	}
 
 	bool UK2Node_MapFindRef::IsActionFilteredOut(FBlueprintActionFilter const& Filter)
 	{
-		bool bIsFilteredOut = false;
-		for (UEdGraphPin* Pin : Filter.Context.Pins)
-		{
-			if (bReturnByRefDesired && !K2Node_MapFindRef_Impl::SupportsReturnByRef(Pin->PinType))
-			{
-				bIsFilteredOut = true;
-				break;
-			}
-		}
-		return bIsFilteredOut;
+		(void)Filter;
+		return false;
 	}
 
 	void UK2Node_MapFindRef::PostReconstructNode()
 	{
+		Super::PostReconstructNode();
+
+		bReturnByRefDesired = false;
+		if (UEdGraphPin* ValuePin = GetValuePin())
+		{
+			ValuePin->PinType.bIsReference = false;
+		}
 		PropagatePinType();
 	}
 
@@ -255,9 +200,13 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 		KeyPin->PinToolTip = LOCTEXT("KeyPin_Tooltip", "要查找的键").ToString();
 
 		UEdGraphNode::FCreatePinParams OutputPinParams;
-		OutputPinParams.bIsReference = bReturnByRefDesired;
+		bReturnByRefDesired = false;
+		OutputPinParams.bIsReference = false;
 		UEdGraphPin* ValuePin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Wildcard, TEXT("Value"), OutputPinParams);
-		ValuePin->PinToolTip = LOCTEXT("ValuePin_Tooltip", "找到的值（引用类型）").ToString();
+		ValuePin->PinToolTip = LOCTEXT("ValuePin_Tooltip", "找到的值（副本）").ToString();
+
+		UEdGraphPin* FoundPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Boolean, TEXT("Found"));
+		FoundPin->PinToolTip = LOCTEXT("FoundPin_Tooltip", "是否找到指定键").ToString();
 	}
 
 	void UK2Node_MapFindRef::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
@@ -265,7 +214,10 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 		Super::NotifyPinConnectionListChanged(Pin);
 
 		PropagatePinType();
-		GetGraph()->NotifyNodeChanged(this);
+		if (UEdGraph* Graph = GetGraph())
+		{
+			Graph->NotifyNodeChanged(this);
+		}
 	}
 
 	bool UK2Node_MapFindRef::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
@@ -276,11 +228,6 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 			{
 				OutReason = LOCTEXT("NoExecWarning", "Cannot have an map of execution pins.").ToString();
 				return true;
-			}
-			else if (IsSetToReturnRef() && !K2Node_MapFindRef_Impl::SupportsReturnByRef(OtherPin->PinType))
-			{
-				OutReason = LOCTEXT("ConnectionWillChangeNodeToVal", "Change the Get node to return a copy").ToString();
-				return false;
 			}
 		}
 		return false;
@@ -294,34 +241,14 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 
 void UK2Node_MapFindRef::SetDesiredReturnType(bool bAsReference)
 {
-	if (bReturnByRefDesired != bAsReference)
+	(void)bAsReference;
+	const bool bWasReference = IsSetToReturnRef();
+	bReturnByRefDesired = false;
+	if (bWasReference != bReturnByRefDesired && Pins.Num() > 0)
 	{
-		bReturnByRefDesired = bAsReference;
-
-		const bool bReconstruct = (Pins.Num() > 0) && (IsSetToReturnRef() == bAsReference);
-		if (bReconstruct)
-		{
-			ReconstructNode();
-			FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
-		}
+		ReconstructNode();
+		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 	}
-}
-
-void UK2Node_MapFindRef::ToggleReturnPin()
-{
-	FText TransactionTitle;
-	if (bReturnByRefDesired)
-	{
-		TransactionTitle = LOCTEXT("ToggleToVal", "Change to return a copy");
-	}
-	else
-	{
-		TransactionTitle = LOCTEXT("ToggleToRef", "Change to return a reference");
-	}
-	const FScopedTransaction Transaction(TransactionTitle);
-	Modify();
-
-	SetDesiredReturnType(!bReturnByRefDesired);
 }
 
 void UK2Node_MapFindRef::PropagatePinType()
@@ -329,13 +256,14 @@ void UK2Node_MapFindRef::PropagatePinType()
 	UEdGraphPin* MapPin = GetMapPin();
 	UEdGraphPin* KeyPin = GetKeyPin();
 	UEdGraphPin* ValuePin = GetValuePin();
-
-	const bool MapPinConnected = MapPin->LinkedTo.Num() > 0;
-	const bool KeyPinConnected = KeyPin->LinkedTo.Num() > 0;
-	const bool ValuePinConnected = ValuePin->LinkedTo.Num() > 0;
-
 	if (MapPin && KeyPin && ValuePin)
 	{
+		ValuePin->PinType.bIsReference = false;
+
+		const bool MapPinConnected = MapPin->LinkedTo.Num() > 0;
+		const bool KeyPinConnected = KeyPin->LinkedTo.Num() > 0;
+		const bool ValuePinConnected = ValuePin->LinkedTo.Num() > 0;
+
 		UClass const* CallingContext = nullptr;
 		if (UBlueprint const* Blueprint = GetBlueprint())
 		{
@@ -478,7 +406,7 @@ void UK2Node_MapFindRef::PropagatePinType()
 
 bool UK2Node_MapFindRef::IsSetToReturnRef() const
 {
-	return bReturnByRefDesired && K2Node_MapFindRef_Impl::SupportsReturnByRef(this);
+	return false;
 }
 
 #pragma endregion

@@ -14,11 +14,15 @@
 #include "Misc/App.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
+#include "Editor.h"
+#include "EdGraph/EdGraph.h"
 #include "Engine/Blueprint.h"
 #include "K2Node_FunctionEntry.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "EdGraphSchema_K2.h"
+#include "ScopedTransaction.h"
+#include "UObject/Package.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "XBlueprintLibraryCleanupTool"
@@ -432,131 +436,151 @@ int32 UXBlueprintLibraryCleanupTool::ExecuteCleanupWorldContextParams(bool bLogT
         }
         
         bool bBlueprintModified = false;
+        const bool bPackageWasDirty = Blueprint->GetOutermost()->IsDirty();
         const int32 SuccessCountBeforeThisBlueprint = SuccessCount;
 
-        for (const FWorldContextScanResult& Result : Results)
         {
-            // 尝试移除参数
-            if (Result.Node && !Result.bIsCallNode) // 只处理函数入口节点
+            FScopedTransaction CleanupTransaction(FText::Format(
+                LOCTEXT("CleanupBlueprintTransaction", "清理蓝图 World Context 参数: {0}"),
+                FText::FromString(Blueprint->GetName())));
+            Blueprint->Modify();
+
+            for (const FWorldContextScanResult& Result : Results)
             {
-                UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(Result.Node);
-                if (EntryNode)
+                // 尝试移除参数
+                if (Result.Node && !Result.bIsCallNode) // 只处理函数入口节点
                 {
-                    // 查找对应的引脚
-                    UEdGraphPin* PinToRemove = nullptr;
-                    for (UEdGraphPin* Pin : EntryNode->Pins)
+                    UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(Result.Node);
+                    if (EntryNode)
                     {
-                        if (Pin->PinName.ToString() == Result.PinName && IsWorldContextPin(Pin))
+                        // 查找对应的引脚
+                        UEdGraphPin* PinToRemove = nullptr;
+                        for (UEdGraphPin* Pin : EntryNode->Pins)
                         {
-                            PinToRemove = Pin;
-                            break;
-                        }
-                    }
-                    
-                    if (PinToRemove)
-                    {
-                        // 使用更安全的方式移除引脚
-                        // 1. 先断开所有连接（虽然我们已经检查了未连接，但为了安全）
-                        PinToRemove->BreakAllPinLinks();
-                        
-                        // 2. 尝试通过用户定义引脚信息移除引脚
-                        bool bRemoveSuccess = false;
-                        
-                        // 查找对应的用户定义引脚信息
-                        TSharedPtr<FUserPinInfo> UserPinToRemove = nullptr;
-                        for (TSharedPtr<FUserPinInfo> UserPin : EntryNode->UserDefinedPins)
-                        {
-                            if (UserPin.IsValid() && UserPin->PinName == PinToRemove->PinName)
+                            if (Pin->PinName.ToString() == Result.PinName && IsWorldContextPin(Pin))
                             {
-                                UserPinToRemove = UserPin;
+                                PinToRemove = Pin;
                                 break;
                             }
                         }
-                        
-                         if (UserPinToRemove.IsValid())
-                         {
-                            // UE 默认禁用 C++ 异常（bEnableExceptions=false）；这里不使用 try/catch。
-                            // 如果出现异常情况，通常会以 ensure/check 或无效指针导致的崩溃形式表现，try/catch 也无法可靠拦截。
-                            EntryNode->RemoveUserDefinedPin(UserPinToRemove);
-                            bRemoveSuccess = true;
-                         }
-                         else
-                         {
-                             // 如果不是用户定义引脚，尝试普通移除
-                            EntryNode->RemovePin(PinToRemove);
-                            bRemoveSuccess = true;
-                            
-                            if (bLogToConsole)
+
+                        if (PinToRemove)
+                        {
+                            EntryNode->Modify();
+                            if (UEdGraph* Graph = EntryNode->GetGraph())
                             {
-                                UE_LOG(LogXTools, Warning, TEXT("   通过普通方式移除: %s::%s"), 
-                                       *Result.FunctionName, *Result.PinName);
+                                Graph->Modify();
                             }
-                         }
-                        
-                        // 3. 重构节点以更新界面
-                        if (bRemoveSuccess)
-                        {
-                            EntryNode->ReconstructNode();
-                        }
-                        
-                        if (bRemoveSuccess)
-                        {
-                            bBlueprintModified = true;
-                            SuccessCount++;
-                            
-                            if (bLogToConsole)
+
+                            // 使用更安全的方式移除引脚
+                            // 1. 先断开所有连接（虽然我们已经检查了未连接，但为了安全）
+                            PinToRemove->BreakAllPinLinks();
+
+                            // 2. 尝试通过用户定义引脚信息移除引脚
+                            bool bRemoveSuccess = false;
+                            TSharedPtr<FUserPinInfo> UserPinToRemove = nullptr;
+                            for (TSharedPtr<FUserPinInfo> UserPin : EntryNode->UserDefinedPins)
                             {
-                                UE_LOG(LogXTools, Warning, TEXT("   已移除参数: %s::%s"), 
-                                       *Result.FunctionName, *Result.PinName);
+                                if (UserPin.IsValid() && UserPin->PinName == PinToRemove->PinName)
+                                {
+                                    UserPinToRemove = UserPin;
+                                    break;
+                                }
+                            }
+
+                            if (UserPinToRemove.IsValid())
+                            {
+                                EntryNode->RemoveUserDefinedPin(UserPinToRemove);
+                                bRemoveSuccess = true;
+                            }
+                            else
+                            {
+                                EntryNode->RemovePin(PinToRemove);
+                                bRemoveSuccess = true;
+
+                                if (bLogToConsole)
+                                {
+                                    UE_LOG(LogXTools, Warning, TEXT("   通过普通方式移除: %s::%s"),
+                                        *Result.FunctionName, *Result.PinName);
+                                }
+                            }
+
+                            // 3. 重构节点以更新界面
+                            if (bRemoveSuccess)
+                            {
+                                EntryNode->ReconstructNode();
+                                bBlueprintModified = true;
+                                SuccessCount++;
+
+                                if (bLogToConsole)
+                                {
+                                    UE_LOG(LogXTools, Warning, TEXT("   已移除参数: %s::%s"),
+                                        *Result.FunctionName, *Result.PinName);
+                                }
+                            }
+                            else
+                            {
+                                FailureCount++;
                             }
                         }
                         else
                         {
                             FailureCount++;
+                            if (bLogToConsole)
+                            {
+                                FXToolsErrorReporter::Warning(LogXTools,
+                                    FString::Printf(TEXT("未找到参数: %s::%s"), *Result.FunctionName, *Result.PinName),
+                                    TEXT("ExecuteCleanupWorldContextParams"));
+                            }
                         }
                     }
                     else
                     {
                         FailureCount++;
-                        if (bLogToConsole)
-                        {
-                            FXToolsErrorReporter::Warning(LogXTools,
-                                FString::Printf(TEXT("未找到参数: %s::%s"), *Result.FunctionName, *Result.PinName),
-                                TEXT("ExecuteCleanupWorldContextParams"));
-                        }
                     }
                 }
-                else
-                {
-                    FailureCount++;
-                }
+            }
+
+            if (bBlueprintModified)
+            {
+                FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+            }
+            else
+            {
+                CleanupTransaction.Cancel();
             }
         }
         
         // 如果蓝图被修改，重新编译并保存
          if (bBlueprintModified)
          {
-             // 更安全的编译方式
-            // UE 默认禁用 C++ 异常；这里不使用 try/catch。
-            // 1. 先刷新节点
-            FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
-            
-            // 2. 重新编译蓝图
+            // 事务已结束，编译失败时可以立即撤销本蓝图的全部清理修改。
             FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
-            // 3. 检查编译结果，编译失败时回滚统计
+            // 检查编译结果，编译失败时回滚资产和统计
             if (Blueprint->Status == BS_Error)
             {
-                // 该蓝图内的移除操作虽然执行了但编译失败，将本蓝图新增的成功计数回退到失败
                 const int32 ThisBlueprintSuccessCount = SuccessCount - SuccessCountBeforeThisBlueprint;
                 FailureCount += ThisBlueprintSuccessCount;
                 SuccessCount = SuccessCountBeforeThisBlueprint;
 
+                const bool bRolledBack = GEditor && GEditor->UndoTransaction(false);
+                if (bRolledBack)
+                {
+                    FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+                    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+                    if (!bPackageWasDirty)
+                    {
+                        Blueprint->GetOutermost()->SetDirtyFlag(false);
+                    }
+                }
+
                 if (bLogToConsole)
                 {
+                    const FString RollbackState = bRolledBack ? TEXT("已撤销资产修改") : TEXT("自动撤销失败，请手动撤销");
                     FXToolsErrorReporter::Error(LogXTools,
-                        FString::Printf(TEXT("蓝图编译失败，回滚 %d 个参数的成功计数: %s"),
-                            ThisBlueprintSuccessCount, *Blueprint->GetName()),
+                        FString::Printf(TEXT("蓝图编译失败，%s，失败参数=%d: %s"),
+                            *RollbackState, ThisBlueprintSuccessCount, *Blueprint->GetName()),
                         TEXT("ExecuteCleanupWorldContextParams"));
                 }
             }

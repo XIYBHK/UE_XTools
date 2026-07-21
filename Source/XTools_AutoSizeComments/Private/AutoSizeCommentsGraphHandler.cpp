@@ -144,6 +144,14 @@ void FAutoSizeCommentGraphHandler::BindDelegates()
 
 void FAutoSizeCommentGraphHandler::UnbindDelegates()
 {
+	if (GEditor)
+	{
+		GEditor->GetTimerManager()->ClearAllTimersForObject(this);
+	}
+	bPendingSave = false;
+	bPendingGraphVisualRequest = false;
+	bProcessedAltReleased = false;
+
 #if ASC_UE_VERSION_OR_LATER(5, 0)
 	FCoreUObjectDelegates::OnObjectPreSave.RemoveAll(this);
 #else
@@ -350,15 +358,16 @@ void FAutoSizeCommentGraphHandler::RefreshGraphVisualRefresh(TWeakPtr<SGraphPane
 		return;
 	}
 
-	const auto UpdateGraphPanel = [](TWeakPtr<SGraphPanel> LocalPanel)
-	{
-		if (TSharedPtr<SGraphPanel> PinnedLocalPanel = LocalPanel.Pin())
-		{
-			PinnedLocalPanel->Update();
-		}
-	};
+	GEditor->GetTimerManager()->SetTimerForNextTick(
+		FTimerDelegate::CreateRaw(this, &FAutoSizeCommentGraphHandler::UpdateGraphPanel, GraphPanel));
+}
 
-	GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda(UpdateGraphPanel, GraphPanel));
+void FAutoSizeCommentGraphHandler::UpdateGraphPanel(TWeakPtr<SGraphPanel> GraphPanel)
+{
+	if (TSharedPtr<SGraphPanel> PinnedGraphPanel = GraphPanel.Pin())
+	{
+		PinnedGraphPanel->Update();
+	}
 }
 
 EASCResizingMode FAutoSizeCommentGraphHandler::GetResizingMode(UEdGraph* Graph) const
@@ -601,10 +610,13 @@ void FAutoSizeCommentGraphHandler::ProcessAltReleased(TSharedPtr<SGraphPanel> Gr
 		GraphNode->UpdateExistingCommentNodes(OldParents, OldContains);
 	}
 
-	GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda([&]
-	{
-		bProcessedAltReleased = false;
-	}));
+	GEditor->GetTimerManager()->SetTimerForNextTick(
+		FTimerDelegate::CreateRaw(this, &FAutoSizeCommentGraphHandler::ResetAltReleaseState));
+}
+
+void FAutoSizeCommentGraphHandler::ResetAltReleaseState()
+{
+	bProcessedAltReleased = false;
 }
 
 FASCGraphHandlerData& FAutoSizeCommentGraphHandler::GetGraphHandlerData(UEdGraph* Graph)

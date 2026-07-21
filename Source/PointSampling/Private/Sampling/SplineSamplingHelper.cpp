@@ -9,6 +9,11 @@
 #include "Algorithms/PoissonDiskSampling.h"
 #include "Math/UnrealMathUtility.h"
 
+namespace
+{
+	constexpr int32 SplineArcLengthSamplesPerSegment = 20;
+}
+
 TArray<FVector> FSplineSamplingHelper::GenerateAlongSpline(
 	int32 PointCount,
 	const TArray<FVector>& ControlPoints,
@@ -37,8 +42,23 @@ TArray<FVector> FSplineSamplingHelper::GenerateAlongSpline(
 	UE_LOG(LogPointSampling, Log, TEXT("[样条线采样] 开始等距采样: %d 个控制点, %d 个目标点, %s"),
 		ControlPoints.Num(), PointCount, bClosedSpline ? TEXT("闭合") : TEXT("开放"));
 
-	// 计算总弧长（用于等距采样）
-	const float TotalArcLength = CalculateSplineArcLength(ControlPoints, bClosedSpline);
+	// 单次构建参数-累计弧长表，后续采样只需二分查找，不再为每个点重复扫描所有样条段。
+	const int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);
+	const int32 TotalLUTSamples = NumSegments * SplineArcLengthSamplesPerSegment;
+	TArray<float> CumulativeArcLengths;
+	CumulativeArcLengths.SetNumUninitialized(TotalLUTSamples + 1);
+	CumulativeArcLengths[0] = 0.0f;
+
+	float TotalArcLength = 0.0f;
+	FVector PreviousPoint = EvaluateSplineAtParameter(ControlPoints, 0.0f, bClosedSpline);
+	for (int32 SampleIndex = 1; SampleIndex <= TotalLUTSamples; ++SampleIndex)
+	{
+		const float ParameterT = static_cast<float>(SampleIndex) / SplineArcLengthSamplesPerSegment;
+		const FVector CurrentPoint = EvaluateSplineAtParameter(ControlPoints, ParameterT, bClosedSpline);
+		TotalArcLength += FVector::Dist(PreviousPoint, CurrentPoint);
+		CumulativeArcLengths[SampleIndex] = TotalArcLength;
+		PreviousPoint = CurrentPoint;
+	}
 
 	if (TotalArcLength <= 0.0f)
 	{
@@ -46,27 +66,62 @@ TArray<FVector> FSplineSamplingHelper::GenerateAlongSpline(
 		return Points;
 	}
 
+	const auto FindParameterFromArcLength = [&CumulativeArcLengths, TotalArcLength, TotalLUTSamples](float TargetArcLength)
+	{
+		if (TargetArcLength <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		if (TargetArcLength >= TotalArcLength)
+		{
+			return static_cast<float>(TotalLUTSamples) / SplineArcLengthSamplesPerSegment;
+		}
+
+		int32 Low = 1;
+		int32 High = TotalLUTSamples;
+		while (Low < High)
+		{
+			const int32 Mid = Low + (High - Low) / 2;
+			if (CumulativeArcLengths[Mid] < TargetArcLength)
+			{
+				Low = Mid + 1;
+			}
+			else
+			{
+				High = Mid;
+			}
+		}
+
+		const int32 UpperSampleIndex = Low;
+		const int32 LowerSampleIndex = UpperSampleIndex - 1;
+		const float LowerArcLength = CumulativeArcLengths[LowerSampleIndex];
+		const float ArcLengthRange = CumulativeArcLengths[UpperSampleIndex] - LowerArcLength;
+		const float Alpha = ArcLengthRange > UE_SMALL_NUMBER
+			? (TargetArcLength - LowerArcLength) / ArcLengthRange
+			: 0.0f;
+		return (LowerSampleIndex + Alpha) / SplineArcLengthSamplesPerSegment;
+	};
+
 	// 单点采样：返回弧长中点，避免 PointCount-1 除零
 	if (PointCount == 1)
 	{
-		const float ParameterT = FindParameterByArcLength(
-			ControlPoints,
-			TotalArcLength * 0.5f,
-			bClosedSpline,
-			TotalArcLength);
+		const float ParameterT = FindParameterFromArcLength(TotalArcLength * 0.5f);
 		Points.Add(EvaluateSplineAtParameter(ControlPoints, ParameterT, bClosedSpline));
 		return Points;
 	}
 
 	// 等距采样：按弧长均匀分布点
-	const float ArcStep = TotalArcLength / (PointCount - 1);
+	const float ArcStep = bClosedSpline
+		? TotalArcLength / PointCount
+		: TotalArcLength / (PointCount - 1);
 
 	for (int32 i = 0; i < PointCount; ++i)
 	{
 		const float TargetArcLength = i * ArcStep;
 
 		// 找到对应的参数T值
-		float ParameterT = FindParameterByArcLength(ControlPoints, TargetArcLength, bClosedSpline, TotalArcLength);
+		const float ParameterT = FindParameterFromArcLength(TargetArcLength);
 
 		// 计算样条点
 		FVector Point = EvaluateSplineAtParameter(ControlPoints, ParameterT, bClosedSpline);
@@ -179,7 +234,7 @@ float FSplineSamplingHelper::CalculateSplineArcLength(
 
 	float TotalLength = 0.0f;
 	const int32 NumSegments = bClosedSpline ? ControlPoints.Num() : (ControlPoints.Num() - 1);
-	const int32 SamplesPerSegment = 10; // 每段采样10个点用于近似弧长
+	const int32 SamplesPerSegment = SplineArcLengthSamplesPerSegment;
 
 	for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; ++SegmentIndex)
 	{
@@ -258,7 +313,7 @@ float FSplineSamplingHelper::FindParameterByArcLength(
 		// 计算这一段的弧长
 		float SegmentLength = 0.0f;
 		FVector PrevPoint = P1;
-		const int32 SamplesPerSegment = 20;
+		const int32 SamplesPerSegment = SplineArcLengthSamplesPerSegment;
 
 		for (int32 i = 1; i <= SamplesPerSegment; ++i)
 		{
@@ -304,7 +359,7 @@ float FSplineSamplingHelper::FindTByArcLengthInSegment(
 		// 计算从起点到Mid的弧长
 		float ArcLengthToMid = 0.0f;
 		FVector PrevPoint = P1;
-		const int32 Samples = 10;
+		const int32 Samples = SplineArcLengthSamplesPerSegment;
 
 		for (int32 i = 1; i <= Samples; ++i)
 		{

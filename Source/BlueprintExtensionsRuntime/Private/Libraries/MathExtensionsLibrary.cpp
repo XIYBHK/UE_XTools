@@ -66,10 +66,29 @@ float UMathExtensionsLibrary::StableFrame(float DeltaTime, const TArray<float>& 
 
 #pragma region KeepDecimals
 
+	namespace
+	{
+		constexpr int32 MinFloatDecimalPlaces = -37;
+		constexpr int32 MaxFloatDecimalPlaces = 8;
+	}
+
 	float UMathExtensionsLibrary::KeepDecimals_Float(float Value, int32 DecimalPlaces)
 	{
-		const float Multiplier = FMath::Pow(10.0f, static_cast<float>(DecimalPlaces));
-		return FMath::RoundToFloat(Value * Multiplier) / Multiplier;
+		if (!FMath::IsFinite(Value))
+		{
+			return Value;
+		}
+
+		const int32 SafeDecimalPlaces = FMath::Clamp(DecimalPlaces, MinFloatDecimalPlaces, MaxFloatDecimalPlaces);
+		const float Multiplier = FMath::Pow(10.0f, static_cast<float>(SafeDecimalPlaces));
+		const float ScaledValue = Value * Multiplier;
+		if (!FMath::IsFinite(ScaledValue))
+		{
+			return Value;
+		}
+
+		const float RoundedValue = FMath::RoundToFloat(ScaledValue) / Multiplier;
+		return FMath::IsFinite(RoundedValue) ? RoundedValue : Value;
 	}
 
 	FString UMathExtensionsLibrary::KeepDecimals_FloatString(float Value, int32 DecimalPlaces)
@@ -78,7 +97,8 @@ float UMathExtensionsLibrary::StableFrame(float DeltaTime, const TArray<float>& 
 		const float RoundedValue = KeepDecimals_Float(Value, DecimalPlaces);
 	    
 		// 转换为字符串，强制使用指定的小数位数
-		return FString::Printf(TEXT("%.*f"), DecimalPlaces, RoundedValue);
+		const int32 SafeDecimalPlaces = FMath::Clamp(DecimalPlaces, 0, MaxFloatDecimalPlaces);
+		return FString::Printf(TEXT("%.*f"), SafeDecimalPlaces, RoundedValue);
 	}
 
 	FVector2D UMathExtensionsLibrary::KeepDecimals_Vec2(FVector2D Value, int32 DecimalPlaces)

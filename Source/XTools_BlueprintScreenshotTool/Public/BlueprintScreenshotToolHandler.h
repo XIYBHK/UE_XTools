@@ -18,6 +18,7 @@ using FBSTVector2D = FVector2D;
 #include "BlueprintScreenshotToolHandler.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintScreenshotTool, Log, All);
+DECLARE_DYNAMIC_DELEGATE_OneParam(FOnBlueprintScreenshotCompleted, const TArray<FString>&, Paths);
 
 class SGraphEditor;
 class UTextureRenderTarget2D;
@@ -29,12 +30,15 @@ class XTOOLS_BLUEPRINTSCREENSHOTTOOL_API UBlueprintScreenshotToolHandler : publi
 
 public:
 	// Takes a screenshot of the current graph editor
-	UFUNCTION(BlueprintCallable, Category = "Blueprint Screenshot Tool")
+	UFUNCTION(BlueprintCallable, Category = "Blueprint Screenshot Tool", meta = (DeprecatedFunction, DeprecationMessage = "截图在下一帧异步完成，请使用异步截图"))
 	static TArray<FString> TakeScreenshotWithPaths();
 
 	// Takes a screenshot of the current graph editor and shows a notification
-	UFUNCTION(BlueprintCallable, Category = "Blueprint Screenshot Tool")
+	UFUNCTION(BlueprintCallable, Category = "Blueprint Screenshot Tool", meta = (DeprecatedFunction, DeprecationMessage = "截图在下一帧异步完成，请使用异步截图"))
 	static TArray<FString> TakeScreenshotWithNotification();
+
+	UFUNCTION(BlueprintCallable, Category = "Blueprint Screenshot Tool", meta = (DisplayName = "异步截图"))
+	static void TakeScreenshotAsync(const FOnBlueprintScreenshotCompleted& Completion, bool bShowNotification = true);
 
 	// Takes a screenshot of the current graph editor
 	UFUNCTION(BlueprintCallable, Category = "Blueprint Screenshot Tool")
@@ -45,9 +49,13 @@ public:
 	static void OpenDirectory();
 
 	static void OnPostTick(float DeltaTime);
+	static void SetAsyncDriverAvailable(bool bIsAvailable);
 
 private:
 	static bool bTakingScreenshot;
+	static bool bAsyncDriverAvailable;
+	static bool bPendingShowNotification;
+	static FOnBlueprintScreenshotCompleted PendingCompletion;
 
 	static FString GetExtension(EBSTImageFormat InFormat);
 	static FBSTScreenshotData CaptureGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor);
@@ -56,6 +64,7 @@ private:
 
 	static void PrepareForScreenshot();
 	static void ExecuteAsyncScreenshot();
+	static void CompletePendingScreenshot(const TArray<FString>& Paths);
 	static void UpdateScreenshotState(bool bIsProcessing);
 	static void WarmupGraphEditor(TSharedPtr<SGraphEditor> InGraphEditor);
 	

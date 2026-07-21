@@ -16,6 +16,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Components/PrimitiveComponent.h"
+#include "CoreGlobals.h"
 #include "UObject/UObjectGlobals.h"
 
 
@@ -98,6 +99,7 @@ FActorPool::~FActorPool()
 
 AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::GetActor 只能在游戏线程调用"));
     SCOPE_CYCLE_COUNTER(STAT_ActorPool_GetActor);
 
     if (!bIsInitialized || !IsValid(ActorClass) || !IsValid(World))
@@ -224,6 +226,8 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
 
 AActor* FActorPool::AcquireDeferred(UWorld* World)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::AcquireDeferred 只能在游戏线程调用"));
+
     if (!bIsInitialized || !IsValid(ActorClass) || !IsValid(World))
     {
         ACTORPOOL_LOG(Warning, TEXT("AcquireDeferred: 池未初始化或参数无效"));
@@ -280,6 +284,8 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
 
 bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransform)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::FinalizeDeferred 只能在游戏线程调用"));
+
     if (!ValidateActor(Actor) || !bIsInitialized)
     {
         ACTORPOOL_LOG(Warning, TEXT("FinalizeDeferred: Actor无效或池未初始化"));
@@ -343,6 +349,7 @@ bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransfor
 
 bool FActorPool::ReturnActor(AActor* Actor)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::ReturnActor 只能在游戏线程调用"));
     SCOPE_CYCLE_COUNTER(STAT_ActorPool_ReturnActor);
 
     if (!ValidateActor(Actor) || !bIsInitialized)
@@ -430,6 +437,8 @@ bool FActorPool::ReturnActor(AActor* Actor)
 
 void FActorPool::PrewarmPool(UWorld* World, int32 Count)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::PrewarmPool 只能在游戏线程调用"));
+
     if (!bIsInitialized || !IsValid(World) || !IsValid(ActorClass) || Count <= 0)
     {
         return;
@@ -470,9 +479,6 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
                 RootPrimitive->SetSimulatePhysics(false);
             }
             
-            // 移动到池外位置
-            NewActor->SetActorLocation(FVector(0.0f, 0.0f, -100000.0f), false, nullptr, ETeleportType::ResetPhysics);
-
             bool bAddedToPool = false;
             {
                 FWriteScopeLock WriteLock(PoolLock);
@@ -582,6 +588,8 @@ bool FActorPool::ContainsActor(const AActor* Actor) const
 
 void FActorPool::ClearPool()
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::ClearPool 只能在游戏线程调用"));
+
     if (!bIsInitialized)
     {
         return;
@@ -689,6 +697,8 @@ void FActorPool::ClearPool()
 
 void FActorPool::SetMaxSize(int32 NewMaxSize)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::SetMaxSize 只能在游戏线程调用"));
+
     if (NewMaxSize <= 0)
     {
         return;
@@ -932,6 +942,8 @@ int32 FActorPool::GetManagedActorCount_RequiresLock() const
 
 void FActorPool::InitializePool(UWorld* World)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::InitializePool 只能在游戏线程调用"));
+
     if (!bIsInitialized || !IsValid(World) || InitialSize <= 0)
     {
         return;
@@ -948,6 +960,8 @@ void FActorPool::InitializePool(UWorld* World)
 
 void FActorPool::ConfigurePreallocator(UWorld* World, const FObjectPoolConfig& Config)
 {
+    checkf(IsInGameThread(), TEXT("FActorPool::ConfigurePreallocator 只能在游戏线程调用"));
+
     if (!Preallocator.IsValid() || !IsValid(World))
     {
         return;

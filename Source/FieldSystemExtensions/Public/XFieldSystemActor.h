@@ -343,6 +343,9 @@ protected:
 	/** 收集场景中符合筛选条件的GeometryCollectionComponent */
 	void CollectGeometryCollections();
 
+	/** 将当前Construction Fields定向派发到一个已创建物理状态的GeometryCollection */
+	int32 ApplyCurrentFieldsToGeometryCollection(class UGeometryCollectionComponent* GeometryCollection);
+
 	/** 注册Spawn监听 */
 	void RegisterSpawnListener();
 

@@ -16,6 +16,13 @@
 
 #define LOCTEXT_NAMESPACE "FElectronicNodesModule"
 
+#if PLATFORM_WINDOWS && !UE_BUILD_SHIPPING
+namespace
+{
+	FHotPatch ConnectionPolicyHotPatch;
+}
+#endif
+
 void FElectronicNodesModule::StartupModule()
 {
 	// 如果项目中已启用 Marketplace 版本的 ElectronicNodes 插件，则集成版保持空载，避免重复初始化和连接工厂冲突
@@ -66,7 +73,10 @@ void FElectronicNodesModule::StartupModule()
 	if (ElectronicNodesSettings->UseHotPatch && ElectronicNodesSettings->MasterActivate)
 	{
 #if PLATFORM_WINDOWS && !UE_BUILD_SHIPPING
-		FHotPatch::Hook(&FNodeFactory::CreateConnectionPolicy, &FNodeFactoryPatch::CreateConnectionPolicy_Hook);
+		if (!ConnectionPolicyHotPatch.Hook(&FNodeFactory::CreateConnectionPolicy, &FNodeFactoryPatch::CreateConnectionPolicy_Hook))
+		{
+			UE_LOG(LogTemp, Error, TEXT("XTools_ElectronicNodes: failed to install connection policy hot patch."));
+		}
 #endif
 	}
 
@@ -128,6 +138,13 @@ void FElectronicNodesModule::ReloadConfiguration(UObject* Object, struct FProper
 void FElectronicNodesModule::ShutdownModule()
 {
 	ENUpdatePopup::Unregister();
+
+#if PLATFORM_WINDOWS && !UE_BUILD_SHIPPING
+	if (!ConnectionPolicyHotPatch.Unhook())
+	{
+		UE_LOG(LogTemp, Error, TEXT("XTools_ElectronicNodes: failed to restore connection policy hot patch."));
+	}
+#endif
 
 	if (!bInitialized)
 	{

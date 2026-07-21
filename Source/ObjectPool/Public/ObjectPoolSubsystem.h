@@ -88,6 +88,7 @@ struct OBJECTPOOL_API FObjectPoolSubsystemStats
  * - 池的生命周期管理（创建、销毁、清理）
  * - 基本的SpawnActorFromPool/ReturnActorToPool API
  * - 与UE生命周期的集成
+ * - 所有涉及Actor生命周期的操作仅限游戏线程
  * 
  * 移除的功能及新归属：
  * - 复杂配置管理 → FObjectPoolConfigManager
@@ -113,7 +114,7 @@ public:
      * 注册Actor类到对象池
      * @param ActorClass 要池化的Actor类
      * @param InitialSize 初始池大小
-     * @param HardLimit 池的最大限制（0表示无限制）
+     * @param HardLimit 池的最大限制（0使用默认上限100）
      * @return 注册是否成功
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (

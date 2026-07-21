@@ -152,5 +152,13 @@ namespace PoissonSamplingHelpers
 		float Radius,
 		int32 MaxAttempts = 30,
 		const FRandomStream* Stream = nullptr);
+
+	/** 在球体内部执行有目标数量上限的3D Bridson采样 */
+	TArray<FVector> GenerateOptimizedPoisson3DInSphere(
+		float SphereRadius,
+		float MinDistance,
+		int32 TargetPointCount,
+		int32 MaxAttempts = 30,
+		const FRandomStream* Stream = nullptr);
 }
 
