@@ -112,4 +112,4 @@
 
 - **ADD_LATENT_AUTOMATION_COMMAND**: 用于处理需要等待（如加载地图）的异步测试流程。
 
-**运行**: 通过Session Frontend中的Automation标签页运行测试。
+**运行**: 可通过 Session Frontend 的 Automation 标签页或 `UnrealEditor-Cmd.exe` 无头运行，详见[《UE 无头自动化测试最佳实践》](UE无头自动化测试最佳实践.md)。
