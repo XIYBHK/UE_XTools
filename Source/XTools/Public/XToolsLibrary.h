@@ -80,9 +80,87 @@ struct FBezierSpeedOptions
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed", meta = (DisplayName = "速度模式"))
     EBezierSpeedMode SpeedMode = EBezierSpeedMode::Default;
 
-	// 速率曲线（用于调整运动速率）
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed", meta = (DisplayName = "速率曲线"))
+	// 将输入时间进度映射为路径进度；曲线斜率表示相对速度。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed",
+		meta = (DisplayName = "进度映射曲线",
+			ToolTip = "横轴为输入进度，纵轴为路径进度。通常应从(0,0)单调递增到(1,1)，曲线斜率表示相对速度。"))
 	UCurveFloat* SpeedCurve = nullptr;
+};
+
+/** 贝塞尔轨迹的二维平滑噪声参数。横向和纵向振幅相同时对应原始导弹方案。 */
+USTRUCT(BlueprintType)
+struct FBezierNoiseOptions
+{
+    GENERATED_BODY()
+
+    /** 沿最小旋转标架右轴、上轴的噪声振幅。 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "贝塞尔|噪声",
+        meta = (DisplayName = "噪声振幅", ClampMin = "0.0", UIMin = "0.0", ForceUnits = "cm"))
+    FVector2D Amplitude = FVector2D(100.0, 100.0);
+
+    /** 每秒噪声变化频率。噪声按采样时间变化，不受飞行总时长影响。 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "贝塞尔|噪声",
+        meta = (DisplayName = "噪声频率", ClampMin = "0.0", UIMin = "0.0", ForceUnits = "Hz"))
+    float Frequency = 2.0f;
+
+    /** 右轴噪声通道种子。 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "贝塞尔|噪声", meta = (DisplayName = "横向噪声种子"))
+    int32 SeedX = 17;
+
+    /** 上轴噪声通道种子。应与横向种子不同。 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "贝塞尔|噪声", meta = (DisplayName = "纵向噪声种子"))
+    int32 SeedY = 83;
+};
+
+/**
+ * Double Reflection 最小旋转标架（RMF）的跨帧朝向状态。
+ * 为每枚导弹保留一个变量，并将它作为可变引用传给轨迹节点；节点会原地更新状态。
+ * 状态同时持有匀速模式的弧长缓存；内部字段不向蓝图公开，首帧或重新开始轨迹前使用重置节点初始化。
+ */
+USTRUCT(BlueprintType, meta = (DisplayName = "贝塞尔旋转标架状态"))
+struct FBezierRotationFrameState
+{
+    GENERATED_BODY()
+
+    bool bInitialized = false;
+
+    /** 上一帧未叠加噪声的贝塞尔位置。 */
+    FVector PreviousCurvePosition = FVector::ZeroVector;
+
+    /** 上一帧基准曲线的单位切线。 */
+    FVector PreviousTangent = FVector::ForwardVector;
+
+    /** 上一帧基准曲线的单位上方向；未初始化时可用它指定初始滚转方向。 */
+    FVector PreviousNormal = FVector::UpVector;
+
+    /** 上一帧叠加噪声后的最终位置，用于计算实际移动方向。 */
+    FVector PreviousOutputPosition = FVector::ZeroVector;
+
+    /** 匀速模式建立缓存时使用的控制点快照。 */
+    TArray<FVector> CachedArcLengthControlPoints;
+
+    /** 均匀参数采样对应的累计弧长；仅在控制点变化时重建。 */
+    TArray<float> CachedCumulativeArcLengths;
+
+    float CachedTotalArcLength = 0.0f;
+
+    /** 用于验证缓存生命周期，不参与轨迹计算。 */
+    int32 ArcLengthCacheBuildGeneration = 0;
+
+    void Reset(const FVector& InitialUpDirection = FVector::UpVector)
+    {
+        bInitialized = false;
+        PreviousCurvePosition = FVector::ZeroVector;
+        PreviousTangent = FVector::ForwardVector;
+        PreviousNormal = !InitialUpDirection.ContainsNaN() && !InitialUpDirection.IsNearlyZero()
+            ? InitialUpDirection.GetSafeNormal()
+            : FVector::UpVector;
+        PreviousOutputPosition = FVector::ZeroVector;
+        CachedArcLengthControlPoints.Reset();
+        CachedCumulativeArcLengths.Reset();
+        CachedTotalArcLength = 0.0f;
+        ArcLengthCacheBuildGeneration = 0;
+    }
 };
 
 /**
@@ -202,6 +280,58 @@ public:
                                        FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
 
     /**
+     * 根据发射方向和目标表面法线生成三次贝塞尔导弹轨迹的四个控制点。
+     */
+    UFUNCTION(BlueprintPure, Category = "XTools|贝塞尔",
+        meta = (DisplayName = "生成贝塞尔导弹控制点",
+                ReturnDisplayName = "控制点",
+                Keywords = "贝塞尔 导弹 控制点 发射方向 目标法线 Cubic Bezier Missile",
+                ToolTip = "生成三次贝塞尔导弹控制点。目标法线表示目标端控制柄方向，常用命中表面法线或希望从目标点向外偏出的方向；方向会自动单位化，无效方向自动回退。"))
+    static TArray<FVector> BuildBezierMissileControlPoints(
+        UPARAM(DisplayName = "起点位置") FVector StartLocation,
+        UPARAM(DisplayName = "起点方向") FVector StartDirection,
+        UPARAM(DisplayName = "目标位置") FVector TargetLocation,
+        UPARAM(DisplayName = "目标法线",
+            meta = (ToolTip = "目标端控制柄方向。常用命中表面法线，或希望曲线在目标端向外偏出的方向。")) FVector TargetNormal,
+        UPARAM(DisplayName = "起点控制距离") float StartControlDistance,
+        UPARAM(DisplayName = "目标控制距离") float TargetControlDistance);
+
+    /** 重置一枚导弹持有的最小旋转标架状态，可指定初始上方向。 */
+    UFUNCTION(BlueprintCallable, Category = "XTools|贝塞尔",
+        meta = (DisplayName = "重置贝塞尔导弹轨迹状态",
+                Keywords = "贝塞尔 导弹 重置 状态 初始上方向 Reset Missile State",
+                ToolTip = "清除上一条轨迹的标架记录和匀速缓存。首次使用可省略；重新发射、更换轨迹或对象池复用前应调用。初始上方向用于确定首帧滚转。"))
+    static void ResetBezierMissileTrajectoryState(
+        UPARAM(ref, DisplayName = "标架状态") FBezierRotationFrameState& InOutFrame,
+        UPARAM(DisplayName = "初始上方向") FVector InitialUpDirection = FVector::UpVector);
+
+    /**
+     * 计算带端点衰减噪声和最小旋转标架的贝塞尔轨迹。
+     * Progress 经速率曲线后驱动端点包络，再按速度模式映射到曲线参数；ElapsedTime 只驱动噪声相位。
+     */
+    UFUNCTION(BlueprintCallable, Category = "XTools|贝塞尔",
+        meta = (DisplayName = "计算贝塞尔导弹轨迹",
+                WorldContext = "Context",
+                AdvancedDisplay = "SpeedOptions,bShowDebug,Duration,DebugColors",
+                Keywords = "贝塞尔 导弹 噪声 最小旋转标架 Double Reflection RMF Missile Noise",
+                ToolTip = "按进度计算带平滑噪声的贝塞尔导弹位置和朝向。进度控制轨迹位置及端点衰减，噪声采样时间（秒）控制噪声变化；每枚导弹应持续传入自己的标架状态。"))
+    static void CalculateBezierMissileTrajectory(
+        const UObject* Context,
+        UPARAM(ref, DisplayName = "控制点") const TArray<FVector>& Points,
+        UPARAM(DisplayName = "进度") float Progress,
+        UPARAM(DisplayName = "噪声采样时间",
+            meta = (ToolTip = "累计秒数，仅控制噪声相位，不控制轨迹位置。")) float ElapsedTime,
+        UPARAM(ref, DisplayName = "标架状态") FBezierRotationFrameState& InOutFrame,
+        UPARAM(DisplayName = "位置") FVector& OutPosition,
+        UPARAM(DisplayName = "切线") FVector& OutTangent,
+        UPARAM(DisplayName = "旋转") FRotator& OutRotation,
+        UPARAM(DisplayName = "噪声选项") FBezierNoiseOptions NoiseOptions = FBezierNoiseOptions(),
+        UPARAM(DisplayName = "速度选项") FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions(),
+        UPARAM(DisplayName = "显示调试") bool bShowDebug = false,
+        UPARAM(DisplayName = "调试持续时间") float Duration = 0.03f,
+        UPARAM(DisplayName = "调试颜色") FBezierDebugColors DebugColors = FBezierDebugColors());
+
+    /**
      * 测试PRD算法的分布情况。
      * 执行一万次PRD随机，统计每个失败次数触发成功的次数。
      *
@@ -308,6 +438,18 @@ public:
 private:
     // 计算曲线上某点的位置（基于参数）
     static FVector CalculatePointAtParameter(const TArray<FVector>& Points, float Parameter, TArray<FVector>& OutWorkPoints);
+    static FVector CalculatePointAtParameterFast(const TArray<FVector>& Points, float Parameter);
+    static FVector CalculateDerivativeAtParameter(const TArray<FVector>& Points, float Parameter);
+    static float ResolveBezierParameter(
+        UWorld* World,
+        const TArray<FVector>& Points,
+        float Progress,
+        bool bShowDebug,
+        float Duration,
+        const FBezierDebugColors& DebugColors,
+        const FBezierSpeedOptions& SpeedOptions,
+        float& OutMotionProgress,
+        FBezierRotationFrameState* InOutTrajectoryState = nullptr);
     static FVector EvaluateBezierConstantSpeed(
         UWorld* World,
         const TArray<FVector>& Points,

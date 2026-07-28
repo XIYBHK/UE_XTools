@@ -41,6 +41,8 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "CollisionShape.h"
 #include "Curves/CurveFloat.h"
+#include "Math/RotationMatrix.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 //  UObject 系统
 #include "UObject/UObjectGlobals.h"
@@ -430,6 +432,203 @@ void UXToolsLibrary::GetAllAttachedActorsRecursively(AActor* ParentActor, TArray
     }
 }
 
+namespace
+{
+    FVector MakeStableBezierNormal(const FVector& Tangent, const FVector& PreferredNormal)
+    {
+        FVector Normal = PreferredNormal - Tangent * FVector::DotProduct(PreferredNormal, Tangent);
+        if (!Normal.ContainsNaN() && Normal.Normalize())
+        {
+            return Normal;
+        }
+
+        const FVector ReferenceAxis = FMath::Abs(FVector::DotProduct(Tangent, FVector::UpVector)) < 0.99
+            ? FVector::UpVector
+            : FVector::RightVector;
+        Normal = ReferenceAxis - Tangent * FVector::DotProduct(ReferenceAxis, Tangent);
+        const FVector StableNormal = Normal.GetSafeNormal();
+        return StableNormal.IsNearlyZero() ? FVector::UpVector : StableNormal;
+    }
+
+    FVector UpdateBezierRotationMinimizingNormal(
+        const FBezierRotationFrameState& PreviousFrame,
+        const FVector& CurrentCurvePosition,
+        const FVector& CurrentTangent)
+    {
+        const bool bHasValidPreviousFrame = PreviousFrame.bInitialized
+            && !PreviousFrame.PreviousCurvePosition.ContainsNaN()
+            && !PreviousFrame.PreviousTangent.ContainsNaN()
+            && !PreviousFrame.PreviousNormal.ContainsNaN()
+            && !PreviousFrame.PreviousTangent.IsNearlyZero()
+            && !PreviousFrame.PreviousNormal.IsNearlyZero();
+        if (!bHasValidPreviousFrame)
+        {
+            return MakeStableBezierNormal(CurrentTangent, PreviousFrame.PreviousNormal);
+        }
+
+        const FVector PreviousTangent = PreviousFrame.PreviousTangent.GetSafeNormal();
+        const FVector PreviousNormal = MakeStableBezierNormal(PreviousTangent, PreviousFrame.PreviousNormal);
+        const FVector FirstReflectionAxis = CurrentCurvePosition - PreviousFrame.PreviousCurvePosition;
+        const double FirstAxisLengthSquared = FirstReflectionAxis.SizeSquared();
+
+        FVector CandidateNormal;
+        if (FirstAxisLengthSquared > UE_SMALL_NUMBER)
+        {
+            const FVector ReflectedNormal = PreviousNormal
+                - (2.0 * FVector::DotProduct(FirstReflectionAxis, PreviousNormal) / FirstAxisLengthSquared)
+                    * FirstReflectionAxis;
+            const FVector ReflectedTangent = PreviousTangent
+                - (2.0 * FVector::DotProduct(FirstReflectionAxis, PreviousTangent) / FirstAxisLengthSquared)
+                    * FirstReflectionAxis;
+
+            const FVector SecondReflectionAxis = CurrentTangent - ReflectedTangent;
+            const double SecondAxisLengthSquared = SecondReflectionAxis.SizeSquared();
+            CandidateNormal = SecondAxisLengthSquared > UE_SMALL_NUMBER
+                ? ReflectedNormal
+                    - (2.0 * FVector::DotProduct(SecondReflectionAxis, ReflectedNormal) / SecondAxisLengthSquared)
+                        * SecondReflectionAxis
+                : ReflectedNormal;
+        }
+        else
+        {
+            CandidateNormal = FQuat::FindBetweenNormals(PreviousTangent, CurrentTangent)
+                .RotateVector(PreviousNormal);
+        }
+
+        return MakeStableBezierNormal(CurrentTangent, CandidateNormal);
+    }
+}
+
+float UXToolsLibrary::ResolveBezierParameter(
+        UWorld* World,
+        const TArray<FVector>& Points,
+        float Progress,
+        bool bShowDebug,
+        float Duration,
+        const FBezierDebugColors& DebugColors,
+        const FBezierSpeedOptions& SpeedOptions,
+        float& OutMotionProgress,
+        FBezierRotationFrameState* InOutTrajectoryState)
+{
+    float AdjustedProgress = FMath::IsFinite(Progress) ? Progress : 0.0f;
+    if (SpeedOptions.SpeedCurve)
+    {
+        AdjustedProgress = SpeedOptions.SpeedCurve->GetFloatValue(AdjustedProgress);
+    }
+    AdjustedProgress = FMath::IsFinite(AdjustedProgress)
+        ? FMath::Clamp(AdjustedProgress, 0.0f, 1.0f)
+        : 0.0f;
+    OutMotionProgress = AdjustedProgress;
+
+    if (SpeedOptions.SpeedMode != EBezierSpeedMode::Constant || Points.Num() < 2)
+    {
+        return AdjustedProgress;
+    }
+
+    constexpr int32 Segments = 100;
+    TArray<float> LocalCumulativeArcLengths;
+    TArray<float>* CumulativeArcLengths = &LocalCumulativeArcLengths;
+    float TotalLength = 0.0f;
+
+    const bool bCanUseCache = InOutTrajectoryState != nullptr;
+    const bool bCacheMatches = bCanUseCache
+        && InOutTrajectoryState->CachedArcLengthControlPoints == Points
+        && InOutTrajectoryState->CachedCumulativeArcLengths.Num() == Segments + 1
+        && FMath::IsFinite(InOutTrajectoryState->CachedTotalArcLength);
+
+    if (bCacheMatches)
+    {
+        CumulativeArcLengths = &InOutTrajectoryState->CachedCumulativeArcLengths;
+        TotalLength = InOutTrajectoryState->CachedTotalArcLength;
+    }
+    else
+    {
+        TRACE_CPUPROFILER_EVENT_SCOPE("XTools - Build Bezier Arc Length Table");
+
+        if (bCanUseCache)
+        {
+            InOutTrajectoryState->CachedArcLengthControlPoints = Points;
+            InOutTrajectoryState->CachedCumulativeArcLengths.SetNumUninitialized(Segments + 1);
+            CumulativeArcLengths = &InOutTrajectoryState->CachedCumulativeArcLengths;
+            ++InOutTrajectoryState->ArcLengthCacheBuildGeneration;
+        }
+        else
+        {
+            LocalCumulativeArcLengths.SetNumUninitialized(Segments + 1);
+        }
+
+        (*CumulativeArcLengths)[0] = 0.0f;
+        FVector PreviousPoint = CalculatePointAtParameterFast(Points, 0.0f);
+        for (int32 Index = 1; Index <= Segments; ++Index)
+        {
+            const float Parameter = static_cast<float>(Index) / Segments;
+            const FVector CurrentPoint = CalculatePointAtParameterFast(Points, Parameter);
+            TotalLength += FVector::Distance(PreviousPoint, CurrentPoint);
+            (*CumulativeArcLengths)[Index] = TotalLength;
+
+            if (bShowDebug && World)
+            {
+                DrawDebugLine(World, PreviousPoint, CurrentPoint,
+                    DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+            }
+            PreviousPoint = CurrentPoint;
+        }
+
+        if (bCanUseCache)
+        {
+            InOutTrajectoryState->CachedTotalArcLength = TotalLength;
+        }
+    }
+
+    // 缓存命中时仍保留原有调试曲线；调试绘制本身不属于性能路径。
+    if (bCacheMatches && bShowDebug && World)
+    {
+        FVector PreviousPoint = CalculatePointAtParameterFast(Points, 0.0f);
+        for (int32 Index = 1; Index <= Segments; ++Index)
+        {
+            const float Parameter = static_cast<float>(Index) / Segments;
+            const FVector CurrentPoint = CalculatePointAtParameterFast(Points, Parameter);
+            DrawDebugLine(World, PreviousPoint, CurrentPoint,
+                DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+            PreviousPoint = CurrentPoint;
+        }
+    }
+
+    if (FMath::IsNearlyZero(TotalLength) || AdjustedProgress <= 0.0f)
+    {
+        return 0.0f;
+    }
+    if (AdjustedProgress >= 1.0f)
+    {
+        return 1.0f;
+    }
+
+    const float TargetDistance = TotalLength * AdjustedProgress;
+    int32 LowerIndex = 1;
+    int32 UpperIndex = Segments;
+    while (LowerIndex < UpperIndex)
+    {
+        const int32 MiddleIndex = LowerIndex + (UpperIndex - LowerIndex) / 2;
+        if ((*CumulativeArcLengths)[MiddleIndex] < TargetDistance)
+        {
+            LowerIndex = MiddleIndex + 1;
+        }
+        else
+        {
+            UpperIndex = MiddleIndex;
+        }
+    }
+
+    const int32 StartIndex = LowerIndex - 1;
+    const float StartDistance = (*CumulativeArcLengths)[StartIndex];
+    const float EndDistance = (*CumulativeArcLengths)[LowerIndex];
+    const float SegmentLength = EndDistance - StartDistance;
+    const float SegmentProgress = SegmentLength > KINDA_SMALL_NUMBER
+        ? (TargetDistance - StartDistance) / SegmentLength
+        : 1.0f;
+    return (static_cast<float>(StartIndex) + SegmentProgress) / Segments;
+}
+
 FVector UXToolsLibrary::EvaluateBezierConstantSpeed(
         UWorld* World,
         const TArray<FVector>& Points,
@@ -440,64 +639,12 @@ FVector UXToolsLibrary::EvaluateBezierConstantSpeed(
         const FBezierSpeedOptions& SpeedOptions,
         TArray<FVector>& WorkPoints)
 {
-    float AdjustedProgress = Progress;
-    if (SpeedOptions.SpeedCurve)
-    {
-        AdjustedProgress = SpeedOptions.SpeedCurve->GetFloatValue(AdjustedProgress);
-    }
-    AdjustedProgress = FMath::Clamp(AdjustedProgress, 0.0f, 1.0f);
-
-    const int32 Segments = 100;
-    TArray<float> SegmentLengths;
-    SegmentLengths.Reserve(Segments);
-    float TotalLength = 0.0f;
-
-    FVector PreviousPoint = CalculatePointAtParameter(Points, 0.0f, WorkPoints);
-    for (int32 Index = 1; Index <= Segments; ++Index)
-    {
-        const float T = static_cast<float>(Index) / Segments;
-        const FVector CurrentPoint = CalculatePointAtParameter(Points, T, WorkPoints);
-        const float SegmentLength = FVector::Distance(PreviousPoint, CurrentPoint);
-        SegmentLengths.Add(SegmentLength);
-        TotalLength += SegmentLength;
-
-        if (bShowDebug)
-        {
-            DrawDebugLine(World, PreviousPoint, CurrentPoint, DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
-        }
-
-        PreviousPoint = CurrentPoint;
-    }
-
-    if (FMath::IsNearlyZero(TotalLength))
-    {
-        return Points[0];
-    }
-
-    const float TargetDistance = TotalLength * AdjustedProgress;
-    float AccumulatedLength = 0.0f;
-    float Parameter = 1.0f;
-
-    for (int32 Index = 0; Index < Segments; ++Index)
-    {
-        const float CurrentSegment = SegmentLengths[Index];
-        if (AccumulatedLength + CurrentSegment >= TargetDistance)
-        {
-            const float ExcessLength = (AccumulatedLength + CurrentSegment) - TargetDistance;
-            const float SegmentProgress = (CurrentSegment > KINDA_SMALL_NUMBER)
-                ? 1.0f - (ExcessLength / CurrentSegment)
-                : 1.0f;
-
-            const float PreviousT = static_cast<float>(Index) / Segments;
-            const float CurrentT = static_cast<float>(Index + 1) / Segments;
-            Parameter = FMath::Lerp(PreviousT, CurrentT, SegmentProgress);
-            break;
-        }
-
-        AccumulatedLength += CurrentSegment;
-    }
-
-    return CalculatePointAtParameter(Points, Parameter, WorkPoints);
+    float MotionProgress = 0.0f;
+    const float Parameter = ResolveBezierParameter(
+        World, Points, Progress, bShowDebug, Duration, DebugColors, SpeedOptions, MotionProgress);
+    return bShowDebug
+        ? CalculatePointAtParameter(Points, Parameter, WorkPoints)
+        : CalculatePointAtParameterFast(Points, Parameter);
 }
 
 void UXToolsLibrary::DrawBezierDebug(
@@ -584,7 +731,9 @@ FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray
     }
     else
     {
-        ResultPoint = CalculatePointAtParameter(Points, Progress, WorkPoints);
+        ResultPoint = bShowDebug
+            ? CalculatePointAtParameter(Points, Progress, WorkPoints)
+            : CalculatePointAtParameterFast(Points, Progress);
     }
 
     if (bShowDebug)
@@ -593,6 +742,245 @@ FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray
     }
 
     return ResultPoint;
+}
+
+TArray<FVector> UXToolsLibrary::BuildBezierMissileControlPoints(
+    FVector StartLocation,
+    FVector StartDirection,
+    FVector TargetLocation,
+    FVector TargetNormal,
+    float StartControlDistance,
+    float TargetControlDistance)
+{
+    FVector StartToTarget = TargetLocation - StartLocation;
+    if (StartToTarget.ContainsNaN() || !StartToTarget.Normalize())
+    {
+        StartToTarget = FVector::ForwardVector;
+    }
+
+    if (StartDirection.ContainsNaN() || !StartDirection.Normalize())
+    {
+        StartDirection = StartToTarget;
+    }
+    if (TargetNormal.ContainsNaN() || !TargetNormal.Normalize())
+    {
+        TargetNormal = -StartToTarget;
+    }
+
+    const float SafeStartDistance = FMath::IsFinite(StartControlDistance)
+        ? FMath::Max(0.0f, StartControlDistance)
+        : 0.0f;
+    const float SafeTargetDistance = FMath::IsFinite(TargetControlDistance)
+        ? FMath::Max(0.0f, TargetControlDistance)
+        : 0.0f;
+
+    return {
+        StartLocation,
+        StartLocation + StartDirection * SafeStartDistance,
+        TargetLocation + TargetNormal * SafeTargetDistance,
+        TargetLocation
+    };
+}
+
+void UXToolsLibrary::ResetBezierMissileTrajectoryState(
+    FBezierRotationFrameState& InOutFrame,
+    FVector InitialUpDirection)
+{
+    InOutFrame.Reset(InitialUpDirection);
+}
+
+void UXToolsLibrary::CalculateBezierMissileTrajectory(
+    const UObject* Context,
+    const TArray<FVector>& Points,
+    float Progress,
+    float ElapsedTime,
+    FBezierRotationFrameState& InOutFrame,
+    FVector& OutPosition,
+    FVector& OutTangent,
+    FRotator& OutRotation,
+    FBezierNoiseOptions NoiseOptions,
+    FBezierSpeedOptions SpeedOptions,
+    bool bShowDebug,
+    float Duration,
+    FBezierDebugColors DebugColors)
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE("XTools - Calculate Bezier Missile Trajectory");
+
+    // 只保留本帧需要的标架字段，避免逐帧复制弧长缓存数组。
+    FBezierRotationFrameState PreviousFrame;
+    PreviousFrame.bInitialized = InOutFrame.bInitialized;
+    PreviousFrame.PreviousCurvePosition = InOutFrame.PreviousCurvePosition;
+    PreviousFrame.PreviousTangent = InOutFrame.PreviousTangent;
+    PreviousFrame.PreviousNormal = InOutFrame.PreviousNormal;
+    PreviousFrame.PreviousOutputPosition = InOutFrame.PreviousOutputPosition;
+
+    UWorld* World = nullptr;
+    if (bShowDebug)
+    {
+        if (GEngine)
+        {
+            World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
+        }
+        if (!World)
+        {
+            UE_LOG(LogXTools, Warning, TEXT("CalculateBezierMissileTrajectory: 无法获取 World，跳过调试绘制"));
+            bShowDebug = false;
+        }
+    }
+
+    TArray<FVector> WorkPoints;
+    float Parameter = FMath::IsFinite(Progress) ? FMath::Clamp(Progress, 0.0f, 1.0f) : 0.0f;
+    float MotionProgress = Parameter;
+    FVector CurvePosition = FVector::ZeroVector;
+    if (Points.Num() >= 2)
+    {
+        Parameter = ResolveBezierParameter(
+            World, Points, Parameter, bShowDebug, Duration, DebugColors, SpeedOptions,
+            MotionProgress, &InOutFrame);
+        CurvePosition = bShowDebug
+            ? CalculatePointAtParameter(Points, Parameter, WorkPoints)
+            : CalculatePointAtParameterFast(Points, Parameter);
+    }
+    else if (Points.Num() == 1)
+    {
+        CurvePosition = Points[0];
+        WorkPoints.Add(Points[0]);
+    }
+
+    FVector Tangent = Points.Num() >= 2
+        ? CalculateDerivativeAtParameter(Points, Parameter).GetSafeNormal()
+        : FVector::ZeroVector;
+    if (Tangent.IsNearlyZero() || Tangent.ContainsNaN())
+    {
+        if (PreviousFrame.bInitialized
+            && !PreviousFrame.PreviousTangent.ContainsNaN()
+            && !PreviousFrame.PreviousTangent.IsNearlyZero())
+        {
+            Tangent = PreviousFrame.PreviousTangent.GetSafeNormal();
+        }
+        else if (Points.Num() >= 2)
+        {
+            const float StartParameter = FMath::Max(0.0f, Parameter - 0.001f);
+            const float EndParameter = FMath::Min(1.0f, Parameter + 0.001f);
+            Tangent = (CalculatePointAtParameterFast(Points, EndParameter)
+                - CalculatePointAtParameterFast(Points, StartParameter)).GetSafeNormal();
+        }
+        if (Tangent.IsNearlyZero() || Tangent.ContainsNaN())
+        {
+            Tangent = FVector::ForwardVector;
+            for (int32 Index = 1; Index < Points.Num(); ++Index)
+            {
+                const FVector ControlDirection = (Points[Index] - Points[Index - 1]).GetSafeNormal();
+                if (!ControlDirection.IsNearlyZero() && !ControlDirection.ContainsNaN())
+                {
+                    Tangent = ControlDirection;
+                    break;
+                }
+            }
+        }
+    }
+
+    const FVector Normal = UpdateBezierRotationMinimizingNormal(
+        PreviousFrame, CurvePosition, Tangent);
+    const FVector Right = FVector::CrossProduct(Normal, Tangent).GetSafeNormal();
+
+    OutPosition = CurvePosition;
+    if (Points.Num() >= 2)
+    {
+        const float Envelope = 4.0f * MotionProgress * (1.0f - MotionProgress);
+        const float SafeElapsedTime = FMath::IsFinite(ElapsedTime) ? ElapsedTime : 0.0f;
+        const float SafeFrequency = FMath::IsFinite(NoiseOptions.Frequency)
+            ? FMath::Max(0.0f, NoiseOptions.Frequency)
+            : 0.0f;
+        const double AmplitudeX = FMath::IsFinite(NoiseOptions.Amplitude.X)
+            ? FMath::Max(0.0, NoiseOptions.Amplitude.X)
+            : 0.0;
+        const double AmplitudeY = FMath::IsFinite(NoiseOptions.Amplitude.Y)
+            ? FMath::Max(0.0, NoiseOptions.Amplitude.Y)
+            : 0.0;
+        const float NoiseTime = SafeFrequency * SafeElapsedTime;
+        const float NoiseX = FMath::PerlinNoise2D(
+            FVector2D(NoiseTime, static_cast<float>(NoiseOptions.SeedX)));
+        const float NoiseY = FMath::PerlinNoise2D(
+            FVector2D(NoiseTime, static_cast<float>(NoiseOptions.SeedY)));
+        OutPosition += Envelope * (Right * (AmplitudeX * NoiseX) + Normal * (AmplitudeY * NoiseY));
+    }
+
+    FVector MovementTangent = Tangent;
+    if (PreviousFrame.bInitialized
+        && !PreviousFrame.PreviousOutputPosition.ContainsNaN())
+    {
+        const FVector CurrentNoiseOffset = OutPosition - CurvePosition;
+        const FVector PreviousNoiseOffset = PreviousFrame.PreviousOutputPosition
+            - PreviousFrame.PreviousCurvePosition;
+        const bool bNoiseAffectsMovement = !CurrentNoiseOffset.IsNearlyZero()
+            || !PreviousNoiseOffset.IsNearlyZero();
+        const FVector MovementDelta = OutPosition - PreviousFrame.PreviousOutputPosition;
+        if (bNoiseAffectsMovement && !MovementDelta.ContainsNaN() && !MovementDelta.IsNearlyZero())
+        {
+            MovementTangent = MovementDelta.GetSafeNormal();
+        }
+    }
+
+    const FVector MovementNormal = MakeStableBezierNormal(MovementTangent, Normal);
+    OutTangent = MovementTangent;
+    OutRotation = FRotationMatrix::MakeFromXZ(MovementTangent, MovementNormal).ToQuat().Rotator();
+    InOutFrame.bInitialized = true;
+    InOutFrame.PreviousCurvePosition = CurvePosition;
+    InOutFrame.PreviousTangent = Tangent;
+    InOutFrame.PreviousNormal = Normal;
+    InOutFrame.PreviousOutputPosition = OutPosition;
+
+    if (bShowDebug)
+    {
+        DrawBezierDebug(World, Points, WorkPoints, DebugColors, Duration, OutPosition);
+        DrawDebugLine(World, CurvePosition, OutPosition,
+            DebugColors.ResultPointColor.ToFColor(true), false, Duration);
+    }
+}
+
+FVector UXToolsLibrary::CalculatePointAtParameterFast(const TArray<FVector>& Points, float Parameter)
+{
+    const int32 PointCount = Points.Num();
+    if (PointCount == 0)
+    {
+        return FVector::ZeroVector;
+    }
+    if (PointCount == 1)
+    {
+        return Points[0];
+    }
+    if (PointCount == 2)
+    {
+        return FMath::Lerp(Points[0], Points[1], Parameter);
+    }
+    if (PointCount == 3)
+    {
+        const FVector P01 = FMath::Lerp(Points[0], Points[1], Parameter);
+        const FVector P12 = FMath::Lerp(Points[1], Points[2], Parameter);
+        return FMath::Lerp(P01, P12, Parameter);
+    }
+    if (PointCount == 4)
+    {
+        const FVector P01 = FMath::Lerp(Points[0], Points[1], Parameter);
+        const FVector P12 = FMath::Lerp(Points[1], Points[2], Parameter);
+        const FVector P23 = FMath::Lerp(Points[2], Points[3], Parameter);
+        const FVector P012 = FMath::Lerp(P01, P12, Parameter);
+        const FVector P123 = FMath::Lerp(P12, P23, Parameter);
+        return FMath::Lerp(P012, P123, Parameter);
+    }
+
+    TArray<FVector, TInlineAllocator<8>> WorkingPoints;
+    WorkingPoints.Append(Points.GetData(), PointCount);
+    for (int32 RemainingPoints = PointCount - 1; RemainingPoints > 0; --RemainingPoints)
+    {
+        for (int32 Index = 0; Index < RemainingPoints; ++Index)
+        {
+            WorkingPoints[Index] = FMath::Lerp(
+                WorkingPoints[Index], WorkingPoints[Index + 1], Parameter);
+        }
+    }
+    return WorkingPoints[0];
 }
 
 FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points, float Parameter, TArray<FVector>& OutWorkPoints)
@@ -660,6 +1048,43 @@ FVector UXToolsLibrary::CalculatePointAtParameter(const TArray<FVector>& Points,
     }
 
     return OutWorkPoints[TotalPoints - 1];
+}
+
+FVector UXToolsLibrary::CalculateDerivativeAtParameter(const TArray<FVector>& Points, float Parameter)
+{
+    const int32 PointCount = Points.Num();
+    if (PointCount < 2)
+    {
+        return FVector::ZeroVector;
+    }
+
+    const float OneMinusParameter = 1.0f - Parameter;
+    if (PointCount == 2)
+    {
+        return Points[1] - Points[0];
+    }
+    if (PointCount == 3)
+    {
+        return 2.0 * (OneMinusParameter * (Points[1] - Points[0])
+            + Parameter * (Points[2] - Points[1]));
+    }
+    if (PointCount == 4)
+    {
+        return 3.0 * (
+            OneMinusParameter * OneMinusParameter * (Points[1] - Points[0])
+            + 2.0 * OneMinusParameter * Parameter * (Points[2] - Points[1])
+            + Parameter * Parameter * (Points[3] - Points[2]));
+    }
+
+    TArray<FVector> DerivativePoints;
+    DerivativePoints.Reserve(PointCount - 1);
+    const double Degree = PointCount - 1;
+    for (int32 Index = 0; Index < PointCount - 1; ++Index)
+    {
+        DerivativePoints.Add(Degree * (Points[Index + 1] - Points[Index]));
+    }
+
+    return CalculatePointAtParameterFast(DerivativePoints, Parameter);
 }
 
 TArray<int32> UXToolsLibrary::TestPRDDistribution(float BaseChance)
