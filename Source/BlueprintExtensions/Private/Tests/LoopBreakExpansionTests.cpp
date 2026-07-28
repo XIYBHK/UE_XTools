@@ -1,0 +1,490 @@
+#include "Misc/AutomationTest.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+#include "K2Nodes/K2Node_ForEachArrayReverse.h"
+#include "K2Nodes/K2Node_ForEachLoopWithDelay.h"
+#include "K2Nodes/K2Node_ForEachSet.h"
+#include "K2Nodes/K2Node_ForLoopWithDelay.h"
+#include "K2Nodes/K2Node_ForLoopWithDelayReverse.h"
+#include "K2Nodes/K2Node_WhileLoopWithDelay.h"
+
+#include "EdGraphSchema_K2.h"
+#include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "GameFramework/Actor.h"
+#include "K2Node_AssignmentStatement.h"
+#include "K2Node_CallFunction.h"
+#include "K2Node_ExecutionSequence.h"
+#include "K2Node_IfThenElse.h"
+#include "K2Node_TemporaryVariable.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "KismetCompiler.h"
+
+namespace
+{
+	class FExpansionTestCompilerContext : public FKismetCompilerContext
+	{
+	public:
+		FExpansionTestCompilerContext(
+			UBlueprint* Blueprint,
+			FCompilerResultsLog& Results,
+			const FKismetCompilerOptions& Options)
+			: FKismetCompilerContext(Blueprint, Results, Options)
+		{
+			Schema = GetMutableDefault<UEdGraphSchema_K2>();
+		}
+	};
+
+	template <typename NodeType>
+	NodeType* AddTestNode(UEdGraph* Graph)
+	{
+		NodeType* Node = NewObject<NodeType>(Graph);
+		Graph->AddNode(Node);
+		Node->CreateNewGuid();
+		Node->AllocateDefaultPins();
+		return Node;
+	}
+
+	UBlueprint* CreateTestBlueprint(const TCHAR* BaseName, UEdGraph*& OutEventGraph)
+	{
+		const FName BlueprintName = MakeUniqueObjectName(GetTransientPackage(), UBlueprint::StaticClass(), FName(BaseName));
+		UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+			AActor::StaticClass(),
+			GetTransientPackage(),
+			BlueprintName,
+			BPTYPE_Normal,
+			UBlueprint::StaticClass(),
+			UBlueprintGeneratedClass::StaticClass(),
+			NAME_None);
+		OutEventGraph = Blueprint ? FBlueprintEditorUtils::FindEventGraph(Blueprint) : nullptr;
+		return Blueprint;
+	}
+
+	bool ConnectBreakFromLoopBody(
+		FAutomationTestBase& Test,
+		UEdGraph* Graph,
+		UEdGraphPin* LoopBodyPin,
+		UEdGraphPin* BreakPin,
+		UK2Node_ExecutionSequence*& OutBodySequence)
+	{
+		OutBodySequence = AddTestNode<UK2Node_ExecutionSequence>(Graph);
+		const UEdGraphSchema* Schema = Graph->GetSchema();
+		return Test.TestTrue(TEXT("连接循环体到测试执行序列"),
+			Schema && Schema->TryCreateConnection(LoopBodyPin, OutBodySequence->GetExecPin()))
+			&& Test.TestTrue(TEXT("连接测试执行序列到 Break"),
+				Schema->TryCreateConnection(OutBodySequence->GetThenPinGivenIndex(0), BreakPin));
+	}
+
+	bool ValidateExpandedBreakTopology(
+		FAutomationTestBase& Test,
+		const TCHAR* Context,
+		UK2Node_ExecutionSequence* BodySequence)
+	{
+		UEdGraphPin* BodyExecPin = BodySequence ? BodySequence->GetExecPin() : nullptr;
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 测试循环体执行引脚"), Context), BodyExecPin)
+			|| !Test.TestEqual(*FString::Printf(TEXT("%s: 循环体只有一个展开来源"), Context), BodyExecPin->LinkedTo.Num(), 1))
+		{
+			return false;
+		}
+
+		UK2Node_ExecutionSequence* ExpandedLoopSequence =
+			Cast<UK2Node_ExecutionSequence>(BodyExecPin->LinkedTo[0]->GetOwningNode());
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 找到展开后的循环执行序列"), Context), ExpandedLoopSequence))
+		{
+			return false;
+		}
+
+		UEdGraphPin* BreakSourcePin = BodySequence->GetThenPinGivenIndex(0);
+		if (!Test.TestEqual(*FString::Printf(TEXT("%s: Break 只有一个赋值目标"), Context), BreakSourcePin->LinkedTo.Num(), 1))
+		{
+			return false;
+		}
+
+		UK2Node_AssignmentStatement* BreakAssignment =
+			Cast<UK2Node_AssignmentStatement>(BreakSourcePin->LinkedTo[0]->GetOwningNode());
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: Break 展开为计数器赋值"), Context), BreakAssignment))
+		{
+			return false;
+		}
+
+		Test.TestEqual(*FString::Printf(TEXT("%s: Break 赋值不直接触发 Completed"), Context),
+			BreakAssignment->GetThenPin()->LinkedTo.Num(), 0);
+
+		UEdGraphPin* ContinuationPin = ExpandedLoopSequence->GetThenPinGivenIndex(1);
+		if (!Test.TestEqual(*FString::Printf(TEXT("%s: 循环体后只有一个条件出口"), Context), ContinuationPin->LinkedTo.Num(), 1))
+		{
+			return false;
+		}
+
+		UK2Node_IfThenElse* PostBodyBranch = Cast<UK2Node_IfThenElse>(ContinuationPin->LinkedTo[0]->GetOwningNode());
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 循环体后重新检查循环条件"), Context), PostBodyBranch))
+		{
+			return false;
+		}
+
+		UEdGraphPin* CompletedExecPin = PostBodyBranch->GetElsePin()->LinkedTo.Num() == 1
+			? PostBodyBranch->GetElsePin()->LinkedTo[0]
+			: nullptr;
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 条件失效进入完成路径"), Context), CompletedExecPin))
+		{
+			return false;
+		}
+
+		Test.TestEqual(*FString::Printf(TEXT("%s: 自然结束与 Break 汇入同一完成入口"), Context),
+			CompletedExecPin->LinkedTo.Num(), 2);
+		return true;
+	}
+
+	bool ValidateSingleFlightGuard(
+		FAutomationTestBase& Test,
+		const TCHAR* Context,
+		UEdGraph* Graph)
+	{
+		UK2Node_IfThenElse* EntryBranch = nullptr;
+		UK2Node_AssignmentStatement* StartRunning = nullptr;
+
+		for (UEdGraphNode* GraphNode : Graph->Nodes)
+		{
+			UK2Node_IfThenElse* CandidateBranch = Cast<UK2Node_IfThenElse>(GraphNode);
+			if (!CandidateBranch
+				|| CandidateBranch->GetThenPin()->LinkedTo.Num() != 0
+				|| CandidateBranch->GetElsePin()->LinkedTo.Num() != 1)
+			{
+				continue;
+			}
+
+			UK2Node_AssignmentStatement* CandidateStart =
+				Cast<UK2Node_AssignmentStatement>(CandidateBranch->GetElsePin()->LinkedTo[0]->GetOwningNode());
+			if (CandidateStart && CandidateStart->GetValuePin()->DefaultValue == TEXT("true"))
+			{
+				EntryBranch = CandidateBranch;
+				StartRunning = CandidateStart;
+				break;
+			}
+		}
+
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 找到单实例入口守卫"), Context), EntryBranch)
+			|| !Test.TestNotNull(*FString::Printf(TEXT("%s: 首次进入时设置运行标记"), Context), StartRunning))
+		{
+			return false;
+		}
+
+		UEdGraphPin* RunningFlagPin = EntryBranch->GetConditionPin()->LinkedTo.Num() == 1
+			? EntryBranch->GetConditionPin()->LinkedTo[0]
+			: nullptr;
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 守卫读取共享运行标记"), Context), RunningFlagPin))
+		{
+			return false;
+		}
+
+		UK2Node_AssignmentStatement* FinishRunning = nullptr;
+		for (UEdGraphPin* LinkedPin : RunningFlagPin->LinkedTo)
+		{
+			UK2Node_AssignmentStatement* Assignment =
+				Cast<UK2Node_AssignmentStatement>(LinkedPin->GetOwningNode());
+			if (Assignment && Assignment->GetVariablePin() == LinkedPin
+				&& Assignment->GetValuePin()->DefaultValue == TEXT("false")
+				&& Assignment->GetExecPin()->LinkedTo.Num() > 0)
+			{
+				FinishRunning = Assignment;
+				break;
+			}
+		}
+
+		return Test.TestNotNull(*FString::Printf(TEXT("%s: Completed前释放运行标记"), Context), FinishRunning);
+	}
+
+	bool ValidateZeroDelayBypass(
+		FAutomationTestBase& Test,
+		const TCHAR* Context,
+		UEdGraph* Graph)
+	{
+		UK2Node_CallFunction* DelayNode = nullptr;
+		UK2Node_CallFunction* DelayLessEqualZero = nullptr;
+
+		for (UEdGraphNode* GraphNode : Graph->Nodes)
+		{
+			UK2Node_CallFunction* CallFunction = Cast<UK2Node_CallFunction>(GraphNode);
+			if (!CallFunction)
+			{
+				continue;
+			}
+
+			if (CallFunction->GetFunctionName() == GET_FUNCTION_NAME_CHECKED(UKismetSystemLibrary, Delay))
+			{
+				DelayNode = CallFunction;
+			}
+			else if (CallFunction->GetFunctionName() == GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_DoubleDouble))
+			{
+				DelayLessEqualZero = CallFunction;
+			}
+		}
+
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 找到正延迟节点"), Context), DelayNode)
+			|| !Test.TestNotNull(*FString::Printf(TEXT("%s: 找到零延迟判定"), Context), DelayLessEqualZero))
+		{
+			return false;
+		}
+
+		UEdGraphPin* CompareToZeroPin = DelayLessEqualZero->FindPin(TEXT("B"), EGPD_Input);
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 零延迟比较引脚"), Context), CompareToZeroPin))
+		{
+			return false;
+		}
+		Test.TestEqual(*FString::Printf(TEXT("%s: Delay与0比较"), Context), CompareToZeroPin->DefaultValue, FString(TEXT("0.0")));
+
+		UEdGraphPin* ComparisonResultPin = DelayLessEqualZero->GetReturnValuePin();
+		UK2Node_IfThenElse* DelayBranch = ComparisonResultPin->LinkedTo.Num() == 1
+			? Cast<UK2Node_IfThenElse>(ComparisonResultPin->LinkedTo[0]->GetOwningNode())
+			: nullptr;
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s: 找到延迟分支"), Context), DelayBranch))
+		{
+			return false;
+		}
+
+		const bool bPositiveDelayUsesLatent = DelayBranch->GetElsePin()->LinkedTo.Num() == 1
+			&& DelayBranch->GetElsePin()->LinkedTo[0] == DelayNode->GetExecPin();
+		const bool bZeroDelayBypassesLatent = DelayBranch->GetThenPin()->LinkedTo.Num() == 1
+			&& DelayBranch->GetThenPin()->LinkedTo[0] != DelayNode->GetExecPin();
+
+		return Test.TestTrue(*FString::Printf(TEXT("%s: Delay>0才进入Latent"), Context), bPositiveDelayUsesLatent)
+			&& Test.TestTrue(*FString::Printf(TEXT("%s: Delay<=0同步继续"), Context), bZeroDelayBypassesLatent);
+	}
+
+	bool ValidateWhileBreakTopology(
+		FAutomationTestBase& Test,
+		UK2Node_ExecutionSequence* BodySequence)
+	{
+		UEdGraphPin* BodyExecPin = BodySequence ? BodySequence->GetExecPin() : nullptr;
+		if (!Test.TestNotNull(TEXT("While: 测试循环体执行引脚"), BodyExecPin)
+			|| !Test.TestEqual(TEXT("While: 循环体只有一个展开来源"), BodyExecPin->LinkedTo.Num(), 1))
+		{
+			return false;
+		}
+
+		UK2Node_ExecutionSequence* ExpandedLoopSequence =
+			Cast<UK2Node_ExecutionSequence>(BodyExecPin->LinkedTo[0]->GetOwningNode());
+		if (!Test.TestNotNull(TEXT("While: 找到展开后的循环执行序列"), ExpandedLoopSequence))
+		{
+			return false;
+		}
+
+		UEdGraphPin* BreakSourcePin = BodySequence->GetThenPinGivenIndex(0);
+		if (!Test.TestEqual(TEXT("While: Break只有一个赋值目标"), BreakSourcePin->LinkedTo.Num(), 1))
+		{
+			return false;
+		}
+
+		UK2Node_AssignmentStatement* BreakAssignment =
+			Cast<UK2Node_AssignmentStatement>(BreakSourcePin->LinkedTo[0]->GetOwningNode());
+		if (!Test.TestNotNull(TEXT("While: Break展开为标记赋值"), BreakAssignment))
+		{
+			return false;
+		}
+		Test.TestEqual(TEXT("While: Break赋值不直接触发Completed"), BreakAssignment->GetThenPin()->LinkedTo.Num(), 0);
+
+		UEdGraphPin* ContinuationPin = ExpandedLoopSequence->GetThenPinGivenIndex(1);
+		UK2Node_IfThenElse* PostBodyBreakGate = ContinuationPin->LinkedTo.Num() == 1
+			? Cast<UK2Node_IfThenElse>(ContinuationPin->LinkedTo[0]->GetOwningNode())
+			: nullptr;
+		if (!Test.TestNotNull(TEXT("While: 循环体后检查Break标记"), PostBodyBreakGate))
+		{
+			return false;
+		}
+
+		UEdGraphPin* CompleteExecPin = PostBodyBreakGate->GetThenPin()->LinkedTo.Num() == 1
+			? PostBodyBreakGate->GetThenPin()->LinkedTo[0]
+			: nullptr;
+		if (!Test.TestNotNull(TEXT("While: Break进入统一完成路径"), CompleteExecPin))
+		{
+			return false;
+		}
+
+		Test.TestEqual(TEXT("While: 自然结束与两个Break边界共用完成入口"), CompleteExecPin->LinkedTo.Num(), 3);
+		Test.TestEqual(TEXT("While: 未Break时才进入延迟判定"), PostBodyBreakGate->GetElsePin()->LinkedTo.Num(), 1);
+		return true;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FLoopBreakExpansionTest,
+	"XTools.BlueprintExtensions.LoopBreakExpansion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLoopBreakExpansionTest::RunTest(const FString& Parameters)
+{
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopBreakDelayTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建延迟循环测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取延迟循环事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForLoopWithDelay* LoopNode = AddTestNode<UK2Node_ForLoopWithDelay>(EventGraph);
+		UK2Node_ExecutionSequence* BodySequence = nullptr;
+		if (!ConnectBreakFromLoopBody(*this, EventGraph, LoopNode->GetLoopBodyPin(), LoopNode->GetBreakPin(), BodySequence))
+		{
+			return false;
+		}
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("延迟循环展开无编译错误"), Results.NumErrors, 0);
+		ValidateExpandedBreakTopology(*this, TEXT("延迟 ForLoop"), BodySequence);
+		ValidateSingleFlightGuard(*this, TEXT("延迟 ForLoop"), EventGraph);
+		ValidateZeroDelayBypass(*this, TEXT("延迟 ForLoop"), EventGraph);
+	}
+
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopZeroDelayReverseTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建倒序延迟循环测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取倒序延迟循环事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForLoopWithDelayReverse* LoopNode = AddTestNode<UK2Node_ForLoopWithDelayReverse>(EventGraph);
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("倒序延迟循环展开无编译错误"), Results.NumErrors, 0);
+		ValidateZeroDelayBypass(*this, TEXT("延迟倒序 ForLoop"), EventGraph);
+	}
+
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopBreakWhileTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建延迟While测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取延迟While事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_WhileLoopWithDelay* LoopNode = AddTestNode<UK2Node_WhileLoopWithDelay>(EventGraph);
+		UK2Node_ExecutionSequence* BodySequence = nullptr;
+		if (!ConnectBreakFromLoopBody(*this, EventGraph, LoopNode->GetLoopBodyPin(), LoopNode->GetBreakPin(), BodySequence))
+		{
+			return false;
+		}
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("延迟While展开无编译错误"), Results.NumErrors, 0);
+		ValidateWhileBreakTopology(*this, BodySequence);
+		ValidateSingleFlightGuard(*this, TEXT("延迟 While"), EventGraph);
+		ValidateZeroDelayBypass(*this, TEXT("延迟 While"), EventGraph);
+	}
+
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopZeroDelayForEachTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建延迟 ForEach 测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取延迟 ForEach 事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForEachLoopWithDelay* LoopNode = AddTestNode<UK2Node_ForEachLoopWithDelay>(EventGraph);
+		UK2Node_TemporaryVariable* ArraySource = AddTestNode<UK2Node_TemporaryVariable>(EventGraph);
+		ArraySource->VariableType.PinCategory = UEdGraphSchema_K2::PC_Int;
+		ArraySource->VariableType.ContainerType = EPinContainerType::Array;
+		ArraySource->ReconstructNode();
+		const UEdGraphSchema* Schema = EventGraph->GetSchema();
+		if (!TestTrue(TEXT("连接延迟 ForEach 测试数组"),
+			Schema && Schema->TryCreateConnection(ArraySource->GetVariablePin(), LoopNode->GetArrayPin())))
+		{
+			return false;
+		}
+		LoopNode->NotifyPinConnectionListChanged(LoopNode->GetArrayPin());
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("延迟 ForEach 展开无编译错误"), Results.NumErrors, 0);
+		ValidateZeroDelayBypass(*this, TEXT("延迟 ForEach"), EventGraph);
+	}
+
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopZeroDelayForEachReverseTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建倒序延迟 ForEach 测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取倒序延迟 ForEach 事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForEachArrayReverse* LoopNode = AddTestNode<UK2Node_ForEachArrayReverse>(EventGraph);
+		UK2Node_TemporaryVariable* ArraySource = AddTestNode<UK2Node_TemporaryVariable>(EventGraph);
+		ArraySource->VariableType.PinCategory = UEdGraphSchema_K2::PC_Int;
+		ArraySource->VariableType.ContainerType = EPinContainerType::Array;
+		ArraySource->ReconstructNode();
+		const UEdGraphSchema* Schema = EventGraph->GetSchema();
+		if (!TestTrue(TEXT("连接倒序延迟 ForEach 测试数组"),
+			Schema && Schema->TryCreateConnection(ArraySource->GetVariablePin(), LoopNode->GetArrayPin())))
+		{
+			return false;
+		}
+		LoopNode->NotifyPinConnectionListChanged(LoopNode->GetArrayPin());
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("倒序延迟 ForEach 展开无编译错误"), Results.NumErrors, 0);
+		ValidateZeroDelayBypass(*this, TEXT("倒序延迟 ForEach"), EventGraph);
+	}
+
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopBreakSetTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建 Set 循环测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取 Set 循环事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForEachSet* LoopNode = AddTestNode<UK2Node_ForEachSet>(EventGraph);
+		UK2Node_TemporaryVariable* SetSource = AddTestNode<UK2Node_TemporaryVariable>(EventGraph);
+		SetSource->VariableType.PinCategory = UEdGraphSchema_K2::PC_Int;
+		SetSource->VariableType.ContainerType = EPinContainerType::Set;
+		SetSource->ReconstructNode();
+
+		const UEdGraphSchema* Schema = EventGraph->GetSchema();
+		if (!TestTrue(TEXT("连接 Set 测试输入"),
+			Schema && Schema->TryCreateConnection(SetSource->GetVariablePin(), LoopNode->GetSetPin())))
+		{
+			return false;
+		}
+		LoopNode->NotifyPinConnectionListChanged(LoopNode->GetSetPin());
+
+		UK2Node_ExecutionSequence* BodySequence = nullptr;
+		if (!ConnectBreakFromLoopBody(*this, EventGraph, LoopNode->GetLoopBodyPin(), LoopNode->GetBreakPin(), BodySequence))
+		{
+			return false;
+		}
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("Set 循环展开无编译错误"), Results.NumErrors, 0);
+		ValidateExpandedBreakTopology(*this, TEXT("ForEach Set"), BodySequence);
+	}
+
+	return !HasAnyErrors();
+}
+
+#endif

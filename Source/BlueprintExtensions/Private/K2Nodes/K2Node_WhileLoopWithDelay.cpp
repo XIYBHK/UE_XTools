@@ -13,6 +13,7 @@
 #include "K2Node_IfThenElse.h"
 #include "K2Node_TemporaryVariable.h"
 
+#include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 
 #define LOCTEXT_NAMESPACE "XTools_K2Node_WhileLoopWithDelay"
@@ -41,7 +42,7 @@ FText UK2Node_WhileLoopWithDelay::GetTooltipText() const
 {
 	return LOCTEXT(
 		"TooltipText",
-		"条件为True时循环执行\n\n- 每次执行循环体后等待Delay秒，再重新检查Condition\n- Delay为0或负数时也会通过Latent流程到下一次更新，避免同帧无限循环\n- 支持Break中断循环\n- 只能放在事件图中，不能放在蓝图函数或宏图中");
+		"Condition为True时按间隔启动循环体\n\n- Delay为0或负数时在当前帧同步继续\n- 零延迟且Condition持续为True可能触发无限循环保护\n- 支持Break中断循环\n- 运行期间再次触发同一节点会被忽略\n- 不会等待循环体中的Latent或异步节点完成");
 }
 
 FText UK2Node_WhileLoopWithDelay::GetKeywords() const
@@ -66,7 +67,7 @@ FSlateIcon UK2Node_WhileLoopWithDelay::GetIconAndTint(FLinearColor& OutColor) co
 
 void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
-	if (!K2NodeHelpers::IsLatentGraphCompatible(SourceGraph))
+	if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this, SourceGraph))
 	{
 		CompilerContext.MessageLog.Error(
 			*LOCTEXT("LatentGraphOnly", "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中").ToString(),
@@ -84,6 +85,9 @@ void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerCont
 		return;
 	}
 
+	const K2NodeHelpers::FSingleFlightExecutionGuard ExecutionGuard =
+		K2NodeHelpers::CreateSingleFlightExecutionGuard(CompilerContext, this, SourceGraph);
+
 	UK2Node_TemporaryVariable* BreakFlagNode = CompilerContext.SpawnIntermediateNode<UK2Node_TemporaryVariable>(this, SourceGraph);
 	BreakFlagNode->VariableType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
 	BreakFlagNode->AllocateDefaultPins();
@@ -93,6 +97,7 @@ void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerCont
 	InitBreakFlag->AllocateDefaultPins();
 	InitBreakFlag->GetValuePin()->DefaultValue = TEXT("false");
 	K2NodeHelpers::TryConnect(CompilerContext, BreakFlagPin, InitBreakFlag->GetVariablePin());
+	K2NodeHelpers::TryConnect(CompilerContext, ExecutionGuard.StartThenPin, InitBreakFlag->GetExecPin());
 
 	UK2Node_IfThenElse* ConditionBranch = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
 	ConditionBranch->AllocateDefaultPins();
@@ -102,10 +107,28 @@ void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerCont
 	LoopSequence->AllocateDefaultPins();
 	K2NodeHelpers::TryConnect(CompilerContext, ConditionBranch->GetThenPin(), LoopSequence->GetExecPin());
 
+	UK2Node_IfThenElse* PostBodyBreakGate = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
+	PostBodyBreakGate->AllocateDefaultPins();
+	K2NodeHelpers::TryConnect(CompilerContext, LoopSequence->GetThenPinGivenIndex(1), PostBodyBreakGate->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, BreakFlagPin, PostBodyBreakGate->GetConditionPin());
+
 	UK2Node_CallFunction* DelayNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	DelayNode->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UKismetSystemLibrary, Delay)));
 	DelayNode->AllocateDefaultPins();
-	K2NodeHelpers::TryConnect(CompilerContext, LoopSequence->GetThenPinGivenIndex(1), DelayNode->GetExecPin());
+
+	UK2Node_CallFunction* DelayLessEqualZero = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+	DelayLessEqualZero->SetFromFunction(
+		UKismetMathLibrary::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_DoubleDouble)));
+	DelayLessEqualZero->AllocateDefaultPins();
+	DelayLessEqualZero->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("0.0");
+
+	UK2Node_IfThenElse* DelayBranch = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
+	DelayBranch->AllocateDefaultPins();
+	K2NodeHelpers::TryConnect(CompilerContext, PostBodyBreakGate->GetElsePin(), DelayBranch->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, DelayLessEqualZero->GetReturnValuePin(), DelayBranch->GetConditionPin());
+	K2NodeHelpers::TryConnect(CompilerContext, DelayBranch->GetThenPin(), ConditionBranch->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, DelayBranch->GetElsePin(), DelayNode->GetExecPin());
 
 	UK2Node_IfThenElse* BreakGate = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
 	BreakGate->AllocateDefaultPins();
@@ -116,19 +139,22 @@ void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerCont
 	UK2Node_ExecutionSequence* CompleteSequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
 	CompleteSequence->AllocateDefaultPins();
 	K2NodeHelpers::TryConnect(CompilerContext, ConditionBranch->GetElsePin(), CompleteSequence->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, PostBodyBreakGate->GetThenPin(), CompleteSequence->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, BreakGate->GetThenPin(), CompleteSequence->GetExecPin());
+	K2NodeHelpers::TryConnect(CompilerContext, CompleteSequence->GetThenPinGivenIndex(0), ExecutionGuard.FinishExecPin);
 
 	UK2Node_AssignmentStatement* BreakFlagAssign = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
 	BreakFlagAssign->AllocateDefaultPins();
 	BreakFlagAssign->GetValuePin()->DefaultValue = TEXT("true");
 	K2NodeHelpers::TryConnect(CompilerContext, BreakFlagPin, BreakFlagAssign->GetVariablePin());
-	K2NodeHelpers::TryConnect(CompilerContext, BreakFlagAssign->GetThenPin(), CompleteSequence->GetExecPin());
 
-	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *InitBreakFlag->GetExecPin());
+	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *ExecutionGuard.EntryExecPin);
 	CompilerContext.MovePinLinksToIntermediate(*GetBreakPin(), *BreakFlagAssign->GetExecPin());
 	CompilerContext.MovePinLinksToIntermediate(*GetConditionPin(), *ConditionBranch->GetConditionPin());
+	CompilerContext.CopyPinLinksToIntermediate(*GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
 	CompilerContext.MovePinLinksToIntermediate(*GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
 	CompilerContext.MovePinLinksToIntermediate(*GetLoopBodyPin(), *LoopSequence->GetThenPinGivenIndex(0));
-	CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(), *CompleteSequence->GetThenPinGivenIndex(0));
+	CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(), *ExecutionGuard.FinishThenPin);
 
 	K2NodeHelpers::EndExpandNode(this);
 }
@@ -168,13 +194,13 @@ void UK2Node_WhileLoopWithDelay::AllocateDefaultPins()
 
 	UEdGraphPin* DelayPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Real, UEdGraphSchema_K2::PC_Float, DelayPinName);
 	DelayPin->DefaultValue = TEXT("0.1");
-	DelayPin->PinToolTip = LOCTEXT("DelayTooltip", "每次循环体执行后的等待时间，单位为秒。0或负数也会通过Latent流程进入下一次更新").ToString();
+	DelayPin->PinToolTip = LOCTEXT("DelayTooltip", "每次循环体执行后的等待时间，单位为秒。0或负数表示在当前帧同步继续").ToString();
 
 	UEdGraphPin* LoopBodyPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, LoopBodyPinName);
-	LoopBodyPin->PinToolTip = LOCTEXT("LoopBodyTooltip", "循环体：Condition为True时执行").ToString();
+	LoopBodyPin->PinToolTip = LOCTEXT("LoopBodyTooltip", "循环体：Condition为True时启动；不会等待其中的Latent或异步节点完成").ToString();
 
 	UEdGraphPin* BreakPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, BreakPinName);
-	BreakPin->PinToolTip = LOCTEXT("BreakTooltip", "中断循环并立即执行Completed").ToString();
+	BreakPin->PinToolTip = LOCTEXT("BreakTooltip", "在当前循环边界中断并执行Completed").ToString();
 
 	UEdGraphPin* CompletedPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 	CompletedPin->PinFriendlyName = LOCTEXT("CompletedPinName", "Completed");

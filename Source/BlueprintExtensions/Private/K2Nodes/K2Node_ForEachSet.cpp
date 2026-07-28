@@ -174,12 +174,18 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
     UK2Node_ExecutionSequence* CompleteSequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
     CompleteSequence->AllocateDefaultPins();
     K2NodeHelpers::TryConnect(CompilerContext, Branch->GetElsePin(), CompleteSequence->GetExecPin());
-    K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetThenPin(), CompleteSequence->GetExecPin());
 
     // 8. 创建执行序列（循环体 -> 递增）
     UK2Node_ExecutionSequence* Sequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
     Sequence->AllocateDefaultPins();
     K2NodeHelpers::TryConnect(CompilerContext, Sequence->GetExecPin(), Branch->GetThenPin());
+
+    // 循环体返回后重检条件；Break 写入越界哨兵后在此进入唯一的完成路径。
+    UK2Node_IfThenElse* PostBodyBranch = CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
+    PostBodyBranch->AllocateDefaultPins();
+    K2NodeHelpers::TryConnect(CompilerContext, Sequence->GetThenPinGivenIndex(1), PostBodyBranch->GetExecPin());
+    K2NodeHelpers::TryConnect(CompilerContext, Condition->GetReturnValuePin(), PostBodyBranch->GetConditionPin());
+    K2NodeHelpers::TryConnect(CompilerContext, PostBodyBranch->GetElsePin(), CompleteSequence->GetExecPin());
 
     // 9. 创建递增节点
     UK2Node_CallFunction* Increment = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -191,7 +197,7 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
     // 10. 创建赋值节点（递增后的值）
     UK2Node_AssignmentStatement* LoopCounterAssign = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
     LoopCounterAssign->AllocateDefaultPins();
-    K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetExecPin(), Sequence->GetThenPinGivenIndex(1));
+    K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetExecPin(), PostBodyBranch->GetThenPin());
     K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetVariablePin(), LoopCounterPin);
     K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetValuePin(), Increment->GetReturnValuePin());
     K2NodeHelpers::TryConnect(CompilerContext, LoopCounterAssign->GetThenPin(), Branch->GetExecPin());  // 循环回到分支

@@ -13,6 +13,9 @@
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintNodeSpawner.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "K2Node_AssignmentStatement.h"
+#include "K2Node_IfThenElse.h"
+#include "K2Node_TemporaryVariable.h"
 
 /**
  * K2Node 辅助函数命名空间
@@ -98,6 +101,55 @@ namespace K2NodeHelpers
 		{
 			Node->BreakAllNodeLinks();
 		}
+	}
+
+	struct FSingleFlightExecutionGuard
+	{
+		UEdGraphPin* EntryExecPin = nullptr;
+		UEdGraphPin* StartThenPin = nullptr;
+		UEdGraphPin* FinishExecPin = nullptr;
+		UEdGraphPin* FinishThenPin = nullptr;
+	};
+
+	/**
+	 * 为事件图 Latent 节点创建单实例运行守卫。
+	 * 同一节点运行期间的重复入口会被忽略，避免共享事件图临时变量与固定 Latent UUID 相互覆盖。
+	 */
+	FORCEINLINE FSingleFlightExecutionGuard CreateSingleFlightExecutionGuard(
+		FKismetCompilerContext& CompilerContext,
+		UK2Node* SourceNode,
+		UEdGraph* SourceGraph)
+	{
+		UK2Node_TemporaryVariable* RunningFlag =
+			CompilerContext.SpawnIntermediateNode<UK2Node_TemporaryVariable>(SourceNode, SourceGraph);
+		RunningFlag->VariableType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+		RunningFlag->AllocateDefaultPins();
+		UEdGraphPin* RunningFlagPin = RunningFlag->GetVariablePin();
+
+		UK2Node_IfThenElse* EntryBranch =
+			CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(SourceNode, SourceGraph);
+		EntryBranch->AllocateDefaultPins();
+		TryConnect(CompilerContext, RunningFlagPin, EntryBranch->GetConditionPin());
+
+		UK2Node_AssignmentStatement* StartRunning =
+			CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(SourceNode, SourceGraph);
+		StartRunning->AllocateDefaultPins();
+		StartRunning->GetValuePin()->DefaultValue = TEXT("true");
+		TryConnect(CompilerContext, EntryBranch->GetElsePin(), StartRunning->GetExecPin());
+		TryConnect(CompilerContext, RunningFlagPin, StartRunning->GetVariablePin());
+
+		UK2Node_AssignmentStatement* FinishRunning =
+			CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(SourceNode, SourceGraph);
+		FinishRunning->AllocateDefaultPins();
+		FinishRunning->GetValuePin()->DefaultValue = TEXT("false");
+		TryConnect(CompilerContext, RunningFlagPin, FinishRunning->GetVariablePin());
+
+		return {
+			EntryBranch->GetExecPin(),
+			StartRunning->GetThenPin(),
+			FinishRunning->GetExecPin(),
+			FinishRunning->GetThenPin()
+		};
 	}
 
 	/**
@@ -187,6 +239,22 @@ namespace K2NodeHelpers
 
 		const EGraphType GraphType = TargetGraph->GetSchema()->GetGraphType(TargetGraph);
 		return GraphType == EGraphType::GT_Ubergraph;
+	}
+
+	/**
+	 * 编译阶段按原始节点所属图检查 Latent 兼容性。
+	 * 事件图会先被克隆到临时 ConsolidatedEventGraph，直接判断编译图会被误识别为函数图。
+	 */
+	FORCEINLINE bool IsLatentNodeGraphCompatible(
+		const FKismetCompilerContext& CompilerContext,
+		const UK2Node* Node,
+		const UEdGraph* CompiledGraph)
+	{
+		const UK2Node* SourceNode = Node
+			? Cast<UK2Node>(CompilerContext.MessageLog.FindSourceObject(Node))
+			: nullptr;
+		const UEdGraph* AuthoredGraph = SourceNode ? SourceNode->GetGraph() : CompiledGraph;
+		return IsLatentGraphCompatible(AuthoredGraph);
 	}
 
 	/**

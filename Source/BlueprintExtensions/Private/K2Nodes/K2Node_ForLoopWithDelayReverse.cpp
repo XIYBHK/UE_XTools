@@ -56,9 +56,9 @@ FText UK2Node_ForLoopWithDelayReverse::GetCompactNodeTitle() const {
 
 FText UK2Node_ForLoopWithDelayReverse::GetTooltipText() const {
   return LOCTEXT("TooltipText",
-                 "从 LastIndex 递减到 FirstIndex 循环执行\n\n- "
-                 "支持延迟：每次迭代之间可设置等待时间\n- 支持Break中断循环\n- "
-                 "适用于需要倒序计数的场景");
+                 "从 LastIndex 递减到 FirstIndex 按间隔启动循环体\n\n- "
+                 "支持Break中断循环\n- 运行期间再次触发同一节点会被忽略\n- "
+                 "不会等待循环体中的Latent或异步节点完成");
 }
 
 FText UK2Node_ForLoopWithDelayReverse::GetKeywords() const {
@@ -87,7 +87,8 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
   // 【参考 K2Node_ForLoopWithDelay 实现模式，修改为倒序】
   // 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
-  if (!K2NodeHelpers::IsLatentGraphCompatible(SourceGraph)) {
+  if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this,
+                                                   SourceGraph)) {
     CompilerContext.MessageLog.Error(
         *LOCTEXT("LatentGraphOnly",
                  "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
@@ -105,6 +106,10 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
     return;
   }
 
+  const K2NodeHelpers::FSingleFlightExecutionGuard ExecutionGuard =
+      K2NodeHelpers::CreateSingleFlightExecutionGuard(CompilerContext, this,
+                                                       SourceGraph);
+
   // 1. 创建循环计数器临时变量
   UK2Node_TemporaryVariable *LoopCounterNode =
       CompilerContext.SpawnIntermediateNode<UK2Node_TemporaryVariable>(
@@ -120,6 +125,8 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
   LoopCounterInit->AllocateDefaultPins();
   K2NodeHelpers::TryConnect(CompilerContext, 
       LoopCounterPin, LoopCounterInit->GetVariablePin());
+  K2NodeHelpers::TryConnect(CompilerContext, ExecutionGuard.StartThenPin,
+                            LoopCounterInit->GetExecPin());
 
   // 3. 创建分支节点
   UK2Node_IfThenElse *Branch =
@@ -172,8 +179,6 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
       CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this,
                                                                 SourceGraph);
   DelayBranch->AllocateDefaultPins();
-  K2NodeHelpers::TryConnect(CompilerContext, 
-      Sequence->GetThenPinGivenIndex(1), DelayBranch->GetExecPin());
   K2NodeHelpers::TryConnect(CompilerContext, 
       DelayLessEqualZero->GetReturnValuePin(), DelayBranch->GetConditionPin());
   DelayLessEqualZero->FindPinChecked(TEXT("B"))->DefaultValue = TEXT("0.0");
@@ -246,12 +251,28 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
   CompleteSequence->AllocateDefaultPins();
   K2NodeHelpers::TryConnect(CompilerContext, Branch->GetElsePin(),
                             CompleteSequence->GetExecPin());
-  K2NodeHelpers::TryConnect(CompilerContext, LoopCounterBreak->GetThenPin(),
+
+  // 循环体返回后重检条件；Break 写入越界哨兵后在此进入唯一的完成路径。
+  UK2Node_IfThenElse *PostBodyBranch =
+      CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this,
+                                                                SourceGraph);
+  PostBodyBranch->AllocateDefaultPins();
+  K2NodeHelpers::TryConnect(CompilerContext,
+                            Sequence->GetThenPinGivenIndex(1),
+                            PostBodyBranch->GetExecPin());
+  K2NodeHelpers::TryConnect(CompilerContext, Condition->GetReturnValuePin(),
+                            PostBodyBranch->GetConditionPin());
+  K2NodeHelpers::TryConnect(CompilerContext, PostBodyBranch->GetThenPin(),
+                            DelayBranch->GetExecPin());
+  K2NodeHelpers::TryConnect(CompilerContext, PostBodyBranch->GetElsePin(),
                             CompleteSequence->GetExecPin());
+  K2NodeHelpers::TryConnect(CompilerContext,
+                            CompleteSequence->GetThenPinGivenIndex(0),
+                            ExecutionGuard.FinishExecPin);
 
   // 10. 最后统一移动所有外部连接（参考智能排序模式）
   CompilerContext.MovePinLinksToIntermediate(*GetExecPin(),
-                                             *LoopCounterInit->GetExecPin());
+                                             *ExecutionGuard.EntryExecPin);
   CompilerContext.MovePinLinksToIntermediate(
       *GetLastIndexPin(),
       *LoopCounterInit->GetValuePin()); // 倒序：从 LastIndex 开始
@@ -267,7 +288,7 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
   CompilerContext.MovePinLinksToIntermediate(
       *GetLoopBodyPin(), *Sequence->GetThenPinGivenIndex(0));
   CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(),
-                                             *CompleteSequence->GetThenPinGivenIndex(0));
+                                             *ExecutionGuard.FinishThenPin);
   CompilerContext.MovePinLinksToIntermediate(*GetIndexPin(), *LoopCounterPin);
 
   // Break 引脚连接到专门的 Break 赋值节点
@@ -342,7 +363,7 @@ void UK2Node_ForLoopWithDelayReverse::AllocateDefaultPins() {
   UEdGraphPin *LoopBodyPin =
       CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, LoopBodyPinName);
   LoopBodyPin->PinToolTip =
-      LOCTEXT("LoopBodyTooltip", "循环体：每次迭代时执行").ToString();
+      LOCTEXT("LoopBodyTooltip", "循环体：每次迭代时启动；不会等待其中的Latent或异步节点完成").ToString();
 
   // Index 输出
   UEdGraphPin *IndexPin =
