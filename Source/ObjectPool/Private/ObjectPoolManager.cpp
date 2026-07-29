@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "HAL/PlatformFilemanager.h"
+#include "UObject/UObjectGlobals.h"
 
 //  日志和统计
 DEFINE_LOG_CATEGORY(LogObjectPoolManager);
@@ -61,6 +62,12 @@ FObjectPoolManager& FObjectPoolManager::operator=(FObjectPoolManager&& Other) no
         Other.bAutoManagementEnabled = false;
     }
     return *this;
+}
+
+void FObjectPoolManager::AddReferencedObjects(FReferenceCollector& Collector, UObject* ReferencingObject)
+{
+    FScopeLock Lock(&ManagementLock);
+    Collector.AddReferencedObjects(UsageHistory, ReferencingObject);
 }
 
 //  池生命周期管理实现
@@ -148,7 +155,7 @@ bool FObjectPoolManager::ShouldDestroyPool(UClass* ActorClass, const FActorPool&
 
 //  智能管理功能实现
 
-void FObjectPoolManager::PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools, EMaintenanceType MaintenanceType)
+void FObjectPoolManager::PerformMaintenance(const TMap<TObjectPtr<UClass>, TSharedPtr<FActorPool>>& AllPools, EMaintenanceType MaintenanceType)
 {
     SCOPE_CYCLE_COUNTER(STAT_PoolManager_PerformMaintenance);
 
@@ -340,7 +347,7 @@ FObjectPoolManager::FManagementStats FObjectPoolManager::GetManagementStats() co
     return Stats;
 }
 
-FString FObjectPoolManager::GenerateManagementReport(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools) const
+FString FObjectPoolManager::GenerateManagementReport(const TMap<TObjectPtr<UClass>, TSharedPtr<FActorPool>>& AllPools) const
 {
     FScopeLock Lock(&ManagementLock);
 

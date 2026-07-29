@@ -113,11 +113,9 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
     Actor->SetActorTickEnabled(true);
 
     //  重新启用ProjectileMovement组件
-    TArray<UProjectileMovementComponent*> ProjectileComponents;
-    Actor->GetComponents<UProjectileMovementComponent>(ProjectileComponents);
-
-    for (UProjectileMovementComponent* ProjectileComp : ProjectileComponents)
+    for (UActorComponent* Component : Actor->GetComponents())
     {
+        UProjectileMovementComponent* ProjectileComp = Cast<UProjectileMovementComponent>(Component);
         if (IsValid(ProjectileComp))
         {
             ProjectileComp->SetActive(true);
@@ -530,11 +528,9 @@ void FObjectPoolUtils::ResetBasicActorProperties(AActor* Actor, bool bHideActor)
     Actor->SetActorTickEnabled(!bHideActor);
 
     //  设置所有PrimitiveComponent的碰撞（包括子组件）
-    TArray<UPrimitiveComponent*> PrimitiveComponents;
-    Actor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-
-    for (UPrimitiveComponent* PrimComp : PrimitiveComponents)
+    for (UActorComponent* Component : Actor->GetComponents())
     {
+        UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Component);
         if (IsValid(PrimComp))
         {
             if (bHideActor)
@@ -576,11 +572,9 @@ void FObjectPoolUtils::ResetActorPhysics(AActor* Actor)
     }
 
     //  重置所有物理组件
-    TArray<UPrimitiveComponent*> PrimitiveComponents;
-    Actor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-
-    for (UPrimitiveComponent* Component : PrimitiveComponents)
+    for (UActorComponent* ActorComponent : Actor->GetComponents())
     {
+        UPrimitiveComponent* Component = Cast<UPrimitiveComponent>(ActorComponent);
         if (IsValid(Component))
         {
             Component->SetSimulatePhysics(false);
@@ -597,65 +591,39 @@ void FObjectPoolUtils::ResetActorComponents(AActor* Actor)
         return;
     }
 
-    //  重置ProjectileMovement组件
-    TArray<UProjectileMovementComponent*> ProjectileComponents;
-    Actor->GetComponents<UProjectileMovementComponent>(ProjectileComponents);
-
-    for (UProjectileMovementComponent* ProjectileComp : ProjectileComponents)
+    //  直接遍历Actor持有的组件集合，避免为每种组件重复构造临时数组。
+    for (UActorComponent* Component : Actor->GetComponents())
     {
-        if (IsValid(ProjectileComp))
+        if (!IsValid(Component))
+        {
+            continue;
+        }
+
+        if (UProjectileMovementComponent* ProjectileComp = Cast<UProjectileMovementComponent>(Component))
         {
             ResetProjectileMovementComponent(ProjectileComp);
         }
-    }
 
-    //  重置粒子系统组件
-    TArray<UParticleSystemComponent*> ParticleComponents;
-    Actor->GetComponents<UParticleSystemComponent>(ParticleComponents);
-
-    for (UParticleSystemComponent* ParticleComp : ParticleComponents)
-    {
-        if (IsValid(ParticleComp))
+        if (UParticleSystemComponent* ParticleComp = Cast<UParticleSystemComponent>(Component))
         {
             ParticleComp->DeactivateSystem();
             ParticleComp->ResetParticles();
         }
-    }
 
-    //  重置音频组件
-    TArray<UAudioComponent*> AudioComponents;
-    Actor->GetComponents<UAudioComponent>(AudioComponents);
-
-    for (UAudioComponent* AudioComp : AudioComponents)
-    {
-        if (IsValid(AudioComp))
+        if (UAudioComponent* AudioComp = Cast<UAudioComponent>(Component))
         {
             AudioComp->Stop();
             AudioComp->SetVolumeMultiplier(1.0f);
             AudioComp->SetPitchMultiplier(1.0f);
         }
-    }
 
-    //  重置移动组件
-    TArray<UMovementComponent*> MovementComponents;
-    Actor->GetComponents<UMovementComponent>(MovementComponents);
-
-    for (UMovementComponent* MovementComp : MovementComponents)
-    {
-        if (IsValid(MovementComp))
+        if (UMovementComponent* MovementComp = Cast<UMovementComponent>(Component))
         {
             MovementComp->StopMovementImmediately();
             MovementComp->Velocity = FVector::ZeroVector;
         }
-    }
 
-    //  重置网格组件
-    TArray<UMeshComponent*> MeshComponents;
-    Actor->GetComponents<UMeshComponent>(MeshComponents);
-
-    for (UMeshComponent* MeshComp : MeshComponents)
-    {
-        if (IsValid(MeshComp))
+        if (UMeshComponent* MeshComp = Cast<UMeshComponent>(Component))
         {
             // 重置材质参数等
             MeshComp->SetVisibility(true);

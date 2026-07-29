@@ -95,8 +95,13 @@ FVector FFormationMathUtils::CalculateSeparationForce(
     const TArray<FVector>& Positions,
     const FBoidsMovementParams& Params)
 {
-    // 使用check验证输入参数
-    check(Params.SeparationWeight >= 0.0f);
+    if (Params.SeparationWeight < 0.0f)
+    {
+        UE_LOG(LogFormationSystem, Warning,
+            TEXT("CalculateSeparationForce: SeparationWeight 不能为负数: %.3f"),
+            Params.SeparationWeight);
+        return FVector::ZeroVector;
+    }
     
     if (!Positions.IsValidIndex(UnitIndex))
     {
@@ -264,4 +269,4 @@ float FFormationMathUtils::ApplyEasing(float Progress, float Strength)
     
     // 使用幂函数实现缓动
     return FMath::Pow(Progress, Strength);
-} 
+}

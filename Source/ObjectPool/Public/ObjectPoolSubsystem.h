@@ -101,6 +101,8 @@ class OBJECTPOOL_API UObjectPoolSubsystem : public UWorldSubsystem
     GENERATED_BODY()
 
 public:
+    static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
+
     //  UE官方子系统完整生命周期 - 深度集成引擎机制
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
@@ -232,7 +234,7 @@ private:
     //  核心数据成员
 
     /** 池存储：Actor类 -> 池实例 (UE官方智能指针最佳实践) */
-    TMap<UClass*, TSharedPtr<FActorPool>> ActorPools;
+    TMap<TObjectPtr<UClass>, TSharedPtr<FActorPool>> ActorPools;
     
     /** UE官方推荐：预分配容器减少运行时重分配 */
     static constexpr int32 DefaultPoolCapacity = 16;
@@ -276,7 +278,7 @@ private:
     /** 待预热信息结构体 */
     struct FDelayedPrewarmInfo
     {
-        UClass* ActorClass;
+        TObjectPtr<UClass> ActorClass;
         int32 Count;
         FString PoolName;
         

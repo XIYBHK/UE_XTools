@@ -14,6 +14,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "UObject/UObjectGlobals.h"
 
 //  日志和统计
 DEFINE_LOG_CATEGORY(LogObjectPoolConfigManager);
@@ -66,6 +67,19 @@ FObjectPoolConfigManager& FObjectPoolConfigManager::operator=(FObjectPoolConfigM
         Other.bIsInitialized = false;
     }
     return *this;
+}
+
+void FObjectPoolConfigManager::AddReferencedObjects(FReferenceCollector& Collector, UObject* ReferencingObject)
+{
+    FScopeLock Lock(&ConfigLock);
+
+    Collector.AddReferencedObjects(ActorConfigs, ReferencingObject);
+    for (auto& ConfigPair : ActorConfigs)
+    {
+        Collector.AddReferencedObject(ConfigPair.Value.ActorClass.GetGCPtr(), ReferencingObject);
+    }
+
+    Collector.AddReferencedObject(DefaultConfig.ActorClass.GetGCPtr(), ReferencingObject);
 }
 
 //  配置管理功能实现

@@ -4,6 +4,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "AssetNaming/X_AssetNamingManager.h"
+#include "Settings/X_AssetEditorSettings.h"
 
 // 简单类名前缀测试
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_GetCorrectPrefix_SimpleClass,
@@ -13,13 +14,28 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_GetCorrectPrefix_SimpleClass,
 bool FXAssetNaming_GetCorrectPrefix_SimpleClass::RunTest(const FString& Parameters)
 {
     FX_AssetNamingManager& Manager = FX_AssetNamingManager::Get();
+    UX_AssetEditorSettings* Settings = GetMutableDefault<UX_AssetEditorSettings>();
 
-    // 构造一个模拟的 StaticMesh 资产数据（只关心 AssetClassPath）
+    const TMap<FString, FString> SavedPrefixMappings = Settings->AssetPrefixMappings;
+    const TArray<FString> SavedExcludedClasses = Settings->ExcludedAssetClasses;
+    const TArray<FString> SavedExcludedFolders = Settings->ExcludedFolders;
+    Settings->AssetPrefixMappings.Add(TEXT("StaticMesh"), TEXT("SM_"));
+    Settings->ExcludedAssetClasses.Remove(TEXT("StaticMesh"));
+    Settings->ExcludedFolders.Reset();
+
+    // 构造一个位于项目内容目录中的 StaticMesh 资产数据
     FAssetData AssetData;
+    AssetData.PackageName = TEXT("/Game/Test/TestStaticMesh");
     AssetData.AssetClassPath = FTopLevelAssetPath(TEXT("/Script/Engine"), TEXT("StaticMesh"));
+    AssetData.AssetName = TEXT("TestStaticMesh");
+    AssetData.PackagePath = TEXT("/Game/Test");
 
     const FString SimpleClassName = Manager.GetSimpleClassName(AssetData);
     const FString Prefix = Manager.GetCorrectPrefix(AssetData, SimpleClassName);
+
+    Settings->AssetPrefixMappings = SavedPrefixMappings;
+    Settings->ExcludedAssetClasses = SavedExcludedClasses;
+    Settings->ExcludedFolders = SavedExcludedFolders;
 
     TestEqual(TEXT("StaticMesh 应该返回 SM_ 前缀"), Prefix, FString(TEXT("SM_")));
     return true;

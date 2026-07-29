@@ -15,19 +15,6 @@ public class XTools : ModuleRules
 		// 添加模块定义
 		PublicDefinitions.Add("WITH_XTOOLS=1");
 
-		// 兼容旧代码中的 DLLEXPORT/DLLIMPORT 宏（非 UE 最佳实践，但为避免破坏性改动保留）
-		// 注意：在非 Windows 平台上 __declspec 不可用，必须定义为空以保证可编译（插件支持 Win64/Mac/Linux）。
-		if (Target.Platform.IsInGroup(UnrealPlatformGroup.Windows))
-		{
-			PublicDefinitions.Add("DLLEXPORT=__declspec(dllexport)");
-			PublicDefinitions.Add("DLLIMPORT=__declspec(dllimport)");
-		}
-		else
-		{
-			PublicDefinitions.Add("DLLEXPORT=");
-			PublicDefinitions.Add("DLLIMPORT=");
-		}
-
 		// UE版本宏定义（用于跨版本兼容性系统）
 		// 
 		// UE最佳实践说明：
@@ -107,7 +94,6 @@ public class XTools : ModuleRules
 		"XToolsCore",  // 核心工具和版本兼容性
 		"XTools_ComponentTimelineRuntime",
 		"RandomShuffles",
-		"FormationSystem",
 		// UE Geometry modules for native surface sampling
 		"GeometryCore",           // FMeshSurfacePointSampling, FDynamicMesh3
 		"MeshConversion",         // StaticMesh <-> DynamicMesh conversion
@@ -140,9 +126,6 @@ public class XTools : ModuleRules
 				"ToolWidgets"        // Required for editor tool widgets
 			});
 
-			PrivateDependencyModuleNames.AddRange(new string[] {
-				"MessageLog"
-			});
 		}
 
 		// Dynamically loaded modules

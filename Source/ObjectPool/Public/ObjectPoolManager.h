@@ -115,6 +115,8 @@ public:
     FObjectPoolManager(FObjectPoolManager&& Other) noexcept;
     FObjectPoolManager& operator=(FObjectPoolManager&& Other) noexcept;
 
+    void AddReferencedObjects(FReferenceCollector& Collector, UObject* ReferencingObject);
+
 public:
     //  池生命周期管理
 
@@ -153,7 +155,7 @@ public:
      * @param AllPools 所有池的映射
      * @param MaintenanceType 维护类型
      */
-    void PerformMaintenance(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools, 
+    void PerformMaintenance(const TMap<TObjectPtr<UClass>, TSharedPtr<FActorPool>>& AllPools,
                            EMaintenanceType MaintenanceType = EMaintenanceType::All);
 
     /**
@@ -220,7 +222,7 @@ public:
      * @param AllPools 所有池的映射
      * @return 格式化的报告
      */
-    FString GenerateManagementReport(const TMap<UClass*, TSharedPtr<FActorPool>>& AllPools) const;
+    FString GenerateManagementReport(const TMap<TObjectPtr<UClass>, TSharedPtr<FActorPool>>& AllPools) const;
 
     /**
      * 重置统计信息
@@ -240,7 +242,7 @@ private:
     mutable FManagementStats Stats;
 
     /** 池使用历史记录 */
-    mutable TMap<UClass*, TArray<float>> UsageHistory;
+    mutable TMap<TObjectPtr<UClass>, TArray<float>> UsageHistory;
 
     /** 管理锁 */
     mutable FCriticalSection ManagementLock;

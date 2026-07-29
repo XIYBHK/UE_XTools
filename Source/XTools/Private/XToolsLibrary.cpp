@@ -14,8 +14,6 @@
 
 // Parent finder settings
 #include "RandomShuffleArrayLibrary.h"
-#include "FormationSystem.h"
-#include "FormationLibrary.h"
 
 //  UE Geometry 依赖 (原生表面采样 - 仅编辑器)
 #if WITH_EDITORONLY_DATA
@@ -49,7 +47,6 @@
 
 //  线程安全支持
 #include "HAL/CriticalSection.h"
-#include "HAL/PlatformMemory.h"
 
 //  线程安全的 PRD 测试管理器
 class FThreadSafePRDTester
@@ -82,27 +79,8 @@ namespace XToolsConfig
     constexpr int32 PRD_ARRAY_SIZE = PRD_MAX_FAILURE_COUNT + 1;
     constexpr int32 PRD_TOTAL_TESTS = 10000;
 
-    // 性能测试配置
-    constexpr int32 PERF_TEST_ARRAY_COUNT = 100;
-    constexpr int32 PERF_TEST_ARRAY_SIZE = 1000;
-    constexpr float PERF_TEST_RANGE_MIN = -100.0f;
-    constexpr float PERF_TEST_RANGE_MAX = 100.0f;
-
-    // 内存阈值配置 (字节)
-    constexpr SIZE_T MEMORY_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
-
     // 百分比转换常量
     constexpr float PERCENTAGE_MULTIPLIER = 100.0f;
-    constexpr double MILLISECONDS_MULTIPLIER = 1000.0;
-    constexpr double MEGABYTES_DIVISOR = 1024.0 * 1024.0;
-
-    // 默认容量预分配
-    constexpr int32 DEFAULT_POINTS_RESERVE = 1000;
-
-    // 评分阈值
-    constexpr float EXCELLENT_SCORE_THRESHOLD = 9.0f;
-    constexpr float GOOD_SCORE_THRESHOLD = 7.0f;
-    constexpr float MAX_SCORE = 10.0f;
 }
 
 //  网格参数结构体
@@ -261,35 +239,6 @@ public:
 private:
     FCriticalSection CacheLock;
     TMap<FGridParametersKey, FGridParameters> Cache;
-};
-
-//  平台安全的内存统计工具
-class FPlatformSafeMemoryStats
-{
-public:
-    static SIZE_T GetSafeMemoryUsage()
-    {
-        // Win64 平台专用优化
-        #if PLATFORM_WINDOWS
-            // 直接获取内存统计，不使用try-catch，因为UE的异常处理通常是针对特定情况的
-            // 如果FPlatformMemory::GetStats()在非编辑器构建中不可用，它应该有自己的处理机制
-            const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
-            return Stats.UsedPhysical;
-        #else
-            // 其他平台返回默认值
-            // UE_LOG(LogXTools, Warning, TEXT("当前平台不支持内存统计")); // 移除日志，避免在非编辑器构建中引入不必要的依赖
-            return 0;
-        #endif
-    }
-
-    static bool IsMemoryStatsAvailable()
-    {
-        #if PLATFORM_WINDOWS
-            return true;
-        #else
-            return false;
-        #endif
-    }
 };
 
 /**
@@ -500,12 +449,8 @@ namespace
 }
 
 float UXToolsLibrary::ResolveBezierParameter(
-        UWorld* World,
         const TArray<FVector>& Points,
         float Progress,
-        bool bShowDebug,
-        float Duration,
-        const FBezierDebugColors& DebugColors,
         const FBezierSpeedOptions& SpeedOptions,
         float& OutMotionProgress,
         FBezierRotationFrameState* InOutTrajectoryState)
@@ -565,32 +510,12 @@ float UXToolsLibrary::ResolveBezierParameter(
             const FVector CurrentPoint = CalculatePointAtParameterFast(Points, Parameter);
             TotalLength += FVector::Distance(PreviousPoint, CurrentPoint);
             (*CumulativeArcLengths)[Index] = TotalLength;
-
-            if (bShowDebug && World)
-            {
-                DrawDebugLine(World, PreviousPoint, CurrentPoint,
-                    DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
-            }
             PreviousPoint = CurrentPoint;
         }
 
         if (bCanUseCache)
         {
             InOutTrajectoryState->CachedTotalArcLength = TotalLength;
-        }
-    }
-
-    // 缓存命中时仍保留原有调试曲线；调试绘制本身不属于性能路径。
-    if (bCacheMatches && bShowDebug && World)
-    {
-        FVector PreviousPoint = CalculatePointAtParameterFast(Points, 0.0f);
-        for (int32 Index = 1; Index <= Segments; ++Index)
-        {
-            const float Parameter = static_cast<float>(Index) / Segments;
-            const FVector CurrentPoint = CalculatePointAtParameterFast(Points, Parameter);
-            DrawDebugLine(World, PreviousPoint, CurrentPoint,
-                DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
-            PreviousPoint = CurrentPoint;
         }
     }
 
@@ -629,21 +554,26 @@ float UXToolsLibrary::ResolveBezierParameter(
     return (static_cast<float>(StartIndex) + SegmentProgress) / Segments;
 }
 
-FVector UXToolsLibrary::EvaluateBezierConstantSpeed(
-        UWorld* World,
+FVector UXToolsLibrary::EvaluateBezierPoint(
         const TArray<FVector>& Points,
         float Progress,
-        bool bShowDebug,
-        float Duration,
-        const FBezierDebugColors& DebugColors,
         const FBezierSpeedOptions& SpeedOptions,
-        TArray<FVector>& WorkPoints)
+        TArray<FVector>* OutWorkPoints)
 {
+    if (Points.Num() < 2)
+    {
+        if (OutWorkPoints)
+        {
+            *OutWorkPoints = Points;
+        }
+        return Points.Num() == 1 ? Points[0] : FVector::ZeroVector;
+    }
+
     float MotionProgress = 0.0f;
     const float Parameter = ResolveBezierParameter(
-        World, Points, Progress, bShowDebug, Duration, DebugColors, SpeedOptions, MotionProgress);
-    return bShowDebug
-        ? CalculatePointAtParameter(Points, Parameter, WorkPoints)
+        Points, Progress, SpeedOptions, MotionProgress);
+    return OutWorkPoints
+        ? CalculatePointAtParameter(Points, Parameter, *OutWorkPoints)
         : CalculatePointAtParameterFast(Points, Parameter);
 }
 
@@ -655,6 +585,11 @@ void UXToolsLibrary::DrawBezierDebug(
         float Duration,
         const FVector& ResultPoint)
 {
+    if (!World)
+    {
+        return;
+    }
+
     for (const FVector& Point : Points)
     {
         DrawDebugSphere(World, Point, 8.0f, 8, DebugColors.ControlPointColor.ToFColor(true), false, Duration);
@@ -663,6 +598,20 @@ void UXToolsLibrary::DrawBezierDebug(
     for (int32 Index = 0; Index < Points.Num() - 1; ++Index)
     {
         DrawDebugLine(World, Points[Index], Points[Index + 1], DebugColors.ControlLineColor.ToFColor(true), false, Duration);
+    }
+
+    constexpr int32 CurveSegments = 100;
+    if (Points.Num() >= 2)
+    {
+        FVector PreviousPoint = CalculatePointAtParameterFast(Points, 0.0f);
+        for (int32 Index = 1; Index <= CurveSegments; ++Index)
+        {
+            const float Parameter = static_cast<float>(Index) / CurveSegments;
+            const FVector CurrentPoint = CalculatePointAtParameterFast(Points, Parameter);
+            DrawDebugLine(World, PreviousPoint, CurrentPoint,
+                DebugColors.IntermediateLineColor.ToFColor(true), false, Duration);
+            PreviousPoint = CurrentPoint;
+        }
     }
 
     const int32 PointCount = Points.Num();
@@ -697,50 +646,36 @@ void UXToolsLibrary::DrawBezierDebug(
     DrawDebugPoint(World, ResultPoint, 20.0f, DebugColors.ResultPointColor.ToFColor(true), false, ResultPointDuration);
 }
 
-FVector UXToolsLibrary::CalculateBezierPoint(const UObject* Context,const TArray<FVector>& Points, float Progress, bool bShowDebug, float Duration, FBezierDebugColors DebugColors, FBezierSpeedOptions SpeedOptions)
+FVector UXToolsLibrary::CalculateBezierPoint(
+    const TArray<FVector>& Points,
+    float Progress,
+    FBezierSpeedOptions SpeedOptions)
 {
-    // 参数验证
-    if (Points.Num() < 2)
-    {
-        return Points.Num() == 1 ? Points[0] : FVector::ZeroVector;
-    }
+    return EvaluateBezierPoint(Points, Progress, SpeedOptions);
+}
 
-    // 确保Progress在[0,1]范围内
-    Progress = FMath::Clamp(Progress, 0.0f, 1.0f);
-
-    // 调试绘制降级处理：无法获取 World 时只关闭调试绘制，不影响数值计算
-    UWorld* World = nullptr;
-    if (bShowDebug)
-    {
-        if (GEngine)
-        {
-            World = GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::LogAndReturnNull);
-        }
-        if (!World)
-        {
-            UE_LOG(LogXTools, Warning, TEXT("CalculateBezierPoint: 无法获取 World，跳过调试绘制"));
-            bShowDebug = false;
-        }
-    }
-
-    FVector ResultPoint;
+FVector UXToolsLibrary::CalculateAndDrawBezierPoint(
+    const UObject* Context,
+    const TArray<FVector>& Points,
+    float Progress,
+    float Duration,
+    FBezierDebugColors DebugColors,
+    FBezierSpeedOptions SpeedOptions)
+{
     TArray<FVector> WorkPoints;
-    if (SpeedOptions.SpeedMode == EBezierSpeedMode::Constant)
+    const FVector ResultPoint = EvaluateBezierPoint(Points, Progress, SpeedOptions, &WorkPoints);
+
+    UWorld* World = GEngine
+        ? GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::ReturnNull)
+        : nullptr;
+    if (!World)
     {
-        ResultPoint = EvaluateBezierConstantSpeed(World, Points, Progress, bShowDebug, Duration, DebugColors, SpeedOptions, WorkPoints);
-    }
-    else
-    {
-        ResultPoint = bShowDebug
-            ? CalculatePointAtParameter(Points, Progress, WorkPoints)
-            : CalculatePointAtParameterFast(Points, Progress);
+        XTOOLS_LOG_WARNING(LogXTools, TEXT("CalculateAndDrawBezierPoint: 无法获取 World，跳过调试绘制"));
+        return ResultPoint;
     }
 
-    if (bShowDebug)
-    {
-        DrawBezierDebug(World, Points, WorkPoints, DebugColors, Duration, ResultPoint);
-    }
-
+    const float SafeDuration = FMath::IsFinite(Duration) ? FMath::Max(0.0f, Duration) : 0.0f;
+    DrawBezierDebug(World, Points, WorkPoints, DebugColors, SafeDuration, ResultPoint);
     return ResultPoint;
 }
 
@@ -835,8 +770,7 @@ void UXToolsLibrary::CalculateBezierMissileTrajectory(
     if (Points.Num() >= 2)
     {
         Parameter = ResolveBezierParameter(
-            World, Points, Parameter, bShowDebug, Duration, DebugColors, SpeedOptions,
-            MotionProgress, &InOutFrame);
+            Points, Parameter, SpeedOptions, MotionProgress, &InOutFrame);
         CurvePosition = bShowDebug
             ? CalculatePointAtParameter(Points, Parameter, WorkPoints)
             : CalculatePointAtParameterFast(Points, Parameter);

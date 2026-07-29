@@ -56,6 +56,8 @@ public:
     FActorPool(const FActorPool&) = delete;
     FActorPool& operator=(const FActorPool&) = delete;
 
+    void AddReferencedObjects(FReferenceCollector& Collector, UObject* ReferencingObject);
+
 public:
     /**
      * 从池中获取一个Actor

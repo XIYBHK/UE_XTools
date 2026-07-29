@@ -32,6 +32,40 @@ DEFINE_STAT(STAT_ObjectPoolSubsystem_GetOrCreatePool);
 
 //  USubsystem接口实现
 
+void UObjectPoolSubsystem::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+{
+    UObjectPoolSubsystem* This = CastChecked<UObjectPoolSubsystem>(InThis);
+
+    {
+        FReadScopeLock ReadLock(This->PoolsRWLock);
+        Collector.AddReferencedObjects(This->ActorPools, This);
+        for (auto& PoolPair : This->ActorPools)
+        {
+            if (PoolPair.Value.IsValid())
+            {
+                PoolPair.Value->AddReferencedObjects(Collector, This);
+            }
+        }
+    }
+
+    if (This->ConfigManager.IsValid())
+    {
+        This->ConfigManager->AddReferencedObjects(Collector, This);
+    }
+
+    if (This->PoolManager.IsValid())
+    {
+        This->PoolManager->AddReferencedObjects(Collector, This);
+    }
+
+    for (FDelayedPrewarmInfo& PrewarmInfo : This->DelayedPrewarmQueue)
+    {
+        Collector.AddReferencedObject(PrewarmInfo.ActorClass, This);
+    }
+
+    Super::AddReferencedObjects(This, Collector);
+}
+
 void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);

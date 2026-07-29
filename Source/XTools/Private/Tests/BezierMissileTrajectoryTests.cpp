@@ -211,13 +211,12 @@ bool FBezierMissileTrajectory_FastEvaluationAndDefaultProgressCurve::RunTest(con
     };
     const TArray<float> SampleParameters = { 0.0f, 0.17f, 0.5f, 0.83f, 1.0f };
     const FBezierDebugColors DebugColors;
-
     for (const TArray<FVector>& Curve : Curves)
     {
         for (const float Parameter : SampleParameters)
         {
             const FVector Actual = UXToolsLibrary::CalculateBezierPoint(
-                nullptr, Curve, Parameter, false, 0.03f, DebugColors, FBezierSpeedOptions());
+                Curve, Parameter, FBezierSpeedOptions());
             const FVector Expected = EvaluateBezierReference(Curve, Parameter);
             TestTrue(TEXT("无调试快速求值应与De Casteljau参考结果一致"),
                 Actual.Equals(Expected, UE_KINDA_SMALL_NUMBER));
@@ -231,6 +230,20 @@ bool FBezierMissileTrajectory_FastEvaluationAndDefaultProgressCurve::RunTest(con
 
     FBezierSpeedOptions DefaultSpeedOptions;
     DefaultSpeedOptions.SpeedCurve = ProgressCurve;
+    const FVector MappedPoint = UXToolsLibrary::CalculateBezierPoint(
+        Curves[3], 0.5f, DefaultSpeedOptions);
+    TestTrue(TEXT("基础节点在默认速度模式下应应用进度映射曲线"),
+        MappedPoint.Equals(EvaluateBezierReference(Curves[3], 0.25f), UE_KINDA_SMALL_NUMBER));
+
+    const float NaN = std::numeric_limits<float>::quiet_NaN();
+    TestTrue(TEXT("非有限进度应安全回退到曲线起点"),
+        UXToolsLibrary::CalculateBezierPoint(Curves[3], NaN, FBezierSpeedOptions()).Equals(Curves[3][0]));
+    TestEqual(TEXT("空控制点应返回零向量"),
+        UXToolsLibrary::CalculateBezierPoint({}, 0.5f, FBezierSpeedOptions()), FVector::ZeroVector);
+    const TArray<FVector> SinglePoint = { FVector(12.0, 34.0, 56.0) };
+    TestEqual(TEXT("单控制点应返回该控制点"),
+        UXToolsLibrary::CalculateBezierPoint(SinglePoint, 0.5f, FBezierSpeedOptions()), SinglePoint[0]);
+
     FBezierRotationFrameState Frame;
     FVector Position;
     FVector Tangent;
@@ -241,6 +254,44 @@ bool FBezierMissileTrajectory_FastEvaluationAndDefaultProgressCurve::RunTest(con
         MakeDisabledNoise(), DefaultSpeedOptions, false, 0.03f, DebugColors);
     TestTrue(TEXT("默认速度模式也应将进度映射曲线应用于贝塞尔参数"),
         Position.Equals(EvaluateBezierReference(Curves[3], 0.25f), UE_KINDA_SMALL_NUMBER));
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FBezierPoint_BlueprintNodeSemantics,
+    "XTools.Bezier.Point.BlueprintNodeSemantics",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBezierPoint_BlueprintNodeSemantics::RunTest(const FString& Parameters)
+{
+    const UFunction* PureFunction = UXToolsLibrary::StaticClass()->FindFunctionByName(
+        GET_FUNCTION_NAME_CHECKED(UXToolsLibrary, CalculateBezierPoint));
+    TestNotNull(TEXT("应找到贝塞尔纯计算函数"), PureFunction);
+    if (PureFunction)
+    {
+        TestTrue(TEXT("计算节点应为BlueprintPure"),
+            PureFunction->HasAnyFunctionFlags(FUNC_BlueprintPure));
+#if WITH_EDITOR
+        TestFalse(TEXT("计算节点不应声明WorldContext"),
+            PureFunction->HasMetaData(TEXT("WorldContext")));
+#endif
+    }
+
+    const UFunction* DebugFunction = UXToolsLibrary::StaticClass()->FindFunctionByName(
+        GET_FUNCTION_NAME_CHECKED(UXToolsLibrary, CalculateAndDrawBezierPoint));
+    TestNotNull(TEXT("应找到贝塞尔调试绘制函数"), DebugFunction);
+    if (DebugFunction)
+    {
+        TestTrue(TEXT("调试节点应为BlueprintCallable"),
+            DebugFunction->HasAnyFunctionFlags(FUNC_BlueprintCallable));
+        TestFalse(TEXT("调试节点不应为BlueprintPure"),
+            DebugFunction->HasAnyFunctionFlags(FUNC_BlueprintPure));
+#if WITH_EDITOR
+        TestEqual(TEXT("调试节点应声明Context为WorldContext"),
+            DebugFunction->GetMetaData(TEXT("WorldContext")), FString(TEXT("Context")));
+#endif
+    }
 
     return true;
 }
@@ -271,7 +322,7 @@ bool FBezierMissileTrajectory_BaseCurveDeterminismAndEndpoints::RunTest(const FS
         MakeDisabledNoise(), SpeedOptions, false, 0.03f, DebugColors);
 
     const FVector ExistingPosition = UXToolsLibrary::CalculateBezierPoint(
-        nullptr, Points, 0.37f, false, 0.03f, DebugColors, SpeedOptions);
+        Points, 0.37f, SpeedOptions);
     TestTrue(TEXT("关闭噪声时应与现有贝塞尔节点位置一致"),
         BasePosition.Equals(ExistingPosition, UE_KINDA_SMALL_NUMBER));
 
@@ -328,7 +379,7 @@ bool FBezierMissileTrajectory_BaseCurveDeterminismAndEndpoints::RunTest(const FS
         BasePosition, BaseTangent, BaseRotation,
         MakeDisabledNoise(), ConstantSpeedOptions, false, 0.03f, DebugColors);
     const FVector ExistingConstantSpeedPosition = UXToolsLibrary::CalculateBezierPoint(
-        nullptr, HigherOrderPoints, 0.42f, false, 0.03f, DebugColors, ConstantSpeedOptions);
+        HigherOrderPoints, 0.42f, ConstantSpeedOptions);
     TestTrue(TEXT("任意阶匀速模式应与现有节点位置一致"),
         BasePosition.Equals(ExistingConstantSpeedPosition, UE_KINDA_SMALL_NUMBER));
 

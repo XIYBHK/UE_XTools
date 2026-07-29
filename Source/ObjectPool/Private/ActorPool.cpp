@@ -97,6 +97,11 @@ FActorPool::~FActorPool()
 
 //  核心池管理功能实现
 
+void FActorPool::AddReferencedObjects(FReferenceCollector& Collector, UObject* ReferencingObject)
+{
+    Collector.AddReferencedObject(ActorClass.GetGCPtr(), ReferencingObject);
+}
+
 AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
 {
     checkf(IsInGameThread(), TEXT("FActorPool::GetActor 只能在游戏线程调用"));

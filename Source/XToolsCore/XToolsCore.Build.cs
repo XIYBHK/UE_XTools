@@ -12,7 +12,7 @@ using UnrealBuildTool;
  * 所有 Runtime 模块都可以安全依赖此模块
  * 
  * 包含：
- * - XToolsVersionCompat.h: UE 5.3-5.6 版本兼容性宏
+ * - XToolsVersionCompat.h: UE 5.3-5.8 版本兼容性宏
  * - XToolsErrorReporter.h: 统一错误/日志处理
  * - XToolsDefines.h: 插件版本和通用宏定义
  */
@@ -83,5 +83,10 @@ public class XToolsCore : ModuleRules
 			{
 			}
 		);
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("MessageLog");
+		}
 	}
 }

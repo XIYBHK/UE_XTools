@@ -60,6 +60,7 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
     }
 
 #if WITH_EDITOR
+    if (Verbosity == ELogVerbosity::Error || Verbosity == ELogVerbosity::Warning)
     {
         FMessageLog EditorLog("XToolsCore");
         switch (Verbosity)
@@ -71,7 +72,6 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
             EditorLog.Warning(FText::FromString(FullMessage));
             break;
         default:
-            EditorLog.Info(FText::FromString(FullMessage));
             break;
         }
     }

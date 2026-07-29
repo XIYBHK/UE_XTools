@@ -1114,7 +1114,7 @@ namespace PoissonSamplingHelpers
 
             if (!bFound)
             {
-                ActivePoints.RemoveAt(Index);
+                ActivePoints.RemoveAtSwap(Index);
             }
         }
 
@@ -1202,7 +1202,7 @@ namespace PoissonSamplingHelpers
 
             if (!bFound)
             {
-                ActivePoints.RemoveAt(Index);
+                ActivePoints.RemoveAtSwap(Index);
             }
         }
 

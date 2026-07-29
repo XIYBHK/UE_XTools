@@ -259,25 +259,32 @@ public:
         UPARAM(DisplayName = "包含自身") bool bIncludeSelf = false
     );
 
-    /**
-     * 计算贝塞尔曲线上的点
-     * @param Points - 控制点数组
-     * @param Progress - 计算进度(0-1)
-     * @param bShowDebug - 是否显示调试
-     * @param Duration - 调试显示持续时间
-     * @param DebugColors - 调试颜色配置
-     * @param SpeedOptions - 速度选项
-     * @return 贝塞尔曲线上的点
-     */
-    UFUNCTION(BlueprintPure, Category = "XTools|Bezier", 
-        meta = (DisplayName = "计算贝塞尔曲线点", 
-               WorldContext="Context"))
-    static FVector CalculateBezierPoint(const UObject* Context, UPARAM(ref) const TArray<FVector>& Points, 
-                                       float Progress, 
-                                       bool bShowDebug, 
-                                       float Duration = 0.03, 
-                                       FBezierDebugColors DebugColors = FBezierDebugColors(),
-                                       FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
+    /** 纯计算贝塞尔曲线点，不访问世界也不产生调试绘制。 */
+    UFUNCTION(BlueprintPure, Category = "XTools|贝塞尔",
+        meta = (DisplayName = "计算贝塞尔曲线点",
+                ReturnDisplayName = "曲线点",
+                Keywords = "贝塞尔 曲线 求值 De Casteljau Bezier Evaluate",
+                ToolTip = "按进度计算任意阶贝塞尔曲线点。速度选项可先映射进度，并可选择弧长近似匀速；该节点不访问世界或绘制调试图形。"))
+    static FVector CalculateBezierPoint(
+        UPARAM(ref, DisplayName = "控制点") const TArray<FVector>& Points,
+        UPARAM(DisplayName = "进度") float Progress,
+        UPARAM(DisplayName = "速度选项") FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
+
+    /** 计算贝塞尔曲线点，并在指定世界中绘制本次求值过程。 */
+    UFUNCTION(BlueprintCallable, Category = "XTools|贝塞尔",
+        meta = (DisplayName = "计算并绘制贝塞尔曲线点",
+                WorldContext = "Context",
+                AdvancedDisplay = "Duration,DebugColors,SpeedOptions",
+                ReturnDisplayName = "曲线点",
+                Keywords = "贝塞尔 曲线 调试 绘制 De Casteljau Bezier Debug Draw",
+                ToolTip = "按进度计算任意阶贝塞尔曲线点，并绘制控制点、控制线和本次De Casteljau求值过程。"))
+    static FVector CalculateAndDrawBezierPoint(
+        const UObject* Context,
+        UPARAM(ref, DisplayName = "控制点") const TArray<FVector>& Points,
+        UPARAM(DisplayName = "进度") float Progress,
+        UPARAM(DisplayName = "调试持续时间", meta = (ClampMin = "0.0", UIMin = "0.0", ForceUnits = "s")) float Duration = 0.03f,
+        UPARAM(DisplayName = "调试颜色") FBezierDebugColors DebugColors = FBezierDebugColors(),
+        UPARAM(DisplayName = "速度选项") FBezierSpeedOptions SpeedOptions = FBezierSpeedOptions());
 
     /**
      * 根据发射方向和目标表面法线生成三次贝塞尔导弹轨迹的四个控制点。
@@ -441,24 +448,16 @@ private:
     static FVector CalculatePointAtParameterFast(const TArray<FVector>& Points, float Parameter);
     static FVector CalculateDerivativeAtParameter(const TArray<FVector>& Points, float Parameter);
     static float ResolveBezierParameter(
-        UWorld* World,
         const TArray<FVector>& Points,
         float Progress,
-        bool bShowDebug,
-        float Duration,
-        const FBezierDebugColors& DebugColors,
         const FBezierSpeedOptions& SpeedOptions,
         float& OutMotionProgress,
         FBezierRotationFrameState* InOutTrajectoryState = nullptr);
-    static FVector EvaluateBezierConstantSpeed(
-        UWorld* World,
+    static FVector EvaluateBezierPoint(
         const TArray<FVector>& Points,
         float Progress,
-        bool bShowDebug,
-        float Duration,
-        const FBezierDebugColors& DebugColors,
         const FBezierSpeedOptions& SpeedOptions,
-        TArray<FVector>& WorkPoints);
+        TArray<FVector>* OutWorkPoints = nullptr);
     static void DrawBezierDebug(
         UWorld* World,
         const TArray<FVector>& Points,

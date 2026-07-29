@@ -125,13 +125,13 @@ void UK2Node_MapAppend::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 	CompilerContext.MovePinLinksToIntermediate(*GetThenPin(), *MapForEach->GetCompletedPin());
 
 	// Connect loop body with add elem exec
-	GetSchema()->TryCreateConnection(AddElement->GetExecPin(), MapForEach->GetLoopBodyPin());
+	K2NodeHelpers::TryConnect(CompilerContext, AddElement->GetExecPin(), MapForEach->GetLoopBodyPin());
 
 	// Connect get key return pin to add element key pin
-	GetSchema()->TryCreateConnection(AddElement->FindPinChecked(TEXT("Key"), EGPD_Input), MapForEach->GetKeyPin());
+	K2NodeHelpers::TryConnect(CompilerContext, AddElement->FindPinChecked(TEXT("Key"), EGPD_Input), MapForEach->GetKeyPin());
 
 	// Connect get value return pin to add element value pin
-	GetSchema()->TryCreateConnection(AddElement->FindPinChecked(TEXT("Value"), EGPD_Input), MapForEach->GetValuePin());
+	K2NodeHelpers::TryConnect(CompilerContext, AddElement->FindPinChecked(TEXT("Value"), EGPD_Input), MapForEach->GetValuePin());
 
 	BreakAllNodeLinks();
 }

@@ -63,6 +63,8 @@ public:
     FObjectPoolConfigManager(FObjectPoolConfigManager&& Other) noexcept;
     FObjectPoolConfigManager& operator=(FObjectPoolConfigManager&& Other) noexcept;
 
+    void AddReferencedObjects(FReferenceCollector& Collector, UObject* ReferencingObject);
+
 public:
     //  配置管理功能
 
@@ -174,7 +176,7 @@ private:
     //  内部数据成员
 
     /** 配置存储：Actor类 -> 配置 */
-    TMap<UClass*, FObjectPoolConfig> ActorConfigs;
+    TMap<TObjectPtr<UClass>, FObjectPoolConfig> ActorConfigs;
 
     /** 默认配置 */
     FObjectPoolConfig DefaultConfig;
