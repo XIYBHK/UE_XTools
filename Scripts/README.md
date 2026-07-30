@@ -8,6 +8,10 @@
 |---------|----------|------|
 | `BuildPlugin-MultiUE.ps1` | 多版本UE插件自动化打包 | PowerShell |
 | `Clean-UEPlugin.ps1` | 插件清理工具 | PowerShell |
+| `InvokePresetAssetTool.ps1` | 统一生成或验证曲线、缩放和 CameraShake 预设 | PowerShell |
+| `GeneratePresetLibraryAssets.py` | 数据驱动的 CurveFloat、CurveVector 和 CameraShake UE 生成器 | UE Python |
+| `GenerateEasingCurveAssets.py` | 数学缓动曲线的自适应 Hermite 生成器 | UE Python |
+| `PresetLibraryAssets.json` | 普通曲线、缩放和 CameraShake 的预设数据源 | JSON |
 | `ue_blueprint_export_flow.py` | UE蓝图复制/导出文本逻辑流梳理 | Python |
 | `export_blueprint_asset_copy_text.py` | 通过 UE Editor 命令行从 Blueprint 资产导出节点复制文本 | UE Python |
 
@@ -77,6 +81,23 @@ python .\Scripts\ue_blueprint_export_flow.py ".\Docs\ref\BP_Base_Bullet\from_uas
 ```
 
 `ue_blueprint_export_flow.py` 会区分入口节点与 Tunnel 边界：EventGraph/ConstructionScript 入口通常是 `K2Node_Event`、`K2Node_CustomEvent`、`K2Node_ComponentBoundEvent`、`K2Node_FunctionEntry`；`K2Node_Tunnel` 主要用于宏、折叠图、子图或编译中间图的输入输出边界。
+
+#### **5. 生成和验证预设资产**
+
+```powershell
+# 普通曲线、Actor 缩放曲线和 CameraShake
+.\InvokePresetAssetTool.ps1 -Set PresetLibrary -Mode Generate
+.\InvokePresetAssetTool.ps1 -Set PresetLibrary -Mode Validate
+
+# 数学缓动曲线
+.\InvokePresetAssetTool.ps1 -Set Easing -Mode Generate
+.\InvokePresetAssetTool.ps1 -Set Easing -Mode Validate
+
+# 强制重建全部预设
+.\InvokePresetAssetTool.ps1 -Set All -Mode Generate -Force
+```
+
+默认使用 UE 5.3 基线和当前 `cppxtools.uproject`。数据格式、切线含义、CameraShake 通道配置和扩展流程见[《曲线与镜头晃动预设生成工具链》](../Docs/开发文档/曲线与镜头晃动预设生成工具链.md)。
 
 ### 在项目根目录下执行
 

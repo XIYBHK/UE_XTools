@@ -270,6 +270,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
 			"Name": "AssetSearch",
 			"Enabled": true,
 			"Optional": true

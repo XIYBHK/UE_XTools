@@ -1,6 +1,49 @@
 {
   "curve_vector_path": "/XTools/Curve/ActorScale",
   "camera_shake_path": "/XTools/CameraShake",
+  "curve_float_presets": [
+    {
+      "path": "/XTools/Curve/Motion",
+      "name": "Curve_预备后发射_反向蓄力",
+      "keys": [
+        [0.0, 0.0, 0.0, 0.0],
+        [0.15, -0.12, 0.0, 0.0],
+        [1.0, 1.0, 0.0, 0.0]
+      ]
+    },
+    {
+      "path": "/XTools/Curve/Motion",
+      "name": "Curve_后坐力_快速踢回0-1-0",
+      "keys": [
+        [0.0, 0.0, 12.5, 12.5],
+        [0.08, 1.0, 0.0, -2.0],
+        [1.0, 0.0, 0.0, 0.0]
+      ]
+    },
+    {
+      "path": "/XTools/Curve/Effects",
+      "name": "Curve_双脉冲0-1-0-1-0",
+      "keys": [
+        [0.0, 0.0, 0.0, 0.0],
+        [0.08, 1.0, 0.0, 0.0],
+        [0.22, 0.0, 0.0, 0.0],
+        [0.38, 0.65, 0.0, 0.0],
+        [0.58, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0]
+      ]
+    },
+    {
+      "path": "/XTools/Curve/Effects",
+      "name": "Curve_包络_攻击衰减保持释放",
+      "keys": [
+        [0.0, 0.0, 0.0, 0.0],
+        [0.12, 1.0, 0.0, 0.0],
+        [0.3, 0.7, 0.0, 0.0],
+        [0.72, 0.7, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0]
+      ]
+    }
+  ],
   "scale_curves": [
     {
       "name": "CurveVec_缩放_保持原值",
@@ -137,6 +180,7 @@
       "blend_in": 0.0,
       "blend_out": 0.05,
       "single_instance": true,
+      "location_amplitude_multiplier": 4.0,
       "location": {
         "x": [0.25, 24.0]
       },
@@ -152,6 +196,7 @@
       "blend_in": 0.0,
       "blend_out": 0.07,
       "single_instance": true,
+      "location_amplitude_multiplier": 5.0,
       "location": {
         "x": [0.55, 22.0],
         "z": [0.08, 18.0]
@@ -168,6 +213,7 @@
       "blend_in": 0.0,
       "blend_out": 0.1,
       "single_instance": true,
+      "location_amplitude_multiplier": 6.0,
       "location": {
         "x": [0.9, 18.0],
         "z": [0.16, 16.0]
@@ -185,6 +231,7 @@
       "blend_in": 0.0,
       "blend_out": 0.08,
       "single_instance": true,
+      "location_amplitude_multiplier": 8.0,
       "location": {
         "x": [0.55, 18.0],
         "y": [0.35, 20.0],
@@ -202,6 +249,7 @@
       "blend_in": 0.0,
       "blend_out": 0.14,
       "single_instance": true,
+      "location_amplitude_multiplier": 12.0,
       "location": {
         "x": [1.25, 14.0],
         "y": [0.85, 16.0],
@@ -220,6 +268,7 @@
       "blend_in": 0.0,
       "blend_out": 0.1,
       "single_instance": true,
+      "location_amplitude_multiplier": 5.0,
       "location": {
         "z": [1.2, 18.0],
         "x": [0.25, 16.0]
@@ -235,6 +284,7 @@
       "blend_in": 0.0,
       "blend_out": 0.2,
       "single_instance": true,
+      "location_amplitude_multiplier": 6.0,
       "location": {
         "x": [1.0, 10.0],
         "y": [0.6, 12.0],
@@ -252,6 +302,7 @@
       "blend_in": 0.0,
       "blend_out": 0.35,
       "single_instance": false,
+      "location_amplitude_multiplier": 4.0,
       "location": {
         "x": [6.0, 12.0],
         "y": [5.0, 14.0],
@@ -270,6 +321,7 @@
       "blend_in": 0.0,
       "blend_out": 0.45,
       "single_instance": false,
+      "location_amplitude_multiplier": 5.0,
       "location": {
         "x": [2.0, 7.0],
         "y": [1.5, 8.0],
@@ -288,6 +340,7 @@
       "blend_in": 0.05,
       "blend_out": 0.12,
       "single_instance": true,
+      "location_amplitude_multiplier": 3.0,
       "location": {
         "y": [0.18, 8.0],
         "z": [0.45, 8.0]
@@ -303,6 +356,7 @@
       "blend_in": 0.15,
       "blend_out": 0.2,
       "single_instance": true,
+      "location_amplitude_multiplier": 3.0,
       "location": {
         "x": [0.35, 8.0],
         "y": [0.35, 9.0],
@@ -321,6 +375,7 @@
       "blend_in": 0.4,
       "blend_out": 0.4,
       "single_instance": true,
+      "location_amplitude_multiplier": 3.0,
       "location": {
         "x": [0.22, 1.2],
         "y": [0.22, 1.4],
@@ -332,6 +387,92 @@
         "roll": [0.04, 1.1]
       },
       "fov": [0.08, 0.8]
+    },
+    {
+      "name": "CS_载具_引擎震动",
+      "duration": 0.0,
+      "blend_in": 0.2,
+      "blend_out": 0.3,
+      "single_instance": true,
+      "location_amplitude_multiplier": 2.0,
+      "location": {
+        "x": [0.45, 18.0],
+        "y": [0.35, 22.0],
+        "z": [0.55, 26.0]
+      },
+      "rotation": {
+        "pitch": [0.08, 18.0],
+        "yaw": [0.05, 22.0],
+        "roll": [0.06, 24.0]
+      }
+    },
+    {
+      "name": "CS_地震_强烈",
+      "duration": 5.0,
+      "blend_in": 0.2,
+      "blend_out": 1.0,
+      "single_instance": true,
+      "location_amplitude_multiplier": 5.0,
+      "location": {
+        "x": [3.0, 2.8],
+        "y": [3.5, 3.4],
+        "z": [1.6, 4.6]
+      },
+      "rotation": {
+        "pitch": [1.0, 3.2],
+        "yaw": [1.2, 3.8],
+        "roll": [0.7, 2.5]
+      }
+    },
+    {
+      "name": "CS_影视_手持轻微",
+      "duration": 0.0,
+      "blend_in": 0.5,
+      "blend_out": 0.5,
+      "single_instance": true,
+      "location": {
+        "x": [0.35, 0.65],
+        "y": [0.3, 0.75],
+        "z": [0.2, 0.55]
+      },
+      "rotation": {
+        "pitch": [0.22, 0.65],
+        "yaw": [0.28, 0.5],
+        "roll": [0.12, 0.35]
+      }
+    },
+    {
+      "name": "CS_载具_船体摇摆",
+      "pattern": "wave",
+      "duration": 0.0,
+      "blend_in": 0.5,
+      "blend_out": 0.5,
+      "single_instance": true,
+      "location": {
+        "x": [1.0, 0.18, "random"],
+        "y": [2.0, 0.22, "random"],
+        "z": [3.0, 0.35, "random"]
+      },
+      "rotation": {
+        "pitch": [0.7, 0.28, "random"],
+        "yaw": [0.2, 0.18, "random"],
+        "roll": [1.2, 0.22, "random"]
+      }
+    },
+    {
+      "name": "CS_角色_呼吸起伏",
+      "pattern": "wave",
+      "duration": 0.0,
+      "blend_in": 0.6,
+      "blend_out": 0.6,
+      "single_instance": true,
+      "location": {
+        "x": [0.25, 0.22, "zero"],
+        "z": [0.4, 0.22, "zero"]
+      },
+      "rotation": {
+        "pitch": [0.15, 0.22, "zero"]
+      }
     }
   ]
 }

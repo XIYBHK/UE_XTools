@@ -22,6 +22,7 @@ import unreal
 
 ASSET_PATH = "/XTools/Curve/EasingFunctions"
 VALIDATE_ONLY = os.environ.get("XTOOLS_EASING_CURVE_VALIDATE_ONLY") == "1"
+FORCE_REBUILD = os.environ.get("XTOOLS_EASING_CURVE_FORCE_REBUILD") == "1"
 VALIDATION_STEPS = 131072
 ADAPTIVE_TEST_SAMPLES = 32
 MAX_SUBDIVISION_DEPTH = 24
@@ -357,7 +358,7 @@ def _import_curve(asset_tools, asset_name, easing_name, keys, source_directory):
     return asset
 
 
-def _validate_curve(asset, asset_name, function):
+def _validate_curve(asset, asset_name, function, keys):
     if not isinstance(asset, unreal.CurveFloat):
         raise RuntimeError(f"{asset_name} is not a CurveFloat")
 
@@ -371,11 +372,18 @@ def _validate_curve(asset, asset_name, function):
         max_error = max(max_error, abs(asset.get_float_value(time) - function(time)))
     if max_error > MAX_VERTICAL_ERROR + 1.0e-6:
         raise RuntimeError(f"{asset_name} exceeds error limit: {max_error}")
+    key_data = [
+        unreal.Vector4(x=time, y=value, z=arrive, w=leave)
+        for time, value, arrive, leave in keys
+    ]
+    if not unreal.XCurvePresetLibrary.does_curve_float_match_cubic_keys(asset, key_data):
+        raise RuntimeError(f"{asset_name} does not contain the expected cubic keys and tangents")
     return max_error
 
 
 def main():
-    if len(EASINGS) != 30 or set(EASINGS) != set(ASSET_NAMES):
+    if (len(EASINGS) != 30 or set(EASINGS) != set(ASSET_NAMES)
+            or len(set(ASSET_NAMES.values())) != len(ASSET_NAMES)):
         raise RuntimeError(f"Expected 30 easing functions, found {len(EASINGS)}")
 
     asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
@@ -391,12 +399,29 @@ def main():
         asset_name = ASSET_NAMES[easing_name]
         keys = _build_cubic_keys(easing_name, function)
         corner_count = _validate_key_smoothness(easing_name, keys)
+        asset_path = f"{ASSET_PATH}/{asset_name}"
+        max_error = None
         if VALIDATE_ONLY:
-            asset = unreal.load_asset(f"{ASSET_PATH}/{asset_name}", unreal.CurveFloat)
+            asset = unreal.load_asset(asset_path, unreal.CurveFloat)
+        elif not FORCE_REBUILD and unreal.EditorAssetLibrary.does_asset_exist(asset_path):
+            asset = unreal.load_asset(asset_path, unreal.CurveFloat)
+            if not isinstance(asset, unreal.CurveFloat):
+                raise RuntimeError(
+                    f"{asset_path} is not a CurveFloat; "
+                    "use Force only if replacement is intentional"
+                )
+            try:
+                max_error = _validate_curve(asset, asset_name, function, keys)
+            except RuntimeError as exc:
+                unreal.log_warning(f"Rebuilding {asset_name}: {exc}")
+                asset = _import_curve(asset_tools, asset_name, easing_name, keys, source_directory)
+            else:
+                unreal.log(f"Unchanged {asset_name}: max error {max_error:.7f}")
         else:
             asset = _import_curve(asset_tools, asset_name, easing_name, keys, source_directory)
         total_keys += len(keys)
-        max_error = _validate_curve(asset, asset_name, function)
+        if max_error is None:
+            max_error = _validate_curve(asset, asset_name, function, keys)
 
         unreal.log(
             f"{'Validated' if VALIDATE_ONLY else 'Generated'} {asset_name}: "
