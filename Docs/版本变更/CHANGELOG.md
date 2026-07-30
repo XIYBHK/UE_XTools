@@ -1,5 +1,80 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.9 (2026-07-30)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 新增功能
+- **XTools**: 新增贝塞尔导弹轨迹、控制点生成和标架状态节点
+- **X_AssetEditor**: 新增曲线与镜头晃动预设生成工具链及常用预设库
+- **PointSampling**: 新增矩形网格独立横纵间距节点
+
+### 重要修复
+- **XTools**: 修复延迟循环编译、重入、Break 完成和零延迟同步语义
+- **XTools**: 修复贝塞尔速度映射、噪声方向与旋转跟随
+- **ObjectPool / FormationSystem / BlueprintExtensions**: 修复引用收集、输入边界和节点连线
+
+### 性能优化
+- **PointSampling**: 泊松活跃点移除优化为常数复杂度
+- **ObjectPool**: 激活和重置路径直接遍历组件集合
+
+</details>
+
+<details>
+<summary><strong>XTools</strong></summary>
+
+- 调整 贝塞尔曲线点拆分为纯计算与显式调试绘制节点
+- 修复 默认速度模式未应用进度映射曲线
+- 新增 贝塞尔导弹轨迹、控制点生成和标架状态重置节点
+- 优化 贝塞尔噪声端点衰减与匀速映射
+- 调整 贝塞尔节点提示与噪声采样时间命名
+- 修复 贝塞尔输出切线和旋转跟随噪声方向
+- 修复 延迟循环事件图编译误判
+- 修复 循环 Break 后重复执行 Completed
+- 修复 延迟循环重入覆盖共享状态
+- 修复 零延迟循环未同步执行
+- 调整 延迟循环按间隔启动循环体
+
+</details>
+
+<details>
+<summary><strong>X_AssetEditor</strong></summary>
+
+- 新增 曲线与镜头晃动预设生成工具链
+- 新增 常用 Perlin 与 Wave 镜头晃动预设
+- 优化 曲线预设分类与平滑性验证
+
+</details>
+
+<details>
+<summary><strong>XToolsCore / ObjectPool</strong></summary>
+
+- 优化 编辑器消息面板仅接收警告和错误
+- 修复 非反射池数据类引用收集
+- 优化 激活和重置组件遍历
+
+</details>
+
+<details>
+<summary><strong>FormationSystem / BlueprintExtensions</strong></summary>
+
+- 修复 负分离权重安全返回零向量
+- 修复 Map Append 内部连线校验
+
+</details>
+
+<details>
+<summary><strong>PointSampling / BlueprintAssist</strong></summary>
+
+- 新增 矩形网格独立横纵间距节点
+- 优化 泊松活跃点常数复杂度移除
+- 调整 BlueprintAssist 默认禁用自动格式化
+
+</details>
+
+---
+
 ## 版本 v1.9.8 (2026-07-21)
 
 <details>
