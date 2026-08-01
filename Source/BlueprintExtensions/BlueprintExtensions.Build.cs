@@ -47,7 +47,8 @@ public class BlueprintExtensions : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"XToolsCore",                 // 统一错误处理和跨版本兼容
-			"BlueprintExtensionsRuntime"  // K2Nodes需要调用Runtime模块中的函数库
+			"BlueprintExtensionsRuntime", // K2Nodes需要调用Runtime模块中的函数库
+			"RandomShuffles"               // Blueprint 反射测试调用随机数组节点
 		}
 	);
 

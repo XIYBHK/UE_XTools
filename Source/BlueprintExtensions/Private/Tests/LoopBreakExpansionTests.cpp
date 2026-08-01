@@ -1,6 +1,6 @@
 #include "Misc/AutomationTest.h"
 
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "K2Nodes/K2Node_ForEachArrayReverse.h"
 #include "K2Nodes/K2Node_ForEachLoopWithDelay.h"

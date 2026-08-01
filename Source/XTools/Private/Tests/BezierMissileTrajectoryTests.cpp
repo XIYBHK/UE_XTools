@@ -3,7 +3,7 @@
 * Licensed under UE_XTools License
 */
 
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "XToolsLibrary.h"
 #include "Curves/CurveFloat.h"
