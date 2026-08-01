@@ -24,10 +24,11 @@ public:
 	 * @param PointCount 总点数
 	 * @param Radius 圆形/球体半径
 	 * @param bIs3D 是否为3D球体
+	 * @param bSolid 是否生成实心圆/球
 	 * @param DistributionMode 分布模式
 	 * @param MinDistance 泊松分布的最小距离
 	 * @param StartAngle 起始角度（度，仅Uniform模式2D有效）
-	 * @param bClockwise 是否顺时针排列（仅Uniform模式2D有效）
+	 * @param bClockwise 是否顺时针排列（仅Uniform模式有效）
 	 * @param JitterStrength 扰动强度(0-1)
 	 * @param RandomStream 随机流
 	 * @return 相对于中心的点位数组
@@ -36,6 +37,7 @@ public:
 		int32 PointCount,
 		float Radius,
 		bool bIs3D,
+		bool bSolid,
 		ECircleDistributionMode DistributionMode,
 		float MinDistance,
 		float StartAngle,
@@ -141,14 +143,16 @@ private:
 	 * @param PointCount 点数
 	 * @param Radius 半径
 	 * @param bIs3D 是否为3D球体
-	 * @param StartAngle 起始角度（仅2D有效）
-	 * @param bClockwise 是否顺时针（仅2D有效）
+	 * @param bSolid 是否生成实心圆/球
+	 * @param StartAngle 起始角度
+	 * @param bClockwise 是否顺时针
 	 * @return 点位数组
 	 */
 	static TArray<FVector> GenerateUniform(
 		int32 PointCount,
 		float Radius,
 		bool bIs3D,
+		bool bSolid,
 		float StartAngle,
 		bool bClockwise
 	);
@@ -198,6 +202,38 @@ private:
 		float Radius,
 		float StartAngleDeg,
 		float EndAngleDeg,
+		bool bClockwise
+	);
+
+	static void GenerateFullRingPoints(
+		TArray<FVector>& OutPoints,
+		int32 PointCount,
+		float Radius,
+		float Z,
+		float StartAngleDeg,
+		bool bClockwise
+	);
+
+	static void GenerateSolidDiscPoints(
+		TArray<FVector>& OutPoints,
+		int32 PointCount,
+		float Radius,
+		float Z,
+		float StartAngle,
+		bool bClockwise
+	);
+
+	static TArray<FVector> GenerateUniformSphereShell(
+		int32 PointCount,
+		float Radius,
+		float StartAngle,
+		bool bClockwise
+	);
+
+	static TArray<FVector> GenerateUniformSolidSphere(
+		int32 PointCount,
+		float Radius,
+		float StartAngle,
 		bool bClockwise
 	);
 

@@ -242,16 +242,27 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
 
   // 圆形类阵型
   case EPointSamplingMode::Circle:
-    return UFormationSamplingLibrary::GenerateCircle(
+  {
+    const TArray<FTransform> CircleTransforms = UFormationSamplingLibrary::GenerateCircle(
         PointCount, CenterLocation, Rotation,
         FMath::Max(10.0f, Spacing), // Radius
         false,                      // bIs3D
+        false,                      // bSolid
         static_cast<ECircleDistributionMode>(
             FMath::Clamp(Param3, 0, 2)), // DistributionMode
         FMath::Max(1.0f, Param1),        // MinDistance
         Param2,                          // StartAngle
         true,                            // bClockwise
         CoordinateSpace, JitterStrength, RandomSeed);
+
+    TArray<FVector> Points;
+    Points.Reserve(CircleTransforms.Num());
+    for (const FTransform& CircleTransform : CircleTransforms)
+    {
+      Points.Add(CircleTransform.GetLocation());
+    }
+    return Points;
+  }
 
   // 雪花类阵型
   case EPointSamplingMode::Snowflake:

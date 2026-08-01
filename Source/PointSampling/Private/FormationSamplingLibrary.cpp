@@ -198,6 +198,28 @@ namespace FormationSamplingInternal
 			Point.Y += RandomStream.FRandRange(-JitterRange, JitterRange);
 		}
 	}
+
+	TArray<FTransform> BuildOutwardFacingTransforms(
+		const TArray<FVector>& Points,
+		const FVector& CenterLocation)
+	{
+		TArray<FTransform> Transforms;
+		Transforms.Reserve(Points.Num());
+
+		for (const FVector& Point : Points)
+		{
+			const FVector DirectionFromCenter = Point - CenterLocation;
+			if (DirectionFromCenter.IsNearlyZero())
+			{
+				Transforms.Emplace(FRotator::ZeroRotator, Point);
+				continue;
+			}
+
+			Transforms.Emplace(DirectionFromCenter.Rotation(), Point);
+		}
+
+		return Transforms;
+	}
 }
 
 // ============================================================================
@@ -334,12 +356,13 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHollowTriangle(
 // 圆形和雪花类阵型实现（占位符）
 // ============================================================================
 
-TArray<FVector> UFormationSamplingLibrary::GenerateCircle(
+TArray<FTransform> UFormationSamplingLibrary::GenerateCircle(
 	int32 PointCount,
 	FVector CenterLocation,
 	FRotator Rotation,
 	float Radius,
 	bool bIs3D,
+	bool bSolid,
 	ECircleDistributionMode DistributionMode,
 	float MinDistance,
 	float StartAngle,
@@ -351,11 +374,13 @@ TArray<FVector> UFormationSamplingLibrary::GenerateCircle(
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateCircle(
-		PointCount, Radius, bIs3D, DistributionMode, MinDistance,
+		PointCount, Radius, bIs3D, bSolid, DistributionMode, MinDistance,
 		StartAngle, bClockwise, JitterStrength, RandomStream
 	);
 
-	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+	TArray<FVector> TransformedPoints = FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
+	const FVector FacingCenter = CoordinateSpace == EPoissonCoordinateSpace::Raw ? FVector::ZeroVector : CenterLocation;
+	return FormationSamplingInternal::BuildOutwardFacingTransforms(TransformedPoints, FacingCenter);
 }
 
 TArray<FVector> UFormationSamplingLibrary::GenerateSnowflake(

@@ -174,23 +174,25 @@ public:
 	 * @param Rotation 旋转
 	 * @param Radius 半径
 	 * @param bIs3D 是否为3D球体（false=2D圆形，true=3D球体）
+	 * @param bSolid 是否生成实心圆/球
 	 * @param DistributionMode 分布模式（均匀/斐波那契/泊松）
 	 * @param MinDistance 泊松分布的最小距离（仅Poisson模式有效）
-	 * @param StartAngle 起始角度（仅Uniform模式的2D圆形有效）
-	 * @param bClockwise 是否顺时针（仅Uniform模式的2D圆形有效）
+	 * @param StartAngle 起始角度（仅Uniform模式有效）
+	 * @param bClockwise 是否顺时针（仅Uniform模式有效）
 	 * @param CoordinateSpace 坐标空间
 	 * @param JitterStrength 扰动强度(0-1)
 	 * @param RandomSeed 随机种子
-	 * @return 点位数组
+	 * @return 变换数组，位置为点位，旋转默认朝向圆/球外侧
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|圆形",
 		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed"))
-	static TArray<FVector> GenerateCircle(
+	static TArray<FTransform> GenerateCircle(
 		int32 PointCount,
 		FVector CenterLocation,
 		FRotator Rotation,
 		float Radius = 200.0f,
 		bool bIs3D = false,
+		bool bSolid = false,
 		ECircleDistributionMode DistributionMode = ECircleDistributionMode::Uniform,
 		float MinDistance = 50.0f,
 		float StartAngle = 0.0f,
