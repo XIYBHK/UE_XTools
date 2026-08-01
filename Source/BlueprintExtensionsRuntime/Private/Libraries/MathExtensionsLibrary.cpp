@@ -122,6 +122,82 @@ float UMathExtensionsLibrary::StableFrame(float DeltaTime, const TArray<float>& 
 
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 
+#pragma region CurveScale
+
+	namespace
+	{
+		bool IsFiniteVector(const FVector& Value)
+		{
+			return FMath::IsFinite(Value.X) && FMath::IsFinite(Value.Y) && FMath::IsFinite(Value.Z);
+		}
+
+		double ApplyBoundedScaleStrength(double CurveScale, double Strength, double MinScaleMultiplier, double MaxScaleMultiplier)
+		{
+			if (CurveScale >= 1.0)
+			{
+				const double Range = MaxScaleMultiplier - 1.0;
+				if (Range <= KINDA_SMALL_NUMBER)
+				{
+					return 1.0;
+				}
+
+				const double Alpha = FMath::Clamp((CurveScale - 1.0) / Range, 0.0, 1.0);
+				return 1.0 + Range * (1.0 - FMath::Pow(1.0 - Alpha, Strength));
+			}
+
+			const double Range = 1.0 - MinScaleMultiplier;
+			if (Range <= KINDA_SMALL_NUMBER)
+			{
+				return 1.0;
+			}
+
+			const double Alpha = FMath::Clamp((1.0 - CurveScale) / Range, 0.0, 1.0);
+			return 1.0 - Range * (1.0 - FMath::Pow(1.0 - Alpha, Strength));
+		}
+	}
+
+	FVector UMathExtensionsLibrary::ApplyScaleCurveAmplitude(
+		FVector BaseScale,
+		FVector CurveScale,
+		double Strength,
+		double MinScaleMultiplier,
+		double MaxScaleMultiplier)
+	{
+		if (!IsFiniteVector(BaseScale))
+		{
+			BaseScale = FVector::OneVector;
+		}
+
+		if (!IsFiniteVector(CurveScale))
+		{
+			CurveScale = FVector::OneVector;
+		}
+
+		const double SafeStrength = FMath::IsFinite(Strength) ? FMath::Max(Strength, 0.0) : 1.0;
+		const double SafeMinScaleMultiplier = FMath::IsFinite(MinScaleMultiplier)
+			? FMath::Clamp(MinScaleMultiplier, 0.0, 1.0)
+			: 0.0;
+		const double SafeMaxScaleMultiplier = FMath::IsFinite(MaxScaleMultiplier)
+			? FMath::Max(MaxScaleMultiplier, 1.0)
+			: 2.0;
+		const FVector ScaleMultiplier(
+			ApplyBoundedScaleStrength(CurveScale.X, SafeStrength, SafeMinScaleMultiplier, SafeMaxScaleMultiplier),
+			ApplyBoundedScaleStrength(CurveScale.Y, SafeStrength, SafeMinScaleMultiplier, SafeMaxScaleMultiplier),
+			ApplyBoundedScaleStrength(CurveScale.Z, SafeStrength, SafeMinScaleMultiplier, SafeMaxScaleMultiplier));
+		FVector Result = BaseScale * ScaleMultiplier;
+
+		if (!IsFiniteVector(Result))
+		{
+			Result = BaseScale;
+		}
+
+		return Result;
+	}
+
+#pragma endregion
+
+//————————————————————————————————————————————————————————————————————————————————————————————————————
+
 #pragma region Sort
 
 	void UMathExtensionsLibrary::SortInsertFloat(UPARAM(ref) TArray<double>& InOutArray, double InsertElement, bool SortAsendant)

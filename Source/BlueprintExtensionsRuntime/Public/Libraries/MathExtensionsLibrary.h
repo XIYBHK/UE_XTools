@@ -40,6 +40,24 @@ public:
 
 //——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
+#pragma region CurveScale
+
+	UFUNCTION(BlueprintPure, Category = "XTools|Blueprint Extensions|Math|Curve",
+		meta = (DisplayName = "应用缩放曲线强度",
+			Keywords = "缩放 曲线 强度 幅度 倍率 Scale Curve Strength Amount ECF Timeline",
+			ToolTip = "将以(1,1,1)为无变化基准的缩放曲线值按强度增强，再乘以动效前的基础缩放。强度0保持基础缩放，1使用曲线原始效果，大于1会平滑推向最小/最大曲线倍率，避免负缩放或极端拉伸。",
+			AdvancedDisplay = "MinScaleMultiplier,MaxScaleMultiplier"))
+	static FVector ApplyScaleCurveAmplitude(
+		UPARAM(DisplayName = "基础缩放") FVector BaseScale = FVector(1.0),
+		UPARAM(DisplayName = "曲线缩放") FVector CurveScale = FVector(1.0),
+		UPARAM(DisplayName = "强度", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3.0")) double Strength = 1.0,
+		UPARAM(DisplayName = "最小曲线倍率", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0")) double MinScaleMultiplier = 0.0,
+		UPARAM(DisplayName = "最大曲线倍率", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "5.0")) double MaxScaleMultiplier = 2.0);
+
+#pragma endregion
+
+//——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+
 #pragma region Sort
 	
 	UFUNCTION(BlueprintCallable, Category = "XTools|Blueprint Extensions|Math|Sort", meta = (DisplayName = "排序插入浮点数", CompactNodeTitle = "SortInsert", ToolTip = "将浮点数插入到已排序数组的正确位置，保持数组排序状态。使用二分查找定位，适合维护实时排行榜等有序列表。"))
