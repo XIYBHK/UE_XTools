@@ -5,6 +5,14 @@
 
 ---
 
+### PointSampling
+- 优化 圆/球点阵顺序
+- 新增 实心圆/球选项
+- 调整 圆/球输出变换数组
+
+### BlueprintExtensionsRuntime
+- 新增 缩放曲线幅度节点
+
 ## 日志格式说明
 
 ### 模块分类

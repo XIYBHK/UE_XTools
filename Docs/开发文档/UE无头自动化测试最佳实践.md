@@ -2,7 +2,7 @@
 
 > 支持范围：UE_XTools，Unreal Engine 5.3-5.8，Windows / PowerShell。
 > 本地开发基线：`D:\UEProject\cppxtools` 的 Unreal Engine 5.3 项目。
-> 调研与本地验证日期：2026-07-23。
+> 调研与本地验证日期：2026-08-02。
 > 本文的默认方案是在无 GUI 的真实 Unreal Editor 进程中运行 UE Automation Test Framework，不是用普通进程绕过引擎测试。
 
 ## 1. 核心结论
@@ -21,6 +21,8 @@ Session Frontend 和 `UnrealEditor-Cmd.exe` 是同一套 Automation Framework �
 2. UE 5.3 `UnrealEditor-Cmd` 运行受影响测试前缀。
 3. 本地小功能不额外编译 UE 5.4-5.8；跨版本问题留到版本更新/发布 CI 矩阵处理。
 4. 只有已打包游戏、真实平台、多进程或联机测试才升级到 Gauntlet。
+
+本轮在 UE 5.3 基线项目中聚合验证了 41 个 XTools 测试：`succeeded=41`、`failed=0`、`notRun=0`。报告保存在项目的 `Saved/Automation/Reports/<RunId>/index.json` 和 `index.html` 中。
 
 ## 2. 选择正确的测试层级
 
@@ -55,10 +57,47 @@ Source/<Module>/Private/Tests/<Feature>Tests.cpp
 
 测试不应为了访问私有实现而破坏模块边界。优先测试公开 API 的可观察行为；确实需要大量白盒测试时，再评估拆出可独立测试的内部类型。
 
+### 3.1.1 当前覆盖范围
+
+本轮新增或补齐的测试集中在以下高收益功能：
+
+| 模块 | 覆盖内容 | 测试层级 |
+|---|---|---|
+| `PointSampling` | 阵型分发、几何/军阵/基础/排序算法、矩形网格间距与变换 | 算法行为 |
+| `FormationSystem` | 内置阵型、数据转换、边界力和非法权重 | 算法行为 |
+| `RandomShuffles` | 固定种子复现、权重采样、严格分配、PRD 状态边界 | 算法行为 |
+| `BlueprintExtensions` | 真实临时 Blueprint 图执行 `CustomThunk` 数组节点 | Blueprint 编译与执行 |
+| `BlueprintExtensionsRuntime` | 变换、样条、对象反射、支撑点和数学函数 | UObject/函数库行为 |
+| `AxisLocker`、`FieldSystemExtensions` | 轴锁定映射、Actor Class/Tag 筛选 | 状态/筛选行为 |
+| `GeometryTool`、`Sort`、`XTools_EnhancedCodeFlow` | 同心圆点、排序去重、ID/SoftPath 转换 | 算法行为 |
+| `XTools`、`X_AssetEditor` | Bezier 轨迹状态、资产命名规则 | 轨迹/编辑器行为 |
+
+测试文件仍放在各自模块的 `Private/Tests` 下。新增测试未单独建立 Runtime 测试模块，也没有让 Runtime 模块依赖 Editor 模块。
+
+### 3.1.2 测试代码与插件打包
+
+Runtime 和 `UncookedOnly` 模块中的测试源文件使用以下保护条件：
+
+```cpp
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+// Automation test implementation
+#endif
+```
+
+这样处理的原因是：
+
+- UE 5.3 UBT 在 `Development` 和 `Editor Development` 中默认启用 `WITH_DEV_AUTOMATION_TESTS`，而 `Shipping` 默认关闭。
+- `WITH_EDITOR` 只在 Editor/Program 目标启用；`UnrealGame Development` 和 `Shipping` 目标为 `0`。
+- `BuildPlugin` 会构建 `UnrealEditor Development`、`UnrealGame Development` 和 `UnrealGame Shipping`。因此编辑器 DLL 会包含测试实现，但游戏 Development/Shipping 二进制不会包含测试注册和实现。
+- `BlueprintExtensions` 是 `UncookedOnly` 模块，Blueprint 图执行测试及其对 `RandomShuffles` 的依赖属于编辑器编译边界，不进入运行时模块。
+- `X_AssetEditor` 等已有测试位于 `.uplugin` 的 `Editor` 模块中，即使不使用上述宏，也会随 Editor 模块边界自动排除出游戏目标。
+
+结论：这些测试不会改变插件的运行时行为，也不会导致 Shipping 打包失败或把测试注册带进游戏。正式 `BuildPlugin` 仍会让编辑器目标编译测试，因此会产生少量编辑器编译时间和 DLL 体积开销；这属于预期成本。发布前仍需执行完整打包矩阵验证，而不是用增量 Editor 编译替代打包验证。
+
 ### 3.2 最小测试模板
 
 ```cpp
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "MyFeatureLibrary.h"
 #include "Misc/AutomationTest.h"
@@ -114,6 +153,8 @@ XTools.PointSampling.RectangleGrid.GeneratesIndependentSpacing
 - 日志中的 Error/Warning 可能影响测试结果。预期错误使用 `AddExpectedError` / `AddExpectedMessage`，不要全局关闭日志检查。
 - 只有承诺在 1 秒内完成的快速 Unit/Feature Test 才标记 `SmokeFilter`。
 - 涉及多个 Tick、异步加载或回调时使用 Latent Command 或 Automation Spec 的 `LatentIt`，不要在 Game Thread 上 `Sleep` 或忙等。
+- Blueprint 节点必须优先测试编译后的真实 Blueprint 图和 `ProcessEvent`/图执行结果；不要把 `CustomThunk` 当作普通 C++ `UFunction::ProcessEvent` 直接调用来替代 Blueprint 字节码执行。
+- 测试排序、采样和点阵时同时验证数量、确定性、边界点、索引顺序和退化输入；不要只验证“返回数组非空”。
 
 ## 4. 构建后再运行测试
 
@@ -161,7 +202,7 @@ $testArguments = @(
     '-nop4'
     '-NullRHI'
     '-nosplash'
-    '-ExecCmds=Automation RunTests XTools.Bezier.MissileTrajectory; Quit'
+    '-ExecCmds=Automation RunTests XTools.Bezier.MissileTrajectory'
     '-TestExit=Automation Test Queue Empty'
     "-ReportExportPath=$reportPath"
     "-log=$logName"
@@ -195,11 +236,11 @@ if (
 
 - UE 5.8 官方页面示例写作 `Automation RunTest`；本项目 UE 5.3 引擎源码帮助和实际执行均确认 `Automation RunTests`。项目命令统一使用已验证的复数形式。
 - 使用 `-ReportExportPath`。旧参数 `-ReportOutputPath` 在 UE 5.3 已被标记为旧名称并会产生警告。
-- `-TestExit="Automation Test Queue Empty"` 让进程在测试队列完成时退出；`Automation ...; Quit` 同时把退出动作排入 Automation 命令队列。
+- `-TestExit="Automation Test Queue Empty"` 让进程在测试队列完成时退出。使用这个参数时不要再把 `Quit` 拼入 `-ExecCmds`，避免在测试结果写入报告前提前结束进程。
 - `-unattended` 防止模态对话框等待人工输入。
 - `-nop4` 防止测试流程访问 Perforce。
 - 报告目录和日志文件应按运行唯一命名，避免把上一次结果误认为本次结果。
-- `$expectedTestCount` 必须随测试集合更新；它可以防止过滤器拼错、测试未编译或插件未加载时产生“0 个测试但流程结束”的假成功。
+- `$expectedTestCount` 必须随测试集合更新；它可以防止过滤器拼错、测试未编译或插件未加载时产生“0 个测试但流程结束”的假成功。运行整个插件前先从报告确认当前总数，再更新该值。
 
 ### 5.2 运行粒度
 
@@ -292,6 +333,17 @@ Latent Command 的 `Update()` 应在条件满足时返回 `true`，否则返回 
 ### 7.3 何时使用 Functional Testing
 
 当验收目标是“某个 Actor 在某张地图中完成完整行为”时，使用 Functional Testing 或专用测试地图通常比在 C++ 测试里手工拼装整个关卡更清晰。测试地图必须保持最小、确定，并避免依赖编辑器当前打开的关卡。
+
+### 7.4 World、Blueprint 和 Latent 测试的分层
+
+- 纯算法、函数库和确定性状态：使用 `IMPLEMENT_SIMPLE_AUTOMATION_TEST`，优先 `-NullRHI`。
+- Blueprint 节点的展开语义：在 `BlueprintExtensions` 中构造最小临时 Blueprint，编译图并执行生成函数；这能覆盖 Pin 类型、字节码展开和 CustomThunk 的真实路径。
+- UObject、资产和反射：通过真实 Editor 进程加载模块，并使用临时对象/资产验证公开行为；不要把抽象 `UObject` 直接实例化为测试对象。
+- World/Actor 生命周期：只有当功能确实依赖 `UWorld`、Actor Spawn、组件注册或 Tick 时才创建临时 World；验证完成后销毁 Actor、World 和临时 Package。
+- 多帧等待、PIE、异步加载和回调：使用 `IAutomationLatentCommand` 或 Automation Spec 的 `LatentIt`，为每个等待条件设置超时和失败信息。
+- World 测试不自动等于 GPU 测试。没有渲染、材质、截图或窗口输入依赖时，仍优先使用 `-NullRHI`。
+
+本轮已落地的是函数库、算法和一个真实 Blueprint 图执行测试；World/PIE/Latent 测试应在目标功能确实需要生命周期或跨帧行为时再增加，避免为了覆盖率手工搭建无关关卡。
 
 ## 8. 测试隔离、日志和临时排除
 
