@@ -174,7 +174,7 @@ public:
 	 * @param Rotation 旋转
 	 * @param Radius 半径
 	 * @param bIs3D 是否为3D球体（false=2D圆形，true=3D球体）
-	 * @param bSolid 是否生成实心圆/球
+	 * @param bSolid 是否生成实心圆/球（仅Uniform模式有效）
 	 * @param DistributionMode 分布模式（均匀/斐波那契/泊松）
 	 * @param MinDistance 泊松分布的最小距离（仅Poisson模式有效）
 	 * @param StartAngle 起始角度（仅Uniform模式有效）
@@ -182,10 +182,12 @@ public:
 	 * @param CoordinateSpace 坐标空间
 	 * @param JitterStrength 扰动强度(0-1)
 	 * @param RandomSeed 随机种子
+	 * @param SolidRingSpacing 实心模式下同心环的目标间距，0为自动
+	 * @param MinimumPointsPerRing 实心球每个纬度环的最小点数
 	 * @return 变换数组，位置为点位，旋转默认朝向圆/球外侧
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|圆形",
-		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed"))
+		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed,SolidRingSpacing,MinimumPointsPerRing"))
 	static TArray<FTransform> GenerateCircle(
 		int32 PointCount,
 		FVector CenterLocation,
@@ -199,7 +201,44 @@ public:
 		bool bClockwise = true,
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
-		int32 RandomSeed = 0
+		int32 RandomSeed = 0,
+		UPARAM(DisplayName = "实心环间距") float SolidRingSpacing = 0.0f,
+		UPARAM(DisplayName = "每圈最小点数") int32 MinimumPointsPerRing = 6,
+		UPARAM(DisplayName = "排序方式") EPointArrayOrderMode PointOrder = EPointArrayOrderMode::Preserve,
+		UPARAM(DisplayName = "反转索引") bool bReverseOrder = false
+	);
+
+	/**
+	 * 重排位置数组的索引顺序。坐标旋转用于将输出坐标还原到阵型自身坐标系；
+	 * 世界空间旋转阵型应传入生成时使用的旋转，本地/原始空间保持默认即可。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|排序",
+		meta = (DisplayName = "排序点位数组", Keywords = "点位 排序 索引 下到上 左到右 顺时针 逆时针",
+			ToolTip = "仅重排数组索引，不修改点位坐标。圆形和球体排序使用中心位置、起始角和坐标旋转定义自身坐标系。",
+			AdvancedDisplay = "CenterLocation,CoordinateRotation,StartAngle,LayerTolerance,bReverseOrder"))
+	static TArray<FVector> SortPointArray(
+		UPARAM(DisplayName = "点位") const TArray<FVector>& Points,
+		UPARAM(DisplayName = "排序方式") EPointArrayOrderMode PointOrder = EPointArrayOrderMode::Preserve,
+		UPARAM(DisplayName = "中心位置") FVector CenterLocation = FVector::ZeroVector,
+		UPARAM(DisplayName = "坐标旋转") FRotator CoordinateRotation = FRotator::ZeroRotator,
+		UPARAM(DisplayName = "起始角") float StartAngle = 0.0f,
+		UPARAM(DisplayName = "分层容差") float LayerTolerance = 1.0f,
+		UPARAM(DisplayName = "反转索引") bool bReverseOrder = false
+	);
+
+	/** 重排变换数组的索引顺序，保留每个变换的平移、旋转和缩放。 */
+	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|排序",
+		meta = (DisplayName = "排序变换数组", Keywords = "变换 排序 索引 下到上 左到右 顺时针 逆时针",
+			ToolTip = "仅重排数组索引，不修改各变换。圆形和球体排序使用中心位置、起始角和坐标旋转定义自身坐标系。",
+			AdvancedDisplay = "CenterLocation,CoordinateRotation,StartAngle,LayerTolerance,bReverseOrder"))
+	static TArray<FTransform> SortTransformArray(
+		UPARAM(DisplayName = "变换") const TArray<FTransform>& Transforms,
+		UPARAM(DisplayName = "排序方式") EPointArrayOrderMode PointOrder = EPointArrayOrderMode::Preserve,
+		UPARAM(DisplayName = "中心位置") FVector CenterLocation = FVector::ZeroVector,
+		UPARAM(DisplayName = "坐标旋转") FRotator CoordinateRotation = FRotator::ZeroRotator,
+		UPARAM(DisplayName = "起始角") float StartAngle = 0.0f,
+		UPARAM(DisplayName = "分层容差") float LayerTolerance = 1.0f,
+		UPARAM(DisplayName = "反转索引") bool bReverseOrder = false
 	);
 
 	/**
@@ -493,7 +532,8 @@ public:
 
 	/**
 	 * 生成同心圆环阵型（多层圆环分布）
-	 * @param PointsPerRing 每层的点数数组
+	 * @param PointCount PointsPerRing为空时的目标点数
+	 * @param PointsPerRing 每层的显式点数；非空时优先遵循该数组
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|高级圆形",
 		meta = (DisplayName = "生成同心圆环阵型", AdvancedDisplay = "JitterStrength,RandomSeed"))

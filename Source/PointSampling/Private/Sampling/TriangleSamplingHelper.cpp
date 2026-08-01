@@ -109,46 +109,32 @@ TArray<FVector> FTriangleSamplingHelper::GenerateHollowTriangle(
 
 	Points.Reserve(PointCount);
 
-	// 计算需要的边长（每条边的点数）
-	int32 PointsPerEdge = FMath::Max(2, FMath::CeilToInt(FMath::Sqrt(static_cast<float>(PointCount))));
+	// 以目标弧长构成居中的等边三角形，并在闭合周长上使用半开区间取样。
+	const float SideLength = static_cast<float>(PointCount) * Spacing / 3.0f;
+	const float Height = SideLength * FMath::Sqrt(3.0f) * 0.5f;
+	const float Direction = bInverted ? 1.0f : -1.0f;
+	const FVector TopVertex(0.0f, Direction * Height * (2.0f / 3.0f), 0.0f);
+	const FVector LeftVertex(-SideLength * 0.5f, -Direction * Height / 3.0f, 0.0f);
+	const FVector RightVertex(SideLength * 0.5f, -Direction * Height / 3.0f, 0.0f);
 
-	// 等边三角形的高度
-	float Height = (PointsPerEdge - 1) * Spacing * FMath::Sqrt(3.0f) * 0.5f;
-	float HalfWidth = (PointsPerEdge - 1) * Spacing * 0.5f;
-
-	// 三角形的三个顶点
-	FVector TopVertex(0.0f, bInverted ? Height : -Height, 0.0f);
-	FVector LeftVertex(-HalfWidth, bInverted ? -Height : Height, 0.0f);
-	FVector RightVertex(HalfWidth, bInverted ? -Height : Height, 0.0f);
-
-	int32 GeneratedCount = 0;
-
-	// 生成三条边
-	// 边1: 顶点 -> 左顶点
-	for (int32 i = 0; i < PointsPerEdge && GeneratedCount < PointCount; ++i)
+	for (int32 Index = 0; Index < PointCount; ++Index)
 	{
-		float T = (PointsPerEdge > 1) ? (static_cast<float>(i) / (PointsPerEdge - 1)) : 0.5f;
-		FVector Point = FMath::Lerp(TopVertex, LeftVertex, T);
-		Points.Add(Point);
-		++GeneratedCount;
-	}
+		const float PerimeterProgress = static_cast<float>(Index) * 3.0f / static_cast<float>(PointCount);
+		const int32 EdgeIndex = FMath::Min(FMath::FloorToInt(PerimeterProgress), 2);
+		const float EdgeProgress = PerimeterProgress - EdgeIndex;
 
-	// 边2: 左顶点 -> 右顶点（跳过起点避免重复）
-	for (int32 i = 1; i < PointsPerEdge && GeneratedCount < PointCount; ++i)
-	{
-		float T = (PointsPerEdge > 1) ? (static_cast<float>(i) / (PointsPerEdge - 1)) : 0.5f;
-		FVector Point = FMath::Lerp(LeftVertex, RightVertex, T);
-		Points.Add(Point);
-		++GeneratedCount;
-	}
-
-	// 边3: 右顶点 -> 顶点（跳过起点和终点避免重复）
-	for (int32 i = 1; i < PointsPerEdge - 1 && GeneratedCount < PointCount; ++i)
-	{
-		float T = (PointsPerEdge > 1) ? (static_cast<float>(i) / (PointsPerEdge - 1)) : 0.5f;
-		FVector Point = FMath::Lerp(RightVertex, TopVertex, T);
-		Points.Add(Point);
-		++GeneratedCount;
+		switch (EdgeIndex)
+		{
+		case 0:
+			Points.Add(FMath::Lerp(TopVertex, LeftVertex, EdgeProgress));
+			break;
+		case 1:
+			Points.Add(FMath::Lerp(LeftVertex, RightVertex, EdgeProgress));
+			break;
+		default:
+			Points.Add(FMath::Lerp(RightVertex, TopVertex, EdgeProgress));
+			break;
+		}
 	}
 
 	// 应用扰动

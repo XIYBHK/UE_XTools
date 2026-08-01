@@ -43,7 +43,9 @@ public:
 		float StartAngle,
 		bool bClockwise,
 		float JitterStrength,
-		FRandomStream& RandomStream
+		FRandomStream& RandomStream,
+		float SolidRingSpacing,
+		int32 MinimumPointsPerRing
 	);
 
 	/**
@@ -154,7 +156,9 @@ private:
 		bool bIs3D,
 		bool bSolid,
 		float StartAngle,
-		bool bClockwise
+		bool bClockwise,
+		float SolidRingSpacing,
+		int32 MinimumPointsPerRing
 	);
 
 	/**
@@ -220,7 +224,8 @@ private:
 		float Radius,
 		float Z,
 		float StartAngle,
-		bool bClockwise
+		bool bClockwise,
+		float RingSpacing
 	);
 
 	static TArray<FVector> GenerateUniformSphereShell(
@@ -234,7 +239,9 @@ private:
 		int32 PointCount,
 		float Radius,
 		float StartAngle,
-		bool bClockwise
+		bool bClockwise,
+		float SolidRingSpacing,
+		int32 MinimumPointsPerRing
 	);
 
 	/**

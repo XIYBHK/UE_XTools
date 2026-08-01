@@ -176,6 +176,40 @@ enum class ECircleDistributionMode : uint8
 };
 
 /**
+ * 点位数组索引排序方式。排序只重排数组，不会修改点位坐标或变换。
+ */
+UENUM(BlueprintType)
+enum class EPointArrayOrderMode : uint8
+{
+	/** 保持生成器原始顺序 */
+	Preserve UMETA(DisplayName = "保持生成顺序"),
+
+	/** 按局部X轴从小到大 */
+	XAscending UMETA(DisplayName = "X轴从小到大"),
+
+	/** 按局部Y轴从小到大 */
+	YAscending UMETA(DisplayName = "Y轴从小到大"),
+
+	/** 按局部Z轴从小到大 */
+	ZAscending UMETA(DisplayName = "Z轴从小到大"),
+
+	/** 局部Y轴由下至上，同一行局部X轴由左至右 */
+	GridBottomToTopLeftToRight UMETA(DisplayName = "下至上，每行左至右"),
+
+	/** 从起始角开始顺时针环绕中心 */
+	CircleClockwise UMETA(DisplayName = "环绕中心顺时针"),
+
+	/** 从起始角开始逆时针环绕中心 */
+	CircleCounterClockwise UMETA(DisplayName = "环绕中心逆时针"),
+
+	/** 按局部Z轴由下至上分层，每层顺时针环绕中心 */
+	SphereBottomToTopClockwise UMETA(DisplayName = "球体下至上，顺时针"),
+
+	/** 按局部Z轴由下至上分层，每层逆时针环绕中心 */
+	SphereBottomToTopCounterClockwise UMETA(DisplayName = "球体下至上，逆时针")
+};
+
+/**
  * 纹理采样通道选择
  */
 UENUM(BlueprintType)

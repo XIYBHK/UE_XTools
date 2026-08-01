@@ -149,7 +149,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	float StartAngle,
 	bool bClockwise,
 	float JitterStrength,
-	FRandomStream& RandomStream)
+	FRandomStream& RandomStream,
+	float SolidRingSpacing,
+	int32 MinimumPointsPerRing)
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0 || Radius <= 0.0f)
@@ -161,7 +163,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	switch (DistributionMode)
 	{
 	case ECircleDistributionMode::Uniform:
-		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise);
+		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, MinimumPointsPerRing);
 		break;
 
 	case ECircleDistributionMode::Fibonacci:
@@ -173,7 +175,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 		break;
 
 	default:
-		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise);
+		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, MinimumPointsPerRing);
 		break;
 	}
 
@@ -234,8 +236,19 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflake(
 		return Points;
 	}
 
-	// 计算每层的点数（按层数比例分配）
-	int32 PointsPerLayer = FMath::Max(1, PointCount / ActualLayers);
+	TArray<int32> LayerPointCounts;
+	if (PointCount >= ActualLayers)
+	{
+		LayerPointCounts = DistributeCountsByWeights(PointCount - ActualLayers, LayerRadii);
+		for (int32& LayerPointCount : LayerPointCounts)
+		{
+			++LayerPointCount;
+		}
+	}
+	else
+	{
+		LayerPointCounts = DistributeCountsByWeights(PointCount, LayerRadii);
+	}
 
 	// 生成各层的点
 	int32 GeneratedCount = 0;
@@ -243,10 +256,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflake(
 	{
 		float LayerRadius = LayerRadii[LayerIndex];
 
-		// 最后一层用剩余所有点数
-		int32 LayerPointCount = (LayerIndex == ActualLayers - 1)
-			? (PointCount - GeneratedCount)
-			: PointsPerLayer;
+		const int32 LayerPointCount = LayerPointCounts[LayerIndex];
 
 		if (LayerPointCount <= 0)
 			continue;
@@ -255,11 +265,8 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflake(
 		float AngleOffset = LayerIndex * 30.0f; // 每层偏移30度
 
 		// 生成这一层的圆周点
-		TArray<FVector> LayerPoints;
-		GenerateArcPoints(LayerPoints, LayerPointCount, LayerRadius, AngleOffset, AngleOffset + 360.0f, true);
-
-		Points.Append(LayerPoints);
-		GeneratedCount += LayerPoints.Num();
+		GenerateFullRingPoints(Points, LayerPointCount, LayerRadius, 0.0f, AngleOffset, true);
+		GeneratedCount += LayerPointCount;
 	}
 
 	// 应用扰动
@@ -319,8 +326,19 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflakeArc(
 		return Points;
 	}
 
-	// 计算每层的点数
-	int32 PointsPerLayer = FMath::Max(1, PointCount / ActualLayers);
+	TArray<int32> LayerPointCounts;
+	if (PointCount >= ActualLayers)
+	{
+		LayerPointCounts = DistributeCountsByWeights(PointCount - ActualLayers, LayerRadii);
+		for (int32& LayerPointCount : LayerPointCounts)
+		{
+			++LayerPointCount;
+		}
+	}
+	else
+	{
+		LayerPointCounts = DistributeCountsByWeights(PointCount, LayerRadii);
+	}
 
 	// 生成各层的弧形点
 	int32 GeneratedCount = 0;
@@ -328,20 +346,21 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflakeArc(
 	{
 		float LayerRadius = LayerRadii[LayerIndex];
 
-		int32 LayerPointCount = (LayerIndex == ActualLayers - 1)
-			? (PointCount - GeneratedCount)
-			: PointsPerLayer;
+		const int32 LayerPointCount = LayerPointCounts[LayerIndex];
 
 		if (LayerPointCount <= 0)
 			continue;
 
 		// 生成这一层的弧形点（所有层使用相同的起始角度和弧度范围）
-		TArray<FVector> LayerPoints;
-		float EndAngle = StartAngle + ArcAngle;
-		GenerateArcPoints(LayerPoints, LayerPointCount, LayerRadius, StartAngle, EndAngle, true);
-
-		Points.Append(LayerPoints);
-		GeneratedCount += LayerPoints.Num();
+		if (FMath::IsNearlyEqual(ArcAngle, 360.0f))
+		{
+			GenerateFullRingPoints(Points, LayerPointCount, LayerRadius, 0.0f, StartAngle, true);
+		}
+		else
+		{
+			GenerateArcPoints(Points, LayerPointCount, LayerRadius, StartAngle, StartAngle + ArcAngle, true);
+		}
+		GeneratedCount += LayerPointCount;
 	}
 
 	// 应用扰动
@@ -418,7 +437,8 @@ void FCircleSamplingHelper::GenerateSolidDiscPoints(
 	float Radius,
 	float Z,
 	float StartAngle,
-	bool bClockwise)
+	bool bClockwise,
+	float RingSpacing)
 {
 	if (PointCount <= 0 || Radius < 0.0f)
 	{
@@ -434,14 +454,36 @@ void FCircleSamplingHelper::GenerateSolidDiscPoints(
 		return;
 	}
 
-	const int32 RingCount = ChooseRegularConcentricLayerCount(PointCount);
-	for (int32 RingIndex = RingCount - 1; RingIndex >= 0; --RingIndex)
+	if (PointCount == 1)
 	{
-		const float RingAlpha = static_cast<float>(RingIndex + 1) / static_cast<float>(RingCount);
+		OutPoints.Add(FVector(0.0f, 0.0f, Z));
+		return;
+	}
+
+	const int32 RequestedRingCount = RingSpacing > UE_KINDA_SMALL_NUMBER
+		? FMath::Max(1, FMath::CeilToInt(Radius / RingSpacing))
+		: ChooseRegularConcentricLayerCount(PointCount);
+	const int32 RingCount = FMath::Min(RequestedRingCount, PointCount - 1);
+
+	TArray<float> RingWeights;
+	RingWeights.Reserve(RingCount);
+	for (int32 RingIndex = RingCount; RingIndex > 0; --RingIndex)
+	{
+		RingWeights.Add(static_cast<float>(RingIndex) / static_cast<float>(RingCount));
+	}
+
+	const TArray<int32> RingPointCounts = DistributeCountsByWeights(PointCount - 1, RingWeights);
+	for (int32 RingIndex = 0; RingIndex < RingCount; ++RingIndex)
+	{
+		if (RingPointCounts[RingIndex] <= 0)
+		{
+			continue;
+		}
+
+		const float RingAlpha = static_cast<float>(RingCount - RingIndex) / static_cast<float>(RingCount);
 		const float RingRadius = Radius * RingAlpha;
-		const int32 InnerRingIndex = RingCount - RingIndex - 1;
-		const float RingOffset = StartAngle + InnerRingIndex * GOLDEN_ANGLE;
-		GenerateFullRingPoints(OutPoints, PointCount, RingRadius, Z, RingOffset, bClockwise);
+		const float RingOffset = StartAngle + RingIndex * GOLDEN_ANGLE;
+		GenerateFullRingPoints(OutPoints, RingPointCounts[RingIndex], RingRadius, Z, RingOffset, bClockwise);
 	}
 
 	OutPoints.Add(FVector(0.0f, 0.0f, Z));
@@ -482,7 +524,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniformSolidSphere(
 	int32 PointCount,
 	float Radius,
 	float StartAngle,
-	bool bClockwise)
+	bool bClockwise,
+	float SolidRingSpacing,
+	int32 MinimumPointsPerRing)
 {
 	TArray<FVector> Points;
 	Points.Reserve(PointCount);
@@ -502,7 +546,8 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniformSolidSphere(
 			continue;
 		}
 
-		GenerateSolidDiscPoints(Points, Layer.PointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise);
+		const int32 RingPointCount = FMath::Max(Layer.PointCount, FMath::Max(1, MinimumPointsPerRing));
+		GenerateSolidDiscPoints(Points, RingPointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise, SolidRingSpacing);
 	}
 
 	return Points;
@@ -530,7 +575,9 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 	bool bIs3D,
 	bool bSolid,
 	float StartAngle,
-	bool bClockwise)
+	bool bClockwise,
+	float SolidRingSpacing,
+	int32 MinimumPointsPerRing)
 {
 	TArray<FVector> Points;
 	Points.Reserve(PointCount);
@@ -538,13 +585,13 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 	if (bIs3D)
 	{
 		return bSolid
-			? GenerateUniformSolidSphere(PointCount, Radius, StartAngle, bClockwise)
+			? GenerateUniformSolidSphere(PointCount, Radius, StartAngle, bClockwise, SolidRingSpacing, MinimumPointsPerRing)
 			: GenerateUniformSphereShell(PointCount, Radius, StartAngle, bClockwise);
 	}
 
 	if (bSolid)
 	{
-		GenerateSolidDiscPoints(Points, PointCount, Radius, 0.0f, StartAngle, bClockwise);
+		GenerateSolidDiscPoints(Points, PointCount, Radius, 0.0f, StartAngle, bClockwise, SolidRingSpacing);
 	}
 	else
 	{
@@ -896,22 +943,44 @@ TArray<FVector> FCircleSamplingHelper::GenerateConcentricRings(
 	// 计算每层的半径
 	const float RadialStep = MaxRadius / RingCount;
 
+	TArray<int32> AutoRingCounts;
+	if (PointsPerRing.Num() == 0)
+	{
+		TArray<float> RingWeights;
+		RingWeights.Reserve(RingCount);
+		for (int32 Ring = 0; Ring < RingCount; ++Ring)
+		{
+			RingWeights.Add(static_cast<float>(Ring + 1));
+		}
+		AutoRingCounts = DistributeCountsByWeights(PointCount, RingWeights);
+	}
+
 	int32 GeneratedCount = 0;
 
 	for (int32 Ring = 0; Ring < RingCount && GeneratedCount < PointCount; ++Ring)
 	{
 		float Radius = (Ring + 1) * RadialStep;
 
-		// 获取该层的点数
-		int32 PointsInRing = (Ring < PointsPerRing.Num()) ? PointsPerRing[Ring] : 8; // 默认8个点
+		// 显式配置优先；未配置时按圆周长度分配目标点数。
+		int32 PointsInRing = 0;
+		if (PointsPerRing.Num() > 0)
+		{
+			PointsInRing = (Ring < PointsPerRing.Num()) ? PointsPerRing[Ring] : 0;
+		}
+		else
+		{
+			PointsInRing = AutoRingCounts[Ring];
+		}
 
-		// 确保至少有点
-		PointsInRing = FMath::Max(1, PointsInRing);
+		if (PointsInRing <= 0)
+		{
+			continue;
+		}
 
 		for (int32 Point = 0; Point < PointsInRing && GeneratedCount < PointCount; ++Point)
 		{
 			// 计算角度
-			float Angle = (360.0f * Point) / PointsInRing;
+			float Angle = (360.0f * Point) / PointsInRing + Ring * GOLDEN_ANGLE;
 
 			// 极坐标转换为笛卡尔坐标
 			FVector Position = FormationSamplingInternal::PolarToCartesian(Radius, FMath::DegreesToRadians(Angle));

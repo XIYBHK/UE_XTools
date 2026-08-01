@@ -210,15 +210,15 @@ TArray<FVector> UPointSamplingLibrary::GenerateFormation(
   case EPointSamplingMode::SolidRectangle:
     return UFormationSamplingLibrary::GenerateSolidRectangle(
         PointCount, CenterLocation, Rotation, Spacing,
-        FMath::Max(1, static_cast<int32>(Param1)), // RowCount
-        FMath::Max(1, static_cast<int32>(Param2)), // ColumnCount
+        Param1 > 0.0f ? static_cast<int32>(Param1) : 0, // RowCount, 0=自动计算
+        Param2 > 0.0f ? static_cast<int32>(Param2) : 0, // ColumnCount, 0=自动计算
         1.0f, CoordinateSpace, JitterStrength, RandomSeed);
 
   case EPointSamplingMode::HollowRectangle:
     return UFormationSamplingLibrary::GenerateHollowRectangle(
         PointCount, CenterLocation, Rotation, Spacing,
-        FMath::Max(1, static_cast<int32>(Param1)), // RowCount
-        FMath::Max(1, static_cast<int32>(Param2)), // ColumnCount
+        Param1 > 0.0f ? static_cast<int32>(Param1) : 0, // RowCount, 0=自动计算
+        Param2 > 0.0f ? static_cast<int32>(Param2) : 0, // ColumnCount, 0=自动计算
         1.0f, CoordinateSpace, JitterStrength, RandomSeed);
 
   case EPointSamplingMode::SpiralRectangle:

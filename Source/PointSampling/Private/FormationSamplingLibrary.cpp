@@ -16,6 +16,8 @@
 #include "Sampling/FormationSamplingInternal.h"
 #include "Components/SplineComponent.h"
 #include "Algo/AnyOf.h"
+#include "Algo/Reverse.h"
+#include "Algo/Sort.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
 
@@ -220,6 +222,117 @@ namespace FormationSamplingInternal
 
 		return Transforms;
 	}
+
+	float GetClockwiseAngle(const FVector& LocalPoint, float StartAngleDegrees)
+	{
+		const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(LocalPoint.Y, LocalPoint.X));
+		return FMath::Fmod(StartAngleDegrees - AngleDegrees + 360.0f, 360.0f);
+	}
+
+	float GetCounterClockwiseAngle(const FVector& LocalPoint, float StartAngleDegrees)
+	{
+		const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(LocalPoint.Y, LocalPoint.X));
+		return FMath::Fmod(AngleDegrees - StartAngleDegrees + 360.0f, 360.0f);
+	}
+
+	TArray<int32> BuildPointOrderIndices(
+		const TArray<FVector>& Points,
+		EPointArrayOrderMode PointOrder,
+		const FVector& CenterLocation,
+		const FRotator& CoordinateRotation,
+		float StartAngle,
+		float LayerTolerance,
+		bool bReverseOrder)
+	{
+		TArray<int32> Indices;
+		Indices.Reserve(Points.Num());
+		for (int32 Index = 0; Index < Points.Num(); ++Index)
+		{
+			Indices.Add(Index);
+		}
+
+		if (PointOrder == EPointArrayOrderMode::Preserve)
+		{
+			if (bReverseOrder)
+			{
+				Algo::Reverse(Indices);
+			}
+			return Indices;
+		}
+
+		TArray<FVector> LocalPoints;
+		LocalPoints.Reserve(Points.Num());
+		for (const FVector& Point : Points)
+		{
+			LocalPoints.Add(CoordinateRotation.UnrotateVector(Point - CenterLocation));
+		}
+
+		const float SafeLayerTolerance = FMath::Max(LayerTolerance, UE_KINDA_SMALL_NUMBER);
+		Indices.Sort([&LocalPoints, PointOrder, StartAngle, SafeLayerTolerance](int32 LeftIndex, int32 RightIndex)
+		{
+			const FVector& Left = LocalPoints[LeftIndex];
+			const FVector& Right = LocalPoints[RightIndex];
+			auto CompareThenIndex = [LeftIndex, RightIndex](float LeftValue, float RightValue)
+			{
+				return LeftValue == RightValue ? LeftIndex < RightIndex : LeftValue < RightValue;
+			};
+
+			switch (PointOrder)
+			{
+			case EPointArrayOrderMode::XAscending:
+				return CompareThenIndex(Left.X, Right.X);
+
+			case EPointArrayOrderMode::YAscending:
+				return CompareThenIndex(Left.Y, Right.Y);
+
+			case EPointArrayOrderMode::ZAscending:
+				return CompareThenIndex(Left.Z, Right.Z);
+
+			case EPointArrayOrderMode::GridBottomToTopLeftToRight:
+				if (Left.Y != Right.Y)
+				{
+					return Left.Y < Right.Y;
+				}
+				return CompareThenIndex(Left.X, Right.X);
+
+			case EPointArrayOrderMode::CircleClockwise:
+				return CompareThenIndex(GetClockwiseAngle(Left, StartAngle), GetClockwiseAngle(Right, StartAngle));
+
+			case EPointArrayOrderMode::CircleCounterClockwise:
+				return CompareThenIndex(GetCounterClockwiseAngle(Left, StartAngle), GetCounterClockwiseAngle(Right, StartAngle));
+
+			case EPointArrayOrderMode::SphereBottomToTopClockwise:
+			case EPointArrayOrderMode::SphereBottomToTopCounterClockwise:
+				{
+					const int32 LeftLayer = FMath::RoundToInt(Left.Z / SafeLayerTolerance);
+					const int32 RightLayer = FMath::RoundToInt(Right.Z / SafeLayerTolerance);
+					if (LeftLayer != RightLayer)
+					{
+						return LeftLayer < RightLayer;
+					}
+
+					const float LeftAngle = PointOrder == EPointArrayOrderMode::SphereBottomToTopClockwise
+						? GetClockwiseAngle(Left, StartAngle)
+						: GetCounterClockwiseAngle(Left, StartAngle);
+					const float RightAngle = PointOrder == EPointArrayOrderMode::SphereBottomToTopClockwise
+						? GetClockwiseAngle(Right, StartAngle)
+						: GetCounterClockwiseAngle(Right, StartAngle);
+					return CompareThenIndex(LeftAngle, RightAngle);
+				}
+
+			case EPointArrayOrderMode::Preserve:
+			default:
+				return LeftIndex < RightIndex;
+			}
+		});
+
+		if (bReverseOrder)
+		{
+			Algo::Reverse(Indices);
+		}
+
+		return Indices;
+	}
 }
 
 // ============================================================================
@@ -369,18 +482,74 @@ TArray<FTransform> UFormationSamplingLibrary::GenerateCircle(
 	bool bClockwise,
 	EPoissonCoordinateSpace CoordinateSpace,
 	float JitterStrength,
-	int32 RandomSeed)
+	int32 RandomSeed,
+	float SolidRingSpacing,
+	int32 MinimumPointsPerRing,
+	EPointArrayOrderMode PointOrder,
+	bool bReverseOrder)
 {
 	FRandomStream RandomStream(RandomSeed);
 
 	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateCircle(
 		PointCount, Radius, bIs3D, bSolid, DistributionMode, MinDistance,
-		StartAngle, bClockwise, JitterStrength, RandomStream
+		StartAngle, bClockwise, JitterStrength, RandomStream, SolidRingSpacing, MinimumPointsPerRing
 	);
 
 	TArray<FVector> TransformedPoints = FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 	const FVector FacingCenter = CoordinateSpace == EPoissonCoordinateSpace::Raw ? FVector::ZeroVector : CenterLocation;
-	return FormationSamplingInternal::BuildOutwardFacingTransforms(TransformedPoints, FacingCenter);
+	TArray<FTransform> Transforms = FormationSamplingInternal::BuildOutwardFacingTransforms(TransformedPoints, FacingCenter);
+	return SortTransformArray(Transforms, PointOrder, FacingCenter,
+		CoordinateSpace == EPoissonCoordinateSpace::World ? Rotation : FRotator::ZeroRotator,
+		StartAngle, FMath::Max(Radius * 0.001f, UE_KINDA_SMALL_NUMBER), bReverseOrder);
+}
+
+TArray<FVector> UFormationSamplingLibrary::SortPointArray(
+	const TArray<FVector>& Points,
+	EPointArrayOrderMode PointOrder,
+	FVector CenterLocation,
+	FRotator CoordinateRotation,
+	float StartAngle,
+	float LayerTolerance,
+	bool bReverseOrder)
+{
+	const TArray<int32> Indices = FormationSamplingInternal::BuildPointOrderIndices(
+		Points, PointOrder, CenterLocation, CoordinateRotation, StartAngle, LayerTolerance, bReverseOrder);
+
+	TArray<FVector> SortedPoints;
+	SortedPoints.Reserve(Points.Num());
+	for (const int32 Index : Indices)
+	{
+		SortedPoints.Add(Points[Index]);
+	}
+	return SortedPoints;
+}
+
+TArray<FTransform> UFormationSamplingLibrary::SortTransformArray(
+	const TArray<FTransform>& Transforms,
+	EPointArrayOrderMode PointOrder,
+	FVector CenterLocation,
+	FRotator CoordinateRotation,
+	float StartAngle,
+	float LayerTolerance,
+	bool bReverseOrder)
+{
+	TArray<FVector> Locations;
+	Locations.Reserve(Transforms.Num());
+	for (const FTransform& Transform : Transforms)
+	{
+		Locations.Add(Transform.GetLocation());
+	}
+
+	const TArray<int32> Indices = FormationSamplingInternal::BuildPointOrderIndices(
+		Locations, PointOrder, CenterLocation, CoordinateRotation, StartAngle, LayerTolerance, bReverseOrder);
+
+	TArray<FTransform> SortedTransforms;
+	SortedTransforms.Reserve(Transforms.Num());
+	for (const int32 Index : Indices)
+	{
+		SortedTransforms.Add(Transforms[Index]);
+	}
+	return SortedTransforms;
 }
 
 TArray<FVector> UFormationSamplingLibrary::GenerateSnowflake(
@@ -901,13 +1070,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateConcentricRingsFormation(
 {
 	FRandomStream RandomStream(RandomSeed);
 
-	// 如果 PointsPerRing 为空，使用默认值 {6, 12, 18, 24}
-	const TArray<int32>& ActualPointsPerRing = PointsPerRing.Num() > 0
-		? PointsPerRing
-		: TArray<int32>{6, 12, 18, 24};
-
 	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateConcentricRings(
-		PointCount, MaxRadius, RingCount, ActualPointsPerRing, JitterStrength, RandomStream
+		PointCount, MaxRadius, RingCount, PointsPerRing, JitterStrength, RandomStream
 	);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);

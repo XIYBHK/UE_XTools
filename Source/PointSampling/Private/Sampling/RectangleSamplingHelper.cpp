@@ -133,14 +133,11 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	int32 Cols = ColumnCount;
 	if (Rows <= 0 || Cols <= 0)
 	{
-		// 对于空心矩形，估算周长需要的点数
-		int32 EffectivePointCount = (PointCount > 0) ? PointCount : 20; // 默认周长约20个点
-		int32 EstimatedPerimeter = FMath::CeilToInt(FMath::Sqrt(EffectivePointCount * 4.0f));
-		Rows = EstimatedPerimeter / 2;
-		Cols = EstimatedPerimeter / 2;
-		// 确保至少是2x2
-		Rows = FMath::Max(2, Rows);
-		Cols = FMath::Max(2, Cols);
+		// 自动模式采用正方形边框，并保证边框容量不小于目标点数。
+		const int32 EffectivePointCount = (PointCount > 0) ? PointCount : 20;
+		const int32 PointsPerSide = FMath::Max(2, FMath::CeilToInt((EffectivePointCount + 4) / 4.0f));
+		Rows = PointsPerSide;
+		Cols = PointsPerSide;
 	}
 
 	// 计算最大可能生成的点数（空心矩形周长）
