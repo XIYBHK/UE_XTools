@@ -484,6 +484,7 @@ TArray<FTransform> UFormationSamplingLibrary::GenerateCircle(
 	float JitterStrength,
 	int32 RandomSeed,
 	float SolidRingSpacing,
+	float SolidLayerSpacing,
 	int32 MinimumPointsPerRing,
 	EPointArrayOrderMode PointOrder,
 	bool bReverseOrder)
@@ -492,7 +493,7 @@ TArray<FTransform> UFormationSamplingLibrary::GenerateCircle(
 
 	TArray<FVector> LocalPoints = FCircleSamplingHelper::GenerateCircle(
 		PointCount, Radius, bIs3D, bSolid, DistributionMode, MinDistance,
-		StartAngle, bClockwise, JitterStrength, RandomStream, SolidRingSpacing, MinimumPointsPerRing
+		StartAngle, bClockwise, JitterStrength, RandomStream, SolidRingSpacing, SolidLayerSpacing, MinimumPointsPerRing
 	);
 
 	TArray<FVector> TransformedPoints = FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);

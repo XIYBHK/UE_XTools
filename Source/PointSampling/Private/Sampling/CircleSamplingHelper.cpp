@@ -95,7 +95,7 @@ namespace
 		return Counts;
 	}
 
-	TArray<FSphereCircleLayer> BuildSphereCircleLayers(int32 PointCount, float Radius)
+	TArray<FSphereCircleLayer> BuildSphereCircleLayers(int32 PointCount, float Radius, float LayerSpacing = 0.0f)
 	{
 		TArray<FSphereCircleLayer> Layers;
 		if (PointCount <= 0 || Radius <= 0.0f)
@@ -110,8 +110,11 @@ namespace
 		}
 
 		const int32 MinLayerCount = PointCount > 2 ? 3 : 2;
+		const int32 RequestedLayerCount = LayerSpacing > UE_KINDA_SMALL_NUMBER
+			? FMath::CeilToInt((Radius * 2.0f) / LayerSpacing) + 1
+			: FMath::CeilToInt(FMath::Sqrt(static_cast<float>(PointCount)));
 		const int32 LayerCount = FMath::Clamp(
-			FMath::CeilToInt(FMath::Sqrt(static_cast<float>(PointCount))),
+			RequestedLayerCount,
 			MinLayerCount,
 			PointCount);
 
@@ -137,6 +140,76 @@ namespace
 
 		return Layers;
 	}
+
+	TArray<FSphereCircleLayer> BuildSolidSphereCircleLayers(
+		int32 PointCount,
+		float Radius,
+		float LayerSpacing,
+		int32 MinimumPointsPerRing)
+	{
+		TArray<FSphereCircleLayer> Layers = BuildSphereCircleLayers(PointCount, Radius, LayerSpacing);
+		if (Layers.IsEmpty())
+		{
+			return Layers;
+		}
+
+		TArray<int32> LayerPointCounts;
+		LayerPointCounts.Init(0, Layers.Num());
+		TArray<int32> DiscLayerIndices;
+		TArray<float> DiscWeights;
+		int32 RemainingCount = PointCount;
+
+		for (int32 LayerIndex = 0; LayerIndex < Layers.Num(); ++LayerIndex)
+		{
+			if (Layers[LayerIndex].CircleRadius <= UE_KINDA_SMALL_NUMBER)
+			{
+				LayerPointCounts[LayerIndex] = 1;
+				--RemainingCount;
+			}
+			else
+			{
+				DiscLayerIndices.Add(LayerIndex);
+				DiscWeights.Add(Layers[LayerIndex].CircleRadius * Layers[LayerIndex].CircleRadius);
+			}
+		}
+
+		const int32 MinimumPerDisc = FMath::Max(1, MinimumPointsPerRing);
+		const int32 RequiredForMinimum = MinimumPerDisc * DiscLayerIndices.Num();
+		if (RemainingCount >= RequiredForMinimum)
+		{
+			for (const int32 LayerIndex : DiscLayerIndices)
+			{
+				LayerPointCounts[LayerIndex] = MinimumPerDisc;
+			}
+			RemainingCount -= RequiredForMinimum;
+		}
+		else
+		{
+			const int32 VisibleDiscCount = FMath::Min(RemainingCount, DiscLayerIndices.Num());
+			for (int32 DiscIndex = 0; DiscIndex < VisibleDiscCount; ++DiscIndex)
+			{
+				LayerPointCounts[DiscLayerIndices[DiscIndex]] = 1;
+			}
+			RemainingCount -= VisibleDiscCount;
+		}
+
+		const TArray<int32> AdditionalCounts = DistributeCountsByWeights(RemainingCount, DiscWeights);
+		for (int32 DiscIndex = 0; DiscIndex < DiscLayerIndices.Num(); ++DiscIndex)
+		{
+			LayerPointCounts[DiscLayerIndices[DiscIndex]] += AdditionalCounts[DiscIndex];
+			Layers[DiscLayerIndices[DiscIndex]].PointCount = LayerPointCounts[DiscLayerIndices[DiscIndex]];
+		}
+
+		for (int32 LayerIndex = 0; LayerIndex < Layers.Num(); ++LayerIndex)
+		{
+			if (Layers[LayerIndex].CircleRadius <= UE_KINDA_SMALL_NUMBER)
+			{
+				Layers[LayerIndex].PointCount = LayerPointCounts[LayerIndex];
+			}
+		}
+
+		return Layers;
+	}
 }
 
 TArray<FVector> FCircleSamplingHelper::GenerateCircle(
@@ -151,6 +224,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	float JitterStrength,
 	FRandomStream& RandomStream,
 	float SolidRingSpacing,
+	float SolidLayerSpacing,
 	int32 MinimumPointsPerRing)
 {
 	TArray<FVector> Points;
@@ -163,7 +237,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	switch (DistributionMode)
 	{
 	case ECircleDistributionMode::Uniform:
-		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, MinimumPointsPerRing);
+		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, SolidLayerSpacing, MinimumPointsPerRing);
 		break;
 
 	case ECircleDistributionMode::Fibonacci:
@@ -175,7 +249,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 		break;
 
 	default:
-		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, MinimumPointsPerRing);
+		Points = GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, SolidLayerSpacing, MinimumPointsPerRing);
 		break;
 	}
 
@@ -526,6 +600,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniformSolidSphere(
 	float StartAngle,
 	bool bClockwise,
 	float SolidRingSpacing,
+	float SolidLayerSpacing,
 	int32 MinimumPointsPerRing)
 {
 	TArray<FVector> Points;
@@ -537,17 +612,22 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniformSolidSphere(
 		return Points;
 	}
 
-	const TArray<FSphereCircleLayer> Layers = BuildSphereCircleLayers(PointCount, Radius);
+	const TArray<FSphereCircleLayer> Layers = BuildSolidSphereCircleLayers(
+		PointCount, Radius, SolidLayerSpacing, MinimumPointsPerRing);
 	for (const FSphereCircleLayer& Layer : Layers)
 	{
+		if (Layer.PointCount <= 0)
+		{
+			continue;
+		}
+
 		if (Layer.CircleRadius <= UE_KINDA_SMALL_NUMBER || Layer.PointCount == 1)
 		{
 			Points.Add(FVector(0.0f, 0.0f, Layer.Z));
 			continue;
 		}
 
-		const int32 RingPointCount = FMath::Max(Layer.PointCount, FMath::Max(1, MinimumPointsPerRing));
-		GenerateSolidDiscPoints(Points, RingPointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise, SolidRingSpacing);
+		GenerateSolidDiscPoints(Points, Layer.PointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise, SolidRingSpacing);
 	}
 
 	return Points;
@@ -577,6 +657,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 	float StartAngle,
 	bool bClockwise,
 	float SolidRingSpacing,
+	float SolidLayerSpacing,
 	int32 MinimumPointsPerRing)
 {
 	TArray<FVector> Points;
@@ -585,7 +666,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniform(
 	if (bIs3D)
 	{
 		return bSolid
-			? GenerateUniformSolidSphere(PointCount, Radius, StartAngle, bClockwise, SolidRingSpacing, MinimumPointsPerRing)
+			? GenerateUniformSolidSphere(PointCount, Radius, StartAngle, bClockwise, SolidRingSpacing, SolidLayerSpacing, MinimumPointsPerRing)
 			: GenerateUniformSphereShell(PointCount, Radius, StartAngle, bClockwise);
 	}
 

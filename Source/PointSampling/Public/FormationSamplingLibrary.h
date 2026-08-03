@@ -182,12 +182,13 @@ public:
 	 * @param CoordinateSpace 坐标空间
 	 * @param JitterStrength 扰动强度(0-1)
 	 * @param RandomSeed 随机种子
-	 * @param SolidRingSpacing 实心模式下同心环的目标间距，0为自动
-	 * @param MinimumPointsPerRing 实心球每个纬度环的最小点数
+	 * @param SolidRingSpacing 实心圆盘内同心环的目标间距，0为自动
+	 * @param SolidLayerSpacing 实心球纬度层的目标间距，0为自动
+	 * @param MinimumPointsPerRing 实心球每个纬度截面的最小点数；总点数不足时优先保持总数
 	 * @return 变换数组，位置为点位，旋转默认朝向圆/球外侧
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|圆形",
-		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed,SolidRingSpacing,MinimumPointsPerRing"))
+		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed,SolidRingSpacing,SolidLayerSpacing,MinimumPointsPerRing"))
 	static TArray<FTransform> GenerateCircle(
 		int32 PointCount,
 		FVector CenterLocation,
@@ -202,8 +203,9 @@ public:
 		EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::Local,
 		float JitterStrength = 0.0f,
 		int32 RandomSeed = 0,
-		UPARAM(DisplayName = "实心环间距") float SolidRingSpacing = 0.0f,
-		UPARAM(DisplayName = "每圈最小点数") int32 MinimumPointsPerRing = 6,
+		UPARAM(DisplayName = "实心圆盘环间距") float SolidRingSpacing = 0.0f,
+		UPARAM(DisplayName = "实心球层间距") float SolidLayerSpacing = 0.0f,
+		UPARAM(DisplayName = "每个纬度层最小点数") int32 MinimumPointsPerRing = 6,
 		UPARAM(DisplayName = "排序方式") EPointArrayOrderMode PointOrder = EPointArrayOrderMode::Preserve,
 		UPARAM(DisplayName = "反转索引") bool bReverseOrder = false
 	);

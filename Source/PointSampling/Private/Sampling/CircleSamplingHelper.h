@@ -45,6 +45,7 @@ public:
 		float JitterStrength,
 		FRandomStream& RandomStream,
 		float SolidRingSpacing,
+		float SolidLayerSpacing,
 		int32 MinimumPointsPerRing
 	);
 
@@ -158,6 +159,7 @@ private:
 		float StartAngle,
 		bool bClockwise,
 		float SolidRingSpacing,
+		float SolidLayerSpacing,
 		int32 MinimumPointsPerRing
 	);
 
@@ -241,6 +243,7 @@ private:
 		float StartAngle,
 		bool bClockwise,
 		float SolidRingSpacing,
+		float SolidLayerSpacing,
 		int32 MinimumPointsPerRing
 	);
 

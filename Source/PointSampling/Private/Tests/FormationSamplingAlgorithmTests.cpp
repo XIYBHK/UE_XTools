@@ -91,13 +91,48 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> SolidSphere = UFormationSamplingLibrary::GenerateCircle(
 		24, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, RawSpace,
-		0.0f, 0, 0.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
+		0.0f, 0, 0.0f, 0.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
 	TestEqual(TEXT("实心球应严格返回目标点数"), SolidSphere.Num(), 24);
 	if (SolidSphere.Num() == 24)
 	{
 		TestTrue(TEXT("球体按层排序应从下方开始"),
 			SolidSphere[0].GetLocation().Z <= SolidSphere.Last().GetLocation().Z);
 	}
+
+	const TArray<FTransform> SolidSphereWithDefaultMinimum = UFormationSamplingLibrary::GenerateCircle(
+		12, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, RawSpace);
+	TestEqual(TEXT("实心球默认最小点数不应突破总点数"), SolidSphereWithDefaultMinimum.Num(), 12);
+
+	const TArray<FTransform> LayerSpacedSolidSphere = UFormationSamplingLibrary::GenerateCircle(
+		100, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, RawSpace,
+		0.0f, 0, 25.0f, 50.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
+	TestEqual(TEXT("指定实心球层间距应保持总点数"), LayerSpacedSolidSphere.Num(), 100);
+	TArray<float> LayerHeights;
+	for (const FTransform& Transform : LayerSpacedSolidSphere)
+	{
+		const FVector Location = Transform.GetLocation();
+		TestTrue(TEXT("实心球点位应位于球体边界内"), Location.Size() <= 100.01f);
+
+		bool bKnownLayer = false;
+		for (const float Height : LayerHeights)
+		{
+			bKnownLayer |= FMath::IsNearlyEqual(Location.Z, Height, UE_KINDA_SMALL_NUMBER);
+		}
+		if (!bKnownLayer)
+		{
+			LayerHeights.Add(Location.Z);
+		}
+
+		if (FMath::IsNearlyZero(Location.Z, UE_KINDA_SMALL_NUMBER))
+		{
+			const float RingRadius = FVector(Location.X, Location.Y, 0.0f).Size();
+			TestTrue(TEXT("实心球中心截面的环间距应可控"),
+				FMath::IsNearlyEqual(RingRadius / 25.0f, FMath::RoundToFloat(RingRadius / 25.0f), UE_KINDA_SMALL_NUMBER));
+		}
+	}
+	TestEqual(TEXT("指定50厘米实心球层间距应生成5个纬度层"), LayerHeights.Num(), 5);
 
 	const TArray<FVector> Snowflake = UFormationSamplingLibrary::GenerateSnowflake(
 		12, FVector::ZeroVector, FRotator::ZeroRotator, 150.0f, 3, 50.0f, RawSpace);
