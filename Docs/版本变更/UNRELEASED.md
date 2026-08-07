@@ -5,6 +5,11 @@
 
 ---
 
+### SplineMovement
+- 新增 样条线移动异步节点
+- 新增 AddMovementInput/AIMoveTo 双模式
+- 新增 前瞻距离、横向偏移、反向移动参数
+
 ### PointSampling
 - 优化 圆/球点阵顺序
 - 新增 实心圆/球选项
