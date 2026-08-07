@@ -172,7 +172,10 @@ enum class ECircleDistributionMode : uint8
 	Fibonacci   UMETA(DisplayName = "斐波那契"),
 
 	/** 随机但保证最小距离的自然分布 */
-	Poisson     UMETA(DisplayName = "泊松分布")
+	Poisson     UMETA(DisplayName = "泊松分布"),
+
+	/** 仅3D实心球有效：交错密铺层堆叠，首末层为五点十字结构 */
+	ClosePacked UMETA(DisplayName = "紧密堆叠（实心球）")
 };
 
 /**
@@ -202,10 +205,10 @@ enum class EPointArrayOrderMode : uint8
 	/** 从起始角开始逆时针环绕中心 */
 	CircleCounterClockwise UMETA(DisplayName = "环绕中心逆时针"),
 
-	/** 按局部Z轴由下至上分层，每层顺时针环绕中心 */
+	/** 按局部Z轴由下至上分层，每层由内至外顺时针环绕中心 */
 	SphereBottomToTopClockwise UMETA(DisplayName = "球体下至上，顺时针"),
 
-	/** 按局部Z轴由下至上分层，每层逆时针环绕中心 */
+	/** 按局部Z轴由下至上分层，每层由内至外逆时针环绕中心 */
 	SphereBottomToTopCounterClockwise UMETA(DisplayName = "球体下至上，逆时针")
 };
 

@@ -247,6 +247,14 @@ private:
 		int32 MinimumPointsPerRing
 	);
 
+	/** 生成由圆形截面层紧密堆叠组成的实心球点阵。 */
+	static TArray<FVector> GenerateClosePackedSphere(
+		int32 PointCount,
+		float Radius,
+		float TargetSpacing,
+		float TargetLayerSpacing
+	);
+
 	/**
 	 * 应用扰动到点位
 	 * @param Points 点位数组

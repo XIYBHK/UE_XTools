@@ -210,6 +210,35 @@ namespace
 
 		return Layers;
 	}
+
+	float FindClosePackedSphereSpacing(int32 PointCount, float Radius)
+	{
+		const float Volume = (4.0f / 3.0f) * PI * Radius * Radius * Radius;
+		return FMath::Pow(FMath::Sqrt(2.0f) * Volume / PointCount, 1.0f / 3.0f);
+	}
+
+	TArray<FVector> BuildClosePackedSphereCross(float Radius, float Spacing, float LayerSpacing, int32 LayerIndex)
+	{
+		const float Z = LayerIndex * LayerSpacing;
+		const TArray<FVector> CrossPoints = {
+			FVector(0.0f, 0.0f, Z),
+			FVector(Spacing, 0.0f, Z),
+			FVector(-Spacing, 0.0f, Z),
+			FVector(0.0f, Spacing, Z),
+			FVector(0.0f, -Spacing, Z)
+		};
+
+		TArray<FVector> ValidPoints;
+		for (const FVector& Point : CrossPoints)
+		{
+			if (Point.SizeSquared() <= FMath::Square(Radius) + UE_KINDA_SMALL_NUMBER)
+			{
+				ValidPoints.Add(Point);
+			}
+		}
+		return ValidPoints;
+	}
+
 }
 
 TArray<FVector> FCircleSamplingHelper::GenerateCircle(
@@ -246,6 +275,12 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 
 	case ECircleDistributionMode::Poisson:
 		Points = GeneratePoisson(PointCount, Radius, bIs3D, MinDistance, RandomStream);
+		break;
+
+	case ECircleDistributionMode::ClosePacked:
+		Points = bIs3D && bSolid
+			? GenerateClosePackedSphere(PointCount, Radius, SolidRingSpacing, SolidLayerSpacing)
+			: GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, SolidLayerSpacing, MinimumPointsPerRing);
 		break;
 
 	default:
@@ -629,6 +664,90 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniformSolidSphere(
 
 		GenerateSolidDiscPoints(Points, Layer.PointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise, SolidRingSpacing);
 	}
+
+	return Points;
+}
+
+TArray<FVector> FCircleSamplingHelper::GenerateClosePackedSphere(
+	int32 PointCount,
+	float Radius,
+	float TargetSpacing,
+	float TargetLayerSpacing)
+{
+	if (PointCount <= 0 || Radius <= 0.0f)
+	{
+		return {};
+	}
+
+	if (PointCount == 1)
+	{
+		return {FVector::ZeroVector};
+	}
+
+	const float Spacing = TargetSpacing > UE_KINDA_SMALL_NUMBER
+		? TargetSpacing
+		: FindClosePackedSphereSpacing(PointCount, Radius);
+	const float LayerSpacing = TargetLayerSpacing > UE_KINDA_SMALL_NUMBER
+		? TargetLayerSpacing
+		: Spacing * FMath::Sqrt(2.0f / 3.0f);
+	const int32 CapLayerIndex = FMath::FloorToInt(
+		FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(Spacing))) / LayerSpacing);
+	const TArray<FVector> BottomCross = PointCount >= 10 && CapLayerIndex > 0
+		? BuildClosePackedSphereCross(Radius, Spacing, LayerSpacing, -CapLayerIndex)
+		: TArray<FVector>();
+	const TArray<FVector> TopCross = PointCount >= 10 && CapLayerIndex > 0
+		? BuildClosePackedSphereCross(Radius, Spacing, LayerSpacing, CapLayerIndex)
+		: TArray<FVector>();
+	const int32 InteriorLayerCount = FMath::Max(0, CapLayerIndex * 2 - 1);
+	if (BottomCross.Num() != 5 || TopCross.Num() != 5 || PointCount - 10 < InteriorLayerCount)
+	{
+		return GenerateUniformSolidSphere(PointCount, Radius, 0.0f, true, Spacing, LayerSpacing, 1);
+	}
+
+	TArray<int32> LayerPointCounts;
+	LayerPointCounts.Init(1, InteriorLayerCount);
+	int32 RemainingCount = PointCount - 10 - InteriorLayerCount;
+	while (RemainingCount > 0)
+	{
+		int32 BestLayerIndex = 0;
+		float BestScore = -1.0f;
+		for (int32 LayerIndex = 0; LayerIndex < InteriorLayerCount; ++LayerIndex)
+		{
+			const float Z = (LayerIndex - CapLayerIndex + 1) * LayerSpacing;
+			const float LayerAreaWeight = FMath::Max(UE_KINDA_SMALL_NUMBER, FMath::Square(Radius) - FMath::Square(Z));
+			const float Score = LayerAreaWeight / static_cast<float>(LayerPointCounts[LayerIndex] + 1);
+			if (Score > BestScore)
+			{
+				BestScore = Score;
+				BestLayerIndex = LayerIndex;
+			}
+		}
+		++LayerPointCounts[BestLayerIndex];
+		--RemainingCount;
+	}
+
+	TArray<FVector> Points = BottomCross;
+	Points.Reserve(PointCount);
+	for (int32 LayerIndex = 0; LayerIndex < InteriorLayerCount; ++LayerIndex)
+	{
+		const float Z = (LayerIndex - CapLayerIndex + 1) * LayerSpacing;
+		const float CircleRadius = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(Z)));
+		const float LayerStartAngle = static_cast<float>(LayerIndex) * GOLDEN_ANGLE;
+		GenerateSolidDiscPoints(Points, LayerPointCounts[LayerIndex], CircleRadius, Z, LayerStartAngle, true, Spacing);
+	}
+	Points.Append(TopCross);
+	Points.Sort([](const FVector& Left, const FVector& Right)
+	{
+		if (Left.Z != Right.Z)
+		{
+			return Left.Z < Right.Z;
+		}
+		if (Left.Y != Right.Y)
+		{
+			return Left.Y < Right.Y;
+		}
+		return Left.X < Right.X;
+	});
 
 	return Points;
 }

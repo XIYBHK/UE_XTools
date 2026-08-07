@@ -174,8 +174,8 @@ public:
 	 * @param Rotation 旋转
 	 * @param Radius 半径
 	 * @param bIs3D 是否为3D球体（false=2D圆形，true=3D球体）
-	 * @param bSolid 是否生成实心圆/球（仅Uniform模式有效）
-	 * @param DistributionMode 分布模式（均匀/斐波那契/泊松）
+	 * @param bSolid 是否生成实心圆/球（Uniform和ClosePacked模式有效）
+	 * @param DistributionMode 分布模式（均匀/斐波那契/泊松/紧密堆叠）
 	 * @param MinDistance 泊松分布的最小距离（仅Poisson模式有效）
 	 * @param StartAngle 起始角度（仅Uniform模式有效）
 	 * @param bClockwise 是否顺时针（仅Uniform模式有效）
@@ -183,12 +183,12 @@ public:
 	 * @param JitterStrength 扰动强度(0-1)
 	 * @param RandomSeed 随机种子
 	 * @param SolidRingSpacing 实心圆盘内同心环的目标间距，0为自动
-	 * @param SolidLayerSpacing 实心球纬度层的目标间距，0为自动
+	 * @param SolidLayerSpacing 实心球相邻层的Z轴间距，0为自动；仅控制层高，不影响水平环间距
 	 * @param MinimumPointsPerRing 实心球每个纬度截面的最小点数；总点数不足时优先保持总数
 	 * @return 变换数组，位置为点位，旋转默认朝向圆/球外侧
 	 */
 	UFUNCTION(BlueprintCallable, Category = "XTools|点采样|圆形",
-		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed,SolidRingSpacing,SolidLayerSpacing,MinimumPointsPerRing"))
+		meta = (DisplayName = "生成圆形/球体点阵", AdvancedDisplay = "MinDistance,StartAngle,bClockwise,JitterStrength,RandomSeed,SolidRingSpacing,MinimumPointsPerRing"))
 	static TArray<FTransform> GenerateCircle(
 		int32 PointCount,
 		FVector CenterLocation,
@@ -204,7 +204,7 @@ public:
 		float JitterStrength = 0.0f,
 		int32 RandomSeed = 0,
 		UPARAM(DisplayName = "实心圆盘环间距") float SolidRingSpacing = 0.0f,
-		UPARAM(DisplayName = "实心球层间距") float SolidLayerSpacing = 0.0f,
+		UPARAM(DisplayName = "Z轴层间距") float SolidLayerSpacing = 0.0f,
 		UPARAM(DisplayName = "每个纬度层最小点数") int32 MinimumPointsPerRing = 6,
 		UPARAM(DisplayName = "排序方式") EPointArrayOrderMode PointOrder = EPointArrayOrderMode::Preserve,
 		UPARAM(DisplayName = "反转索引") bool bReverseOrder = false

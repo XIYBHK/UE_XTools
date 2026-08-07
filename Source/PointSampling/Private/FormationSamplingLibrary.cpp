@@ -311,6 +311,13 @@ namespace FormationSamplingInternal
 						return LeftLayer < RightLayer;
 					}
 
+					const float LeftRadius = Left.Size2D();
+					const float RightRadius = Right.Size2D();
+					if (!FMath::IsNearlyEqual(LeftRadius, RightRadius, 0.01f))
+					{
+						return LeftRadius < RightRadius;
+					}
+
 					const float LeftAngle = PointOrder == EPointArrayOrderMode::SphereBottomToTopClockwise
 						? GetClockwiseAngle(Left, StartAngle)
 						: GetCounterClockwiseAngle(Left, StartAngle);

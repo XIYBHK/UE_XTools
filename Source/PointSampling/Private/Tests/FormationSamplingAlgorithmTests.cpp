@@ -134,6 +134,131 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("指定50厘米实心球层间距应生成5个纬度层"), LayerHeights.Num(), 5);
 
+	const TArray<FTransform> ClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
+		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
+		0.0f, 0, 0.0f, 0.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
+	TestEqual(TEXT("紧密堆叠实心球应严格返回目标点数"), ClosePackedSphere.Num(), 120);
+	for (int32 PointIndex = 1; PointIndex < ClosePackedSphere.Num(); ++PointIndex)
+	{
+		const FVector Previous = ClosePackedSphere[PointIndex - 1].GetLocation();
+		const FVector Current = ClosePackedSphere[PointIndex].GetLocation();
+		TestTrue(TEXT("紧密堆叠逆时针排序应由下至上"), Previous.Z <= Current.Z + UE_KINDA_SMALL_NUMBER);
+		if (!FMath::IsNearlyEqual(Previous.Z, Current.Z, UE_KINDA_SMALL_NUMBER))
+		{
+			continue;
+		}
+
+		const float PreviousRadius = Previous.Size2D();
+		const float CurrentRadius = Current.Size2D();
+		TestTrue(TEXT("紧密堆叠同层排序应由内至外"), PreviousRadius <= CurrentRadius + 0.01f);
+		if (!FMath::IsNearlyEqual(PreviousRadius, CurrentRadius, 0.01f))
+		{
+			continue;
+		}
+
+		const float PreviousAngle = FMath::Fmod(FMath::RadiansToDegrees(FMath::Atan2(Previous.Y, Previous.X)) + 360.0f, 360.0f);
+		const float CurrentAngle = FMath::Fmod(FMath::RadiansToDegrees(FMath::Atan2(Current.Y, Current.X)) + 360.0f, 360.0f);
+		TestTrue(TEXT("紧密堆叠同环排序应为逆时针"), PreviousAngle <= CurrentAngle + 0.01f);
+	}
+	TArray<float> PackedLayerHeights;
+	for (int32 LeftIndex = 0; LeftIndex < ClosePackedSphere.Num(); ++LeftIndex)
+	{
+		const FVector Left = ClosePackedSphere[LeftIndex].GetLocation();
+		TestTrue(TEXT("紧密堆叠实心球点位应位于球体边界内"), Left.Size() <= 100.01f);
+
+		bool bKnownLayer = false;
+		for (const float Height : PackedLayerHeights)
+		{
+			bKnownLayer |= FMath::IsNearlyEqual(Left.Z, Height, UE_KINDA_SMALL_NUMBER);
+		}
+		if (!bKnownLayer)
+		{
+			PackedLayerHeights.Add(Left.Z);
+		}
+	}
+	TestTrue(TEXT("紧密堆叠实心球应至少有三层"), PackedLayerHeights.Num() >= 3);
+	if (PackedLayerHeights.Num() >= 2)
+	{
+		int32 BottomLayerCount = 0;
+		int32 TopLayerCount = 0;
+		for (const FTransform& Point : ClosePackedSphere)
+		{
+			BottomLayerCount += FMath::IsNearlyEqual(Point.GetLocation().Z, PackedLayerHeights[0], UE_KINDA_SMALL_NUMBER) ? 1 : 0;
+			TopLayerCount += FMath::IsNearlyEqual(Point.GetLocation().Z, PackedLayerHeights.Last(), UE_KINDA_SMALL_NUMBER) ? 1 : 0;
+		}
+		TestEqual(TEXT("紧密堆叠实心球底层应为五点十字结构"), BottomLayerCount, 5);
+		TestEqual(TEXT("紧密堆叠实心球顶层应为五点十字结构"), TopLayerCount, 5);
+	}
+	float MinimumPackedDistance = TNumericLimits<float>::Max();
+	for (int32 LeftIndex = 0; LeftIndex < ClosePackedSphere.Num(); ++LeftIndex)
+	{
+		const FVector Left = ClosePackedSphere[LeftIndex].GetLocation();
+		for (int32 RightIndex = LeftIndex + 1; RightIndex < ClosePackedSphere.Num(); ++RightIndex)
+		{
+			const FVector Right = ClosePackedSphere[RightIndex].GetLocation();
+			MinimumPackedDistance = FMath::Min(MinimumPackedDistance, FVector::Dist(Left, Right));
+		}
+	}
+	TestTrue(TEXT("紧密堆叠实心球不应生成重合点"), MinimumPackedDistance > UE_KINDA_SMALL_NUMBER);
+	if (PackedLayerHeights.Num() >= 2)
+	{
+		const float AutomaticLayerSpacing = PackedLayerHeights[1] - PackedLayerHeights[0];
+		for (int32 LayerIndex = 2; LayerIndex < PackedLayerHeights.Num(); ++LayerIndex)
+		{
+			TestTrue(TEXT("紧密堆叠自动层距应保持一致"),
+				FMath::IsNearlyEqual(PackedLayerHeights[LayerIndex] - PackedLayerHeights[LayerIndex - 1],
+					AutomaticLayerSpacing, 0.05f));
+		}
+	}
+
+	const TArray<FTransform> ManuallyLayerSpacedClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
+		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
+		0.0f, 0, 25.0f, 20.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
+	TestEqual(TEXT("紧密堆叠手动层距应严格返回目标点数"), ManuallyLayerSpacedClosePackedSphere.Num(), 120);
+	TArray<float> ManuallyLayerHeights;
+	for (const FTransform& Point : ManuallyLayerSpacedClosePackedSphere)
+	{
+		const float Z = Point.GetLocation().Z;
+		bool bKnownLayer = false;
+		for (const float Height : ManuallyLayerHeights)
+		{
+			bKnownLayer |= FMath::IsNearlyEqual(Z, Height, UE_KINDA_SMALL_NUMBER);
+		}
+		if (!bKnownLayer)
+		{
+			ManuallyLayerHeights.Add(Z);
+		}
+	}
+	TestTrue(TEXT("紧密堆叠手动层距应生成多层"), ManuallyLayerHeights.Num() >= 3);
+	if (ManuallyLayerHeights.Num() >= 2)
+	{
+		TestTrue(TEXT("紧密堆叠应使用手动层间距"),
+			FMath::IsNearlyEqual(ManuallyLayerHeights[1] - ManuallyLayerHeights[0], 20.0f, 0.05f));
+		for (int32 LayerIndex = 1; LayerIndex < ManuallyLayerHeights.Num(); ++LayerIndex)
+		{
+			TestTrue(TEXT("紧密堆叠手动层距不应产生断层"),
+				FMath::IsNearlyEqual(ManuallyLayerHeights[LayerIndex] - ManuallyLayerHeights[LayerIndex - 1], 20.0f, 0.05f));
+		}
+	}
+
+	const TArray<FTransform> WideLayerSpacedClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
+		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
+		0.0f, 0, 25.0f, 40.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
+	TestEqual(TEXT("调整Z轴层间距不应改变紧密堆叠总点数"), WideLayerSpacedClosePackedSphere.Num(), 120);
+	for (const FTransform& Point : WideLayerSpacedClosePackedSphere)
+	{
+		const FVector Location = Point.GetLocation();
+		if (FMath::IsNearlyZero(Location.Z, UE_KINDA_SMALL_NUMBER))
+		{
+			const float RingRadius = Location.Size2D();
+			TestTrue(TEXT("Z轴层间距不应改变水平环间距"),
+				FMath::IsNearlyEqual(RingRadius / 25.0f, FMath::RoundToFloat(RingRadius / 25.0f), UE_KINDA_SMALL_NUMBER));
+		}
+	}
+
 	const TArray<FVector> Snowflake = UFormationSamplingLibrary::GenerateSnowflake(
 		12, FVector::ZeroVector, FRotator::ZeroRotator, 150.0f, 3, 50.0f, RawSpace);
 	TestPointCount(*this, TEXT("雪花形"), Snowflake, 12);
