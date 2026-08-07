@@ -11,6 +11,7 @@
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Class.h"
+#include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FObjectExtensionsLibrary_FindsObjectsByClass,

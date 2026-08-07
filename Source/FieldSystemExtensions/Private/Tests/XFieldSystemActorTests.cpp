@@ -8,6 +8,7 @@
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
 #include "XFieldSystemActor.h"
+#include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FXFieldSystemActor_FiltersActorsByClassAndTag,

@@ -8,6 +8,7 @@
 #include "Components/SplineComponent.h"
 #include "Libraries/SplineExtensionsLibrary.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSplineExtensionsLibrary_QueriesAndSimplifiesSpline,
