@@ -612,4 +612,109 @@ bool FLoopSplitPinValueExpansionTest::RunTest(const FString& Parameters)
 	return !HasAnyErrors();
 }
 
+namespace
+{
+	UK2Node_CallFunction* FindCallFunctionByName(UEdGraph* Graph, const FName FunctionName)
+	{
+		for (UEdGraphNode* GraphNode : Graph->Nodes)
+		{
+			UK2Node_CallFunction* CallFunction = Cast<UK2Node_CallFunction>(GraphNode);
+			if (CallFunction && CallFunction->GetFunctionName() == FunctionName)
+			{
+				return CallFunction;
+			}
+		}
+		return nullptr;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FLoopDefaultValuePropagationTest,
+	"XTools.BlueprintExtensions.LoopDefaultValuePropagation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLoopDefaultValuePropagationTest::RunTest(const FString& Parameters)
+{
+	// 回归测试：CopyPinLinksToIntermediate 只搬链接不搬默认值。
+	// Delay/LastIndex 等输入引脚未连接时，「Delay<=0 判定」「Break 越界哨兵」等
+	// 经 Copy 连接的中间引脚必须与源引脚默认值一致，否则静默走零延迟直通/Break 失效。
+
+	// ForLoopWithDelay：Delay 默认 0.1、LastIndex 默认 10，均不连接
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopDefaultValueForTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建默认值传播测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取默认值传播事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForLoopWithDelay* LoopNode = AddTestNode<UK2Node_ForLoopWithDelay>(EventGraph);
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("默认值传播展开无编译错误"), Results.NumErrors, 0);
+
+		UK2Node_CallFunction* DelayCompare = FindCallFunctionByName(
+			EventGraph, GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_DoubleDouble));
+		if (!TestNotNull(TEXT("找到零延迟判定节点"), DelayCompare))
+		{
+			return false;
+		}
+		TestEqual(TEXT("Delay 未连接时判定引脚继承默认 0.1"),
+			DelayCompare->FindPinChecked(TEXT("A"))->DefaultValue, FString(TEXT("0.1")));
+
+		// BreakValue 与 Increment 都是 Add_IntInt，但 Increment 的 A 已连到计数器，
+		// 未连 A 的那个是 Break 哨兵
+		bool bFoundBreakSentinel = false;
+		for (UEdGraphNode* GraphNode : EventGraph->Nodes)
+		{
+			UK2Node_CallFunction* CallFunction = Cast<UK2Node_CallFunction>(GraphNode);
+			if (!CallFunction
+				|| CallFunction->GetFunctionName() != GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Add_IntInt))
+			{
+				continue;
+			}
+			UEdGraphPin* PinA = CallFunction->FindPinChecked(TEXT("A"));
+			if (PinA->LinkedTo.Num() == 0)
+			{
+				bFoundBreakSentinel = true;
+				TestEqual(TEXT("LastIndex 未连接时 Break 哨兵继承默认 10"),
+					PinA->DefaultValue, FString(TEXT("10")));
+			}
+		}
+		TestTrue(TEXT("找到 Break 哨兵节点"), bFoundBreakSentinel);
+	}
+
+	// WhileLoopWithDelay：Delay 默认 0.1，不连接
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopDefaultValueWhileTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建 While 默认值测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取 While 默认值事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_WhileLoopWithDelay* LoopNode = AddTestNode<UK2Node_WhileLoopWithDelay>(EventGraph);
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("While 默认值传播展开无编译错误"), Results.NumErrors, 0);
+
+		UK2Node_CallFunction* DelayCompare = FindCallFunctionByName(
+			EventGraph, GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, LessEqual_DoubleDouble));
+		if (!TestNotNull(TEXT("找到 While 零延迟判定节点"), DelayCompare))
+		{
+			return false;
+		}
+		TestEqual(TEXT("While Delay 未连接时判定引脚继承默认 0.1"),
+			DelayCompare->FindPinChecked(TEXT("A"))->DefaultValue, FString(TEXT("0.1")));
+	}
+
+	return !HasAnyErrors();
+}
+
 #endif

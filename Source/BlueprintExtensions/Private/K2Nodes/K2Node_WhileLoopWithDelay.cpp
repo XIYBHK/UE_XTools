@@ -155,7 +155,7 @@ void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerCont
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *ExecutionGuard.EntryExecPin);
 	CompilerContext.MovePinLinksToIntermediate(*GetBreakPin(), *BreakFlagAssign->GetExecPin());
 	CompilerContext.MovePinLinksToIntermediate(*GetConditionPin(), *ConditionBranch->GetConditionPin());
-	CompilerContext.CopyPinLinksToIntermediate(*GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
+	K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(CompilerContext, *GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
 	CompilerContext.MovePinLinksToIntermediate(*GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
 	CompilerContext.MovePinLinksToIntermediate(*GetLoopBodyPin(), *LoopSequence->GetThenPinGivenIndex(0));
 	CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(), *ExecutionGuard.FinishThenPin);

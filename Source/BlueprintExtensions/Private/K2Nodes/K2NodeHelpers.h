@@ -103,6 +103,22 @@ namespace K2NodeHelpers
 		}
 	}
 
+	/**
+	 * CopyPinLinksToIntermediate 的增强版：同时搬运默认值。
+	 * 引擎的 CopyPinLinks 只搬链接（与 MovePinLinks 不同，不搬 DefaultValue/DefaultObject/DefaultTextValue），
+	 * 输入引脚未连接时中间节点会退回函数参数默认值，与源引脚上的默认值/用户手输值产生语义分叉
+	 * （例如 Delay 引脚默认 0.1 未连接时，Delay<=0 判定引脚仍是 0.0，导致直通无延迟）。
+	 */
+	FORCEINLINE FPinConnectionResponse CopyPinLinksAndDefaultToIntermediate(
+		FKismetCompilerContext& CompilerContext, UEdGraphPin& SourcePin, UEdGraphPin& IntermediatePin)
+	{
+		FPinConnectionResponse Response = CompilerContext.CopyPinLinksToIntermediate(SourcePin, IntermediatePin);
+		IntermediatePin.DefaultValue = SourcePin.DefaultValue;
+		IntermediatePin.DefaultObject = SourcePin.DefaultObject;
+		IntermediatePin.DefaultTextValue = SourcePin.DefaultTextValue;
+		return Response;
+	}
+
 	struct FSingleFlightExecutionGuard
 	{
 		UEdGraphPin* EntryExecPin = nullptr;

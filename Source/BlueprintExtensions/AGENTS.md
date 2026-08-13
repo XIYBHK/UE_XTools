@@ -41,7 +41,8 @@ void ExpandNode(FKismetCompilerContext& Ctx, UEdGraph* Graph) override
     // 3. 连线 (只用 TryConnect)
     K2NodeHelpers::TryConnect(Ctx, SrcPin, DstPin);
 
-    // 4. 迁移原始连线
+    // 4. 迁移原始连线（需要保留源连接的 Copy 场景用
+    //    CopyPinLinksAndDefaultToIntermediate：引擎 CopyPinLinks 不搬默认值）
     Ctx.MovePinLinksToIntermediate(*OldPin, *NewPin);
 
     // 5. 收尾断链

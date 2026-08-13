@@ -280,13 +280,14 @@ void UK2Node_ForLoopWithDelayReverse::ExpandNode(
   CompilerContext.MovePinLinksToIntermediate(
       *GetLastIndexPin(),
       *LoopCounterInit->GetValuePin()); // 倒序：从 LastIndex 开始
-  CompilerContext.CopyPinLinksToIntermediate(
-      *GetFirstIndexPin(), *BreakValue->FindPinChecked(TEXT("A")));
+  K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(
+      CompilerContext, *GetFirstIndexPin(), *BreakValue->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetFirstIndexPin(),
       *Condition->FindPinChecked(TEXT("B"))); // 倒序：到 FirstIndex 结束
-  CompilerContext.CopyPinLinksToIntermediate(
-      *GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
+  K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(
+      CompilerContext, *GetDelayPin(),
+      *DelayLessEqualZero->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
   CompilerContext.MovePinLinksToIntermediate(

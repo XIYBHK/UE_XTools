@@ -55,6 +55,8 @@
 
 ### BlueprintExtensions
 - 修复 分割结构体引脚展开后输出丢值
+- 修复 循环节点延迟默认值被静默忽略
+- 修复 ForLoop延迟循环Break哨兵失效
 - 修复 对象池生成节点拆分Transform失效
 
 ## 日志格式说明

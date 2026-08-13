@@ -278,12 +278,13 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
                                              *ExecutionGuard.EntryExecPin);
   CompilerContext.MovePinLinksToIntermediate(*GetFirstIndexPin(),
                                              *LoopCounterInit->GetValuePin());
-  CompilerContext.CopyPinLinksToIntermediate(
-      *GetLastIndexPin(), *BreakValue->FindPinChecked(TEXT("A")));
+  K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(
+      CompilerContext, *GetLastIndexPin(), *BreakValue->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetLastIndexPin(), *Condition->FindPinChecked(TEXT("B")));
-  CompilerContext.CopyPinLinksToIntermediate(
-      *GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
+  K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(
+      CompilerContext, *GetDelayPin(),
+      *DelayLessEqualZero->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
   CompilerContext.MovePinLinksToIntermediate(

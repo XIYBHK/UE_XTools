@@ -7,6 +7,7 @@
 - 统一使用 `K2NodeHelpers::TryConnect(CompilerContext, A, B)`。
 - 禁止在新代码中直接使用 `MakeLinkTo`。
 - 禁止在新代码中直接散落 `CompilerContext.GetSchema()->TryCreateConnection(...)`。
+- 需要保留源引脚连接的复制场景，统一使用 `K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(...)`：引擎 `CopyPinLinksToIntermediate` 只搬链接不搬默认值，源引脚未连接/用户手输值时中间判定引脚会与源默认值分叉（如 Delay<=0 判定丢失默认 0.1）。
 
 ## 2. ExpandNode 骨架（强制）
 - 第一行必须调用 `Super::ExpandNode(...)`（等价展开拆分引脚 ExpandSplitPins）：结构体引脚被「分割结构体引脚」后链接挂在子引脚上，不展开则 `MovePinLinksToIntermediate` 迁移不到链接，收尾断链后下游静默读到默认值。父类会执行自身完整展开逻辑时（如 `UK2Node_SpawnActorFromClass`），改为直接调用 `ExpandSplitPins(CompilerContext, SourceGraph)`。

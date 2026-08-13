@@ -361,8 +361,9 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   // 14. 最后统一移动所有外部连接（参考智能排序模式）
   CompilerContext.MovePinLinksToIntermediate(*GetExecPin(),
                                              *ExecutionGuard.EntryExecPin);
-  CompilerContext.CopyPinLinksToIntermediate(
-      *GetDelayPin(), *DelayLessEqualZero->FindPinChecked(TEXT("A")));
+  K2NodeHelpers::CopyPinLinksAndDefaultToIntermediate(
+      CompilerContext, *GetDelayPin(),
+      *DelayLessEqualZero->FindPinChecked(TEXT("A")));
   CompilerContext.MovePinLinksToIntermediate(
       *GetDelayPin(), *DelayNode->FindPinChecked(TEXT("Duration")));
   CompilerContext.MovePinLinksToIntermediate(
