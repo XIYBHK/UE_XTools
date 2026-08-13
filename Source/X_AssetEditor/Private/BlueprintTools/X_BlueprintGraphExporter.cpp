@@ -23,6 +23,8 @@
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
 #include "Engine/EngineBaseTypes.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "Engine/TimelineTemplate.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -110,6 +112,9 @@
 #include "Misc/ScopedSlowTask.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Components/ActorComponent.h"
+#include "Components/SceneComponent.h"
+#include "Components/SplineComponent.h"
 #include "UObject/UnrealType.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
@@ -1526,6 +1531,36 @@ namespace
         return Nodes;
     }
 
+    TArray<TSharedPtr<FJsonValue>> BuildUnconnectedExecPinsJson(
+        const UEdGraph* Graph,
+        const TMap<const UEdGraphNode*, FString>& NodeIds)
+    {
+        TArray<TSharedPtr<FJsonValue>> Pins;
+        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        {
+            if (!Node)
+            {
+                continue;
+            }
+
+            for (const UEdGraphPin* Pin : Node->Pins)
+            {
+                if (!Pin || !IsExecPin(Pin) || Pin->bHidden || Pin->LinkedTo.Num() > 0)
+                {
+                    continue;
+                }
+
+                TSharedPtr<FJsonObject> PinJson = MakeShared<FJsonObject>();
+                PinJson->SetObjectField(TEXT("node"), NodeRefToJson(Node, NodeIds));
+                PinJson->SetObjectField(TEXT("pin"), PinRefToJson(MakePinRef(Pin, NodeIds)));
+                PinJson->SetStringField(TEXT("direction"), DirectionToString(Pin->Direction));
+                PinJson->SetBoolField(TEXT("node_enabled"), Node->IsNodeEnabled());
+                Pins.Add(MakeShared<FJsonValueObject>(PinJson));
+            }
+        }
+        return Pins;
+    }
+
     TArray<TSharedPtr<FJsonValue>> BuildEdgesJson(
         const UEdGraph* Graph,
         const TMap<const UEdGraphNode*, FString>& NodeIds,
@@ -1708,6 +1743,7 @@ namespace
         Json->SetArrayField(TEXT("entry_nodes"), BuildEntryNodesJson(Graph, NodeIds));
         Json->SetArrayField(TEXT("exec_chain"), BuildExecChainJson(Graph, NodeIds, ReachableNodes));
         Json->SetArrayField(TEXT("orphan_exec_nodes"), BuildOrphanExecNodesJson(Graph, NodeIds, ReachableNodes));
+        Json->SetArrayField(TEXT("unconnected_exec_pins"), BuildUnconnectedExecPinsJson(Graph, NodeIds));
 
         int32 ExecEdgeCount = 0;
         int32 DataEdgeCount = 0;
@@ -1777,6 +1813,630 @@ namespace
             Variables.Add(MakeShared<FJsonValueObject>(BlueprintVariableToJson(Variable)));
         }
         return Variables;
+    }
+
+    bool ShouldExportComponentProperty(const FProperty* Property)
+    {
+        if (!Property)
+        {
+            return false;
+        }
+
+        if (Property->HasAnyPropertyFlags(CPF_Transient | CPF_DuplicateTransient | CPF_Deprecated))
+        {
+            return false;
+        }
+
+        return Property->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible | CPF_Config);
+    }
+
+    FString PropertyFlagsToString(EPropertyFlags Flags)
+    {
+        TArray<FString> FlagNames;
+        if ((Flags & CPF_Edit) != 0)
+        {
+            FlagNames.Add(TEXT("Edit"));
+        }
+        if ((Flags & CPF_BlueprintVisible) != 0)
+        {
+            FlagNames.Add(TEXT("BlueprintVisible"));
+        }
+        if ((Flags & CPF_BlueprintReadOnly) != 0)
+        {
+            FlagNames.Add(TEXT("BlueprintReadOnly"));
+        }
+        if ((Flags & CPF_Config) != 0)
+        {
+            FlagNames.Add(TEXT("Config"));
+        }
+        if ((Flags & CPF_DisableEditOnInstance) != 0)
+        {
+            FlagNames.Add(TEXT("DisableEditOnInstance"));
+        }
+        if ((Flags & CPF_DisableEditOnTemplate) != 0)
+        {
+            FlagNames.Add(TEXT("DisableEditOnTemplate"));
+        }
+        return FString::Join(FlagNames, TEXT("|"));
+    }
+
+    TSharedPtr<FJsonObject> ObjectPropertyToJson(const UObject* Object, const FProperty* Property)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        Json->SetStringField(TEXT("name"), Property ? Property->GetName() : FString());
+        Json->SetStringField(TEXT("display_name"), Property ? Property->GetDisplayNameText().ToString() : FString());
+        Json->SetStringField(TEXT("cpp_type"), Property ? Property->GetCPPType() : FString());
+        Json->SetStringField(TEXT("flags"), Property ? PropertyFlagsToString(Property->GetPropertyFlags()) : FString());
+
+        if (!Object || !Property)
+        {
+            return Json;
+        }
+
+        FString ValueText;
+        Property->ExportTextItem_Direct(
+            ValueText,
+            Property->ContainerPtrToValuePtr<void>(Object),
+            nullptr,
+            const_cast<UObject*>(Object),
+            PPF_None);
+        Json->SetStringField(TEXT("value"), ValueText);
+        return Json;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> ObjectPropertiesToJson(const UObject* Object)
+    {
+        TArray<TSharedPtr<FJsonValue>> Properties;
+        if (!Object)
+        {
+            return Properties;
+        }
+
+        for (TFieldIterator<FProperty> PropertyIt(Object->GetClass(), EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
+        {
+            const FProperty* Property = *PropertyIt;
+            if (ShouldExportComponentProperty(Property))
+            {
+                Properties.Add(MakeShared<FJsonValueObject>(ObjectPropertyToJson(Object, Property)));
+            }
+        }
+
+        return Properties;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> ComponentPropertiesToJson(const UActorComponent* Component)
+    {
+        return ObjectPropertiesToJson(Component);
+    }
+
+    FString ComponentCreationMethodToString(EComponentCreationMethod CreationMethod)
+    {
+        return StaticEnum<EComponentCreationMethod>()
+            ? StaticEnum<EComponentCreationMethod>()->GetNameStringByValue(static_cast<int64>(CreationMethod))
+            : FString::FromInt(static_cast<int32>(CreationMethod));
+    }
+
+    TSharedPtr<FJsonObject> VectorToJson(const FVector& Vector)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        Json->SetNumberField(TEXT("x"), Vector.X);
+        Json->SetNumberField(TEXT("y"), Vector.Y);
+        Json->SetNumberField(TEXT("z"), Vector.Z);
+        Json->SetStringField(TEXT("text"), Vector.ToString());
+        return Json;
+    }
+
+    TSharedPtr<FJsonObject> RotatorToJson(const FRotator& Rotator)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        Json->SetNumberField(TEXT("pitch"), Rotator.Pitch);
+        Json->SetNumberField(TEXT("yaw"), Rotator.Yaw);
+        Json->SetNumberField(TEXT("roll"), Rotator.Roll);
+        Json->SetStringField(TEXT("text"), Rotator.ToString());
+        return Json;
+    }
+
+    TSharedPtr<FJsonObject> SceneComponentToJson(const USceneComponent* SceneComponent)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        if (!SceneComponent)
+        {
+            return Json;
+        }
+
+        Json->SetObjectField(TEXT("relative_location"), VectorToJson(SceneComponent->GetRelativeLocation()));
+        Json->SetObjectField(TEXT("relative_rotation"), RotatorToJson(SceneComponent->GetRelativeRotation()));
+        Json->SetObjectField(TEXT("relative_scale"), VectorToJson(SceneComponent->GetRelativeScale3D()));
+        Json->SetStringField(TEXT("mobility"), StaticEnum<EComponentMobility::Type>()
+            ? StaticEnum<EComponentMobility::Type>()->GetNameStringByValue(static_cast<int64>(SceneComponent->Mobility.GetValue()))
+            : FString::FromInt(static_cast<int32>(SceneComponent->Mobility.GetValue())));
+        Json->SetStringField(TEXT("attach_socket"), SceneComponent->GetAttachSocketName().ToString());
+        Json->SetStringField(TEXT("attach_parent"), SceneComponent->GetAttachParent()
+            ? SceneComponent->GetAttachParent()->GetName()
+            : FString());
+        return Json;
+    }
+
+    FString SplinePointTypeToString(ESplinePointType::Type PointType)
+    {
+        switch (PointType)
+        {
+        case ESplinePointType::Linear:
+            return TEXT("Linear");
+        case ESplinePointType::Curve:
+            return TEXT("Curve");
+        case ESplinePointType::Constant:
+            return TEXT("Constant");
+        case ESplinePointType::CurveClamped:
+            return TEXT("CurveClamped");
+        case ESplinePointType::CurveCustomTangent:
+            return TEXT("CurveCustomTangent");
+        default:
+            return FString::FromInt(static_cast<int32>(PointType));
+        }
+    }
+
+    TSharedPtr<FJsonObject> SplineComponentToJson(const USplineComponent* SplineComponent)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        if (!SplineComponent)
+        {
+            return Json;
+        }
+
+        const int32 PointCount = SplineComponent->GetNumberOfSplinePoints();
+        Json->SetNumberField(TEXT("point_count"), PointCount);
+        Json->SetNumberField(TEXT("length"), SplineComponent->GetSplineLength());
+        Json->SetBoolField(TEXT("closed_loop"), SplineComponent->IsClosedLoop());
+
+        TArray<TSharedPtr<FJsonValue>> Points;
+        for (int32 Index = 0; Index < PointCount; ++Index)
+        {
+            TSharedPtr<FJsonObject> PointJson = MakeShared<FJsonObject>();
+            PointJson->SetNumberField(TEXT("index"), Index);
+            PointJson->SetStringField(TEXT("type"), SplinePointTypeToString(SplineComponent->GetSplinePointType(Index)));
+            PointJson->SetObjectField(TEXT("local_location"), VectorToJson(SplineComponent->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::Local)));
+            PointJson->SetObjectField(TEXT("world_location"), VectorToJson(SplineComponent->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::World)));
+            PointJson->SetObjectField(TEXT("local_arrive_tangent"), VectorToJson(SplineComponent->GetArriveTangentAtSplinePoint(Index, ESplineCoordinateSpace::Local)));
+            PointJson->SetObjectField(TEXT("local_leave_tangent"), VectorToJson(SplineComponent->GetLeaveTangentAtSplinePoint(Index, ESplineCoordinateSpace::Local)));
+            PointJson->SetObjectField(TEXT("rotation"), RotatorToJson(SplineComponent->GetRotationAtSplinePoint(Index, ESplineCoordinateSpace::Local)));
+            PointJson->SetObjectField(TEXT("scale"), VectorToJson(SplineComponent->GetScaleAtSplinePoint(Index)));
+            Points.Add(MakeShared<FJsonValueObject>(PointJson));
+        }
+        Json->SetArrayField(TEXT("points"), Points);
+        return Json;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> ComponentChildVariableNamesToJson(const USCS_Node* Node)
+    {
+        TArray<TSharedPtr<FJsonValue>> Children;
+        if (!Node)
+        {
+            return Children;
+        }
+
+        for (const USCS_Node* ChildNode : Node->GetChildNodes())
+        {
+            if (ChildNode)
+            {
+                Children.Add(MakeShared<FJsonValueString>(ChildNode->GetVariableName().ToString()));
+            }
+        }
+
+        return Children;
+    }
+
+    TSharedPtr<FJsonObject> ComponentTemplateToJson(
+        const UActorComponent* ComponentTemplate,
+        const FName VariableName,
+        const FName ParentVariableName,
+        const bool bFromSimpleConstructionScript,
+        const USCS_Node* SimpleConstructionScriptNode = nullptr)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        if (!ComponentTemplate)
+        {
+            return Json;
+        }
+
+        Json->SetStringField(TEXT("name"), ComponentTemplate->GetName());
+        Json->SetStringField(TEXT("variable_name"), VariableName.ToString());
+        Json->SetStringField(TEXT("class"), ComponentTemplate->GetClass() ? ComponentTemplate->GetClass()->GetName() : FString());
+        Json->SetStringField(TEXT("class_path"), ComponentTemplate->GetClass() ? ComponentTemplate->GetClass()->GetPathName() : FString());
+        Json->SetStringField(TEXT("template_path"), ComponentTemplate->GetPathName());
+        Json->SetStringField(TEXT("parent_variable_name"), ParentVariableName.ToString());
+        Json->SetBoolField(TEXT("from_simple_construction_script"), bFromSimpleConstructionScript);
+        Json->SetBoolField(TEXT("auto_activate"), ComponentTemplate->bAutoActivate);
+        Json->SetBoolField(TEXT("editable_when_inherited"), ComponentTemplate->bEditableWhenInherited);
+        Json->SetStringField(TEXT("creation_method"), ComponentCreationMethodToString(ComponentTemplate->CreationMethod));
+        if (SimpleConstructionScriptNode)
+        {
+            const UClass* ComponentClass = SimpleConstructionScriptNode->ComponentClass.Get();
+            Json->SetStringField(TEXT("scs_node_path"), SimpleConstructionScriptNode->GetPathName());
+            Json->SetStringField(TEXT("component_class_path"), ComponentClass ? ComponentClass->GetPathName() : FString());
+            Json->SetStringField(TEXT("attach_to_name"), SimpleConstructionScriptNode->AttachToName.ToString());
+            Json->SetStringField(TEXT("parent_component_owner_class_name"), SimpleConstructionScriptNode->ParentComponentOwnerClassName.ToString());
+            Json->SetBoolField(TEXT("is_parent_component_native"), SimpleConstructionScriptNode->bIsParentComponentNative);
+            Json->SetArrayField(TEXT("child_variable_names"), ComponentChildVariableNamesToJson(SimpleConstructionScriptNode));
+        }
+
+        if (const USceneComponent* SceneComponent = Cast<USceneComponent>(ComponentTemplate))
+        {
+            Json->SetObjectField(TEXT("scene"), SceneComponentToJson(SceneComponent));
+        }
+        if (const USplineComponent* SplineComponent = Cast<USplineComponent>(ComponentTemplate))
+        {
+            Json->SetObjectField(TEXT("spline"), SplineComponentToJson(SplineComponent));
+        }
+
+        TArray<TSharedPtr<FJsonValue>> Properties = ComponentPropertiesToJson(ComponentTemplate);
+        Json->SetNumberField(TEXT("property_count"), Properties.Num());
+        Json->SetArrayField(TEXT("properties"), Properties);
+        return Json;
+    }
+
+    TSharedPtr<FJsonObject> ClassDefaultsToJson(const UBlueprint* Blueprint)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        const UClass* GeneratedClass = Blueprint ? Blueprint->GeneratedClass : nullptr;
+        const UObject* DefaultObject = GeneratedClass ? GeneratedClass->GetDefaultObject(false) : nullptr;
+        if (!DefaultObject)
+        {
+            return Json;
+        }
+
+        Json->SetStringField(TEXT("class"), GeneratedClass->GetName());
+        Json->SetStringField(TEXT("class_path"), GeneratedClass->GetPathName());
+        Json->SetStringField(TEXT("default_object_path"), DefaultObject->GetPathName());
+        TArray<TSharedPtr<FJsonValue>> Properties = ObjectPropertiesToJson(DefaultObject);
+        Json->SetNumberField(TEXT("property_count"), Properties.Num());
+        Json->SetArrayField(TEXT("properties"), Properties);
+        return Json;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> DefaultObjectComponentsToJson(const UBlueprint* Blueprint)
+    {
+        TArray<TSharedPtr<FJsonValue>> Components;
+        const UClass* GeneratedClass = Blueprint ? Blueprint->GeneratedClass : nullptr;
+        const AActor* ActorDefaultObject = GeneratedClass ? Cast<AActor>(GeneratedClass->GetDefaultObject(false)) : nullptr;
+        if (!ActorDefaultObject)
+        {
+            return Components;
+        }
+
+        TArray<UActorComponent*> ActorComponents;
+        ActorDefaultObject->GetComponents(ActorComponents);
+        for (const UActorComponent* Component : ActorComponents)
+        {
+            if (!Component)
+            {
+                continue;
+            }
+
+            TSharedPtr<FJsonObject> ComponentJson = ComponentTemplateToJson(Component, Component->GetFName(), NAME_None, false);
+            ComponentJson->SetStringField(TEXT("owner_path"), Component->GetOwner() ? Component->GetOwner()->GetPathName() : FString());
+            ComponentJson->SetBoolField(TEXT("from_default_object"), true);
+            Components.Add(MakeShared<FJsonValueObject>(ComponentJson));
+        }
+
+        return Components;
+    }
+
+    TSharedPtr<FJsonObject> ComponentTreeNodeToJson(const USCS_Node* Node)
+    {
+        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+        if (!Node)
+        {
+            return Json;
+        }
+
+        const UActorComponent* ComponentTemplate = Node->ComponentTemplate;
+        const UClass* ComponentClass = Node->ComponentClass.Get();
+        Json->SetStringField(TEXT("node_path"), Node->GetPathName());
+        Json->SetStringField(TEXT("variable_name"), Node->GetVariableName().ToString());
+        Json->SetStringField(TEXT("component_class"), ComponentClass ? ComponentClass->GetName() : FString());
+        Json->SetStringField(TEXT("component_class_path"), ComponentClass ? ComponentClass->GetPathName() : FString());
+        Json->SetStringField(TEXT("parent_variable_name"), Node->ParentComponentOrVariableName.ToString());
+        Json->SetStringField(TEXT("parent_component_owner_class_name"), Node->ParentComponentOwnerClassName.ToString());
+        Json->SetStringField(TEXT("attach_to_name"), Node->AttachToName.ToString());
+        Json->SetBoolField(TEXT("is_parent_component_native"), Node->bIsParentComponentNative);
+        Json->SetBoolField(TEXT("has_component_template"), ComponentTemplate != nullptr);
+        if (ComponentTemplate)
+        {
+            Json->SetObjectField(TEXT("component"), ComponentTemplateToJson(
+                ComponentTemplate,
+                Node->GetVariableName(),
+                Node->ParentComponentOrVariableName,
+                true,
+                Node));
+        }
+
+        TArray<TSharedPtr<FJsonValue>> Children;
+        for (const USCS_Node* ChildNode : Node->GetChildNodes())
+        {
+            if (ChildNode)
+            {
+                Children.Add(MakeShared<FJsonValueObject>(ComponentTreeNodeToJson(ChildNode)));
+            }
+        }
+        Json->SetNumberField(TEXT("child_count"), Children.Num());
+        Json->SetArrayField(TEXT("children"), Children);
+        return Json;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> BuildBlueprintComponentTreeJson(const UBlueprint* Blueprint)
+    {
+        TArray<TSharedPtr<FJsonValue>> ComponentTree;
+        if (!Blueprint || !Blueprint->SimpleConstructionScript)
+        {
+            return ComponentTree;
+        }
+
+        for (const USCS_Node* RootNode : Blueprint->SimpleConstructionScript->GetRootNodes())
+        {
+            if (RootNode)
+            {
+                ComponentTree.Add(MakeShared<FJsonValueObject>(ComponentTreeNodeToJson(RootNode)));
+            }
+        }
+
+        return ComponentTree;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> BuildBlueprintComponentsJson(const UBlueprint* Blueprint)
+    {
+        TArray<TSharedPtr<FJsonValue>> Components;
+        if (!Blueprint)
+        {
+            return Components;
+        }
+
+        TSet<const UActorComponent*> ExportedComponents;
+
+        if (const USimpleConstructionScript* SimpleConstructionScript = Blueprint->SimpleConstructionScript)
+        {
+            for (const USCS_Node* Node : SimpleConstructionScript->GetAllNodes())
+            {
+                const UActorComponent* ComponentTemplate = Node ? Node->ComponentTemplate : nullptr;
+                if (!ComponentTemplate)
+                {
+                    continue;
+                }
+
+                Components.Add(MakeShared<FJsonValueObject>(ComponentTemplateToJson(
+                    ComponentTemplate,
+                    Node->GetVariableName(),
+                    Node->ParentComponentOrVariableName,
+                    true,
+                    Node)));
+                ExportedComponents.Add(ComponentTemplate);
+            }
+        }
+
+        for (const UActorComponent* ComponentTemplate : Blueprint->ComponentTemplates)
+        {
+            if (!ComponentTemplate || ExportedComponents.Contains(ComponentTemplate))
+            {
+                continue;
+            }
+
+            Components.Add(MakeShared<FJsonValueObject>(ComponentTemplateToJson(
+                ComponentTemplate,
+                NAME_None,
+                NAME_None,
+                false)));
+            ExportedComponents.Add(ComponentTemplate);
+        }
+
+        return Components;
+    }
+
+    void AppendComponentPropertiesMarkdown(
+        FString& Markdown,
+        const UActorComponent* ComponentTemplate,
+        const int32 PropertyLimit)
+    {
+        if (!ComponentTemplate || PropertyLimit <= 0)
+        {
+            return;
+        }
+
+        int32 ExportedCount = 0;
+        for (TFieldIterator<FProperty> PropertyIt(ComponentTemplate->GetClass(), EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
+        {
+            const FProperty* Property = *PropertyIt;
+            if (!ShouldExportComponentProperty(Property))
+            {
+                continue;
+            }
+
+            FString ValueText;
+            Property->ExportTextItem_Direct(
+                ValueText,
+                Property->ContainerPtrToValuePtr<void>(ComponentTemplate),
+                nullptr,
+                const_cast<UActorComponent*>(ComponentTemplate),
+                PPF_None);
+
+            Markdown += FString::Printf(
+                TEXT("  - `%s` (%s, %s): `%s`\n"),
+                *Property->GetName(),
+                *Property->GetCPPType(),
+                *PropertyFlagsToString(Property->GetPropertyFlags()),
+                *ValueText);
+            ++ExportedCount;
+            if (ExportedCount >= PropertyLimit)
+            {
+                Markdown += FString::Printf(TEXT("  - ... 属性较多，Markdown 仅显示前 %d 项；JSON 包含完整属性列表\n"), PropertyLimit);
+                break;
+            }
+        }
+    }
+
+    void AppendOneComponentMarkdown(
+        FString& Markdown,
+        const UActorComponent* ComponentTemplate,
+        const FName VariableName,
+        const FName ParentVariableName,
+        const bool bFromSimpleConstructionScript)
+    {
+        if (!ComponentTemplate)
+        {
+            return;
+        }
+
+        const FString DisplayName = VariableName.IsNone() ? ComponentTemplate->GetName() : VariableName.ToString();
+        Markdown += FString::Printf(
+            TEXT("### %s\n"),
+            *DisplayName);
+        Markdown += FString::Printf(
+            TEXT("- 类: `%s`\n"),
+            ComponentTemplate->GetClass() ? *ComponentTemplate->GetClass()->GetPathName() : TEXT(""));
+        Markdown += FString::Printf(
+            TEXT("- 模板路径: `%s`\n"),
+            *ComponentTemplate->GetPathName());
+        Markdown += FString::Printf(
+            TEXT("- 来源: `%s`\n"),
+            bFromSimpleConstructionScript ? TEXT("SimpleConstructionScript") : TEXT("ComponentTemplates"));
+        Markdown += FString::Printf(
+            TEXT("- AutoActivate: `%s`, EditableWhenInherited: `%s`\n"),
+            ComponentTemplate->bAutoActivate ? TEXT("true") : TEXT("false"),
+            ComponentTemplate->bEditableWhenInherited ? TEXT("true") : TEXT("false"));
+        if (!ParentVariableName.IsNone())
+        {
+            Markdown += FString::Printf(TEXT("- 父组件: `%s`\n"), *ParentVariableName.ToString());
+        }
+
+        if (const USceneComponent* SceneComponent = Cast<USceneComponent>(ComponentTemplate))
+        {
+            const FString MobilityText = StaticEnum<EComponentMobility::Type>()
+                ? StaticEnum<EComponentMobility::Type>()->GetNameStringByValue(static_cast<int64>(SceneComponent->Mobility.GetValue()))
+                : FString::FromInt(static_cast<int32>(SceneComponent->Mobility.GetValue()));
+            Markdown += FString::Printf(
+                TEXT("- 相对变换: Location `%s`, Rotation `%s`, Scale `%s`\n"),
+                *SceneComponent->GetRelativeLocation().ToString(),
+                *SceneComponent->GetRelativeRotation().ToString(),
+                *SceneComponent->GetRelativeScale3D().ToString());
+            Markdown += FString::Printf(
+                TEXT("- Mobility: `%s`, AttachParent: `%s`, Socket: `%s`\n"),
+                *MobilityText,
+                SceneComponent->GetAttachParent() ? *SceneComponent->GetAttachParent()->GetName() : TEXT(""),
+                *SceneComponent->GetAttachSocketName().ToString());
+        }
+
+        Markdown += TEXT("- 关键参数:\n");
+        AppendComponentPropertiesMarkdown(Markdown, ComponentTemplate, 20);
+        Markdown += TEXT("\n");
+    }
+
+    void AppendComponentTreeNodeMarkdown(FString& Markdown, const USCS_Node* Node, int32 Depth)
+    {
+        if (!Node)
+        {
+            return;
+        }
+
+        const UActorComponent* ComponentTemplate = Node->ComponentTemplate;
+        const UClass* ComponentClass = Node->ComponentClass.Get();
+        const FString Indent = FString::ChrN(Depth * 2, TEXT(' '));
+        const FString VariableName = Node->GetVariableName().ToString();
+        const FString ClassName = ComponentClass
+            ? ComponentClass->GetPathName()
+            : (ComponentTemplate && ComponentTemplate->GetClass() ? ComponentTemplate->GetClass()->GetPathName() : FString());
+
+        Markdown += FString::Printf(
+            TEXT("%s- `%s` : `%s`\n"),
+            *Indent,
+            *VariableName,
+            *ClassName);
+        if (!Node->ParentComponentOrVariableName.IsNone())
+        {
+            Markdown += FString::Printf(
+                TEXT("%s  - 父组件: `%s`\n"),
+                *Indent,
+                *Node->ParentComponentOrVariableName.ToString());
+        }
+        if (!Node->AttachToName.IsNone())
+        {
+            Markdown += FString::Printf(
+                TEXT("%s  - Socket/Bone: `%s`\n"),
+                *Indent,
+                *Node->AttachToName.ToString());
+        }
+        if (!ComponentTemplate)
+        {
+            Markdown += FString::Printf(TEXT("%s  - 无组件模板\n"), *Indent);
+        }
+
+        for (const USCS_Node* ChildNode : Node->GetChildNodes())
+        {
+            AppendComponentTreeNodeMarkdown(Markdown, ChildNode, Depth + 1);
+        }
+    }
+
+    void AppendComponentsMarkdown(FString& Markdown, const UBlueprint* Blueprint)
+    {
+        if (!Blueprint)
+        {
+            return;
+        }
+
+        TSet<const UActorComponent*> ExportedComponents;
+        int32 ComponentCount = 0;
+        FString ComponentTreeMarkdown;
+        FString ComponentMarkdown;
+
+        if (const USimpleConstructionScript* SimpleConstructionScript = Blueprint->SimpleConstructionScript)
+        {
+            ComponentTreeMarkdown += TEXT("### SCS 树\n\n");
+            for (const USCS_Node* RootNode : SimpleConstructionScript->GetRootNodes())
+            {
+                AppendComponentTreeNodeMarkdown(ComponentTreeMarkdown, RootNode, 0);
+            }
+            ComponentTreeMarkdown += TEXT("\n");
+
+            for (const USCS_Node* Node : SimpleConstructionScript->GetAllNodes())
+            {
+                const UActorComponent* ComponentTemplate = Node ? Node->ComponentTemplate : nullptr;
+                if (!ComponentTemplate)
+                {
+                    continue;
+                }
+
+                AppendOneComponentMarkdown(
+                    ComponentMarkdown,
+                    ComponentTemplate,
+                    Node->GetVariableName(),
+                    Node->ParentComponentOrVariableName,
+                    true);
+                ExportedComponents.Add(ComponentTemplate);
+                ++ComponentCount;
+            }
+        }
+
+        for (const UActorComponent* ComponentTemplate : Blueprint->ComponentTemplates)
+        {
+            if (!ComponentTemplate || ExportedComponents.Contains(ComponentTemplate))
+            {
+                continue;
+            }
+
+            AppendOneComponentMarkdown(ComponentMarkdown, ComponentTemplate, NAME_None, NAME_None, false);
+            ExportedComponents.Add(ComponentTemplate);
+            ++ComponentCount;
+        }
+
+        Markdown += TEXT("## 组件树\n\n");
+        Markdown += FString::Printf(TEXT("- 组件数: %d\n\n"), ComponentCount);
+        Markdown += ComponentTreeMarkdown;
+        if (ComponentCount == 0)
+        {
+            Markdown += TEXT("- 无组件模板信息\n\n");
+            return;
+        }
+
+        Markdown += TEXT("### 组件详情\n\n");
+        Markdown += ComponentMarkdown;
     }
 
     TSharedPtr<FJsonObject> RichCurveKeyToJson(const FRichCurveKey& Key)
@@ -2083,10 +2743,19 @@ namespace
         Root->SetStringField(TEXT("asset_path"), Blueprint->GetPathName());
         Root->SetStringField(TEXT("blueprint_class"), Blueprint->GetClass()->GetName());
         Root->SetStringField(TEXT("parent_class"), Blueprint->ParentClass ? Blueprint->ParentClass->GetPathName() : FString());
+        Root->SetObjectField(TEXT("class_defaults"), ClassDefaultsToJson(Blueprint));
 
         TArray<TSharedPtr<FJsonValue>> Variables = BuildBlueprintVariablesJson(Blueprint);
         Root->SetNumberField(TEXT("variable_count"), Variables.Num());
         Root->SetArrayField(TEXT("variables"), Variables);
+
+        TArray<TSharedPtr<FJsonValue>> Components = BuildBlueprintComponentsJson(Blueprint);
+        Root->SetNumberField(TEXT("component_count"), Components.Num());
+        Root->SetArrayField(TEXT("components"), Components);
+        Root->SetArrayField(TEXT("component_tree"), BuildBlueprintComponentTreeJson(Blueprint));
+        TArray<TSharedPtr<FJsonValue>> DefaultObjectComponents = DefaultObjectComponentsToJson(Blueprint);
+        Root->SetNumberField(TEXT("default_object_component_count"), DefaultObjectComponents.Num());
+        Root->SetArrayField(TEXT("default_object_components"), DefaultObjectComponents);
 
         TArray<TSharedPtr<FJsonValue>> Timelines = BuildTimelinesJson(Blueprint);
         Root->SetNumberField(TEXT("timeline_count"), Timelines.Num());
@@ -2342,6 +3011,7 @@ namespace
         }
         Markdown += FString::Printf(TEXT("- 图表数: %d\n\n"), ValidGraphCount);
 
+        AppendComponentsMarkdown(Markdown, Blueprint);
         AppendTimelinesMarkdown(Markdown, Blueprint);
 
         for (UEdGraph* Graph : Graphs)
