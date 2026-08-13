@@ -222,10 +222,11 @@ public:
      * 调整阵型单位数量
      * @param Formation 原始阵型
      * @param NewUnitCount 新的单位数量
+     * @param RandomSeed 随机种子（扩展时用于生成偏移，同一种子结果可复现）
      * @return 调整后的阵型
      */
-    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "调整阵型单位数量"))
-    static FFormationData ResizeFormation(const FFormationData& Formation, int32 NewUnitCount);
+    UFUNCTION(BlueprintCallable, Category = "XTools|Formation", meta = (DisplayName = "调整阵型单位数量", AdvancedDisplay = "RandomSeed"))
+    static FFormationData ResizeFormation(const FFormationData& Formation, int32 NewUnitCount, UPARAM(DisplayName="随机种子") int32 RandomSeed = 0);
 
     /**
      * 绘制阵型调试信息

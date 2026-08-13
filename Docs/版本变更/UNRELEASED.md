@@ -33,6 +33,9 @@
 - 调整 圆形多层次点阵节点标记弃用
 - 新增 形状/矩形采样随机种子参数
 
+### FormationSystem
+- 新增 阵型数量调整随机种子参数
+
 ### BlueprintExtensionsRuntime
 - 新增 缩放曲线幅度节点
 

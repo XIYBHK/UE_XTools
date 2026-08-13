@@ -554,7 +554,7 @@ FFormationData UFormationLibrary::MoveFormation(const FFormationData& Formation,
     return MovedFormation;
 }
 
-FFormationData UFormationLibrary::ResizeFormation(const FFormationData& Formation, int32 NewUnitCount)
+FFormationData UFormationLibrary::ResizeFormation(const FFormationData& Formation, int32 NewUnitCount, int32 RandomSeed)
 {
     if (NewUnitCount <= 0)
     {
@@ -618,6 +618,8 @@ FFormationData UFormationLibrary::ResizeFormation(const FFormationData& Formatio
             if (NewUnitCount > OriginalCount)
             {
                 // 增加单位：复制现有位置并添加随机偏移
+                // 种子驱动的 FRandomStream，与插件其他模块约定一致（同一种子结果可复现）
+                FRandomStream RandomStream(RandomSeed);
                 ResizedFormation.Positions.Reserve(NewUnitCount);
                 for (int32 i = OriginalCount; i < NewUnitCount; i++)
                 {
@@ -625,8 +627,8 @@ FFormationData UFormationLibrary::ResizeFormation(const FFormationData& Formatio
                     FVector NewPos = Formation.Positions[SourceIndex];
                     // 添加小的随机偏移避免重叠
                     NewPos += FVector(
-                        FMath::RandRange(-50.0f, 50.0f),
-                        FMath::RandRange(-50.0f, 50.0f),
+                        RandomStream.RandRange(-50.0f, 50.0f),
+                        RandomStream.RandRange(-50.0f, 50.0f),
                         0.0f
                     );
                     ResizedFormation.Positions.Add(NewPos);
