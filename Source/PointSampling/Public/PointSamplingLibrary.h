@@ -99,11 +99,11 @@ public:
   // ============================================================================
 
   UFUNCTION(BlueprintCallable, Category = "Point Sampling|Cache",
-            meta = (DisplayName = "清空泊松采样缓存"))
+            meta = (DisplayName = "清空点采样缓存"))
   static void ClearPoissonSamplingCache();
 
   UFUNCTION(BlueprintCallable, Category = "Point Sampling|Cache",
-            meta = (DisplayName = "获取泊松缓存统计"))
+            meta = (DisplayName = "获取点采样缓存统计"))
   static void GetPoissonSamplingCacheStats(int32 &OutHits, int32 &OutMisses);
 
   // ============================================================================

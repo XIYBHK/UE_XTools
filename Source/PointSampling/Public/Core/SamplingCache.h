@@ -197,6 +197,63 @@ struct FPoissonCacheKey
 	}
 };
 
+/** 圆形/球体规则点阵的局部几何缓存键。 */
+struct FCircleSamplingCacheKey
+{
+	int32 PointCount = 0;
+	int32 RandomSeed = 0;
+	int32 MinimumPointsPerRing = 0;
+	float Radius = 0.0f;
+	float MinDistance = 0.0f;
+	float StartAngle = 0.0f;
+	float JitterStrength = 0.0f;
+	float RingSpacing = 0.0f;
+	float LayerSpacing = 0.0f;
+	float LayerDensity = 1.0f;
+	uint8 DistributionMode = 0;
+	bool bIs3D = false;
+	bool bSolid = false;
+	bool bClockwise = false;
+
+	bool operator==(const FCircleSamplingCacheKey& Other) const
+	{
+		auto Quantize = [](float Value) { return FMath::RoundToInt(Value * 100.0f); };
+		return PointCount == Other.PointCount
+			&& RandomSeed == Other.RandomSeed
+			&& MinimumPointsPerRing == Other.MinimumPointsPerRing
+			&& Quantize(Radius) == Quantize(Other.Radius)
+			&& Quantize(MinDistance) == Quantize(Other.MinDistance)
+			&& Quantize(StartAngle) == Quantize(Other.StartAngle)
+			&& Quantize(JitterStrength) == Quantize(Other.JitterStrength)
+			&& Quantize(RingSpacing) == Quantize(Other.RingSpacing)
+			&& Quantize(LayerSpacing) == Quantize(Other.LayerSpacing)
+			&& Quantize(LayerDensity) == Quantize(Other.LayerDensity)
+			&& DistributionMode == Other.DistributionMode
+			&& bIs3D == Other.bIs3D
+			&& bSolid == Other.bSolid
+			&& bClockwise == Other.bClockwise;
+	}
+
+	friend uint32 GetTypeHash(const FCircleSamplingCacheKey& Key)
+	{
+		auto Quantize = [](float Value) { return FMath::RoundToInt(Value * 100.0f); };
+		uint32 Hash = GetTypeHash(Key.PointCount);
+		Hash = HashCombine(Hash, GetTypeHash(Key.RandomSeed));
+		Hash = HashCombine(Hash, GetTypeHash(Key.MinimumPointsPerRing));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.Radius)));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.MinDistance)));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.StartAngle)));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.JitterStrength)));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.RingSpacing)));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.LayerSpacing)));
+		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.LayerDensity)));
+		Hash = HashCombine(Hash, GetTypeHash(Key.DistributionMode));
+		Hash = HashCombine(Hash, GetTypeHash(Key.bIs3D));
+		Hash = HashCombine(Hash, GetTypeHash(Key.bSolid));
+		return HashCombine(Hash, GetTypeHash(Key.bClockwise));
+	}
+};
+
 /**
  * 采样结果缓存系统
  * 
@@ -217,25 +274,40 @@ public:
 	
 	/** 存储结果到缓存 */
 	void Store(const FPoissonCacheKey& Key, const TArray<FVector>& Points);
+
+	/** 获取圆形/球体规则点阵的局部几何缓存结果。 */
+	TOptional<TArray<FVector>> GetCachedCircle(const FCircleSamplingCacheKey& Key);
+
+	/** 存储圆形/球体规则点阵的局部几何缓存结果。 */
+	void StoreCircle(const FCircleSamplingCacheKey& Key, const TArray<FVector>& Points);
 	
 	/** 清空缓存 */
 	void ClearCache();
 	
 	/** 获取缓存统计 */
 	void GetStats(int32& OutHits, int32& OutMisses);
+
+	/** 获取圆形/球体规则点阵缓存统计。 */
+	void GetCircleStats(int32& OutHits, int32& OutMisses);
 	
 private:
 	FSamplingCache() = default;
 	
 	/** 移除最久未使用的条目（LRU淘汰） */
 	void RemoveLRUEntry();
-	
+	void RemoveCircleLRUEntry();
+
 	static constexpr int32 MaxCacheSize = 50;
+	static constexpr int32 MaxCircleCacheSize = 50;
 	
 	FCriticalSection CacheLock;
 	TMap<FPoissonCacheKey, TArray<FVector>> Cache;
 	TMap<FPoissonCacheKey, double> AccessTimes;  // 记录每个条目的最后访问时间
 	int32 CacheHits = 0;
 	int32 CacheMisses = 0;
+	TMap<FCircleSamplingCacheKey, TArray<FVector>> CircleCache;
+	TMap<FCircleSamplingCacheKey, double> CircleAccessTimes;
+	int32 CircleCacheHits = 0;
+	int32 CircleCacheMisses = 0;
 };
 

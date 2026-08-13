@@ -5,6 +5,7 @@
 
 #include "PointSamplingLibrary.h"
 #include "Algorithms/PoissonDiskSampling.h"
+#include "Core/SamplingCache.h"
 #include "FormationSamplingLibrary.h"
 #include "Sampling/FormationSamplingInternal.h"
 #include "Sampling/PointDeduplicationHelper.h"
@@ -81,7 +82,14 @@ void UPointSamplingLibrary::ClearPoissonSamplingCache() {
 
 void UPointSamplingLibrary::GetPoissonSamplingCacheStats(int32 &OutHits,
                                                          int32 &OutMisses) {
-  FPoissonDiskSampling::GetCacheStats(OutHits, OutMisses);
+  int32 PoissonHits = 0;
+  int32 PoissonMisses = 0;
+  int32 CircleHits = 0;
+  int32 CircleMisses = 0;
+  FPoissonDiskSampling::GetCacheStats(PoissonHits, PoissonMisses);
+  FSamplingCache::Get().GetCircleStats(CircleHits, CircleMisses);
+  OutHits = PoissonHits + CircleHits;
+  OutMisses = PoissonMisses + CircleMisses;
 }
 
 // ============================================================================

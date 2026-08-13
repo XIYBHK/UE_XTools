@@ -44,9 +44,12 @@ public:
 		bool bClockwise,
 		float JitterStrength,
 		FRandomStream& RandomStream,
+		int32 RandomSeed,
 		float SolidRingSpacing,
 		float SolidLayerSpacing,
-		int32 MinimumPointsPerRing
+		float SolidLayerDensity,
+		int32 MinimumPointsPerRing,
+		bool bUseCache
 	);
 
 	/**
@@ -249,11 +252,12 @@ private:
 
 	/** 生成由圆形截面层紧密堆叠组成的实心球点阵。 */
 	static TArray<FVector> GenerateClosePackedSphere(
-		int32 PointCount,
-		float Radius,
-		float TargetSpacing,
-		float TargetLayerSpacing
-	);
+			int32 PointCount,
+			float Radius,
+			float TargetSpacing,
+			float TargetLayerSpacing,
+			float TargetLayerDensity
+		);
 
 	/**
 	 * 应用扰动到点位

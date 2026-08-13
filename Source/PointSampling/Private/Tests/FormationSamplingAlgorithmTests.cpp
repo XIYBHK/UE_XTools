@@ -7,6 +7,7 @@
 
 #include "FormationSamplingLibrary.h"
 #include "PointSamplingLibrary.h"
+#include "Core/SamplingCache.h"
 #include "Misc/AutomationTest.h"
 
 namespace
@@ -83,6 +84,44 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 			FVector::DotProduct(Circle[Index].GetRotation().RotateVector(FVector::ForwardVector), Direction) > 0.999f);
 	}
 
+	UPointSamplingLibrary::ClearPoissonSamplingCache();
+	int32 CacheHitsBefore = 0;
+	int32 CacheMissesBefore = 0;
+	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsBefore, CacheMissesBefore);
+	const TArray<FTransform> CachedCircle = UFormationSamplingLibrary::GenerateCircle(
+		12, FVector(100.0f, 0.0f, 0.0f), FRotator::ZeroRotator, 100.0f, false, false,
+		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, EPoissonCoordinateSpace::World,
+		0.0f, 123, true);
+	int32 CacheHitsAfterFirstCall = 0;
+	int32 CacheMissesAfterFirstCall = 0;
+	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsAfterFirstCall, CacheMissesAfterFirstCall);
+	const TArray<FTransform> CachedCircleAtNewCenter = UFormationSamplingLibrary::GenerateCircle(
+		12, FVector(300.0f, 0.0f, 0.0f), FRotator::ZeroRotator, 100.0f, false, false,
+		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, EPoissonCoordinateSpace::World,
+		0.0f, 123, true);
+	int32 CacheHitsAfterSecondCall = 0;
+	int32 CacheMissesAfterSecondCall = 0;
+	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsAfterSecondCall, CacheMissesAfterSecondCall);
+	TestEqual(TEXT("首次启用圆形缓存应产生一次未命中"), CacheMissesAfterFirstCall, CacheMissesBefore + 1);
+	TestEqual(TEXT("相同圆形参数应命中局部几何缓存"), CacheHitsAfterSecondCall, CacheHitsAfterFirstCall + 1);
+	TestEqual(TEXT("命中缓存不应增加未命中数"), CacheMissesAfterSecondCall, CacheMissesAfterFirstCall);
+	if (CachedCircle.Num() == CachedCircleAtNewCenter.Num() && CachedCircle.Num() > 0)
+	{
+		TestTrue(TEXT("命中缓存时仍应更新场景位置"),
+			CachedCircleAtNewCenter[0].GetLocation().Equals(CachedCircle[0].GetLocation() + FVector(200.0f, 0.0f, 0.0f), UE_KINDA_SMALL_NUMBER));
+	}
+
+	const TArray<FTransform> UncachedCircle = UFormationSamplingLibrary::GenerateCircle(
+		12, FVector(500.0f, 0.0f, 0.0f), FRotator::ZeroRotator, 100.0f, false, false,
+		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, EPoissonCoordinateSpace::World,
+		0.0f, 123, false);
+	int32 CacheHitsAfterDisabledCall = 0;
+	int32 CacheMissesAfterDisabledCall = 0;
+	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsAfterDisabledCall, CacheMissesAfterDisabledCall);
+	TestEqual(TEXT("关闭圆形缓存不应读取缓存"), CacheHitsAfterDisabledCall, CacheHitsAfterSecondCall);
+	TestEqual(TEXT("关闭圆形缓存不应写入缓存统计"), CacheMissesAfterDisabledCall, CacheMissesAfterSecondCall);
+	TestEqual(TEXT("关闭圆形缓存仍应生成有效结果"), UncachedCircle.Num(), 12);
+
 	const TArray<FTransform> SolidCircle = UFormationSamplingLibrary::GenerateCircle(
 		12, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, false, true,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, RawSpace);
@@ -91,7 +130,7 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> SolidSphere = UFormationSamplingLibrary::GenerateCircle(
 		24, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, RawSpace,
-		0.0f, 0, 0.0f, 0.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
+			0.0f, 0, true, 0.0f, 0.0f, 2.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
 	TestEqual(TEXT("实心球应严格返回目标点数"), SolidSphere.Num(), 24);
 	if (SolidSphere.Num() == 24)
 	{
@@ -107,7 +146,7 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> LayerSpacedSolidSphere = UFormationSamplingLibrary::GenerateCircle(
 		100, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, RawSpace,
-		0.0f, 0, 25.0f, 50.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
+		0.0f, 0, true, 25.0f, 50.0f, 2.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
 	TestEqual(TEXT("指定实心球层间距应保持总点数"), LayerSpacedSolidSphere.Num(), 100);
 	TArray<float> LayerHeights;
 	for (const FTransform& Transform : LayerSpacedSolidSphere)
@@ -137,8 +176,8 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> ClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
 		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
 		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
-		0.0f, 0, 0.0f, 0.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
-	TestEqual(TEXT("紧密堆叠实心球应严格返回目标点数"), ClosePackedSphere.Num(), 120);
+		0.0f, 0, true, 25.0f, 0.0f, 1.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
+	TestTrue(TEXT("紧密堆叠实心球应生成点位"), ClosePackedSphere.Num() > 0);
 	for (int32 PointIndex = 1; PointIndex < ClosePackedSphere.Num(); ++PointIndex)
 	{
 		const FVector Previous = ClosePackedSphere[PointIndex - 1].GetLocation();
@@ -190,6 +229,65 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 		TestEqual(TEXT("紧密堆叠实心球底层应为五点十字结构"), BottomLayerCount, 5);
 		TestEqual(TEXT("紧密堆叠实心球顶层应为五点十字结构"), TopLayerCount, 5);
 	}
+
+	const TArray<FTransform> DenseLayerClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
+		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
+		0.0f, 0, true, 25.0f, 0.0f, 2.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
+	TestTrue(TEXT("提高Z层级密度应增加紧密堆叠实际点数"), DenseLayerClosePackedSphere.Num() > ClosePackedSphere.Num());
+	TArray<float> DenseLayerHeights;
+	for (const FTransform& Point : DenseLayerClosePackedSphere)
+	{
+		const FVector Location = Point.GetLocation();
+		TestTrue(TEXT("提高Z层级密度后点位应位于球体边界内"), Location.Size() <= 100.01f);
+		const float Z = Location.Z;
+		if (DenseLayerHeights.IsEmpty() || !FMath::IsNearlyEqual(DenseLayerHeights.Last(), Z, UE_KINDA_SMALL_NUMBER))
+		{
+			DenseLayerHeights.Add(Z);
+		}
+	}
+	TestTrue(TEXT("提高Z层级密度应增加水平截面层数"), DenseLayerHeights.Num() > PackedLayerHeights.Num());
+	int32 BaseCenterLayerCount = 0;
+	int32 DenseCenterLayerCount = 0;
+	for (const FTransform& Point : ClosePackedSphere)
+	{
+		BaseCenterLayerCount += FMath::IsNearlyZero(Point.GetLocation().Z, UE_KINDA_SMALL_NUMBER) ? 1 : 0;
+	}
+	for (const FTransform& Point : DenseLayerClosePackedSphere)
+	{
+		DenseCenterLayerCount += FMath::IsNearlyZero(Point.GetLocation().Z, UE_KINDA_SMALL_NUMBER) ? 1 : 0;
+	}
+	TestEqual(TEXT("提高Z层级密度不应增加中心截面的点数"), DenseCenterLayerCount, BaseCenterLayerCount);
+	int32 CircleCacheHitsBefore = 0;
+	int32 CircleCacheMissesBefore = 0;
+	FSamplingCache::Get().GetCircleStats(CircleCacheHitsBefore, CircleCacheMissesBefore);
+	const TArray<FTransform> CachedDenseLayerClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
+		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
+		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
+		0.0f, 0, true, 25.0f, 0.0f, 2.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
+	int32 CircleCacheHitsAfter = 0;
+	int32 CircleCacheMissesAfter = 0;
+	FSamplingCache::Get().GetCircleStats(CircleCacheHitsAfter, CircleCacheMissesAfter);
+	TestEqual(TEXT("紧密堆叠缓存应保持生成结果"), CachedDenseLayerClosePackedSphere.Num(), DenseLayerClosePackedSphere.Num());
+	TestEqual(TEXT("相同紧密堆叠参数应命中局部几何缓存"), CircleCacheHitsAfter, CircleCacheHitsBefore + 1);
+	TestEqual(TEXT("相同紧密堆叠参数不应产生新的缓存未命中"), CircleCacheMissesAfter, CircleCacheMissesBefore);
+	int32 PublicCacheHits = 0;
+	int32 PublicCacheMisses = 0;
+	UPointSamplingLibrary::GetPoissonSamplingCacheStats(PublicCacheHits, PublicCacheMisses);
+	TestTrue(TEXT("公开缓存统计应包含紧密堆叠球体缓存命中"), PublicCacheHits >= CircleCacheHitsAfter);
+	TestTrue(TEXT("公开缓存统计应包含紧密堆叠球体缓存未命中"), PublicCacheMisses >= CircleCacheMissesAfter);
+	for (const float LayerHeight : DenseLayerHeights)
+	{
+		bool bHasZeroDegreePoint = false;
+		for (const FTransform& Point : DenseLayerClosePackedSphere)
+		{
+			const FVector Location = Point.GetLocation();
+			bHasZeroDegreePoint |= FMath::IsNearlyEqual(Location.Z, LayerHeight, UE_KINDA_SMALL_NUMBER)
+				&& FMath::IsNearlyZero(Location.Y, UE_KINDA_SMALL_NUMBER)
+				&& Location.X >= -UE_KINDA_SMALL_NUMBER;
+		}
+		TestTrue(TEXT("提高Z层级密度后各层应保持固定环形相位"), bHasZeroDegreePoint);
+	}
 	float MinimumPackedDistance = TNumericLimits<float>::Max();
 	for (int32 LeftIndex = 0; LeftIndex < ClosePackedSphere.Num(); ++LeftIndex)
 	{
@@ -215,8 +313,8 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> ManuallyLayerSpacedClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
 		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
 		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
-		0.0f, 0, 25.0f, 20.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
-	TestEqual(TEXT("紧密堆叠手动层距应严格返回目标点数"), ManuallyLayerSpacedClosePackedSphere.Num(), 120);
+		0.0f, 0, true, 25.0f, 5.0f, 2.0f, 1, EPointArrayOrderMode::SphereBottomToTopClockwise);
+	TestEqual(TEXT("紧密堆叠手动层距不应改变实际点数"), ManuallyLayerSpacedClosePackedSphere.Num(), DenseLayerClosePackedSphere.Num());
 	TArray<float> ManuallyLayerHeights;
 	for (const FTransform& Point : ManuallyLayerSpacedClosePackedSphere)
 	{
@@ -234,29 +332,51 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	TestTrue(TEXT("紧密堆叠手动层距应生成多层"), ManuallyLayerHeights.Num() >= 3);
 	if (ManuallyLayerHeights.Num() >= 2)
 	{
-		TestTrue(TEXT("紧密堆叠应使用手动层间距"),
-			FMath::IsNearlyEqual(ManuallyLayerHeights[1] - ManuallyLayerHeights[0], 20.0f, 0.05f));
+		TestTrue(TEXT("紧密堆叠应使用合法范围内的手动层间距"),
+			FMath::IsNearlyEqual(ManuallyLayerHeights[1] - ManuallyLayerHeights[0], 5.0f, 0.05f));
 		for (int32 LayerIndex = 1; LayerIndex < ManuallyLayerHeights.Num(); ++LayerIndex)
 		{
 			TestTrue(TEXT("紧密堆叠手动层距不应产生断层"),
-				FMath::IsNearlyEqual(ManuallyLayerHeights[LayerIndex] - ManuallyLayerHeights[LayerIndex - 1], 20.0f, 0.05f));
+				FMath::IsNearlyEqual(ManuallyLayerHeights[LayerIndex] - ManuallyLayerHeights[LayerIndex - 1], 5.0f, 0.05f));
 		}
 	}
 
 	const TArray<FTransform> WideLayerSpacedClosePackedSphere = UFormationSamplingLibrary::GenerateCircle(
 		120, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, true, true,
 		ECircleDistributionMode::ClosePacked, 50.0f, 0.0f, true, RawSpace,
-		0.0f, 0, 25.0f, 40.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
-	TestEqual(TEXT("调整Z轴层间距不应改变紧密堆叠总点数"), WideLayerSpacedClosePackedSphere.Num(), 120);
+		0.0f, 0, true, 25.0f, 40.0f, 2.0f, 1, EPointArrayOrderMode::SphereBottomToTopCounterClockwise);
+	TestEqual(TEXT("调整Z轴层间距不应改变紧密堆叠实际点数"), WideLayerSpacedClosePackedSphere.Num(), DenseLayerClosePackedSphere.Num());
+	if (ManuallyLayerSpacedClosePackedSphere.Num() == WideLayerSpacedClosePackedSphere.Num())
+	{
+		for (int32 PointIndex = 0; PointIndex < ManuallyLayerSpacedClosePackedSphere.Num(); ++PointIndex)
+		{
+			const float CompactRadius = ManuallyLayerSpacedClosePackedSphere[PointIndex].GetLocation().Size2D();
+			const float WideRadius = WideLayerSpacedClosePackedSphere[PointIndex].GetLocation().Size2D();
+			TestTrue(TEXT("Z轴层间距不应改变任何水平点位"),
+				FMath::IsNearlyEqual(CompactRadius, WideRadius, UE_KINDA_SMALL_NUMBER));
+		}
+	}
+	TArray<float> WideLayerHeights;
 	for (const FTransform& Point : WideLayerSpacedClosePackedSphere)
 	{
-		const FVector Location = Point.GetLocation();
-		if (FMath::IsNearlyZero(Location.Z, UE_KINDA_SMALL_NUMBER))
+		const float Z = Point.GetLocation().Z;
+		if (WideLayerHeights.IsEmpty() || !FMath::IsNearlyEqual(WideLayerHeights.Last(), Z, UE_KINDA_SMALL_NUMBER))
 		{
-			const float RingRadius = Location.Size2D();
-			TestTrue(TEXT("Z轴层间距不应改变水平环间距"),
-				FMath::IsNearlyEqual(RingRadius / 25.0f, FMath::RoundToFloat(RingRadius / 25.0f), UE_KINDA_SMALL_NUMBER));
+			WideLayerHeights.Add(Z);
 		}
+	}
+	if (WideLayerHeights.Num() >= 2)
+	{
+		for (int32 LayerIndex = 1; LayerIndex < WideLayerHeights.Num(); ++LayerIndex)
+		{
+			TestTrue(TEXT("超出球形约束的Z轴层间距应被限制为一致层高"),
+				FMath::IsNearlyEqual(WideLayerHeights[LayerIndex] - WideLayerHeights[LayerIndex - 1],
+					WideLayerHeights[1] - WideLayerHeights[0], 0.05f));
+		}
+	}
+	for (const FTransform& Point : WideLayerSpacedClosePackedSphere)
+	{
+		TestTrue(TEXT("超出球形约束的Z轴层间距应被限制"), Point.GetLocation().Size() <= 100.01f);
 	}
 
 	const TArray<FVector> Snowflake = UFormationSamplingLibrary::GenerateSnowflake(

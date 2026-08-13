@@ -5,6 +5,7 @@
 
 #include "CircleSamplingHelper.h"
 #include "FormationSamplingInternal.h"
+#include "Core/SamplingCache.h"
 #include "Math/UnrealMathUtility.h"
 #include "Algorithms/PoissonDiskSampling.h"
 #include "Algorithms/PoissonSamplingHelpers.h"
@@ -217,26 +218,16 @@ namespace
 		return FMath::Pow(FMath::Sqrt(2.0f) * Volume / PointCount, 1.0f / 3.0f);
 	}
 
-	TArray<FVector> BuildClosePackedSphereCross(float Radius, float Spacing, float LayerSpacing, int32 LayerIndex)
+	TArray<FVector> BuildClosePackedSphereCross(float Spacing, float LayerSpacing, int32 LayerIndex)
 	{
 		const float Z = LayerIndex * LayerSpacing;
-		const TArray<FVector> CrossPoints = {
+		return {
 			FVector(0.0f, 0.0f, Z),
 			FVector(Spacing, 0.0f, Z),
 			FVector(-Spacing, 0.0f, Z),
 			FVector(0.0f, Spacing, Z),
 			FVector(0.0f, -Spacing, Z)
 		};
-
-		TArray<FVector> ValidPoints;
-		for (const FVector& Point : CrossPoints)
-		{
-			if (Point.SizeSquared() <= FMath::Square(Radius) + UE_KINDA_SMALL_NUMBER)
-			{
-				ValidPoints.Add(Point);
-			}
-		}
-		return ValidPoints;
 	}
 
 }
@@ -252,14 +243,40 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	bool bClockwise,
 	float JitterStrength,
 	FRandomStream& RandomStream,
+	int32 RandomSeed,
 	float SolidRingSpacing,
 	float SolidLayerSpacing,
-	int32 MinimumPointsPerRing)
+	float SolidLayerDensity,
+	int32 MinimumPointsPerRing,
+	bool bUseCache)
 {
 	TArray<FVector> Points;
 	if (PointCount <= 0 || Radius <= 0.0f)
 	{
 		return Points;
+	}
+
+	FCircleSamplingCacheKey CacheKey;
+	CacheKey.PointCount = PointCount;
+	CacheKey.RandomSeed = RandomSeed;
+	CacheKey.MinimumPointsPerRing = MinimumPointsPerRing;
+	CacheKey.Radius = Radius;
+	CacheKey.MinDistance = MinDistance;
+	CacheKey.StartAngle = StartAngle;
+	CacheKey.JitterStrength = JitterStrength;
+	CacheKey.RingSpacing = SolidRingSpacing;
+	CacheKey.LayerSpacing = SolidLayerSpacing;
+	CacheKey.LayerDensity = SolidLayerDensity;
+	CacheKey.DistributionMode = static_cast<uint8>(DistributionMode);
+	CacheKey.bIs3D = bIs3D;
+	CacheKey.bSolid = bSolid;
+	CacheKey.bClockwise = bClockwise;
+	if (bUseCache)
+	{
+		if (TOptional<TArray<FVector>> CachedPoints = FSamplingCache::Get().GetCachedCircle(CacheKey))
+		{
+			return CachedPoints.GetValue();
+		}
 	}
 
 	// 根据分布模式生成点位
@@ -278,8 +295,13 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 		break;
 
 	case ECircleDistributionMode::ClosePacked:
+		if (!bIs3D || !bSolid)
+		{
+			UE_LOG(LogPointSampling, Warning,
+				TEXT("ClosePacked 分布仅对 3D 实心球（bIs3D=true 且 bSolid=true）有效，当前参数已自动降级为 Uniform 分布。"));
+		}
 		Points = bIs3D && bSolid
-			? GenerateClosePackedSphere(PointCount, Radius, SolidRingSpacing, SolidLayerSpacing)
+			? GenerateClosePackedSphere(PointCount, Radius, SolidRingSpacing, SolidLayerSpacing, SolidLayerDensity)
 			: GenerateUniform(PointCount, Radius, bIs3D, bSolid, StartAngle, bClockwise, SolidRingSpacing, SolidLayerSpacing, MinimumPointsPerRing);
 		break;
 
@@ -292,6 +314,11 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	if (JitterStrength > 0.0f && DistributionMode != ECircleDistributionMode::Poisson)
 	{
 		ApplyJitter(Points, JitterStrength, Radius, RandomStream);
+	}
+
+	if (bUseCache)
+	{
+		FSamplingCache::Get().StoreCircle(CacheKey, Points);
 	}
 
 	return Points;
@@ -672,7 +699,8 @@ TArray<FVector> FCircleSamplingHelper::GenerateClosePackedSphere(
 	int32 PointCount,
 	float Radius,
 	float TargetSpacing,
-	float TargetLayerSpacing)
+	float TargetLayerSpacing,
+	float TargetLayerDensity)
 {
 	if (PointCount <= 0 || Radius <= 0.0f)
 	{
@@ -684,65 +712,46 @@ TArray<FVector> FCircleSamplingHelper::GenerateClosePackedSphere(
 		return {FVector::ZeroVector};
 	}
 
-	const float Spacing = TargetSpacing > UE_KINDA_SMALL_NUMBER
+	const float TargetPointSpacing = TargetSpacing > UE_KINDA_SMALL_NUMBER
 		? TargetSpacing
 		: FindClosePackedSphereSpacing(PointCount, Radius);
+	const float LayerDensity = FMath::Max(1.0f, TargetLayerDensity);
+	// Z层级密度只插入更多水平截面，保持每个圆盘原有的环间距和环上间距。
+	const float RingSpacing = TargetPointSpacing;
+	const float BaseLayerSpacing = TargetPointSpacing * FMath::Sqrt(2.0f / 3.0f);
+	const float CapLayoutZ = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(RingSpacing)));
+	const int32 CapLayerIndex = FMath::Max(1, FMath::RoundToInt(CapLayoutZ / BaseLayerSpacing * LayerDensity));
+	const float MaximumLayerSpacing = CapLayoutZ / static_cast<float>(CapLayerIndex);
 	const float LayerSpacing = TargetLayerSpacing > UE_KINDA_SMALL_NUMBER
-		? TargetLayerSpacing
-		: Spacing * FMath::Sqrt(2.0f / 3.0f);
-	const int32 CapLayerIndex = FMath::FloorToInt(
-		FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(Spacing))) / LayerSpacing);
-	const TArray<FVector> BottomCross = PointCount >= 10 && CapLayerIndex > 0
-		? BuildClosePackedSphereCross(Radius, Spacing, LayerSpacing, -CapLayerIndex)
-		: TArray<FVector>();
-	const TArray<FVector> TopCross = PointCount >= 10 && CapLayerIndex > 0
-		? BuildClosePackedSphereCross(Radius, Spacing, LayerSpacing, CapLayerIndex)
-		: TArray<FVector>();
-	const int32 InteriorLayerCount = FMath::Max(0, CapLayerIndex * 2 - 1);
-	if (BottomCross.Num() != 5 || TopCross.Num() != 5 || PointCount - 10 < InteriorLayerCount)
-	{
-		return GenerateUniformSolidSphere(PointCount, Radius, 0.0f, true, Spacing, LayerSpacing, 1);
-	}
+		? FMath::Min(TargetLayerSpacing, MaximumLayerSpacing)
+		: MaximumLayerSpacing;
 
-	TArray<int32> LayerPointCounts;
-	LayerPointCounts.Init(1, InteriorLayerCount);
-	int32 RemainingCount = PointCount - 10 - InteriorLayerCount;
-	while (RemainingCount > 0)
+	TArray<FVector> Points = BuildClosePackedSphereCross(RingSpacing, LayerSpacing, -CapLayerIndex);
+	for (int32 LayerIndex = -CapLayerIndex + 1; LayerIndex < CapLayerIndex; ++LayerIndex)
 	{
-		int32 BestLayerIndex = 0;
-		float BestScore = -1.0f;
-		for (int32 LayerIndex = 0; LayerIndex < InteriorLayerCount; ++LayerIndex)
+		const float Z = LayerIndex * LayerSpacing;
+		const float LayoutZ = CapLayoutZ * static_cast<float>(LayerIndex) / static_cast<float>(CapLayerIndex);
+		const float CircleRadius = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(LayoutZ)));
+		const int32 RingCount = FMath::Max(1, FMath::CeilToInt(CircleRadius / RingSpacing));
+		int32 LayerPointCount = 1;
+		for (int32 RingIndex = 1; RingIndex <= RingCount; ++RingIndex)
 		{
-			const float Z = (LayerIndex - CapLayerIndex + 1) * LayerSpacing;
-			const float LayerAreaWeight = FMath::Max(UE_KINDA_SMALL_NUMBER, FMath::Square(Radius) - FMath::Square(Z));
-			const float Score = LayerAreaWeight / static_cast<float>(LayerPointCounts[LayerIndex] + 1);
-			if (Score > BestScore)
-			{
-				BestScore = Score;
-				BestLayerIndex = LayerIndex;
-			}
+			const float RingRadius = CircleRadius * static_cast<float>(RingIndex) / static_cast<float>(RingCount);
+			LayerPointCount += FMath::Max(3, FMath::RoundToInt(2.0f * PI * RingRadius / RingSpacing));
 		}
-		++LayerPointCounts[BestLayerIndex];
-		--RemainingCount;
-	}
 
-	TArray<FVector> Points = BottomCross;
-	Points.Reserve(PointCount);
-	for (int32 LayerIndex = 0; LayerIndex < InteriorLayerCount; ++LayerIndex)
-	{
-		const float Z = (LayerIndex - CapLayerIndex + 1) * LayerSpacing;
-		const float CircleRadius = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(Z)));
-		const float LayerStartAngle = static_cast<float>(LayerIndex) * GOLDEN_ANGLE;
-		GenerateSolidDiscPoints(Points, LayerPointCounts[LayerIndex], CircleRadius, Z, LayerStartAngle, true, Spacing);
+		GenerateSolidDiscPoints(Points, LayerPointCount, CircleRadius, Z, 0.0f, true, RingSpacing);
 	}
-	Points.Append(TopCross);
+	Points.Append(BuildClosePackedSphereCross(RingSpacing, LayerSpacing, CapLayerIndex));
+
 	Points.Sort([](const FVector& Left, const FVector& Right)
 	{
-		if (Left.Z != Right.Z)
+		// UE 最佳实践：浮点比较使用容差，避免不同计算路径产生的微小误差破坏排序稳定性
+		if (!FMath::IsNearlyEqual(Left.Z, Right.Z, UE_KINDA_SMALL_NUMBER))
 		{
 			return Left.Z < Right.Z;
 		}
-		if (Left.Y != Right.Y)
+		if (!FMath::IsNearlyEqual(Left.Y, Right.Y, UE_KINDA_SMALL_NUMBER))
 		{
 			return Left.Y < Right.Y;
 		}

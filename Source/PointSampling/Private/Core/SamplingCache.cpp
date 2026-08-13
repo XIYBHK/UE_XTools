@@ -37,6 +37,32 @@ void FSamplingCache::Store(const FPoissonCacheKey& Key, const TArray<FVector>& P
 	AccessTimes.Add(Key, FPlatformTime::Seconds());
 }
 
+TOptional<TArray<FVector>> FSamplingCache::GetCachedCircle(const FCircleSamplingCacheKey& Key)
+{
+	FScopeLock Lock(&CacheLock);
+	if (const TArray<FVector>* Found = CircleCache.Find(Key))
+	{
+		CircleAccessTimes.Add(Key, FPlatformTime::Seconds());
+		++CircleCacheHits;
+		return *Found;
+	}
+
+	++CircleCacheMisses;
+	return {};
+}
+
+void FSamplingCache::StoreCircle(const FCircleSamplingCacheKey& Key, const TArray<FVector>& Points)
+{
+	FScopeLock Lock(&CacheLock);
+	if (CircleCache.Num() >= MaxCircleCacheSize && !CircleCache.Contains(Key))
+	{
+		RemoveCircleLRUEntry();
+	}
+
+	CircleCache.Add(Key, Points);
+	CircleAccessTimes.Add(Key, FPlatformTime::Seconds());
+}
+
 void FSamplingCache::ClearCache()
 {
 	FScopeLock Lock(&CacheLock);
@@ -44,6 +70,17 @@ void FSamplingCache::ClearCache()
 	AccessTimes.Empty();
 	CacheHits = 0;
 	CacheMisses = 0;
+	CircleCache.Empty();
+	CircleAccessTimes.Empty();
+	CircleCacheHits = 0;
+	CircleCacheMisses = 0;
+}
+
+void FSamplingCache::GetCircleStats(int32& OutHits, int32& OutMisses)
+{
+	FScopeLock Lock(&CacheLock);
+	OutHits = CircleCacheHits;
+	OutMisses = CircleCacheMisses;
 }
 
 void FSamplingCache::GetStats(int32& OutHits, int32& OutMisses)
@@ -51,6 +88,23 @@ void FSamplingCache::GetStats(int32& OutHits, int32& OutMisses)
 	FScopeLock Lock(&CacheLock);
 	OutHits = CacheHits;
 	OutMisses = CacheMisses;
+}
+
+void FSamplingCache::RemoveCircleLRUEntry()
+{
+	FCircleSamplingCacheKey OldestKey;
+	double OldestTime = TNumericLimits<double>::Max();
+	for (const TPair<FCircleSamplingCacheKey, double>& Pair : CircleAccessTimes)
+	{
+		if (Pair.Value < OldestTime)
+		{
+			OldestTime = Pair.Value;
+			OldestKey = Pair.Key;
+		}
+	}
+
+	CircleCache.Remove(OldestKey);
+	CircleAccessTimes.Remove(OldestKey);
 }
 
 void FSamplingCache::RemoveLRUEntry()
