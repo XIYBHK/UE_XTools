@@ -67,6 +67,10 @@ FSlateIcon UK2Node_WhileLoopWithDelay::GetIconAndTint(FLinearColor& OutColor) co
 
 void UK2Node_WhileLoopWithDelay::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
+	// 先展开拆分引脚：结构体引脚被分割（Split Struct Pin）后链接挂在子引脚上，
+	// 不展开则 MovePinLinksToIntermediate 迁移不到链接，下游会静默读到默认值
+	Super::ExpandNode(CompilerContext, SourceGraph);
+
 	if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this, SourceGraph))
 	{
 		CompilerContext.MessageLog.Error(

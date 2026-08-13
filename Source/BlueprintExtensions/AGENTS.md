@@ -25,6 +25,10 @@ Private/
 ```cpp
 void ExpandNode(FKismetCompilerContext& Ctx, UEdGraph* Graph) override
 {
+    // 0. 展开拆分引脚（必须）：Split Struct Pin 后链接挂在子引脚上，
+    //    不展开则 MovePinLinksToIntermediate 丢失链接，下游静默读到默认值
+    Super::ExpandNode(Ctx, Graph);
+
     // 1. 入口校验
     if (!K2NodeHelpers::BeginExpandNode(Ctx, this, {RequiredPins...}, ErrMsg))
         return;

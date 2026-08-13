@@ -53,6 +53,10 @@
 ### BlueprintExtensionsRuntime
 - 新增 缩放曲线幅度节点
 
+### BlueprintExtensions
+- 修复 分割结构体引脚展开后输出丢值
+- 修复 对象池生成节点拆分Transform失效
+
 ## 日志格式说明
 
 ### 模块分类

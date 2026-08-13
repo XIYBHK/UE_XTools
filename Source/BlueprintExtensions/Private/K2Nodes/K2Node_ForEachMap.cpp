@@ -118,6 +118,10 @@ TSharedPtr<SWidget> UK2Node_ForEachMap::CreateNodeImage() const
 
 void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
+	// 先展开拆分引脚：结构体引脚被分割（Split Struct Pin）后链接挂在子引脚上，
+	// 不展开则 MovePinLinksToIntermediate 迁移不到链接，下游会静默读到默认值
+	Super::ExpandNode(CompilerContext, SourceGraph);
+
 	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 	if (!K2NodeHelpers::BeginExpandNode(
 			CompilerContext, this,

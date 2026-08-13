@@ -203,6 +203,10 @@ void UK2Node_SpawnActorFromPool::UpdateReturnValueType()
 
 void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
+    // 展开拆分引脚（等价原生实现第一行 Super::ExpandNode 的效果；此处不能直接调 Super，
+    // 因为父类 ExpandNode 会执行原生 SpawnActor 的完整展开逻辑）
+    ExpandSplitPins(CompilerContext, SourceGraph);
+
     // 完全对齐UE原生SpawnActorFromClass的ExpandNode实现模式
     // 参考：Engine/Source/Editor/BlueprintGraph/Private/K2Node_SpawnActorFromClass.cpp 第575-583行
 

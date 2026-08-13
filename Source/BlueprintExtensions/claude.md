@@ -9,8 +9,8 @@
 - 禁止在新代码中直接散落 `CompilerContext.GetSchema()->TryCreateConnection(...)`。
 
 ## 2. ExpandNode 骨架（强制）
-- 入口先调用 `K2NodeHelpers::BeginExpandNode(...)` 校验必需引脚。
-- 当前节点直接继承 `UK2Node`，可省略无额外行为的 `Super::ExpandNode(...)`；不要依赖父类调用完成断链。
+- 第一行必须调用 `Super::ExpandNode(...)`（等价展开拆分引脚 ExpandSplitPins）：结构体引脚被「分割结构体引脚」后链接挂在子引脚上，不展开则 `MovePinLinksToIntermediate` 迁移不到链接，收尾断链后下游静默读到默认值。父类会执行自身完整展开逻辑时（如 `UK2Node_SpawnActorFromClass`），改为直接调用 `ExpandSplitPins(CompilerContext, SourceGraph)`。
+- 入口再调用 `K2NodeHelpers::BeginExpandNode(...)` 校验必需引脚。
 - 末尾统一调用 `K2NodeHelpers::EndExpandNode(this)` 收尾断链。
 - 失败分支（如关键输入未连接）要记录 `MessageLog`，并终止展开。
 

@@ -14,10 +14,13 @@
 #include "Engine/BlueprintGeneratedClass.h"
 #include "GameFramework/Actor.h"
 #include "K2Node_AssignmentStatement.h"
+#include "K2Node_BreakStruct.h"
+#include "K2Node_CallArrayFunction.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_ExecutionSequence.h"
 #include "K2Node_IfThenElse.h"
 #include "K2Node_TemporaryVariable.h"
+#include "Kismet/KismetArrayLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -484,6 +487,128 @@ bool FLoopBreakExpansionTest::RunTest(const FString& Parameters)
 		ValidateExpandedBreakTopology(*this, TEXT("ForEach Set"), BodySequence);
 	}
 
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FLoopSplitPinValueExpansionTest,
+	"XTools.BlueprintExtensions.LoopSplitPinValueExpansion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLoopSplitPinValueExpansionTest::RunTest(const FString& Parameters)
+{
+	// 回归测试：结构体 Value 引脚被「分割结构体引脚」后，链接挂在子引脚上。
+	// 若 ExpandNode 不先展开拆分引脚，MovePinLinksToIntermediate 只能迁移父引脚的空链接，
+	// 子引脚链接会在收尾断链时丢失，下游静默读到默认值（如 Transform 全 0）。
+	UEdGraph* EventGraph = nullptr;
+	UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopSplitPinValueTest"), EventGraph);
+	if (!TestNotNull(TEXT("创建拆分引脚测试蓝图"), Blueprint)
+		|| !TestNotNull(TEXT("获取拆分引脚测试事件图"), EventGraph))
+	{
+		return false;
+	}
+
+	UK2Node_ForEachLoopWithDelay* LoopNode = AddTestNode<UK2Node_ForEachLoopWithDelay>(EventGraph);
+
+	// Transform 数组作为输入，使 Value 引脚传播为可拆分的结构体
+	UK2Node_TemporaryVariable* ArraySource = AddTestNode<UK2Node_TemporaryVariable>(EventGraph);
+	ArraySource->VariableType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+	ArraySource->VariableType.PinSubCategoryObject = TBaseStructure<FTransform>::Get();
+	ArraySource->VariableType.ContainerType = EPinContainerType::Array;
+	ArraySource->ReconstructNode();
+
+	const UEdGraphSchema* Schema = EventGraph->GetSchema();
+	if (!TestTrue(TEXT("连接 Transform 测试数组"),
+		Schema && Schema->TryCreateConnection(ArraySource->GetVariablePin(), LoopNode->GetArrayPin())))
+	{
+		return false;
+	}
+	LoopNode->NotifyPinConnectionListChanged(LoopNode->GetArrayPin());
+
+	UEdGraphPin* ValuePin = LoopNode->GetValuePin();
+	if (!TestEqual(TEXT("Value 引脚已传播为 Transform 结构体"),
+		ValuePin->PinType.PinCategory, UEdGraphSchema_K2::PC_Struct))
+	{
+		return false;
+	}
+
+	// 模拟用户在节点上执行「分割结构体引脚」
+	const UEdGraphSchema_K2* K2Schema = CastChecked<UEdGraphSchema_K2>(Schema);
+	K2Schema->SplitPin(ValuePin, false);
+	if (!TestTrue(TEXT("Value 引脚已拆分为子引脚"), ValuePin->SubPins.Num() > 0))
+	{
+		return false;
+	}
+
+	// 找到 Location 子引脚并连接一个消费端（取向量长度）
+	UEdGraphPin* LocationSubPin = nullptr;
+	for (UEdGraphPin* SubPin : ValuePin->SubPins)
+	{
+		if (SubPin && SubPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct
+			&& SubPin->PinType.PinSubCategoryObject == TBaseStructure<FVector>::Get())
+		{
+			LocationSubPin = SubPin;
+			break;
+		}
+	}
+	if (!TestNotNull(TEXT("找到 Location 拆分引脚"), LocationSubPin))
+	{
+		return false;
+	}
+
+	UK2Node_CallFunction* Consumer = AddTestNode<UK2Node_CallFunction>(EventGraph);
+	Consumer->SetFromFunction(UKismetMathLibrary::StaticClass()->FindFunctionByName(
+		GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, VSize)));
+	Consumer->AllocateDefaultPins();
+	UEdGraphPin* ConsumerInputPin = Consumer->FindPinChecked(TEXT("A"), EGPD_Input);
+	if (!TestTrue(TEXT("拆分引脚连接消费端"),
+		Schema->TryCreateConnection(LocationSubPin, ConsumerInputPin)))
+	{
+		return false;
+	}
+
+	FCompilerResultsLog Results;
+	FKismetCompilerOptions Options;
+	FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+	LoopNode->ExpandNode(CompilerContext, EventGraph);
+	TestEqual(TEXT("拆分引脚展开无编译错误"), Results.NumErrors, 0);
+
+	// 核心断言：拆分引脚的链接必须在展开后存活，而不是被静默断开
+	if (!TestEqual(TEXT("拆分引脚链接在展开后保留"), ConsumerInputPin->LinkedTo.Num(), 1))
+	{
+		return false;
+	}
+
+	// 链接应经由自动生成的 Break 节点回到数组 Get 调用的元素输出。
+	// 注意：FTransform 走 MD_NativeBreakFunction 元数据，生成的是调用 BreakTransform 的
+	// UK2Node_CallFunction 而非 UK2Node_BreakStruct，这里对两种形态都接受。
+	UEdGraphNode* SplitExpandNode = ConsumerInputPin->LinkedTo[0]->GetOwningNode();
+	UK2Node* SplitK2Node = Cast<UK2Node>(SplitExpandNode);
+	const bool bIsBreakForm = Cast<UK2Node_BreakStruct>(SplitExpandNode) != nullptr
+		|| Cast<UK2Node_CallFunction>(SplitExpandNode) != nullptr;
+	if (!TestTrue(TEXT("拆分引脚展开为 Break 形态节点"), SplitK2Node != nullptr && bIsBreakForm))
+	{
+		return false;
+	}
+
+	UEdGraphPin* BreakInputPin = nullptr;
+	for (UEdGraphPin* Pin : SplitK2Node->Pins)
+	{
+		if (Pin && Pin->Direction == EGPD_Input && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct
+			&& Pin->PinType.PinSubCategoryObject == TBaseStructure<FTransform>::Get())
+		{
+			BreakInputPin = Pin;
+			break;
+		}
+	}
+	if (!TestNotNull(TEXT("找到 Break 节点 Transform 输入"), BreakInputPin)
+		|| !TestEqual(TEXT("Break 输入连接到数组元素输出"), BreakInputPin->LinkedTo.Num(), 1))
+	{
+		return false;
+	}
+
+	UK2Node_CallArrayFunction* GetArrayItem = Cast<UK2Node_CallArrayFunction>(BreakInputPin->LinkedTo[0]->GetOwningNode());
+	TestNotNull(TEXT("数组元素来自 Array_Get 调用"), GetArrayItem);
 	return !HasAnyErrors();
 }
 
