@@ -39,12 +39,13 @@ namespace
 
 	double GetSignedSideForIndex(int32 UnitIndex, const FXToolsQueueSplineConfig& Config)
 	{
-		if (!Config.bAlternateSides || UnitIndex <= 0)
+		// 与 UQueueSplineComponent::CalculateSlotForIndex 保持一致：含队头在内，偶数索引向右、奇数索引向左
+		if (!Config.bAlternateSides)
 		{
 			return 0.0;
 		}
 
-		return (UnitIndex % 2) == 1 ? 1.0 : -1.0;
+		return (UnitIndex % 2) == 0 ? 1.0 : -1.0;
 	}
 
 	double GetRandomRange(FRandomStream& RandomStream, double Radius)

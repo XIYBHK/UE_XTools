@@ -35,6 +35,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|排队样条线", meta = (DisplayName = "旋转插值速度", ClampMin = "0.0"))
 	float RotationInterpSpeed = 8.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|排队样条线",
+		meta = (DisplayName = "直接插值碰撞扫描",
+			ToolTip = "直接插值模式移动时进行碰撞扫描（仅检测根组件），防止排队成员互相穿模或穿墙；被其他成员挡住时会停在阻挡点。关闭可获得完全平滑的插值移动。"))
+	bool bDirectInterpSweep = true;
+
 	UPROPERTY(BlueprintAssignable, Category = "XTools|排队样条线|移动事件", meta = (DisplayName = "排队移动开始"))
 	FQueueSplineMovementEvent OnQueueMoveStarted;
 

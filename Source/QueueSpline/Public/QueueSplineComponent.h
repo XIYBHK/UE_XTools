@@ -29,6 +29,15 @@ struct FQueueSplineMemberRuntime
 	EQueueSplineMemberPhase Phase = EQueueSplineMemberPhase::Queued;
 };
 
+/**
+ * 排队样条线组件
+ *
+ * 移动模型：成员注册后持续沿样条向路径终点行进（每次追踪「当前距离 + 路径前视距离」的前视点），
+ * 槽位仅用于预填充生成与状态查询，不作为停靠点；队列间距通过「成员及后方暂停」屏障维持。
+ * 需要"到槽停靠、前队离开再递补"的固定队列时，请用暂停接口显式控制。
+ *
+ * 性能：成员较多时建议增大「更新间隔」，样条投影查询按成员数线性增长。
+ */
 UCLASS(ClassGroup = (XTools), meta = (BlueprintSpawnableComponent))
 class QUEUESPLINE_API UQueueSplineComponent : public UActorComponent
 {
@@ -45,6 +54,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|排队样条线", meta = (DisplayName = "自动更新"))
 	bool bAutoUpdate = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|排队样条线",
+		meta = (DisplayName = "更新间隔", ClampMin = "0.0",
+			ToolTip = "两次排队目标更新之间的秒数，0 表示每帧更新。成员较多时增大该值可显著降低样条投影查询开销。"))
+	float UpdateInterval = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "XTools|排队样条线", meta = (DisplayName = "自动推送到移动组件"))
 	bool bAutoPushToMovementComponent = true;
@@ -90,7 +104,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "重建排队槽位"))
 	bool RebuildQueueSlots();
 
-	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "生成初始排队Transform", Keywords = "排队 样条 生成 初始位置 预填充 Spawn Transform", ToolTip = "预填充模式返回队头到队尾的初始Transform数组；从入口模式只返回一个入口Transform，适合每次生成一个角色。"))
+	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "生成初始排队Transform", Keywords = "排队 样条 生成 初始位置 预填充 Spawn Transform", ToolTip = "预填充模式返回队头到队尾的初始Transform数组；从入口模式只返回一个入口Transform，适合每次生成一个角色。\n样条组件未设置时自动使用所属Actor上的第一个样条组件；返回空数组表示配置无效，具体原因见输出日志（Output Log）与屏幕警告。\n注意：在 Construction Script 中调用时样条可能尚未注册，返回的是局部坐标，请在 BeginPlay 之后使用。"))
 	TArray<FTransform> GenerateInitialSpawnTransforms(UPARAM(DisplayName = "生成数量") int32 Count) const;
 
 	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "更新排队目标"))
@@ -99,12 +113,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "设置排队暂停"))
 	void SetQueuePaused(UPARAM(DisplayName = "暂停") bool bPaused);
 
-	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "设置成员及后方暂停", ToolTip = "暂停指定成员以及注册顺序位于其后的成员；解除时仍会保留其他成员形成的停靠状态。"))
+	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "设置成员及后方暂停", ToolTip = "暂停指定成员以及注册顺序位于其后的成员；解除时仍会保留其他成员形成的停靠状态。\n注意：暂停范围为调用时刻的快照，之后新注册的成员不受影响。"))
 	bool SetMemberAndFollowingPaused(
 		UPARAM(DisplayName = "成员Actor") AActor* Member,
 		UPARAM(DisplayName = "暂停") bool bPaused);
 
-	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "按句柄设置成员及后方暂停", ToolTip = "暂停指定成员以及注册顺序位于其后的成员；解除时仍会保留其他成员形成的停靠状态。"))
+	UFUNCTION(BlueprintCallable, Category = "XTools|排队样条线", meta = (DisplayName = "按句柄设置成员及后方暂停", ToolTip = "暂停指定成员以及注册顺序位于其后的成员；解除时仍会保留其他成员形成的停靠状态。\n注意：暂停范围为调用时刻的快照，之后新注册的成员不受影响。"))
 	bool SetMemberHandleAndFollowingPaused(
 		UPARAM(DisplayName = "成员句柄") FQueueSplineMemberHandle Handle,
 		UPARAM(DisplayName = "暂停") bool bPaused);
@@ -174,7 +188,7 @@ private:
 	double GetPathEndDistance() const;
 	double GetActorSplineDistance(const AActor* Actor) const;
 	double GetActorSplineRightOffset(const AActor* Actor, double SplineDistance) const;
-	bool CalculateSlotForIndex(int32 SlotIndex, int32 MemberSeed, int32 QueueMemberCount, FQueueSplineSlot& OutSlot) const;
+	bool CalculateSlotForIndex(const USplineComponent* Spline, int32 SlotIndex, int32 MemberSeed, int32 QueueMemberCount, FQueueSplineSlot& OutSlot) const;
 	FQueueSplineMoveTarget BuildMoveTarget(const FQueueSplineMemberRuntime& Member) const;
 	FQueueSplineMoveTarget BuildMoveTargetAtDistance(FQueueSplineMemberHandle Handle, AActor* Actor, double Distance, double RightOffset, EQueueSplineMemberPhase Phase) const;
 	void PushTargetToMovementComponent(AActor* Actor, const FQueueSplineMoveTarget& Target) const;

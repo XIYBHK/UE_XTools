@@ -4,8 +4,10 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "QueueSplineLog.h"
 #include "QueueSplineMovementComponent.h"
 #include "QueueSplineSubsystem.h"
+#include "XToolsErrorReporter.h"
 
 namespace
 {
@@ -88,6 +90,16 @@ void UQueueSplineComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UQueueSplineComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// 最佳实践：不需要每帧刷新时按更新间隔降频（样条投影查询开销随成员数线性增长）
+	const float SafeUpdateInterval = FMath::Max(UpdateInterval, 0.0f);
+	if (!FMath::IsNearlyEqual(PrimaryComponentTick.TickInterval, SafeUpdateInterval))
+	{
+		SetComponentTickInterval(SafeUpdateInterval);
+	}
+
+	// 失效成员清理不受暂停影响：成员销毁后始终应触发注销事件
+	CleanupInvalidMembers();
 
 	if (!bAutoUpdate || bQueuePaused)
 	{
@@ -265,7 +277,7 @@ bool UQueueSplineComponent::RebuildQueueSlots()
 		}
 
 		FQueueSplineSlot Slot;
-		if (!CalculateSlotForIndex(SlotIndex, Member.RandomSeed, QueueMemberCount, Slot))
+		if (!CalculateSlotForIndex(SplineComponent, SlotIndex, Member.RandomSeed, QueueMemberCount, Slot))
 		{
 			return false;
 		}
@@ -282,27 +294,68 @@ bool UQueueSplineComponent::RebuildQueueSlots()
 TArray<FTransform> UQueueSplineComponent::GenerateInitialSpawnTransforms(int32 Count) const
 {
 	TArray<FTransform> Transforms;
-	if (Count <= 0 || !IsSplineUsable(SplineComponent))
+	if (Count <= 0)
 	{
 		return Transforms;
 	}
 
+	// 样条未手动设置时，自动使用所属 Actor 上的第一个样条组件（蓝图常见用法）
+	const USplineComponent* EffectiveSpline = SplineComponent;
+	if (!IsValid(EffectiveSpline))
+	{
+		if (const AActor* Owner = GetOwner())
+		{
+			EffectiveSpline = Owner->FindComponentByClass<USplineComponent>();
+		}
+		if (IsValid(EffectiveSpline))
+		{
+			XTOOLS_LOG_INFO(LogQueueSpline, TEXT("生成初始排队Transform：样条组件未设置，已自动使用所属Actor上的第一个 USplineComponent。"));
+		}
+	}
+
+	if (!IsValid(EffectiveSpline))
+	{
+		FXToolsErrorReporter::Warning(LogQueueSpline,
+			TEXT("生成初始排队Transform失败：样条组件未设置，且所属Actor上没有可用的 USplineComponent。"),
+			NAME_None, true, 5.0f);
+		return Transforms;
+	}
+	if (EffectiveSpline->GetNumberOfSplinePoints() < 2)
+	{
+		FXToolsErrorReporter::Warning(LogQueueSpline,
+			TEXT("生成初始排队Transform失败：样条点数量不足，至少需要 2 个点。"),
+			NAME_None, true, 5.0f);
+		return Transforms;
+	}
+	if (EffectiveSpline->GetSplineLength() <= KINDA_SMALL_NUMBER)
+	{
+		FXToolsErrorReporter::Warning(LogQueueSpline,
+			TEXT("生成初始排队Transform失败：样条长度过短。"),
+			NAME_None, true, 5.0f);
+		return Transforms;
+	}
+	if (!EffectiveSpline->IsRegistered())
+	{
+		// 未注册组件的 ComponentToWorld 为单位变换，世界坐标查询会退化为局部坐标（看起来像原点附近的值）
+		XTOOLS_LOG_WARNING(LogQueueSpline, TEXT("生成初始排队Transform：样条组件尚未注册（如在 Construction Script 中调用），返回的位置将是样条局部坐标而非世界坐标。"));
+	}
+
 	if (Settings.FillMode == EQueueSplineFillMode::FromStart)
 	{
-		const double SplineLength = static_cast<double>(SplineComponent->GetSplineLength());
+		const double SplineLength = static_cast<double>(EffectiveSpline->GetSplineLength());
 		const double EntryOffset = ClampDistance(
 			Settings.EntryDistance,
 			SplineLength);
 		const double EntryDistance = Settings.bHeadTowardSplineEnd
 			? EntryOffset
 			: SplineLength - EntryOffset;
-		const FVector CenterLocation = SplineComponent->GetLocationAtDistanceAlongSpline(
+		const FVector CenterLocation = EffectiveSpline->GetLocationAtDistanceAlongSpline(
 			static_cast<float>(EntryDistance),
 			ESplineCoordinateSpace::World);
-		const FVector RightVector = SplineComponent->GetRightVectorAtDistanceAlongSpline(
+		const FVector RightVector = EffectiveSpline->GetRightVectorAtDistanceAlongSpline(
 			static_cast<float>(EntryDistance),
 			ESplineCoordinateSpace::World);
-		const FRotator Rotation = SplineComponent->GetRotationAtDistanceAlongSpline(
+		const FRotator Rotation = EffectiveSpline->GetRotationAtDistanceAlongSpline(
 			static_cast<float>(EntryDistance),
 			ESplineCoordinateSpace::World);
 
@@ -322,7 +375,7 @@ TArray<FTransform> UQueueSplineComponent::GenerateInitialSpawnTransforms(int32 C
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		FQueueSplineSlot Slot;
-		if (CalculateSlotForIndex(Index, Settings.RandomSeed + Index * 7919, Count, Slot))
+		if (CalculateSlotForIndex(EffectiveSpline, Index, Settings.RandomSeed + Index * 7919, Count, Slot))
 		{
 			Transforms.Add(FTransform(Slot.TargetRotation, Slot.TargetLocation));
 		}
@@ -720,18 +773,19 @@ double UQueueSplineComponent::GetActorSplineRightOffset(const AActor* Actor, dou
 }
 
 bool UQueueSplineComponent::CalculateSlotForIndex(
+	const USplineComponent* Spline,
 	int32 SlotIndex,
 	int32 MemberSeed,
 	int32 QueueMemberCount,
 	FQueueSplineSlot& OutSlot) const
 {
 	OutSlot = FQueueSplineSlot();
-	if (!IsSplineUsable(SplineComponent) || SlotIndex < 0)
+	if (!IsSplineUsable(Spline) || SlotIndex < 0)
 	{
 		return false;
 	}
 
-	const double SplineLength = static_cast<double>(SplineComponent->GetSplineLength());
+	const double SplineLength = static_cast<double>(Spline->GetSplineLength());
 	const double SafeSpacing = FMath::Max(Settings.Spacing, 1.0);
 	const double QueueLength = SafeSpacing * static_cast<double>(FMath::Max(QueueMemberCount - 1, 0));
 	const double SafeEntryDistance = ClampDistance(Settings.EntryDistance, SplineLength);
@@ -765,10 +819,10 @@ bool UQueueSplineComponent::CalculateSlotForIndex(
 		: 0.0;
 
 	const double RightOffset = SideSign * FMath::Max(Settings.SideOffset, 0.0) + SideJitter;
-	const FVector CenterLocation = SplineComponent->GetLocationAtDistanceAlongSpline(
+	const FVector CenterLocation = Spline->GetLocationAtDistanceAlongSpline(
 		static_cast<float>(Distance),
 		ESplineCoordinateSpace::World);
-	const FVector RightVector = SplineComponent->GetRightVectorAtDistanceAlongSpline(
+	const FVector RightVector = Spline->GetRightVectorAtDistanceAlongSpline(
 		static_cast<float>(Distance),
 		ESplineCoordinateSpace::World);
 
@@ -777,7 +831,7 @@ bool UQueueSplineComponent::CalculateSlotForIndex(
 	OutSlot.RightOffset = RightOffset;
 	OutSlot.CenterLocation = CenterLocation;
 	OutSlot.TargetLocation = CenterLocation + RightVector * static_cast<float>(RightOffset);
-	OutSlot.TargetRotation = SplineComponent->GetRotationAtDistanceAlongSpline(
+	OutSlot.TargetRotation = Spline->GetRotationAtDistanceAlongSpline(
 		static_cast<float>(Distance),
 		ESplineCoordinateSpace::World);
 	return true;
@@ -812,6 +866,8 @@ FQueueSplineMoveTarget UQueueSplineComponent::BuildMoveTarget(const FQueueSpline
 		TargetDistance,
 		TargetRightOffset,
 		Member.Phase);
+	// 透传真实槽位索引：移动组件据此判断槽位变化并重置到达锁存，同时与「获取排队成员状态」的槽位索引保持一致
+	Target.Slot.SlotIndex = Member.SlotIndex;
 	const FVector EndLocation = SplineComponent->GetLocationAtDistanceAlongSpline(
 		static_cast<float>(EndDistance),
 		ESplineCoordinateSpace::World);
@@ -963,6 +1019,12 @@ void UQueueSplineComponent::DrawDebugSlots() const
 
 	for (const FQueueSplineMemberRuntime& Member : Members)
 	{
+		// 黄色：真实槽位（预填充/状态查询用）；青色：当前前视移动目标
+		if (Member.SlotIndex != INDEX_NONE)
+		{
+			DrawDebugSphere(World, Member.Slot.TargetLocation, 10.0f, 8, FColor::Yellow, false, DebugDrawTime);
+		}
+
 		const FQueueSplineMoveTarget Target = BuildMoveTarget(Member);
 		DrawDebugSphere(World, Target.Slot.TargetLocation, 18.0f, 12, FColor::Cyan, false, DebugDrawTime);
 		DrawDebugLine(World, Target.Slot.CenterLocation, Target.Slot.TargetLocation, FColor::Green, false, DebugDrawTime, 0, 2.0f);

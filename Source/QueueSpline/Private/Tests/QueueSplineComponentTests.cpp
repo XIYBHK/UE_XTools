@@ -290,4 +290,43 @@ bool FQueueSplinePausePropagationTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineInitialSpawnAutoBindTest,
+	"XTools.QueueSpline.Component.InitialSpawnAutoBind",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineInitialSpawnAutoBindTest::RunTest(const FString& Parameters)
+{
+	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
+	QueueOwner->AddInstanceComponent(Spline);
+	// 故意不设置 Queue->SplineComponent，验证自动绑定所属 Actor 上的样条
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
+
+	TArray<FVector> SplinePoints;
+	SplinePoints.Add(FVector::ZeroVector);
+	SplinePoints.Add(FVector(1000.0, 0.0, 0.0));
+	Spline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::Local);
+
+	Queue->Settings.FillMode = EQueueSplineFillMode::PreFilledRatio;
+	Queue->Settings.FillRatio = 0.5;
+	Queue->Settings.Spacing = 100.0;
+	Queue->Settings.SideOffset = 0.0;
+	Queue->Settings.SideJitter = 0.0;
+	Queue->Settings.DistanceJitter = 0.0;
+
+	const TArray<FTransform> Transforms = Queue->GenerateInitialSpawnTransforms(3);
+	TestEqual(TEXT("未手动设置样条时应自动绑定并返回请求数量"), Transforms.Num(), 3);
+	if (Transforms.Num() == 3)
+	{
+		TestEqual(TEXT("自动绑定的队头位于预填充比例"), Transforms[0].GetLocation().X, 500.0);
+	}
+
+	AActor* EmptyOwner = NewObject<AActor>(GetTransientPackage());
+	UQueueSplineComponent* EmptyQueue = NewObject<UQueueSplineComponent>(EmptyOwner);
+	TestEqual(TEXT("无样条可用时应返回空数组并告警"), EmptyQueue->GenerateInitialSpawnTransforms(3).Num(), 0);
+
+	return true;
+}
+
 #endif

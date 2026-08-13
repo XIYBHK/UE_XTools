@@ -274,5 +274,6 @@ void UQueueSplineMovementComponent::ApplyDirectInterp(float DeltaTime)
 		DeltaTime,
 		RotationInterpSpeed);
 
-	OwnerActor->SetActorLocationAndRotation(NewLocation, NewRotation);
+	// 默认开启碰撞扫描：防止排队成员互相穿模；关闭则保持完全平滑的无阻挡插值
+	OwnerActor->SetActorLocationAndRotation(NewLocation, NewRotation, bDirectInterpSweep);
 }
