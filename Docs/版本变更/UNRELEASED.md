@@ -36,6 +36,12 @@
 ### FormationSystem
 - 新增 阵型数量调整随机种子参数
 
+### QueueSpline
+- 新增 排队样条线移动模块
+
+### SplineMovementEditor
+- 新增 样条线移动异步节点编辑器模块
+
 ### BlueprintExtensionsRuntime
 - 新增 缩放曲线幅度节点
 
