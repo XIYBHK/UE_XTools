@@ -408,7 +408,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflake(
 	// 应用扰动
 	if (JitterStrength > 0.0f)
 	{
-		ApplyJitter(Points, JitterStrength, Radius * 0.1f, RandomStream);
+		ApplyJitter(Points, JitterStrength, Radius, RandomStream);
 	}
 
 	return Points;
@@ -502,7 +502,7 @@ TArray<FVector> FCircleSamplingHelper::GenerateSnowflakeArc(
 	// 应用扰动
 	if (JitterStrength > 0.0f)
 	{
-		ApplyJitter(Points, JitterStrength, Radius * 0.1f, RandomStream);
+		ApplyJitter(Points, JitterStrength, Radius, RandomStream);
 	}
 
 	return Points;
@@ -768,8 +768,9 @@ void FCircleSamplingHelper::ApplyJitter(
 	FRandomStream& RandomStream)
 {
 	// 保持原有功能：Scale = BaseRadius * 0.1f，JitterStrength 需要 Clamp
+	// 注意：Strength 由 ApplyJitter2D 内部统一乘算，此处不得混入 Scale，否则强度被平方
 	const float ClampedStrength = FMath::Clamp(JitterStrength, 0.0f, 1.0f);
-	const float Scale = BaseRadius * 0.1f * ClampedStrength;
+	const float Scale = BaseRadius * 0.1f;
 	FormationSamplingInternal::ApplyJitter2D(Points, ClampedStrength, Scale, RandomStream);
 }
 
@@ -823,26 +824,27 @@ TArray<FVector> FCircleSamplingHelper::GenerateFibonacci(
 	{
 		if (PointCount == 1)
 		{
-			Points.Add(FVector(0.0f, Radius, 0.0f));
+			Points.Add(FVector(0.0f, 0.0f, Radius));
 			return Points;
 		}
 
 		// 3D球体 - 斐波那契球面（最均匀的球面分布）
+		// 以 Z 轴为极轴（UE 惯例 Z-up），与 GenerateUniformSphereShell 保持一致
 		for (int32 i = 0; i < PointCount; ++i)
 		{
 			// 黄金角度（弧度）
 			float Theta = GOLDEN_ANGLE * PI / 180.0f * i;
 
-			// y坐标从1到-1均匀分布
-			float Y = 1.0f - (i / static_cast<float>(PointCount - 1)) * 2.0f;
+			// Z 坐标从 1 到 -1 均匀分布（极轴为 Z）
+			float Z = 1.0f - (i / static_cast<float>(PointCount - 1)) * 2.0f;
 
 			// 在该高度的圆的半径
-			float RadiusAtY = FMath::Sqrt(1.0f - Y * Y);
+			float RadiusAtZ = FMath::Sqrt(FMath::Max(0.0f, 1.0f - Z * Z));
 
 			FVector Point(
-				FMath::Cos(Theta) * RadiusAtY * Radius,
-				Y * Radius,
-				FMath::Sin(Theta) * RadiusAtY * Radius
+				FMath::Cos(Theta) * RadiusAtZ * Radius,
+				FMath::Sin(Theta) * RadiusAtZ * Radius,
+				Z * Radius
 			);
 
 			Points.Add(Point);
@@ -936,16 +938,80 @@ TArray<FVector> FCircleSamplingHelper::GeneratePoisson(
 		}
 	}
 
-	// 如果生成的点数不够，补充随机点（使用拒绝采样）
+	// 如果生成的点数不够，补充随机点（拒绝采样 + 空间哈希网格加速）
 	if (Points.Num() < PointCount)
 	{
+		// 格子边长 = MinDistance，冲突点只可能落在候选格子的 3x3(x3) 邻域内，
+		// 距离检查从每次 O(N) 降为 O(1)，总复杂度从 O(N^2 * MaxAttempts) 降为 O(N * MaxAttempts)
+		const float MinDistSq = MinDistance * MinDistance;
+		const float InvCellSize = (MinDistance > UE_KINDA_SMALL_NUMBER) ? 1.0f / MinDistance : 0.0f;
+
+		auto GetCell = [InvCellSize, bIs3D](const FVector& P) -> FIntVector
+		{
+			return FIntVector(
+				FMath::FloorToInt(P.X * InvCellSize),
+				FMath::FloorToInt(P.Y * InvCellSize),
+				bIs3D ? FMath::FloorToInt(P.Z * InvCellSize) : 0);
+		};
+
+		TMap<FIntVector, TArray<int32>> Grid;
+		if (InvCellSize > 0.0f)
+		{
+			Grid.Reserve(Points.Num());
+			for (int32 Index = 0; Index < Points.Num(); ++Index)
+			{
+				Grid.FindOrAdd(GetCell(Points[Index])).Add(Index);
+			}
+		}
+
+		auto IsTooClose = [&](const FVector& Candidate) -> bool
+		{
+			if (InvCellSize <= 0.0f)
+			{
+				// MinDistance 无效的兜底：退化为线性扫描
+				for (const FVector& ExistingPoint : Points)
+				{
+					if (FVector::DistSquared(Candidate, ExistingPoint) < MinDistSq)
+					{
+						return true;
+					}
+				}
+				return false;
+			}
+
+			const FIntVector BaseCell = GetCell(Candidate);
+			const int32 ZRange = bIs3D ? 1 : 0;
+			for (int32 DX = -1; DX <= 1; ++DX)
+			{
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					for (int32 DZ = -ZRange; DZ <= ZRange; ++DZ)
+					{
+						const TArray<int32>* CellPoints = Grid.Find(BaseCell + FIntVector(DX, DY, DZ));
+						if (!CellPoints)
+						{
+							continue;
+						}
+						for (const int32 PointIndex : *CellPoints)
+						{
+							if (FVector::DistSquared(Candidate, Points[PointIndex]) < MinDistSq)
+							{
+								return true;
+							}
+						}
+					}
+				}
+			}
+			return false;
+		};
+
 		int32 MaxAttempts = (PointCount - Points.Num()) * 30;
 		int32 Attempts = 0;
-		
+
 		while (Points.Num() < PointCount && Attempts < MaxAttempts)
 		{
 			FVector Candidate;
-			
+
 			if (bIs3D)
 			{
 				// 在球体内随机生成点
@@ -965,23 +1031,16 @@ TArray<FVector> FCircleSamplingHelper::GeneratePoisson(
 				const float Theta = RandomStream.FRand() * 2.0f * PI;
 				Candidate = FormationSamplingInternal::PolarToCartesian(R, Theta);
 			}
-			
-			// 检查是否与现有点保持最小距离
-			bool bTooClose = false;
-			for (const FVector& ExistingPoint : Points)
+
+			if (!IsTooClose(Candidate))
 			{
-				if (FVector::DistSquared(Candidate, ExistingPoint) < MinDistance * MinDistance)
+				if (InvCellSize > 0.0f)
 				{
-					bTooClose = true;
-					break;
+					Grid.FindOrAdd(GetCell(Candidate)).Add(Points.Num());
 				}
-			}
-			
-			if (!bTooClose)
-			{
 				Points.Add(Candidate);
 			}
-			
+
 			++Attempts;
 		}
 	}

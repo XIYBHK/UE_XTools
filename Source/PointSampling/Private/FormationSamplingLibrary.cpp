@@ -289,11 +289,16 @@ namespace FormationSamplingInternal
 				return CompareThenIndex(Left.Z, Right.Z);
 
 			case EPointArrayOrderMode::GridBottomToTopLeftToRight:
-				if (Left.Y != Right.Y)
 				{
-					return Left.Y < Right.Y;
+					// 与球体排序一致：按分层容差量化 Y 行，带扰动的点也能保持逐行分组
+					const int32 LeftRow = FMath::RoundToInt(Left.Y / SafeLayerTolerance);
+					const int32 RightRow = FMath::RoundToInt(Right.Y / SafeLayerTolerance);
+					if (LeftRow != RightRow)
+					{
+						return LeftRow < RightRow;
+					}
+					return CompareThenIndex(Left.X, Right.X);
 				}
-				return CompareThenIndex(Left.X, Right.X);
 
 			case EPointArrayOrderMode::CircleClockwise:
 				return CompareThenIndex(GetClockwiseAngle(Left, StartAngle), GetClockwiseAngle(Right, StartAngle));
@@ -787,7 +792,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateWedgeFormation(
 		PointCount, Spacing, WedgeAngle
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -807,7 +813,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateColumnFormation(
 		PointCount, Spacing
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -827,7 +834,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateLineFormation(
 		PointCount, Spacing
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -848,7 +856,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateVeeFormation(
 		PointCount, Spacing, VeeAngle
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -870,7 +879,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateEchelonFormation(
 		PointCount, Spacing, Direction, EchelonAngle
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -895,7 +905,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateHexagonalGrid(
 		PointCount, Spacing, Rings
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }
@@ -938,7 +949,8 @@ TArray<FVector> UFormationSamplingLibrary::GenerateArchimedeanSpiral(
 		PointCount, Spacing, Turns
 	);
 
-	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing, RandomStream);
+	// 扰动基准与矩形/三角形阵型一致：最大偏移为半个间距，避免相邻点交换位置
+	FormationSamplingInternal::ApplyJitter(LocalPoints, JitterStrength, Spacing * 0.5f, RandomStream);
 
 	return FormationSamplingInternal::TransformPoints(LocalPoints, CenterLocation, Rotation, CoordinateSpace);
 }

@@ -161,7 +161,8 @@ void FTriangleSamplingHelper::ApplyJitter(
 	FRandomStream& RandomStream)
 {
 	// 保持原有功能：Scale = Spacing * 0.5f，JitterStrength 需要 Clamp
+	// 注意：Strength 由 ApplyJitter2D 内部统一乘算，此处不得混入 Scale，否则强度被平方
 	const float ClampedStrength = FMath::Clamp(JitterStrength, 0.0f, 1.0f);
-	const float Scale = Spacing * 0.5f * ClampedStrength;
+	const float Scale = Spacing * 0.5f;
 	FormationSamplingInternal::ApplyJitter2D(Points, ClampedStrength, Scale, RandomStream);
 }
