@@ -75,7 +75,8 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
     FVector Size_A,
     FVector Size_B,
     bool bIsUseRandomSize,
-    FRotator Rotator_Delta)
+    FRotator Rotator_Delta,
+    int32 RandomSeed)
 {
     TArray<FTransform> FTransforms;
 
@@ -87,20 +88,23 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
     Distance = FMath::Clamp(Distance, GeometryToolInternal::MinDistance, 100000.f);
     Noise = FMath::Max(0.0f, Noise);
 
+    // 与 FormationSamplingLibrary 一致：通过种子驱动的 FRandomStream 保证同一种子结果可复现
+    FRandomStream RandomStream(RandomSeed);
+
     if (USphereComponent* Sphere = Cast<USphereComponent>(Shape))
     {
         FTransforms = GenerateSpherePoints(Sphere, Distance, Noise, bIsUseLookAtOrigin,
-            Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta);
+            Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta, RandomStream);
     }
     else if (UBoxComponent* Box = Cast<UBoxComponent>(Shape))
     {
         FTransforms = GenerateBoxPoints(Box, Distance, Noise, bIsUseLookAtOrigin,
-            Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta);
+            Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta, RandomStream);
     }
     else if (UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Shape))
     {
         FTransforms = GenerateCapsulePoints(Capsule, Distance, Noise, bIsUseLookAtOrigin,
-            Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta);
+            Rotator_A, Rotator_B, bIsUseRandomRotation, Size_A, Size_B, bIsUseRandomSize, Rotator_Delta, RandomStream);
     }
     else
     {
@@ -135,13 +139,16 @@ void UGeometryInstance::GetPointsByCustomRect(
     bool bIsUseRandomRotation,
     FVector Size_A,
     FVector Size_B,
-    bool bIsUseRandomSize)
+    bool bIsUseRandomSize,
+    int32 RandomSeed)
 {
     if (!GetStaticMesh())
     {
         UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，无法添加实例。"));
         return;
     }
+
+    FRandomStream RandomStream(RandomSeed);
 
     const int32 CountX = FMath::Clamp(Counts3D.X, 1, GeometryToolInternal::MaxAxisSamples);
     const int32 CountY = FMath::Clamp(Counts3D.Y, 1, GeometryToolInternal::MaxAxisSamples);
@@ -192,7 +199,8 @@ void UGeometryInstance::GetPointsByCustomRect(
                     Rotator_A, Rotator_B, Size_A, Size_B,
                     FRotator::ZeroRotator,  // Rotator_Delta
                     FVector::ZeroVector,    // Origin
-                    Location                // PointLocation
+                    Location,               // PointLocation
+                    RandomStream
                 );
 
                 if (bIsUseWorldSpace)
@@ -280,7 +288,8 @@ TArray<FTransform> UGeometryInstance::GenerateSpherePoints(
     const FVector& Size_A,
     const FVector& Size_B,
     bool bIsUseRandomSize,
-    const FRotator& Rotator_Delta)
+    const FRotator& Rotator_Delta,
+    FRandomStream& RandomStream)
 {
     TArray<FTransform> FTransforms;
 
@@ -297,54 +306,79 @@ TArray<FTransform> UGeometryInstance::GenerateSpherePoints(
 
     const FVector Origin = Sphere->GetComponentLocation();
     const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
-    const float SphereRound = 2.0f * PI * Radius;
-    const int32 NumPerRound = FMath::Clamp(FMath::FloorToInt(SphereRound / SafeDistance), 8, 180);
-    const int64 EstimatedCount = static_cast<int64>(NumPerRound) * NumPerRound;
+    const float SafeNoise = FMath::Max(0.0f, Noise);
+
+    // 等面积纬线环分布：Z 轴等距分层（阿基米德球帽定理保证各环带面积相等），
+    // 每层点数按圆周长分配，极点只生成一次。
+    // 避免经纬度网格在所有经线共享极点时产生 NumPerRound 个完全重合的点。
+    const int32 LayerCount = FMath::Clamp(
+        FMath::FloorToInt((2.0f * Radius) / SafeDistance) + 1,
+        2,
+        GeometryToolInternal::MaxAxisSamples);
+
+    // 点数预估：球面面积 / 单点面积
+    const int64 EstimatedCount = static_cast<int64>(FMath::CeilToDouble(
+        4.0 * PI * FMath::Square(static_cast<double>(Radius) / SafeDistance)));
     if (GeometryToolInternal::ExceedsPointBudget(EstimatedCount))
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 球体采样点数过大，已取消生成。NumPerRound=%d"), NumPerRound);
+        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 球体采样点数过大，已取消生成。Radius=%.1f, Distance=%.1f"), Radius, SafeDistance);
         return FTransforms;
     }
 
-    const float DeltaAnglePerRound = 360.0f / NumPerRound;
-    const float SafeNoise = FMath::Max(0.0f, Noise);
-    const float NoiseAngle = (SafeNoise > KINDA_SMALL_NUMBER)
-        ? FMath::Clamp(FMath::RadiansToDegrees(SafeNoise / Radius), 0.0f, 45.0f)
-        : 0.0f;
-
     FTransforms.Reserve(static_cast<int32>(EstimatedCount));
 
-    for (int32 LongitudeIndex = 0; LongitudeIndex < NumPerRound; ++LongitudeIndex)
+    auto AddSpherePoint = [&](const FVector& PointLocation)
     {
-        const float Longitude = LongitudeIndex * DeltaAnglePerRound;
-        const FRotator LongitudeRotator(0.0f, Longitude, 0.0f);
-        const FVector AxisX = LongitudeRotator.Quaternion().GetForwardVector();
-        const FVector AxisY = LongitudeRotator.Quaternion().GetUpVector();
+        const FVector JitteredPoint = (SafeNoise > KINDA_SMALL_NUMBER)
+            ? PointLocation + FVector(
+                RandomStream.RandRange(-SafeNoise, SafeNoise),
+                RandomStream.RandRange(-SafeNoise, SafeNoise),
+                RandomStream.RandRange(-SafeNoise, SafeNoise))
+            : PointLocation;
 
-        for (int32 LatitudeIndex = 0; LatitudeIndex < NumPerRound; ++LatitudeIndex)
+        FTransform InstanceTransform;
+        InstanceTransform.SetLocation(JitteredPoint);
+
+        ApplyTransformParameters(
+            InstanceTransform,
+            bIsUseLookAtOrigin,
+            bIsUseRandomRotation,
+            bIsUseRandomSize,
+            Rotator_A,
+            Rotator_B,
+            Size_A,
+            Size_B,
+            Rotator_Delta,
+            Origin,
+            JitteredPoint,
+            RandomStream);
+
+        FTransforms.Add(InstanceTransform);
+    };
+
+    for (int32 LayerIndex = 0; LayerIndex < LayerCount; ++LayerIndex)
+    {
+        const float T = static_cast<float>(LayerIndex) / static_cast<float>(LayerCount - 1);
+        const float Z = FMath::Lerp(-Radius, Radius, T);
+        const float CircleRadius = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - Z * Z));
+
+        // 极点层：圆周半径为零，只生成一个点
+        if (CircleRadius <= KINDA_SMALL_NUMBER)
         {
-            const float Latitude = LatitudeIndex * DeltaAnglePerRound;
-            const float LatitudeNoise = (NoiseAngle > 0.0f) ? FMath::RandRange(-NoiseAngle, NoiseAngle) : 0.0f;
+            AddSpherePoint(Origin + FVector(0.0f, 0.0f, Z));
+            continue;
+        }
+
+        // 每层点数正比于圆周长，保证环上点间距与层间距一致
+        const int32 RingCount = FMath::Max(1, FMath::RoundToInt((2.0f * PI * CircleRadius) / SafeDistance));
+        const float AngleDelta = 360.0f / RingCount;
+
+        for (int32 RingIndex = 0; RingIndex < RingCount; ++RingIndex)
+        {
+            const float Angle = RingIndex * AngleDelta;
             const FVector Point = Origin + GeometryToolInternal::PolarToCartesianOnPlane(
-                Latitude + LatitudeNoise, Radius, AxisX, AxisY);
-
-            FTransform InstanceTransform;
-            InstanceTransform.SetLocation(Point);
-
-            ApplyTransformParameters(
-                InstanceTransform,
-                bIsUseLookAtOrigin,
-                bIsUseRandomRotation,
-                bIsUseRandomSize,
-                Rotator_A,
-                Rotator_B,
-                Size_A,
-                Size_B,
-                Rotator_Delta,
-                Origin,
-                Point);
-
-            FTransforms.Add(InstanceTransform);
+                Angle, CircleRadius, FVector(1, 0, 0), FVector(0, 1, 0)) + FVector(0.0f, 0.0f, Z);
+            AddSpherePoint(Point);
         }
     }
 
@@ -362,7 +396,8 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
     const FVector& Size_A,
     const FVector& Size_B,
     bool bIsUseRandomSize,
-    const FRotator& Rotator_Delta)
+    const FRotator& Rotator_Delta,
+    FRandomStream& RandomStream)
 {
     TArray<FTransform> FTransforms;
 
@@ -404,9 +439,9 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
                     continue;
                 }
 
-                const float NoiseForward = FMath::RandRange(-SafeNoise, SafeNoise);
-                const float NoiseRight = FMath::RandRange(-SafeNoise, SafeNoise);
-                const float NoiseUp = FMath::RandRange(-SafeNoise, SafeNoise);
+                const float NoiseForward = RandomStream.RandRange(-SafeNoise, SafeNoise);
+                const float NoiseRight = RandomStream.RandRange(-SafeNoise, SafeNoise);
+                const float NoiseUp = RandomStream.RandRange(-SafeNoise, SafeNoise);
 
                 FVector Location = Origin
                     + SafeDistance * Index_X * ForwardVector
@@ -423,7 +458,7 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
                 InstanceTransform.SetLocation(Location);
 
                 ApplyTransformParameters(InstanceTransform, bIsUseLookAtOrigin, bIsUseRandomRotation, bIsUseRandomSize,
-                    Rotator_A, Rotator_B, Size_A, Size_B, Rotator_Delta, Origin, Location);
+                    Rotator_A, Rotator_B, Size_A, Size_B, Rotator_Delta, Origin, Location, RandomStream);
 
                 FTransforms.Add(InstanceTransform);
             }
@@ -444,7 +479,8 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
     const FVector& Size_A,
     const FVector& Size_B,
     bool bIsUseRandomSize,
-    const FRotator& Rotator_Delta)
+    const FRotator& Rotator_Delta,
+    FRandomStream& RandomStream)
 {
     TArray<FTransform> FTransforms;
 
@@ -488,9 +524,9 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
     auto AddPoint = [&](const FVector& PointLocation)
     {
         FVector JitteredPoint = PointLocation
-            + FMath::RandRange(-SafeNoise, SafeNoise) * ForwardVector
-            + FMath::RandRange(-SafeNoise, SafeNoise) * RightVector
-            + FMath::RandRange(-SafeNoise, SafeNoise) * UpVector;
+            + RandomStream.RandRange(-SafeNoise, SafeNoise) * ForwardVector
+            + RandomStream.RandRange(-SafeNoise, SafeNoise) * RightVector
+            + RandomStream.RandRange(-SafeNoise, SafeNoise) * UpVector;
 
         FTransform InstanceTransform;
         InstanceTransform.SetLocation(JitteredPoint);
@@ -505,7 +541,8 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
             Size_B,
             Rotator_Delta,
             Origin,
-            JitteredPoint);
+            JitteredPoint,
+            RandomStream);
         FTransforms.Add(InstanceTransform);
     };
 
@@ -578,7 +615,8 @@ void UGeometryInstance::ApplyTransformParameters(
     const FVector& Size_B,
     const FRotator& Rotator_Delta,
     const FVector& Origin,
-    const FVector& PointLocation) const
+    const FVector& PointLocation,
+    FRandomStream& RandomStream) const
 {
     FRotator Rotator = FRotator(0, 0, 0);
     FVector Size = FVector(1, 1, 1);
@@ -591,17 +629,17 @@ void UGeometryInstance::ApplyTransformParameters(
     if (bIsUseRandomRotation)
     {
         Rotator = FRotator(
-            FMath::RandRange(Rotator_A.Pitch, Rotator_B.Pitch),
-            FMath::RandRange(Rotator_A.Yaw, Rotator_B.Yaw),
-            FMath::RandRange(Rotator_A.Roll, Rotator_B.Roll));
+            RandomStream.RandRange(Rotator_A.Pitch, Rotator_B.Pitch),
+            RandomStream.RandRange(Rotator_A.Yaw, Rotator_B.Yaw),
+            RandomStream.RandRange(Rotator_A.Roll, Rotator_B.Roll));
     }
 
     if (bIsUseRandomSize)
     {
         Size = FVector(
-            FMath::RandRange(Size_A.X, Size_B.X),
-            FMath::RandRange(Size_A.Y, Size_B.Y),
-            FMath::RandRange(Size_A.Z, Size_B.Z));
+            RandomStream.RandRange(Size_A.X, Size_B.X),
+            RandomStream.RandRange(Size_A.Y, Size_B.Y),
+            RandomStream.RandRange(Size_A.Z, Size_B.Z));
     }
 
     Rotator += Rotator_Delta;

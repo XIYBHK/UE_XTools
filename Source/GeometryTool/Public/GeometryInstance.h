@@ -122,7 +122,7 @@ protected:
 public:
     UFUNCTION(BlueprintCallable, Category = "XTools|几何工具|形状采样",
         meta = (DisplayName = "根据形状生成点阵",
-            ToolTip = "根据指定的形状组件（Box、Sphere、Capsule）生成点阵。\n\n参数：\nShape - 形状组件\nbIsAddInstance - 是否直接添加为实例\nDistance - 点间距\nNoise - 噪声强度\nbIsUseLookAtOrigin - 是否朝向原点\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放\nRotator_Delta - 旋转偏移量\n\n返回值：\n生成的变换数组",
+            ToolTip = "根据指定的形状组件（Box、Sphere、Capsule）生成点阵。\n\n参数：\nShape - 形状组件\nbIsAddInstance - 是否直接添加为实例\nDistance - 点间距\nNoise - 噪声强度\nbIsUseLookAtOrigin - 是否朝向原点\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放\nRotator_Delta - 旋转偏移量\nRandomSeed - 随机种子（同一种子生成结果可复现）\n\n返回值：\n生成的变换数组",
             Keywords = "形状,采样,Box,Sphere,Capsule"))
     TArray<FTransform> GetPointsByShape(
         UPARAM(DisplayName="形状组件") UShapeComponent* Shape,
@@ -136,11 +136,12 @@ public:
         UPARAM(DisplayName="缩放最小值") FVector Size_A = FVector(1, 1, 1),
         UPARAM(DisplayName="缩放最大值") FVector Size_B = FVector(1, 1, 1),
         UPARAM(DisplayName="使用随机缩放") bool bIsUseRandomSize = false,
-        UPARAM(DisplayName="旋转偏移") FRotator Rotator_Delta = FRotator(0, 0, 0));
+        UPARAM(DisplayName="旋转偏移") FRotator Rotator_Delta = FRotator(0, 0, 0),
+        UPARAM(DisplayName="随机种子") int32 RandomSeed = 0);
 
     UFUNCTION(BlueprintCallable, Category = "XTools|几何工具|矩形采样",
         meta = (DisplayName = "自定义矩形区域点阵",
-            ToolTip = "在指定的自定义矩形区域内生成规则点阵。\n\n参数：\nOriginTransform - 原点变换（按世界空间解释）\nCounts3D - 三维点数量\nDistance3D - 三维间距\nbIsUseWorldSpace - 实例写入空间（true=世界空间，false=组件本地空间）\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放",
+            ToolTip = "在指定的自定义矩形区域内生成规则点阵。\n\n参数：\nOriginTransform - 原点变换（按世界空间解释）\nCounts3D - 三维点数量\nDistance3D - 三维间距\nbIsUseWorldSpace - 实例写入空间（true=世界空间，false=组件本地空间）\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放\nRandomSeed - 随机种子（同一种子生成结果可复现）",
             Keywords = "矩形,自定义,3D",
             CPP_Default_Counts3D = "(X=5,Y=5,Z=1)"))
     void GetPointsByCustomRect(
@@ -153,7 +154,8 @@ public:
         UPARAM(DisplayName="使用随机旋转") bool bIsUseRandomRotation = false,
         UPARAM(DisplayName="缩放最小值") FVector Size_A = FVector(1, 1, 1),
         UPARAM(DisplayName="缩放最大值") FVector Size_B = FVector(1, 1, 1),
-        UPARAM(DisplayName="使用随机缩放") bool bIsUseRandomSize = false);
+        UPARAM(DisplayName="使用随机缩放") bool bIsUseRandomSize = false,
+        UPARAM(DisplayName="随机种子") int32 RandomSeed = 0);
 
     // C++ 便捷重载：保持旧调用习惯，默认 5x5x1 点阵
     void GetPointsByCustomRect(
@@ -165,7 +167,8 @@ public:
         bool bIsUseRandomRotation = false,
         FVector Size_A = FVector(1, 1, 1),
         FVector Size_B = FVector(1, 1, 1),
-        bool bIsUseRandomSize = false)
+        bool bIsUseRandomSize = false,
+        int32 RandomSeed = 0)
     {
         GetPointsByCustomRect(
             OriginTransform,
@@ -177,11 +180,17 @@ public:
             bIsUseRandomRotation,
             Size_A,
             Size_B,
-            bIsUseRandomSize);
+            bIsUseRandomSize,
+            RandomSeed);
     }
 
+    // 已弃用：功能为「生成同心圆环阵型」的子集（第 i 层点数 = InitCount*i，半径 = RadiusDelta*i），
+    // 请改用 UFormationSamplingLibrary::GenerateConcentricRingsFormation（XTools|点采样|高级圆形），
+    // 通过 PointsPerRing 数组精确控制每层点数，并支持扰动、随机种子和坐标空间。
     UFUNCTION(BlueprintCallable, Category = "XTools|几何工具|圆形采样",
-        meta = (DisplayName = "圆形多层次点阵",
+        meta = (DisplayName = "圆形多层次点阵（已弃用）",
+            DeprecatedFunction,
+            DeprecationMessage = "该节点已弃用，请改用「生成同心圆环阵型」（XTools|点采样|高级圆形）：通过 PointsPerRing 数组精确控制每层点数，功能为其超集。",
             ToolTip = "生成多层次圆形点阵，从中心向外扩展。\n\n参数：\nInitCount - 初始圆环点数\nInitAngle - 起始角度\nLevel - 层数\nRadiusDelta - 半径增量\n\n返回值：\n生成的变换数组",
             Keywords = "圆形,多层,螺旋"))
     TArray<FTransform> GetPointsByCircle(
@@ -202,7 +211,8 @@ private:
         const FVector& Size_A,
         const FVector& Size_B,
         bool bIsUseRandomSize,
-        const FRotator& Rotator_Delta);
+        const FRotator& Rotator_Delta,
+        FRandomStream& RandomStream);
 
     TArray<FTransform> GenerateBoxPoints(
         class UBoxComponent* Box,
@@ -215,7 +225,8 @@ private:
         const FVector& Size_A,
         const FVector& Size_B,
         bool bIsUseRandomSize,
-        const FRotator& Rotator_Delta);
+        const FRotator& Rotator_Delta,
+        FRandomStream& RandomStream);
 
     TArray<FTransform> GenerateCapsulePoints(
         class UCapsuleComponent* Capsule,
@@ -228,7 +239,8 @@ private:
         const FVector& Size_A,
         const FVector& Size_B,
         bool bIsUseRandomSize,
-        const FRotator& Rotator_Delta);
+        const FRotator& Rotator_Delta,
+        FRandomStream& RandomStream);
 
     void ApplyTransformParameters(
         FTransform& OutTransform,
@@ -241,5 +253,6 @@ private:
         const FVector& Size_B,
         const FRotator& Rotator_Delta,
         const FVector& Origin,
-        const FVector& PointLocation) const;
+        const FVector& PointLocation,
+        FRandomStream& RandomStream) const;
 };
