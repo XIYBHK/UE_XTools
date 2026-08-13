@@ -33,9 +33,9 @@ USplineMoveAlongAction* USplineMoveAlongAction::SplineMoveAlong(
 	USplineMoveAlongAction* Action = NewObject<USplineMoveAlongAction>(Pawn);
 	Action->Pawn_Ptr       = Pawn;
 	Action->Spline_Ptr     = Spline;
-	Action->LookaheadDist  = FMath::Max(LookaheadDistance, 1.f);
+	Action->LookaheadDist  = FMath::Max(LookaheadDistance, KINDA_SMALL_NUMBER);
 	Action->RightOffsetRate= RightOffsetRate;
-	Action->InputWeight    = FMath::Clamp(InputWeight, 0.f, 1.f);
+	Action->InputWeight    = InputWeight;
 	Action->bReverse       = bReverse;
 	Action->MoveMode       = MoveMode;
 
@@ -142,19 +142,21 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 		return false;
 	}
 
-	// ---- 2. 找到 Pawn 在样条线上的最近点 ----
+	// ---- 2. 初始化并保持蓝图宏中的“当前长度” ----
 	const FVector PawnPos = Pawn->GetActorLocation();
-	const float NearestKey = Spline->FindInputKeyClosestToWorldLocation(PawnPos);
-	const float NearestDist = Spline->GetDistanceAlongSplineAtSplineInputKey(NearestKey);
+	if (!bHasCurrentDistance)
+	{
+		const float NearestKey = Spline->FindInputKeyClosestToWorldLocation(PawnPos);
+		CurrentDistance = Spline->GetDistanceAlongSplineAtSplineInputKey(NearestKey);
+		bHasCurrentDistance = true;
+	}
 
-	// ---- 3. 到达终点检测 ----
-	//
-	// 正向：Pawn 最近点距离 >= 样条总长 - 前瞻距离的一半（避免在终点附近反复横跳）
-	// 反向：Pawn 最近点距离 <= 前瞻距离的一半
-	const float ArrivalThreshold = LookaheadDist * 0.5f;
+	// ---- 3. 计算下一个样条距离并检查终点 ----
+	const float Direction = bReverse ? -1.f : 1.f;
+	const float NextDistance = CurrentDistance + LookaheadDist * Direction;
 	const bool bReachedEnd = bReverse
-		? (NearestDist <= ArrivalThreshold)
-		: (NearestDist >= SplineLength - ArrivalThreshold);
+		? (CurrentDistance <= 0.f)
+		: (NextDistance >= SplineLength);
 
 	if (bReachedEnd)
 	{
@@ -162,13 +164,10 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 		return false;
 	}
 
-	// ---- 4. 计算前瞻目标点 ----
+	// ---- 4. 计算刷新距离对应的目标点 ----
 	//
 	// 沿样条前瞻 LookaheadDist，加上右向偏移（还原蓝图宏的 ScaleAtDist.Y * 偏移率 逻辑）
-	const float TargetDist = FMath::Clamp(
-		NearestDist + LookaheadDist * (bReverse ? -1.f : 1.f),
-		0.f,
-		SplineLength);
+	const float TargetDist = NextDistance;
 
 	const FVector SplinePos  = Spline->GetLocationAtDistanceAlongSpline(TargetDist, ESplineCoordinateSpace::World);
 	const FVector RightVec   = Spline->GetRightVectorAtDistanceAlongSpline(TargetDist, ESplineCoordinateSpace::World);
@@ -176,6 +175,18 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 
 	// 右向偏移量 = RightVector * Scale.Y * 偏移率（与蓝图宏 v4 完全一致）
 	const FVector TargetPos = SplinePos + RightVec * ScaleAtDist.Y * RightOffsetRate;
+
+	if (FVector::Dist2D(TargetPos, PawnPos) <= LookaheadDist)
+	{
+		CurrentDistance = NextDistance;
+	}
+
+	// v4 的 Sequence 顺序：Then 先触发，随后移动，再触发持续执行。
+	if (bFirstTick)
+	{
+		bFirstTick = false;
+		Then.Broadcast();
+	}
 
 	// ---- 5. 驱动移动 ----
 	switch (MoveMode)
@@ -207,12 +218,6 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 	}
 
 	// ---- 6. 广播持续执行事件 ----
-	if (bFirstTick)
-	{
-		bFirstTick = false;
-		Then.Broadcast();
-	}
-
 	OnTick.Broadcast(TargetPos, TargetDist);
 
 	return true; // 继续下一帧
