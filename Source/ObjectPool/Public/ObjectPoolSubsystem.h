@@ -133,7 +133,7 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "XTools|对象池", meta = (
         DisplayName = "从池获取Actor",
-        ToolTip = "从对象池获取Actor，永不失败！如果池为空会自动创建新Actor",
+        ToolTip = "从对象池获取Actor，永不失败！池满或无可用实例时自动回退为普通生成，该Actor不受池管理（归还时会被拒绝），需要区分来源时请使用对象池函数库的「从池获取Actor（扩展）」",
         Keywords = "对象池,生成,获取,永不失败"))
     AActor* SpawnActorFromPool(UClass* ActorClass, const FTransform& SpawnTransform);
 

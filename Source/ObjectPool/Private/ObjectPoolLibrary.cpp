@@ -615,21 +615,22 @@ int32 UObjectPoolLibrary::BatchReturnActorsEx(const UObject* WorldContext, const
 
 AActor* UObjectPoolLibrary::AcquireOrSpawn(const UObject* WorldContext, TSubclassOf<AActor> ActorClass, const FTransform& SpawnTransform, EPoolOpResult& OutResult)
 {
-    OutResult = EPoolOpResult::InvalidArgs;
-    AActor* Actor = SpawnActorFromPool(WorldContext, ActorClass, SpawnTransform);
-    if (!Actor)
-    {
-        return nullptr;
-    }
-
-    // 粗略判断是否为回退生成：当前API无法直接知晓，保守置为Success
-    OutResult = EPoolOpResult::Success;
-    return Actor;
+    return SpawnActorFromPoolEx(WorldContext, ActorClass, SpawnTransform, OutResult);
 }
 
 bool UObjectPoolLibrary::ReleaseOrDespawn(const UObject* WorldContext, AActor* Actor, EPoolOpResult& OutResult)
 {
-    return ReturnActorToPoolEx(WorldContext, Actor, OutResult);
+    const bool bReturned = ReturnActorToPoolEx(WorldContext, Actor, OutResult);
+    if (OutResult == EPoolOpResult::NotPooled)
+    {
+        // 非池对象：按函数名语义销毁（ReturnActorToPoolEx 只归还并报告，不销毁）
+        if (IsValid(Actor))
+        {
+            Actor->Destroy();
+        }
+        return true;
+    }
+    return bReturned;
 }
 
 AActor* UObjectPoolLibrary::AcquireDeferredFromPool(const UObject* WorldContext, TSubclassOf<AActor> ActorClass)

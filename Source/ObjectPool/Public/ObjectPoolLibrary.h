@@ -76,7 +76,7 @@ public:
      */
 	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
         DisplayName = "从池获取Actor（静态）",
-		ToolTip = "静态方法：从对象池获取Actor，永不失败，自动处理所有错误情况",
+		ToolTip = "静态方法：从对象池获取Actor，永不失败，自动处理所有错误情况。池满或无可用实例时会回退为普通生成，该Actor不受池管理，需要区分来源时请使用「从池获取Actor（扩展）」",
 		Keywords = "Pool Spawn Acquire Get",
         WorldContext = "WorldContext"))
     static AActor* SpawnActorFromPool(
@@ -186,6 +186,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="XTools|对象池|核心", meta=(
         DisplayName = "获取或生成",
         CompactNodeTitle = "获取/生成",
+        ToolTip = "从对象池获取Actor，结果码如实反映来源：成功=从池中复用，回退生成=池满时普通生成（该Actor不受池管理）",
         WorldContext = "WorldContext"))
     static AActor* AcquireOrSpawn(
         const UObject* WorldContext,
@@ -214,6 +215,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="XTools|对象池|核心", meta=(
         DisplayName = "释放或移除",
         CompactNodeTitle = "释放/移除",
+        ToolTip = "释放Actor：池对象归还到池（结果=成功）；非池对象直接销毁（结果=非池对象），两种情况均返回true",
         WorldContext = "WorldContext"))
     static bool ReleaseOrDespawn(
         const UObject* WorldContext,
