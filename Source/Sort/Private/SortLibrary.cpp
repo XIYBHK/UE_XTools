@@ -349,7 +349,15 @@ void USortLibrary::SortActorsByAngleAndDistance(const TArray<AActor*>& Actors, c
         float Distance;
         float Score;
 
-        bool operator<(const FActorSortInfo& Other) const { return Score < Other.Score; }
+        bool operator<(const FActorSortInfo& Other) const
+        {
+            if (Score != Other.Score)
+            {
+                return Score < Other.Score;
+            }
+            // TArray::Sort 非稳定排序，同分时按原始输入顺序打破平局
+            return OriginalIndex < Other.OriginalIndex;
+        }
     };
 
     TArray<FActorSortInfo> FilteredPairs;
@@ -422,7 +430,16 @@ void USortLibrary::SortActorsByAngleAndDistance(const TArray<AActor*>& Actors, c
     }
     else
     {
-        FilteredPairs.Sort([](const auto& A, const auto& B){ return B < A; });
+        // 降序：分数降序，但同分仍按原始输入顺序升序。
+        // 不能直接反转升序比较器，否则同分组会按索引倒序输出。
+        FilteredPairs.Sort([](const FActorSortInfo& A, const FActorSortInfo& B)
+        {
+            if (A.Score != B.Score)
+            {
+                return A.Score > B.Score;
+            }
+            return A.OriginalIndex < B.OriginalIndex;
+        });
     }
 
     // 填充输出数组
