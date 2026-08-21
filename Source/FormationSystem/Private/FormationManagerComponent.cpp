@@ -380,7 +380,7 @@ TArray<TArray<float>> UFormationManagerComponent::CreateCostMatrix(
     uint32 PositionsHash = CalculatePositionsHash(FromPositions, ToPositions);
     double CurrentTime = FPlatformTime::Seconds();
 
-    if (CostMatrixCache.IsValid(PositionsHash, CacheMode, CurrentTime))
+    if (CostMatrixCache.IsValid(PositionsHash, CacheMode, CurrentTime, FromPositions, ToPositions))
     {
         UE_LOG(LogFormationSystem, VeryVerbose, TEXT("使用缓存的成本矩阵"));
         return CostMatrixCache.CostMatrix;
@@ -398,7 +398,7 @@ TArray<TArray<float>> UFormationManagerComponent::CreateCostMatrix(
     }
 
     // 更新缓存
-    CostMatrixCache.UpdateCache(PositionsHash, CacheMode, NewCostMatrix, CurrentTime);
+    CostMatrixCache.UpdateCache(PositionsHash, CacheMode, NewCostMatrix, CurrentTime, FromPositions, ToPositions);
 
     return NewCostMatrix;
 }
@@ -421,6 +421,10 @@ uint32 UFormationManagerComponent::CalculatePositionsHash(
         Hash = HashCombine(Hash, GetTypeHash(Pos));
     }
 
+    // 将两个数组的元素数量纳入哈希：From/To 边界切分不同的输入（展平序列相同）不再共享同一哈希
+    Hash = HashCombine(Hash, GetTypeHash(FromPositions.Num()));
+    Hash = HashCombine(Hash, GetTypeHash(ToPositions.Num()));
+
     return Hash;
 }
 
@@ -429,23 +433,38 @@ uint32 UFormationManagerComponent::CalculatePositionsHash(
 bool UFormationManagerComponent::FCostMatrixCache::IsValid(
     uint32 NewHash,
     EFormationTransitionMode NewMode,
-    double CurrentTime) const
+    double CurrentTime,
+    const TArray<FVector>& FromPositions,
+    const TArray<FVector>& ToPositions) const
 {
-    return PositionsHash == NewHash &&
-           Mode == NewMode &&
-           (CurrentTime - CacheTime) < FormationPerformanceConfig::CacheLifetimeSeconds;
+    // 快路径：哈希 + 模式 + TTL 初筛
+    if (PositionsHash != NewHash ||
+        Mode != NewMode ||
+        (CurrentTime - CacheTime) >= FormationPerformanceConfig::CacheLifetimeSeconds)
+    {
+        return false;
+    }
+
+    // 慢路径：仅在哈希初筛通过后精确比较位置数组（TArray::operator== 先比长度再逐元素），
+    // 消除 32 位截断碰撞与结构碰撞导致的误命中
+    return CachedFromPositions == FromPositions && CachedToPositions == ToPositions;
 }
 
 void UFormationManagerComponent::FCostMatrixCache::UpdateCache(
     uint32 NewHash,
     EFormationTransitionMode NewMode,
     const TArray<TArray<float>>& NewMatrix,
-    double CurrentTime)
+    double CurrentTime,
+    const TArray<FVector>& FromPositions,
+    const TArray<FVector>& ToPositions)
 {
     PositionsHash = NewHash;
     Mode = NewMode;
     CostMatrix = NewMatrix;
     CacheTime = CurrentTime;
+    // TArray 拷贝赋值即深拷贝，保存输入副本而非引用，避免悬空
+    CachedFromPositions = FromPositions;
+    CachedToPositions = ToPositions;
 }
 
 void UFormationManagerComponent::ApplyCostModifications(

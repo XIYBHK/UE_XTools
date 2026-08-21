@@ -7,6 +7,7 @@
 
 // 前向声明
 class IFormationInterface;
+class FFormationManagerComponentCacheTests;
 
 /** 阵型过渡完成时广播 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFormationTransitionCompleted);
@@ -221,8 +222,12 @@ private:
         TArray<TArray<float>> CostMatrix;
         double CacheTime = 0.0;
 
-        bool IsValid(uint32 NewHash, EFormationTransitionMode NewMode, double CurrentTime) const;
-        void UpdateCache(uint32 NewHash, EFormationTransitionMode NewMode, const TArray<TArray<float>>& NewMatrix, double CurrentTime);
+        /** 精确缓存键：哈希初筛通过后逐元素比对，消除 32 位截断或结构碰撞导致的误命中 */
+        TArray<FVector> CachedFromPositions;
+        TArray<FVector> CachedToPositions;
+
+        bool IsValid(uint32 NewHash, EFormationTransitionMode NewMode, double CurrentTime, const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions) const;
+        void UpdateCache(uint32 NewHash, EFormationTransitionMode NewMode, const TArray<TArray<float>>& NewMatrix, double CurrentTime, const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions);
     };
 
     /** 成本矩阵缓存 */
@@ -230,4 +235,7 @@ private:
 
     /** 计算位置数组的哈希值 */
     uint32 CalculatePositionsHash(const TArray<FVector>& FromPositions, const TArray<FVector>& ToPositions) const;
+
+    /** 测试访问授权：允许自动化测试直接调用受保护的 CreateCostMatrix 验证缓存防碰撞行为（编译期授权，不构成生产 API） */
+    friend class FFormationManagerComponentCacheTests;
 };
