@@ -7,6 +7,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Logging/LogMacros.h"
 #include "Internationalization/Text.h"
+#include "Internationalization/TextComparison.h"
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
 #include "Algo/Reverse.h"
@@ -15,90 +16,132 @@
 #include "XToolsVersionCompat.h"
 
 /**
+ * 自然排序预解析键（Schwartzian 变换）：每个字符串只解析一次，比较器复用解析结果，
+ * 消除排序期间对同一子串的重复提取与重复文化敏感比较。
+ * 段提取与比较语义与逐字符实现完全一致：数字段识别、前导零处理、
+ * 文本段文化敏感比较（当前文化的 FText Primary 级别）、末尾按原串总长度决胜。
+ */
+struct FNaturalSortKey
+{
+    struct FSegment
+    {
+        /** 是否为数字段 */
+        bool bNumeric = false;
+        /** 数字段：有效数字长度（去除前导零后）；文本段不使用 */
+        int32 SignificantLength = 0;
+        /** 数字段：有效数字字符（无前导零）；文本段：原文 */
+        FString Text;
+    };
+
+    /** 按原顺序解析出的数字/文本段序列 */
+    TArray<FSegment> Segments;
+    /** 原串总字符数（含前导零），末尾长度决胜使用 */
+    int32 TotalLength = 0;
+};
+
+/** 解析自然排序键：段边界与逐字符实现的扫描逻辑一致（连续数字为一段，连续非数字为一段） */
+static FNaturalSortKey BuildNaturalSortKey(const FString& Source)
+{
+    FNaturalSortKey Key;
+    Key.TotalLength = Source.Len();
+
+    int32 Index = 0;
+    while (Index < Source.Len())
+    {
+        const int32 Start = Index;
+        const bool bNumeric = FChar::IsDigit(Source[Index]);
+        while (Index < Source.Len() && FChar::IsDigit(Source[Index]) == bNumeric)
+        {
+            ++Index;
+        }
+
+        FNaturalSortKey::FSegment& Segment = Key.Segments.AddDefaulted_GetRef();
+        Segment.bNumeric = bNumeric;
+        if (bNumeric)
+        {
+            int32 SignificantStart = Start;
+            while (SignificantStart < Index && Source[SignificantStart] == '0')
+            {
+                ++SignificantStart;
+            }
+            Segment.Text = Source.Mid(SignificantStart, Index - SignificantStart);
+            Segment.SignificantLength = Index - SignificantStart;
+        }
+        else
+        {
+            Segment.Text = Source.Mid(Start, Index - Start);
+        }
+    }
+    return Key;
+}
+
+/**
+ * 比较两个自然排序键，语义与逐字符比较逐条对齐：
+ * - 数字段 vs 数字段：先比有效数字长度，再逐字符比较；
+ * - 文本段 vs 文本段：当前文化的文化敏感比较（与 FText::CompareTo 的 Primary 级别一致）；
+ * - 段类型不匹配（一侧数字一侧文本）：数字侧相当于空文本段，与逐字符实现的提取行为一致；
+ * - 全部公共段相等后：按原串总长度决胜（含前导零差异）。
+ */
+static int32 CompareNaturalSortKeys(const FNaturalSortKey& A, const FNaturalSortKey& B)
+{
+    const int32 SegmentCount = FMath::Min(A.Segments.Num(), B.Segments.Num());
+    for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
+    {
+        const FNaturalSortKey::FSegment& SegmentA = A.Segments[SegmentIndex];
+        const FNaturalSortKey::FSegment& SegmentB = B.Segments[SegmentIndex];
+
+        if (SegmentA.bNumeric && SegmentB.bNumeric)
+        {
+            if (SegmentA.SignificantLength != SegmentB.SignificantLength)
+            {
+                return SegmentA.SignificantLength < SegmentB.SignificantLength ? -1 : 1;
+            }
+
+            for (int32 DigitIndex = 0; DigitIndex < SegmentA.SignificantLength; ++DigitIndex)
+            {
+                const TCHAR DigitA = SegmentA.Text[DigitIndex];
+                const TCHAR DigitB = SegmentB.Text[DigitIndex];
+                if (DigitA != DigitB)
+                {
+                    return DigitA < DigitB ? -1 : 1;
+                }
+            }
+        }
+        else if (!SegmentA.bNumeric && !SegmentB.bNumeric)
+        {
+            const int32 Result = FTextComparison::CompareTo(SegmentA.Text, SegmentB.Text, ETextComparisonLevel::Primary);
+            if (Result != 0)
+            {
+                return Result;
+            }
+        }
+        else
+        {
+            // 一侧数字段一侧文本段：逐字符实现中数字侧提取出的非数字段为空串
+            const int32 Result = SegmentA.bNumeric
+                ? FTextComparison::CompareTo(FString(), SegmentB.Text, ETextComparisonLevel::Primary)
+                : FTextComparison::CompareTo(SegmentA.Text, FString(), ETextComparisonLevel::Primary);
+            if (Result != 0)
+            {
+                return Result;
+            }
+        }
+    }
+
+    if (A.TotalLength < B.TotalLength) return -1;
+    if (A.TotalLength > B.TotalLength) return 1;
+
+    return 0;
+}
+
+/**
  * 自然排序比较器，用于处理字符串中的数字和中文
  */
 struct FNaturalSortComparator
 {
     static int32 Compare(const FString& A, const FString& B)
     {
-        int32 IndexA = 0, IndexB = 0;
-        while (IndexA < A.Len() && IndexB < B.Len())
-        {
-            // 如果两者都是数字，则按数值比较
-            if (FChar::IsDigit(A[IndexA]) && FChar::IsDigit(B[IndexB]))
-            {
-                const int32 NumberStartA = IndexA;
-                const int32 NumberStartB = IndexB;
-                while (IndexA < A.Len() && FChar::IsDigit(A[IndexA]))
-                {
-                    ++IndexA;
-                }
-                while (IndexB < B.Len() && FChar::IsDigit(B[IndexB]))
-                {
-                    ++IndexB;
-                }
-
-                int32 SignificantStartA = NumberStartA;
-                int32 SignificantStartB = NumberStartB;
-                while (SignificantStartA < IndexA && A[SignificantStartA] == '0')
-                {
-                    ++SignificantStartA;
-                }
-                while (SignificantStartB < IndexB && B[SignificantStartB] == '0')
-                {
-                    ++SignificantStartB;
-                }
-
-                const int32 SignificantLengthA = IndexA - SignificantStartA;
-                const int32 SignificantLengthB = IndexB - SignificantStartB;
-                if (SignificantLengthA != SignificantLengthB)
-                {
-                    return SignificantLengthA < SignificantLengthB ? -1 : 1;
-                }
-
-                for (int32 DigitIndex = 0; DigitIndex < SignificantLengthA; ++DigitIndex)
-                {
-                    const TCHAR DigitA = A[SignificantStartA + DigitIndex];
-                    const TCHAR DigitB = B[SignificantStartB + DigitIndex];
-                    if (DigitA != DigitB)
-                    {
-                        return DigitA < DigitB ? -1 : 1;
-                    }
-                }
-            }
-            else
-            {
-                // 提取非数字部分进行比较
-                int32 StartA = IndexA, StartB = IndexB;
-                while (IndexA < A.Len() && !FChar::IsDigit(A[IndexA]))
-                {
-                    IndexA++;
-                }
-                while (IndexB < B.Len() && !FChar::IsDigit(B[IndexB]))
-                {
-                    IndexB++;
-                }
-
-                FString SubA = A.Mid(StartA, IndexA - StartA);
-                FString SubB = B.Mid(StartB, IndexB - StartB);
-
-                // 使用FText进行文化敏感的比较，支持中文拼音
-                FText TextA = FText::FromString(SubA);
-                FText TextB = FText::FromString(SubB);
-                int32 Result = TextA.CompareTo(TextB, ETextComparisonLevel::Primary);
-
-                if (Result != 0)
-                {
-                    return Result;
-                }
-            }
-        }
-
-        // 如果一个字符串是另一个的前缀，则较短的优先
-        if (A.Len() < B.Len()) return -1;
-        if (A.Len() > B.Len()) return 1;
-
-        return 0;
+        return CompareNaturalSortKeys(BuildNaturalSortKey(A), BuildNaturalSortKey(B));
     }
 };
 
@@ -486,11 +529,12 @@ void USortLibrary::SortStringArray(const TArray<FString>& InArray,
     struct FSortPair
     {
         FString Value;
+        FNaturalSortKey Key;
         int32 OriginalIndex;
 
         bool operator<(const FSortPair& Other) const
         {
-            const int32 Cmp = FNaturalSortComparator::Compare(Value, Other.Value);
+            const int32 Cmp = CompareNaturalSortKeys(Key, Other.Key);
             if (Cmp < 0) return true;
             if (Cmp > 0) return false;
             return OriginalIndex < Other.OriginalIndex;
@@ -502,7 +546,7 @@ void USortLibrary::SortStringArray(const TArray<FString>& InArray,
 
     for (int32 i = 0; i < InArray.Num(); ++i)
     {
-        Pairs.Emplace(FSortPair{InArray[i], i});
+        Pairs.Emplace(FSortPair{InArray[i], BuildNaturalSortKey(InArray[i]), i});
     }
 
     if (bAscending)
@@ -540,11 +584,12 @@ void USortLibrary::SortNameArray(const TArray<FName>& InArray,
     {
         FName Value;
         FString StringValue;
+        FNaturalSortKey Key;
         int32 OriginalIndex;
 
         bool operator<(const FSortPair& Other) const
         {
-            const int32 Cmp = FNaturalSortComparator::Compare(StringValue, Other.StringValue);
+            const int32 Cmp = CompareNaturalSortKeys(Key, Other.Key);
             if (Cmp < 0) return true;
             if (Cmp > 0) return false;
             return OriginalIndex < Other.OriginalIndex;
@@ -556,8 +601,10 @@ void USortLibrary::SortNameArray(const TArray<FName>& InArray,
 
     for (int32 i = 0; i < InArray.Num(); ++i)
     {
+        // 注意顺序：先构建键再移动字符串（花括号初始化列表按从左到右求值）
         FString StringValue = InArray[i].ToString();
-        Pairs.Emplace(FSortPair{InArray[i], MoveTemp(StringValue), i});
+        FNaturalSortKey Key = BuildNaturalSortKey(StringValue);
+        Pairs.Emplace(FSortPair{InArray[i], MoveTemp(StringValue), MoveTemp(Key), i});
     }
 
     if (bAscending)
@@ -1109,11 +1156,82 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
         Indices[i] = i;
     }
 
-    // 计算深度限制（IntroSort模式：2*log2(n)）
-    const int32 DepthLimit = ArrayHelper.Num() > 0 ? 2 * FMath::CeilLogTwo(ArrayHelper.Num()) : 0;
-    
-    // 使用带深度限制的快速排序（IntroSort）
-    QuickSortByProperty(ArrayHelper, ArrayProp->Inner, SortProp, Indices, 0, ArrayHelper.Num() - 1, bAscending, DepthLimit);
+    // 字符串类属性（FName/FString/FText）走自然排序：预提取字符串并预解析排序键，
+    // 每个元素只执行一次属性取值与一次 ToString，排序期间比较器零取值零转换
+    //（原路径每次比较取值两次，FName/FText 还要 ToString 两次）。
+    if (CastField<FNameProperty>(SortProp) || CastField<FStrProperty>(SortProp) || CastField<FTextProperty>(SortProp))
+    {
+        struct FStringPropertySortPair
+        {
+            FNaturalSortKey Key;
+            int32 Index = 0;
+            bool bIsNull = false;
+
+            // 空值语义与 ComparePropertyValues 保持一致：升序时空值排在有效值之后
+            bool operator<(const FStringPropertySortPair& Other) const
+            {
+                if (bIsNull || Other.bIsNull)
+                {
+                    if (bIsNull && Other.bIsNull)
+                    {
+                        return false;
+                    }
+                    return Other.bIsNull;
+                }
+                return CompareNaturalSortKeys(Key, Other.Key) < 0;
+            }
+        };
+
+        TArray<FStringPropertySortPair> Pairs;
+        Pairs.Reserve(ArrayHelper.Num());
+        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+        {
+            FStringPropertySortPair& Pair = Pairs.AddDefaulted_GetRef();
+            Pair.Index = i;
+
+            void* ValuePtr = GetPropertyValuePtr(ArrayHelper, ArrayProp->Inner, SortProp, i);
+            if (!ValuePtr)
+            {
+                Pair.bIsNull = true;
+                continue;
+            }
+
+            if (const FNameProperty* NameProp = CastField<FNameProperty>(SortProp))
+            {
+                Pair.Key = BuildNaturalSortKey(NameProp->GetPropertyValue(ValuePtr).ToString());
+            }
+            else if (const FStrProperty* StringProp = CastField<FStrProperty>(SortProp))
+            {
+                Pair.Key = BuildNaturalSortKey(StringProp->GetPropertyValue(ValuePtr));
+            }
+            else if (const FTextProperty* TextProp = CastField<FTextProperty>(SortProp))
+            {
+                Pair.Key = BuildNaturalSortKey(TextProp->GetPropertyValue(ValuePtr).ToString());
+            }
+        }
+
+        if (bAscending)
+        {
+            Pairs.Sort();
+        }
+        else
+        {
+            Pairs.Sort([](const FStringPropertySortPair& A, const FStringPropertySortPair& B) { return B < A; });
+        }
+
+        for (int32 i = 0; i < Pairs.Num(); ++i)
+        {
+            Indices[i] = Pairs[i].Index;
+        }
+    }
+    else
+    {
+        // 计算深度限制（IntroSort模式：2*log2(n)）
+        const int32 DepthLimit = ArrayHelper.Num() > 0 ? 2 * FMath::CeilLogTwo(ArrayHelper.Num()) : 0;
+
+        // 使用带深度限制的快速排序（IntroSort）
+        QuickSortByProperty(ArrayHelper, ArrayProp->Inner, SortProp, Indices, 0, ArrayHelper.Num() - 1, bAscending, DepthLimit);
+    }
 
     // 根据排序后的索引重新排列数组
     // 使用 InitializeValue/DestroyValue 正确处理非 POD 类型（FString、TArray 等）
