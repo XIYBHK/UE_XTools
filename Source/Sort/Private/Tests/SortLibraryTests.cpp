@@ -241,10 +241,10 @@ bool FSortLibrary_ReversesAndDeduplicatesValues::RunTest(const FString& Paramete
 	TArray<int32> DuplicateIndices;
 	TArray<FVector> DuplicateValues;
 	USortLibrary::FindDuplicateVectors(InputVectors, DuplicateIndices, DuplicateValues, 0.01f);
-\tTestTrue(TEXT("重复向量检测应报告重复组的全部成员"),
-\t\tDuplicateIndices == TArray<int32>({0, 1}) && DuplicateValues.Num() == 2);
+    TestTrue(TEXT("重复向量检测应报告重复组的全部成员"),
+        DuplicateIndices == TArray<int32>({0, 1}) && DuplicateValues.Num() == 2);
 
-\treturn true;
+    return true;
 }
 
 // ---------------------------------------------------------------------------
