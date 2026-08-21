@@ -27,7 +27,18 @@ namespace RandomShuffles
         constexpr int32 DefaultStateMapReserve = 64;  // 默认状态映射预分配大小
         constexpr int32 MaxStateMapSize = 1000;       // 状态映射最大大小
     }
+
+    /**
+     * 世界清理时是否应自动清空 PRD 状态 - 纯判定函数，便于确定性测试。
+     *
+     * @param   bSessionEnded           世界清理广播的 bSessionEnded（无缝切换中继跳为 false，表示会话仍在继续）
+     * @param   bHasOtherLiveGameWorld  被清理世界之外是否仍存在其它未进入拆除流程的 Game/PIE 世界
+     * @return  仅当会话结束且被清理的是最后一个存活的 Game/PIE 世界时返回 true
+     */
+    bool ShouldResetPRDStatesOnWorldCleanup(bool bSessionEnded, bool bHasOtherLiveGameWorld);
 }
+
+class UWorld;
 
 /**
  * PRD 性能统计结构
@@ -295,6 +306,20 @@ public:
 		DisplayName = "清理所有PRD状态",
 		ToolTip="清理所有PRD状态, 重置所有累积的失败次数. \n• 用于重大状态变化(玩家死亡、关卡切换、游戏重启) \n• 释放所有内存, 避免状态污染 \n• 让所有PRD系统重新开始"))
 	static void ClearAllPRDStates();
+
+public:
+	/**
+	 * 【内部接口，非蓝图节点】世界清理委托回调，由 FRandomShufflesModule 注册到 FWorldDelegates::OnWorldCleanup。
+	 * 仅处理 Game/PIE 世界；仅当 bSessionEnded=true 且被清理的是最后一个存活的 Game/PIE 世界时，
+	 * 自动清空 PRD 状态映射（不重置性能统计）。对同一世界的重复广播及流送子世界递归广播幂等。
+	 */
+	static void HandleWorldCleanup(UWorld* World, bool bSessionEnded, bool bCleanupResources);
+
+	/**
+	 * 【内部接口，非蓝图节点】仅清空 PRD 状态映射，不重置性能统计。
+	 * 供世界生命周期自动清理路径使用；需要同时重置统计时请显式调用 ClearAllPRDStates()。
+	 */
+	static void ClearPRDStatesForWorldTeardown();
 
 	static void GenericArray_RandomSample(
         void* InputArray, const FArrayProperty* ArrayProp, 
@@ -601,4 +626,7 @@ public:
 
 	// 更新性能统计 - 线程安全版本
 	static void UpdatePerformanceStats(int32 FailureCount);
+
+	// 检查被清理世界之外是否仍存在其它未进入拆除流程的 Game/PIE 世界
+	static bool HasOtherLiveGameWorlds(const UWorld* WorldBeingCleaned);
 };

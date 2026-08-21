@@ -178,4 +178,82 @@ bool FRandomShuffle_PRDStateAndBoundsAreControlled::RunTest(const FString& Param
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRandomShuffle_PRDWorldCleanupLifecycleIsDeterministic,
+	"XTools.RandomShuffles.PRD.WorldCleanupLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRandomShuffle_PRDWorldCleanupLifecycleIsDeterministic::RunTest(const FString& Parameters)
+{
+	using RandomShuffles::ShouldResetPRDStatesOnWorldCleanup;
+
+	// 纯判定矩阵：是否应在世界清理广播时自动清空 PRD 状态
+	TestTrue(TEXT("最后一个Game/PIE世界且会话结束时应清理"),
+		ShouldResetPRDStatesOnWorldCleanup(true, false));
+	TestFalse(TEXT("仍存在其它存活Game/PIE世界时不应清理"),
+		ShouldResetPRDStatesOnWorldCleanup(true, true));
+	TestFalse(TEXT("无缝切换中继跳(bSessionEnded=false)不应清理"),
+		ShouldResetPRDStatesOnWorldCleanup(false, false));
+	TestFalse(TEXT("bSessionEnded=false且存在其它存活世界时不应清理"),
+		ShouldResetPRDStatesOnWorldCleanup(false, true));
+
+	// 模拟多世界拆除序列：与 HandleWorldCleanup 使用同一判定驱动清理路径
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
+	URandomShuffleArrayLibrary::ResetPRDPerformanceStats();
+
+	FRandomStream Stream(987654);
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(0.5f, Stream, TEXT("RandomShuffleTest.WorldCleanup.Multi"));
+	FPRDPerformanceStats Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("前置：PRD调用后应存在一个状态"), Stats.StateMapSize, 1);
+	TestEqual(TEXT("前置：PRD调用后统计应记录一次调用"), Stats.TotalCalls, 1);
+
+	// 世界A清理但世界B仍存活：判定不清空，状态必须保留
+	if (ShouldResetPRDStatesOnWorldCleanup(true, true))
+	{
+		URandomShuffleArrayLibrary::ClearPRDStatesForWorldTeardown();
+	}
+	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("多世界场景：清理其中一个世界不应清空状态"), Stats.StateMapSize, 1);
+
+	// 世界B清理（最后一个存活世界）：判定清空
+	if (ShouldResetPRDStatesOnWorldCleanup(true, false))
+	{
+		URandomShuffleArrayLibrary::ClearPRDStatesForWorldTeardown();
+	}
+	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("多世界场景：最后一个世界清理后状态应清空"), Stats.StateMapSize, 0);
+	TestEqual(TEXT("自动清理路径不应重置性能统计"), Stats.TotalCalls, 1);
+
+	// 行为级确定性：自动清理后，相同随机流必须重现首个序列（证明失败计数真正归零）
+	const FString StateID = TEXT("RandomShuffleTest.WorldCleanup.Det");
+	TArray<bool> FirstSequence;
+	{
+		FRandomStream FirstStream(1357911);
+		for (int32 Index = 0; Index < 8; ++Index)
+		{
+			FirstSequence.Add(URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(0.3f, FirstStream, StateID));
+		}
+	}
+
+	URandomShuffleArrayLibrary::ClearPRDStatesForWorldTeardown();
+
+	TArray<bool> SecondSequence;
+	{
+		FRandomStream SecondStream(1357911);
+		for (int32 Index = 0; Index < 8; ++Index)
+		{
+			SecondSequence.Add(URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(0.3f, SecondStream, StateID));
+		}
+	}
+	TestEqual(TEXT("自动清理后相同随机流的PRD序列应可重现"), FirstSequence, SecondSequence);
+
+	// 回归：显式 ClearAllPRDStates 保持原有行为（状态与统计同时重置）
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
+	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("显式清理后状态映射应为空"), Stats.StateMapSize, 0);
+	TestEqual(TEXT("显式清理后统计应重置"), Stats.TotalCalls, 0);
+
+	return true;
+}
+
 #endif

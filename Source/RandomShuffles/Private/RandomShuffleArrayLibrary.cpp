@@ -5,6 +5,8 @@
 
 #include "RandomShuffleArrayLibrary.h"
 #include "Math/UnrealMathUtility.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
 #include "RandomSample.h"
 #include "WeightPoolSample.h"
 #include "RandomShuffleLog.h"
@@ -665,16 +667,87 @@ void URandomShuffleArrayLibrary::ClearPRDState(FString StateID)
 void URandomShuffleArrayLibrary::ClearAllPRDStates()
 {
     // 清空 PRD 状态映射
-    {
-        FScopeLock Lock(&PRDStateLock);
-        PRDStateMap.Empty();
-    }
+    ClearPRDStatesForWorldTeardown();
 
     // 重置性能统计（使用独立的锁）
     {
         FScopeLock Lock(&PerformanceStatsLock);
         PerformanceStats = FPRDPerformanceStats();
     }
+}
+
+// 世界生命周期自动清理 - 仅清空状态映射，不触碰性能统计
+void URandomShuffleArrayLibrary::ClearPRDStatesForWorldTeardown()
+{
+    FScopeLock Lock(&PRDStateLock);
+    PRDStateMap.Empty();
+}
+
+namespace RandomShuffles
+{
+    bool ShouldResetPRDStatesOnWorldCleanup(bool bSessionEnded, bool bHasOtherLiveGameWorld)
+    {
+        // 无缝切换中继跳（bSessionEnded=false）表示会话仍在继续，不清空；
+        // 仍存在其它未进入拆除流程的 Game/PIE 世界时（多 PIE 逐世界交错拆除），不清空。
+        return bSessionEnded && !bHasOtherLiveGameWorld;
+    }
+}
+
+bool URandomShuffleArrayLibrary::HasOtherLiveGameWorlds(const UWorld* WorldBeingCleaned)
+{
+    if (!GEngine)
+    {
+        return false;
+    }
+
+    for (const FWorldContext& Context : GEngine->GetWorldContexts())
+    {
+        UWorld* World = Context.World();
+        if (!World || World == WorldBeingCleaned)
+        {
+            continue;
+        }
+
+        if (Context.WorldType != EWorldType::Game && Context.WorldType != EWorldType::PIE)
+        {
+            continue;
+        }
+
+        // 已进入拆除流程的世界不算存活：多 PIE 拆除时先拆的世界在最后一个世界清理时仍挂在
+        // WorldList 中（EndPlayMap 在全部拆除完成后才移除上下文）。bIsTearingDown 由
+        // BeginTearingDown 设置（PIE 拆除路径与 EndPlay 均会调用），UE 5.3-5.8 均为公有成员
+        // 且不会被重置，可跨版本作为“已拆除/拆除中”的判定信号。
+        if (World->bIsTearingDown)
+        {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+void URandomShuffleArrayLibrary::HandleWorldCleanup(UWorld* World, bool bSessionEnded, bool /*bCleanupResources*/)
+{
+    if (!World)
+    {
+        return;
+    }
+
+    // 仅处理 Game/PIE 世界（编辑器世界、预览世界不触发自动清理）
+    if (World->WorldType != EWorldType::Game && World->WorldType != EWorldType::PIE)
+    {
+        return;
+    }
+
+    if (!RandomShuffles::ShouldResetPRDStatesOnWorldCleanup(bSessionEnded, HasOtherLiveGameWorlds(World)))
+    {
+        return;
+    }
+
+    // TMap::Empty 幂等：同一世界的重复广播及流送子世界的递归广播不会产生副作用
+    ClearPRDStatesForWorldTeardown();
 }
 
 // 性能统计实现
