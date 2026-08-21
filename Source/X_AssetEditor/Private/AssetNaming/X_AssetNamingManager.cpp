@@ -46,6 +46,40 @@ static void ChopSuffixNoShrink(FString& InOutString, int32 NumCharsToChop)
 
 TUniquePtr<FX_AssetNamingManager> FX_AssetNamingManager::Instance = nullptr;
 
+namespace XAssetNaming
+{
+    void RecordRenameFailure(FX_RenameOperationResult& Result, const FString& AssetName, const FString& Reason)
+    {
+        Result.FailedCount++;
+        Result.FailedRenames.Add(AssetName);
+        Result.FailedDetails.Add(FX_RenameFailure{ AssetName, Reason });
+    }
+
+    FString FormatFailureDetails(const FX_RenameOperationResult& Result, int32 MaxEntries)
+    {
+        if (Result.FailedDetails.Num() == 0 || MaxEntries <= 0)
+        {
+            return FString();
+        }
+
+        FString Output;
+        const int32 EntriesToShow = FMath::Min(Result.FailedDetails.Num(), MaxEntries);
+        for (int32 Index = 0; Index < EntriesToShow; ++Index)
+        {
+            const FX_RenameFailure& Failure = Result.FailedDetails[Index];
+            Output += FString::Printf(TEXT("- %s — %s\n"), *Failure.AssetName, *Failure.Reason);
+        }
+
+        const int32 RemainingCount = Result.FailedDetails.Num() - EntriesToShow;
+        if (RemainingCount > 0)
+        {
+            Output += FString::Printf(TEXT("... 其余 %d 条失败详情见输出日志\n"), RemainingCount);
+        }
+
+        return Output;
+    }
+}
+
 FX_AssetNamingManager& FX_AssetNamingManager::Get()
 {
     if (!Instance.IsValid())
@@ -442,8 +476,9 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     if (!AssetData.IsValid())
     {
         UE_LOG(LogX_AssetNaming, Warning, TEXT("Invalid asset data found; skipped"));
-        Result.FailedCount++;
-        Result.FailedRenames.Add(LOCTEXT("InvalidAsset", "Invalid Asset").ToString());
+        XAssetNaming::RecordRenameFailure(Result,
+            LOCTEXT("InvalidAsset", "Invalid Asset").ToString(),
+            LOCTEXT("FailReasonInvalidAssetData", "资产数据无效").ToString());
         return;
     }
 
@@ -466,8 +501,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     if (PackagePath.IsEmpty())
     {
         UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset '%s' has invalid package path"), *CurrentName);
-        Result.FailedCount++;
-        Result.FailedRenames.Add(CurrentName);
+        XAssetNaming::RecordRenameFailure(Result, CurrentName,
+            LOCTEXT("FailReasonEmptyPackagePath", "包路径为空").ToString());
         return;
     }
 
@@ -483,8 +518,9 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     {
         UE_LOG(LogX_AssetNaming, Warning, TEXT("Cannot determine prefix for asset '%s' (class: %s)"),
             *CurrentName, *SimpleClassName);
-        Result.FailedCount++;
-        Result.FailedRenames.Add(CurrentName);
+        XAssetNaming::RecordRenameFailure(Result, CurrentName,
+            FString::Printf(TEXT("%s（资产类型: %s）"),
+                *LOCTEXT("FailReasonUnknownPrefix", "无法确定资产前缀").ToString(), *SimpleClassName));
         return;
     }
 
@@ -522,8 +558,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
             if (!AssetObject)
             {
                 UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset object is null for '%s', cannot rename"), *CurrentName);
-                Result.FailedCount++;
-                Result.FailedRenames.Add(CurrentName);
+                XAssetNaming::RecordRenameFailure(Result, CurrentName,
+                    LOCTEXT("FailReasonNullAssetObjectSuffix", "资产对象为空（后缀规范化路径）").ToString());
                 return;
             }
 
@@ -538,8 +574,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
             }
             else
             {
-                Result.FailedCount++;
-                Result.FailedRenames.Add(CurrentName);
+                XAssetNaming::RecordRenameFailure(Result, CurrentName,
+                    LOCTEXT("FailReasonSuffixRenameFailed", "后缀规范化重命名失败").ToString());
                 UE_LOG(LogX_AssetNaming, Error, TEXT("Numeric suffix normalization failed: %s"), *CurrentName);
             }
         }
@@ -594,8 +630,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     if (AssetRegistry.IsLoadingAssets())
     {
         UE_LOG(LogX_AssetNaming, Warning, TEXT("AssetRegistry started loading during rename operation, skipping asset: %s"), *CurrentName);
-        Result.FailedCount++;
-        Result.FailedRenames.Add(CurrentName);
+        XAssetNaming::RecordRenameFailure(Result, CurrentName,
+            LOCTEXT("FailReasonAssetRegistryLoading", "资产注册表正在加载").ToString());
         return;
     }
 
@@ -604,8 +640,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     if (!ExistingNamesPtr)
     {
         UE_LOG(LogX_AssetNaming, Warning, TEXT("Folder cache missing for path: %s"), *PackagePath);
-        Result.FailedCount++;
-        Result.FailedRenames.Add(CurrentName);
+        XAssetNaming::RecordRenameFailure(Result, CurrentName,
+            LOCTEXT("FailReasonFolderCacheMissing", "文件夹缓存缺失").ToString());
         return;
     }
 
@@ -654,8 +690,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     UObject* AssetObject = AssetData.GetAsset();
     if (!AssetObject)
     {
-        Result.FailedCount++;
-        Result.FailedRenames.Add(CurrentName);
+        XAssetNaming::RecordRenameFailure(Result, CurrentName,
+            LOCTEXT("FailReasonNullAssetObject", "资产对象为空").ToString());
         UE_LOG(LogX_AssetNaming, Error, TEXT("Asset object is null for '%s', cannot rename"),
             *CurrentName);
         return;
@@ -673,8 +709,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     }
     else
     {
-        Result.FailedCount++;
-        Result.FailedRenames.Add(CurrentName);
+        XAssetNaming::RecordRenameFailure(Result, CurrentName,
+            LOCTEXT("FailReasonMainRenameFailed", "主路径重命名失败").ToString());
         UE_LOG(LogX_AssetNaming, Error, TEXT("Rename failed: %s"), *CurrentName);
     }
 }
@@ -705,6 +741,17 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
             OperationDetails->Append(LOCTEXT("AutoRenameHint", "当开启了“创建/导入时自动重命名”且资产已经被自动重命名时，\n").ToString());
             OperationDetails->Append(LOCTEXT("AutoRenameHint2", "可能会发生这种情况。请查看输出日志了解详情。\n").ToString());
         }
+    }
+
+    // 追加失败明细（弹窗限前 50 条；完整详情写入输出日志，避免 UI 截断后信息丢失）
+    if (Result.FailedDetails.Num() > 0)
+    {
+        OperationDetails->Append(TEXT("\n"));
+        OperationDetails->Append(LOCTEXT("FailedDetailsHeader", "失败明细：\n").ToString());
+        OperationDetails->Append(XAssetNaming::FormatFailureDetails(Result, 50));
+
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("Asset rename failure details:\n%s"),
+            *XAssetNaming::FormatFailureDetails(Result, MAX_int32));
     }
 
     // 显示可点击的通知

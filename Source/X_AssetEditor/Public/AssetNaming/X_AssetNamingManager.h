@@ -12,6 +12,15 @@
 DECLARE_LOG_CATEGORY_EXTERN(LogX_AssetNaming, Log, All);
 
 /**
+ * 单条重命名失败详情（内部结构，非 USTRUCT，不暴露给蓝图）
+ */
+struct FX_RenameFailure
+{
+	FString AssetName;  // 失败的资产名称
+	FString Reason;     // 具体失败原因（可区分）
+};
+
+/**
  * 资产重命名操作结果结构体
  */
 struct FX_RenameOperationResult
@@ -19,9 +28,32 @@ struct FX_RenameOperationResult
 	int32 SuccessCount = 0;
 	int32 SkippedCount = 0;
 	int32 FailedCount = 0;
-	TArray<FString> SuccessfulRenames;  // 旧包路径
-	TArray<FString> FailedRenames;      // 失败的资产名称
+	TArray<FString> SuccessfulRenames;      // 旧包路径
+	TArray<FString> FailedRenames;          // 失败的资产名称（保留兼容潜在外部 C++ 调用方）
+	TArray<FX_RenameFailure> FailedDetails; // 失败详情（名称 + 原因）
 };
+
+/**
+ * 批量重命名失败记录/格式化的内部纯 helper（供自动化测试直接调用）
+ */
+namespace XAssetNaming
+{
+	/**
+	 * 统一记录一次失败：同步递增 FailedCount、追加 FailedRenames 与 FailedDetails
+	 * @param Result 操作结果
+	 * @param AssetName 失败的资产名称
+	 * @param Reason 具体失败原因（必须可区分，禁止统一写成“重命名失败”）
+	 */
+	X_ASSETEDITOR_API void RecordRenameFailure(FX_RenameOperationResult& Result, const FString& AssetName, const FString& Reason);
+
+	/**
+	 * 将失败详情格式化为多行文本（每行“资产名 — 原因”）
+	 * @param Result 操作结果
+	 * @param MaxEntries 最多输出的条目数；超出部分以“其余 N 条”注明（传 MAX_int32 表示不限制）
+	 * @return 格式化文本；无失败时返回空字符串
+	 */
+	X_ASSETEDITOR_API FString FormatFailureDetails(const FX_RenameOperationResult& Result, int32 MaxEntries);
+}
 
 /**
  * 资产命名模式结构体（支持变体命名）

@@ -8,7 +8,7 @@
 
 // 简单类名前缀测试
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_GetCorrectPrefix_SimpleClass,
-    "XTools.资产命名.GetCorrectPrefix.简单类名",
+    "XTools.AssetNaming.GetCorrectPrefix.SimpleClass",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FXAssetNaming_GetCorrectPrefix_SimpleClass::RunTest(const FString& Parameters)
@@ -43,7 +43,7 @@ bool FXAssetNaming_GetCorrectPrefix_SimpleClass::RunTest(const FString& Paramete
 
 // 数字后缀规范化测试
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_NormalizeNumericSuffix,
-    "XTools.资产命名.NormalizeNumericSuffix",
+    "XTools.AssetNaming.NormalizeNumericSuffix",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FXAssetNaming_NormalizeNumericSuffix::RunTest(const FString& Parameters)
@@ -61,6 +61,72 @@ bool FXAssetNaming_NormalizeNumericSuffix::RunTest(const FString& Parameters)
     TestEqual(TEXT("没有数字后缀的名称应保持不变"),
         Manager.NormalizeNumericSuffix(TEXT("BP_角色")),
         FString(TEXT("BP_角色")));
+
+    return true;
+}
+
+// 失败记录 helper：计数、旧名称数组、详情数组必须同步写入
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_RecordRenameFailureSyncsAllFields,
+    "XTools.AssetNaming.RecordRenameFailure.SyncsAllFields",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXAssetNaming_RecordRenameFailureSyncsAllFields::RunTest(const FString& Parameters)
+{
+    FX_RenameOperationResult Result;
+
+    XAssetNaming::RecordRenameFailure(Result, TEXT("SM_Chair"), TEXT("无法确定资产前缀"));
+    XAssetNaming::RecordRenameFailure(Result, TEXT("BP_Door"), TEXT("资产对象为空"));
+    XAssetNaming::RecordRenameFailure(Result, TEXT("M_Wood"), TEXT("主路径重命名失败"));
+
+    TestEqual(TEXT("失败计数应为3"), Result.FailedCount, 3);
+    TestEqual(TEXT("旧名称数组应同步记录3条"), Result.FailedRenames.Num(), 3);
+    TestEqual(TEXT("详情数组应同步记录3条"), Result.FailedDetails.Num(), 3);
+
+    TestEqual(TEXT("第1条名称应写入旧数组"), Result.FailedRenames[0], FString(TEXT("SM_Chair")));
+    TestEqual(TEXT("第1条详情名称应一致"), Result.FailedDetails[0].AssetName, FString(TEXT("SM_Chair")));
+    TestEqual(TEXT("第1条详情原因应保留"), Result.FailedDetails[0].Reason, FString(TEXT("无法确定资产前缀")));
+    TestEqual(TEXT("第2条详情原因应可区分"), Result.FailedDetails[1].Reason, FString(TEXT("资产对象为空")));
+    TestEqual(TEXT("第3条详情原因应可区分"), Result.FailedDetails[2].Reason, FString(TEXT("主路径重命名失败")));
+
+    // 旧数组与详情数组的名称必须逐条一致（兼容性契约）
+    for (int32 Index = 0; Index < Result.FailedRenames.Num(); ++Index)
+    {
+        TestEqual(TEXT("旧数组与详情数组名称应逐条一致"),
+            Result.FailedRenames[Index], Result.FailedDetails[Index].AssetName);
+    }
+
+    return true;
+}
+
+// 失败详情格式化：输出必须包含资产名与原因，并在超限时注明剩余数量
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_FormatFailureDetailsContainsNameAndReason,
+    "XTools.AssetNaming.FormatFailureDetails.NameReasonAndTruncation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXAssetNaming_FormatFailureDetailsContainsNameAndReason::RunTest(const FString& Parameters)
+{
+    FX_RenameOperationResult EmptyResult;
+    TestTrue(TEXT("无失败时格式化结果应为空字符串"),
+        XAssetNaming::FormatFailureDetails(EmptyResult, 50).IsEmpty());
+
+    FX_RenameOperationResult Result;
+    XAssetNaming::RecordRenameFailure(Result, TEXT("SM_Chair"), TEXT("无法确定资产前缀"));
+    XAssetNaming::RecordRenameFailure(Result, TEXT("BP_Door"), TEXT("资产对象为空"));
+    XAssetNaming::RecordRenameFailure(Result, TEXT("M_Wood"), TEXT("主路径重命名失败"));
+
+    const FString FullText = XAssetNaming::FormatFailureDetails(Result, MAX_int32);
+    TestTrue(TEXT("完整输出应包含第1条资产名"), FullText.Contains(TEXT("SM_Chair")));
+    TestTrue(TEXT("完整输出应包含第1条原因"), FullText.Contains(TEXT("无法确定资产前缀")));
+    TestTrue(TEXT("完整输出应包含第2条资产名"), FullText.Contains(TEXT("BP_Door")));
+    TestTrue(TEXT("完整输出应包含第2条原因"), FullText.Contains(TEXT("资产对象为空")));
+    TestTrue(TEXT("完整输出应包含第3条资产名"), FullText.Contains(TEXT("M_Wood")));
+    TestTrue(TEXT("完整输出应包含第3条原因"), FullText.Contains(TEXT("主路径重命名失败")));
+    TestFalse(TEXT("未截断时不应出现剩余提示"), FullText.Contains(TEXT("其余")));
+
+    const FString TruncatedText = XAssetNaming::FormatFailureDetails(Result, 2);
+    TestTrue(TEXT("截断输出应包含前2条"), TruncatedText.Contains(TEXT("SM_Chair")) && TruncatedText.Contains(TEXT("BP_Door")));
+    TestFalse(TEXT("截断输出不应包含第3条资产名"), TruncatedText.Contains(TEXT("M_Wood")));
+    TestTrue(TEXT("截断输出应注明剩余1条"), TruncatedText.Contains(TEXT("其余 1 条")));
 
     return true;
 }
