@@ -248,10 +248,84 @@ bool FRandomShuffle_PRDWorldCleanupLifecycleIsDeterministic::RunTest(const FStri
 	TestEqual(TEXT("自动清理后相同随机流的PRD序列应可重现"), FirstSequence, SecondSequence);
 
 	// 回归：显式 ClearAllPRDStates 保持原有行为（状态与统计同时重置）
+        URandomShuffleArrayLibrary::ClearAllPRDStates();
+        Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+        TestEqual(TEXT("显式清理后状态映射应为空"), Stats.StateMapSize, 0);
+        TestEqual(TEXT("显式清理后统计应重置"), Stats.TotalCalls, 0);
+
+        return true;
+}
+
+// ---------------------------------------------------------------------------
+// 状态映射满表（MaxStateMapSize=1000）后的确定性回归：
+// 1) 填满 1000 个不同 StateID 后映射不再增长；
+// 2) 自动路径第 1001 个新 ID：现有 Error 日志触发、写入被丢弃、映射不增长；
+// 3) Advanced 写路径：满表丢弃 + 同一 StateID 的去重 Warning 只打一次；
+// 4) 清理后映射与去重集合一并复位，Advanced 恢复正常记录。
+// ---------------------------------------------------------------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRandomShuffle_PRDStateMapCapIsEnforced,
+	"XTools.RandomShuffles.PRD.StateMapCapIsEnforced",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRandomShuffle_PRDStateMapCapIsEnforced::RunTest(const FString& Parameters)
+{
 	URandomShuffleArrayLibrary::ClearAllPRDStates();
+
+	// 1) 自动路径填满 1000 个不同 StateID（每个均为正常插入，无满表日志）
+	{
+		FRandomStream FillStream(20260821);
+		for (int32 Index = 0; Index < 1000; ++Index)
+		{
+			URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(0.3f, FillStream,
+				FString::Printf(TEXT("RandomShuffleTest.FullMap.%d"), Index));
+		}
+	}
+	FPRDPerformanceStats Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("填满上限后状态映射应为1000"), Stats.StateMapSize, 1000);
+
+	// 2) 自动路径第 1001 个新 StateID：GetOrCreate 的既有 Error 触发，写入被丢弃，映射不增长
+	AddExpectedError(TEXT("PRD状态映射已达到最大大小限制"));
+	FRandomStream OverflowStream(1);
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(0.3f, OverflowStream,
+		TEXT("RandomShuffleTest.FullMap.OverflowAuto"));
 	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
-	TestEqual(TEXT("显式清理后状态映射应为空"), Stats.StateMapSize, 0);
-	TestEqual(TEXT("显式清理后统计应重置"), Stats.TotalCalls, 0);
+	TestEqual(TEXT("满表后自动路径不应新增状态"), Stats.StateMapSize, 1000);
+
+	// 3) Advanced 写路径：满表丢弃并打去重 Warning；判定本身不受满表影响（P=1 必触发）。
+	// 预期日志"恰好1次"一次性覆盖三个断言点：满表首调打1条、同ID去重不再打、清理后恢复不打
+	// （UE 5.3 的 Occurrences==0 语义是"至少一次"，零次断言不可用，故采用计数法）
+	AddExpectedMessage(TEXT("无法记录状态 'RandomShuffleTest.FullMap.OverflowAdvanced'"),
+		ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1);
+	int32 FailureCount = 0;
+	float ActualChance = 0.0f;
+	FRandomStream AdvancedStream(1);
+	const bool bAdvancedResult = URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(
+		1.0f, AdvancedStream, FailureCount, ActualChance,
+		TEXT("RandomShuffleTest.FullMap.OverflowAdvanced"), 5);
+	TestTrue(TEXT("满表不影响Advanced判定结果"), bAdvancedResult);
+	TestEqual(TEXT("满表不影响Advanced失败次数推进"), FailureCount, 0);
+	TestEqual(TEXT("满表不影响Advanced概率输出"), ActualChance, 1.0f);
+	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("满表后Advanced路径不应新增状态"), Stats.StateMapSize, 1000);
+
+	// 同一 StateID 再次调用：去重后不再打 Warning（计入上方"恰好1次"预期）
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(
+		1.0f, AdvancedStream, FailureCount, ActualChance,
+		TEXT("RandomShuffleTest.FullMap.OverflowAdvanced"), 5);
+	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("去重不影响满表丢弃行为"), Stats.StateMapSize, 1000);
+
+	// 4) 清理后映射与去重集合一并复位，Advanced 恢复正常记录（无Warning，仍计入"恰好1次"预期）
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(
+		1.0f, AdvancedStream, FailureCount, ActualChance,
+		TEXT("RandomShuffleTest.FullMap.OverflowAdvanced"), 5);
+	Stats = URandomShuffleArrayLibrary::GetPRDPerformanceStats();
+	TestEqual(TEXT("清理后Advanced应恢复状态记录"), Stats.StateMapSize, 1);
+
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
 
 	return true;
 }

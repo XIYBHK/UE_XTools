@@ -526,6 +526,7 @@ namespace RandomShuffles
 // 静态成员定义 - 线程安全的PRD状态管理
 TMap<FName, int32> URandomShuffleArrayLibrary::PRDStateMap;
 FCriticalSection URandomShuffleArrayLibrary::PRDStateLock;
+TSet<FName> URandomShuffleArrayLibrary::FullMapWarnedStateIDs;
 FPRDPerformanceStats URandomShuffleArrayLibrary::PerformanceStats;
 FCriticalSection URandomShuffleArrayLibrary::PerformanceStatsLock;
 
@@ -561,7 +562,7 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolAdvanced(float BaseChance, int3
     // 高级模式仍由调用者控制输入失败数，这里仅按 StateID 记录最新状态，便于系统隔离和观测
     if (!StateID.IsEmpty())
     {
-        SetPRDStateValue(StateID, OutFailureCount);
+        SetPRDStateValue(StateID, OutFailureCount, true);
     }
     UpdatePerformanceStats(OutFailureCount);
 
@@ -597,7 +598,7 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(float BaseCh
     // 高级模式仍由调用者控制输入失败数，这里仅按 StateID 记录最新状态，便于系统隔离和观测
     if (!StateID.IsEmpty())
     {
-        SetPRDStateValue(StateID, OutFailureCount);
+        SetPRDStateValue(StateID, OutFailureCount, true);
     }
     UpdatePerformanceStats(OutFailureCount);
 
@@ -639,7 +640,7 @@ int32 URandomShuffleArrayLibrary::GetOrCreatePRDStateValue(const FString& StateI
     return 0;
 }
 
-void URandomShuffleArrayLibrary::SetPRDStateValue(const FString& StateID, int32 FailureCount)
+void URandomShuffleArrayLibrary::SetPRDStateValue(const FString& StateID, int32 FailureCount, bool bLogWhenFull)
 {
     FScopeLock Lock(&PRDStateLock);
 
@@ -654,6 +655,28 @@ void URandomShuffleArrayLibrary::SetPRDStateValue(const FString& StateID, int32 
     if (PRDStateMap.Num() < RandomShuffles::Config::MaxStateMapSize)
     {
         PRDStateMap.Add(StateKey, FMath::Clamp(FailureCount, 0, RandomShuffles::Config::MaxFailureCount));
+        return;
+    }
+
+    // 映射已满：写入被丢弃（判定本身不受影响，调用方自带失败次数）。
+    // 仅Advanced路径（bLogWhenFull）打日志；自动路径已由GetOrCreatePRDStateValue的Error覆盖，避免重复。
+    // 按StateID去重且总量有界（MaxFullMapWarnedIDs），动态StateID场景下不会无界刷屏；世界清理时随映射复位。
+    if (bLogWhenFull && FullMapWarnedStateIDs.Num() < RandomShuffles::Config::MaxFullMapWarnedIDs
+        && !FullMapWarnedStateIDs.Contains(StateKey))
+    {
+        FullMapWarnedStateIDs.Add(StateKey);
+        if (FullMapWarnedStateIDs.Num() == RandomShuffles::Config::MaxFullMapWarnedIDs)
+        {
+            UE_LOG(LogRandomShuffle, Warning,
+                TEXT("PRD状态映射已满：已有 %d 个不同StateID的写入被拒绝，后续不再逐条提示。请检查是否使用了过多动态StateID，或调用清理接口释放状态。"),
+                RandomShuffles::Config::MaxFullMapWarnedIDs);
+        }
+        else
+        {
+            UE_LOG(LogRandomShuffle, Warning,
+                TEXT("PRD状态映射已达到上限 (%d)，无法记录状态 '%s' 的失败次数；本次判定不受影响，该状态不会被跟踪。"),
+                RandomShuffles::Config::MaxStateMapSize, *StateID);
+        }
     }
 }
 
@@ -681,6 +704,7 @@ void URandomShuffleArrayLibrary::ClearPRDStatesForWorldTeardown()
 {
     FScopeLock Lock(&PRDStateLock);
     PRDStateMap.Empty();
+    FullMapWarnedStateIDs.Empty();
 }
 
 namespace RandomShuffles

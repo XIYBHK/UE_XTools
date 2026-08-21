@@ -25,7 +25,10 @@ namespace RandomShuffles
 
         // 性能配置
         constexpr int32 DefaultStateMapReserve = 64;  // 默认状态映射预分配大小
-        constexpr int32 MaxStateMapSize = 1000;       // 状态映射最大大小
+        // 状态映射最大大小；满表后新StateID读取返回0（PRD退化为首试概率）、写入被丢弃（详见各函数日志）
+        constexpr int32 MaxStateMapSize = 1000;
+        // 满表丢弃日志按StateID去重，去重集合上限；达到后打一条总结并静默，避免动态StateID刷屏
+        constexpr int32 MaxFullMapWarnedIDs = 100;
     }
 
     /**
@@ -209,7 +212,7 @@ public:
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
 		DisplayName = "PRD随机判定",
-		ToolTip="使用DOTA2的PRD算法生成布尔值, 让随机事件更加均衡, 避免运气过好或过差. \n• 自动管理状态, 开箱即用 \n• 使用StateID区分不同系统(如'暴击'、'技能触发'、'掉落') \n• 适合大多数使用场景"))
+		ToolTip="使用DOTA2的PRD算法生成布尔值, 让随机事件更加均衡, 避免运气过好或过差. \n• 自动管理状态, 开箱即用 \n• 使用StateID区分不同系统(如'暴击'、'技能触发'、'掉落') \n• 适合大多数使用场景 \n• 状态映射上限1000个StateID, 超出后新StateID按首试概率计算(详见日志)"))
 	static bool PseudoRandomBool(
 		UPARAM(DisplayName="触发概率") float BaseChance,
 		UPARAM(DisplayName="状态标识") FString StateID = TEXT("Default"));
@@ -231,7 +234,7 @@ public:
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
 		DisplayName = "PRD随机判定(完全控制)",
-		ToolTip="使用DOTA2的PRD算法生成布尔值, 提供完全的状态控制. \n• 手动控制失败次数输入输出 \n• 可实现自定义状态管理逻辑 \n• 提供调试信息(当前概率、更新失败数) \n• 适合复杂PRD应用和精确控制场景"))
+		ToolTip="使用DOTA2的PRD算法生成布尔值, 提供完全的状态控制. \n• 手动控制失败次数输入输出 \n• 可实现自定义状态管理逻辑 \n• 提供调试信息(当前概率、更新失败数) \n• 适合复杂PRD应用和精确控制场景 \n• StateID仅用于状态记录/观测, 映射满1000时写入被忽略(详见日志), 判定不受影响"))
 	static bool PseudoRandomBoolAdvanced(
 		UPARAM(DisplayName="触发概率") float BaseChance,
 		UPARAM(DisplayName="更新失败数") int32& OutFailureCount,
@@ -253,7 +256,7 @@ public:
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
 		DisplayName = "流送PRD随机判定",
-		ToolTip="使用DOTA2的PRD算法和指定随机流生成布尔值, 让随机事件更加均衡. \n• 自动管理状态, 开箱即用 \n• 支持可重现的随机序列 \n• 使用StateID区分不同系统 \n• 适合需要确定性随机的场景"))
+		ToolTip="使用DOTA2的PRD算法和指定随机流生成布尔值, 让随机事件更加均衡. \n• 自动管理状态, 开箱即用 \n• 支持可重现的随机序列 \n• 使用StateID区分不同系统 \n• 适合需要确定性随机的场景 \n• 状态映射上限1000个StateID, 超出后新StateID按首试概率计算(详见日志)"))
 	static bool PseudoRandomBoolFromStream(
 		UPARAM(DisplayName="触发概率") float BaseChance,
 		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream,
@@ -277,7 +280,7 @@ public:
 	*/
 	UFUNCTION(BlueprintCallable, Category="XTools|随机", meta=(
 		DisplayName = "流送PRD随机判定(完全控制)",
-		ToolTip="使用DOTA2的PRD算法和指定随机流生成布尔值, 提供完全的状态控制. \n• 手动控制失败次数输入输出 \n• 支持可重现的随机序列 \n• 提供调试信息(当前概率、更新失败数) \n• 适合复杂PRD应用和确定性随机场景"))
+		ToolTip="使用DOTA2的PRD算法和指定随机流生成布尔值, 提供完全的状态控制. \n• 手动控制失败次数输入输出 \n• 支持可重现的随机序列 \n• 提供调试信息(当前概率、更新失败数) \n• 适合复杂PRD应用和确定性随机场景 \n• StateID仅用于状态记录/观测, 映射满1000时写入被忽略(详见日志), 判定不受影响"))
 	static bool PseudoRandomBoolFromStreamAdvanced(
 		UPARAM(DisplayName="触发概率") float BaseChance,
 		UPARAM(Ref, DisplayName="随机流") FRandomStream& Stream,
@@ -614,6 +617,9 @@ public:
 	static TMap<FName, int32> PRDStateMap;
 	static FCriticalSection PRDStateLock;
 
+	// 满表丢弃日志的StateID去重集合（与PRDStateMap同锁保护，上限MaxFullMapWarnedIDs，随世界清理复位）
+	static TSet<FName> FullMapWarnedStateIDs;
+
 	// 性能统计 - 独立的线程安全锁
 	static FPRDPerformanceStats PerformanceStats;
 	static FCriticalSection PerformanceStatsLock;
@@ -622,7 +628,8 @@ public:
 	static int32 GetOrCreatePRDStateValue(const FString& StateID);
 
 	// 更新PRD状态值 - 线程安全版本
-	static void SetPRDStateValue(const FString& StateID, int32 FailureCount);
+	// bLogWhenFull：映射满且StateID为新键时是否打去重Warning（仅Advanced路径传true；自动路径已由GetOrCreatePRDStateValue的Error覆盖）
+	static void SetPRDStateValue(const FString& StateID, int32 FailureCount, bool bLogWhenFull = false);
 
 	// 更新性能统计 - 线程安全版本
 	static void UpdatePerformanceStats(int32 FailureCount);
