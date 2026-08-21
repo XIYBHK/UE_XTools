@@ -44,11 +44,23 @@ namespace
 			static_cast<float>(Radius)));
 	}
 
-	struct FQueueSplineTargetNotification
+	/** RAII 派发守卫：构造置位、析构恢复进入前状态；嵌套调用返回时不清零外层仍在派发的状态 */
+	struct FScopedNotificationDispatch
 	{
-		FQueueSplineMemberHandle Handle;
-		TWeakObjectPtr<AActor> Actor;
-		FQueueSplineMoveTarget Target;
+		bool& bDispatching;
+		bool PreviousValue;
+
+		explicit FScopedNotificationDispatch(bool& InDispatching)
+			: bDispatching(InDispatching)
+			, PreviousValue(InDispatching)
+		{
+			bDispatching = true;
+		}
+
+		~FScopedNotificationDispatch()
+		{
+			bDispatching = PreviousValue;
+		}
 	};
 }
 
@@ -395,66 +407,84 @@ void UQueueSplineComponent::UpdateQueueTargets(float DeltaTime)
 	const double SafeDeltaTime = FMath::Max(static_cast<double>(DeltaTime), 0.0);
 	const float InterpSpeed = static_cast<float>(FMath::Max(Settings.OffsetReturnSpeed, 0.0));
 
-	TArray<FQueueSplineTargetNotification> Notifications;
-	Notifications.Reserve(Members.Num());
-	for (FQueueSplineMemberRuntime& Member : Members)
+	// 非重入调用复用成员缓冲（Reset 保留容量，摊销零分配）；
+	// 缓冲使用期间（快照填充到派发结束）的递归调用改用独立局部数组，不覆盖外层快照
+	TArray<FQueueSplineTargetNotification> ReentrantNotifications;
+	TArray<FQueueSplineTargetNotification>* NotificationsPtr = &NotificationBuffer;
+	if (bIsDispatchingNotifications)
 	{
-		AActor* Actor = Member.Actor.Get();
-		if (!IsValid(Actor))
-		{
-			continue;
-		}
-
-		Member.CurrentRightOffset = static_cast<double>(FMath::FInterpTo(
-			static_cast<float>(Member.CurrentRightOffset),
-			0.0f,
-			static_cast<float>(SafeDeltaTime),
-			InterpSpeed));
-
-		const double ProjectedDistance = GetActorSplineDistance(Actor);
-		if (!Member.bHasSplineDistance)
-		{
-			Member.CurrentSplineDistance = ProjectedDistance;
-			Member.bHasSplineDistance = true;
-		}
-		else if (Settings.bHeadTowardSplineEnd)
-		{
-			Member.CurrentSplineDistance = FMath::Max(Member.CurrentSplineDistance, ProjectedDistance);
-		}
-		else
-		{
-			Member.CurrentSplineDistance = FMath::Min(Member.CurrentSplineDistance, ProjectedDistance);
-		}
-
-		FQueueSplineMoveTarget Target = BuildMoveTarget(Member);
-		Member.bReachedSlot = Target.bReachedSlot;
-
-		FQueueSplineTargetNotification& Notification = Notifications.AddDefaulted_GetRef();
-		Notification.Handle = Member.Handle;
-		Notification.Actor = Actor;
-		Notification.Target = Target;
+		NotificationsPtr = &ReentrantNotifications;
+		ReentrantNotifications.Reserve(Members.Num());
 	}
-	RefreshMovementPauseStates();
-
-	for (const FQueueSplineTargetNotification& Notification : Notifications)
+	else
 	{
-		int32 MemberIndex = INDEX_NONE;
-		if (!IsHandleCurrent(Notification.Handle, MemberIndex))
-		{
-			continue;
-		}
+		NotificationBuffer.Reset();
+	}
+	TArray<FQueueSplineTargetNotification>& Notifications = *NotificationsPtr;
 
-		AActor* Actor = Notification.Actor.Get();
-		if (!IsValid(Actor))
-		{
-			continue;
-		}
+	{
+		// 守卫覆盖快照填充与派发全程：期间任何重入（含移动组件事件回调）都走局部数组
+		FScopedNotificationDispatch DispatchGuard(bIsDispatchingNotifications);
 
-		if (bAutoPushToMovementComponent)
+		for (FQueueSplineMemberRuntime& Member : Members)
 		{
-			PushTargetToMovementComponent(Actor, Notification.Target);
+			AActor* Actor = Member.Actor.Get();
+			if (!IsValid(Actor))
+			{
+				continue;
+			}
+
+			Member.CurrentRightOffset = static_cast<double>(FMath::FInterpTo(
+				static_cast<float>(Member.CurrentRightOffset),
+				0.0f,
+				static_cast<float>(SafeDeltaTime),
+				InterpSpeed));
+
+			const double ProjectedDistance = GetActorSplineDistance(Actor);
+			if (!Member.bHasSplineDistance)
+			{
+				Member.CurrentSplineDistance = ProjectedDistance;
+				Member.bHasSplineDistance = true;
+			}
+			else if (Settings.bHeadTowardSplineEnd)
+			{
+				Member.CurrentSplineDistance = FMath::Max(Member.CurrentSplineDistance, ProjectedDistance);
+			}
+			else
+			{
+				Member.CurrentSplineDistance = FMath::Min(Member.CurrentSplineDistance, ProjectedDistance);
+			}
+
+			FQueueSplineMoveTarget Target = BuildMoveTarget(Member);
+			Member.bReachedSlot = Target.bReachedSlot;
+
+			FQueueSplineTargetNotification& Notification = Notifications.AddDefaulted_GetRef();
+			Notification.Handle = Member.Handle;
+			Notification.Actor = Actor;
+			Notification.Target = Target;
 		}
-		OnMemberTargetUpdated.Broadcast(Notification.Handle, Notification.Target);
+		RefreshMovementPauseStates();
+
+		for (const FQueueSplineTargetNotification& Notification : Notifications)
+		{
+			int32 MemberIndex = INDEX_NONE;
+			if (!IsHandleCurrent(Notification.Handle, MemberIndex))
+			{
+				continue;
+			}
+
+			AActor* Actor = Notification.Actor.Get();
+			if (!IsValid(Actor))
+			{
+				continue;
+			}
+
+			if (bAutoPushToMovementComponent)
+			{
+				PushTargetToMovementComponent(Actor, Notification.Target);
+			}
+			OnMemberTargetUpdated.Broadcast(Notification.Handle, Notification.Target);
+		}
 	}
 
 	if (bDrawDebug)

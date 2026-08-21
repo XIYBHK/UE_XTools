@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "QueueSplineTypes.h"
+#include "UObject/WeakObjectPtr.h"
 #include "QueueSplineComponent.generated.h"
 
 class UQueueSplineMovementComponent;
@@ -181,6 +182,26 @@ private:
 	bool bServiceLocked = false;
 	bool bIsEndingPlay = false;
 	FQueueSplineMemberHandle CurrentServingHandle;
+
+	/** 目标更新通知快照条目：先生成快照，再逐条广播；广播回调期间成员可增删，派发前按句柄复查有效性 */
+	struct FQueueSplineTargetNotification
+	{
+		FQueueSplineMemberHandle Handle;
+		TWeakObjectPtr<AActor> Actor;
+		FQueueSplineMoveTarget Target;
+	};
+
+	/** 通知快照缓冲：非重入调用以 Reset 复用容量，避免每次更新重新分配 */
+	TArray<FQueueSplineTargetNotification> NotificationBuffer;
+
+	/** 通知缓冲使用期间（快照填充到派发结束）为真：此期间的递归 UpdateQueueTargets 改用独立局部数组，不覆盖外层快照 */
+	bool bIsDispatchingNotifications = false;
+
+	/** 测试访问授权：自动化测试读取通知缓冲状态验证复用与重入隔离（编译期授权，不新增运行时 API） */
+	friend class FQueueSplineNotificationPerMemberTest;
+	friend class FQueueSplineNotificationReentrancyTest;
+	friend class FQueueSplineNotificationNestedReturnTest;
+	friend class FQueueSplineNotificationSkipInvalidTest;
 
 	void RefreshHandleMap();
 	void CleanupInvalidMembers();

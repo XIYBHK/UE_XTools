@@ -7,7 +7,9 @@
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
 #include "QueueSplineMovementComponent.h"
+#include "QueueSplineTestObjects.h"
 #include "UObject/Package.h"
+#include "UObject/ScriptDelegates.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FQueueSplinePlanarArrivalTest,
@@ -325,6 +327,260 @@ bool FQueueSplineInitialSpawnAutoBindTest::RunTest(const FString& Parameters)
 	AActor* EmptyOwner = NewObject<AActor>(GetTransientPackage());
 	UQueueSplineComponent* EmptyQueue = NewObject<UQueueSplineComponent>(EmptyOwner);
 	TestEqual(TEXT("无样条可用时应返回空数组并告警"), EmptyQueue->GenerateInitialSpawnTransforms(3).Num(), 0);
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// 通知缓冲复用与重入隔离（分配优化回归测试）
+//
+// 订阅方式：使用 UQueueSplineTargetEventRecorder（见 QueueSplineTestObjects.h），
+// 其 UFUNCTION 签名与 FQueueSplineMemberTargetEvent 完全一致（Handle + Target），
+// 绑定后走标准反射调用路径，不依赖参数布局巧合。
+// 广播次数以通知快照条数与 Recorder 记录序列等价验证（派发循环对每条有效通知恰好广播一次）。
+// ---------------------------------------------------------------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineNotificationPerMemberTest,
+	"XTools.QueueSpline.Component.NotificationPerMember",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineNotificationPerMemberTest::RunTest(const FString& Parameters)
+{
+	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
+
+	TArray<FVector> SplinePoints;
+	SplinePoints.Add(FVector::ZeroVector);
+	SplinePoints.Add(FVector(1000.0, 0.0, 0.0));
+	Spline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::Local);
+	Queue->SplineComponent = Spline;
+	Queue->Settings.SideOffset = 0.0;
+	Queue->Settings.SideJitter = 0.0;
+	Queue->Settings.DistanceJitter = 0.0;
+	Queue->bAutoPushToMovementComponent = false;
+
+	AActor* Members[3];
+	FQueueSplineMemberHandle Handles[3];
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		Members[Index] = NewObject<AActor>(GetTransientPackage());
+		USceneComponent* Root = NewObject<USceneComponent>(Members[Index]);
+		Members[Index]->SetRootComponent(Root);
+		TestTrue(TEXT("应成功注册通知测试成员"), Queue->RegisterQueueMember(Members[Index], Handles[Index]));
+	}
+
+	Queue->UpdateQueueTargets(0.0f);
+	TestEqual(TEXT("第一次更新应为每个有效成员生成一条通知"), Queue->NotificationBuffer.Num(), 3);
+
+	FQueueSplineMoveTarget Target;
+	TestTrue(TEXT("应能读取第一位成员目标"), Queue->GetQueueMoveTarget(Handles[0], Target));
+	TestEqual(TEXT("首次目标应位于前视距离"), Target.Slot.Distance, 150.0);
+
+	// 移动成员后再次更新，验证通知内容每次重新计算而非陈旧复用
+	Members[0]->GetRootComponent()->SetWorldLocation(FVector(100.0, 0.0, 0.0));
+	Queue->UpdateQueueTargets(0.0f);
+	TestEqual(TEXT("第二次更新仍应为每个有效成员生成一条通知"), Queue->NotificationBuffer.Num(), 3);
+	TestTrue(TEXT("应能再次读取第一位成员目标"), Queue->GetQueueMoveTarget(Handles[0], Target));
+	TestEqual(TEXT("移动后目标距离应随位置刷新"), Target.Slot.Distance, 250.0);
+	TestEqual(TEXT("两次更新不应影响成员数量"), Queue->GetQueueMemberCount(), 3);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineNotificationReentrancyTest,
+	"XTools.QueueSpline.Component.NotificationReentrancy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineNotificationReentrancyTest::RunTest(const FString& Parameters)
+{
+	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
+
+	TArray<FVector> SplinePoints;
+	SplinePoints.Add(FVector::ZeroVector);
+	SplinePoints.Add(FVector(1000.0, 0.0, 0.0));
+	Spline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::Local);
+	Queue->SplineComponent = Spline;
+	Queue->Settings.SideOffset = 0.0;
+	Queue->Settings.SideJitter = 0.0;
+	Queue->Settings.DistanceJitter = 0.0;
+	Queue->bAutoPushToMovementComponent = false;
+
+	AActor* Members[3];
+	FQueueSplineMemberHandle Handles[3];
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		Members[Index] = NewObject<AActor>(GetTransientPackage());
+		USceneComponent* Root = NewObject<USceneComponent>(Members[Index]);
+		Members[Index]->SetRootComponent(Root);
+		TestTrue(TEXT("应成功注册递归测试成员"), Queue->RegisterQueueMember(Members[Index], Handles[Index]));
+	}
+
+	// 每次回调注销当前广播成员（成员数递减构成递归终止条件），外层回调再递归更新
+	UQueueSplineTargetEventRecorder* Recorder = NewObject<UQueueSplineTargetEventRecorder>();
+	Recorder->Queue = Queue;
+	Recorder->bUnregisterCurrentOnEveryCallback = true;
+	Recorder->bReenterOnOuterCallback = true;
+
+	FScriptDelegate Delegate;
+	Delegate.BindUFunction(Recorder, TEXT("HandleTargetUpdated"));
+	Queue->OnMemberTargetUpdated.Add(Delegate);
+
+	Queue->UpdateQueueTargets(0.0f);
+
+	TestEqual(TEXT("递归广播链应完成全部成员注销"), Queue->GetQueueMemberCount(), 0);
+	TestEqual(TEXT("递归调用不应覆盖外层通知快照"), Queue->NotificationBuffer.Num(), 3);
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const FQueueSplineMemberHandle& Expected = Handles[Index];
+		const bool bHandleInSnapshot = Queue->NotificationBuffer.ContainsByPredicate(
+			[&Expected](const UQueueSplineComponent::FQueueSplineTargetNotification& Notification)
+			{
+				return Notification.Handle == Expected;
+			});
+		TestTrue(TEXT("外层通知快照应保留全部注册句柄"), bHandleInSnapshot);
+	}
+	TestEqual(TEXT("递归链应按成员顺序各广播一次"), Recorder->ReceivedHandles.Num(), 3);
+	if (Recorder->ReceivedHandles.Num() == 3)
+	{
+		TestTrue(TEXT("递归链广播顺序应保持成员顺序"), Recorder->ReceivedHandles[0] == Handles[0]
+			&& Recorder->ReceivedHandles[1] == Handles[1]
+			&& Recorder->ReceivedHandles[2] == Handles[2]);
+	}
+
+	// 递归结束后守卫应已恢复，后续更新走正常缓冲路径
+	Queue->UpdateQueueTargets(0.0f);
+	TestEqual(TEXT("守卫恢复后空队列更新不应崩溃"), Queue->GetQueueMemberCount(), 0);
+
+	return true;
+}
+
+// 专项回归：嵌套 UpdateQueueTargets 返回后，外层派发继续执行有效回调并再次重入。
+// 若派发守卫在嵌套返回时错误清零派发标志（而非恢复进入前状态），
+// 外层后续回调的重入会复用并覆盖外层正在遍历的通知缓冲，快照条数被内层数据替换。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineNotificationNestedReturnTest,
+	"XTools.QueueSpline.Component.NotificationNestedReturnReentrancy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineNotificationNestedReturnTest::RunTest(const FString& Parameters)
+{
+	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
+
+	TArray<FVector> SplinePoints;
+	SplinePoints.Add(FVector::ZeroVector);
+	SplinePoints.Add(FVector(1000.0, 0.0, 0.0));
+	Spline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::Local);
+	Queue->SplineComponent = Spline;
+	Queue->Settings.SideOffset = 0.0;
+	Queue->Settings.SideJitter = 0.0;
+	Queue->Settings.DistanceJitter = 0.0;
+	Queue->bAutoPushToMovementComponent = false;
+
+	AActor* Members[4];
+	FQueueSplineMemberHandle Handles[4];
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		Members[Index] = NewObject<AActor>(GetTransientPackage());
+		USceneComponent* Root = NewObject<USceneComponent>(Members[Index]);
+		Members[Index]->SetRootComponent(Root);
+		TestTrue(TEXT("应成功注册嵌套返回测试成员"), Queue->RegisterQueueMember(Members[Index], Handles[Index]));
+	}
+
+	// 外层回调重入；首个外层回调注销成员 D，使内层快照（3 条）与外层快照（4 条）长度不同：
+	// 守卫若在嵌套返回时清零标志，外层后续重入会 Reset 成员缓冲并以 3 条内层数据覆盖外层 4 条快照
+	UQueueSplineTargetEventRecorder* Recorder = NewObject<UQueueSplineTargetEventRecorder>();
+	Recorder->Queue = Queue;
+	Recorder->bReenterOnOuterCallback = true;
+	Recorder->HandleToRemoveOnFirstOuter = Handles[3];
+
+	FScriptDelegate Delegate;
+	Delegate.BindUFunction(Recorder, TEXT("HandleTargetUpdated"));
+	Queue->OnMemberTargetUpdated.Add(Delegate);
+
+	Queue->UpdateQueueTargets(0.0f);
+
+	TestEqual(TEXT("首个外层回调应注销注入成员 D"), Queue->GetQueueMemberCount(), 3);
+	// 决定性断言：外层快照必须保持 4 条。守卫 bug 版本会被嵌套返回后的外层重入覆盖成内层的 3 条
+	TestEqual(TEXT("嵌套返回后的外层重入不得覆盖外层通知快照"), Queue->NotificationBuffer.Num(), 4);
+
+	// 精确广播序列：外层按 [A,B,C] 各触发一次，每次重入内层完整广播当轮 3 名成员；D 已注销不广播
+	TestEqual(TEXT("广播序列条数应符合嵌套返回推演"), Recorder->ReceivedHandles.Num(), 12);
+	if (Recorder->ReceivedHandles.Num() == 12)
+	{
+		const FQueueSplineMemberHandle ExpectedSequence[] = {
+			Handles[0],
+			Handles[0], Handles[1], Handles[2],
+			Handles[1],
+			Handles[0], Handles[1], Handles[2],
+			Handles[2],
+			Handles[0], Handles[1], Handles[2],
+		};
+		for (int32 Index = 0; Index < 12; ++Index)
+		{
+			TestTrue(TEXT("嵌套返回场景广播序列应与推演一致"),
+				Recorder->ReceivedHandles[Index] == ExpectedSequence[Index]);
+		}
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineNotificationSkipInvalidTest,
+	"XTools.QueueSpline.Component.NotificationSkipsUnregistered",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineNotificationSkipInvalidTest::RunTest(const FString& Parameters)
+{
+	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
+
+	TArray<FVector> SplinePoints;
+	SplinePoints.Add(FVector::ZeroVector);
+	SplinePoints.Add(FVector(1000.0, 0.0, 0.0));
+	Spline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::Local);
+	Queue->SplineComponent = Spline;
+	Queue->Settings.SideOffset = 0.0;
+	Queue->Settings.SideJitter = 0.0;
+	Queue->Settings.DistanceJitter = 0.0;
+	Queue->bAutoPushToMovementComponent = false;
+
+	AActor* Members[3];
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		Members[Index] = NewObject<AActor>(GetTransientPackage());
+		USceneComponent* Root = NewObject<USceneComponent>(Members[Index]);
+		Members[Index]->SetRootComponent(Root);
+		FQueueSplineMemberHandle Handle;
+		TestTrue(TEXT("应成功注册跳过测试成员"), Queue->RegisterQueueMember(Members[Index], Handle));
+	}
+
+	// 广播回调中清空全部成员：后续快照通知的句柄复查应失败并被安全跳过，不崩溃
+	UQueueSplineTargetEventRecorder* Recorder = NewObject<UQueueSplineTargetEventRecorder>();
+	Recorder->Queue = Queue;
+	Recorder->bClearMembersOnEveryCallback = true;
+
+	FScriptDelegate Delegate;
+	Delegate.BindUFunction(Recorder, TEXT("HandleTargetUpdated"));
+	Queue->OnMemberTargetUpdated.Add(Delegate);
+
+	Queue->UpdateQueueTargets(0.0f);
+
+	TestEqual(TEXT("派发中注销应清空全部成员"), Queue->GetQueueMemberCount(), 0);
+	TestEqual(TEXT("派发中注销不应破坏已生成的通知快照"), Queue->NotificationBuffer.Num(), 3);
+	TestEqual(TEXT("清空后其余成员的广播应被句柄复查跳过"), Recorder->ReceivedHandles.Num(), 1);
+
+	// 清空后的再次更新应安全返回（成员为空直接退出）
+	Queue->UpdateQueueTargets(0.0f);
+	TestEqual(TEXT("空队列再次更新应安全返回"), Queue->GetQueueMemberCount(), 0);
 
 	return true;
 }
