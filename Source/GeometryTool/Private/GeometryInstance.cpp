@@ -36,6 +36,11 @@ namespace GeometryToolInternal
 		       AxisY * UKismetMathLibrary::DegSin(AngleDeg) * Radius;
 	}
 
+	/**
+	 * 计算单个轴向上的采样层数：floor(Length / Distance) + 1，并钳制到 [1, MaxAxisSamples]。
+	 * 契约：至少返回 1 —— 当轴长度小于采样间距（Length < Distance）时，该轴只生成一个采样层，
+	 * 保证大间距下盒体采样不会出现零层。
+	 */
 	int32 CalcAxisSamples(float Length, float Distance)
 	{
 		return FMath::Clamp(FMath::FloorToInt(Length / Distance) + 1, 1, MaxAxisSamples);

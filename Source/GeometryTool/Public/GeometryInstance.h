@@ -122,7 +122,7 @@ protected:
 public:
     UFUNCTION(BlueprintCallable, Category = "XTools|几何工具|形状采样",
         meta = (DisplayName = "根据形状生成点阵",
-            ToolTip = "根据指定的形状组件（Box、Sphere、Capsule）生成点阵。\n\n参数：\nShape - 形状组件\nbIsAddInstance - 是否直接添加为实例\nDistance - 点间距\nNoise - 噪声强度\nbIsUseLookAtOrigin - 是否朝向原点\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放\nRotator_Delta - 旋转偏移量\nRandomSeed - 随机种子（同一种子生成结果可复现）\n\n返回值：\n生成的变换数组",
+            ToolTip = "根据指定的形状组件（Box、Sphere、Capsule）生成点阵。\n\n采样规则：\nDistance 会被限制为至少 1；对盒体采样，每个轴至少生成一个采样层；当某轴长度小于 Distance 时，该轴只生成一个采样层。\n\n参数：\nShape - 形状组件\nbIsAddInstance - 是否直接添加为实例\nDistance - 点间距\nNoise - 噪声强度\nbIsUseLookAtOrigin - 是否朝向原点\nRotator_A/B - 随机旋转范围\nbIsUseRandomRotation - 是否使用随机旋转\nSize_A/B - 随机缩放范围\nbIsUseRandomSize - 是否使用随机缩放\nRotator_Delta - 旋转偏移量\nRandomSeed - 随机种子（同一种子生成结果可复现）\n\n返回值：\n生成的变换数组",
             Keywords = "形状,采样,Box,Sphere,Capsule"))
     TArray<FTransform> GetPointsByShape(
         UPARAM(DisplayName="形状组件") UShapeComponent* Shape,
