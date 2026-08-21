@@ -18,6 +18,20 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogComponentTimelineRuntime, Log, All);
 
+namespace ComponentTimeline
+{
+	ETimelineBindDecision ResolveTimelineBindDecision(const UObject* CurrentValue)
+	{
+		if (CurrentValue == nullptr)
+		{
+			return ETimelineBindDecision::Create;
+		}
+
+		// IsValid 对已销毁/pending-kill（MarkAsGarbage）的对象返回 false
+		return IsValid(CurrentValue) ? ETimelineBindDecision::Skip : ETimelineBindDecision::RebindStale;
+	}
+}
+
 namespace
 {
 	/**
@@ -44,10 +58,18 @@ namespace
 		FObjectPropertyBase* Prop = FindFProperty<FObjectPropertyBase>(ComponentClass, TimelineTemplate->GetVariableName());
 		if (Prop)
 		{
-			// 检查TimelineComponent是否已创建，防止多次调用InitializeTimeLineComponent
+			// 重复初始化判定：有效时间轴幂等跳过；失效引用先清空再重建，
+			// 防止时间轴被显式销毁后属性仍持僵尸强引用而无法重建
 			UObject* CurrentValue = Prop->GetObjectPropertyValue_InContainer(BlueprintOwner);
-			if (CurrentValue) 
+			const ComponentTimeline::ETimelineBindDecision BindDecision = ComponentTimeline::ResolveTimelineBindDecision(CurrentValue);
+			if (BindDecision == ComponentTimeline::ETimelineBindDecision::Skip)
+			{
 				return;
+			}
+			if (BindDecision == ComponentTimeline::ETimelineBindDecision::RebindStale)
+			{
+				Prop->SetObjectPropertyValue_InContainer(BlueprintOwner, nullptr);
+			}
 		}
 
 		// 创建唯一的时间轴组件名称

@@ -12,6 +12,28 @@
 #include "ComponentTimelineLibrary.generated.h"
 
 /**
+ * 组件时间轴绑定判定
+ */
+namespace ComponentTimeline
+{
+	/** 时间轴重复初始化判定结果 */
+	enum class ETimelineBindDecision
+	{
+		Create,       // 属性为空：创建并绑定新时间轴
+		Skip,         // 属性持有有效时间轴：幂等跳过
+		RebindStale   // 属性持有失效/pending-kill 时间轴：先清空属性再重新创建绑定
+	};
+
+	/**
+	 * 时间轴重复初始化判定 - 纯函数，便于确定性测试。
+	 *
+	 * @param   CurrentValue    蓝图中 UTimelineComponent* 属性的当前值（可为空）
+	 * @return  空指针返回 Create；有效对象返回 Skip；已失效或 pending-kill 返回 RebindStale
+	 */
+	ETimelineBindDecision ResolveTimelineBindDecision(const UObject* CurrentValue);
+}
+
+/**
  * 组件时间轴功能库类
  * 包含了一系列静态函数，用于初始化和管理组件时间轴
  */
