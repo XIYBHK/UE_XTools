@@ -121,7 +121,7 @@ public:
 	    if (!MapTerm || !*MapTerm || !KeyTerm || !SubKeyTerm)
 	    {
 	        // 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-	        Context.MessageLog.Warning(*NSLOCTEXT("K2Node", "Error_InvalidTerminals", "引脚寄了").ToString(), Node);
+	        Context.MessageLog.Warning(*NSLOCTEXT("K2Node", "Error_InvalidTerminals", "映射节点编译失败：一个或多个必需引脚未正确连接或类型不匹配。请检查 Map、Key 和 Value 引脚连接。").ToString(), Node);
 	        return;
 	    }
 	    

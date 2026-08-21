@@ -4,8 +4,11 @@
 #include "BlueprintScreenshotToolCommandManager.h"
 #include "BlueprintScreenshotToolCommands.h"
 #include "BlueprintScreenshotToolHandler.h"
+#include "BlueprintEditorModule.h"
 #include "Interfaces/IMainFrameModule.h"
-#include "Toolkits/AssetEditorToolkit.h"
+#include "Misc/App.h"
+#include "Misc/CoreDelegates.h"
+#include "Modules/ModuleManager.h"
 
 void FBlueprintScreenshotToolCommandManager::RegisterCommands()
 {
@@ -53,10 +56,20 @@ void FBlueprintScreenshotToolCommandManager::MapCommands()
 
 void FBlueprintScreenshotToolCommandManager::RegisterToolbarExtension()
 {
-	auto ExtensibilityManager = FAssetEditorToolkit::GetSharedToolBarExtensibilityManager();
+	// Kismet 模块的 StartupModule 含 check(GEditor)（BlueprintEditorModule.cpp:202），
+	// 本模块为 Default 加载阶段，此时 GEditor 尚未创建，强制加载 Kismet 会导致引擎启动崩溃；
+	// 延迟到 OnPostEngineInit（届时 GEditor 已就绪）再注册。
+	if (!GEngine || !GEngine->IsInitialized())
+	{
+		FCoreDelegates::OnPostEngineInit.AddRaw(this, &FBlueprintScreenshotToolCommandManager::RegisterToolbarExtension);
+		return;
+	}
+
+	// The Blueprint Editor owns this extensibility manager and applies its extenders to its toolbar.
+	auto ExtensibilityManager = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>("Kismet").GetMenuExtensibilityManager();
 	if (!ExtensibilityManager.IsValid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("XTools_BlueprintScreenshotTool: ToolBarExtensibilityManager is invalid, skip toolbar extension registration."));
+		UE_LOG(LogTemp, Warning, TEXT("XTools_BlueprintScreenshotTool: Blueprint Editor extensibility manager is invalid, skip toolbar extension registration."));
 		return;
 	}
 	
@@ -67,15 +80,20 @@ void FBlueprintScreenshotToolCommandManager::RegisterToolbarExtension()
 
 void FBlueprintScreenshotToolCommandManager::UnregisterToolbarExtension()
 {
+	// 引擎初始化前模块即被卸载时，清理挂起的延迟注册委托，避免悬空回调
+	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
+
 	if (!ToolbarExtension.IsValid())
 	{
 		return;
 	}
 
-	const auto ExtensibilityManager = FAssetEditorToolkit::GetSharedToolBarExtensibilityManager();
-	if (ExtensibilityManager.IsValid())
+	if (FBlueprintEditorModule* BlueprintEditorModule = FModuleManager::GetModulePtr<FBlueprintEditorModule>("Kismet"))
 	{
-		ExtensibilityManager->RemoveExtender(ToolbarExtension);
+		if (const TSharedPtr<FExtensibilityManager> ExtensibilityManager = BlueprintEditorModule->GetMenuExtensibilityManager())
+		{
+			ExtensibilityManager->RemoveExtender(ToolbarExtension);
+		}
 	}
 
 	ToolbarExtension.Reset();

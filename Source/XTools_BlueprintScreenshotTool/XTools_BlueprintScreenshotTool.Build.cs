@@ -52,6 +52,7 @@ public class XTools_BlueprintScreenshotTool : ModuleRules
 				"ImageWriteQueue",
 				"ApplicationCore",
 				"InputCore",
+				"Kismet",
 				"RenderCore",
 				"UMG",
 				"GraphEditor",
