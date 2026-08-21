@@ -46,6 +46,7 @@ public class XTools_SwitchLanguage : ModuleRules
 			"InputCore",
 			"EditorFramework",
 			"UnrealEd",
+			"InternationalizationSettings",
 			"ToolMenus",
 			"Slate",
 			"SlateCore",

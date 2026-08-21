@@ -7,16 +7,15 @@
 #include "XTools_SwitchLanguageStyle.h"
 #include "XTools_SwitchLanguageCommands.h"
 #include "ToolMenus.h"
-#include "Kismet/KismetInternationalizationLibrary.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "Interfaces/IPluginManager.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphSchema.h"
+#include "Editor/InternationalizationSettings/Classes/InternationalizationSettingsModel.h"
 #include "Engine/Blueprint.h"
 #include "Internationalization/Culture.h"
 #include "Internationalization/Internationalization.h"
 #include "Internationalization/TextLocalizationManager.h"
-#include "Misc/ConfigCacheIni.h"
 #include "Editor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "UObject/UObjectIterator.h"
@@ -39,14 +38,6 @@ FString GetNextEditorCulture()
 	}
 
 	return TEXT("en");
-}
-
-void PersistEditorLanguageSettings(const FString& CultureName)
-{
-	GConfig->SetString(TEXT("Internationalization"), TEXT("Language"), *CultureName, GEditorSettingsIni);
-	GConfig->SetString(TEXT("Internationalization"), TEXT("Locale"), *CultureName, GEditorSettingsIni);
-	GConfig->SetString(TEXT("Internationalization"), TEXT("Culture"), TEXT(""), GEditorSettingsIni);
-	GConfig->Flush(false, GEditorSettingsIni);
 }
 
 void RefreshGraphSchemas()
@@ -140,19 +131,28 @@ void FXTools_SwitchLanguageModule::ShutdownModule()
 void FXTools_SwitchLanguageModule::PluginButtonClicked()
 {
 	const FString TargetCulture = GetNextEditorCulture();
-	FInternationalization& I18N = FInternationalization::Get();
-	const bool bLanguageMatchesLocale = I18N.GetCurrentLanguage() == I18N.GetCurrentLocale();
-	const bool bSwitchSucceeded = bLanguageMatchesLocale
-		? I18N.SetCurrentLanguageAndLocale(TargetCulture)
-		: I18N.SetCurrentLanguage(TargetCulture);
+	const TArray<FString> LocalizedCultureNames = FTextLocalizationManager::Get().GetLocalizedCultureNames(ELocalizationLoadFlags::Editor);
+	if (!LocalizedCultureNames.Contains(TargetCulture))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("XTools_SwitchLanguage: Editor language '%s' is not available."), *TargetCulture);
+		return;
+	}
 
-	if (!bSwitchSucceeded)
+	UInternationalizationSettingsModel* SettingsModel = GetMutableDefault<UInternationalizationSettingsModel>();
+	if (!SettingsModel)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("XTools_SwitchLanguage: Failed to access editor internationalization settings."));
+		return;
+	}
+
+	FInternationalization& I18N = FInternationalization::Get();
+	if (!I18N.SetCurrentLanguage(TargetCulture))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("XTools_SwitchLanguage: Failed to switch editor language to '%s'."), *TargetCulture);
 		return;
 	}
 
-	PersistEditorLanguageSettings(TargetCulture);
+	SettingsModel->SetEditorLanguage(TargetCulture);
 	FTextLocalizationManager::Get().RefreshResources();
 	RefreshGraphSchemas();
 	RefreshBlueprints();
@@ -199,10 +199,10 @@ void FXTools_SwitchLanguageModule::RegisterMenus()
 {
 	FToolMenuOwnerScoped OwnerScoped(this);
 
-	// 关卡编辑器工具栏
+	// 关卡编辑器的用户扩展工具栏。
 	{
-		UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.PlayToolBar");
-		FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("PluginTools");
+		UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.User");
+		FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("XTools_SwitchLanguage");
 		FToolMenuEntry& Entry = Section.AddEntry(
 			FToolMenuEntry::InitToolBarButton(FXTools_SwitchLanguageCommands::Get().PluginAction));
 		Entry.SetCommandList(PluginCommands);
@@ -211,17 +211,18 @@ void FXTools_SwitchLanguageModule::RegisterMenus()
 		Entry.ToolTip = FText::FromString(TEXT("切换编辑器语言 (英文/中文)"));
 	}
 
-	// 资产编辑器工具栏
+	// 资产编辑器的公共操作工具栏。不要扩展 AssetEditor.DefaultToolBar：它是所有资产编辑器的父菜单。
 	{
-		UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("AssetEditor.DefaultToolBar");
-		FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("PluginTools");
+		UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("AssetEditorToolbar.CommonActions");
+		FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("XTools_SwitchLanguage");
 		FToolMenuEntry& Entry = Section.AddEntry(
 			FToolMenuEntry::InitToolBarButton(FXTools_SwitchLanguageCommands::Get().PluginAction));
 		Entry.SetCommandList(PluginCommands);
 		Entry.Name = "XTools_SwitchLanguageButton";
-		Entry.Label = FText::FromString(TEXT(""));
+		Entry.Label = FText::FromString(TEXT("SwitchLanguage"));
 		Entry.ToolTip = FText::FromString(TEXT("切换编辑器语言 (英文/中文)"));
 	}
+
 }
 
 #undef LOCTEXT_NAMESPACE
