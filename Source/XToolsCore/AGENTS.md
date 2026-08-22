@@ -41,11 +41,11 @@ XTOOLS_CHECK_ARRAY_INDEX(Arr, Idx, false);
 ## BUILD.CS 要点
 
 - 无外部依赖 (仅 Core/CoreUObject/Engine)
-- `Build.cs` 根据引擎版本自动注入 `XTOOLS_ENGINE_5_X_OR_LATER` 宏
+- 各分版本宏（如 `XTOOLS_ENGINE_5_4_OR_LATER` 至 `XTOOLS_ENGINE_5_8_OR_LATER`）由 `XToolsVersionCompat.h` 基于 `ENGINE_MAJOR_VERSION` / `ENGINE_MINOR_VERSION` 推导，不由 Build.cs 直接注入
 - 新模块仅需 `PublicDependencyModuleNames.Add("XToolsCore")`
 
 ## GOTCHAS
 
 - 原子操作 API 在 5.3 和 5.5+ 底层实现不同，必须用 `XTOOLS_ATOMIC_*` 宏
 - `XTOOLS_GET_ELEMENT_SIZE` 返回 `int32`，5.5 之前直接取字段，之后调方法
-- 新增版本宏时必须同步更新 `XToolsCore.Build.cs` 的 `PublicDefinitions`
+- 新增版本宏时在 `XToolsVersionCompat.h` 中用 `XTOOLS_ENGINE_VERSION_AT_LEAST` 定义，无需改 Build.cs

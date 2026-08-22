@@ -35,7 +35,7 @@ XTools/
 │   ├── XTools_ElectronicNodes/     # [Editor] 连线美化 (第三方汉化)
 │   ├── XTools_BlueprintScreenshotTool/ # [Editor] 截图工具 (第三方汉化)
 │   ├── XTools_SwitchLanguage/ # [Editor] 语言切换
-│   └── XTools/                # [主模块] 插件入口 + 欢迎UI
+│   └── XTools/                # [主模块] 插件入口 + 运行时工具库
 ├── Scripts/                   # 构建/清理脚本
 ├── Docs/版本变更/             # CHANGELOG + UNRELEASED
 ├── .github/workflows/         # CI/CD (多版本构建 + 发布)
@@ -70,7 +70,7 @@ XToolsCore (PreDefault)
 | 新建 K2Node | `Source/BlueprintExtensions/` | 参考 K2Node_ForEachLoopWithDelay，必读 claude.md |
 | 新建运行时函数库 | `Source/BlueprintExtensionsRuntime/Public/Libraries/` | 继承 UBlueprintFunctionLibrary |
 | 新建运行时模块 | 复制 Sort 模块结构 | .Build.cs 加 XToolsCore 依赖 |
-| 版本兼容适配 | `Source/XToolsCore/Public/XToolsVersionCompat.h` | 用 XTOOLS_ENGINE_5_X_OR_LATER 宏 |
+| 版本兼容适配 | `Source/XToolsCore/Public/XToolsVersionCompat.h` | 用 XTOOLS_ENGINE_5_4_OR_LATER 等分版本宏 |
 | 错误处理 | `Source/XToolsCore/Public/XToolsErrorReporter.h` | XTOOLS_LOG_* 宏或 FXToolsErrorReporter:: |
 | 防御性编程 | `Source/XToolsCore/Public/XToolsDefines.h` | XTOOLS_SAFE_EXECUTE, XTOOLS_CHECK_VALID |
 | 对象池集成 | `Source/ObjectPool/Public/` | UObjectPoolSubsystem 全局入口 |

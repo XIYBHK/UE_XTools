@@ -194,14 +194,14 @@ public:
         meta = (
             DisplayName = "排序字符串数组",
             Keywords = "排序,字符串,文本,索引",
-            ToolTip = "对字符串数组进行排序，按照字典序（lexicographical order）进行比较，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的字符串数组\nbAscending - true为升序（字典序），false为降序（字典序）\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
+            ToolTip = "对字符串数组进行自然排序：数字段按数值比较（如 File2 排在 File10 前），文本段按当前文化进行比较，并返回排序后元素对应的原始索引。\n参数:\nInArray - 要排序的字符串数组\nbAscending - true为升序，false为降序\n返回值:\nSortedArray - 排序后的数组\nOriginalIndices - 排序后每个元素在原数组中的索引"
         ))
     static void SortStringArray(UPARAM(DisplayName="输入数组") const TArray<FString>& InArray, 
         UPARAM(DisplayName="排序后数组") TArray<FString>& SortedArray, 
         UPARAM(DisplayName="原始索引") TArray<int32>& OriginalIndices,
         UPARAM(DisplayName="升序排序") bool bAscending = true);
 
-    /** 根据字典序对命名数组进行排序 */
+    /** 根据自然排序对命名数组进行排序 */
     UFUNCTION(BlueprintPure,
         Category = "XTools|排序|基础类型", 
         meta = (

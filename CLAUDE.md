@@ -68,7 +68,7 @@ XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.
 ├─ GeometryTool                        # 几何工具（形状组件点阵生成、表面采样）
 ├─ RandomShuffles                      # PRD 伪随机分布算法和数组洗牌
 ├─ FormationSystem                     # 编队系统和移动控制
-└─ XTools                              # 主模块（插件入口、欢迎界面）
+└─ XTools                              # 主模块（插件入口与运行时工具库）
 
 编辑器模块层（UncookedOnly，每个都有对应 Runtime 模块）
 ├─ BlueprintExtensions                 # → BlueprintExtensionsRuntime: 14+ 自定义 K2Node
@@ -173,7 +173,7 @@ FXToolsErrorReporter::Warning(
 `SortGenericByProperty` 通过 UE 反射系统（`FProperty`）按属性名称排序任意结构体数组。
 
 ### RandomShuffles PRD
-基于 DOTA2 的伪随机分布算法，使用 `thread_local` 隔离状态，`WorldSubsystem` 持久化。
+基于 DOTA2 的伪随机分布算法。状态为静态 `TMap` + `FCriticalSection`（非 `thread_local`、非 `WorldSubsystem`）；世界清理通过 `FWorldDelegates::OnWorldCleanup` 重置状态。
 
 ## 常见陷阱
 

@@ -45,6 +45,8 @@
 ### FormationSystem
 - 新增 阵型数量调整随机种子参数
 - 修复 成本矩阵缓存误命中
+- 新增 阵型过渡停止事件并清理临时管理Actor
+- 优化 演示Actor按需启用Tick
 
 ### QueueSpline
 - 新增 排队样条线移动模块

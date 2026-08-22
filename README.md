@@ -47,7 +47,7 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 
 | 模块 | 功能 | 主要用途 |
 |------|------|----------|
-| **XTools** | 主模块 | 插件入口、编辑器工具集成、欢迎界面 |
+| **XTools** | 主模块 | 插件入口与运行时工具库 |
 | **SplineMovementEditor** | 样条线移动编辑器 | 提供样条线移动异步节点的蓝图编辑器支持 |
 | **X_AssetEditor** | 资产编辑器 | 批量碰撞设置、材质函数应用、命名规范化、纹理打包支持 |
 | **XTools_BlueprintAssist** | 蓝图助手 | 节点自动格式化、智能连线、快捷操作（已汉化） |
