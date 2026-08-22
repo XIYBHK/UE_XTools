@@ -519,6 +519,7 @@
 - **修复** 修复 ForEachArrayReverse 引脚重复创建问题（移除 Super 调用）
 - **完善** 完善 ForEachArrayReverse 类型验证逻辑
 - **修复** 修复 Map 随机访问空 Map 边界问题（RandomItem/RandomItemFromStream）
+- **优化** 延迟循环节点显示标题与参数提示
 
 ### X_AssetEditor 模块
 - **优化** 彻底修复 Ticker Lambda 悬空指针风险（使用 TSharedPtr/TWeakPtr）
@@ -528,6 +529,7 @@
 - **优化** 配置化硬编码常量（FactoryCreationTimeWindow、StartupActivationDelay）
 - **优化** 静态缓存正则表达式模式，避免重复编译
 - **优化** 批量重命名性能：预缓存文件夹资产名称（O(n²)→O(n)）
+- **修复** 未保存资产包的导入检测
 - **移除** 删除 90 行未实现的命名冲突检测代码
 - **调整** FactoryCreationTimeWindow 默认值改为 15 秒
 
@@ -541,6 +543,12 @@
 - **优化** 增强纹理采样自动对齐逻辑，确保点位整齐且不重叠
 - **修复** 修复压缩纹理在渲染模式下无法自动反转采样的问题
 - **优化** 修复UHT解析错误（ToolTip多行字符串合并为单行）
+- **新增** 静态网格体采样去重半径与网格对齐参数
+- **新增** 纹理采样去重半径与网格对齐模式
+- **调整** 纹理采样统一使用智能接口
+
+### EnhancedCodeFlow 模块
+- **新增** 异步 Action Owner 有效性检查
 
 </details>
 
