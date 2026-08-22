@@ -20,7 +20,7 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 ```
 
 ### 依赖
-- **Unreal Engine**: 5.3 - 5.7
+- **Unreal Engine**: 5.3 - 5.8
 - **编辑器插件**: EditorScriptingUtilities（资产工具需要）
 
 ## 📦 核心模块
@@ -32,8 +32,11 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 | **XToolsCore** | 跨版本兼容性层 | 提供 UE 5.3-5.8 版本兼容性和统一错误处理 |
 | **Sort** | 智能排序系统 | 支持基础类型、向量、Actor、通用结构体的排序和数组操作 |
 | **RandomShuffles** | PRD 随机系统 | 基于 DOTA2 算法的伪随机分布，提供更公平的随机体验 |
+| **AxisLocker** | 物理轴向锁定 | 按预设或手动组合锁定物理组件自由度 |
 | **EnhancedCodeFlow** | 异步流程控制 | 延迟执行、时间轴动画、协程支持、性能分析 |
 | **PointSampling** | 高级几何采样 | 泊松圆盘采样、基于面积的网格采样、等距样条线采样、纹理密度采样 |
+| **SplineMovement** | 样条线移动 | 提供 AddMovementInput 和 AIMoveTo 双模式跟随 |
+| **QueueSpline** | 排队样条线 | 管理沿样条线移动的队列目标和成员状态 |
 | **ComponentTimelineRuntime** | 组件时间轴 | 在任意组件中使用时间轴功能，支持网络复制 |
 | **BlueprintExtensionsRuntime** | 蓝图扩展库 | 14+ 自定义 K2Node，增强循环、Map操作、变量反射 |
 | **ObjectPool** | 对象池系统 | Actor 对象池，支持预热、自动扩池、状态重置 |
@@ -45,6 +48,7 @@ git clone https://github.com/XIYBHK/UE_XTools.git
 | 模块 | 功能 | 主要用途 |
 |------|------|----------|
 | **XTools** | 主模块 | 插件入口、编辑器工具集成、欢迎界面 |
+| **SplineMovementEditor** | 样条线移动编辑器 | 提供样条线移动异步节点的蓝图编辑器支持 |
 | **X_AssetEditor** | 资产编辑器 | 批量碰撞设置、材质函数应用、命名规范化、纹理打包支持 |
 | **XTools_BlueprintAssist** | 蓝图助手 | 节点自动格式化、智能连线、快捷操作（已汉化） |
 | **XTools_AutoSizeComments** | 自动注释框 | 注释框自动调整大小、样式管理（已汉化） |

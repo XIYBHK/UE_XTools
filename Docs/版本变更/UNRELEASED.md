@@ -5,10 +5,18 @@
 
 ---
 
+### X_AssetEditor
+- 新增 蓝图导出组件层级与孤立引脚
+- 修复 批量重命名失败详情丢失
+
+### AxisLocker
+- 新增 目标解析状态查询
+
 ### SplineMovement
 - 新增 样条线移动异步节点
 - 新增 AddMovementInput/AIMoveTo 双模式
 - 新增 前瞻距离、横向偏移、反向移动参数
+- 修复 样条移动距离推进逻辑
 
 ### PointSampling
 - 优化 圆/球点阵顺序
@@ -32,9 +40,11 @@
 - 调整 球体采样改为等面积纬线环分布
 - 调整 圆形多层次点阵节点标记弃用
 - 新增 形状/矩形采样随机种子参数
+- 修复 盒体大间距采样边界
 
 ### FormationSystem
 - 新增 阵型数量调整随机种子参数
+- 修复 成本矩阵缓存误命中
 
 ### QueueSpline
 - 新增 排队样条线移动模块
@@ -46,6 +56,7 @@
 - 优化 调试绘制补充真实槽位
 - 修复 初始排队Transform静默返回空
 - 新增 排队样条组件自动绑定样条
+- 优化 通知缓冲并隔离重入派发
 
 ### SplineMovementEditor
 - 新增 样条线移动异步节点编辑器模块
@@ -58,6 +69,30 @@
 - 修复 循环节点延迟默认值被静默忽略
 - 修复 ForLoop延迟循环Break哨兵失效
 - 修复 对象池生成节点拆分Transform失效
+- 优化 Map节点错误诊断
+
+### ObjectPool
+- 修复 回退对象释放语义
+
+### Sort
+- 稳定 夹角距离排序索引
+- 优化 自然排序比较性能
+
+### XTools_SwitchLanguage
+- 修复 曲线资产编辑器崩溃
+
+### XTools_BlueprintScreenshotTool
+- 优化 工具栏延迟初始化
+
+### RandomShuffles
+- 修复 PRD世界状态自动清理
+- 调整 满表状态告警与退化提示
+
+### ComponentTimelineRuntime
+- 修复 失效时间轴引用重建
+
+### FieldSystemExtensions
+- 优化 构造场命令拷贝次数
 
 ## 日志格式说明
 
