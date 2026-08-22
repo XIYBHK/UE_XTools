@@ -1036,6 +1036,16 @@
 
 </details>
 
+<details>
+<summary><strong>ObjectPool、XTools 与 X_AssetEditor</strong></summary>
+
+- 新增 ObjectPool Actor 对象池模块、预热/归还接口和对象池生成节点
+- 新增 蓝图函数库清理工具，扫描并清理无效 World Context 参数
+- 新增 泊松采样缓存与采样辅助能力，减少重复计算
+- 新增 静态网格体碰撞管理与自动凸包设置工具
+
+</details>
+
 ---
 
 ## 版本 v1.8.x (2025-11-04)
