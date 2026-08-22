@@ -62,3 +62,27 @@ enum class EAxisLockPreset : uint8
 	HorizontalOnly UMETA(DisplayName = "只能水平移动（锁Z位移）"),
 	FreezeAll      UMETA(DisplayName = "完全冻结（6轴全锁）")
 };
+
+/**
+ * 轴向锁定目标解析状态。
+ * 由 UAxisLockerComponent::GetTargetResolveStatus 返回，用于编程区分解析失败的具体原因，
+ * 避免只能依赖日志/屏幕提示判断。
+ */
+UENUM(BlueprintType)
+enum class EAxisLockTargetStatus : uint8
+{
+	/** 已解析到有效目标（OutTarget 可用）。*/
+	Ready                 UMETA(DisplayName = "已解析"),
+
+	/** 未指定目标且无可用挂载父级（未设置覆盖、名称为空、父级不是 PrimitiveComponent）。*/
+	NoTargetAvailable     UMETA(DisplayName = "无可用目标"),
+
+	/** 指定了目标组件名称，但 Owner 内不存在同名 PrimitiveComponent。*/
+	NameNotFound          UMETA(DisplayName = "名称未找到"),
+
+	/** 已解析到目标组件，但其没有有效的 BodyInstance。*/
+	NoBodyInstance        UMETA(DisplayName = "目标无BodyInstance"),
+
+	/** 运行时覆盖目标已失效（曾调用 SetTargetComponent，但对象已被销毁）；OutTarget 为回退解析结果（可能为空）。*/
+	TargetOverrideInvalid UMETA(DisplayName = "覆盖目标已失效")
+};

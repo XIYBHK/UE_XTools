@@ -23,19 +23,25 @@ UAxisLockerComponent::UAxisLockerComponent()
 void UAxisLockerComponent::SetTargetComponent(UPrimitiveComponent* InTarget)
 {
 	TargetComponentOverride = InTarget;
+	bTargetOverrideWasSet = (InTarget != nullptr);
 }
 
-UPrimitiveComponent* UAxisLockerComponent::ResolveTarget() const
+UPrimitiveComponent* UAxisLockerComponent::ResolveTargetWithStatus(EAxisLockTargetStatus& OutStatus) const
 {
 	// 1) 运行时覆盖优先
 	if (TargetComponentOverride.IsValid())
 	{
-		return TargetComponentOverride.Get();
+		UPrimitiveComponent* OverrideTarget = TargetComponentOverride.Get();
+		OutStatus = OverrideTarget->GetBodyInstance()
+			? EAxisLockTargetStatus::Ready
+			: EAxisLockTargetStatus::NoBodyInstance;
+		return OverrideTarget;
 	}
 
-	// 2) 编辑器显式目标名称
+	// 2) 编辑器显式目标名称（名称已设置但未命中时不回退挂载父级，与既有行为一致）
 	if (!TargetComponentName.IsNone())
 	{
+		UPrimitiveComponent* NamedTarget = nullptr;
 		if (AActor* Owner = GetOwner())
 		{
 			TArray<UPrimitiveComponent*> PrimitiveComponents;
@@ -44,17 +50,59 @@ UPrimitiveComponent* UAxisLockerComponent::ResolveTarget() const
 			{
 				if (IsValid(Component) && Component->GetFName() == TargetComponentName)
 				{
-					return Component;
+					NamedTarget = Component;
+					break;
 				}
 			}
 		}
 
-		XTOOLS_LOG_WARNING_EX(LogAxisLocker, FString::Printf(TEXT("轴向锁定组件：指定目标组件不存在（%s）"), *TargetComponentName.ToString()), NAME_None, true, 5.0f);
-		return nullptr;
+		if (!NamedTarget)
+		{
+			OutStatus = EAxisLockTargetStatus::NameNotFound;
+			return nullptr;
+		}
+
+		OutStatus = bTargetOverrideWasSet
+			? EAxisLockTargetStatus::TargetOverrideInvalid
+			: (NamedTarget->GetBodyInstance() ? EAxisLockTargetStatus::Ready : EAxisLockTargetStatus::NoBodyInstance);
+		return NamedTarget;
 	}
 
 	// 3) 回退到挂载父级（与参考插件等价）
-	return Cast<UPrimitiveComponent>(GetAttachParent());
+	UPrimitiveComponent* ParentTarget = Cast<UPrimitiveComponent>(GetAttachParent());
+	if (!ParentTarget)
+	{
+		OutStatus = bTargetOverrideWasSet
+			? EAxisLockTargetStatus::TargetOverrideInvalid
+			: EAxisLockTargetStatus::NoTargetAvailable;
+		return nullptr;
+	}
+
+	OutStatus = bTargetOverrideWasSet
+		? EAxisLockTargetStatus::TargetOverrideInvalid
+		: (ParentTarget->GetBodyInstance() ? EAxisLockTargetStatus::Ready : EAxisLockTargetStatus::NoBodyInstance);
+	return ParentTarget;
+}
+
+UPrimitiveComponent* UAxisLockerComponent::ResolveTarget() const
+{
+	EAxisLockTargetStatus Status = EAxisLockTargetStatus::NoTargetAvailable;
+	UPrimitiveComponent* Target = ResolveTargetWithStatus(Status);
+
+	// 保留既有行为：指定了名称但未命中时输出 Warning（含屏幕提示）
+	if (Status == EAxisLockTargetStatus::NameNotFound)
+	{
+		XTOOLS_LOG_WARNING_EX(LogAxisLocker, FString::Printf(TEXT("轴向锁定组件：指定目标组件不存在（%s）"), *TargetComponentName.ToString()), NAME_None, true, 5.0f);
+	}
+
+	return Target;
+}
+
+EAxisLockTargetStatus UAxisLockerComponent::GetTargetResolveStatus(UPrimitiveComponent*& OutTarget) const
+{
+	EAxisLockTargetStatus Status = EAxisLockTargetStatus::NoTargetAvailable;
+	OutTarget = ResolveTargetWithStatus(Status);
+	return Status;
 }
 
 TArray<FString> UAxisLockerComponent::GetTargetComponentNameOptions() const
