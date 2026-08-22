@@ -135,6 +135,9 @@ bool UFormationManagerComponent::StartFormationTransition(
     const FFormationData& ToFormation,
     const FFormationTransitionConfig& Config)
 {
+    // 重入语义：变换进行中再次调用会用新参数替换当前变换（下方直接覆盖 TransitionState），
+    // 旧单位停在原地，且不触发旧变换的完成事件/停止事件。调用方需要避免重入时，
+    // 请先用 IsTransitioning() 门控（参考 FormationTestActor::SwitchToFormation）。
     // 验证输入参数
     if (Units.Num() == 0)
     {
@@ -283,6 +286,11 @@ void UFormationManagerComponent::StopFormationTransition(bool bSnapToTarget)
     TransitionState.OverallProgress = 0.0f;
     TransitionState.UnitTransitions.Empty();
     SetComponentTickEnabled(false);
+
+    // 广播停止事件（正常完成走 OnFormationTransitionCompleted，两者语义独立，不互相伪装）。
+    // 放在状态清理之后：监听者（如便捷节点创建的临时管理 Actor 的自销毁）观察到的是已停止的最终状态。
+    // 重复调用由函数入口的 bIsTransitioning 早退拦截，不会重复广播。
+    OnFormationTransitionStopped.Broadcast();
 }
 
 // ========== 算法实现 ==========

@@ -12,6 +12,9 @@ class FFormationManagerComponentCacheTests;
 /** 阵型过渡完成时广播 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFormationTransitionCompleted);
 
+/** 阵型过渡被主动停止时广播 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFormationTransitionStopped);
+
 /**
  * 阵型管理器组件
  * 负责管理阵型变换的核心逻辑
@@ -38,6 +41,15 @@ public:
     FOnFormationTransitionCompleted OnFormationTransitionCompleted;
 
     /**
+     * 阵型过渡被 StopFormationTransition 主动停止时广播（可用于清理临时管理 Actor）。
+     * 与"过渡完成事件"语义独立：正常完成不触发本事件，主动停止不触发完成事件。
+     */
+    UPROPERTY(BlueprintAssignable, Category = "Formation",
+        meta = (DisplayName = "过渡停止事件",
+            ToolTip = "阵型过渡被\"停止阵型变换\"主动停止时广播。\n与过渡完成事件语义独立：正常完成不触发本事件，主动停止也不触发完成事件。\n可用于清理 QuickFormationTransition 等节点创建的临时管理 Actor。"))
+    FOnFormationTransitionStopped OnFormationTransitionStopped;
+
+    /**
      * 检测两个阵型是否为相同阵型的平移关系
      * @param FromPositions 起始阵型位置
      * @param ToPositions 目标阵型位置
@@ -54,7 +66,9 @@ public:
      * @param Config 变换配置
      * @return 是否成功开始变换
      */
-    UFUNCTION(BlueprintCallable, Category = "Formation", meta = (DisplayName = "开始阵型变换"))
+    UFUNCTION(BlueprintCallable, Category = "Formation",
+        meta = (DisplayName = "开始阵型变换",
+            ToolTip = "开始阵型变换。\n注意：在已有变换进行中再次调用时，会用新参数替换当前变换（旧单位停在原地，且不触发旧变换的完成事件）。"))
     bool StartFormationTransition(
         const TArray<AActor*>& Units,
         const FFormationData& FromFormation,
@@ -83,7 +97,9 @@ public:
      * 停止当前的阵型变换
      * @param bSnapToTarget 是否立即移动到目标位置
      */
-    UFUNCTION(BlueprintCallable, Category = "Formation", meta = (DisplayName = "停止阵型变换"))
+    UFUNCTION(BlueprintCallable, Category = "Formation",
+        meta = (DisplayName = "停止阵型变换",
+            ToolTip = "停止当前的阵型变换，并广播\"过渡停止事件\"（不会触发\"过渡完成事件\"）。\n对未在变换中的管理器调用为空操作；重复调用不会重复广播。"))
     void StopFormationTransition(bool bSnapToTarget = false);
 
     /** 销毁拥有此组件的 Actor（用于自动清理临时管理 Actor） */

@@ -15,6 +15,8 @@
 AFormationTestActor::AFormationTestActor()
 {
     PrimaryActorTick.bCanEverTick = true;
+    // Tick 仅用于自动循环演示（UpdateAutoLoop），默认关闭，由 BeginPlay(详情面板勾选 bAutoLoop 时)/StartDemo 开启
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
     // 创建根组件
     RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
@@ -26,6 +28,9 @@ AFormationTestActor::AFormationTestActor()
 void AFormationTestActor::BeginPlay()
 {
     Super::BeginPlay();
+
+    // 详情面板直接勾选"自动循环"（不经 StartDemo）的路径：BeginPlay 时按 bAutoLoop 补开 Tick
+    SetActorTickEnabled(bAutoLoop);
 
     // 延迟初始化，确保所有组件都已准备好。
     // 使用对象方法重载（内部经 CreateUObject 绑定弱引用），Actor 销毁后回调自动失效，避免悬空调用。
@@ -253,6 +258,7 @@ void AFormationTestActor::StartDemo()
     }
 
     bAutoLoop = true;
+    SetActorTickEnabled(true); // Tick 仅承载 UpdateAutoLoop，演示期间才开启
     LastTransitionTime = GetWorld()->GetTimeSeconds();
     
     UE_LOG(LogFormationSystem, Log, TEXT("FormationTestActor: 开始演示模式"));
@@ -261,7 +267,8 @@ void AFormationTestActor::StartDemo()
 void AFormationTestActor::StopDemo()
 {
     bAutoLoop = false;
-    
+    SetActorTickEnabled(false);
+
     if (FormationManager->IsTransitioning())
     {
         FormationManager->StopFormationTransition(false);

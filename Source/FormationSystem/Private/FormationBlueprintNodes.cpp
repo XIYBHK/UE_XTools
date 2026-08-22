@@ -84,8 +84,10 @@ bool UFormationBlueprintNodes::QuickFormationTransition(
 
     if (bSuccess)
     {
-        // 过渡完成后自动销毁临时管理 Actor
+        // 过渡完成后自动销毁临时管理 Actor；用户主动停止时同样销毁（停止事件不会触发完成事件）
         OutFormationManager->OnFormationTransitionCompleted.AddDynamic(
+            OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+        OutFormationManager->OnFormationTransitionStopped.AddDynamic(
             OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
 
         if (bShowDebug)
@@ -175,8 +177,10 @@ UFormationManagerComponent* UFormationBlueprintNodes::FormationTransitionSequenc
 
         FormationManager->StartFormationTransition(Units, CurrentFormation, FirstTargetFormation, Config);
 
-        // 过渡完成后自动销毁临时管理 Actor
+        // 过渡完成后自动销毁临时管理 Actor；用户主动停止时同样销毁（停止事件不会触发完成事件）
         FormationManager->OnFormationTransitionCompleted.AddDynamic(
+            FormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+        FormationManager->OnFormationTransitionStopped.AddDynamic(
             FormationManager, &UFormationManagerComponent::DestroyOwnerActor);
     }
 
@@ -606,8 +610,10 @@ bool UFormationBlueprintNodes::RTSFlockFormationTransition(
 
     if (bSuccess)
     {
-        // 过渡完成后自动销毁临时管理 Actor
+        // 过渡完成后自动销毁临时管理 Actor；用户主动停止时同样销毁（停止事件不会触发完成事件）
         OutFormationManager->OnFormationTransitionCompleted.AddDynamic(
+            OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+        OutFormationManager->OnFormationTransitionStopped.AddDynamic(
             OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
 
         if (bShowDebug)
@@ -698,8 +704,10 @@ bool UFormationBlueprintNodes::PathAwareFormationTransition(
 
     if (bSuccess)
     {
-        // 过渡完成后自动销毁临时管理 Actor
+        // 过渡完成后自动销毁临时管理 Actor；用户主动停止时同样销毁（停止事件不会触发完成事件）
         OutFormationManager->OnFormationTransitionCompleted.AddDynamic(
+            OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
+        OutFormationManager->OnFormationTransitionStopped.AddDynamic(
             OutFormationManager, &UFormationManagerComponent::DestroyOwnerActor);
 
         if (bShowDebug)
