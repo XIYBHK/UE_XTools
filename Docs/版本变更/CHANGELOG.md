@@ -703,15 +703,18 @@
 - **PointSampling**: 纹理点阵生成、多种算法支持、3D矩形点阵
 - **XToolsCore**: 6个防御性编程宏（指针/UObject/数组检查）
 - **BlueprintExtensions**: 带延迟的倒序ForLoop节点
+- **BlueprintExtensions**: 新增条件序列、多分支和多条件选择节点
 - **XTools_EnhancedCodeFlow**: 时间轴循环功能（bLoop）
 - **X_AssetEditor**: 特殊编辑模式检测（破碎/建模/地形等模式下禁用重命名）
 - **PivotTool**: 静态网格体枢轴点管理功能
 - **XToolsLibrary**: 递归获取所有子Actor（BFS）
 - **VariableReflectionLibrary**: GetVariableNames增加bIncludeSuper参数
+- **Scripts**: 新增 UE 插件智能清理工具 v3.0，支持目录、压缩包和批量处理
 
 ### 重要修复
 - **X_AssetEditor**: 启动时误触发自动重命名、Lambda生命周期竞态等多处崩溃问题
 - **MaterialTools**: 添加材质函数后撤销崩溃、EmissiveColor连接失败
+- **BlueprintExtensionsRuntime**: 限制动态函数/事件调用的栈分配大小，避免大参数导致栈溢出
 - **XTools_AutoSizeComments**: GetNodePos空指针访问导致材质编辑器崩溃
 - **PointSampling**: 3D泊松采样球面分布不均匀、Grid无效标记冲突等问题
 
@@ -795,8 +798,15 @@
 - **新增** 新增6个防御性编程宏（指针/UObject/数组检查）
 - **优化** 提升硬件不稳定环境下的代码鲁棒性
 
+### BlueprintExtensionsRuntime
+- **修复** 动态函数/事件调用增加栈分配大小上限，避免大参数导致栈溢出
+
+### ObjectPool
+- **本地化** 对象池统计消息使用可本地化文本
+
 ### BlueprintExtensions
 - **新增** 带延迟的倒序ForLoop节点（K2Node_ForLoopWithDelayReverse）
+- **新增** 条件序列、多分支和多条件选择节点
 - **优化** 所有Delay循环节点增加图兼容性检查（仅EventGraph可用）
 - **优化** ForLoop/ForEach延迟节点增加编译时引脚有效性检查
 - **修复** K2Node蓝图编译时增加空指针防护，避免硬件异常崩溃
@@ -822,6 +832,9 @@
 
 ### PivotTool
 - **新增** 静态网格体枢轴点管理功能
+
+### Scripts
+- **新增** UE 插件智能清理工具 v3.0，支持压缩包、批量处理和清理预览
 
 ### CI/CD工作流
 - **修复** update-release-assets工作流重复删除资产导致404错误
@@ -955,6 +968,7 @@
 
 ### 新增功能
 - 集成 BlueprintScreenshotTool 蓝图截图模块，支持快捷键截图与结果通知
+- 新增 XTools_SwitchLanguage 编辑器语言切换模块
 - 资产命名系统新增命名冲突检测、变体命名、数字后缀规范化、纹理打包后缀与蒙太奇通知前缀等能力
 
 ### 重要修复

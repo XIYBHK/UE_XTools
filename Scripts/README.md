@@ -8,6 +8,7 @@
 |---------|----------|------|
 | `BuildPlugin-MultiUE.ps1` | 多版本UE插件自动化打包 | PowerShell |
 | `Clean-UEPlugin.ps1` | 插件清理工具 | PowerShell |
+| `ue插件清理/clean_ue_plugin.bat` | UE 插件智能清理工具 v3.0 | Python/批处理 |
 | `InvokePresetAssetTool.ps1` | 统一生成或验证曲线、缩放和 CameraShake 预设 | PowerShell |
 | `GeneratePresetLibraryAssets.py` | 数据驱动的 CurveFloat、CurveVector 和 CameraShake UE 生成器 | UE Python |
 | `GenerateEasingCurveAssets.py` | 数学缓动曲线的自适应 Hermite 生成器 | UE Python |
@@ -46,6 +47,8 @@
 # 使用PowerShell清理工具
 .\Clean-UEPlugin.ps1
 ```
+
+压缩包或批量清理可使用 `ue插件清理/clean_ue_plugin.bat`，详见该目录下的 README。
 
 #### **3. 蓝图导出文本逻辑流梳理**
 
