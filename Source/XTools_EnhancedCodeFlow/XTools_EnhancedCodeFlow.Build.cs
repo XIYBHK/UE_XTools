@@ -48,6 +48,7 @@ public class XTools_EnhancedCodeFlow : ModuleRules
 			new string[]
 			{
 				"Projects",   // IPluginManager 所在模块，用于检测外部 EnhancedCodeFlow 插件
+				"DeveloperSettings", // UECFSettings 运行时开发者设置所在模块
 				"XToolsCore"  // UE 版本兼容性支持
 			}
 		);

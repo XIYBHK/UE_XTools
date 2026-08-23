@@ -2,9 +2,11 @@
 
 #include "ECFSubsystem.h"
 #include "ECFActionBase.h"
+#include "ECFSettings.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Interfaces/IPluginManager.h"
+#include "UObject/UObjectGlobals.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
@@ -61,29 +63,15 @@ bool UECFSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 	}
 
 	//  检查插件设置，如果未启用则不创建子系统
-	static bool bHasLoggedMissingSettingsClass = false;
-	if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
+	//  迁移说明：不再反射读取 Editor-only 模块的 X_AssetEditorSettings（打包后该类不存在导致开关被忽略、
+	//  编辑器与打包成品行为反转），改为读取本模块运行时开发者设置，保证编辑器与打包成品行为一致
+	const UECFSettings* Settings = GetDefault<UECFSettings>();
+	const bool bEnabled = Settings ? Settings->bEnableEnhancedCodeFlowSubsystem : true;
+	if (!bEnabled)
 	{
-		if (const UObject* Settings = SettingsClass->GetDefaultObject())
-		{
-			const FProperty* Property = SettingsClass->FindPropertyByName(TEXT("bEnableEnhancedCodeFlowSubsystem"));
-			if (Property && Property->IsA<FBoolProperty>())
-			{
-				const FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property);
-				if (BoolProperty && !BoolProperty->GetPropertyValue_InContainer(Settings))
-				{
-					// 设置中未启用增强代码流
-					return false;
-				}
-			}
-		}
+		return false;
 	}
-	else if (!bHasLoggedMissingSettingsClass)
-	{
-		bHasLoggedMissingSettingsClass = true;
-		UE_LOG(LogTemp, Verbose, TEXT("XTools_EnhancedCodeFlow: X_AssetEditorSettings not found, using default subsystem creation behavior."));
-	}
-	
+
 	return Super::ShouldCreateSubsystem(Outer);
 }
 

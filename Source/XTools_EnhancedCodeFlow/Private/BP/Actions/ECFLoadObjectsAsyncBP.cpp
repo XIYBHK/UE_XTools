@@ -11,12 +11,17 @@ UECFLoadObjectsAsyncBP* UECFLoadObjectsAsyncBP::ECFLoadObjectsAsync(const UObjec
 	if (Proxy)
 	{
 		Proxy->Init(WorldContextObject, Settings);
-		Proxy->Proxy_Handle = FFlow::LoadObjectsAsync(WorldContextObject, ObjectsToLoad, [Proxy](bool bStopped)
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFLoadObjectsAsyncBP> WeakProxy(Proxy);
+		Proxy->Proxy_Handle = FFlow::LoadObjectsAsync(WorldContextObject, ObjectsToLoad, [WeakProxy](bool bStopped)
 		{
-			if (IsProxyValid(Proxy))
+			if (UECFLoadObjectsAsyncBP* StrongProxy = WeakProxy.Get())
 			{
-				Proxy->OnComplete.Broadcast(bStopped);
-				Proxy->ClearAsyncBPAction();
+				if (IsProxyValid(StrongProxy))
+				{
+					StrongProxy->OnComplete.Broadcast(bStopped);
+					StrongProxy->ClearAsyncBPAction();
+				}
 			}
 		}, Settings);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);

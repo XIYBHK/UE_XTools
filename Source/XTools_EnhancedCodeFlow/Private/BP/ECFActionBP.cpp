@@ -99,6 +99,13 @@ bool UECFActionBP::TickCompletionWatch(float DeltaTime)
 		return false;
 	}
 
+	// WorldContextObject 失效时直接清理动作，避免每次进入 UECFSubsystem::Get 命中 ensureAlwaysMsgf 反复弹窗
+	if (!IsValid(Proxy_WorldContextObject.Get()))
+	{
+		ClearAsyncBPAction();
+		return false;
+	}
+
 	if (!FFlow::IsActionRunning(Proxy_WorldContextObject.Get(), Proxy_Handle))
 	{
 		ClearAsyncBPAction();

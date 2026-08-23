@@ -11,21 +11,29 @@ UECFTimelineVectorBP* UECFTimelineVectorBP::ECFTimelineVector(const UObject* Wor
 	if (Proxy)
 	{
 		Proxy->Init(WorldContextObject, Settings);
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFTimelineVectorBP> WeakProxy(Proxy);
 		Proxy->Proxy_Handle = FFlow::AddTimelineVector(WorldContextObject,
 			StartValue, StopValue, Time,
-			[Proxy](FVector Value, float Time)
+			[WeakProxy](FVector Value, float Time)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnTick.Broadcast(Value, Time, false);
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnTick.Broadcast(Value, Time, false);
+					}
 				}
 			},
-			[Proxy](FVector Value, float Time, bool bStopped)
+			[WeakProxy](FVector Value, float Time, bool bStopped)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnFinished.Broadcast(Value, Time, bStopped);
-					Proxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
 			},
 			BlendFunc, BlendExp, PlayRate, Settings);

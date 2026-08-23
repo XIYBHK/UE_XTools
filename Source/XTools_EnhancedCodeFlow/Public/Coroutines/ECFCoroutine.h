@@ -53,6 +53,10 @@ struct FECFCoroutinePromise
 	bool bStopped = false;
 	bool bTimedOut = false;
 	FECFHandle ActionHandle;
+
+	// 子系统获取失败时的延迟清理标记：防止嵌套 co_await 失败链对同一帧重复调度销毁。
+	bool bFailureCleanupArmed = false;
+
 	void AssignHandle(const FECFHandle& NewHandle)
 	{
 		ActionHandle = NewHandle;
@@ -80,6 +84,10 @@ struct FECFCoroutinePromise
 	bool bStopped = false;
 	bool bTimedOut = false;
 	FECFHandle ActionHandle;
+
+	// 与真实分支保持字段一致（协程不可用时的哑实现，无实际作用）。
+	bool bFailureCleanupArmed = false;
+
 	void AssignHandle(const FECFHandle& NewHandle) {}
 };
 

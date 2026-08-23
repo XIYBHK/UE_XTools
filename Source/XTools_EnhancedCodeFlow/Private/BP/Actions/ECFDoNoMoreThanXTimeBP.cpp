@@ -18,20 +18,25 @@ UECFDoNoMoreThanXTimeBP* UECFDoNoMoreThanXTimeBP::ECFDoNoMoreThanXTime(const UOb
 			UECFBPLibrary::ECFGetNewInstanceId(InstanceId);
 		}
 
-		Proxy->Proxy_Handle = FFlow::DoNoMoreThanXTime(WorldContextObject, [Proxy]()
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFDoNoMoreThanXTimeBP> WeakProxy(Proxy);
+		Proxy->Proxy_Handle = FFlow::DoNoMoreThanXTime(WorldContextObject, [WeakProxy]()
 		{
 			// 因为动作将在第一次调用时执行，检查异步动作是否已激活
 			// 未激活的动作没有委托绑定！
 			// 为激活排队 OnExecute 广播
-			if (IsProxyValid(Proxy))
+			if (UECFDoNoMoreThanXTimeBP* StrongProxy = WeakProxy.Get())
 			{
-				if (Proxy->bActivated)
+				if (IsProxyValid(StrongProxy))
 				{
-					Proxy->OnExecute.Broadcast();
-				}
-				else
-				{
-					Proxy->bExecuteOnActivation = true;
+					if (StrongProxy->bActivated)
+					{
+						StrongProxy->OnExecute.Broadcast();
+					}
+					else
+					{
+						StrongProxy->bExecuteOnActivation = true;
+					}
 				}
 			}
 		}, Time, MaxExecsEnqueued, InstanceId.InstanceId, Settings);

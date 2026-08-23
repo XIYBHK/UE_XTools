@@ -11,22 +11,30 @@ UECFTickerBP* UECFTickerBP::ECFTicker(const UObject* WorldContextObject, float T
 	if (Proxy)
 	{
 		Proxy->Init(WorldContextObject, Settings);
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFTickerBP> WeakProxy(Proxy);
 		Proxy->Proxy_Handle = FFlow::AddTicker(WorldContextObject, TickingTime,
-			[Proxy](float DeltaTime)
+			[WeakProxy](float DeltaTime)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFTickerBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnTick.Broadcast(DeltaTime, false);
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnTick.Broadcast(DeltaTime, false);
+					}
 				}
-			}, 
-			[Proxy](bool bStopped)
+			},
+			[WeakProxy](bool bStopped)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFTickerBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnComplete.Broadcast(0.f, bStopped);
-					Proxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnComplete.Broadcast(0.f, bStopped);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
-			}, 
+			},
 		Settings);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}

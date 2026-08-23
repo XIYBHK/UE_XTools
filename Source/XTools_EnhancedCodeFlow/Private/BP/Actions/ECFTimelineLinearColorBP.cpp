@@ -11,21 +11,29 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 	if (Proxy)
 	{
 		Proxy->Init(WorldContextObject, Settings);
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFTimelineLinearColorBP> WeakProxy(Proxy);
 		Proxy->Proxy_Handle = FFlow::AddTimelineLinearColor(WorldContextObject,
 			StartValue, StopValue, Time,
-			[Proxy](FLinearColor Value, float Time)
+			[WeakProxy](FLinearColor Value, float Time)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnTick.Broadcast(Value, Time, false);
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnTick.Broadcast(Value, Time, false);
+					}
 				}
 			},
-			[Proxy](FLinearColor Value, float Time, bool bStopped)
+			[WeakProxy](FLinearColor Value, float Time, bool bStopped)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnFinished.Broadcast(Value, Time, bStopped);
-					Proxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
 			},
 			BlendFunc, BlendExp, PlayRate, Settings);

@@ -11,12 +11,17 @@ UECFDelayBP* UECFDelayBP::ECFDelay(const UObject* WorldContextObject, float Dela
 	if (Proxy)
 	{
 		Proxy->Init(WorldContextObject, Settings);
-		Proxy->Proxy_Handle = FFlow::Delay(WorldContextObject, DelayTime, [Proxy](bool bStopped)
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFDelayBP> WeakProxy(Proxy);
+		Proxy->Proxy_Handle = FFlow::Delay(WorldContextObject, DelayTime, [WeakProxy](bool bStopped)
 		{
-			if (IsProxyValid(Proxy))
+			if (UECFDelayBP* StrongProxy = WeakProxy.Get())
 			{
-				Proxy->OnComplete.Broadcast(bStopped);
-				Proxy->ClearAsyncBPAction();
+				if (IsProxyValid(StrongProxy))
+				{
+					StrongProxy->OnComplete.Broadcast(bStopped);
+					StrongProxy->ClearAsyncBPAction();
+				}
 			}
 		}, Settings);
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);

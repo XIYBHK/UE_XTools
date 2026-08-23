@@ -12,22 +12,30 @@ UECFWaitAndExecuteBP* UECFWaitAndExecuteBP::ECFWaitAndExecute(const UObject* Wor
 	{
 		Proxy->Init(WorldContextObject, Settings);
 		Proxy->Proxy_HasFinished = false;
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFWaitAndExecuteBP> WeakProxy(Proxy);
 		Proxy->Proxy_Handle = FFlow::WaitAndExecute(WorldContextObject,
-			[Proxy](float DeltaTime)
+			[WeakProxy](float DeltaTime)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFWaitAndExecuteBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnWait.Broadcast(Proxy, DeltaTime, false, false);
-					return Proxy->Proxy_HasFinished;
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnWait.Broadcast(StrongProxy, DeltaTime, false, false);
+						return StrongProxy->Proxy_HasFinished;
+					}
 				}
 				return true;
 			},
-			[Proxy](bool bTimedOut, bool bStopped)
+			[WeakProxy](bool bTimedOut, bool bStopped)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFWaitAndExecuteBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnExecute.Broadcast(Proxy, 0.f, bTimedOut, bStopped);
-					Proxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnExecute.Broadcast(StrongProxy, 0.f, bTimedOut, bStopped);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
 			},
 		InTimeOut, Settings);

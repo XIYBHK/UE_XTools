@@ -5,6 +5,7 @@
 #include "ECFCoroutine.h"
 #include "ECFSubsystem.h"
 #include "ECFTypes.h"
+#include "Containers/Ticker.h"
 
 class XTOOLS_ENHANCEDCODEFLOW_API FECFCoroutineAwaiter
 {
@@ -34,9 +35,32 @@ protected:
 
 		ensureMsgf(false, TEXT("ECF Coroutine - failed to obtain subsystem, suspended coroutine will be resumed immediately."));
 		InCoroutineHandle.resume();
-		if (InCoroutineHandle.done())
+		if (InCoroutineHandle.done() && !InCoroutineHandle.promise().bFailureCleanupArmed)
 		{
-			InCoroutineHandle.destroy();
+			// 不能在协程自身的 await_suspend 执行期间同步 destroy：
+			// awaiter 临时对象存放在该协程帧内，resume 返回后立即销毁帧，
+			// 仍在栈上执行的 awaiter/await_suspend 代码将构成 use-after-free。
+			// 推迟到下一 tick，待本次恢复的调用栈完全展开后再回收；
+			// bFailureCleanupArmed 防止嵌套 co_await 失败链对同一帧重复调度销毁。
+			InCoroutineHandle.promise().bFailureCleanupArmed = true;
+			const FECFCoroutineHandle DeferredDestroyHandle = InCoroutineHandle;
+			FTSTicker::GetCoreTicker().AddTicker(
+				FTickerDelegate::CreateLambda([DeferredDestroyHandle](float DeltaTime)
+				{
+					if (DeferredDestroyHandle.done())
+					{
+						// 先复位标记（协程帧可能被后续 await 复用），再安全销毁
+						DeferredDestroyHandle.promise().bFailureCleanupArmed = false;
+						DeferredDestroyHandle.destroy();
+					}
+					else
+					{
+						// 理论不可达（子系统缺失时不存在其他挂起点）；复位标记以允许将来重新调度
+						DeferredDestroyHandle.promise().bFailureCleanupArmed = false;
+					}
+					return false;
+				}),
+				0.0f);
 		}
 	}
 

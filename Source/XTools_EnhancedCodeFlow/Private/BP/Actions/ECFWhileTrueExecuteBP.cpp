@@ -13,29 +13,40 @@ UECFWhileTrueExecuteBP* UECFWhileTrueExecuteBP::ECFWhileTrueExecute(const UObjec
 		Proxy->Init(WorldContextObject, Settings);
 		Proxy->Proxy_IsTrue = true;
 		constexpr bool bEvaluatePredicateOnSetup = false;
+		// 使用弱指针捕获，防止回调延迟执行时 Proxy 已被 GC 导致悬空访问
+		TWeakObjectPtr<UECFWhileTrueExecuteBP> WeakProxy(Proxy);
 		Proxy->Proxy_Handle = FFlow::WhileTrueExecute(WorldContextObject,
-			[Proxy]()
+			[WeakProxy]()
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFWhileTrueExecuteBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnWhile.Broadcast(Proxy, 0.f, false, false);
-					return Proxy->Proxy_IsTrue;
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnWhile.Broadcast(StrongProxy, 0.f, false, false);
+						return StrongProxy->Proxy_IsTrue;
+					}
 				}
 				return false;
 			},
-			[Proxy](float DeltaTime)
+			[WeakProxy](float DeltaTime)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFWhileTrueExecuteBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnExecute.Broadcast(Proxy, DeltaTime, false, false);
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnExecute.Broadcast(StrongProxy, DeltaTime, false, false);
+					}
 				}
 			},
-			[Proxy](bool bTimedOut, bool bStopped)
+			[WeakProxy](bool bTimedOut, bool bStopped)
 			{
-				if (IsProxyValid(Proxy))
+				if (UECFWhileTrueExecuteBP* StrongProxy = WeakProxy.Get())
 				{
-					Proxy->OnComplete.Broadcast(Proxy, 0.f, bTimedOut, bStopped);
-					Proxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnComplete.Broadcast(StrongProxy, 0.f, bTimedOut, bStopped);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
 			},
 		TimeOut, Settings, bEvaluatePredicateOnSetup);
