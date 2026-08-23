@@ -264,7 +264,7 @@ public:
         meta = (DisplayName = "计算贝塞尔曲线点",
                 ReturnDisplayName = "曲线点",
                 Keywords = "贝塞尔 曲线 求值 De Casteljau Bezier Evaluate",
-                ToolTip = "按进度计算任意阶贝塞尔曲线点。速度选项可先映射进度，并可选择弧长近似匀速；该节点不访问世界或绘制调试图形。"))
+                ToolTip = "按进度计算任意阶贝塞尔曲线点。速度选项可先映射进度，并可选择弧长近似匀速；该节点不访问世界或绘制调试图形。\n\n性能提示：此节点每次调用将重建弧长表，请勿在 Tick 中逐帧调用；需要高频使用请改用带状态的导弹轨迹接口。"))
     static FVector CalculateBezierPoint(
         UPARAM(ref, DisplayName = "控制点") const TArray<FVector>& Points,
         UPARAM(DisplayName = "进度") float Progress,
