@@ -341,12 +341,13 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 			return NAME_None;
 		}();
 
-		FFieldSystemCommand LocalCommand = Command;
-		LocalCommand.InitFieldNodes(Solver->GetSolverTime(), OwnerName);
-
-		// 提交命令到Solver（复制UGeometryCollectionComponent::DispatchFieldCommand的实现）
-		Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, NewCommand = LocalCommand]()
+		// 保持 TimeCreation 的“入队时刻”语义：入队前读取求解器时间并按值捕获。
+		// 按值捕获直接深拷贝一次 Command；原实现经 LocalCommand 中转 + lambda 再捕获
+		// 会产生两次求值图深拷贝（FFieldSystemCommand 无移动构造，无法以 MoveTemp 消除）。
+		const double SolverTime = Solver->GetSolverTime();
+		Solver->EnqueueCommandImmediate([Solver, PhysicsProxy, SolverTime, OwnerName, NewCommand = Command]() mutable
 		{
+			NewCommand.InitFieldNodes(SolverTime, OwnerName);
 			// UE 5.5+ BufferCommand已弃用，使用BufferFieldCommand_Internal
 #if XTOOLS_ENGINE_5_5_OR_LATER
 			PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
