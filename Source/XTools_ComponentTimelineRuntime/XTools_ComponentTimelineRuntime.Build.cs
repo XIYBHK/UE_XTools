@@ -49,8 +49,6 @@ public class XTools_ComponentTimelineRuntime : ModuleRules
 			{
 				"CoreUObject",
 				"Engine",
-				"Slate",
-				"SlateCore",
 				"DeveloperSettings"
 			}
 		);
