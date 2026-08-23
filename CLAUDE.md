@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.9），提供蓝图节点和 C++ 功能库。插件采用多模块架构（23个模块），每个模块独立编译和打包。
+XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.9），提供蓝图节点和 C++ 功能库。插件采用多模块架构（26个模块），每个模块独立编译和打包。
 
 **核心设计原则**：
 - 单一职责原则：每个模块专注于一个特定功能领域
@@ -68,13 +68,16 @@ XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.
 ├─ GeometryTool                        # 几何工具（形状组件点阵生成、表面采样）
 ├─ RandomShuffles                      # PRD 伪随机分布算法和数组洗牌
 ├─ FormationSystem                     # 编队系统和移动控制
+├─ SplineMovement                      # 样条移动（普通插值 + AI 寻路两种模式）
+├─ QueueSpline                         # 队列样条（成员沿样条排队，重入隔离派发）
 └─ XTools                              # 主模块（插件入口与运行时工具库）
 
 编辑器模块层（UncookedOnly，每个都有对应 Runtime 模块）
 ├─ BlueprintExtensions                 # → BlueprintExtensionsRuntime: 14+ 自定义 K2Node
 ├─ ObjectPoolEditor                    # → ObjectPool: K2Node_SpawnActorFromPool
 ├─ SortEditor                          # → Sort: K2Node_SmartSort
-└─ XTools_ComponentTimelineUncooked    # → ComponentTimelineRuntime: K2Node_ComponentTimeline
+├─ XTools_ComponentTimelineUncooked    # → ComponentTimelineRuntime: K2Node_ComponentTimeline
+└─ SplineMovementEditor                # → SplineMovement: 样条移动编辑器支持
 
 Editor Only 模块（仅 Win64，除 SwitchLanguage）
 ├─ X_AssetEditor                       # 资产批量处理（碰撞、材质函数、命名规范）
@@ -166,7 +169,7 @@ FXToolsErrorReporter::Warning(
 - 编译时宏 `ECF_INSIGHT_PROFILING` 控制 Insight 跟踪
 
 ### ComponentTimeline
-- 运行时：`UComponentTimelineComponent`；编辑器：`UK2Node_ComponentTimelineRuntime`
+- 运行时：`UComponentTimelineLibrary::InitializeComponentTimelines` 在 BeginPlay 中对原生 `UTimelineComponent` 做手动初始化（带幂等防护）；编辑器节点：`K2Node_ComponentTimeline`
 - 必须在 `BeginPlay` 中调用初始化函数
 
 ### Sort 通用排序

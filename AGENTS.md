@@ -6,13 +6,13 @@
 
 ## OVERVIEW
 
-UE 5.3-5.8 模块化蓝图工具插件 (v1.9.9)，23个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
+UE 5.3-5.8 模块化蓝图工具插件 (v1.9.9)，26个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
 
 ## STRUCTURE
 
 ```
 XTools/
-├── Source/                    # 23个模块源码
+├── Source/                    # 26个模块源码
 │   ├── XToolsCore/            # [基础层] 版本兼容 + 错误处理 + 通用宏
 │   ├── AxisLocker/            # [运行时] 物理轴向锁定 + 状态恢复
 │   ├── ObjectPool/            # [运行时] Actor对象池子系统
@@ -27,8 +27,11 @@ XTools/
 │   ├── RandomShuffles/        # [运行时] PRD伪随机
 │   ├── FieldSystemExtensions/ # [运行时] Chaos场系统
 │   ├── XTools_ComponentTimelineRuntime/ # [运行时] 组件时间轴
+│   ├── SplineMovement/        # [运行时] 样条移动（含AI寻路模式）
+│   ├── QueueSpline/           # [运行时] 队列样条（重入隔离派发）
 │   ├── ObjectPoolEditor/      # [编辑器] K2Node_SpawnActorFromPool
 │   ├── XTools_ComponentTimelineUncooked/ # [编辑器] K2Node_ComponentTimeline
+│   ├── SplineMovementEditor/  # [编辑器] 样条移动编辑器支持
 │   ├── X_AssetEditor/         # [Editor] 资产批处理 (Win64)
 │   ├── XTools_AutoSizeComments/    # [Editor] 注释框自适应 (第三方汉化)
 │   ├── XTools_BlueprintAssist/     # [Editor] 蓝图格式化 (第三方汉化)
@@ -52,15 +55,18 @@ XToolsCore (PreDefault)
  ├─ XTools_EnhancedCodeFlow (+Projects)
  ├─ PointSampling (+RenderCore, RHI)
  ├─ FieldSystemExtensions (+Chaos, FieldSystemEngine)
- ├─ FormationSystem (+AIModule, Slate, UMG)
+ ├─ FormationSystem (+AIModule)
  ├─ XTools_ComponentTimelineRuntime
+ ├─ SplineMovement (+AIModule, Projects)
+ ├─ QueueSpline
  │
- ├─ [UncookedOnly] BlueprintExtensions → BlueprintExtensionsRuntime
+ ├─ [UncookedOnly] BlueprintExtensions → BlueprintExtensionsRuntime (+RandomShuffles私有依赖)
  ├─ [UncookedOnly] ObjectPoolEditor → ObjectPool
  ├─ [UncookedOnly] SortEditor → Sort
  ├─ [UncookedOnly] XTools_ComponentTimelineUncooked → ComponentTimelineRuntime
+ ├─ [UncookedOnly] SplineMovementEditor → SplineMovement
  │
- └─ [Main] XTools → ComponentTimelineRuntime, RandomShuffles, FormationSystem, GeometryCore
+ └─ [Main] XTools → ComponentTimelineRuntime, RandomShuffles, GeometryCore 等
 ```
 
 ## WHERE TO LOOK
@@ -146,7 +152,7 @@ XTOOLS_CHECK_VALID(Actor, false);
 
 ## LOADING ORDER
 
-PreDefault → XToolsCore | Default → 10个Runtime + XTools主模块 | PostDefault → 4个UncookedOnly
+PreDefault → XToolsCore | Default → 13个Runtime（含主模块XTools）| PostDefault → 5个UncookedOnly
 
 ## THIRD-PARTY MODULES
 
