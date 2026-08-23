@@ -39,7 +39,8 @@ private:
     int32 MaxHullVerts;
     int32 HullPrecision;
 
-    TSharedPtr<SWindow> DialogWindow;
+    /** 持有窗口弱引用，避免与 SWindow 内容共享引用形成引用环导致泄漏 */
+    TWeakPtr<SWindow> DialogWindow;
     bool bConfirmed = false;
 
 private:

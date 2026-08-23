@@ -140,9 +140,10 @@ bool SX_AutoConvexDialog::ShowDialog(int32& OutHullCount, int32& OutMaxHullVerts
 FReply SX_AutoConvexDialog::OnConfirm()
 {
     bConfirmed = true;
-    if (DialogWindow.IsValid())
+    // 弱引用需先 Pin 才能访问窗口
+    if (TSharedPtr<SWindow> PinnedWindow = DialogWindow.Pin())
     {
-        DialogWindow->RequestDestroyWindow();
+        PinnedWindow->RequestDestroyWindow();
     }
     return FReply::Handled();
 }
@@ -150,9 +151,10 @@ FReply SX_AutoConvexDialog::OnConfirm()
 FReply SX_AutoConvexDialog::OnCancel()
 {
     bConfirmed = false;
-    if (DialogWindow.IsValid())
+    // 弱引用需先 Pin 才能访问窗口
+    if (TSharedPtr<SWindow> PinnedWindow = DialogWindow.Pin())
     {
-        DialogWindow->RequestDestroyWindow();
+        PinnedWindow->RequestDestroyWindow();
     }
     return FReply::Handled();
 }
