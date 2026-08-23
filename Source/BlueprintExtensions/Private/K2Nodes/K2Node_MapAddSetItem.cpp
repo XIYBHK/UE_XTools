@@ -1,4 +1,4 @@
-﻿#include "K2Nodes/K2Node_MapAddSetItem.h"
+#include "K2Nodes/K2Node_MapAddSetItem.h"
 #include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器功能
@@ -127,10 +127,19 @@ public:
 	        return;
 	    }
 	    
+	    // 先获取目标函数；FunctionToCall 为空时编译器会直接解引用崩溃，必须判空后再生成语句
+	    UFunction* AddSetItemFunc = FindUField<UFunction>(UMapExtensionsLibrary::StaticClass(), TEXT("Map_AddSetItem"));
+	    if (!AddSetItemFunc)
+	    {
+	        // 使用 Warning 而非 Error：与项目约定一致，避免触发 EdGraphNode.h:563 断言崩溃
+	        Context.MessageLog.Warning(*FString::Printf(TEXT("映射节点编译失败：在 UMapExtensionsLibrary 中未找到函数 %s。"), TEXT("Map_AddSetItem")), Node);
+	        return;
+	    }
+
 	    // MapAdd
 	    FBlueprintCompiledStatement& MapAddStmt = Context.AppendStatementForNode(Node);
 	    MapAddStmt.Type = KCST_CallFunction;
-	    MapAddStmt.FunctionToCall = FindUField<UFunction>(UMapExtensionsLibrary::StaticClass(), TEXT("Map_AddSetItem"));
+	    MapAddStmt.FunctionToCall = AddSetItemFunc;
 	    MapAddStmt.RHS.Add(*MapTerm);
 	    MapAddStmt.RHS.Add(KeyTerm);
 	    MapAddStmt.RHS.Add(ItemTerm);

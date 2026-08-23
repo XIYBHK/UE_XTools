@@ -1,4 +1,4 @@
-﻿#include "K2Nodes/K2Node_Assign.h"
+#include "K2Nodes/K2Node_Assign.h"
 #include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器功能
@@ -204,7 +204,7 @@ void UK2Node_Assign::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionReg
 bool UK2Node_Assign::IsActionFilteredOut(class FBlueprintActionFilter const& Filter)
 {
 	// Default to filtering this node out unless dragging off of a reference output pin
-	bool bIsFilteredOut = false;
+	bool bIsFilteredOut = true;
 	FBlueprintActionContext const& FilterContext = Filter.Context;
 
 	for (UEdGraphPin* Pin : FilterContext.Pins)

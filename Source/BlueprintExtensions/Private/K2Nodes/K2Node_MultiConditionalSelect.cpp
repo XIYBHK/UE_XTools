@@ -305,11 +305,12 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	UEdGraphPin* ArrayPin = MakeArray->GetOutputPin();
 	UEdGraphPin* TargetArrayPin = ArrayFind->FindPinChecked(TEXT("TargetArray"));
 	UEdGraphPin* ItemToFindPin = ArrayFind->FindPinChecked(TEXT("ItemToFind"));
-	const UEdGraphSchema* Schema = CompilerContext.GetSchema();
 	ArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
-	if (Schema)
+	if (!K2NodeHelpers::TryConnect(CompilerContext, ArrayPin, TargetArrayPin))
 	{
-		Schema->TryCreateConnection(ArrayPin, TargetArrayPin);
+		// 连接失败：TryConnect 内部已记录 Warning 日志，终止展开避免生成残缺数据流
+		BreakAllNodeLinks();
+		return;
 	}
 	TargetArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
 	ItemToFindPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
@@ -318,18 +319,22 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	// Link between Array Find and 1st Select
 	UEdGraphPin* ArrayFindOutputPin = ArrayFind->GetReturnValuePin();
 	UEdGraphPin* Select1stIndexPin = Select1st->GetIndexPin();
-	if (Schema)
+	if (!K2NodeHelpers::TryConnect(CompilerContext, ArrayFindOutputPin, Select1stIndexPin))
 	{
-		Schema->TryCreateConnection(ArrayFindOutputPin, Select1stIndexPin);
+		// 连接失败：终止展开避免生成残缺数据流
+		BreakAllNodeLinks();
+		return;
 	}
 	Select1st->NotifyPinConnectionListChanged(Select1stIndexPin);
 
 	// Link between Array Find and Int Equal
 	UEdGraphPin* IntEqualAPin = IntEqual->FindPinChecked(TEXT("A"));
 	UEdGraphPin* IntEqualBPin = IntEqual->FindPinChecked(TEXT("B"));
-	if (Schema)
+	if (!K2NodeHelpers::TryConnect(CompilerContext, ArrayFindOutputPin, IntEqualAPin))
 	{
-		Schema->TryCreateConnection(ArrayFindOutputPin, IntEqualAPin);
+		// 连接失败：终止展开避免生成残缺数据流
+		BreakAllNodeLinks();
+		return;
 	}
 	ArrayFindOutputPin->GetSchema()->TrySetDefaultValue(*IntEqualBPin, TEXT("-1"));
 
@@ -339,14 +344,18 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	UEdGraphPin* Select2ndIndexPin = Select2nd->GetIndexPin();
 	TArray<UEdGraphPin*> Select2ndOptionPins;
 	Select2nd->GetOptionPins(Select2ndOptionPins);
-	if (Schema)
+	if (!K2NodeHelpers::TryConnect(CompilerContext, IntEqualReturnValuePin, Select2ndIndexPin))
 	{
-		Schema->TryCreateConnection(IntEqualReturnValuePin, Select2ndIndexPin);
+		// 连接失败：终止展开避免生成残缺数据流
+		BreakAllNodeLinks();
+		return;
 	}
 	Select2nd->NotifyPinConnectionListChanged(Select2ndIndexPin);
-	if (Schema)
+	if (!K2NodeHelpers::TryConnect(CompilerContext, Select1stReturnValuePin, Select2ndOptionPins[0]))
 	{
-		Schema->TryCreateConnection(Select1stReturnValuePin, Select2ndOptionPins[0]);
+		// 连接失败：终止展开避免生成残缺数据流
+		BreakAllNodeLinks();
+		return;
 	}
 	CompilerContext.MovePinLinksToIntermediate(*GetDefaultOptionPin(), *Select2ndOptionPins[1]);
 

@@ -31,7 +31,8 @@ namespace K2NodeHelpers
 	{
 		if (!SourcePin || !TargetPin)
 		{
-			CompilerContext.MessageLog.Error(TEXT("K2Node internal connection failed: null pin."));
+			// 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
+			CompilerContext.MessageLog.Warning(TEXT("K2Node internal connection failed: null pin."));
 			return false;
 		}
 
@@ -49,11 +50,12 @@ namespace K2NodeHelpers
 
 			if (ErrorNode)
 			{
-				CompilerContext.MessageLog.Error(*Message, ErrorNode);
+				// 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
+				CompilerContext.MessageLog.Warning(*Message, ErrorNode);
 			}
 			else
 			{
-				CompilerContext.MessageLog.Error(*Message);
+				CompilerContext.MessageLog.Warning(*Message);
 			}
 		}
 

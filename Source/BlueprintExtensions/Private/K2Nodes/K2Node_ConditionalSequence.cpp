@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2025 XIYBHK
  * Licensed under UE_XTools License
  * 
@@ -107,9 +107,11 @@ void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerCon
 			UEdGraphPin* IfThenElseThenPin = IfThenElse->GetThenPin();
 			UEdGraphPin* IfThenElseCondPin = IfThenElse->GetConditionPin();
 
-			if (const UEdGraphSchema* Schema = CompilerContext.GetSchema())
+			if (!K2NodeHelpers::TryConnect(CompilerContext, SequenceExecPin, IfThenElseExecPin))
 			{
-				Schema->TryCreateConnection(SequenceExecPin, IfThenElseExecPin);
+				// 连接失败：TryConnect 内部已记录 Warning 日志，终止展开避免生成残缺执行流
+				BreakAllNodeLinks();
+				return;
 			}
 			CompilerContext.MovePinLinksToIntermediate(*CaseExecPin, *IfThenElseThenPin);
 			CompilerContext.MovePinLinksToIntermediate(*CaseCondPin, *IfThenElseCondPin);

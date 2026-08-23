@@ -97,7 +97,8 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
   // 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
   if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this,
                                                    SourceGraph)) {
-    CompilerContext.MessageLog.Error(
+    // 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
+    CompilerContext.MessageLog.Warning(
         *LOCTEXT("LatentGraphOnly",
                  "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
              .ToString(),
