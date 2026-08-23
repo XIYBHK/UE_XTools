@@ -47,11 +47,7 @@ public class FormationSystem : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"InputCore",
 			"AIModule",
-			"Slate",
-			"SlateCore",
-			"UMG",
 			"XToolsCore"
 		});
 

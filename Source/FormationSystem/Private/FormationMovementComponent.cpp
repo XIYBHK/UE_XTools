@@ -58,6 +58,9 @@ void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, 
     if (HasReachedTarget())
     {
         UE_LOG(LogFormationSystem, Log, TEXT("FormationMovementComponent: 已在目标位置"));
+        // 已到达目标的提前返回路径同样广播完成事件（与 UpdateMovement 正常到达路径
+        // 保持一致的参数与时机语义），避免依赖完成事件的调用方永久挂起
+        OnMovementCompleted.Broadcast(this);
         return;
     }
     

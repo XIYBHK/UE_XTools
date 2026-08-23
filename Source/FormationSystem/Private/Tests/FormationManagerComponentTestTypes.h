@@ -5,8 +5,9 @@
 
 #pragma once
 
-#if WITH_EDITOR
-
+// 说明：本测试类不在编译期剔除（不加 #if WITH_EDITOR 守卫）——
+// UHT 对 Game 目标生成的 .gen.cpp 不会继承该守卫，守卫反而导致打包构建
+// 引用未声明类型而失败。类本身惰性无副作用，仅被编辑器自动化测试引用。
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "FormationManagerComponentTestTypes.generated.h"
@@ -34,5 +35,3 @@ public:
     /** 停止事件广播次数 */
     int32 StoppedCount = 0;
 };
-
-#endif // WITH_EDITOR
