@@ -212,6 +212,7 @@ public:
 	 * 性能影响：启用后会在BeginPlay时分帧预热对象池
 	 * 建议：仅在需要频繁生成/销毁Actor的项目中启用（如射击游戏、弹幕游戏）
 	 */
+	// 【已废弃】此字段已废弃，开关迁移至 /Script/ObjectPool.UObjectPoolSettings（Source/ObjectPool/Public/ObjectPoolSettings.h），编辑器内不再生效。
 	UPROPERTY(config, EditAnywhere, Category="子系统开关", meta=(
 		DisplayName="启用对象池",
 		ToolTip="启用后提供Actor对象池功能，适合需要频繁生成/销毁Actor的项目\n默认关闭，按需启用"))
@@ -224,6 +225,7 @@ public:
 	 * 性能影响：内存占用极小（<10KB），提供强大的异步编程能力
 	 * 建议：默认启用，该子系统非常轻量且功能强大
 	 */
+	// 【已废弃】此字段已废弃，开关迁移至 /Script/XTools_EnhancedCodeFlow.ECFSettings（Source/XTools_EnhancedCodeFlow/Public/ECFSettings.h），编辑器内不再生效。
 	UPROPERTY(config, EditAnywhere, Category="子系统开关", meta=(
 		DisplayName="启用增强代码流",
 		ToolTip="提供异步执行、协程等高级代码流功能\n默认启用（轻量级子系统）"))
