@@ -16,6 +16,7 @@
 //  对象池模块依赖
 #include "ObjectPool.h"
 #include "ActorPool.h"
+#include "ObjectPoolUtils.h"
 #include "ObjectPoolSubsystem.h"
 
 FObjectPoolPreallocator::FObjectPoolPreallocator(FActorPool* InOwnerPool)
@@ -377,6 +378,8 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
         NewActor->SetActorTickEnabled(false);
         if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(NewActor->GetRootComponent()))
         {
+            // 禁用前先保存原始碰撞/物理设置（与 PrewarmPool 同理，防止原始值在首次归还时被永久固化）
+            FObjectPoolUtils::SaveOriginalCollisionSettings(RootPrimitive);
             RootPrimitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
             RootPrimitive->SetSimulatePhysics(false);
         }

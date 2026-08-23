@@ -115,20 +115,24 @@ bool IObjectPoolInterface::CallLifecycleEventEnhanced(AActor* Actor, EObjectPool
     if (bAsync)
     {
         //  异步调用（在游戏线程的下一帧执行）
-        AsyncTask(ENamedThreads::GameThread, [Actor, EventType]()
+        //  使用弱指针捕获，防止延迟执行期间 Actor 已被 GC 导致悬空访问
+        TWeakObjectPtr<AActor> WeakActor(Actor);
+        AsyncTask(ENamedThreads::GameThread, [WeakActor, EventType]()
         {
-            if (IsValid(Actor))
+            //  先解析弱指针，再做原有的有效性判断
+            AActor* StrongActor = WeakActor.Get();
+            if (IsValid(StrongActor))
             {
                 switch (EventType)
                 {
                 case EObjectPoolLifecycleEvent::Created:
-                    IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+                    IObjectPoolInterface::Execute_OnPoolActorCreated(StrongActor);
                     break;
                 case EObjectPoolLifecycleEvent::Activated:
-                    IObjectPoolInterface::Execute_OnPoolActorActivated(Actor);
+                    IObjectPoolInterface::Execute_OnPoolActorActivated(StrongActor);
                     break;
                 case EObjectPoolLifecycleEvent::ReturnedToPool:
-                    IObjectPoolInterface::Execute_OnReturnToPool(Actor);
+                    IObjectPoolInterface::Execute_OnReturnToPool(StrongActor);
                     break;
                 default:
                     break;

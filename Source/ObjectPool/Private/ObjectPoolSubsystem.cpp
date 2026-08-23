@@ -11,6 +11,7 @@
 #include "ObjectPoolManager.h"
 #include "ObjectPoolUtils.h"
 #include "ObjectPoolInterface.h"
+#include "ObjectPoolSettings.h"
 
 //  UE核心依赖
 #include "Engine/World.h"
@@ -136,29 +137,14 @@ void UObjectPoolSubsystem::Deinitialize()
 bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
     //  检查插件设置，如果未启用则不创建子系统
-    // 注意：这里不能直接include X_AssetEditorSettings.h，因为会产生循环依赖
-    // 使用FindObject动态加载配置
-    static bool bHasLoggedMissingSettingsClass = false;
-    if (const UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
+    //  迁移说明：不再反射读取 Editor-only 模块的 X_AssetEditorSettings（打包后该类不存在导致开关被忽略、
+    //  编辑器与打包成品行为反转），改为读取本模块运行时开发者设置，保证编辑器与打包成品行为一致
+    const UObjectPoolSettings* Settings = GetDefault<UObjectPoolSettings>();
+    const bool bEnabled = Settings ? Settings->bEnableObjectPoolSubsystem : true;
+    if (!bEnabled)
     {
-        if (const UObject* Settings = SettingsClass->GetDefaultObject())
-        {
-            const FProperty* Property = SettingsClass->FindPropertyByName(TEXT("bEnableObjectPoolSubsystem"));
-            if (Property && Property->IsA<FBoolProperty>())
-            {
-                const FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property);
-                if (BoolProperty && !BoolProperty->GetPropertyValue_InContainer(Settings))
-                {
-                    // 设置中未启用对象池
-                    return false;
-                }
-            }
-        }
-    }
-    else if (!bHasLoggedMissingSettingsClass)
-    {
-        bHasLoggedMissingSettingsClass = true;
-        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("未找到X_AssetEditorSettings，使用默认策略创建ObjectPool子系统"));
+        // 设置中未启用对象池
+        return false;
     }
     
     // 只在游戏世界中创建
@@ -331,7 +317,27 @@ AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
         OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("AcquireDeferredFromPool: 无法创建池 %s"), *ActorClass->GetName());
         return nullptr;
     }
-    return Pool->AcquireDeferred(World);
+
+    if (AActor* ResultActor = Pool->AcquireDeferred(World))
+    {
+        return ResultActor;
+    }
+
+    //  永不失败机制（延迟路径）：池空/满或新建失败时，回退为标准延迟构造生成。
+    //  使用 SpawnActorDeferred 保持两段式契约——BeginPlay 推迟到调用方
+    //  FinalizeSpawnFromPool 的 FinishSpawning 才触发，ExposeOnSpawn 赋值窗口不变。
+    OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("AcquireDeferredFromPool: 池无可用Actor，回退标准延迟生成: %s"), *ActorClass->GetName());
+    AActor* FallbackActor = World->SpawnActorDeferred<AActor>(ActorClass, FTransform::Identity);
+    if (FallbackActor)
+    {
+        DeferredFallbackActors.Add(FallbackActor);
+        ++SubsystemStats.TotalFallbackSpawns;
+    }
+    else
+    {
+        OBJECTPOOL_SUBSYSTEM_LOG(Error, TEXT("AcquireDeferredFromPool: 回退延迟生成也失败: %s"), *ActorClass->GetName());
+    }
+    return FallbackActor;
 }
 
 bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform& SpawnTransform)
@@ -342,6 +348,19 @@ bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("FinalizeSpawnFromPool: Actor无效"));
         return false;
+    }
+
+    //  延迟回退生成的Actor不属于任何池：直接完成构造并激活
+    if (DeferredFallbackActors.Contains(Actor))
+    {
+        DeferredFallbackActors.Remove(Actor);
+        OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("FinalizeSpawnFromPool: 回退生成的Actor，走非池化完成: %s"), *Actor->GetName());
+        if (!Actor->IsActorInitialized())
+        {
+            Actor->FinishSpawning(SpawnTransform);
+        }
+        FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+        return true;
     }
 
     UClass* ActorClass = Actor->GetClass();

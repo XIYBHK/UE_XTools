@@ -72,11 +72,11 @@ public:
      * @param WorldContext 世界上下文
      * @param ActorClass Actor类型
      * @param SpawnTransform 生成位置和旋转
-     * @return 池化的Actor实例，永不返回null
+     * @return 池化的Actor实例，生成失败时返回null
      */
 	UFUNCTION(BlueprintCallable, Category = "XTools|对象池|核心", meta = (
         DisplayName = "从池获取Actor（静态）",
-		ToolTip = "静态方法：从对象池获取Actor，永不失败，自动处理所有错误情况。池满或无可用实例时会回退为普通生成，该Actor不受池管理，需要区分来源时请使用「从池获取Actor（扩展）」",
+		ToolTip = "静态方法：从对象池获取Actor。池满或无可用实例时会回退为普通生成，该Actor不受池管理，需要区分来源时请使用「从池获取Actor（扩展）」。注意：若目标类本身无法生成（如抽象类、加载失败），将返回空值，调用方需判空",
 		Keywords = "Pool Spawn Acquire Get",
         WorldContext = "WorldContext"))
     static AActor* SpawnActorFromPool(

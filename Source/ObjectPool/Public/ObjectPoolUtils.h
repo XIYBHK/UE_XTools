@@ -189,11 +189,22 @@ public:
 
     /**
      * 生成池的唯一标识符
-     * 
+     *
      * @param ActorClass Actor类
      * @return 唯一标识符
      */
     static FString GeneratePoolId(TSubclassOf<AActor> ActorClass);
+
+    /**
+     * 保存PrimitiveComponent的原始碰撞/物理设置（含 bSimulatePhysics）。
+     * 供池外预热/创建路径在禁用碰撞前快照原始配置（原为私有，预热路径需要外部调用，移至公开）。
+     */
+    static void SaveOriginalCollisionSettings(class UPrimitiveComponent* PrimComp);
+
+    /**
+     * 恢复PrimitiveComponent的原始碰撞/物理设置
+     */
+    static void RestoreOriginalCollisionSettings(class UPrimitiveComponent* PrimComp);
 
 private:
     //  内部辅助方法
@@ -232,16 +243,6 @@ private:
      * 计算Actor类的内存占用估算
      */
     static int64 CalculateActorMemoryFootprint(TSubclassOf<AActor> ActorClass);
-
-    /**
-     * 保存PrimitiveComponent的原始碰撞设置
-     */
-    static void SaveOriginalCollisionSettings(class UPrimitiveComponent* PrimComp);
-
-    /**
-     * 恢复PrimitiveComponent的原始碰撞设置
-     */
-    static void RestoreOriginalCollisionSettings(class UPrimitiveComponent* PrimComp);
 
     /**
      * 从CDO重置组件到默认状态（通用方法）

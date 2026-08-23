@@ -10,6 +10,7 @@
 #include "Stats/Stats.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Templates/SharedPointer.h"
+#include "UObject/ObjectKey.h"
 #include "ObjectPoolTypes.h"
 #include "ObjectPoolUtils.h"
 #include "ObjectPoolConfigManager.h"
@@ -299,6 +300,14 @@ private:
 
     /** 子系统统计信息实例 */
     FObjectPoolSubsystemStats SubsystemStats;
+
+    /**
+     * 延迟获取回退生成的 Actor 追踪集（永不失败机制·延迟路径）。
+     * AcquireDeferredFromPool 池空/满时以 SpawnActorDeferred 回退生成，
+     * 生成的 Actor 不属于任何池，FinalizeSpawnFromPool 据此走非池化完成分支。
+     * 使用 TObjectKey：调用方未 Finalize 的残留键不会悬挂匹配新对象。
+     */
+    TSet<TObjectKey<AActor>> DeferredFallbackActors;
 
     //  内部辅助方法
 

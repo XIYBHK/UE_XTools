@@ -60,15 +60,10 @@ namespace XTools::ObjectPool
             }
         }
 
-        FActorSpawnParameters DefaultParams;
-        DefaultParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        DefaultParams.bNoFail = true;
-        if (AActor* DefaultActor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform, DefaultParams))
-        {
-            OBJECTPOOL_LOG(Warning, TEXT("UObjectPoolLibrary: 回退到默认Actor: %s"), *DefaultActor->GetName());
-            return DefaultActor;
-        }
-
+        //  生成失败（如传入抽象类、类加载失败等）直接返回 nullptr，
+        //  不再回退生成 AActor::StaticClass() 的空壳 Actor，避免向调用方返回错误类型
+        OBJECTPOOL_LOG(Error, TEXT("UObjectPoolLibrary: 回退生成失败: %s，返回 nullptr"),
+            ActorClass ? *ActorClass->GetName() : TEXT("Invalid"));
         return nullptr;
     }
 }
@@ -100,7 +95,7 @@ AActor* UObjectPoolLibrary::SpawnActorFromPool(const UObject* WorldContext, TSub
     UObjectPoolSubsystem* PoolSubsystem = GetSubsystemSafe(WorldContext);
     if (PoolSubsystem)
     {
-        // 使用对象池子系统的SpawnActorFromPool（已实现永不失败机制）
+        // 使用对象池子系统的SpawnActorFromPool（池空时自动回退普通生成；类本身无法生成时返回空）
         AActor* Actor = PoolSubsystem->SpawnActorFromPool(ActorClass, SpawnTransform);
 
         OBJECTPOOL_LOG(VeryVerbose, TEXT("UObjectPoolLibrary::SpawnActorFromPool: %s, 结果: %s"),

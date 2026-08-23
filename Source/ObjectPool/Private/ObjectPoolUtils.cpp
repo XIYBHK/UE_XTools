@@ -99,15 +99,10 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
 
     // 复用路径的 Construction Script 重跑移至 FinalizeDeferred，确保顺序与原生更一致
     
-    //  激活Actor
-    ResetBasicActorProperties(Actor, false); // 显示Actor
-    
-    //  启用物理
-    if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
-    {
-        RootPrimitive->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        RootPrimitive->SetSimulatePhysics(false); // 通常池化对象不需要物理模拟
-    }
+    //  激活Actor（碰撞与物理由 ResetBasicActorProperties 按归还时保存的原始配置恢复；
+    //  首次激活则保持蓝图/CDO 配置。不得无条件覆写为 QueryAndPhysics + 关物理，
+    //  否则 QueryOnly 触发器与物理投射物池化后行为错误）
+    ResetBasicActorProperties(Actor, false); // 显示Actor + 恢复原始碰撞/物理设置
     
     //  启用Tick
     Actor->SetActorTickEnabled(true);
@@ -701,8 +696,16 @@ void FObjectPoolUtils::SaveOriginalCollisionSettings(UPrimitiveComponent* PrimCo
     // 添加新的标签保存原始设置
     PrimComp->ComponentTags.Add(FName(*OriginalCollisionTag));
 
-    OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("保存组件碰撞设置: %s -> %s"),
-        *PrimComp->GetName(), *OriginalCollisionTag);
+    //  同步保存物理模拟状态：归还时 SetSimulatePhysics(false) 会覆盖蓝图原始配置，
+    //  不保存则复用激活后无法还原（如物理投射物第二次生成后不再模拟）。
+    const bool bSimulating = PrimComp->IsSimulatingPhysics();
+    PrimComp->ComponentTags.RemoveAll([](const FName& Tag) {
+        return Tag.ToString().StartsWith(TEXT("OriginalSimulatePhysics_"));
+    });
+    PrimComp->ComponentTags.Add(FName(*FString::Printf(TEXT("OriginalSimulatePhysics_%d"), bSimulating ? 1 : 0)));
+
+    OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("保存组件碰撞/物理设置: %s -> %s, Simulate=%d"),
+        *PrimComp->GetName(), *OriginalCollisionTag, bSimulating ? 1 : 0);
 }
 
 void FObjectPoolUtils::RestoreOriginalCollisionSettings(UPrimitiveComponent* PrimComp)
@@ -728,6 +731,21 @@ void FObjectPoolUtils::RestoreOriginalCollisionSettings(UPrimitiveComponent* Pri
 
             OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("恢复组件碰撞设置: %s -> %d"),
                 *PrimComp->GetName(), (int32)OriginalCollision);
+            break;
+        }
+    }
+
+    //  查找并恢复保存的物理模拟状态（归还时物理被强制关闭，此处还原原始配置）
+    for (const FName& Tag : PrimComp->ComponentTags)
+    {
+        FString TagString = Tag.ToString();
+        if (TagString.StartsWith(TEXT("OriginalSimulatePhysics_")))
+        {
+            const bool bOriginalSimulate = (TagString.RightChop(24) == TEXT("1"));
+            PrimComp->SetSimulatePhysics(bOriginalSimulate);
+
+            OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("恢复组件物理模拟设置: %s -> %d"),
+                *PrimComp->GetName(), bOriginalSimulate ? 1 : 0);
             break;
         }
     }

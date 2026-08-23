@@ -477,9 +477,11 @@ void FActorPool::PrewarmPool(UWorld* World, int32 Count)
             NewActor->SetActorHiddenInGame(true);
             NewActor->SetActorTickEnabled(false);
             
-            // 禁用碰撞
+            // 禁用碰撞（必须先保存原始碰撞/物理设置，否则首次归还时
+            // SaveOriginalCollisionSettings 会把已被破坏的 NoCollision 当作原始值永久固化）
             if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(NewActor->GetRootComponent()))
             {
+                FObjectPoolUtils::SaveOriginalCollisionSettings(RootPrimitive);
                 RootPrimitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
                 RootPrimitive->SetSimulatePhysics(false);
             }

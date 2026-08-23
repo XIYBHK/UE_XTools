@@ -4,6 +4,7 @@
 */
 
 #include "ObjectPoolLibrary.h"
+#include "ObjectPoolSettings.h"
 #include "ObjectPoolSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -11,15 +12,13 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
-#include "UObject/Class.h"
 #include "UObject/UObjectGlobals.h"
-#include "UObject/UnrealType.h"
 
 namespace
 {
     /**
-     * 测试世界辅助：对象池子系统默认在设置中关闭（bEnableObjectPoolSubsystem 默认 false），
-     * 且仅在 GameWorld 创建。这里通过反射临时翻转内存中的 CDO 设置（不写配置文件），
+     * 测试世界辅助：对象池子系统由运行时开发者设置 UObjectPoolSettings 控制（默认启用），
+     * 且仅在 GameWorld 创建。这里临时翻转内存中的设置 CDO 开关（不写配置文件），
      * 创建 Game 类型测试世界，析构时销毁世界并恢复设置。
      */
     class FScopedObjectPoolTestWorld
@@ -27,17 +26,14 @@ namespace
     public:
         explicit FScopedObjectPoolTestWorld(FName WorldName)
         {
-            if (UClass* SettingsClass = FindObject<UClass>(nullptr, TEXT("/Script/X_AssetEditor.X_AssetEditorSettings")))
+            // 新默认值为 true；此处防御用户配置关闭子系统的场景，确保测试世界能创建子系统
+            if (UObjectPoolSettings* Settings = GetMutableDefault<UObjectPoolSettings>())
             {
-                SettingsCDO = SettingsClass->GetDefaultObject();
-                if (FBoolProperty* BoolProp = CastField<FBoolProperty>(SettingsClass->FindPropertyByName(TEXT("bEnableObjectPoolSubsystem"))))
+                bOriginalValue = Settings->bEnableObjectPoolSubsystem;
+                bSettingFlipped = !bOriginalValue;
+                if (bSettingFlipped)
                 {
-                    bOriginalValue = BoolProp->GetPropertyValue_InContainer(SettingsCDO);
-                    bSettingFlipped = !bOriginalValue;
-                    if (bSettingFlipped)
-                    {
-                        BoolProp->SetPropertyValue_InContainer(SettingsCDO, true);
-                    }
+                    Settings->bEnableObjectPoolSubsystem = true;
                 }
             }
 
@@ -52,14 +48,11 @@ namespace
                 World = nullptr;
             }
 
-            if (bSettingFlipped && SettingsCDO)
+            if (bSettingFlipped)
             {
-                if (const UClass* SettingsClass = SettingsCDO->GetClass())
+                if (UObjectPoolSettings* Settings = GetMutableDefault<UObjectPoolSettings>())
                 {
-                    if (FBoolProperty* BoolProp = CastField<FBoolProperty>(SettingsClass->FindPropertyByName(TEXT("bEnableObjectPoolSubsystem"))))
-                    {
-                        BoolProp->SetPropertyValue_InContainer(SettingsCDO, bOriginalValue);
-                    }
+                    Settings->bEnableObjectPoolSubsystem = bOriginalValue;
                 }
             }
         }
@@ -68,7 +61,6 @@ namespace
 
     private:
         UWorld* World = nullptr;
-        UObject* SettingsCDO = nullptr;
         bool bOriginalValue = false;
         bool bSettingFlipped = false;
     };
