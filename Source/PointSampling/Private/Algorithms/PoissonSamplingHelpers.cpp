@@ -419,34 +419,10 @@ namespace PoissonSamplingHelpers
         }
         
         const int32 ToRemove = Points.Num() - TargetCount;
-        
-        // 小规模裁剪（<10个点）：使用原有的逐个移除算法
-        // 原因：小规模时批量算法的开销反而更大
-        if (ToRemove < 10)
-        {
-            while (Points.Num() > TargetCount)
-            {
-                int32 MostCrowdedIndex = 0;
-                float MinNearestDistSq = FLT_MAX;
-                
-                for (int32 i = 0; i < Points.Num(); ++i)
-                {
-                    const float NearestDistSq = FindNearestDistanceSquared(Points[i], Points, i);
-                    if (NearestDistSq < MinNearestDistSq)
-                    {
-                        MinNearestDistSq = NearestDistSq;
-                        MostCrowdedIndex = i;
-                    }
-                }
-                
-                Points.RemoveAtSwap(MostCrowdedIndex);
-            }
-            return;
-        }
-        
-        // 大规模裁剪：批量移除算法
 
         // 点数上限保护：超过合理上限时 Warn 并跳过（避免 O(N²) 阻塞游戏线程）
+        // 注意：该检查必须覆盖两条路径——小裁剪分支的逐个移除算法单次迭代即 O(N²)，
+        // 大数组（如数万点）下即使只裁剪 1 个点也会冻结游戏线程，故置于分支之前。
         const int32 BatchSizeLimit = 2000;
         if (Points.Num() > BatchSizeLimit)
         {
@@ -456,6 +432,32 @@ namespace PoissonSamplingHelpers
                 Points.Num(), BatchSizeLimit);
             return;
         }
+
+        // 小规模裁剪（<10个点）：使用原有的逐个移除算法
+        // 原因：小规模时批量算法的开销反而更大
+        if (ToRemove < 10)
+        {
+            while (Points.Num() > TargetCount)
+            {
+                int32 MostCrowdedIndex = 0;
+                float MinNearestDistSq = FLT_MAX;
+
+                for (int32 i = 0; i < Points.Num(); ++i)
+                {
+                    const float NearestDistSq = FindNearestDistanceSquared(Points[i], Points, i);
+                    if (NearestDistSq < MinNearestDistSq)
+                    {
+                        MinNearestDistSq = NearestDistSq;
+                        MostCrowdedIndex = i;
+                    }
+                }
+
+                Points.RemoveAtSwap(MostCrowdedIndex);
+            }
+            return;
+        }
+
+        // 大规模裁剪：批量移除算法
 
         // 1. 计算所有点的最近邻距离（一次O(N²)）
         TArray<TPair<float, int32>> DistanceIndexPairs;
