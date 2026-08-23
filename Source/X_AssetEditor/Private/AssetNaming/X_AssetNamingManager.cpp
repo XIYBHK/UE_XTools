@@ -44,6 +44,30 @@ static void ChopSuffixNoShrink(FString& InOutString, int32 NumCharsToChop)
 #endif
 }
 
+/**
+ * 【事务性缓存维护】重命名成功后同步更新文件夹名称缓存
+ * 移除旧名条目并写入新名条目，保证同批后续资产的冲突检测基于最新占用情况：
+ * - 新名不写入 → 同批两资产规范化撞名时，第二个要到引擎端才失败；
+ * - 旧名不移除 → 已腾出的名字会被误判为仍被占用而错加后缀。
+ * 仅通过 TMap/TSet 的既有 API（FindOrAdd/Remove/Add）维护，不绕过容器封装。
+ */
+static void UpdateFolderNameCacheAfterRename(TMap<FString, TSet<FString>>& FolderNameCache,
+    const FString& PackagePath, const FString& OldName, const FString& NewName)
+{
+    // 同名“重命名”不会发生（上游有安全检查），防御性跳过避免误删条目
+    if (OldName == NewName)
+    {
+        return;
+    }
+
+    TSet<FString>& CachedNames = FolderNameCache.FindOrAdd(PackagePath);
+    CachedNames.Remove(OldName);
+    CachedNames.Add(NewName);
+
+    UE_LOG(LogX_AssetNaming, Verbose, TEXT("文件夹名称缓存已同步更新: %s（%s -> %s）"),
+        *PackagePath, *OldName, *NewName);
+}
+
 TUniquePtr<FX_AssetNamingManager> FX_AssetNamingManager::Instance = nullptr;
 
 namespace XAssetNaming
@@ -448,17 +472,76 @@ FX_RenameOperationResult FX_AssetNamingManager::RenameAssets(const TArray<FAsset
     );
     SlowTask.MakeDialog(true);
 
-    for (const FAssetData& AssetData : SelectedAssets)
+    // ========== 【事务性上报】批量过程台账：区分已完成 / 失败 / 未处理 ==========
+    // 进度条取消或单项失败会让批次停留在“部分新名 + 部分旧名”的混合状态，
+    // 用本地数组逐项记录，循环结束后统一写入结果结构与日志，供调用方感知部分完成。
+    TArray<FString> SucceededNames;          // 已成功重命名的资产（记录处理前的旧名）
+    TArray<FX_RenameFailure> FailedEntries;  // 失败的资产（原名 + 具体失败原因）
+    TArray<FString> UnprocessedNames;        // 因用户取消而未经处理的资产（保持原名）
+
+    for (int32 AssetIndex = 0; AssetIndex < SelectedAssets.Num(); ++AssetIndex)
     {
+        const FAssetData& AssetData = SelectedAssets[AssetIndex];
         SlowTask.EnterProgressFrame(1.0f);
 
         if (SlowTask.ShouldCancel())
         {
             UE_LOG(LogX_AssetNaming, Warning, TEXT("User canceled name normalization"));
+
+            // 记录从取消点开始所有未经处理的资产，明确混合状态中“仍为旧名”的部分
+            for (int32 PendingIndex = AssetIndex; PendingIndex < SelectedAssets.Num(); ++PendingIndex)
+            {
+                UnprocessedNames.Add(SelectedAssets[PendingIndex].AssetName.ToString());
+            }
             break;
         }
 
+        const int32 SuccessCountBefore = Result.SuccessCount;
+        const int32 FailedCountBefore = Result.FailedCount;
         ProcessSingleAssetRename(AssetData, Result, AssetRegistry, AssetTools, FolderNameCache);
+
+        const FString AssetDisplayName = AssetData.AssetName.ToString();
+        if (Result.SuccessCount > SuccessCountBefore)
+        {
+            SucceededNames.Add(AssetDisplayName);
+        }
+        else if (Result.FailedCount > FailedCountBefore && Result.FailedDetails.Num() > 0)
+        {
+            // 失败原因已由 RecordRenameFailure 追加到 Result.FailedDetails，此处同步登记用于批末汇总
+            FailedEntries.Add(Result.FailedDetails.Last());
+        }
+    }
+
+    // ========== 【事务性上报】循环结束后把台账写入结果输出结构 ==========
+    // 成功与失败明细已随流程写入 Result.SuccessfulRenames / Result.FailedDetails，
+    // 这里补齐“取消 / 未处理”信息，使调用方能显式区分部分完成的混合状态。
+    Result.UnprocessedAssetNames = MoveTemp(UnprocessedNames);
+    Result.bCancelledByUser = Result.UnprocessedAssetNames.Num() > 0;
+    Result.bPartialCompletion = Result.bCancelledByUser || Result.FailedCount > 0;
+
+    // 日志汇总：成功数、未处理数量与逐条明细（统一使用既有日志类别 LogX_AssetNaming）
+    if (Result.bPartialCompletion)
+    {
+        UE_LOG(LogX_AssetNaming, Warning, TEXT("批量名称规范化部分完成：成功 %d 个，失败 %d 个，跳过 %d 个，未处理 %d 个"),
+            Result.SuccessCount, Result.FailedCount, Result.SkippedCount, Result.UnprocessedAssetNames.Num());
+    }
+    else
+    {
+        UE_LOG(LogX_AssetNaming, Log, TEXT("批量名称规范化结束：成功 %d 个，失败 %d 个，跳过 %d 个"),
+            Result.SuccessCount, Result.FailedCount, Result.SkippedCount);
+    }
+
+    for (const FString& SucceededName : SucceededNames)
+    {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("已完成重命名: %s"), *SucceededName);
+    }
+    for (const FX_RenameFailure& FailureEntry : FailedEntries)
+    {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("失败明细: %s — %s"), *FailureEntry.AssetName, *FailureEntry.Reason);
+    }
+    for (const FString& UnprocessedName : Result.UnprocessedAssetNames)
+    {
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("未处理资产（保持原名）: %s"), *UnprocessedName);
     }
 
     // 显示操作结果
@@ -471,7 +554,7 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     FX_RenameOperationResult& Result,
     IAssetRegistry& AssetRegistry,
     IAssetTools& AssetTools,
-    const TMap<FString, TSet<FString>>& FolderNameCache)
+    TMap<FString, TSet<FString>>& FolderNameCache)
 {
     if (!AssetData.IsValid())
     {
@@ -570,6 +653,11 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
             {
                 Result.SuccessCount++;
                 Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
+
+                // ========== 【事务性】同步维护文件夹名称缓存 ==========
+                // 移除旧名、写入新名，保证同批后续资产的冲突检测反映最新占用情况
+                UpdateFolderNameCacheAfterRename(FolderNameCache, PackagePath, CurrentName, NormalizedForSuffix);
+
                 UE_LOG(LogX_AssetNaming, Log, TEXT("Numeric suffix normalization succeeded: %s -> %s"), *CurrentName, *NormalizedForSuffix);
             }
             else
@@ -705,6 +793,11 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     {
         Result.SuccessCount++;
         Result.SuccessfulRenames.Add(AssetData.PackageName.ToString());
+
+        // ========== 【事务性】同步维护文件夹名称缓存 ==========
+        // 移除旧名、写入新名，保证同批后续资产的冲突检测反映最新占用情况
+        UpdateFolderNameCacheAfterRename(FolderNameCache, PackagePath, CurrentName, FinalNewName);
+
         UE_LOG(LogX_AssetNaming, Log, TEXT("Rename succeeded: %s -> %s"), *CurrentName, *FinalNewName);
     }
     else
@@ -730,6 +823,23 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
     OperationDetails->Append(FText::Format(LOCTEXT("FailedLabel", "- 失败：{0}\n"), FText::AsNumber(Result.FailedCount)).ToString());
     OperationDetails->Append(LOCTEXT("SeparatorLine", "====================================================\n").ToString());
 
+    // 追加未处理明细（仅用户取消时存在；弹窗限前 50 条，与失败明细策略一致）
+    if (Result.bCancelledByUser && Result.UnprocessedAssetNames.Num() > 0)
+    {
+        OperationDetails->Append(TEXT("\n"));
+        OperationDetails->Append(LOCTEXT("UnprocessedHeader", "未处理资产（因取消保持原名）：\n").ToString());
+        const int32 UnprocessedToShow = FMath::Min(Result.UnprocessedAssetNames.Num(), 50);
+        for (int32 Index = 0; Index < UnprocessedToShow; ++Index)
+        {
+            OperationDetails->Append(FString::Printf(TEXT("- %s\n"), *Result.UnprocessedAssetNames[Index]));
+        }
+        const int32 UnprocessedRemaining = Result.UnprocessedAssetNames.Num() - UnprocessedToShow;
+        if (UnprocessedRemaining > 0)
+        {
+            OperationDetails->Append(FString::Printf(TEXT("... 其余 %d 条见输出日志\n"), UnprocessedRemaining));
+        }
+    }
+
     // 添加提示信息
     if (Result.SkippedCount > 0)
     {
@@ -754,20 +864,36 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
             *XAssetNaming::FormatFailureDetails(Result, MAX_int32));
     }
 
-    // 显示可点击的通知
-    FNotificationInfo Info(FText::Format(
-        NSLOCTEXT("X_AssetNaming", "AssetRenameNotification", "资产名称规范化已完成\n总计: {0} | 已重命名: {1} | 无需处理: {2} | 失败: {3}\n点击查看详情"),
-        FText::AsNumber(TotalCount),
-        FText::AsNumber(Result.SuccessCount),
-        FText::AsNumber(Result.SkippedCount),
-        FText::AsNumber(Result.FailedCount)
-    ));
+    // 显示可点击的通知（取消/部分完成时标题显式标注并追加未处理数量，便于用户感知混合状态）
+    FText NotificationText;
+    if (Result.bCancelledByUser)
+    {
+        NotificationText = FText::Format(
+            NSLOCTEXT("X_AssetNaming", "AssetRenameNotificationCancelled",
+                "资产名称规范化已取消（部分完成）\n总计: {0} | 已重命名: {1} | 无需处理: {2} | 失败: {3} | 未处理: {4}\n点击查看详情"),
+            FText::AsNumber(TotalCount),
+            FText::AsNumber(Result.SuccessCount),
+            FText::AsNumber(Result.SkippedCount),
+            FText::AsNumber(Result.FailedCount),
+            FText::AsNumber(Result.UnprocessedAssetNames.Num()));
+    }
+    else
+    {
+        NotificationText = FText::Format(
+            NSLOCTEXT("X_AssetNaming", "AssetRenameNotification", "资产名称规范化已完成\n总计: {0} | 已重命名: {1} | 无需处理: {2} | 失败: {3}\n点击查看详情"),
+            FText::AsNumber(TotalCount),
+            FText::AsNumber(Result.SuccessCount),
+            FText::AsNumber(Result.SkippedCount),
+            FText::AsNumber(Result.FailedCount));
+    }
+
+    FNotificationInfo Info(NotificationText);
 
     Info.bUseLargeFont = false;
     Info.bUseSuccessFailIcons = false;
     Info.bUseThrobber = false;
     Info.FadeOutDuration = 1.0f;
-    Info.ExpireDuration = Result.FailedCount > 0 ? 8.0f : 5.0f;
+    Info.ExpireDuration = (Result.FailedCount > 0 || Result.bCancelledByUser) ? 8.0f : 5.0f;
     Info.bFireAndForget = true;
     Info.bAllowThrottleWhenFrameRateIsLow = true;
     Info.Image = nullptr;
@@ -786,7 +912,8 @@ void FX_AssetNamingManager::ShowRenameResult(const FX_RenameOperationResult& Res
 
     if (NotificationItem.IsValid())
     {
-        if (Result.FailedCount == 0)
+        // 有失败或被取消（存在未处理资产）时均不标记为成功，避免掩盖混合状态
+        if (Result.FailedCount == 0 && !Result.bCancelledByUser)
         {
             NotificationItem->SetCompletionState(SNotificationItem::CS_Success);
         }

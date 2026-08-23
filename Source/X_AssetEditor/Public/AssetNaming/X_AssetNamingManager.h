@@ -31,6 +31,19 @@ struct FX_RenameOperationResult
 	TArray<FString> SuccessfulRenames;      // 旧包路径
 	TArray<FString> FailedRenames;          // 失败的资产名称（保留兼容潜在外部 C++ 调用方）
 	TArray<FX_RenameFailure> FailedDetails; // 失败详情（名称 + 原因）
+
+	/**
+	 * 是否为部分完成：批量结束时仍有资产保持旧名
+	 * （因用户取消而未处理，或单项失败），处于“部分新名 + 部分旧名”的混合状态。
+	 * 调用方应检查此标记，不要默认批次已全部处理完毕。
+	 */
+	bool bPartialCompletion = false;
+
+	/** 是否被用户在进度条中手动取消（存在未经处理的资产） */
+	bool bCancelledByUser = false;
+
+	/** 因取消而未经处理的资产名称列表（这些资产保持原名，可据此核对或续跑） */
+	TArray<FString> UnprocessedAssetNames;
 };
 
 /**
@@ -228,12 +241,14 @@ private:
     /**
      * 处理单个资产的命名规范化（供 RenameSelectedAssets 使用）
      * 封装原本在 RenameSelectedAssets 中的 per-asset 逻辑，便于维护
+     * @param FolderNameCache 文件夹名称缓存；每次成功重命名后会在此同步维护
+     *        （移除旧名条目、写入新名条目），保证同批后续资产的冲突检测基于最新占用情况
      */
     void ProcessSingleAssetRename(const FAssetData& AssetData,
         FX_RenameOperationResult& Result,
         class IAssetRegistry& AssetRegistry,
         class IAssetTools& AssetTools,
-        const TMap<FString, TSet<FString>>& FolderNameCache);
+        TMap<FString, TSet<FString>>& FolderNameCache);
 
     /**
      * 重命名后修复重定向器
