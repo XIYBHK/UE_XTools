@@ -164,5 +164,10 @@ private:
 	bool bHasCurrentDistance = false;
 	float CurrentDistance = 0.f;
 
+	// AIMoveTo 模式防抖状态：记录上次 MoveToLocation 下发的目标位置，
+	// 用于判断目标位移是否超过重寻路阈值
+	FVector LastMoveToTarget = FVector::ZeroVector;
+	bool bHasLastMoveToTarget = false;
+
 	FTSTicker::FDelegateHandle TickHandle;
 };

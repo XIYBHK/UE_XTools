@@ -200,13 +200,21 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 	}
 	case ESplineMoveMode::AIMoveTo:
 	{
-		// 每帧持续更新 AI 目标，路径跟踪由 NavMesh 接管
-		// UE 内部会在目标变化超过阈值时才重新寻路，不会每帧都跑 A*
 		if (AAIController* AICtrl = Cast<AAIController>(Pawn->GetController()))
 		{
-			AICtrl->MoveToLocation(TargetPos, /*AcceptanceRadius=*/LookaheadDist * 0.25f,
-				/*bStopOnOverlap=*/false, /*bUsePathfinding=*/true,
-				/*bProjectDestinationToNavigation=*/true);
+			// 重寻路防抖：MoveToLocation 会中止当前寻路请求，逐帧调用会导致路径反复重建。
+			// 仅当新目标点相对上次下发目标的位移超过 RepathMinDistance（取前瞻距离的一半）
+			// 时才重新发起 MoveToLocation，其余帧沿用 AI 当前移动目标。
+			const float RepathMinDistance = LookaheadDist * 0.5f;
+			if (!bHasLastMoveToTarget ||
+				FVector::Dist(TargetPos, LastMoveToTarget) > RepathMinDistance)
+			{
+				AICtrl->MoveToLocation(TargetPos, /*AcceptanceRadius=*/LookaheadDist * 0.25f,
+					/*bStopOnOverlap=*/false, /*bUsePathfinding=*/true,
+					/*bProjectDestinationToNavigation=*/true);
+				LastMoveToTarget = TargetPos;
+				bHasLastMoveToTarget = true;
+			}
 		}
 		else
 		{
