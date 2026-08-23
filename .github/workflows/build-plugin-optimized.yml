@@ -85,14 +85,10 @@ jobs:
           exit 1
         }
 
-        $ueVersion = "${{ matrix.ue_version }}"
-
-        # Skip version-specific requirements check in verify-toolchain job (no matrix)
-        if ([string]::IsNullOrWhiteSpace($ueVersion)) {
-          Write-Host "[INFO] No UE version specified (verify-toolchain job), skipping version-specific requirements check" -ForegroundColor DarkGray
-          Write-Host "[OK] MSVC toolchain verification completed successfully!" -ForegroundColor Green
-          exit 0
-        }
+        # verify-toolchain job 无构建矩阵（matrix.ue_version 恒为空，原先此处提前 exit，
+        # 分版本校验从未真正执行）。改为对支持的全部 UE 版本逐一校验 MSVC 最低要求，
+        # 在昂贵的构建开始前快速失败。
+        $ueVersionsToCheck = @("5.3", "5.4", "5.5", "5.6", "5.7", "5.8")
 
         $versions = Get-ChildItem -Path $msvcPath -Directory -ErrorAction SilentlyContinue |
           Select-Object -ExpandProperty Name |
@@ -113,57 +109,57 @@ jobs:
           "5.8" = @{ Version = "14.44"; Reason = "UE 5.8 verified with MSVC 14.44.35207" }
         }
 
-        $requirements = $msvcMinRequirements[$ueVersion]
-        if (-not $requirements) {
-          Write-Error "No MSVC requirements found for UE version: $ueVersion"
-          Write-Host "Available versions: $($msvcMinRequirements.Keys -join ', ')" -ForegroundColor Yellow
-          exit 1
-        }
-        Write-Host "UE $ueVersion analysis: $($requirements.Reason)" -ForegroundColor Cyan
-        Write-Host "Minimum required MSVC: $($requirements.Version)+" -ForegroundColor Cyan
-        Write-Host ""
-
-        $minMajor = [int]$requirements.Version.Split('.')[0]
-        $minMinor = [int]$requirements.Version.Split('.')[1]
-
-        # Find the newest compatible version (first match in descending order)
-        $compatibleVersion = $null
-        foreach ($version in $versions) {
-          $parts = $version.Split('.')
-          $major = [int]$parts[0]
-          $minor = [int]$parts[1]
-
-          if ($major -gt $minMajor -or ($major -eq $minMajor -and $minor -ge $minMinor)) {
-            $compatibleVersion = $version
-            break  # Found the newest compatible version
+        $failedVersions = @()
+        foreach ($ueVersion in $ueVersionsToCheck) {
+          $requirements = $msvcMinRequirements[$ueVersion]
+          if (-not $requirements) {
+            Write-Error "No MSVC requirements found for UE version: $ueVersion"
+            exit 1
           }
-        }
+          Write-Host "UE $ueVersion analysis: $($requirements.Reason)" -ForegroundColor Cyan
+          Write-Host "Minimum required MSVC: $($requirements.Version)+" -ForegroundColor Cyan
 
-        if ($compatibleVersion) {
-          Write-Host "[OK] Selected MSVC $compatibleVersion (newest compatible)" -ForegroundColor Green
+          $minMajor = [int]$requirements.Version.Split('.')[0]
+          $minMinor = [int]$requirements.Version.Split('.')[1]
 
-          # Show warnings for suboptimal versions
-          if ($ueVersion -in @("5.3", "5.4") -and $compatibleVersion -ne "14.44.35207") {
-            Write-Host "[INFO] Latest version 14.44.35207 is available but not required for UE $ueVersion" -ForegroundColor DarkGray
+          # Find the newest compatible version (first match in descending order)
+          $compatibleVersion = $null
+          foreach ($version in $versions) {
+            $parts = $version.Split('.')
+            if ($parts.Count -lt 2) { continue }
+            $major = [int]$parts[0]
+            $minor = [int]$parts[1]
+
+            if ($major -gt $minMajor -or ($major -eq $minMajor -and $minor -ge $minMinor)) {
+              $compatibleVersion = $version
+              break  # Found the newest compatible version
+            }
           }
-          if ($ueVersion -in @("5.5", "5.6") -and $compatibleVersion -like "14.36.*") {
-            Write-Host "[WARNING] Using MSVC 14.36 for UE $ueVersion (newer 14.44 is available)" -ForegroundColor Yellow
-            Write-Host "      ElementSize warnings will appear during compilation" -ForegroundColor DarkYellow
-            Write-Host "      Build will complete with XToolsCore compatibility macros" -ForegroundColor DarkYellow
+
+          if ($compatibleVersion) {
+            Write-Host "[OK] UE $ueVersion -> MSVC $compatibleVersion (newest compatible)" -ForegroundColor Green
+
+            # Show warnings for suboptimal versions
+            if ($ueVersion -in @("5.5", "5.6") -and $compatibleVersion -like "14.36.*") {
+              Write-Host "[WARNING] Using MSVC 14.36 for UE $ueVersion (newer 14.44 is available)" -ForegroundColor Yellow
+              Write-Host "      ElementSize warnings will appear during compilation" -ForegroundColor DarkYellow
+              Write-Host "      Build will complete with XToolsCore compatibility macros" -ForegroundColor DarkYellow
+            }
+          } else {
+            Write-Host "[FAIL] No MSVC >= $($requirements.Version) installed for UE $ueVersion" -ForegroundColor Red
+            Write-Host "Requirement: $($requirements.Reason)" -ForegroundColor Red
+            $failedVersions += $ueVersion
           }
-        } else {
-          Write-Error "No compatible MSVC version found"
           Write-Host ""
-          Write-Host "UE $ueVersion requires MSVC $($requirements.Version)+: $($requirements.Reason)" -ForegroundColor Red
+        }
+
+        if ($failedVersions.Count -gt 0) {
+          Write-Error "MSVC toolchain check failed for UE versions: $($failedVersions -join ', ')"
           Write-Host ""
           Write-Host "Installed versions: $($versions -join ', ')" -ForegroundColor Yellow
           Write-Host ""
           Write-Host "To resolve:" -ForegroundColor Yellow
-          if ($ueVersion -in @("5.7", "5.8")) {
-            Write-Host "  - Install MSVC v143 - VS 2022 C++ x64/x86 build tools (v$($requirements.Version) or higher)" -ForegroundColor Cyan
-          } else {
-            Write-Host "  - Latest available 14.44.35207 should work for all UE versions" -ForegroundColor Green
-          }
+          Write-Host "  - Install MSVC v143 - VS 2022 C++ x64/x86 build tools (latest 14.44 satisfies all listed minimums)" -ForegroundColor Cyan
           exit 1
         }
 
@@ -628,36 +624,45 @@ jobs:
           # 发行版临时目录
           $release_temp_dir = "C:\GitHubActions\ReleaseTemp"
           $release_assets_dir = ".\release-assets"
+          # 本次发布目标标签（构建产物命名规则：XTools-UE_<版本>-<tag>.zip）
+          $current_tag = "${{ steps.version.outputs.tag_name }}"
 
           # 创建发行版资产目录
           New-Item -ItemType Directory -Path $release_assets_dir -Force | Out-Null
 
-          # 从临时目录获取所有 zip 文件
-          if (Test-Path $release_temp_dir) {
-            $zip_files = Get-ChildItem -Path $release_temp_dir -Filter "*.zip"
-
-            Write-Host "Found $($zip_files.Count) release files in temp directory"
-
-            foreach ($file in $zip_files) {
-              Write-Host "Copying: $($file.Name)"
-              Copy-Item $file.FullName -Destination $release_assets_dir
-            }
-
-            # 输出统计信息
-            $asset_count = $zip_files.Count
-            "asset_count=$asset_count" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-            # 写入summary
-            "### 📦 Release Assets ($asset_count files)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-            foreach ($file in $zip_files) {
-              $size_mb = [math]::Round($file.Length / 1MB, 2)
-              "- ``$($file.Name)`` ($size_mb MB)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-            }
-          } else {
+          if (-not (Test-Path $release_temp_dir)) {
             Write-Error "Release temp directory not found: $release_temp_dir"
             exit 1
           }
-      
+
+          # 仅收集与本次 tag 匹配的 zip：临时目录为跨运行共享，
+          # 不过滤会把上次失败/中断运行遗留的旧版本包一并发布进新 Release
+          $all_zips = Get-ChildItem -Path $release_temp_dir -Filter "*.zip"
+          $zip_files = @($all_zips | Where-Object { $_.Name -like "*$current_tag" })
+
+          Write-Host "Found $($all_zips.Count) zip file(s) in temp directory, $($zip_files.Count) matching current tag '$current_tag'"
+
+          foreach ($file in $zip_files) {
+            Write-Host "Copying: $($file.Name)"
+            Copy-Item $file.FullName -Destination $release_assets_dir
+          }
+
+          if ($zip_files.Count -eq 0) {
+            Write-Error "No release zip matching tag '$current_tag' found in $release_temp_dir (available: $($all_zips.Name -join ', '))"
+            exit 1
+          }
+
+          # 输出统计信息
+          $asset_count = $zip_files.Count
+          "asset_count=$asset_count" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          # 写入summary
+          "### 📦 Release Assets ($asset_count files)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          foreach ($file in $zip_files) {
+            $size_mb = [math]::Round($file.Length / 1MB, 2)
+            "- ``$($file.Name)`` ($size_mb MB)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
