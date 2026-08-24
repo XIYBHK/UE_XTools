@@ -16,8 +16,12 @@ UFormationMovementComponent::UFormationMovementComponent()
     MinSlowDownSpeed = 0.2f;
     RotationSpeed = 8.0f;
     bEnableSlowDown = true;
+    bStopWhenStuck = false;
+    StuckTimeSeconds = 2.0f;
     bIsMoving = false;
     OwnerCharacter = nullptr;
+    BestDistanceToTarget = 0.0f;
+    NoProgressElapsed = 0.0f;
 }
 
 void UFormationMovementComponent::BeginPlay()
@@ -72,6 +76,9 @@ void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, 
     }
     
     bIsMoving = true;
+    // 卡住检测状态复位：以起点距离为基准，移动中重定向（再次调用本函数）同样重新计程
+    BestDistanceToTarget = GetDistanceToTarget();
+    NoProgressElapsed = 0.0f;
     SetComponentTickEnabled(true);
     
     // 简化日志输出 - 只在VeryVerbose级别输出详细信息
@@ -168,6 +175,17 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
         return;
     }
 
+    // 可选卡住检测：连续无有效距离进展达到 StuckTimeSeconds 时，按"停止移动"语义终止
+    // （清理速度/输入、禁用Tick），但不广播完成事件——完成事件仅表示进入接受半径。
+    // 放在制动提前返回之前，确保任何分支下无进展都会被累计。
+    if (bStopWhenStuck && CheckStuck(DistanceToTarget, DeltaTime))
+    {
+        UE_LOG(LogFormationSystem, Log, TEXT("FormationMovementComponent: 连续 %.2f 秒无有效距离进展（距目标 %.2f cm），判定卡住并停止"),
+            FMath::Clamp(StuckTimeSeconds, 0.5f, 30.0f), DistanceToTarget);
+        StopMovement();
+        return;
+    }
+
     // 计算移动方向（只在水平面，忽略Z轴差异）
     FVector DirectionToTarget = TargetLocation - CurrentLocation;
     DirectionToTarget.Z = 0.0f;
@@ -245,7 +263,22 @@ bool UFormationMovementComponent::HasReachedTarget() const
     {
         return false;
     }
-    
+
     float DistanceToTarget = GetDistanceToTarget();
     return DistanceToTarget <= AcceptanceRadius;
+}
+
+bool UFormationMovementComponent::CheckStuck(float DistanceToTarget, float DeltaTime)
+{
+    if (DistanceToTarget < BestDistanceToTarget - StuckProgressEpsilon)
+    {
+        // 有有效进展：刷新历史最优距离并清零计时
+        BestDistanceToTarget = DistanceToTarget;
+        NoProgressElapsed = 0.0f;
+        return false;
+    }
+
+    NoProgressElapsed += DeltaTime;
+    // StuckTimeSeconds 是 EditAnywhere/BlueprintReadWrite，蓝图运行时写入不受 meta Clamp 约束，判定处统一钳制
+    return NoProgressElapsed >= FMath::Clamp(StuckTimeSeconds, 0.5f, 30.0f);
 }

@@ -28,6 +28,17 @@ class FORMATIONSYSTEM_API UFormationMovementTestComponent : public UFormationMov
 public:
     /** 测试专用：直接注入 OwnerCharacter（替代 BeginPlay 的缓存路径） */
     void SetOwnerCharacterForTest(ACharacter* InOwnerCharacter) { OwnerCharacter = InOwnerCharacter; }
+
+    /** 测试专用：配置卡住检测（生产路径由详情面板/蓝图直接写入 EditAnywhere 属性；protected 成员不能在测试函数体内直接写） */
+    void SetStuckDetectionForTest(bool bInStopWhenStuck, float InStuckTimeSeconds)
+    {
+        bStopWhenStuck = bInStopWhenStuck;
+        StuckTimeSeconds = InStuckTimeSeconds;
+    }
+
+    /** 测试专用：读取卡住检测配置（验证默认值契约） */
+    bool GetStopWhenStuckForTest() const { return bStopWhenStuck; }
+    float GetStuckTimeSecondsForTest() const { return StuckTimeSeconds; }
 };
 
 /**

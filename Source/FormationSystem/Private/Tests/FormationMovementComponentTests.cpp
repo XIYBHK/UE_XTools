@@ -365,4 +365,194 @@ bool FFormationMovementReachesRadiusDuringTickTest::RunTest(const FString& Param
     return true;
 }
 
+// 卡住检测·核心：开启后连续无距离进展达到 StuckTimeSeconds → 自动停止（Tick禁用、IsMoving=false、
+// 速度/输入清理），且不广播完成事件。测试世界不驱动物理，角色不动即等价"被墙阻挡"，完全确定。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementStuckStopsWithoutCompletionTest,
+    "XTools.Formation.Movement.StuckDetectionStopsWithoutCompletion",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementStuckStopsWithoutCompletionTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_StuckStops"));
+    ACharacter* TestCharacter = nullptr;
+    UFormationMovementTestComponent* MoveComp = nullptr;
+    if (!SetupMovementTestEnvironment(WorldScope.Get(), TestCharacter, MoveComp))
+    {
+        AddError(TEXT("测试环境初始化失败"));
+        return false;
+    }
+
+    UCharacterMovementComponent* CMC = TestCharacter->GetCharacterMovement();
+    TestNotNull(TEXT("Character 应持有移动组件"), CMC);
+    if (!CMC)
+    {
+        return false;
+    }
+
+    UFormationMovementTestEventReceiver* Receiver = NewObject<UFormationMovementTestEventReceiver>();
+    MoveComp->OnMovementCompleted.AddDynamic(Receiver, &UFormationMovementTestEventReceiver::OnMovementCompleted);
+
+    MoveComp->SetStuckDetectionForTest(true, 0.5f);
+    CMC->Velocity = FVector(100.0f, 0.0f, 0.0f);
+    MoveComp->StartMoveToLocation(FVector(2000.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+
+    // 第1帧：0.3s < 0.5s，未卡住且确实在尝试移动（产生非零输入，证明"无位移"而非"未启动"）
+    TickMoveComponentManually(MoveComp, 0.3f);
+    TestTrue(TEXT("无进展0.3秒未达判定时长应仍在移动"), MoveComp->IsMoving());
+    TestFalse(TEXT("未卡住前应产生移动输入"), CMC->ConsumeInputVector().IsNearlyZero(0.01f));
+
+    // 第2帧：累计0.6s ≥ 0.5s → 判定卡住，按 StopMovement 语义终止
+    TickMoveComponentManually(MoveComp, 0.3f);
+    TestFalse(TEXT("连续无进展达到判定时长后应退出移动状态"), MoveComp->IsMoving());
+    TestFalse(TEXT("卡住停止后组件Tick应禁用"), MoveComp->IsComponentTickEnabled());
+    TestTrue(TEXT("卡住停止后速度应归零"), CMC->Velocity.IsNearlyZero(0.01f));
+    TestTrue(TEXT("卡住停止后待处理输入应清空"), CMC->ConsumeInputVector().IsNearlyZero(0.01f));
+    TestEqual(TEXT("卡住路径不得广播完成事件"), Receiver->CompletedCount, 0);
+
+    // 卡住后的多余Tick不应触发任何事件（Tick已禁用，手动驱动时空转）
+    TickMoveComponentManually(MoveComp, 0.3f);
+    TestEqual(TEXT("卡住后重复Tick不应广播完成事件"), Receiver->CompletedCount, 0);
+
+    return true;
+}
+
+// 卡住检测·进展复位：出现有效距离进展（>1cm）时无进展计时应清零，不得把"慢但在动"误判为卡住。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementStuckProgressResetsTimerTest,
+    "XTools.Formation.Movement.StuckDetectionProgressResetsTimer",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementStuckProgressResetsTimerTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_StuckProgressReset"));
+    ACharacter* TestCharacter = nullptr;
+    UFormationMovementTestComponent* MoveComp = nullptr;
+    if (!SetupMovementTestEnvironment(WorldScope.Get(), TestCharacter, MoveComp))
+    {
+        AddError(TEXT("测试环境初始化失败"));
+        return false;
+    }
+
+    MoveComp->SetStuckDetectionForTest(true, 0.5f);
+    MoveComp->StartMoveToLocation(FVector(2000.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+
+    TickMoveComponentManually(MoveComp, 0.3f); // 无进展 0.3s
+
+    // 角色接近目标 1000cm：有效进展，计时应在下一帧检测时清零
+    TestTrue(TEXT("移动角色应成功"), TestCharacter->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f)));
+    TickMoveComponentManually(MoveComp, 0.3f); // 检出进展 → 计时清零
+    TestTrue(TEXT("出现进展后不应误判卡住"), MoveComp->IsMoving());
+
+    TickMoveComponentManually(MoveComp, 0.3f); // 重新累计 0.3s < 0.5s
+    TestTrue(TEXT("进展复位后0.3秒应仍在移动（证明计时已清零，否则累计0.9秒早已卡住）"), MoveComp->IsMoving());
+
+    TickMoveComponentManually(MoveComp, 0.3f); // 累计 0.6s ≥ 0.5s
+    TestFalse(TEXT("进展后再次连续无进展达到判定时长应判定卡住"), MoveComp->IsMoving());
+
+    return true;
+}
+
+// 卡住检测·默认关闭零行为变化：bStopWhenStuck 默认 false 时，永久无进展也保持移动状态与Tick，
+// 与修复前行为完全一致（卡墙需手动停止的既有契约）。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementStuckDisabledByDefaultTest,
+    "XTools.Formation.Movement.StuckDetectionDisabledByDefaultKeepsMoving",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementStuckDisabledByDefaultTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_StuckDisabledDefault"));
+    ACharacter* TestCharacter = nullptr;
+    UFormationMovementTestComponent* MoveComp = nullptr;
+    if (!SetupMovementTestEnvironment(WorldScope.Get(), TestCharacter, MoveComp))
+    {
+        AddError(TEXT("测试环境初始化失败"));
+        return false;
+    }
+
+    UFormationMovementTestEventReceiver* Receiver = NewObject<UFormationMovementTestEventReceiver>();
+    MoveComp->OnMovementCompleted.AddDynamic(Receiver, &UFormationMovementTestEventReceiver::OnMovementCompleted);
+
+    TestFalse(TEXT("卡住检测默认应关闭"), MoveComp->GetStopWhenStuckForTest());
+    TestTrue(TEXT("卡住判定时间默认应为2秒"), FMath::IsNearlyEqual(MoveComp->GetStuckTimeSecondsForTest(), 2.0f));
+
+    MoveComp->StartMoveToLocation(FVector(2000.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+
+    // 累计 5 秒无任何进展（远超判定上限）：默认关闭时不得自动停止
+    for (int32 i = 0; i < 5; ++i)
+    {
+        TickMoveComponentManually(MoveComp, 1.0f);
+    }
+    TestTrue(TEXT("默认关闭时永久无进展也应保持移动状态（既有行为）"), MoveComp->IsMoving());
+    TestTrue(TEXT("默认关闭时组件Tick应保持启用"), MoveComp->IsComponentTickEnabled());
+    TestEqual(TEXT("默认关闭时不应广播完成事件"), Receiver->CompletedCount, 0);
+
+    return true;
+}
+
+// 卡住检测·不阻塞到达：开启检测后正常进入接受半径仍广播完成事件一次（到达判定优先于卡住判定）。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementStuckDoesNotBlockArrivalTest,
+    "XTools.Formation.Movement.StuckDetectionDoesNotBlockArrival",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementStuckDoesNotBlockArrivalTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_StuckArrival"));
+    ACharacter* TestCharacter = nullptr;
+    UFormationMovementTestComponent* MoveComp = nullptr;
+    if (!SetupMovementTestEnvironment(WorldScope.Get(), TestCharacter, MoveComp))
+    {
+        AddError(TEXT("测试环境初始化失败"));
+        return false;
+    }
+
+    UFormationMovementTestEventReceiver* Receiver = NewObject<UFormationMovementTestEventReceiver>();
+    MoveComp->OnMovementCompleted.AddDynamic(Receiver, &UFormationMovementTestEventReceiver::OnMovementCompleted);
+
+    MoveComp->SetStuckDetectionForTest(true, 0.5f);
+    MoveComp->StartMoveToLocation(FVector(60.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+    TickMoveComponentManually(MoveComp, 1.0f / 60.0f);
+
+    TestTrue(TEXT("移动角色进入接受半径应成功"), TestCharacter->SetActorLocation(FVector(40.0f, 0.0f, 0.0f)));
+    TickMoveComponentManually(MoveComp, 1.0f / 60.0f);
+
+    TestEqual(TEXT("开启卡住检测后正常到达仍应广播完成事件一次"), Receiver->CompletedCount, 1);
+    TestFalse(TEXT("到达后应退出移动状态"), MoveComp->IsMoving());
+    TestFalse(TEXT("到达后组件Tick应禁用"), MoveComp->IsComponentTickEnabled());
+
+    return true;
+}
+
+// 卡住检测·重定向复位：移动中再次 StartMoveToLocation 重定向时，无进展计时应以新目标重新起算。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementStuckRetargetResetsTimerTest,
+    "XTools.Formation.Movement.StuckDetectionRetargetResetsTimer",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementStuckRetargetResetsTimerTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_StuckRetarget"));
+    ACharacter* TestCharacter = nullptr;
+    UFormationMovementTestComponent* MoveComp = nullptr;
+    if (!SetupMovementTestEnvironment(WorldScope.Get(), TestCharacter, MoveComp))
+    {
+        AddError(TEXT("测试环境初始化失败"));
+        return false;
+    }
+
+    MoveComp->SetStuckDetectionForTest(true, 0.5f);
+
+    MoveComp->StartMoveToLocation(FVector(2000.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+    TickMoveComponentManually(MoveComp, 0.3f); // 对目标A无进展 0.3s
+
+    // 重定向到目标B：卡住计时复位（否则下一帧累计0.6s即卡住）
+    MoveComp->StartMoveToLocation(FVector(0.0f, 2000.0f, 0.0f), 50.0f, 1.0f);
+    TestTrue(TEXT("重定向后应处于移动状态"), MoveComp->IsMoving());
+
+    TickMoveComponentManually(MoveComp, 0.3f); // 对新目标累计 0.3s < 0.5s
+    TestTrue(TEXT("重定向后0.3秒应仍在移动（证明计时已按新目标复位）"), MoveComp->IsMoving());
+
+    TickMoveComponentManually(MoveComp, 0.3f); // 累计 0.6s ≥ 0.5s
+    TestFalse(TEXT("重定向后对新目标连续无进展达到判定时长应判定卡住"), MoveComp->IsMoving());
+
+    return true;
+}
+
 #endif
