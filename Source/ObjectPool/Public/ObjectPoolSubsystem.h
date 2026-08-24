@@ -20,7 +20,6 @@
 
 // 前向声明
 class FActorPool;
-class FObjectPoolMonitor;
 
 /**
  * 子系统级别的统计信息
@@ -93,8 +92,9 @@ struct OBJECTPOOL_API FObjectPoolSubsystemStats
  * 
  * 移除的功能及新归属：
  * - 复杂配置管理 → FObjectPoolConfigManager
- * - 性能监控统计 → FObjectPoolMonitor
  * - 智能池管理 → FObjectPoolManager
+ * （历史设计中的 FObjectPoolMonitor 从未实现，子系统统计由 SubsystemStats 直接维护；
+ *   FObjectPoolManager 的维护类公共接口保留导出但无内部调度入口，按需外部调用）
  */
 UCLASS()
 class OBJECTPOOL_API UObjectPoolSubsystem : public UWorldSubsystem
@@ -271,9 +271,6 @@ private:
     /** 池管理器 */
     TUniquePtr<FObjectPoolManager> PoolManager;
 
-    /** 是否启用监控 */
-    bool bMonitoringEnabled;
-
     //  安全延迟预热机制
     
     /** 待预热信息结构体 */
@@ -344,16 +341,6 @@ private:
      */
     bool ValidateActorClass(UClass* ActorClass) const;
 
-    /**
-     * 清理无效的池
-     */
-    void CleanupInvalidPools();
-
-    /**
-     * 执行定期维护
-     */
-    void PerformMaintenance();
-
     //  性能优化方法
 
     /**
@@ -367,12 +354,6 @@ private:
      * 清理池缓存
      */
     void ClearPoolCache() const;
-
-    /**
-     * 获取子系统级别的统计信息
-     * @return 子系统统计信息
-     */
-    FObjectPoolSubsystemStats GetSubsystemStats() const;
 
     //  安全延迟预热方法
 
@@ -400,9 +381,6 @@ private:
 
     /** 默认池最大大小 */
     static constexpr int32 DEFAULT_POOL_MAX_SIZE = 100;
-
-    /** 维护间隔（秒） */
-    static constexpr float MAINTENANCE_INTERVAL = 30.0f;
 
     /** 延迟预热：每帧最大创建数量（避免卡顿） */
     static constexpr int32 MAX_ACTORS_PER_FRAME_PREWARM = 10;

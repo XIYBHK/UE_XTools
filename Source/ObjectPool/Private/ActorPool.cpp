@@ -130,7 +130,10 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
     // 锁外激活复用的Actor
     if (ResultActor)
     {
-        const bool bActivateOk = IsValid(ResultActor) && FObjectPoolUtils::ActivateActorFromPool(ResultActor, SpawnTransform);
+        // 先按池侧登记补完延迟构造（复用实例通常已完成），再激活
+        bool bFinishedNow = false;
+        const bool bFinishOk = IsValid(ResultActor) && FinishSpawningOnce(ResultActor, SpawnTransform, bFinishedNow);
+        const bool bActivateOk = bFinishOk && FObjectPoolUtils::ActivatePooledActorFromPool(ResultActor, SpawnTransform, false);
 
         // 回调后复核：确认 Activating 状态仍有效（ClearPool 可能已清除，Actor 可能已被销毁）
         bool bCommitOk = false;
@@ -185,7 +188,10 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
                 ActivatingActors.Add(NewActor);
             }
 
-            const bool bActivateOk = FObjectPoolUtils::ActivateActorFromPool(NewActor, SpawnTransform);
+            // 先按池侧登记补完延迟构造（新建实例必处于未完成态），再激活
+            bool bFinishedNow = false;
+            const bool bFinishOk = FinishSpawningOnce(NewActor, SpawnTransform, bFinishedNow);
+            const bool bActivateOk = bFinishOk && FObjectPoolUtils::ActivatePooledActorFromPool(NewActor, SpawnTransform, false);
 
             // 回调后复核
             bool bCommitOk = false;
@@ -309,17 +315,17 @@ bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransfor
         FinalizingActors.Add(Actor);
     }
 
-    // 锁外执行构造/蓝图回调
-    if (!Actor->IsActorInitialized())
+    // 锁外执行构造/蓝图回调。
+    // 判据使用池侧登记：IsActorInitialized() 在世界未完成初始化（加载期）时恒为 false，
+    // 会把已完成 FinishSpawning 的复用实例误判为新实例并二次触发引擎 ensure
+    bool bFinishedNow = false;
+    const bool bFinishOk = FinishSpawningOnce(Actor, SpawnTransform, bFinishedNow);
+    if (!bFinishOk)
     {
-        ACTORPOOL_LOG(VeryVerbose, TEXT("FinalizeDeferred: FinishSpawning: %s"), *Actor->GetName());
-        Actor->FinishSpawning(SpawnTransform);
-        if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
-        {
-            IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
-        }
+        ACTORPOOL_LOG(Warning, TEXT("FinalizeDeferred: Actor无效，无法补完延迟构造"));
+        return false;
     }
-    else
+    if (!bFinishedNow)
     {
         ACTORPOOL_LOG(VeryVerbose, TEXT("FinalizeDeferred: 复用实例激活前重跑ConstructionScripts: %s"), *Actor->GetName());
 #if WITH_EDITOR
@@ -328,7 +334,7 @@ bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransfor
     }
 
     // 激活（内部触发生命周期回调，可能调用 ClearPool 或销毁 Actor）
-    const bool bActivateOk = FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+    const bool bActivateOk = FObjectPoolUtils::ActivatePooledActorFromPool(Actor, SpawnTransform, false);
 
     // 回调后复核并提交
     {
@@ -438,6 +444,34 @@ bool FActorPool::ReturnActor(AActor* Actor)
     }
 
     return bReturnSucceeded;
+}
+
+bool FActorPool::FinishSpawningOnce(AActor* Actor, const FTransform& SpawnTransform, bool& OutFinishedNow)
+{
+    OutFinishedNow = false;
+
+    if (!IsValid(Actor))
+    {
+        return false;
+    }
+
+    // 池侧真相：仅当登记过"未完成延迟构造"才执行 FinishSpawning（每实例至多一次）
+    {
+        FWriteScopeLock WriteLock(PoolLock);
+        OutFinishedNow = (UnfinishedSpawnActors.Remove(Actor) > 0);
+    }
+
+    if (!OutFinishedNow)
+    {
+        return true;
+    }
+
+    Actor->FinishSpawning(SpawnTransform);
+    if (IObjectPoolInterface::DoesActorImplementInterface(Actor))
+    {
+        IObjectPoolInterface::Execute_OnPoolActorCreated(Actor);
+    }
+    return true;
 }
 
 void FActorPool::PrewarmPool(UWorld* World, int32 Count)
@@ -665,6 +699,7 @@ void FActorPool::ClearPool()
         FinalizingActors.Empty();
         ActivatingActors.Empty();
         ReturningActors.Empty();
+        UnfinishedSpawnActors.Empty();
 
         // 重置统计
         TotalRequests = 0;
@@ -786,6 +821,10 @@ AActor* FActorPool::CreateNewActor(UWorld* World)
         
         ++TotalCreated;
 
+        // 登记"未完成延迟构造"状态：池是这些实例的唯一创建方与真相来源
+        //（引擎 IsActorInitialized() 受世界初始化进度门控，判据见 FinishSpawningOnce）
+        UnfinishedSpawnActors.Add(NewActor);
+
         //  OnPoolActorCreated事件已移动到ActivateActorFromPool中的FinishSpawning之后调用
         // 确保在Actor完全初始化后才触发生命周期事件，避免递归调用
         
@@ -893,6 +932,15 @@ void FActorPool::CleanupInvalidActors()
     }
 
     for (auto It = ActivatingActors.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid())
+        {
+            AllActorsSet.Remove(*It);
+            It.RemoveCurrent();
+        }
+    }
+
+    for (auto It = UnfinishedSpawnActors.CreateIterator(); It; ++It)
     {
         if (!It->IsValid())
         {

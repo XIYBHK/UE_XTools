@@ -60,7 +60,7 @@ bool FObjectPoolUtils::ResetActorForPooling(AActor* Actor)
     return true;
 }
 
-bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& SpawnTransform)
+bool FObjectPoolUtils::ActivatePooledActorInternal(AActor* Actor, const FTransform& SpawnTransform, bool bFinishSpawning)
 {
     SCOPE_CYCLE_COUNTER(STAT_ActivateActorFromPool);
     
@@ -70,9 +70,11 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
         return false;
     }
 
-    //  最安全策略：检查是否需要完成延迟构造
-    bool bWasUninitialized = !Actor->IsActorInitialized();
-    if (bWasUninitialized)
+    //  是否补完延迟构造由参数决定：
+    //  - 传统入口以 IsActorInitialized() 判定（历史语义；世界未完成初始化时该标志恒为
+    //    false，会把已完成 FinishSpawning 的复用实例误判为新实例，存在二次触发风险）
+    //  - 池内部路径经 ActivatePooledActorFromPool 显式传入池侧登记的真实状态
+    if (bFinishSpawning)
     {
         OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("Actor未完成初始化，执行FinishSpawning: %s"), *Actor->GetName());
         
@@ -95,14 +97,14 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
     }
 
     //  应用新的Transform
-    ApplyTransformToActor(Actor, SpawnTransform);
+    FObjectPoolUtils::ApplyTransformToActor(Actor, SpawnTransform);
 
     // 复用路径的 Construction Script 重跑移至 FinalizeDeferred，确保顺序与原生更一致
     
     //  激活Actor（碰撞与物理由 ResetBasicActorProperties 按归还时保存的原始配置恢复；
     //  首次激活则保持蓝图/CDO 配置。不得无条件覆写为 QueryAndPhysics + 关物理，
     //  否则 QueryOnly 触发器与物理投射物池化后行为错误）
-    ResetBasicActorProperties(Actor, false); // 显示Actor + 恢复原始碰撞/物理设置
+    FObjectPoolUtils::ResetBasicActorProperties(Actor, false); // 显示Actor + 恢复原始碰撞/物理设置
     
     //  启用Tick
     Actor->SetActorTickEnabled(true);
@@ -133,7 +135,7 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
 
     //  调用生命周期接口（记录调试信息）
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("即将触发Activated生命周期: %s"), *Actor->GetName());
-    SafeCallLifecycleInterface(Actor, TEXT("Activated"));
+    FObjectPoolUtils::SafeCallLifecycleInterface(Actor, TEXT("Activated"));
     
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("成功激活Actor从池: %s"), *Actor->GetName());
     // 调试：输出所有 ExposeOnSpawn 变量的当前值
@@ -157,6 +159,34 @@ bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& Sp
     }
     OBJECTPOOL_UTILS_LOG(VeryVerbose, TEXT("ActivateActorFromPool 完成: %s"), *Actor->GetName());
     return true;
+}
+
+bool FObjectPoolUtils::ActivateActorFromPool(AActor* Actor, const FTransform& SpawnTransform)
+{
+    if (!IsValid(Actor))
+    {
+        OBJECTPOOL_UTILS_LOG(Warning, TEXT("ActivateActorFromPool: Actor无效"));
+        return false;
+    }
+
+    //  历史判据：以 IsActorInitialized() 决定是否补完延迟构造（保持既有外部语义不变）。
+    //  已知局限：世界尚未完成 Actor 初始化时（AreActorsInitialized()==false，如加载期
+    //  预热后首次获取），该标志在 FinishSpawning 之后仍为 false，复用实例会误入补完
+    //  分支二次调用 FinishSpawning 并触发引擎 ensure(!bHasFinishedSpawning)。
+    //  模块内部路径已改用 ActivatePooledActorFromPool 显式传参规避该问题。
+    const bool bNeedsFinishSpawning = !Actor->IsActorInitialized();
+    return ActivatePooledActorInternal(Actor, SpawnTransform, bNeedsFinishSpawning);
+}
+
+bool FObjectPoolUtils::ActivatePooledActorFromPool(AActor* Actor, const FTransform& SpawnTransform, bool bNeedsFinishSpawning)
+{
+    if (!IsValid(Actor))
+    {
+        OBJECTPOOL_UTILS_LOG(Warning, TEXT("ActivatePooledActorFromPool: Actor无效"));
+        return false;
+    }
+
+    return ActivatePooledActorInternal(Actor, SpawnTransform, bNeedsFinishSpawning);
 }
 
 bool FObjectPoolUtils::BasicActorReset(AActor* Actor, const FTransform& NewTransform, bool bResetPhysics)

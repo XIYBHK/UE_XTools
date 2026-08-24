@@ -79,9 +79,6 @@ void UObjectPoolSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     
     //  UE官方容器预分配优化
     ActorPools.Reserve(DefaultPoolCapacity);
-    
-    // 监控器是可选的
-    bMonitoringEnabled = false;
 
     //  初始化缓存
     LastAccessedClass = nullptr;
@@ -726,62 +723,7 @@ bool UObjectPoolSubsystem::ValidateActorClass(UClass* ActorClass) const
     return true;
 }
 
-void UObjectPoolSubsystem::CleanupInvalidPools()
-{
-    FWriteScopeLock WriteLock(PoolsRWLock);
-
-    TArray<UClass*> InvalidClasses;
-
-    for (auto& PoolPair : ActorPools)
-    {
-        if (!PoolPair.Value.IsValid() || !IsValid(PoolPair.Key))
-        {
-            InvalidClasses.Add(PoolPair.Key);
-        }
-    }
-
-    for (UClass* InvalidClass : InvalidClasses)
-    {
-        ActorPools.Remove(InvalidClass);
-        ++SubsystemStats.TotalPoolsDestroyed;
-        if (PoolManager.IsValid() && IsValid(InvalidClass))
-        {
-            PoolManager->OnPoolDestroying(InvalidClass);
-        }
-        OBJECTPOOL_SUBSYSTEM_LOG(Log, TEXT("清理无效池: %s"),
-            InvalidClass ? *InvalidClass->GetName() : TEXT("Unknown"));
-    }
-}
-
-void UObjectPoolSubsystem::PerformMaintenance()
-{
-    if (!bIsInitialized)
-    {
-        return;
-    }
-
-    // 清理无效池
-    CleanupInvalidPools();
-
-    // 委托给池管理器执行维护
-    if (PoolManager.IsValid())
-    {
-        PoolManager->PerformMaintenance(ActorPools);
-    }
-
-    // 更新维护时间
-    SubsystemStats.LastMaintenanceTime = FPlatformTime::Seconds();
-
-    OBJECTPOOL_SUBSYSTEM_LOG(VeryVerbose, TEXT("执行定期维护"));
-}
-
 //  性能统计功能实现
-
-FObjectPoolSubsystemStats UObjectPoolSubsystem::GetSubsystemStats() const
-{
-    FReadScopeLock ReadLock(PoolsRWLock);
-    return SubsystemStats;
-}
 
 TArray<FObjectPoolStats> UObjectPoolSubsystem::GetAllPoolStats() const
 {

@@ -55,6 +55,21 @@ public:
      */
     static bool ActivateActorFromPool(AActor* Actor, const FTransform& SpawnTransform);
 
+    /**
+     * 激活池管理方显式登记过的Actor（对象池内部路径使用，纯增量API）。
+     * 与 ActivateActorFromPool 行为一致，但"是否需要补完延迟构造
+     * （FinishSpawning）"由调用方显式给出，不依赖 IsActorInitialized()：
+     * 该标志在世界尚未完成 Actor 初始化时（AreActorsInitialized()==false，
+     * 如加载期预热后首次获取）恒为 false，会把已完成 FinishSpawning 的
+     * 复用实例误判为新实例，二次调用触发引擎 ensure(!bHasFinishedSpawning)。
+     *
+     * @param Actor 要激活的Actor
+     * @param SpawnTransform 激活时的Transform
+     * @param bNeedsFinishSpawning true=该实例从未执行FinishSpawning（预热/新建的延迟构造态）
+     * @return 激活是否成功
+     */
+    static bool ActivatePooledActorFromPool(AActor* Actor, const FTransform& SpawnTransform, bool bNeedsFinishSpawning);
+
 
 
     /**
@@ -258,6 +273,13 @@ private:
      * 恢复组件的运行时特定属性
      */
     static void RestoreRuntimeSpecificProperties(class UActorComponent* Component);
+
+    /**
+     * 激活流程共享实现（供 ActivateActorFromPool / ActivatePooledActorFromPool 复用）。
+     * 是否补完延迟构造由调用方判定后显式传入，避免直接依赖受世界初始化进度门控的
+     * IsActorInitialized()
+     */
+    static bool ActivatePooledActorInternal(AActor* Actor, const FTransform& SpawnTransform, bool bFinishSpawning);
 
     //  常量定义
 

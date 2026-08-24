@@ -234,6 +234,12 @@ private:
     /** 延迟构造待完成集合（AcquireDeferred → FinalizeDeferred 之间的过渡状态） */
     TSet<TWeakObjectPtr<AActor>> PendingDeferredActors;
 
+    /** 已创建但尚未执行 FinishSpawning 的延迟构造实例（预热/新建后未首次激活）。
+     *  引擎的 IsActorInitialized() 受世界初始化进度门控（加载期恒为 false）且
+     *  bHasFinishedSpawning 为私有，无法外部判别；池作为这些实例的唯一创建方，
+     *  在此维护真实状态，确保每实例至多完成一次 FinishSpawning。 */
+    TSet<TWeakObjectPtr<AActor>> UnfinishedSpawnActors;
+
     /** 完成中集合（FinalizeDeferred 执行构造/蓝图回调期间的过渡状态） */
     TSet<TWeakObjectPtr<AActor>> FinalizingActors;
 
@@ -297,4 +303,13 @@ private:    //  内部辅助方法
      * 定期清理检查（需持有写锁）
      */
     void PeriodicCleanup_RequiresLock();
+
+    /**
+     * 按池侧登记补完延迟构造（每实例至多一次 FinishSpawning）
+     * @param Actor 目标Actor
+     * @param SpawnTransform 完成构造时的Transform
+     * @param OutFinishedNow 输出：本次是否实际执行了 FinishSpawning（false=实例此前已完成）
+     * @return 是否成功处理（Actor无效返回false；无需补完返回true）
+     */
+    bool FinishSpawningOnce(AActor* Actor, const FTransform& SpawnTransform, bool& OutFinishedNow);
 };
