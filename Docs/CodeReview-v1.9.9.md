@@ -95,7 +95,7 @@
 | M25 | `Source/XTools/Private/XToolsLibrary.cpp:473-520` | 贝塞尔匀速模式弧长表缓存只在传入状态对象时生效，纯 BP 节点每次调用重建 100 段 De Casteljau 表（项目已知风险点仍然成立） | 给纯节点加可选状态参数或元数据警示禁逐帧 |
 | M26 | ~~已撤销（实证核验证伪）~~ `Source/XTools_EnhancedCodeFlow/XTools_EnhancedCodeFlow.Build.cs:18-19` | 初审声称"CppStandard=Default 在 UE5.3–5.5 默认 C++17 下协程不可用"。经 UBT 源码核验**不成立**：UE 5.3 TargetRules.cs L137 明文记载 `CppStandard.Default has changed from Cpp17 to Cpp20`（V4 构建设置起），L2791 的迁移提示亦确认 Default==C++20；工具链 switch 遇 Default 直接抛异常，证明其必被解析为具体标准。显式设 `Default` 在全部支持版本均得 `/std:c++20` | 无需修复 |
 | M27 | `.github/workflows/build-plugin-optimized.yml:88` | verify-toolchain 无矩阵却读 matrix.ue_version（恒空提前 exit 0），分版本 MSVC 校验是死代码，5.7/5.8 工具链门槛从未真正执行 | 版本校验移入 build job 或自建循环 |
-| M28 | `Source/XToolsCore/Private/XToolsCore.cpp:15-48` | FXToolsLogCategories 清单漂移：`LogEnhancedCodeFlow` 实际叫 `LogECF`（条目失效）；缺 LogAxisLocker/LogSplineMovement/LogQueueSpline/LogComponentTimelineUncooked；下游 ApplyPluginLogVerbosity 批量设置对 ECF 永不生效 | 以各模块 DECLARE_LOG_CATEGORY_EXTERN 为准重建清单 |
+| M28 | `Source/XToolsCore/Private/XToolsCore.cpp:15-48` | FXToolsLogCategories 清单漂移：`LogEnhancedCodeFlow` 实际叫 `LogECF`（条目失效）；缺 LogAxisLocker/LogSplineMovement/LogQueueSpline/LogComponentTimelineUncooked；下游 ApplyPluginLogVerbosity 批量设置对 ECF 永不生效 | **已由 b694f8e 修复**：按实际模块声明同步清单 |
 
 ---
 
@@ -144,7 +144,7 @@
 - **P0（已处理）**：H1 协程 UAF、H5 Trim 上限移位、H6 CI 发布过滤、H2/H3 对象池回退与碰撞保存逻辑。
 - **P1（已处理）**：M3–M6 K2Node 编译期崩溃/断言/丢线四件套、M1/M2 崩溃类、M15+M16 Runtime DeveloperSettings 迁移、M4 过滤器写反；M26 为误报无需修复。
 - **P2（部分处理）**：M10–M13 生命周期弱指针化、M20–M24 行为一致性批次、M25 贝塞尔警示、FormationMovement 制动带死锁；M17/M18 对象池维护层、M19 主模块拆分仍未处理。
-- **P3（持续还债）**：5.1 规范回迁（错误宏收敛、中文分类统一、Build.cs 卫生）；5.2 死代码清理；M28 日志清单重建 + AGENTS.md/CLAUDE.md 补齐三个新模块并修正 UComponentTimelineComponent 描述。
+- **P3（持续还债）**：5.1 规范回迁（错误宏收敛、中文分类统一、Build.cs 卫生）；5.2 死代码清理；AGENTS.md/CLAUDE.md 补齐三个新模块并修正 UComponentTimelineComponent 描述。M28 日志清单已由 b694f8e 修复。
 
 ---
 
@@ -204,7 +204,7 @@ H2/H3/H5/H6（对象池回退缺失、碰撞覆写、Trim 上限绕过、CI zip 
 本报告基线为 `695be82`。后续提交已处理以下审查项：
 
 - H1、H2、H3、H5、H6：完成协程失败清理、对象池回退与碰撞配置、泊松裁剪上限、CI 发布资产筛选。
-- M3-M6、M10-M16、M20-M24：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖及资产重命名台账等修复。
+- M3-M6、M10-M16、M20-M24、M28：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖、资产重命名台账及日志类别清单同步等修复。
 - FormationSystem：补齐起点即到达完成事件、停止事件清理临时 Actor、制动带速度归零恢复输入，并修复 BeginPlay 前动态移动组件丢失指令。
 - 仍开放：M17/M18 对象池维护层接线与死代码、M19 主模块拆分、卡墙超时/失败事件及其他低优先级规范与性能债务。
 
