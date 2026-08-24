@@ -177,7 +177,9 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
     // 计算速度倍数
     float SpeedMultiplier = 1.0f;
 
-    if (bShouldBrake)
+    // 速度阈值：速度已衰减到接近零时不再视为制动——否则在制动带内（接受半径外）速度归零后
+    // 将永久保持零输入、无法重新加速（卡墙或提前减速停下都会触发该死锁）
+    if (bShouldBrake && CurrentSpeed > 1.0f)
     {
         // 进入制动阶段，停止输入让角色自然减速
         OwnerCharacter->AddMovementInput(FVector::ZeroVector, 0.0f);

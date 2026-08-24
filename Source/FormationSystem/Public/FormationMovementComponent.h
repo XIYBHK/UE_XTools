@@ -28,19 +28,22 @@ public:
      * @param AcceptanceRadius 接受半径
      * @param MoveSpeed 移动速度倍数（0-1）
      */
-    UFUNCTION(BlueprintCallable, Category = "Formation Movement", meta = (DisplayName = "开始移动到位置"))
+    UFUNCTION(BlueprintCallable, Category = "Formation Movement", meta = (DisplayName = "开始移动到位置",
+        ToolTip = "开始移动到目标位置。距离判定只比较XY平面（忽略Z轴高度差）；起点已在接受半径内时会立即广播完成事件。\n注意：没有自动卡墙超时或失败事件——被阻挡时不会自行结束，需要时请调用\"停止移动\"手动终止。"))
     void StartMoveToLocation(FVector TargetLocation, float AcceptanceRadius = 50.0f, float MoveSpeed = 1.0f);
 
     /**
      * 停止移动
      */
-    UFUNCTION(BlueprintCallable, Category = "Formation Movement", meta = (DisplayName = "停止移动"))
+    UFUNCTION(BlueprintCallable, Category = "Formation Movement", meta = (DisplayName = "停止移动",
+        ToolTip = "立即停止移动并清除状态：重置速度、清除待处理的移动输入、禁用组件Tick。\n不广播完成事件。"))
     void StopMovement();
 
     /**
      * 是否正在移动
      */
-    UFUNCTION(BlueprintPure, Category = "Formation Movement", meta = (DisplayName = "是否正在移动"))
+    UFUNCTION(BlueprintPure, Category = "Formation Movement", meta = (DisplayName = "是否正在移动",
+        ToolTip = "是否处于移动中（从开始移动到进入接受半径或手动停止）。\n注意：被阻挡卡住时仍返回true——组件没有卡墙检测，需要时请自行结合距离或超时判断。"))
     bool IsMoving() const { return bIsMoving; }
 
     /**
@@ -53,7 +56,8 @@ public:
      * 移动完成事件
      */
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMovementCompleted, UFormationMovementComponent*, MovementComponent);
-    UPROPERTY(BlueprintAssignable, Category = "Formation Movement")
+    UPROPERTY(BlueprintAssignable, Category = "Formation Movement", meta = (
+        ToolTip = "移动完成事件：仅表示XY平面距离进入接受半径。\n不代表路径可行或过程无阻挡——被卡住时不会广播任何事件（组件没有失败事件，需自行超时判断）。"))
     FOnMovementCompleted OnMovementCompleted;
 
 protected:
