@@ -110,20 +110,17 @@ public class XTools : ModuleRules
 		});
 
 		// Editor-only dependencies
+		// M-19 依赖卫生：已移除零使用的 Kismet/GraphEditor/EditorStyle/EditorWidgets/AppFramework/ToolWidgets。
+		// 勿凭印象重新引入：UE5.3 中 FKismetEditorUtilities(Kismet2/*.h) 与 CompileBlueprint 实现归属 UnrealEd；
+		// 蓝图节点头(K2Node_*/EdGraphSchema_K2) 需 BlueprintGraph，其公开头引用的 KismetCompilerMisc.h 需显式声明 KismetCompiler。
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[] {
-				"Kismet",
 				"UnrealEd",
 				"BlueprintGraph",
-				"GraphEditor",
 				"XTools_ComponentTimelineUncooked",
 				"AssetRegistry",
-				"KismetCompiler",
-				"EditorStyle",
-				"EditorWidgets",
-				"AppFramework",      // Required for SWindow and editor UI windows
-				"ToolWidgets"        // Required for editor tool widgets
+				"KismetCompiler"
 			});
 
 		}
