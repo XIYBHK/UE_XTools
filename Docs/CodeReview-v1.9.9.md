@@ -79,8 +79,8 @@
 | M14 | `Source/ObjectPool/Private/ObjectPoolLibrary.cpp:66` | 请求类 SpawnActor 失败后回退生成裸 `AActor::StaticClass()` 当作目标类型返回，抽象类场景持续产出空壳 Actor（类型污染） | 失败返回 nullptr 并经 FXToolsErrorReporter 上报 |
 | M15 | `Source/ObjectPool/Private/ObjectPoolSubsystem.cpp:142` | 子系统开关反射读取 Editor-only 的 `/Script/X_AssetEditor.X_AssetEditorSettings`：编辑器默认关闭、打包后类不存在则一律启用，同一项目**编辑器/成品行为不对称** | 开关迁入 Runtime 可用的 DeveloperSettings |
 | M16 | `Source/XTools_EnhancedCodeFlow/Private/ECFSubsystem.cpp:65-85` | 与 M15 同型的第二处实例（严重度评低）：运行时模块读 Editor-only 设置，打包后 bEnableEnhancedCodeFlowSubsystem 被忽略 | 同上，建议两项一起做 |
-| M17 | `Source/ObjectPool/Private/ObjectPoolSubsystem.cpp:736` | PerformMaintenance 全工程零调用者，MAINTENANCE_INTERVAL 等常量全为死配置，FObjectPoolManager 自动扩缩容整套机制不可达 | Initialize 里按间隔调度，或删层修正文档 |
-| M18 | `Source/ObjectPool/Public/ObjectPoolSubsystem.h:22` 等 | FObjectPoolMonitor 仅剩前向声明从未实现；FActorStateResetter 是桩代码（ResetActorState 恒 true）；FActorPoolMemoryOptimizer 未接线（其内部还有 `PoolSize >= GetPoolSize()` 自比较恒真 bug） | 删除或真正接入三套并行实现 |
+| M17 | `Source/ObjectPool/Private/ObjectPoolSubsystem.cpp:736` | PerformMaintenance 全工程零调用者，MAINTENANCE_INTERVAL 等常量全为死配置，FObjectPoolManager 自动扩缩容整套机制不可达 | **已处理**：删除子系统内不可达维护入口与死配置；保留并测试导出的管理器 API，接线/移除公共维护类留待架构决策 |
+| M18 | `Source/ObjectPool/Public/ObjectPoolSubsystem.h:22` 等 | FObjectPoolMonitor 仅剩前向声明从未实现；FActorStateResetter 是桩代码（ResetActorState 恒 true）；FActorPoolMemoryOptimizer 未接线（其内部还有 `PoolSize >= GetPoolSize()` 自比较恒真 bug） | **部分处理**：删除未实现的 FObjectPoolMonitor 声明；FActorStateResetter/FActorPoolMemoryOptimizer 等公共导出类保留，待下版本决定接线、废弃或移除 |
 | M19 | `Source/XTools/XTools.Build.cs:115-127` | Runtime 主模块在编辑器目标下链接 UnrealEd/Kismet/BlueprintGraph/KismetCompiler，违背 AGENTS.md 自身红线（有双重守卫暂不致打包失败） | 把编辑器工具拆到独立 Editor/UncookedOnly 模块 |
 | M20 | `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp:344-356` | ApplyFieldToFilteredGeometryCollections 每个 GC 曾做两次求值图深拷贝 | **已由 cf6d246 修复**：按值捕获命令并在入队 lambda 内初始化时间元数据 |
 | M21 | `Source/SplineMovement/Private/SplineMoveAlongAction.cpp:207` | AIMoveTo 模式推进条件几乎每帧满足，接近每帧中止并重建寻路请求（引擎仅对完全相同目标去重），注释"不会每帧跑寻路"不成立 | 目标位移超阈值才重新 MoveToLocation |
@@ -143,7 +143,7 @@
 
 - **P0（已处理）**：H1 协程 UAF、H5 Trim 上限移位、H6 CI 发布过滤、H2/H3 对象池回退与碰撞保存逻辑。
 - **P1（已处理）**：M3–M6 K2Node 编译期崩溃/断言/丢线四件套、M1/M2 崩溃类、M15+M16 Runtime DeveloperSettings 迁移、M4 过滤器写反；M26 为误报无需修复。
-- **P2（部分处理）**：M10–M13 生命周期弱指针化、M21–M24 行为一致性批次、M25 贝塞尔性能债务（已补警示）、FormationMovement 制动带死锁；M17/M18 对象池维护层、M19 主模块拆分仍未处理。
+- **P2（部分处理）**：M10–M13 生命周期弱指针化、M21–M24 行为一致性批次、M25 贝塞尔性能债务（已补警示）、FormationMovement 制动带死锁；M17/M18 对象池维护层已完成不可达子系统清理，公共维护类架构决策仍开放；M19 主模块拆分仍未处理。
 - **P3（持续还债）**：5.1 规范回迁（错误宏收敛、中文分类统一、Build.cs 卫生）；5.2 死代码清理；AGENTS.md/CLAUDE.md 补齐三个新模块并修正 UComponentTimelineComponent 描述。M28 日志清单已由 b694f8e 修复。
 
 ---
@@ -206,6 +206,6 @@ H2/H3/H5/H6（对象池回退缺失、碰撞覆写、Trim 上限绕过、CI zip 
 - H1、H2、H3、H5、H6：完成协程失败清理、对象池回退与碰撞配置、泊松裁剪上限、CI 发布资产筛选。
 - M3-M6、M10-M16、M20-M24、M27-M28：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖、资产重命名台账、CI 工具链校验及日志类别清单同步等修复。
 - FormationSystem：补齐起点即到达完成事件、停止事件清理临时 Actor、制动带速度归零恢复输入，并修复 BeginPlay 前动态移动组件丢失指令。
-- 仍开放：M17/M18 对象池维护层接线与死代码、M19 主模块拆分、卡墙超时/失败事件及其他低优先级规范与性能债务。
+- 仍开放：M18 公共维护类（FActorStateResetter/FActorPoolMemoryOptimizer）的接线、废弃或移除决策；M19 主模块拆分；卡墙超时/失败事件及其他低优先级规范与性能债务。
 
 > 核验结论：原审查报告整体可信度高——83 条初审发现经实证仅 2 条误报、1 条部分修正，误报率约 3.6%；两条误报均源于子代理对引擎行为的推断未经本地多版本源码验证，已在附录中记录教训：**引擎行为类断言必须以本机对应版本引擎源码为准，网络资料（含官方论坛）只能作为线索而非结论**。
