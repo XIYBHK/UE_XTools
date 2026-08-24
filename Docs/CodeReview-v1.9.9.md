@@ -82,7 +82,7 @@
 | M17 | `Source/ObjectPool/Private/ObjectPoolSubsystem.cpp:736` | PerformMaintenance 全工程零调用者，MAINTENANCE_INTERVAL 等常量全为死配置，FObjectPoolManager 自动扩缩容整套机制不可达 | Initialize 里按间隔调度，或删层修正文档 |
 | M18 | `Source/ObjectPool/Public/ObjectPoolSubsystem.h:22` 等 | FObjectPoolMonitor 仅剩前向声明从未实现；FActorStateResetter 是桩代码（ResetActorState 恒 true）；FActorPoolMemoryOptimizer 未接线（其内部还有 `PoolSize >= GetPoolSize()` 自比较恒真 bug） | 删除或真正接入三套并行实现 |
 | M19 | `Source/XTools/XTools.Build.cs:115-127` | Runtime 主模块在编辑器目标下链接 UnrealEd/Kismet/BlueprintGraph/KismetCompiler，违背 AGENTS.md 自身红线（有双重守卫暂不致打包失败） | 把编辑器工具拆到独立 Editor/UncookedOnly 模块 |
-| M20 | `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp:344-356` | ApplyFieldToFilteredGeometryCollections 每个 GC 仍做两次求值图深拷贝（FFieldSystemCommand 拷贝即全图 NewCopy），性能修复 commit be89330 只修了同文件一处 | 按值捕获 SolverTime + InitFieldNodes 移入 lambda，或用 GC->DispatchFieldCommand |
+| M20 | `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp:344-356` | ApplyFieldToFilteredGeometryCollections 每个 GC 曾做两次求值图深拷贝 | **已由 cf6d246 修复**：按值捕获命令并在入队 lambda 内初始化时间元数据 |
 | M21 | `Source/SplineMovement/Private/SplineMoveAlongAction.cpp:207` | AIMoveTo 模式推进条件几乎每帧满足，接近每帧中止并重建寻路请求（引擎仅对完全相同目标去重），注释"不会每帧跑寻路"不成立 | 目标位移超阈值才重新 MoveToLocation |
 | M22 | `Source/FormationSystem/Private/FormationMovementComponent.cpp:58` | StartMoveToLocation 在已到达目标时直接 return 不广播 OnMovementCompleted，事件驱动调用方永久挂起 | 提前返回路径也统一广播 |
 | M23 | `Source/X_AssetEditor/Private/AssetNaming/X_AssetNamingManager.cpp:439` | 批量重命名外层事务包逐资产 RenameAssets，中途失败/取消后形成部分新名部分旧名混合态，无回滚无续跑 | 结果列明已完成/未处理清单并提供重跑 |
@@ -92,9 +92,9 @@
 
 | # | 位置 | 问题 | 建议 |
 |---|------|------|------|
-| M25 | `Source/XTools/Private/XToolsLibrary.cpp:473-520` | 贝塞尔匀速模式弧长表缓存只在传入状态对象时生效，纯 BP 节点每次调用重建 100 段 De Casteljau 表（项目已知风险点仍然成立） | 给纯节点加可选状态参数或元数据警示禁逐帧 |
+| M25 | `Source/XTools/Private/XToolsLibrary.cpp:473-520` | 贝塞尔匀速模式弧长表缓存只在传入状态对象时生效，纯 BP 节点每次调用重建 100 段 De Casteljau 表 | **部分处理**：afd7f40 已补纯节点逐帧调用性能警示；可选状态参数仍未提供 |
 | M26 | ~~已撤销（实证核验证伪）~~ `Source/XTools_EnhancedCodeFlow/XTools_EnhancedCodeFlow.Build.cs:18-19` | 初审声称"CppStandard=Default 在 UE5.3–5.5 默认 C++17 下协程不可用"。经 UBT 源码核验**不成立**：UE 5.3 TargetRules.cs L137 明文记载 `CppStandard.Default has changed from Cpp17 to Cpp20`（V4 构建设置起），L2791 的迁移提示亦确认 Default==C++20；工具链 switch 遇 Default 直接抛异常，证明其必被解析为具体标准。显式设 `Default` 在全部支持版本均得 `/std:c++20` | 无需修复 |
-| M27 | `.github/workflows/build-plugin-optimized.yml:88` | verify-toolchain 无矩阵却读 matrix.ue_version（恒空提前 exit 0），分版本 MSVC 校验是死代码，5.7/5.8 工具链门槛从未真正执行 | 版本校验移入 build job 或自建循环 |
+| M27 | `.github/workflows/build-plugin-optimized.yml:88` | verify-toolchain 无矩阵却读 matrix.ue_version，分版本 MSVC 校验曾是死代码 | **已由 c165274 修复**：改为显式遍历 UE 5.3–5.8 校验最低 MSVC 版本 |
 | M28 | `Source/XToolsCore/Private/XToolsCore.cpp:15-48` | FXToolsLogCategories 清单漂移：`LogEnhancedCodeFlow` 实际叫 `LogECF`（条目失效）；缺 LogAxisLocker/LogSplineMovement/LogQueueSpline/LogComponentTimelineUncooked；下游 ApplyPluginLogVerbosity 批量设置对 ECF 永不生效 | **已由 b694f8e 修复**：按实际模块声明同步清单 |
 
 ---
@@ -143,7 +143,7 @@
 
 - **P0（已处理）**：H1 协程 UAF、H5 Trim 上限移位、H6 CI 发布过滤、H2/H3 对象池回退与碰撞保存逻辑。
 - **P1（已处理）**：M3–M6 K2Node 编译期崩溃/断言/丢线四件套、M1/M2 崩溃类、M15+M16 Runtime DeveloperSettings 迁移、M4 过滤器写反；M26 为误报无需修复。
-- **P2（部分处理）**：M10–M13 生命周期弱指针化、M20–M24 行为一致性批次、M25 贝塞尔警示、FormationMovement 制动带死锁；M17/M18 对象池维护层、M19 主模块拆分仍未处理。
+- **P2（部分处理）**：M10–M13 生命周期弱指针化、M21–M24 行为一致性批次、M25 贝塞尔性能债务（已补警示）、FormationMovement 制动带死锁；M17/M18 对象池维护层、M19 主模块拆分仍未处理。
 - **P3（持续还债）**：5.1 规范回迁（错误宏收敛、中文分类统一、Build.cs 卫生）；5.2 死代码清理；AGENTS.md/CLAUDE.md 补齐三个新模块并修正 UComponentTimelineComponent 描述。M28 日志清单已由 b694f8e 修复。
 
 ---
@@ -204,7 +204,7 @@ H2/H3/H5/H6（对象池回退缺失、碰撞覆写、Trim 上限绕过、CI zip 
 本报告基线为 `695be82`。后续提交已处理以下审查项：
 
 - H1、H2、H3、H5、H6：完成协程失败清理、对象池回退与碰撞配置、泊松裁剪上限、CI 发布资产筛选。
-- M3-M6、M10-M16、M20-M24、M28：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖、资产重命名台账及日志类别清单同步等修复。
+- M3-M6、M10-M16、M20-M24、M27-M28：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖、资产重命名台账、CI 工具链校验及日志类别清单同步等修复。
 - FormationSystem：补齐起点即到达完成事件、停止事件清理临时 Actor、制动带速度归零恢复输入，并修复 BeginPlay 前动态移动组件丢失指令。
 - 仍开放：M17/M18 对象池维护层接线与死代码、M19 主模块拆分、卡墙超时/失败事件及其他低优先级规范与性能债务。
 
