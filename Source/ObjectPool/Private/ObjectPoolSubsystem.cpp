@@ -140,7 +140,8 @@ bool UObjectPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
     //  迁移说明：不再反射读取 Editor-only 模块的 X_AssetEditorSettings（打包后该类不存在导致开关被忽略、
     //  编辑器与打包成品行为反转），改为读取本模块运行时开发者设置，保证编辑器与打包成品行为一致
     const UObjectPoolSettings* Settings = GetDefault<UObjectPoolSettings>();
-    const bool bEnabled = Settings ? Settings->bEnableObjectPoolSubsystem : true;
+    // 设置类不可用时按"关闭"处理（保守默认：未经明确配置不启用对象池）
+    const bool bEnabled = Settings ? Settings->bEnableObjectPoolSubsystem : false;
     if (!bEnabled)
     {
         // 设置中未启用对象池

@@ -17,7 +17,7 @@
 namespace
 {
     /**
-     * 测试世界辅助：对象池子系统由运行时开发者设置 UObjectPoolSettings 控制（默认启用），
+     * 测试世界辅助：对象池子系统由运行时开发者设置 UObjectPoolSettings 控制（默认关闭），
      * 且仅在 GameWorld 创建。这里临时翻转内存中的设置 CDO 开关（不写配置文件），
      * 创建 Game 类型测试世界，析构时销毁世界并恢复设置。
      */
@@ -26,7 +26,8 @@ namespace
     public:
         explicit FScopedObjectPoolTestWorld(FName WorldName)
         {
-            // 新默认值为 true；此处防御用户配置关闭子系统的场景，确保测试世界能创建子系统
+            // 默认值为 false；此处临时开启以确保测试世界能创建子系统
+            // （同时防御用户配置关闭子系统的场景，兼容未来默认值变化）
             if (UObjectPoolSettings* Settings = GetMutableDefault<UObjectPoolSettings>())
             {
                 bOriginalValue = Settings->bEnableObjectPoolSubsystem;
@@ -63,6 +64,35 @@ namespace
         UWorld* World = nullptr;
         bool bOriginalValue = false;
         bool bSettingFlipped = false;
+    };
+
+    /** 临时覆写对象池开关并在析构时恢复原值（仅改内存 CDO，不写配置文件） */
+    class FScopedObjectPoolSettingOverride
+    {
+    public:
+        explicit FScopedObjectPoolSettingOverride(bool bNewValue)
+        {
+            Settings = GetMutableDefault<UObjectPoolSettings>();
+            if (Settings)
+            {
+                bOriginalValue = Settings->bEnableObjectPoolSubsystem;
+                Settings->bEnableObjectPoolSubsystem = bNewValue;
+            }
+        }
+
+        ~FScopedObjectPoolSettingOverride()
+        {
+            if (Settings)
+            {
+                Settings->bEnableObjectPoolSubsystem = bOriginalValue;
+            }
+        }
+
+        bool IsValid() const { return Settings != nullptr; }
+
+    private:
+        UObjectPoolSettings* Settings = nullptr;
+        bool bOriginalValue = false;
     };
 
     /** 构造硬限制已满的池：注册 AActor（初始 0、硬限制 1）并预热 1 个实例，不依赖 Tick 的延迟预热 */
@@ -181,6 +211,68 @@ bool FObjectPoolReleaseOrDespawnDestroysNonPooledTest::RunTest(const FString& Pa
     TestEqual(TEXT("释放非池对象结果码应保留非池对象"), static_cast<int32>(Result), static_cast<int32>(EPoolOpResult::NotPooled));
     TestTrue(TEXT("非池对象应被销毁"), FallbackActor->IsPendingKillPending());
 
+    return true;
+}
+
+// d. 设置默认值：对象池子系统默认关闭（保守兼容——升级项目未经明确配置不应被静默启用）
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolSettingsDefaultDisabledTest,
+    "XTools.ObjectPool.Settings.DefaultDisabled",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolSettingsDefaultDisabledTest::RunTest(const FString& Parameters)
+{
+    const UObjectPoolSettings* Settings = GetDefault<UObjectPoolSettings>();
+    if (!TestNotNull(TEXT("对象池设置 CDO 应可用"), Settings))
+    {
+        return false;
+    }
+
+    TestFalse(TEXT("对象池子系统默认应关闭（升级项目未经明确配置不启用）"),
+        Settings->bEnableObjectPoolSubsystem);
+    return true;
+}
+
+// e. 子系统创建条件：开关关闭时 Game 世界不创建对象池子系统，开启时创建
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolSubsystemCreationRespectsSettingsTest,
+    "XTools.ObjectPool.Settings.SubsystemCreatedOnlyWhenEnabled",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolSubsystemCreationRespectsSettingsTest::RunTest(const FString& Parameters)
+{
+    // 关闭：Game 世界不应创建子系统
+    {
+        FScopedObjectPoolSettingOverride Override(false);
+        if (!TestTrue(TEXT("设置对象应可修改"), Override.IsValid()))
+        {
+            return false;
+        }
+
+        UWorld* DisabledWorld = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ObjectPoolTest_SettingsDisabled"));
+        if (!TestNotNull(TEXT("开关关闭时应能创建测试世界"), DisabledWorld))
+        {
+            return false;
+        }
+        TestTrue(TEXT("开关关闭时不应创建对象池子系统"),
+            DisabledWorld->GetSubsystem<UObjectPoolSubsystem>() == nullptr);
+        DisabledWorld->DestroyWorld(false);
+    }
+
+    // 开启：Game 世界应创建子系统
+    {
+        FScopedObjectPoolSettingOverride Override(true);
+        UWorld* EnabledWorld = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ObjectPoolTest_SettingsEnabled"));
+        if (!TestNotNull(TEXT("开关开启时应能创建测试世界"), EnabledWorld))
+        {
+            return false;
+        }
+        TestNotNull(TEXT("开关开启时应创建对象池子系统"),
+            EnabledWorld->GetSubsystem<UObjectPoolSubsystem>());
+        EnabledWorld->DestroyWorld(false);
+    }
+
+    // 离开作用域后开关应已恢复原值
+    const UObjectPoolSettings* Settings = GetDefault<UObjectPoolSettings>();
+    TestFalse(TEXT("测试结束后设置应恢复为默认关闭"), Settings->bEnableObjectPoolSubsystem);
     return true;
 }
 

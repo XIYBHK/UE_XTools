@@ -635,21 +635,36 @@ jobs:
             exit 1
           }
 
-          # 仅收集与本次 tag 匹配的 zip：临时目录为跨运行共享，
-          # 不过滤会把上次失败/中断运行遗留的旧版本包一并发布进新 Release
+          # 仅收集本次发布官方命名的 zip：XTools-UE_<版本>-<tag>.zip。
+          # 临时目录为跨运行共享，宽松过滤会把上次失败/中断运行遗留的旧包混入新发布。
+          # 注意：-like 模式 "*tag" 会锚定到字符串结尾，永远匹配不到以 .zip 结尾的文件名
+          # （如 XTools-UE_5.3-v1.9.9.zip），因此首尾都必须有明确的通配与扩展名约束。
           $all_zips = Get-ChildItem -Path $release_temp_dir -Filter "*.zip"
-          $zip_files = @($all_zips | Where-Object { $_.Name -like "*$current_tag" })
+          $name_pattern = "XTools-UE_*-$current_tag.zip"
 
-          Write-Host "Found $($all_zips.Count) zip file(s) in temp directory, $($zip_files.Count) matching current tag '$current_tag'"
+          # 只按官方文件名筛选；不使用固定时间窗口，避免 Runner 排队或矩阵构建耗时
+          # 超过阈值时误拒绝合法产物。不同 tag 已由文件名隔离，同 tag 重推由 -Force 覆盖同名文件。
+          $zip_files = @($all_zips | Where-Object { $_.Name -like $name_pattern })
+
+          Write-Host "Found $($all_zips.Count) zip file(s) in temp directory, $($zip_files.Count) matching '$name_pattern'"
+          # 覆盖性校验：tag 推送固定构建全部 UE 版本矩阵，缺任一版本立即失败并列出缺失项，
+          # 避免只发布部分平台的半成品 Release
+          $expected_ue_versions = @("5.3", "5.4", "5.5", "5.6", "5.7", "5.8")
+          $missing_assets = @()
+          foreach ($ue in $expected_ue_versions) {
+            $expected_name = "XTools-UE_$ue-$current_tag.zip"
+            if (-not ($zip_files | Where-Object { $_.Name -eq $expected_name })) {
+              $missing_assets += $expected_name
+            }
+          }
+          if ($missing_assets.Count -gt 0) {
+            Write-Error "Missing release assets for tag '$current_tag': $($missing_assets -join ', ') (available: $($all_zips.Name -join ', '))"
+            exit 1
+          }
 
           foreach ($file in $zip_files) {
             Write-Host "Copying: $($file.Name)"
             Copy-Item $file.FullName -Destination $release_assets_dir
-          }
-
-          if ($zip_files.Count -eq 0) {
-            Write-Error "No release zip matching tag '$current_tag' found in $release_temp_dir (available: $($all_zips.Name -join ', '))"
-            exit 1
           }
 
           # 输出统计信息
