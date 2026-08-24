@@ -44,6 +44,13 @@ void UFormationMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 
 void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, float InAcceptanceRadius, float InMoveSpeed)
 {
+    // 动态组件可能在 Owner BeginPlay 前注册，此时 BeginPlay 尚未缓存 Character；
+    // Outer 已固定为 Owner，按需解析可避免注册后立即下令时丢失移动指令。
+    if (!OwnerCharacter)
+    {
+        OwnerCharacter = Cast<ACharacter>(GetOwner());
+    }
+
     if (!OwnerCharacter)
     {
         UE_LOG(LogFormationSystem, Warning, TEXT("FormationMovementComponent: 无效的Character"));

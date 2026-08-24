@@ -83,6 +83,62 @@ namespace
     }
 }
 
+// M-27 回归：组件在 Owner BeginPlay 前注册并立即收到移动指令时，入口应按需解析 Owner，
+// 不得因 BeginPlay 尚未缓存 OwnerCharacter 而静默丢弃指令。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementBeforeOwnerBeginPlayResolvesOwnerTest,
+    "XTools.Formation.Movement.StartBeforeOwnerBeginPlayResolvesOwner",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementBeforeOwnerBeginPlayResolvesOwnerTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_BeforeOwnerBeginPlay"));
+    UWorld* World = WorldScope.Get();
+    if (!World)
+    {
+        AddError(TEXT("测试世界初始化失败"));
+        return false;
+    }
+
+    ACharacter* TestCharacter = World->SpawnActor<ACharacter>();
+    TestNotNull(TEXT("应生成测试 Character"), TestCharacter);
+    if (!TestCharacter)
+    {
+        return false;
+    }
+
+    UFormationMovementComponent* MoveComp = NewObject<UFormationMovementComponent>(TestCharacter);
+    TestNotNull(TEXT("应创建阵型移动组件"), MoveComp);
+    if (!MoveComp)
+    {
+        return false;
+    }
+
+    TestCharacter->AddInstanceComponent(MoveComp);
+    MoveComp->RegisterComponent();
+
+    // CreateWorld 未 BeginPlay，RegisterComponent 不会替 Owner 补跑组件 BeginPlay。
+    TestFalse(TEXT("前置条件：组件尚未 BeginPlay"), MoveComp->HasBegunPlay());
+
+    MoveComp->StartMoveToLocation(FVector(500.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+    TestTrue(TEXT("Owner 尚未 BeginPlay 时仍应成功进入移动状态"), MoveComp->IsMoving());
+
+    UCharacterMovementComponent* CharacterMovement = TestCharacter->GetCharacterMovement();
+    TestNotNull(TEXT("Character 应持有移动组件"), CharacterMovement);
+    if (!CharacterMovement)
+    {
+        return false;
+    }
+
+    // 手动驱动一帧，确认指令不只是改变状态而是确实产生了目标方向输入。
+    UActorComponent* TickableComponent = MoveComp;
+    TickableComponent->TickComponent(1.0f / 60.0f, LEVELTICK_All, nullptr);
+    const FVector PendingInput = CharacterMovement->ConsumeInputVector();
+    TestTrue(TEXT("Owner 尚未 BeginPlay 时应产生沿目标方向的移动输入"),
+        PendingInput.X > 0.1f && FMath::IsNearlyZero(PendingInput.Y) && FMath::IsNearlyZero(PendingInput.Z));
+
+    return true;
+}
+
 // M-25 核心回归：制动带内速度归零后必须恢复移动输入。
 // 旧逻辑 bShouldBrake 只看距离——距离 ∈ (接受半径, 1.5×接受半径] 且速度已归零时（卡墙或提前减速停下），
 // 永远进入零输入分支：无法重新加速、永不进入接受半径、永不广播完成事件。
