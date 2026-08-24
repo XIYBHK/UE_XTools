@@ -133,7 +133,7 @@
 
 1. **K2Node 安全红线**：自研代码零 MakeLinkTo（仅第三方 fork 上游原样存在）；ReconstructAndFindPin 杜绝重建后旧 Pin 复用；延迟循环节点 Break 经越界哨兵+PostBodyBranch 保证唯一完成路径。
 2. **算法正确性**：RandomShuffles PRD 公式与 DOTA2 一致、满表退化与世界清理（commit 5ebaa61/f41ebbc）落实且有测试；泊松缓存键 GetTypeHash/operator== 严格配套、LRU 有界；竞争泊松加权采样数学正确。
-3. **异步框架设计**：ECF PendingAdd/Active 双队列保证任意回调内增删安全；Owner 弱引用跟踪销毁即回收；FTSTicker 弱捕获配对正确；协程帧所有权转移杜绝双析构（除 H1 失败路径外）。曾怀疑的 standalone bCanTick 问题经引擎源码核实**不构成缺陷**。
+3. **异步框架设计**：ECF PendingAdd/Active 双队列保证任意回调内增删安全；Owner 弱引用跟踪销毁即回收；FTSTicker 弱捕获配对正确；协程帧所有权转移杜绝双析构，H1 失败路径已在后续提交中改为延迟销毁。曾怀疑的 standalone bCanTick 问题经引擎源码核实**不构成缺陷**。
 4. **工程卫生**：Content/Resources 无二进制残留；workflow 无密钥泄漏、GITHUB_TOKEN 最小权限；AssetRegistry 通知内改名延迟 Ticker 执行无死锁路径；Python 与 C++ 零耦合；四个第三方 fork 许可证头完整、汉化低侵入。
 5. **兼容层有效性**：TAtomic 封装经引擎 5.3 源码验证可用；XTOOLS_GET_ELEMENT_SIZE 设计正确；近期修复 commit（be89330 场拷贝、3dbfbba 时间轴重建、fdcf1f6 重入隔离、deaed37 临时 Actor 清理）均验证为真实有效的修复。
 
@@ -141,9 +141,9 @@
 
 ## 七、修复路线图建议
 
-- **P0（立即，均为小改动量）**：H1 协程 UAF、H4 AxisLocker DOF 强制重建、H5 Trim 上限移位、H6 CI 发布过滤 —— 四条都是几行级的修复；H2/H3 对象池补回退与碰撞保存逻辑稍大但边界清晰。
-- **P1（本迭代）**：M3–M6 K2Node 编译期崩溃/断言/丢线四件套（一次专项即可扫完旧节点）；M1/M2 崩溃类；M15+M16 开关迁移（一个 Runtime DeveloperSettings 解决两处）；M26 CppStandard 显式 C++20；M4 过滤器写反。
-- **P2（下个迭代）**：M10–M13 生命周期弱指针化；M17/M18 对象池三代实现决断（删或接线）；M19 主模块拆分；M20–M24 行为一致性批次；M25 贝塞尔警示。
+- **P0（已处理）**：H1 协程 UAF、H5 Trim 上限移位、H6 CI 发布过滤、H2/H3 对象池回退与碰撞保存逻辑。
+- **P1（已处理）**：M3–M6 K2Node 编译期崩溃/断言/丢线四件套、M1/M2 崩溃类、M15+M16 Runtime DeveloperSettings 迁移、M4 过滤器写反；M26 为误报无需修复。
+- **P2（部分处理）**：M10–M13 生命周期弱指针化、M20–M24 行为一致性批次、M25 贝塞尔警示、FormationMovement 制动带死锁；M17/M18 对象池维护层、M19 主模块拆分仍未处理。
 - **P3（持续还债）**：5.1 规范回迁（错误宏收敛、中文分类统一、Build.cs 卫生）；5.2 死代码清理；M28 日志清单重建 + AGENTS.md/CLAUDE.md 补齐三个新模块并修正 UComponentTimelineComponent 描述。
 
 ---
@@ -198,5 +198,14 @@ H2/H3/H5/H6（对象池回退缺失、碰撞覆写、Trim 上限绕过、CI zip 
 - 中危：28 → **26**（M26 撤销、M1 降级至低危）
 - 低危：49 → **50**
 - 总计：**81 条有效发现**
+
+### 9.5 基线后的修复状态
+
+本报告基线为 `695be82`。后续提交已处理以下审查项：
+
+- H1、H2、H3、H5、H6：完成协程失败清理、对象池回退与碰撞配置、泊松裁剪上限、CI 发布资产筛选。
+- M3-M6、M10-M16、M20-M24：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖及资产重命名台账等修复。
+- FormationSystem：补齐起点即到达完成事件、停止事件清理临时 Actor、制动带速度归零恢复输入。
+- 仍开放：M17/M18 对象池维护层接线与死代码、M19 主模块拆分、卡墙超时/失败事件及其他低优先级规范与性能债务。
 
 > 核验结论：原审查报告整体可信度高——83 条初审发现经实证仅 2 条误报、1 条部分修正，误报率约 3.6%；两条误报均源于子代理对引擎行为的推断未经本地多版本源码验证，已在附录中记录教训：**引擎行为类断言必须以本机对应版本引擎源码为准，网络资料（含官方论坛）只能作为线索而非结论**。
