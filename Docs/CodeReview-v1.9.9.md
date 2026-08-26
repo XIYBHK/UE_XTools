@@ -70,7 +70,7 @@
 | M10 | `Source/XTools_EnhancedCodeFlow/Private/BP/Actions/*.cpp`（代表 ECFDelayBP.cpp:14，共 13 个工厂） | BP 异步工厂以裸指针捕获 Proxy 存入动作长生命周期回调，IsProxyValid 先解引用再断言，安全性依赖隐式保活契约，违反项目反模式清单 | **已处理**：`3cf598d` 将 13 个异步 BP 工厂统一改为 `TWeakObjectPtr` 捕获，回调先解析弱引用再校验 Proxy；`RunAsyncThen` 的工作线程转游戏线程回调同样保持弱引用。 |
 | M11 | `Source/XTools_EnhancedCodeFlow/Private/BP/ECFActionBP.cpp:102` + `Private/ECFSubsystem.cpp:86` | 持有 latent 节点的 Actor 销毁后看门狗会进入 `ensureAlwaysMsgf("Can't obtain ThisWorld")`；原报告“每帧必命中”表述过重，查询失败后 ticker 会自清理，实际为每个 Proxy 最多一次 | **已处理**：`3cf598d` 在看门狗调用 `FFlow::IsActionRunning` 前校验 `Proxy_WorldContextObject`，失效即移除 ticker 并清理 Proxy；保留 `UECFSubsystem::Get` 的 ensure 作为直接错误调用的防御诊断。 |
 | M12 | `Source/ObjectPool/Public/ObjectPoolInterface.h:118` | `CallLifecycleEventEnhanced(bAsync=true)` 在 AsyncTask lambda 中捕获裸 `AActor*`，延迟执行期 Actor 可能已 GC，悬空调用 IsValid 为 UB | **已处理**：37f5145 已改 TWeakObjectPtr\<AActor\> 捕获并在回调内重新解析判空（同步路径与 Blueprint API 不变）；本次补充确定性回归测试（任务图冲刷驱动，不依赖 Tick/GC 时序）：调用门（未实现接口返回 false）、同步/异步原生接口精确派发、异步=延迟执行语义、异步入队后销毁 Actor 回调经弱指针安全跳过。 |
-| M13 | `Source/X_AssetEditor/Private/CollisionTools/X_AutoConvexDialog.cpp:127` | DialogWidget 持有 TSharedPtr\<SWindow\> 而 SWindow 内容又共享引用控件，引用环致每次弹窗泄漏一个窗口树（同文件 MaterialFunctionParamDialog 的 TWeakPtr 写法正确） | **已处理**：`DialogWindow` 已改为 `TWeakPtr<SWindow>`（头文件:43），确认/取消回调通过 `Pin()` 后请求关闭（cpp:144-147、155-158）；静态所有权图确认窗口强持有内容、控件仅弱持有窗口，不再形成环。 |
+| M13 | `Source/X_AssetEditor/Private/CollisionTools/X_AutoConvexDialog.cpp:127` | DialogWidget 持有 TSharedPtr\<SWindow\> 而 SWindow 内容又共享引用控件，引用环致每次弹窗泄漏一个窗口树（同文件 MaterialFunctionParamDialog 的 TWeakPtr 写法正确） | **已处理**：`DialogWindow` 已改为 `TWeakPtr<SWindow>`（头文件:43），确认/取消回调通过 `Pin()` 后请求关闭（cpp:144-147、155-158）；新增真实 `FSlateApplication` 生命周期测试，覆盖窗口销毁队列及确认/取消回调。 |
 #### M29 已撤销：未初始化测试世界造成的误报（未计入发现统计）
 
 M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Execute_*` 未收到生命周期事件。网络调研确认标准用法就是实现类覆盖 `_Implementation` 并由调用方走 `Execute_*`；本机 UE 5.3 源码与运行时探针进一步证明 `FindFunction`、native thunk 绑定、`GetInterfaceAddress` 指针调整、调用空间和 `UFunction::Invoke` 全部正常。
@@ -88,7 +88,7 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 | M18 | `Source/ObjectPool/Public/ObjectPoolSubsystem.h:22` 等 | FObjectPoolMonitor 仅剩前向声明从未实现；FActorStateResetter 是桩代码（ResetActorState 恒 true）；FActorPoolMemoryOptimizer 未接线且存在容量判断缺陷 | **已处理（破坏性删除）**：移除 Monitor 前向声明、StateResetter/MemoryOptimizer 头与实现，以及 `FActorResetConfig`/`FActorResetStats` 反射类型；保留 `FObjectPoolManager`、`FObjectPoolUtils` 和 `FObjectPoolStats` 作为替代 API，并新增 C++/蓝图迁移指南。 |
 | M19 | `Source/XTools/XTools.Build.cs` | Runtime 主模块在编辑器目标下链接 UnrealEd/Kismet/BlueprintGraph/KismetCompiler，违背 AGENTS.md 自身红线（有双重守卫暂不致打包失败） | **已处理**：移除零使用的 Kismet/GraphEditor/EditorStyle/EditorWidgets/AppFramework/ToolWidgets 并修正失实注释，保留项均经头文件归属+导出符号取证（UnrealEd/BlueprintGraph/KismetCompiler/AssetRegistry/ComponentTimelineUncooked）；UE 5.3–5.8 `BuildPlugin -StrictIncludes` 的 Editor Development、Game Development、Game Shipping 全部成功。Runtime/Editor 拆分经复审否决——CleanupTool 为运行时可见 API+编辑器门控实现模式、无打包缺陷，拆分会引入打包语义变化。 |
 | M20 | `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp:344-356` | ApplyFieldToFilteredGeometryCollections 每个 GC 曾做两次求值图深拷贝 | **已由 cf6d246 修复**：按值捕获命令并在入队 lambda 内初始化时间元数据 |
-| M21 | ~~已处理~~ `Source/SplineMovement/Private/SplineMoveAlongAction.cpp:201-217` | AIMoveTo 模式曾接近每帧中止并重建寻路请求 | **已处理（7724978）**：缓存上次下发目标，仅当目标位移超过前瞻距离一半时重新 `MoveToLocation`；结束动作仍停止当前 AI 移动。当前缺少可控导航场景自动化，静态状态机与 UE 5.3 编译为现有证据边界。 |
+| M21 | ~~已处理~~ `Source/SplineMovement/Private/SplineMoveAlongAction.cpp:201-217` | AIMoveTo 模式曾接近每帧中止并重建寻路请求 | **已处理（7724978）**：缓存上次下发目标，仅当目标位移超过前瞻距离一半时重新 `MoveToLocation`；结束动作仍停止当前 AI 移动。新增真实 Game World + Pawn + AIController + Spline 请求链路测试、`RepathThreshold` 四个确定性边界和 `CompletionStopsMovement` 结束清理断言；新增 `XTools.SplineMovement.NavigationMapFixture` 加载固定样条移动地图，验证 NavMesh 投影、同步路径和真实 MoveTo 请求均成功。 |
 | M22 | ~~已处理~~ `Source/FormationSystem/Private/FormationMovementComponent.cpp:49-82` | `StartMoveToLocation` 在起点已到达时曾直接返回而不广播完成事件 | **已处理（ec43a6d）**：提前返回路径统一广播 `OnMovementCompleted(this)`；`XTools.Formation.Movement.StartInsideRadiusCompletesImmediately` 已通过。 |
 | M23 | ~~已处理~~ `Source/X_AssetEditor/Private/AssetNaming/X_AssetNamingManager.cpp:414-550` | 批量重命名取消/失败后曾缺少已完成与未处理台账，用户无法可靠续跑 | **已处理（f12e454）**：结果结构记录成功包路径、逐项失败原因和取消后的未处理资产，并显式标识部分完成；专用 AssetNaming 测试覆盖失败详情与格式化。 |
 | M24 | ~~已处理~~ `Source/X_AssetEditor/Private/AssetNaming/X_AssetNamingManager.cpp:54-65, 657-659, 797-799` | `FolderNameCache` 曾在批量期间不更新，导致同批冲突判断使用陈旧占用状态 | **已处理（f12e454）**：每次成功重命名后移除旧名并加入新名，后续资产基于最新缓存解算冲突。 |
@@ -156,8 +156,8 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 - **构建与测试：完成当前范围验证**。全量自动化测试为 100 项成功、0 项失败；UE 5.4–5.8 严格插件矩阵已有 Editor/Game Development/Shipping 成功记录。报告中的测试警告包含预期诊断，不应统称为“全部历史噪音”。
 - **开放维护项：不阻塞当前发布**。
   - P3 规范债务（中文元数据、错误宏覆盖率、重复 helper）延期到独立维护批次，避免与行为修复混提交。
-  - M21 导航场景测试、M13 Slate 生命周期测试需要真实引擎 fixture，列为发布前增强验证，不用静态测试替代。
-  - 真实 PIE/蓝图资产兼容验证列为删除 M18 公共类型前的发布门禁。
+  - M13 Slate 生命周期已具备真实 `FSlateApplication` 窗口销毁自动化；M21 已具备固定地图 NavMesh/AI 集成测试，不用静态测试替代。
+  - M18 被删公共类型尚未进入兼容承诺范围，不设置外部 PIE/蓝图资产迁移门禁；仓库内编译、反射生成和自动化测试作为当前验收边界。
 - **文档状态：已完成本轮同步**。旧任务清单仅作为 2026-03-20 历史记录，当前状态以本报告和 `UNRELEASED.md` 为准。
 
 ---
