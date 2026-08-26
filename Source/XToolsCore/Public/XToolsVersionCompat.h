@@ -22,6 +22,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "Templates/Atomic.h"
 #include "HAL/PlatformAtomics.h"
 

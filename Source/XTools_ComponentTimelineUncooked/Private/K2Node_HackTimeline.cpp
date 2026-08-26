@@ -22,6 +22,7 @@
 #include "KismetCastingUtils.h"
 #include "KismetCompilerMisc.h"
 #include "KismetCompiler.h"
+#include "Runtime/Launch/Resources/Version.h"
 
 #define LOCTEXT_NAMESPACE "K2Node_Timeline"
 

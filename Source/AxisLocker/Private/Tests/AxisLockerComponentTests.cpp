@@ -10,6 +10,7 @@
 #include "AxisLockerComponentTestTypes.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/Actor.h"
+#include "UObject/Package.h"
 
 namespace AxisLockerComponentTests
 {

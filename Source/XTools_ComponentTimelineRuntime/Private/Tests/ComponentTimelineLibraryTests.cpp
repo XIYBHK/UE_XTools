@@ -8,6 +8,7 @@
 #include "Misc/AutomationTest.h"
 #include "ComponentTimelineLibrary.h"
 #include "Components/TimelineComponent.h"
+#include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FComponentTimeline_BindDecisionHandlesNullValidAndStale,

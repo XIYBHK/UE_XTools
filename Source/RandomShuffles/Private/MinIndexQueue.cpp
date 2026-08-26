@@ -4,6 +4,7 @@
 */
 
 #include "MinIndexQueue.h"
+#include "Runtime/Launch/Resources/Version.h"
 
 namespace RandomShuffles {
 

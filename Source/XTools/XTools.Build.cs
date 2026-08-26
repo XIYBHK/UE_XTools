@@ -15,42 +15,6 @@ public class XTools : ModuleRules
 		// 添加模块定义
 		PublicDefinitions.Add("WITH_XTOOLS=1");
 
-		// UE版本宏定义（用于跨版本兼容性系统）
-		// 
-		// UE最佳实践说明：
-		// - UE引擎通常会自动定义 ENGINE_MAJOR_VERSION 和 ENGINE_MINOR_VERSION
-		// - 但为了确保在所有构建环境中都能正确检测版本，我们显式定义它们
-		// - 使用 Target.Version 自动获取当前编译的引擎版本，无需手动设置
-		// - 这种方式确保了插件在不同UE版本中都能正确编译和运行
-		//
-		// 参考：EnhancedCodeFlow模块在Build.cs中直接使用Target.Version进行比较
-		// 但为了在头文件中使用条件编译，我们需要将这些值定义为宏
-		//
-		// 注意：先检查是否已定义（避免重复定义）
-		bool bHasMajorVersion = false;
-		bool bHasMinorVersion = false;
-		
-		foreach (string Def in PublicDefinitions)
-		{
-			if (Def.StartsWith("ENGINE_MAJOR_VERSION="))
-			{
-				bHasMajorVersion = true;
-			}
-			if (Def.StartsWith("ENGINE_MINOR_VERSION="))
-			{
-				bHasMinorVersion = true;
-			}
-		}
-		
-		if (!bHasMajorVersion)
-		{
-			PublicDefinitions.Add("ENGINE_MAJOR_VERSION=" + Target.Version.MajorVersion);
-		}
-		if (!bHasMinorVersion)
-		{
-			PublicDefinitions.Add("ENGINE_MINOR_VERSION=" + Target.Version.MinorVersion);
-		}
-
 		//  UE5.3+ C++20 标准配置
 		CppStandard = CppStandardVersion.Default;
 

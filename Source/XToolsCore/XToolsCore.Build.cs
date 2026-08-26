@@ -41,32 +41,6 @@ public class XToolsCore : ModuleRules
 			"WITH_XTOOLS_CORE=1"
 		});
 
-		// UE版本宏定义（用于跨版本兼容性系统）
-		// 确保在所有构建环境中都能正确检测版本
-		bool bHasMajorVersion = false;
-		bool bHasMinorVersion = false;
-		
-		foreach (string Def in PublicDefinitions)
-		{
-			if (Def.StartsWith("ENGINE_MAJOR_VERSION="))
-			{
-				bHasMajorVersion = true;
-			}
-			if (Def.StartsWith("ENGINE_MINOR_VERSION="))
-			{
-				bHasMinorVersion = true;
-			}
-		}
-		
-		if (!bHasMajorVersion)
-		{
-			PublicDefinitions.Add("ENGINE_MAJOR_VERSION=" + Target.Version.MajorVersion);
-		}
-		if (!bHasMinorVersion)
-		{
-			PublicDefinitions.Add("ENGINE_MINOR_VERSION=" + Target.Version.MinorVersion);
-		}
-
 		// 公共依赖 - Runtime 模块只需要最基础的依赖
 		PublicDependencyModuleNames.AddRange(
 			new string[]
