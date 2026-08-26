@@ -125,7 +125,7 @@ FActorPool                 // 单个 Actor 类的池管理器
 FObjectPoolConfigManager   // 配置管理
 FObjectPoolMonitor         // 性能监控、统计、诊断
 FObjectPoolManager         // 自适应扩池、内存优化
-FActorStateResetter        // 状态重置（Transform、物理、组件、网络）
+FActorStateResetter        // 兼容性保留、未接入且含空实现；运行时使用 FObjectPoolUtils
 UK2Node_SpawnActorFromPool // 自定义蓝图节点（支持 ExposeOnSpawn）
 ```
 永不失败机制：池空时回退到正常 SpawnActor。
