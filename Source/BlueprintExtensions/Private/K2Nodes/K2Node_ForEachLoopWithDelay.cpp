@@ -110,10 +110,11 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
   if (!K2NodeHelpers::BeginExpandNode(
           CompilerContext, this,
           {GetExecPin(), GetArrayPin(), GetDelayPin(), GetLoopBodyPin(),
-           GetValuePin(), GetIndexPin(), GetCompletedPin()},
+           GetBreakPin(), GetValuePin(), GetIndexPin(), GetCompletedPin()},
           LOCTEXT("MissingPins", "@@ 节点引脚不完整"))) {
     return;
   }
+  UEdGraphPin *BreakPin = GetBreakPin();
 
   // 验证数组引脚连接
   UEdGraphPin *ArrayPin = GetArrayPin();
@@ -333,7 +334,15 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
   K2NodeHelpers::TryConnect(CompilerContext, 
       GetElement->FindPinChecked(TEXT("Index")), LoopCounterPin);
   UEdGraphPin *ValuePin = GetElement->FindPin(TEXT("Item"), EGPD_Output);
-  check(ValuePin);
+  if (!ValuePin) {
+    CompilerContext.MessageLog.Warning(
+        *LOCTEXT("MissingArrayItemPin",
+                 "@@ 展开失败：Array Get 中间节点缺少 Item 输出引脚")
+             .ToString(),
+        this);
+    BreakAllNodeLinks();
+    return;
+  }
   ValuePin->PinType = GetValuePin()->PinType;
 
   // 12. 最后统一移动所有外部连接（参考智能排序模式）
@@ -348,7 +357,7 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
       *GetLoopBodyPin(), *Sequence->GetThenPinGivenIndex(0));
   CompilerContext.MovePinLinksToIntermediate(*GetCompletedPin(),
                                              *ExecutionGuard.FinishThenPin);
-  CompilerContext.MovePinLinksToIntermediate(*GetBreakPin(),
+  CompilerContext.MovePinLinksToIntermediate(*BreakPin,
                                              *LoopCounterBreak->GetExecPin());
   CompilerContext.MovePinLinksToIntermediate(*GetValuePin(), *ValuePin);
   CompilerContext.MovePinLinksToIntermediate(*GetIndexPin(), *LoopCounterPin);

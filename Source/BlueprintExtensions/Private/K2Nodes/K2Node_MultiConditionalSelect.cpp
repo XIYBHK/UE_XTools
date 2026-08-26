@@ -86,6 +86,7 @@ void UK2Node_MultiConditionalSelect::PinConnectionListChanged(UEdGraphPin* Pin)
 	{
 		return;
 	}
+	Super::PinConnectionListChanged(Pin);
 
 	if (Pin->LinkedTo.Num() == 0)
 	{
@@ -104,8 +105,6 @@ void UK2Node_MultiConditionalSelect::PinConnectionListChanged(UEdGraphPin* Pin)
 		// Pin type has already fixed.
 		return;
 	}
-
-	Super::PinConnectionListChanged(Pin);
 
 	Modify();
 
@@ -237,16 +236,6 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	}
 
 	UEdGraphPin* ReferenceOptionPin = CasePinPairs[0].Key;
-
-	FEdGraphPinType Select1stPinType;
-	Select1stPinType.PinCategory = UEdGraphSchema_K2::PC_Int;
-	Select1stPinType.PinSubCategory = UEdGraphSchema_K2::PSC_Index;
-	Select1stPinType.PinSubCategoryObject = nullptr;
-
-	FEdGraphPinType Select2ndPinType;
-	Select2ndPinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
-	Select2ndPinType.PinSubCategory = UEdGraphSchema_K2::PSC_Index;
-	Select1stPinType.PinSubCategoryObject = nullptr;
 
 	UK2Node_Select* Select1st = CompilerContext.SpawnIntermediateNode<UK2Node_Select>(this, SourceGraph);
 	Select1st->AllocateDefaultPins();

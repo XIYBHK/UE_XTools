@@ -26,6 +26,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "KismetCompiler.h"
+#include "UObject/Package.h"
 
 namespace
 {
@@ -448,6 +449,31 @@ bool FLoopBreakExpansionTest::RunTest(const FString& Parameters)
 		LoopNode->ExpandNode(CompilerContext, EventGraph);
 		TestEqual(TEXT("倒序延迟 ForEach 展开无编译错误"), Results.NumErrors, 0);
 		ValidateZeroDelayBypass(*this, TEXT("倒序延迟 ForEach"), EventGraph);
+	}
+
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopMissingBreakPinTest"), EventGraph);
+		if (!TestNotNull(TEXT("创建缺失 Break 引脚测试蓝图"), Blueprint)
+			|| !TestNotNull(TEXT("获取缺失 Break 引脚测试事件图"), EventGraph))
+		{
+			return false;
+		}
+
+		UK2Node_ForEachLoopWithDelay* LoopNode = AddTestNode<UK2Node_ForEachLoopWithDelay>(EventGraph);
+		UEdGraphPin* BreakPin = LoopNode->GetBreakPin();
+		if (!TestNotNull(TEXT("测试前存在 Break 引脚"), BreakPin))
+		{
+			return false;
+		}
+		LoopNode->Pins.Remove(BreakPin);
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		TestEqual(TEXT("缺失 Break 引脚不产生编译错误"), Results.NumErrors, 0);
+		TestEqual(TEXT("缺失 Break 引脚产生一次安全诊断"), Results.NumWarnings, 1);
 	}
 
 	{

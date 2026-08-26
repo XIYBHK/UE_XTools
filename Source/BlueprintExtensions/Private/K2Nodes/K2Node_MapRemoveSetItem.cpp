@@ -386,7 +386,7 @@ FEdGraphPinType UK2Node_MapRemoveSetItem::GetKeyPinType() const
         const FEdGraphPinType& MapPinType = MapPin->LinkedTo[0]->PinType;
         if (MapPinType.ContainerType == EPinContainerType::Map)
         {
-            // 直接使用Map的���类型（KeyPinType）来设置
+            // 直接使用Map的键类型（KeyPinType）来设置
             PinType.PinCategory = MapPinType.PinCategory;
             PinType.PinSubCategory = MapPinType.PinSubCategory;
             PinType.PinSubCategoryObject = MapPinType.PinSubCategoryObject;

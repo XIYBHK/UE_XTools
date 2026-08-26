@@ -17,6 +17,7 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/AutomationTest.h"
 #include "RandomShuffleArrayLibrary.h"
+#include "UObject/Package.h"
 
 namespace
 {
