@@ -8,10 +8,10 @@ Runtime 模块。WorldSubsystem 架构，never-fail 设计，Actor 操作仅限�
 |----|------|
 | `UObjectPoolSubsystem` | WorldSubsystem 入口，管理所有池 |
 | `FActorPool` | 单类型池，维护 Available/Active 列表 |
-| `FActorStateResetter` | 状态重置流水线 (Transform/Physics/Component/AI/Network) |
 | `FObjectPoolManager` | 自适应扩池策略 (Conservative/Adaptive/Aggressive/Manual) |
 | `UObjectPoolLibrary` | 蓝图静态API |
 | `IObjectPoolInterface` | Actor 生命周期接口 (Created/Activated/ReturnedToPool) |
+| `FObjectPoolUtils` | Actor 状态恢复、配置校验和统计辅助 |
 
 ## BLUEPRINT API
 
@@ -25,7 +25,7 @@ GetPoolStats / DisplayPoolStats
 
 ## NEVER-FAIL MECHANISM
 
-池空 → 自动 fallback 到 SpawnActor，返回 `EPoolOpResult::FallbackSpawned`。不会崩溃或返回 null。
+池空且请求类可生成时 → 自动 fallback 到 SpawnActor，返回 `EPoolOpResult::FallbackSpawned`；请求类不可生成时返回 null，并保持 `InvalidArgs` 结果码。
 
 ## THREADING CONTRACT
 

@@ -174,7 +174,7 @@ foreach ($e in $engines) {
    - 修复：改用 UE 5.3–5.7 均存在的 `UKismetMathLibrary::LessEqual_DoubleDouble`。
 
 3. `FTimerManager` 类型不完整（UE 5.3/5.4）
-   - 文件：`Source/ObjectPool/Private/ActorStateResetter.cpp`
+   - 历史文件：`Source/ObjectPool/Private/ActorStateResetter.cpp`（已删除；当前迁移方案见《Actor 状态重置迁移指南》）
    - 症状：`error C2027: use of undefined type FTimerManager`。
    - 原因：依赖传递包含，严格 IWYU 构建下缺少完整类型。
    - 修复：显式包含 `TimerManager.h`。

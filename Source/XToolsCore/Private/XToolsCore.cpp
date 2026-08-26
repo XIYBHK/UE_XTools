@@ -34,7 +34,6 @@ const TArray<FName>& FXToolsLogCategories::Get()
 		TEXT("LogObjectPoolManager"),
 		TEXT("LogObjectPoolConfigManager"),
 		TEXT("LogObjectPoolUtils"),
-		TEXT("LogActorPoolMemoryOptimizer"),
 		TEXT("LogFieldSystemExtensions"),
 		TEXT("LogGeometryTool"),
 		TEXT("LogAxisLocker"),

@@ -9,7 +9,6 @@
 #include "ObjectPoolSubsystem.h"
 #include "ObjectPoolUtils.h"
 #include "ActorPool.h"
-#include "ActorPoolMemoryOptimizer.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -160,41 +159,6 @@ bool FObjectPoolManagerAutoResizeDeterministicTest::RunTest(const FString& Param
     // 使用分析：空池固定产生"低使用率"+"低命中率"两条建议，趋势数据不足时不产生建议
     const TArray<FString> Suggestions = AdaptiveManager.AnalyzePoolUsage(AActor::StaticClass(), *Pool);
     TestEqual(TEXT("空池应产生两条固定建议（低使用率与低命中率）"), Suggestions.Num(), 2);
-
-    return true;
-}
-
-// M-18 回归：智能预分配必须比较当前池大小与容量上限，而不是将当前大小与自身比较。
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FActorPoolMemoryOptimizerPreallocationTest,
-    "XTools.ObjectPool.Manager.MemoryOptimizerPreallocationUsesCapacity",
-    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FActorPoolMemoryOptimizerPreallocationTest::RunTest(const FString& Parameters)
-{
-    AddExpectedError(TEXT("World has no context!"),
-        EAutomationExpectedErrorFlags::Contains, 1);
-    FScopedMaintenanceTestWorld TestWorld(TEXT("ObjectPoolTest_MemoryOptimizer"));
-    UWorld* World = TestWorld.Get();
-    if (!TestNotNull(TEXT("应能创建测试世界"), World))
-    {
-        return false;
-    }
-
-    FActorPool Pool(AActor::StaticClass(), 1, 2);
-    Pool.PrewarmPool(World, 1);
-    AActor* ActiveActor = Pool.GetActor(World, FTransform::Identity);
-    if (!TestNotNull(TEXT("应能从预热池获取Actor"), ActiveActor))
-    {
-        return false;
-    }
-
-    FActorPoolMemoryOptimizer Optimizer;
-    TestTrue(TEXT("高使用率且未达到容量上限时应建议预分配"),
-        Optimizer.ShouldPreallocate(Pool));
-
-    Pool.SetMaxSize(Pool.GetPoolSize());
-    TestFalse(TEXT("达到容量上限时不应建议预分配"),
-        Optimizer.ShouldPreallocate(Pool));
 
     return true;
 }

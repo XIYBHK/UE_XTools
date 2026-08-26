@@ -132,6 +132,7 @@
 - 修复 objectpool.clear 无法按蓝图短类名清理已注册池（支持省略 `_C`）
 - 新增 池内激活显式延迟构造状态API
 - 修复 内存优化器预分配判断恒为否
+- 移除 未接线的 ActorStateResetter、MemoryOptimizer 及其反射结构体（迁移见《Actor 状态重置迁移指南》）
 
 ### XTools_EnhancedCodeFlow
 - 修复 代码流开关编辑器/打包行为反转

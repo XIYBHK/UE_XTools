@@ -1,4 +1,6 @@
-# Actor状态重置逻辑实现总结
+# Actor状态重置逻辑实现总结（历史归档）
+
+> 本文记录已删除的 `FActorStateResetter` / `FActorResetConfig` / `FActorResetStats` 设计，代码已不再提供这些公共类型。当前项目请参阅《Actor 状态重置迁移指南》；文中的旧接口示例仅用于迁移参考。
 
 ## 🎯 实现概述
 

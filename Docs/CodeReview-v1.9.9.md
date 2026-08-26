@@ -85,7 +85,7 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 | M15 | `Source/ObjectPool/Private/ObjectPoolSubsystem.cpp:142` | 子系统开关反射读取 Editor-only 的 `/Script/X_AssetEditor.X_AssetEditorSettings`：编辑器默认关闭、打包后类不存在则一律启用，同一项目**编辑器/成品行为不对称** | **已处理**：`37f5145` 迁移至 Runtime `UObjectPoolSettings(config=Game)`，`61fa90c` 将默认值校准为关闭以保持旧项目升级兼容；现有测试覆盖 CDO 默认关闭及开关决定 Game 世界是否创建子系统。 |
 | M16 | `Source/XTools_EnhancedCodeFlow/Private/ECFSubsystem.cpp:65-85` | 与 M15 同型的第二处实例（严重度评低）：运行时模块读 Editor-only 设置，打包后 bEnableEnhancedCodeFlowSubsystem 被忽略 | **已处理**：`3cf598d` 迁移至 Runtime `UECFSettings(config=Game)`，模块显式依赖 `DeveloperSettings`；`ShouldCreateSubsystem` 直接读取运行时 CDO，默认保持启用，编辑器与打包成品共用同一配置节。 |
 | M17 | `Source/ObjectPool/Private/ObjectPoolSubsystem.cpp:736` | PerformMaintenance 全工程零调用者，MAINTENANCE_INTERVAL 等常量全为死配置，FObjectPoolManager 自动扩缩容整套机制不可达 | **已处理**：删除子系统内不可达维护入口与死配置；保留并测试导出的管理器 API，接线/移除公共维护类留待架构决策 |
-| M18 | `Source/ObjectPool/Public/ObjectPoolSubsystem.h:22` 等 | FObjectPoolMonitor 仅剩前向声明从未实现；FActorStateResetter 是桩代码（ResetActorState 恒 true）；FActorPoolMemoryOptimizer 未接线（其内部还有 `PoolSize >= GetPoolSize()` 自比较恒真 bug） | **已处理（兼容保留策略）**：删除未实现 Monitor；StateResetter 明示未接线/含空实现并指向 FObjectPoolUtils；MemoryOptimizer 明示仅供外部显式调用，将容量判断修为 `PoolSize >= GetMaxSize()` 并补未满/满池确定性测试；下一大版本再评估删除导出兼容面。 |
+| M18 | `Source/ObjectPool/Public/ObjectPoolSubsystem.h:22` 等 | FObjectPoolMonitor 仅剩前向声明从未实现；FActorStateResetter 是桩代码（ResetActorState 恒 true）；FActorPoolMemoryOptimizer 未接线且存在容量判断缺陷 | **已处理（破坏性删除）**：移除 Monitor 前向声明、StateResetter/MemoryOptimizer 头与实现，以及 `FActorResetConfig`/`FActorResetStats` 反射类型；保留 `FObjectPoolManager`、`FObjectPoolUtils` 和 `FObjectPoolStats` 作为替代 API，并新增 C++/蓝图迁移指南。 |
 | M19 | `Source/XTools/XTools.Build.cs` | Runtime 主模块在编辑器目标下链接 UnrealEd/Kismet/BlueprintGraph/KismetCompiler，违背 AGENTS.md 自身红线（有双重守卫暂不致打包失败） | **已处理**：移除零使用的 Kismet/GraphEditor/EditorStyle/EditorWidgets/AppFramework/ToolWidgets 并修正失实注释，保留项均经头文件归属+导出符号取证（UnrealEd/BlueprintGraph/KismetCompiler/AssetRegistry/ComponentTimelineUncooked）；UE 5.3–5.8 `BuildPlugin -StrictIncludes` 的 Editor Development、Game Development、Game Shipping 全部成功。Runtime/Editor 拆分经复审否决——CleanupTool 为运行时可见 API+编辑器门控实现模式、无打包缺陷，拆分会引入打包语义变化。 |
 | M20 | `Source/FieldSystemExtensions/Private/XFieldSystemActor.cpp:344-356` | ApplyFieldToFilteredGeometryCollections 每个 GC 曾做两次求值图深拷贝 | **已由 cf6d246 修复**：按值捕获命令并在入队 lambda 内初始化时间元数据 |
 | M21 | ~~已处理~~ `Source/SplineMovement/Private/SplineMoveAlongAction.cpp:201-217` | AIMoveTo 模式曾接近每帧中止并重建寻路请求 | **已处理（7724978）**：缓存上次下发目标，仅当目标位移超过前瞻距离一半时重新 `MoveToLocation`；结束动作仍停止当前 AI 移动。当前缺少可控导航场景自动化，静态状态机与 UE 5.3 编译为现有证据边界。 |
@@ -115,7 +115,7 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 ### 5.2 死代码 / 未接线类（约 10 条）
 - **ECF 已处理**：两个兼容动作类在回调前先 `MarkAsFinished`，避免完成回调重入再次完成；四个导出 STAT 已补 `DEFINE_STAT`。零内部调用的导出动作与未使用 STAT ID 只属兼容/维护债务，不删除公共表面。
 - FieldSystem 的 EFieldResponseDisableMethod 虽无源码调用，但为 `BlueprintType` 公开反射类型，仓内扫描无法排除用户资产引用；本版本保留，不按死代码删除。
-- **ObjectPool 已明确生命周期**：公共旧工具继续保留并由确定性测试钉定；FActorStateResetter 标明兼容保留、未接线且含空实现，并指向活路径 FObjectPoolUtils；FActorPoolMemoryOptimizer 保留为外部显式工具，其预分配容量自比较缺陷已修复并加测试。
+- **ObjectPool 已完成旧维护层清理**：公共旧工具继续保留并由确定性测试钉定；StateResetter、MemoryOptimizer 及其反射结构体已删除，运行时状态恢复统一使用 FObjectPoolUtils，扩缩容和维护使用 FObjectPoolManager。
 - 时间轴两份 PostPasteNode 是为绕开跨版本未导出基类符号而保留的平行实现；当前行为正确，合并属于高风险维护重构，不在缺陷修复中进行。
 
 ### 5.3 细节缺陷类（约 15 条）
@@ -147,7 +147,7 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 
 - **P0（已处理）**：H1 协程 UAF、H5 Trim 上限移位、H6 CI 发布过滤、H2/H3 对象池回退与碰撞保存逻辑。
 - **P1（已处理）**：M3–M6 K2Node 编译期崩溃/断言/丢线四件套、M1/M2 崩溃类、M15+M16 Runtime DeveloperSettings 迁移、M4 过滤器写反；M26 为误报无需修复。
-- **P2（已处理）**：M10–M24 的真实行为缺陷均完成代码修复或契约决策；M25 维持显式性能契约；M18 公共 API 采用“本版本兼容保留、钉定可用部分、标明未接线/空实现”的策略；M19 主模块拆分经复审否决。M29 已确认为未初始化测试世界造成的误报，不实施生产修复。
+- **P2（已处理）**：M10–M24 的真实行为缺陷均完成代码修复或契约决策；M25 维持显式性能契约；M18 已完成旧公共维护层的破坏性删除并提供迁移指南；M19 主模块拆分经复审否决。M29 已确认为未初始化测试世界造成的误报，不实施生产修复。
 - **P3（持续还债）**：剩余项为全仓中文分类/错误宏覆盖率、重复 K2/Timeline helper 与下一大版本公共 API 清理等维护工作；本轮已完成 Build.cs 卫生、ECF 分类、文档架构同步和 M28 日志清单。
 
 ### 收尾清单（截至 `d63557d`）
@@ -156,7 +156,6 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 - **构建与测试：完成当前范围验证**。全量自动化测试为 100 项成功、0 项失败；UE 5.4–5.8 严格插件矩阵已有 Editor/Game Development/Shipping 成功记录。报告中的测试警告包含预期诊断，不应统称为“全部历史噪音”。
 - **开放维护项：不阻塞当前发布**。
   - P3 规范债务（中文元数据、错误宏覆盖率、重复 helper）延期到独立维护批次，避免与行为修复混提交。
-  - M18 的导出 API 删除和迁移方案放到下一大版本；本版本继续保持兼容保留。
   - M21 导航场景测试、M13 Slate 生命周期测试需要真实引擎 fixture，列为发布前增强验证，不用静态测试替代。
   - 真实 PIE/蓝图资产兼容验证列为删除 M18 公共类型前的发布门禁。
 - **文档状态：已完成本轮同步**。旧任务清单仅作为 2026-03-20 历史记录，当前状态以本报告和 `UNRELEASED.md` 为准。
@@ -224,6 +223,6 @@ H2/H3/H5/H6（对象池回退缺失、碰撞覆写、Trim 上限绕过、CI zip 
 - H1、H2、H3、H5、H6：完成协程失败清理、对象池回退与碰撞配置、泊松裁剪上限、CI 发布资产筛选。
 - M3-M6、M10-M16、M20-M24、M27-M28：完成 K2Node 安全、异步代理弱引用、Runtime DeveloperSettings、场命令拷贝、SplineMovement AI 防抖、资产重命名台账、CI 工具链校验及日志类别清单同步等修复。
 - FormationSystem：补齐起点即到达完成事件、停止事件清理临时 Actor、制动带速度归零恢复输入，并修复 BeginPlay 前动态移动组件丢失指令。
-- M18 决策已落地：本版本保留导出兼容面，FActorStateResetter 明示未接线/空实现与替代 API，MemoryOptimizer 修复容量判断并以测试钉定；下一大版本再执行删除评估。仍开放的仅是卡墙超时/失败事件及全仓分类、错误宏、重复 helper 等低优先级设计/规范债务。
+- M18 已完成：删除 FActorStateResetter、FActorPoolMemoryOptimizer 及 FActorResetConfig/FActorResetStats，保留 FObjectPoolManager/FObjectPoolUtils/FObjectPoolStats，并新增迁移指南。仍开放的仅是卡墙超时/失败事件及全仓分类、错误宏、重复 helper 等低优先级设计/规范债务。
 
 > 核验结论：原审查报告整体可信度高——83 条初审发现经实证有 5 条误报、1 条部分修正，修正率约 7.2%；误报均源于未完整核对实际实现、调用面或对引擎行为的推断未经对应源码与官方实现范式验证，已在附录中记录教训：**代码事实以当前实现、完整调用面和提交历史为准；引擎行为类断言必须以本机对应版本引擎源码为准，网络资料（含官方论坛）只能作为线索而非结论**。
