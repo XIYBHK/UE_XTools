@@ -12,6 +12,10 @@ ECF_PRAGMA_DISABLE_OPTIMIZATION
 
 DEFINE_STAT(STAT_ECF_ActionsCount);
 DEFINE_STAT(STAT_ECF_InstancesCount);
+DEFINE_STAT(STAT_ECF_DelayActionsCount);
+DEFINE_STAT(STAT_ECF_AsyncActionsCount);
+DEFINE_STAT(STAT_ECF_CoroutineActionsCount);
+DEFINE_STAT(STAT_ECF_AverageActionDuration);
 
 void UECFSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {

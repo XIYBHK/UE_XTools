@@ -62,8 +62,8 @@ protected:
     TickFunc(DeltaTime, HandleId);
     CurrentTime += DeltaTime;
     if (TickingTime > 0.f && CurrentTime >= TickingTime) {
-      Complete(false);
       MarkAsFinished();
+      Complete(false);
     }
   }
 

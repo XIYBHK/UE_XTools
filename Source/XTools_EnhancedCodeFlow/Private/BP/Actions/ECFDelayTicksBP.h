@@ -17,6 +17,6 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnECFDelayTicksBPEvent OnComplete;
 
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings", ToolTip = "延迟指定帧数后执行动作", DisplayName = "ECF - 延迟帧执行-协程"), Category = "ECF")
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings", ToolTip = "延迟指定帧数后执行动作", DisplayName = "ECF - 延迟帧执行"), Category = "XTools|ECF|延迟")
 	static UECFDelayTicksBP* ECFDelayTicks(const UObject* WorldContextObject, int32 DelayTicks, FECFActionSettings Settings, FECFHandleBP& Handle);
 };
