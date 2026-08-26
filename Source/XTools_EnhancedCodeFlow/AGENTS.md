@@ -40,7 +40,7 @@ PendingAddActions → (下一帧) → Actions → Tick → Complete/Stop
 
 ## GOTCHAS
 
-- Action 不持有 Owner 强引用，Owner 销毁不会自动停止 Action
+- Action 仅弱持有 Owner；Owner 失效后 Action 变为无效，并由子系统 Tick 清理，回调前仍需校验 Owner
 - 协程未完成会永久挂起，需用 `RemoveAllWaitSeconds(true)` 恢复
 - Async Task 在独立线程，超时只忽略回调不停线程
 - `SetPause()` 暂停整个子系统所有 Action

@@ -943,7 +943,5 @@ Exclude Actor Tags (Array<Name>)
 
 ---
 
-**文档版本**: 1.0  
-**最后更新**: 2025-01-04  
 **维护者**: XTools Team
 

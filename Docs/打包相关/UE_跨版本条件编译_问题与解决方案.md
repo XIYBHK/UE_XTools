@@ -1,432 +1,154 @@
-## UE 跨版本条件编译（5.3-5.6）问题与解决方案
+# UE 5.3-5.8 跨版本条件编译
 
-适用范围：XTools 插件跨 UE 5.3-5.6 版本编译，记录 API 变迁和 IWYU 原则导致的兼容性问题。
+XTools 支持 Unreal Engine 5.3-5.8。跨版本适配的目标是把真实 API 差异限制在最小范围，同时保持 UE 5.4+ IWYU 和 Runtime/Editor 模块边界。
 
----
+## 1. 统一版本入口
 
-### 版本兼容策略
+版本宏定义在：
 
-采用统一版本宏 + 最小修改原则：
+```text
+Source/XToolsCore/Public/XToolsVersionCompat.h
+```
+
+头文件直接基于引擎提供的 `ENGINE_MAJOR_VERSION` 和 `ENGINE_MINOR_VERSION` 推导，不在 `.Build.cs` 重复注入版本宏。
+
+所有 Runtime 模块依赖 `XToolsCore`，需要版本判断的源文件显式包含：
 
 ```cpp
-// Source/XTools/Public/XToolsVersionCompat.h
-
-#define XTOOLS_ENGINE_VERSION_AT_LEAST(Major, Minor) \
-    ((ENGINE_MAJOR_VERSION > Major) || \
-     (ENGINE_MAJOR_VERSION == Major && ENGINE_MINOR_VERSION >= Minor))
-
-#define XTOOLS_ENGINE_5_4_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 4)
-#define XTOOLS_ENGINE_5_5_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 5)
-#define XTOOLS_ENGINE_5_6_OR_LATER XTOOLS_ENGINE_VERSION_AT_LEAST(5, 6)
-```
-
----
-
-### 常见问题与修复
-
-#### 1. IWYU 原则导致类型未定义（UE 5.4+）
-
-症状：
-```
-error C2027: 使用了未定义类型"FOverlapResult"
-error C2027: 使用了未定义类型"FHitResult"
-```
-
-原因：
-- UE 5.4 强制执行 IWYU（Include What You Use）原则
-- 头文件仅提供前置声明，不再包含完整定义
-- `WorldCollision.h` 只有 `class FOverlapResult;` 前置声明
-
-解决：
-```cpp
-// XToolsLibrary.cpp / TraceExtensionsLibrary.cpp
-#include "Engine/World.h"
-#include "Engine/HitResult.h"       // FHitResult 完整定义
-#include "Engine/OverlapResult.h"   // FOverlapResult 完整定义
-#include "WorldCollision.h"
-```
-
-影响版本：UE 5.4, 5.5, 5.6
-
----
-
-#### 2. Chaos API 弃用（UE 5.5+）
-
-症状：
-```
-warning C4996: 'FGeometryCollectionPhysicsProxy::BufferCommand': 
-Use BufferFieldCommand_Internal instead
-```
-
-原因：
-- UE 5.5 弃用 `BufferCommand` 方法
-- 新 API 名称为 `BufferFieldCommand_Internal`
-
-解决：
-```cpp
-// XFieldSystemActor.cpp
 #include "XToolsVersionCompat.h"
+```
 
+## 2. 可用宏
+
+```cpp
+XTOOLS_ENGINE_VERSION_AT_LEAST(Major, Minor)
+
+XTOOLS_ENGINE_5_4_OR_LATER
+XTOOLS_ENGINE_5_5_OR_LATER
+XTOOLS_ENGINE_5_6_OR_LATER
+XTOOLS_ENGINE_5_7_OR_LATER
+XTOOLS_ENGINE_5_8_OR_LATER
+```
+
+示例：
+
+```cpp
 #if XTOOLS_ENGINE_5_5_OR_LATER
-    PhysicsProxy->BufferFieldCommand_Internal(Solver, NewCommand);
+    const int32 ElementSize = Property->GetElementSize();
 #else
-    PhysicsProxy->BufferCommand(Solver, NewCommand);
+    const int32 ElementSize = Property->ElementSize;
 #endif
 ```
 
-影响版本：UE 5.5, 5.6
-
----
-
-#### 3. FProperty API 弃用（UE 5.5+）
-
-症状：
-```
-warning C4996: 'FProperty::ElementSize': 
-Use GetElementSize/SetElementSize instead
-```
-
-原因：
-- UE 5.5 弃用直接访问 `ElementSize` 成员变量
-- 推荐使用 `GetElementSize()` 方法
-
-解决方案（遵循 Epic 官方做法）：
-```cpp
-// MapExtensionsLibrary.h
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
-
-UCLASS()
-class BLUEPRINTEXTENSIONSRUNTIME_API UMapExtensionsLibrary : public UBlueprintFunctionLibrary
-{
-    // ... 继续使用 ElementSize ...
-};
-
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
-```
+已有兼容封装时优先使用封装，例如：
 
 ```cpp
-// MapExtensionsLibrary.cpp
-#include "Libraries/MapExtensionsLibrary.h"
-
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
-
-// ... 实现代码 ...
-
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+const int32 ElementSize = XTOOLS_GET_ELEMENT_SIZE(Property);
 ```
 
-参考：Epic 在 `CoreUObject/Property.cpp:859` 也使用此方式处理弃用 API。
+## 3. 何时使用条件编译
 
-影响版本：UE 5.5, 5.6
+只在下列情况使用：
 
----
+- API、类型或枚举在支持版本之间确实改名；
+- 参数签名或访问级别发生变化；
+- 头文件路径或模块归属变化；
+- 某版本缺少后续版本能力，需要最小替代实现。
 
-#### 4. 跨模块访问版本宏失败
+不要用于：
 
-症状：
-```
-fatal error C1083: 无法打开包括文件: "XToolsVersionCompat.h": No such file or directory
-```
+- 掩盖缺失 include；
+- 绕过错误的 Runtime/Editor 依赖；
+- 为未验证的未来版本预写分支；
+- 在多个模块复制相同版本判断；
+- 保留已经不支持版本的历史代码。
 
-原因：
-- `FieldSystemExtensions` 模块引用 `XTools` 模块的头文件
-- 未在 Build.cs 中声明模块依赖
+## 4. IWYU 与模块归属
 
-解决：
-```csharp
-// FieldSystemExtensions.Build.cs
-PublicDependencyModuleNames.AddRange(
-    new string[]
-    {
-        "Core",
-        "CoreUObject",
-        "Engine",
-        "FieldSystemEngine",
-        "Chaos",
-        "GeometryCollectionEngine",
-        "ChaosSolverEngine",
-        "XTools"  // 添加 XTools 模块依赖
-    }
-);
-```
+UE 5.4+ 对 IWYU 更严格。遇到符号缺失时按以下顺序处理：
 
-影响版本：所有版本
+1. 在引擎源码或 API 文档中确认拥有该符号的头；
+2. 在使用文件中显式 include；
+3. 根据头和导出符号确认模块归属；
+4. 在 `.Build.cs` 添加最小 Public/Private 依赖；
+5. 同时验证 Editor 和 Game Target。
 
----
+不要把大型聚合头当兼容层，也不要仅凭类名前缀猜测模块。例如 K2 节点头、编译器辅助类和编辑器 UI 可能属于不同模块。
 
-#### 5. UMetaData 重构为 FMetaData（UE 5.6）
+## 5. Public 与 Private 依赖
 
-症状：
-```
-error C2143: 语法错误: 缺少';'(在'*'的前面)
-error C2440: 无法从"FMetaData"转换为"UMetaData *"
-error C4099: "FMetaData": 类型名称前使用"class"现在使用的是"struct"
-```
+- 公共头的签名、基类或成员暴露某模块类型时，该模块通常是 Public 依赖。
+- 类型只在 `.cpp` 或私有头中使用时，优先 Private 依赖。
+- Runtime 模块不能依赖 `UnrealEd`、`BlueprintGraph`、`GraphEditor` 等 Editor 模块。
+- K2Node 放在 UncookedOnly/Editor 模块，运行时函数放在对应 Runtime 模块。
 
-原因：
-- UE 5.6 将 `UMetaData` 类重构为 `FMetaData` 结构
-- `UPackage::GetMetaData()` 返回类型从 `UMetaData*` 改为 `FMetaData&`
-- 这是一次重大的 API 重构
+版本差异不能改变依赖方向；必要时拆分模块。
 
-解决方案（采用类型别名 - BlueprintAssist 官方方案）：
+## 6. 兼容封装原则
+
+### 6.1 小而集中
+
+同一差异被多个模块使用时，放入 `XToolsVersionCompat.h` 的小型 inline 函数或宏。单一调用点的差异直接留在调用点附近，避免创建一次性抽象。
+
+### 6.2 保持语义一致
+
+不同版本分支必须提供相同外部行为。不要只追求“每个版本都能编译”，还要对返回值、错误路径、线程和生命周期契约做测试。
+
+### 6.3 不隐藏弃用警告
+
+优先迁移到较新 API，并为旧版本保留分支。不要通过全局关闭 deprecation warning 维持旧调用。
+
+### 6.4 明确版本边界
+
+条件应表达首次发生变化的版本：
 
 ```cpp
-// BlueprintAssist/Public/BlueprintAssistGlobals.h
-// UE 5.6+ 类型别名：处理 API 变化
-#if BA_UE_VERSION_OR_LATER(5, 6)
-using FBAMetaData = class FMetaData;  // UE 5.6: FMetaData
-using FBAVector2 = FVector2f;         // UE 5.6: FVector2f
+#if XTOOLS_ENGINE_5_6_OR_LATER
+    // 5.6+ API
 #else
-using FBAMetaData = class UMetaData;  // UE 5.5-: UMetaData
-using FBAVector2 = FVector2D;         // UE 5.5-: FVector2D
+    // 5.3-5.5 API
 #endif
 ```
 
-```cpp
-// BlueprintAssist/Public/BlueprintAssistUtils.h
-class UMetaData;
-class FMetaData;
+不要写难以审计的多个相等判断。
 
-// UE 5.6: FBAMetaData = FMetaData*, UE 5.5-: FBAMetaData = UMetaData*
-static FBAMetaData* GetPackageMetaData(UPackage* Package);
-static FBAMetaData* GetNodeMetaData(UEdGraphNode* Node);
-```
+## 7. 常见差异类型
 
-```cpp
-// BlueprintAssist/Private/BlueprintAssistUtils.cpp
-FBAMetaData* FBAUtils::GetPackageMetaData(UPackage* Package)
-{
-#if BA_UE_VERSION_OR_LATER(5, 6)
-    // UE 5.6: GetMetaData() 返回 FMetaData& 引用，返回其地址
-    return &Package->GetMetaData();
-#else
-    // UE 5.5-: GetMetaData() 直接返回 UMetaData* 指针
-    return Package->GetMetaData();
-#endif
-}
-```
+### FProperty ElementSize
 
-**优势**：
-- ✅ 类型安全，无需 `reinterpret_cast`
-- ✅ 一处定义，全局复用
-- ✅ 代码清晰易读易维护
-- ✅ 符合 C++ 最佳实践
+使用 `XTOOLS_GET_ELEMENT_SIZE(Property)`，避免在业务代码直接访问已弃用成员。设置 ElementSize 属于引擎/UHT 内部行为，非必要不要在插件代码中执行。
 
-影响版本：UE 5.6  
-影响模块：BlueprintAssist
+### 原子操作
 
----
+需要跨版本一致语义时使用 `XToolsVersionCompat` 提供的 `AtomicLoad`、`AtomicStore`、`AtomicExchange` 和 CompareExchange 封装。读-算-写状态转换仍需在同一锁或同一原子操作中完成；封装单次读写不会自动让复合操作原子化。
 
-#### 6. FVector2D 精度变更为 FVector2f（UE 5.6）
+### 编辑器 API
 
-症状：
-```
-error C2440: 无法从 FVector2D 转换为 UE::Math::TVector2<float>
-error C2664: 无法将参数从 const FVector2D 转换为 const FBAVector2&
-```
+编辑器 API 的头路径和模块归属可能变化。先验证当前最低和最高支持版本，不要因为某个版本构建通过就假定整个矩阵相同。
 
-原因：
-- UE 5.6 Slate API 从 `FVector2D` (double) 改为 `FVector2f` (float)
-- 但某些API（如 `GetPasteLocation()`, `GetCursorPos()`）仍返回 `FVector2D`
-- `FVector2f` 和 `FVector2D` 之间**无隐式转换**
-- `FMath::ClosestPointOnSegment2D()` 在5.6返回 `FVector2f` 而非 `FVector2D`
+## 8. 验证矩阵
 
-解决方案 1（类型别名 + 显式转换）：
-```cpp
-// BlueprintAssistGlobals.h - 定义类型别名
-#if BA_UE_VERSION_OR_LATER(5, 6)
-using FBAVector2 = FVector2f;
-#else
-using FBAVector2 = FVector2D;
-#endif
+每个跨版本改动至少验证：
 
-// 使用场景 - 需要显式转换API返回值
-const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();  // 返回FVector2D
-const FBAVector2 MenuLocation(CursorPos.X, CursorPos.Y);  // 显式转换为FBAVector2
-OpenContextMenu(MenuLocation, ...);  // 函数接受FBAVector2参数
-```
+1. `git diff --check`；
+2. UE 5.3 Editor Development；
+3. 受影响模块的自动化测试；
+4. UE 5.8 BuildPlugin 或 Editor Target；
+5. 发布前 UE 5.3-5.8 完整 BuildPlugin 矩阵；
+6. Runtime 变更额外验证 Game Development 和 Shipping。
 
-解决方案 2（FMath API 返回值转换）：
-```cpp
-// ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
-    ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-    // UE 5.6: FMath API 返回 FVector2f，需要转换回 FVector2D
-    const FVector2f ClosestPointF = FMath::ClosestPointOnSegment2D(
-        FVector2f(LocalMousePosition), 
-        FVector2f(Start), 
-        FVector2f(End)
-    );
-    const FVector2D TemporaryPoint(ClosestPointF.X, ClosestPointF.Y);  // 显式转换
-#else
-    const FVector2D TemporaryPoint = FMath::ClosestPointOnSegment2D(
-        LocalMousePosition, Start, End
-    );
-#endif
-```
+若本机没有全部引擎，必须在交付说明中列明实际覆盖版本，并由 CI 补齐矩阵。
 
-**关键点**：
-- ⚠️ **无隐式转换**：`FVector2f` 和 `FVector2D` 不能自动转换
-- ✅ **使用构造函数转换**：`FBAVector2(x, y)` 是类型安全的显式转换
-- ✅ **中间变量正确类型**：用原始类型接收API返回值，再转换
-- ❌ **避免 reinterpret_cast**：使用构造函数而非指针转换
+## 9. 审查清单
 
-影响版本：UE 5.6  
-影响模块：BlueprintAssist, ElectronicNodes
+- [ ] 版本差异已由源码或编译错误证实，不是猜测；
+- [ ] 版本判断位于最小范围；
+- [ ] 没有重复定义引擎版本宏；
+- [ ] Public/Private 依赖与头文件暴露一致；
+- [ ] Runtime 未引入 Editor 模块；
+- [ ] 较新版本不依赖隐式 include；
+- [ ] 各版本分支外部语义一致；
+- [ ] 自动化测试覆盖差异行为；
+- [ ] 发布矩阵覆盖 UE 5.3-5.8。
 
-**修复文件**：
-- `BlueprintAssist/Private/BlueprintAssistWidgets/BABlueprintActionMenu.cpp`
-- `BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistGraphActions.cpp`
-- `BlueprintAssist/Private/BlueprintAssistActions/BlueprintAssistNodeActions.cpp`
-- `ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp`
-
----
-
-#### 7. Material Graph 连接策略头文件路径变更（UE 5.6）
-
-症状：
-```
-fatal error C1083: 无法打开包括文件: "MaterialGraphConnectionDrawingPolicy.cpp"
-```
-
-原因：
-- UE 5.6 重构了 Material Graph 渲染管线
-- `MaterialGraphConnectionDrawingPolicy.cpp` 不再可用或路径变更
-
-解决方案（优雅降级）：
-```cpp
-// ElectronicNodes/Private/Policies/ENMaterialGraphConnectionDrawingPolicy.h
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
-    ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-#pragma message("警告: UE 5.6 MaterialGraph增强连接绘制暂不支持，使用标准绘制")
-// UE 5.6: 优雅降级，不启用 Material Graph 增强连接绘制
-#else
-// UE 5.5-: 正常启用 Material Graph 增强连接绘制
-#include "MaterialGraphConnectionDrawingPolicy.cpp"
-
-class FENMaterialGraphConnectionDrawingPolicy : public FMaterialGraphConnectionDrawingPolicy
-{
-    // ... 实现 ...
-};
-#endif
-```
-
-```cpp
-// ElectronicNodes/Private/ENConnectionDrawingPolicy.cpp
-#if defined(ENGINE_MAJOR_VERSION) && defined(ENGINE_MINOR_VERSION) && \
-    ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-    // UE 5.6: 对 Material Graph 使用标准连接绘制
-    return MakeShareable(new FENConnectionDrawingPolicy(...));
-#else
-    // UE 5.5-: 使用增强的 Material Graph 连接绘制
-    return MakeShareable(new FENMaterialGraphConnectionDrawingPolicy(...));
-#endif
-```
-
-影响版本：UE 5.6  
-影响模块：ElectronicNodes
-
----
-
-### 版本 API 变更记录
-
-| UE 版本 | API 变更 | 影响模块 |
-|---------|---------|---------|
-| 5.4 | IWYU 原则强制执行 | XTools, BlueprintExtensionsRuntime |
-| 5.5 | BufferCommand 弃用 | FieldSystemExtensions |
-| 5.5 | FProperty::ElementSize 弃用 | BlueprintExtensionsRuntime |
-| 5.6 | UMetaData → FMetaData 重构 | BlueprintAssist |
-| 5.6 | FVector2D → FVector2f 精度变更 | BlueprintAssist, ElectronicNodes |
-| 5.6 | MaterialGraphConnectionDrawingPolicy 路径变更 | ElectronicNodes |
-| 5.6 | 弃用警告视为错误（-Werror） | 所有模块 |
-
----
-
-### 避免的反模式
-
-错误做法：
-```cpp
-// 1. 分散的版本判断（难以维护）
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
-    // ...
-#endif
-
-// 2. 依赖前置声明（UE 5.4+ 不够用）
-class FHitResult;
-void UseHitResult(const FHitResult& Hit);
-
-// 3. 强制迁移稳定 API（增加维护成本）
-const int32 Size = Prop->ElementSize;  // 旧代码
-// 改为：
-const int32 Size = Prop->GetElementSize();  // 新代码（可能带来更多修改）
-
-// 4. 使用 reinterpret_cast 处理类型变更（不安全）
-UMetaData* MetaData = reinterpret_cast<UMetaData*>(&Package->GetMetaData());
-
-// 5. 每个使用点都添加条件编译（代码冗余）
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
-    FMetaData& MetaData = Package->GetMetaData();
-    MetaData.SetValue(...);
-#else
-    UMetaData* MetaData = Package->GetMetaData();
-    MetaData->SetValue(...);
-#endif
-```
-
-推荐做法：
-```cpp
-// 1. 统一版本宏
-#if XTOOLS_ENGINE_5_5_OR_LATER
-    // ...
-#endif
-
-// 2. 显式包含完整定义
-#include "Engine/HitResult.h"
-
-// 3. 抑制弃用警告（遵循 Epic 做法）
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
-// ... 使用稳定弃用 API ...
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
-
-// 4. 使用类型别名处理类型变更（类型安全 + 代码清晰）
-#if BA_UE_VERSION_OR_LATER(5, 6)
-using FBAMetaData = class FMetaData;
-#else
-using FBAMetaData = class UMetaData;
-#endif
-
-// 5. 封装辅助函数集中处理版本差异
-FBAMetaData* GetPackageMetaData(UPackage* Package)
-{
-#if BA_UE_VERSION_OR_LATER(5, 6)
-    return &Package->GetMetaData();  // 返回引用的地址
-#else
-    return Package->GetMetaData();   // 直接返回指针
-#endif
-}
-```
-
----
-
-### CI 验证结果
-
-全版本编译通过，0 错误 0 警告：
-
-| 版本 | 状态 | 耗时 |
-|------|------|------|
-| UE 5.3 | BUILD SUCCESSFUL | 3m 35s |
-| UE 5.4 | BUILD SUCCESSFUL | 3m 50s |
-| UE 5.5 | BUILD SUCCESSFUL | 4m 0s |
-| UE 5.6 | BUILD SUCCESSFUL | 3m 39s |
-
----
-
-### 参考资料
-
-- Epic Games: `Engine/Source/Runtime/CoreUObject/Private/UObject/Property.cpp`（弃用警告处理示例）
-- 商业插件参考：BlueprintAssist（版本宏设计、类型别名方案）
-  - `BlueprintAssistGlobals.h`：类型别名定义（UE 5.6 UMetaData/FMetaData 处理）
-  - `BlueprintAssistUtils.cpp`：辅助函数封装版本差异
-- UE 官方文档：IWYU 原则（5.4+ 强制执行）
-- C++ 最佳实践：类型别名（`using`）优于类型转换（`reinterpret_cast`）
-
+相关文档：[多版本插件打包](UE_多版本插件打包_问题与解决方案.md) 与 [命令行编译](命令行编译指令.md)。

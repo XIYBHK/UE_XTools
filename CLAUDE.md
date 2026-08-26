@@ -36,7 +36,7 @@ XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.
 .\Scripts\BuildPlugin-MultiUE.ps1 -Follow
 
 # 指定引擎版本
-.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots "UE_5.3","UE_5.4","UE_5.5","UE_5.6","UE_5.7" -Follow
+.\Scripts\BuildPlugin-MultiUE.ps1 -EngineRoots @('<UE_5.3>', '<UE_5.8>') -Follow
 
 # 其他参数：-OutputBase, -CleanOutput, -StrictIncludes, -NoHostProject
 ```
@@ -59,7 +59,7 @@ XTools 是一个为 Unreal Engine 5.3-5.8 设计的模块化插件系统（v1.9.
 
 运行时模块层（均依赖 XToolsCore）
 ├─ Sort                                # 排序算法库（整数、浮点、字符串、向量、Actor、通用结构体）
-├─ ObjectPool                          # Actor 对象池（智能管理、自动扩池、状态重置）
+├─ ObjectPool                          # Actor 对象池（预热、批量操作、生命周期事件）
 ├─ BlueprintExtensionsRuntime          # 蓝图运行时函数库
 ├─ XTools_EnhancedCodeFlow             # 异步操作和流程控制（延迟、时间轴、循环、协程）
 ├─ FieldSystemExtensions               # Chaos Field System 增强
@@ -123,11 +123,11 @@ static void FunctionName(UPARAM(DisplayName="参数名称") const FVector& Param
 UObjectPoolSubsystem       // 子系统：全局访问点、生命周期管理
 FActorPool                 // 单个 Actor 类的池管理器
 FObjectPoolConfigManager   // 配置管理
-FObjectPoolManager         // 自适应扩池、维护统计
+FObjectPoolManager         // 外部显式调用的维护、分析和扩缩容 API
 FObjectPoolUtils            // Actor 状态恢复、配置校验和统计辅助
 UK2Node_SpawnActorFromPool // 自定义蓝图节点（支持 ExposeOnSpawn）
 ```
-永不失败机制：池空时回退到正常 SpawnActor。
+回退契约：池不可用但请求类可生成时尝试普通 SpawnActor；抽象类、无效类或生成失败时返回 nullptr。需要区分池命中与普通回退时使用带 EPoolOpResult 的扩展接口。
 
 ## XToolsCore 跨版本兼容性
 
@@ -136,7 +136,7 @@ UK2Node_SpawnActorFromPool // 自定义蓝图节点（支持 ExposeOnSpawn）
 PublicDependencyModuleNames.Add("XToolsCore");
 ```
 
-**版本宏**（在 XToolsCore.Build.cs 中自动定义）：
+**版本宏**（`XToolsVersionCompat.h` 根据 `ENGINE_MAJOR_VERSION` / `ENGINE_MINOR_VERSION` 推导）：
 ```cpp
 #define XTOOLS_ENGINE_5_4_OR_LATER  // UE 5.4+
 #define XTOOLS_ENGINE_5_5_OR_LATER  // UE 5.5+
@@ -151,13 +151,8 @@ PublicDependencyModuleNames.Add("XToolsCore");
 
 **统一错误处理**（推荐用法）：
 ```cpp
-FXToolsErrorReporter::Warning(
-    LogBlueprintExtensionsRuntime,
-    TEXT("参数验证失败"),
-    NAME_None,
-    true,   // 显示屏幕提示
-    5.0f    // 显示时长
-);
+XTOOLS_LOG_WARNING(LogMyModule, TEXT("参数验证失败"));
+XTOOLS_LOG_ERROR_EX(LogMyModule, TEXT("操作失败"), NAME_None, true, 5.0f);
 ```
 
 ## 关键模块技术细节
@@ -209,7 +204,7 @@ FXToolsErrorReporter::Warning(
 
 1. 开发阶段在 `Docs/版本变更/UNRELEASED.md` 记录变更
 2. 发布时用 `changelog-generator` 技能整理到 `CHANGELOG.md`
-3. 同步 `XToolsDefines.h`、`XTools.uplugin`、`README.md`、`CLAUDE.md` 和 `AGENTS.md` 中的版本信息
+3. 同步 `XToolsDefines.h`、`XTools.uplugin` 及确实展示版本号的文档
 4. 完成版本一致性、更新日志结构和 `git diff --check` 发布前检查；本地多版本打包仅作可选预检
 5. 提交并推送 `main`，再创建并推送 `v{版本号}` 注释标签
 6. `build-plugin-optimized.yml` 在标签推送后执行正式多版本打包并创建 GitHub Release
@@ -225,8 +220,8 @@ FXToolsErrorReporter::Warning(
 ## 调试
 
 ```cpp
-UE_LOG(LogXTools, Warning, TEXT("调试信息: %s"), *SomeString);
-FXToolsErrorReporter::Warning(LogCategory, TEXT("消息"), NAME_None, true, 5.0f);  // 推荐
+XTOOLS_LOG_WARNING(LogXTools, TEXT("调试信息: %s"), *SomeString);
+XTOOLS_LOG_ERROR_EX(LogXTools, TEXT("消息"), NAME_None, true, 5.0f);
 TRACE_CPUPROFILER_EVENT_SCOPE(FunctionName);  // Unreal Insights 性能分析
 // 对象池控制台命令：objectpool.stats
 ```

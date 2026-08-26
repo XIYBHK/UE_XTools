@@ -1,9 +1,5 @@
 # XTOOLS PLUGIN KNOWLEDGE BASE
 
-**Generated:** 2026-04-03
-**Commit:** 61cb4d2
-**Branch:** main
-
 ## OVERVIEW
 
 UE 5.3-5.8 模块化蓝图工具插件 (v1.9.9)，26个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
@@ -73,7 +69,7 @@ XToolsCore (PreDefault)
 
 | Task | Location | Notes |
 |------|----------|-------|
-| 新建 K2Node | `Source/BlueprintExtensions/` | 参考 K2Node_ForEachLoopWithDelay，必读 claude.md |
+| 新建 K2Node | `Source/BlueprintExtensions/` | 参考 K2Node_ForEachLoopWithDelay，必读同目录 `AGENTS.md` |
 | 新建运行时函数库 | `Source/BlueprintExtensionsRuntime/Public/Libraries/` | 继承 UBlueprintFunctionLibrary |
 | 新建运行时模块 | 复制 Sort 模块结构 | .Build.cs 加 XToolsCore 依赖 |
 | 版本兼容适配 | `Source/XToolsCore/Public/XToolsVersionCompat.h` | 用 XTOOLS_ENGINE_5_4_OR_LATER 等分版本宏 |
@@ -86,6 +82,8 @@ XToolsCore (PreDefault)
 | 打包脚本 | `Scripts/BuildPlugin-MultiUE.ps1` | `-Follow` 实时日志 |
 | 版本记录 | `Docs/版本变更/UNRELEASED.md` | 开发中变更写这里 |
 | 版本发布 | `CLAUDE.md` 版本发布流程 | 标签触发构建并创建 Release |
+| 文档索引 | `Docs/README.md` | 长期文档入口与维护规则 |
+| 代码审查 | `Docs/开发文档/UE代码审查与实证核验指南.md` | 证据链、严重度与测试护栏 |
 
 ## CONVENTIONS
 
@@ -136,9 +134,8 @@ XTOOLS_CHECK_VALID(Actor, false);
 
 ## COMMANDS
 
-```bash
-# 完整编译 (VS Code 任务推荐)
-"D:/UE/UE_5.3/Engine/Build/BatchFiles/Build.bat" cpp0623Editor Win64 Development -Project="D:/Github/cpp0623/cpp0623.uproject"
+```powershell
+# 完整编译优先使用宿主项目 .vscode/tasks.json；命令行格式见 Docs/打包相关/命令行编译指令.md
 
 # 多版本打包
 .\Scripts\BuildPlugin-MultiUE.ps1 -Follow
@@ -152,7 +149,7 @@ XTOOLS_CHECK_VALID(Actor, false);
 
 ## LOADING ORDER
 
-PreDefault → XToolsCore | Default → 13个Runtime（含主模块XTools）| PostDefault → 5个UncookedOnly
+PreDefault → XToolsCore | Default → 14 个 Runtime + 6 个 Editor | PostDefault → 5 个 UncookedOnly
 
 ## THIRD-PARTY MODULES
 
