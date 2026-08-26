@@ -224,7 +224,7 @@ public:
         // 限制缓存大小，避免内存泄漏
         if (Cache.Num() >= 100)
         {
-            Cache.Empty(50); // 清空一半
+            Cache.Empty(50); // 全量清空，并为下一轮预留 50 个槽位
         }
 
         Cache.Add(Key, Params);
