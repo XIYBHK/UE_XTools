@@ -14,7 +14,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogXToolsCore, Log, All);
 // Plugin version
 #define XTOOLS_VERSION_MAJOR 1
 #define XTOOLS_VERSION_MINOR 9
-#define XTOOLS_VERSION_PATCH 9
+#define XTOOLS_VERSION_PATCH 10
 
 // Debugging
 #if !UE_BUILD_SHIPPING

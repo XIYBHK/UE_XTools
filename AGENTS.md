@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-UE 5.3-5.8 模块化蓝图工具插件 (v1.9.9)，26个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
+UE 5.3-5.8 模块化蓝图工具插件 (v1.9.10)，26个模块，C++ Runtime + K2Node Editor 分层架构。中文元数据优先。
 
 ## STRUCTURE
 

@@ -1,5 +1,255 @@
 # XTools 更新日志 (CHANGELOG)
 
+## 版本 v1.9.10 (2026-08-26)
+
+<details>
+<summary><strong>主要更新</strong></summary>
+
+### 新增功能
+- **SplineMovement / QueueSpline**: 新增 AI 寻路样条移动与排队样条模块
+- **PointSampling**: 新增实心圆球、紧密堆叠与缓存能力
+- **ObjectPool / EnhancedCodeFlow**: 新增运行时设置与显式生命周期状态 API
+- **X_AssetEditor**: 新增蓝图组件层级导出与批处理结果上报
+
+### 重要修复
+- **FormationSystem**: 修复移动死锁、永久 Tick 与异常输入
+- **ObjectPool**: 修复回退生成、延迟构造、生命周期与统计一致性
+- **BlueprintExtensions**: 修复节点展开、连线和编译期崩溃
+- **EnhancedCodeFlow**: 修复协程、代理与完成回调生命周期
+- **Sort / RandomShuffles**: 修复 NaN 排序与 PRD 并发状态
+
+### 性能优化
+- **PointSampling**: 优化泊松补充采样与点阵缓存
+- **FieldSystemExtensions**: 减少构造场与过滤场命令拷贝
+- **SplineMovement**: 降低 AI 寻路目标更新频率
+
+</details>
+
+<details>
+<summary><strong>XToolsCore</strong></summary>
+
+- 修复 日志类别清单与实际模块声明不同步
+- 修复 非游戏线程错误提示访问编辑器UI
+- 调整 移除重复引擎版本宏定义
+
+</details>
+
+<details>
+<summary><strong>X_AssetEditor</strong></summary>
+
+- 新增 蓝图导出组件层级与孤立引脚
+- 修复 批量重命名失败详情丢失
+- 修复 重命名文件夹缓存批内不同步
+- 新增 取消批次未处理结果上报
+- 修复 凸包对话框窗口引用泄漏
+- 优化 批量碰撞处理显示进度
+- 调整 碰撞保存内部命名与行为一致
+- 新增 凸包对话框生命周期自动化测试
+
+</details>
+
+<details>
+<summary><strong>AxisLocker</strong></summary>
+
+- 新增 目标解析状态查询
+- 修复 测试类型头阻断打包构建
+
+</details>
+
+<details>
+<summary><strong>PointSampling</strong></summary>
+
+- 优化 圆/球点阵顺序
+- 新增 实心圆/球选项
+- 调整 圆/球输出变换数组
+- 修复 实心球总点数溢出
+- 新增 实心球层间距控制
+- 新增 圆形采样缓存支持
+- 修复 缓存更新误淘汰其他条目
+- 新增 实心球Z层级密度参数
+- 新增 紧密堆叠实心球点阵
+- 调整 紧密堆叠降级时输出警告
+- 优化 紧密堆叠点排序浮点容差比较
+- 修复 雪花点阵扰动强度过弱
+- 修复 扰动强度被重复乘算
+- 修复 网格排序扰动后行分组失效
+- 调整 军事/蜂巢/螺旋扰动基准减半
+- 优化 泊松补充采样空间网格加速
+- 调整 斐波那契球面极轴对齐Z轴
+- 修复 泊松裁剪上限检查被绕过
+
+</details>
+
+<details>
+<summary><strong>GeometryTool</strong></summary>
+
+- 修复 球体采样极点生成重合点
+- 修复 形状采样随机变换被整数量化
+- 调整 球体采样改为等面积纬线环分布
+- 调整 圆形多层次点阵节点标记弃用
+- 新增 形状/矩形采样随机种子参数
+- 修复 盒体大间距采样边界
+
+</details>
+
+<details>
+<summary><strong>FormationSystem</strong></summary>
+
+- 修复 空阵型计算变换成本时访问首元素越界
+- 新增 阵型数量调整随机种子参数
+- 修复 成本矩阵缓存误命中
+- 新增 阵型停止事件与临时Actor清理
+- 优化 演示Actor按需启用Tick
+- 修复 提前到达未广播完成事件
+- 修复 制动带速度归零后移动死锁
+- 修复 BeginPlay前移动指令丢失
+- 移除 未使用的Slate等引擎依赖
+- 修复 测试类型头阻断打包构建
+- 新增 编队移动卡住自动停止配置
+- 修复 编队移动无进展时永久Tick
+- 修复 无根单位参与阵型过渡
+- 修复 阵型过渡覆盖外部缩放
+- 修复 阵型异常输入缺少护栏
+
+</details>
+
+<details>
+<summary><strong>SplineMovement / SplineMovementEditor</strong></summary>
+
+- 新增 样条线移动异步节点
+- 新增 输入驱动与AI寻路双模式
+- 新增 前瞻距离、横向偏移、反向移动参数
+- 修复 样条移动距离推进逻辑
+- 优化 AI模式寻路目标防抖降频
+- 新增 AI模式重寻路阈值
+- 修复 AI请求链路与完成停止逻辑
+- 新增 固定地图NavMesh自动化测试
+- 新增 样条线移动异步节点编辑器模块
+
+</details>
+
+<details>
+<summary><strong>QueueSpline</strong></summary>
+
+- 新增 排队样条线移动模块
+- 修复 排队交错偏移跨模块不一致
+- 修复 移动目标槽位索引失效
+- 新增 排队目标更新间隔参数
+- 新增 直接插值碰撞扫描开关
+- 优化 暂停期间仍清理失效成员
+- 优化 调试绘制补充真实槽位
+- 修复 初始排队Transform静默返回空
+- 新增 排队样条组件自动绑定样条
+- 优化 通知缓冲并隔离重入派发
+
+</details>
+
+<details>
+<summary><strong>BlueprintExtensionsRuntime / BlueprintExtensions</strong></summary>
+
+- 新增 缩放曲线幅度节点
+- 修复 反射赋值失败静默忽略
+- 修复 编辑器反射赋值未发送变更通知
+- 修复 分割结构体引脚展开后输出丢值
+- 修复 循环节点延迟默认值被静默忽略
+- 修复 延迟循环Break哨兵失效
+- 修复 对象池节点拆分Transform失效
+- 优化 Map节点错误诊断
+- 修复 Map节点函数缺失编译期崩溃
+- 修复 赋值节点菜单过滤恒失效
+- 修复 编译Error消息断言崩溃风险
+- 修复 容器节点连线失败静默丢线
+- 修复 延迟循环缺失引脚导致编辑器崩溃
+- 修复 多条件选择引脚变更早退时跳过父类通知
+- 调整 RandomShuffles依赖转私有
+
+</details>
+
+<details>
+<summary><strong>ObjectPool</strong></summary>
+
+- 修复 回退对象释放语义
+- 修复 对象池开关编辑器/打包行为反转
+- 新增 对象池运行时开发者设置
+- 调整 对象池默认关闭
+- 修复 延迟获取池空自动回退生成
+- 修复 池化碰撞物理原始配置丢失
+- 修复 生成失败返回基类空壳Actor
+- 修复 生命周期异步回调悬空指针
+- 新增 生命周期异步回调回归测试
+- 移除 子系统不可达维护层死代码
+- 修复 延迟构造Actor重复完成生成
+- 修复 对象池获取统计未遵守池锁约定
+- 修复 批量归还把失败项计为成功
+- 修复 引擎未初始化时对象池静态访问空指针
+- 修复 按蓝图短类名清理对象池
+- 新增 池内激活显式延迟构造状态API
+- 移除 未接线的对象池维护类型
+
+</details>
+
+<details>
+<summary><strong>XTools_EnhancedCodeFlow</strong></summary>
+
+- 修复 代码流开关编辑器/打包行为反转
+- 新增 代码流运行时开发者设置
+- 修复 协程失败路径协程帧误销毁
+- 修复 异步工厂代理弱引用捕获
+- 修复 失效上下文反复触发断言
+- 修复 完成回调重入时重复完成
+- 修复 导出性能统计缺少定义
+- 调整 异步节点显示名与中文分类
+
+</details>
+
+<details>
+<summary><strong>Sort / RandomShuffles</strong></summary>
+
+- 修复 夹角距离排序索引不稳定
+- 优化 自然排序比较性能
+- 修复 属性排序NaN破坏严格弱序
+- 修复 去重排序输出顺序不确定
+- 修复 属性相等键排序不稳定
+- 修复 PRD世界状态自动清理
+- 调整 满表状态告警与退化提示
+- 修复 PRD自动状态并发丢失更新
+- 修复 PRD二分查表容差导致概率跳变
+
+</details>
+
+<details>
+<summary><strong>ComponentTimelineRuntime / FieldSystemExtensions</strong></summary>
+
+- 修复 失效时间轴引用重建
+- 优化 构造场命令拷贝次数
+- 优化 过滤场命令深拷贝
+
+</details>
+
+<details>
+<summary><strong>编辑器工具</strong></summary>
+
+- 修复 XTools_SwitchLanguage曲线资产编辑器崩溃
+- 优化 BlueprintScreenshotTool工具栏延迟初始化
+
+</details>
+
+<details>
+<summary><strong>XTools / Build / Tests / Docs / CI</strong></summary>
+
+- 移除 主模块未使用的编辑器依赖
+- 调整 贝塞尔匀速节点性能提示
+- 调整 构建依赖与显式包含
+- 校验 UE 5.3–5.8 严格打包
+- 新增 跨模块自动化回归覆盖
+- 调整 文档索引与长期指南
+- 修复 发布资产标签筛选匹配错误
+- 校验 发布资产覆盖全部引擎版本
+
+</details>
+
+---
+
 ## 版本 v1.9.9 (2026-07-30)
 
 <details>
