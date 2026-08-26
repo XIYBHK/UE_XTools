@@ -122,7 +122,7 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 - **Sort 已处理**：属性 QuickSort/HeapSort 对等价键增加原索引决胜，数值、布尔、枚举、NaN、null 与自然字符串路径均保留首现顺序；字符串降序同时固定 null 仍置末。去重 Actor、整数、字符串路径也已改为按输入遍历、TSet 仅负责判重，并覆盖大小写语义及输入输出同数组。
 - PointSampling：~~稠密网格 TotalCells=int32 直乘可溢出~~（已证伪：节点首次引入时即以 int64 计算并在分配前拒绝超出 int32 容量，已补极值回归测试）；~~FCircleSamplingCacheKey 含种子不含流状态~~（已证伪：公开圆形节点只接收种子且每次从种子新建流，私有 helper 无其他调用者；已补非零扰动的缓存命中/关闭缓存重算一致性测试）；**缓存更新误淘汰已处理**（Poisson `Store` 仅在插入新键且容量已满时执行 LRU 淘汰，与 CircleCache 既有规则对齐；新增 50 项满容量更新并逐项读回测试）；**PRD 二分容差已处理**（仅精确表项命中，其他输入走相邻表项线性插值；新增 0.499/0.500/0.501 连续性与插值值回归测试）。超大但未溢出的网格仍可能耗尽资源，但仓内没有统一点数预算，需作为独立 API 设计项处理，不据此虚构固定上限。
 - **K2Node 行为缺陷已处理**：延迟循环将 Break 纳入必需引脚，Array Get 的 Item 缺失改为 Warning 后安全中止；MultiConditionalSelect 在早退前通知 Super，并删除误写且未使用的临时类型块。ForEachMap 全量传播经复核为幂等的多余通知，其余 PropagatePinType/ResetPinToWildcard/Super::AllocateDefaultPins 项均为无错误输出的维护重构，避免在本轮改动节点重建语义。
-- ObjectPool：**统计锁约定已处理**（GetActor/AcquireDeferred 的 TotalRequests 与延迟命中计数收回既有 PoolLock 写区间，并补 TotalAcquired/TotalReleased/HitRate 回归断言）；**BatchReturnActors 成功数已处理**（复用 ReturnActorToPoolEx 的真实结果，仅统计实际归还成功项，并补池对象+非池对象混合回归）；**静态访问已处理**（Get 与 ResolveWorld 在解引用 GEngine 前返回空）；**objectpool.clear 类解析已处理**（仅在当前已注册池类中解析，完整对象路径优先、短名必须唯一、歧义时拒绝操作并列出候选；无参数路径直接调用子系统全清理，避免蓝图短名反查失败）。
+- ObjectPool：**统计锁约定已处理**（GetActor/AcquireDeferred 的 TotalRequests 与延迟命中计数收回既有 PoolLock 写区间，并补 TotalAcquired/TotalReleased/HitRate 回归断言）；**BatchReturnActors 成功数已处理**（复用 ReturnActorToPoolEx 的真实结果，仅统计实际归还成功项，并补池对象+非池对象混合回归）；**静态访问已处理**（Get 与 ResolveWorld 在解引用 GEngine 前返回空）；**objectpool.clear 类解析已处理**（仅在当前已注册池类中解析，完整对象路径优先；原生和蓝图生成类短名均支持省略 `_C`，短名必须唯一，歧义时拒绝操作并列出候选；无参数路径直接调用子系统全清理）。
 - **X_AssetEditor 已处理/校准**：四个批量碰撞入口增加延迟显示的非取消进度框，避免大选择集静默冻结；内部 helper 更名 `FinalizeStaticMeshChanges` 以匹配标脏+编辑通知语义。日志字符串当前左右引号完整，原断言为陈旧误报；资产加载仍同步，但已有可见进度且结果结构无未处理台账，故不引入不完整取消语义。
 
 ### 5.4 表现/文档类（约 8 条）
@@ -154,7 +154,7 @@ M-12 测试排障曾观测到原生 C++ `IObjectPoolInterface` 实现者经 `Exe
 
 - **正确性修复主线：完成**。现行有效的 H/M 项均已修复、撤销或明确为兼容/性能契约；FormationSystem 最近补充的有限值与异常分配护栏已通过 UE 5.3 编译和 19 项自动化测试。
 - **构建与测试：完成当前范围验证**。全量自动化测试为 100 项成功、0 项失败；UE 5.4–5.8 严格插件矩阵已有 Editor/Game Development/Shipping 成功记录。报告中的测试警告包含预期诊断，不应统称为“全部历史噪音”。
-- **开放维护项：不阻塞发布**。包括 P3 规范债务、M18 下一大版本删除评估、M21 导航场景测试、M13 Slate 生命周期测试、BlueprintGeneratedClass 短名解析测试，以及真实 PIE/蓝图资产兼容验证。
+- **开放维护项：不阻塞发布**。包括 P3 规范债务、M18 下一大版本删除评估、M21 导航场景测试、M13 Slate 生命周期测试，以及真实 PIE/蓝图资产兼容验证。
 - **文档状态：已完成本轮同步**。旧任务清单仅作为 2026-03-20 历史记录，当前状态以本报告和 `UNRELEASED.md` 为准。
 
 ---

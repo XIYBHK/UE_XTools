@@ -162,9 +162,17 @@ UClass* FObjectPoolModule::ResolveUniquePoolClassIdentifier(
 
     if (Matches.IsEmpty())
     {
+        FString BlueprintShortName = NormalizedIdentifier;
+        if (!BlueprintShortName.EndsWith(TEXT("_C"), ESearchCase::IgnoreCase))
+        {
+            BlueprintShortName += TEXT("_C");
+        }
+
         for (UClass* CandidateClass : UniqueCandidates)
         {
-            if (CandidateClass->GetName().Equals(NormalizedIdentifier, ESearchCase::IgnoreCase))
+            const FString CandidateName = CandidateClass->GetName();
+            if (CandidateName.Equals(NormalizedIdentifier, ESearchCase::IgnoreCase)
+                || CandidateName.Equals(BlueprintShortName, ESearchCase::IgnoreCase))
             {
                 Matches.Add(CandidateClass);
             }

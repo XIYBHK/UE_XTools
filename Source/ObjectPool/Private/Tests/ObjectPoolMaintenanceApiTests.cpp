@@ -13,6 +13,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
@@ -338,8 +339,11 @@ bool FObjectPoolConsoleClassResolutionTest::RunTest(const FString& Parameters)
     UPackage* PackageB = CreatePackage(TEXT("/Temp/ObjectPoolConsoleResolution/B"));
     UClass* ClassA = NewObject<UClass>(PackageA, TEXT("BP_SharedPoolActor_C"), RF_Transient);
     UClass* ClassB = NewObject<UClass>(PackageB, TEXT("BP_SharedPoolActor_C"), RF_Transient);
+    UBlueprintGeneratedClass* BlueprintClass = NewObject<UBlueprintGeneratedClass>(
+        PackageA, TEXT("BP_RealGeneratedActor_C"), RF_Transient);
     if (!TestNotNull(TEXT("应创建第一个同名测试类"), ClassA)
-        || !TestNotNull(TEXT("应创建第二个同名测试类"), ClassB))
+        || !TestNotNull(TEXT("应创建第二个同名测试类"), ClassB)
+        || !TestNotNull(TEXT("应创建蓝图生成类测试对象"), BlueprintClass))
     {
         return false;
     }
@@ -374,6 +378,12 @@ bool FObjectPoolConsoleClassResolutionTest::RunTest(const FString& Parameters)
     TestNull(TEXT("不存在的类名应返回空"), Resolved);
     TestFalse(TEXT("未命中不应误报歧义"), bAmbiguous);
     TestEqual(TEXT("未命中不应产生候选路径"), CandidatePaths.Num(), 0);
+
+    const TArray<UClass*> BlueprintCandidates = {BlueprintClass};
+    Resolved = FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+        TEXT("BP_RealGeneratedActor"), BlueprintCandidates, bAmbiguous, CandidatePaths);
+    TestTrue(TEXT("蓝图生成类短名省略_C时仍应解析"), Resolved == BlueprintClass);
+    TestFalse(TEXT("蓝图生成类唯一短名不应标记歧义"), bAmbiguous);
 
     return true;
 }
