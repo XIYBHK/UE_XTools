@@ -165,12 +165,48 @@ bool UFormationManagerComponent::StartFormationTransition(
     TArray<FVector> FromWorldPositions = FromFormation.GetWorldPositions();
     TArray<FVector> ToWorldPositions = ToFormation.GetWorldPositions();
 
+    const auto IsFiniteVector = [](const FVector& Value)
+    {
+        return FMath::IsFinite(Value.X) && FMath::IsFinite(Value.Y) && FMath::IsFinite(Value.Z);
+    };
+
+    for (const FVector& Position : FromWorldPositions)
+    {
+        if (!IsFiniteVector(Position))
+        {
+            UE_LOG(LogFormationSystem, Warning, TEXT("StartFormationTransition: 起始阵型包含非有限位置"));
+            return false;
+        }
+    }
+    for (const FVector& Position : ToWorldPositions)
+    {
+        if (!IsFiniteVector(Position))
+        {
+            UE_LOG(LogFormationSystem, Warning, TEXT("StartFormationTransition: 目标阵型包含非有限位置"));
+            return false;
+        }
+    }
+
     // 计算最优分配
     TArray<int32> Assignment = CalculateOptimalAssignment(
         FromWorldPositions,
         ToWorldPositions,
         Config.TransitionMode
     );
+
+    if (Assignment.Num() != Units.Num())
+    {
+        UE_LOG(LogFormationSystem, Warning, TEXT("StartFormationTransition: 分配结果数量无效"));
+        return false;
+    }
+    for (int32 TargetIndex : Assignment)
+    {
+        if (!ToWorldPositions.IsValidIndex(TargetIndex))
+        {
+            UE_LOG(LogFormationSystem, Warning, TEXT("StartFormationTransition: 分配结果包含无效目标索引"));
+            return false;
+        }
+    }
 
     // 初始化变换状态并启用 Tick 驱动位置更新
     TransitionState.bIsTransitioning = true;
@@ -187,8 +223,10 @@ bool UFormationManagerComponent::StartFormationTransition(
     for (int32 i = 0; i < Units.Num(); i++)
     {
         AActor* Actor = Units[i];
-        if (!Actor)
+        if (!IsValid(Actor) || !Actor->GetRootComponent())
         {
+            UE_LOG(LogFormationSystem, Warning,
+                TEXT("StartFormationTransition: 跳过无效或无根组件的单位（索引 %d）"), i);
             continue;
         }
 
@@ -217,6 +255,15 @@ bool UFormationManagerComponent::StartFormationTransition(
 
         // 添加到变换数据数组
         TransitionState.UnitTransitions.Add(UnitData);
+    }
+
+    if (TransitionState.UnitTransitions.IsEmpty())
+    {
+        TransitionState.bIsTransitioning = false;
+        TransitionState.ConflictInfo = FPathConflictInfo();
+        SetComponentTickEnabled(false);
+        UE_LOG(LogFormationSystem, Warning, TEXT("StartFormationTransition: 没有可移动的有效单位"));
+        return false;
     }
 
     // 检测路径冲突
@@ -277,7 +324,6 @@ void UFormationManagerComponent::StopFormationTransition(bool bSnapToTarget)
                 AActor* Actor = UnitData.TargetActor.Get();
                 Actor->SetActorLocation(UnitData.TargetLocation);
                 Actor->SetActorRotation(UnitData.TargetRotation);
-                Actor->SetActorScale3D(UnitData.TargetScale);
             }
         }
     }
@@ -551,11 +597,9 @@ void UFormationManagerComponent::UpdateUnitPositions(float DeltaTime)
         
         FVector CurrentLocation = FMath::Lerp(UnitData.StartLocation, UnitData.TargetLocation, Progress);
         FRotator CurrentRotation = FMath::Lerp(UnitData.StartRotation, UnitData.TargetRotation, Progress);
-        FVector CurrentScale = FMath::Lerp(UnitData.StartScale, UnitData.TargetScale, Progress);
         
         Actor->SetActorLocation(CurrentLocation);
         Actor->SetActorRotation(CurrentRotation);
-        Actor->SetActorScale3D(CurrentScale);
         
         if (Progress >= 1.0f)
         {
@@ -664,4 +708,4 @@ FPathConflictInfo UFormationManagerComponent::CheckFormationPathConflicts(
 
 // ========== 私有函数声明（需要在FormationAlgorithms.cpp中实现） ==========
 
-// ========== 算法实现在FormationAlgorithms.cpp中 ========== 
+// ========== 算法实现在FormationAlgorithms.cpp中 ==========

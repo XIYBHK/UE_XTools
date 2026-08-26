@@ -704,13 +704,37 @@ bool UFormationLibrary::ValidateFormationData(const FFormationData& Formation, F
         return false;
     }
 
-    if (Formation.Spacing <= 0.0f)
+    const auto IsFiniteVector = [](const FVector& Value)
+    {
+        return FMath::IsFinite(Value.X) && FMath::IsFinite(Value.Y) && FMath::IsFinite(Value.Z);
+    };
+
+    if (!IsFiniteVector(Formation.CenterLocation) ||
+        !FMath::IsFinite(Formation.Rotation.Pitch) ||
+        !FMath::IsFinite(Formation.Rotation.Yaw) ||
+        !FMath::IsFinite(Formation.Rotation.Roll))
+    {
+        ErrorMessage = TEXT("阵型中心或旋转必须为有限值");
+        return false;
+    }
+
+    for (const FVector& Position : Formation.Positions)
+    {
+        if (!IsFiniteVector(Position))
+        {
+            ErrorMessage = TEXT("阵型位置必须为有限值");
+            return false;
+        }
+    }
+
+    if (!FMath::IsFinite(Formation.Spacing) || Formation.Spacing <= 0.0f)
     {
         ErrorMessage = TEXT("阵型间距必须大于0");
         return false;
     }
 
-    if (Formation.Size.X < 0.0f || Formation.Size.Y < 0.0f)
+    if (!FMath::IsFinite(Formation.Size.X) || !FMath::IsFinite(Formation.Size.Y) ||
+        Formation.Size.X < 0.0f || Formation.Size.Y < 0.0f)
     {
         ErrorMessage = TEXT("阵型尺寸不能为负数");
         return false;
@@ -727,6 +751,18 @@ float UFormationLibrary::CalculateTransitionCost(
     if (FromFormation.Positions.Num() != ToFormation.Positions.Num())
     {
         return -1.0f; // 无效的比较
+    }
+
+    if (FromFormation.Positions.Num() == 0)
+    {
+        return -1.0f; // 空阵型没有可比较的变换成本
+    }
+
+    FString ValidationError;
+    if (!ValidateFormationData(FromFormation, ValidationError) ||
+        !ValidateFormationData(ToFormation, ValidationError))
+    {
+        return -1.0f;
     }
 
     TArray<FVector> FromPositions = FromFormation.GetWorldPositions();

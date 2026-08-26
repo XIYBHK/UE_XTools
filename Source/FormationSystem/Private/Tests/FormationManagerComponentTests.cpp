@@ -7,7 +7,38 @@
 
 #include "FormationManagerComponent.h"
 #include "FormationManagerComponentTestTypes.h"
+#include "Components/ActorComponent.h"
+#include "Components/SceneComponent.h"
+#include "Engine/EngineBaseTypes.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include <limits>
+
+namespace
+{
+    class FScopedFormationManagerTestWorld
+    {
+    public:
+        explicit FScopedFormationManagerTestWorld(FName WorldName)
+            : World(UWorld::CreateWorld(EWorldType::Game, false, WorldName))
+        {
+        }
+
+        ~FScopedFormationManagerTestWorld()
+        {
+            if (World)
+            {
+                World->DestroyWorld(false);
+            }
+        }
+
+        UWorld* Get() const { return World; }
+
+    private:
+        UWorld* World = nullptr;
+    };
+}
 
 // 访问方式说明：无法通过"测试子类"暴露 protected CreateCostMatrix——
 // UCLASS 不能声明在 .cpp 中（UHT 只处理头文件），无 UCLASS 的 C++ 子类无法经 NewObject 实例化（缺少 StaticClass），
@@ -146,6 +177,85 @@ bool FFormationManagerComponentStopTransitionTests::RunTest(const FString& Param
     TestEqual(TEXT("再次真实停止应再广播一次停止事件"), Receiver->StoppedCount, 2);
     TestEqual(TEXT("完成事件全程不应触发"), Receiver->CompletedCount, 0);
 
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFormationManagerComponentActorTransformSafetyTests,
+    "XTools.Formation.Manager.RejectsRootlessActorsAndPreservesScale",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationManagerComponentActorTransformSafetyTests::RunTest(const FString& Parameters)
+{
+    FScopedFormationManagerTestWorld WorldScope(TEXT("FormationManagerTest_ActorTransformSafety"));
+    UWorld* World = WorldScope.Get();
+    if (!TestNotNull(TEXT("应创建阵型管理器测试世界"), World))
+    {
+        return false;
+    }
+
+    AActor* ManagerActor = World->SpawnActor<AActor>();
+    UFormationManagerComponent* Manager = ManagerActor
+        ? NewObject<UFormationManagerComponent>(ManagerActor)
+        : nullptr;
+    if (!TestNotNull(TEXT("应创建阵型管理器 Actor"), ManagerActor)
+        || !TestNotNull(TEXT("应创建阵型管理器组件"), Manager))
+    {
+        return false;
+    }
+    ManagerActor->AddInstanceComponent(Manager);
+    Manager->RegisterComponent();
+
+    FFormationData FromFormation;
+    FromFormation.Positions = {FVector::ZeroVector};
+    FFormationData ToFormation;
+    ToFormation.Positions = {FVector(100.0f, 0.0f, 0.0f)};
+    FFormationTransitionConfig Config;
+
+    AActor* RootlessActor = World->SpawnActor<AActor>();
+    TestNotNull(TEXT("应创建无根组件测试 Actor"), RootlessActor);
+    TestNull(TEXT("普通 AActor 默认应无根组件"), RootlessActor ? RootlessActor->GetRootComponent() : nullptr);
+    AddExpectedError(TEXT("StartFormationTransition: 跳过无效或无根组件的单位"),
+        EAutomationExpectedErrorFlags::Contains, 1);
+    AddExpectedError(TEXT("StartFormationTransition: 没有可移动的有效单位"),
+        EAutomationExpectedErrorFlags::Contains, 1);
+    TestFalse(TEXT("仅包含无根组件 Actor 时不应启动伪过渡"),
+        Manager->StartFormationTransition({RootlessActor}, FromFormation, ToFormation, Config));
+    TestFalse(TEXT("拒绝无根组件 Actor 后不应处于变换中"), Manager->IsTransitioning());
+
+    FFormationData NonFiniteFromFormation = FromFormation;
+    NonFiniteFromFormation.Positions[0].X = std::numeric_limits<float>::quiet_NaN();
+    AddExpectedError(TEXT("StartFormationTransition: 起始阵型包含非有限位置"),
+        EAutomationExpectedErrorFlags::Contains, 1);
+    TestFalse(TEXT("含非有限位置的阵型不应启动过渡"),
+        Manager->StartFormationTransition({RootlessActor}, NonFiniteFromFormation, ToFormation, Config));
+    TestFalse(TEXT("拒绝非有限阵型后不应处于变换中"), Manager->IsTransitioning());
+
+    AActor* MovableActor = World->SpawnActor<AActor>();
+    USceneComponent* RootComponent = MovableActor
+        ? NewObject<USceneComponent>(MovableActor, TEXT("FormationTestRoot"))
+        : nullptr;
+    if (!TestNotNull(TEXT("应创建可移动测试 Actor"), MovableActor)
+        || !TestNotNull(TEXT("应创建测试根组件"), RootComponent))
+    {
+        return false;
+    }
+    MovableActor->SetRootComponent(RootComponent);
+    MovableActor->AddInstanceComponent(RootComponent);
+    RootComponent->RegisterComponent();
+
+    MovableActor->SetActorScale3D(FVector::OneVector);
+    TestTrue(TEXT("有根组件 Actor 应成功启动过渡"),
+        Manager->StartFormationTransition({MovableActor}, FromFormation, ToFormation, Config));
+
+    const FVector ExternalScale(2.0f, 3.0f, 4.0f);
+    MovableActor->SetActorScale3D(ExternalScale);
+    UActorComponent* TickableManager = Manager;
+    TickableManager->TickComponent(0.016f, LEVELTICK_All, nullptr);
+    TestTrue(TEXT("阵型位置过渡不应每帧覆盖外部缩放"),
+        MovableActor->GetActorScale3D().Equals(ExternalScale));
+
+    Manager->StopFormationTransition(false);
     return true;
 }
 

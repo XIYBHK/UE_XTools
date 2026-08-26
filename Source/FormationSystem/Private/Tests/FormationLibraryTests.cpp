@@ -9,6 +9,7 @@
 #include "FormationLibrary.h"
 #include "FormationMathUtils.h"
 #include "Misc/AutomationTest.h"
+#include <limits>
 
 namespace
 {
@@ -122,6 +123,15 @@ bool FFormationLibrary_TransformsAndValidatesData::RunTest(const FString& Parame
 	FFormationData InvalidFormation;
 	TestFalse(TEXT("空阵型数据应验证失败"), UFormationLibrary::ValidateFormationData(InvalidFormation, ErrorMessage));
 	TestFalse(TEXT("空阵型验证应提供原因"), ErrorMessage.IsEmpty());
+	TestTrue(TEXT("两个空阵型计算变换成本应拒绝计算"),
+		UFormationLibrary::CalculateTransitionCost(InvalidFormation, InvalidFormation) < 0.0f);
+
+	FFormationData NonFiniteFormation = Formation;
+	NonFiniteFormation.Positions[0].X = std::numeric_limits<float>::quiet_NaN();
+	TestFalse(TEXT("含非有限位置的阵型应验证失败"),
+		UFormationLibrary::ValidateFormationData(NonFiniteFormation, ErrorMessage));
+	TestTrue(TEXT("含非有限位置的阵型成本应拒绝计算"),
+		UFormationLibrary::CalculateTransitionCost(NonFiniteFormation, Formation) < 0.0f);
 
 	return true;
 }
