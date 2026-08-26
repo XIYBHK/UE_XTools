@@ -173,7 +173,7 @@ bool FActorPoolMemoryOptimizer::ShouldPreallocate(const FActorPool& Pool) const
     FObjectPoolStats PoolStats = Pool.GetStats();
     
     // 检查池是否已满
-    if (PoolStats.PoolSize >= Pool.GetPoolSize()) // 假设有GetMaxSize方法
+    if (PoolStats.PoolSize >= Pool.GetMaxSize())
     {
         return false;
     }

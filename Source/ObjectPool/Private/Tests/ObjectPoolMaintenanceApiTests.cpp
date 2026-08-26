@@ -4,16 +4,19 @@
 */
 
 #include "ObjectPoolManager.h"
+#include "ObjectPool.h"
 #include "ObjectPoolSettings.h"
 #include "ObjectPoolSubsystem.h"
 #include "ObjectPoolUtils.h"
 #include "ActorPool.h"
+#include "ActorPoolMemoryOptimizer.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/Package.h"
 
 namespace
 {
@@ -160,6 +163,41 @@ bool FObjectPoolManagerAutoResizeDeterministicTest::RunTest(const FString& Param
     return true;
 }
 
+// M-18 回归：智能预分配必须比较当前池大小与容量上限，而不是将当前大小与自身比较。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FActorPoolMemoryOptimizerPreallocationTest,
+    "XTools.ObjectPool.Manager.MemoryOptimizerPreallocationUsesCapacity",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FActorPoolMemoryOptimizerPreallocationTest::RunTest(const FString& Parameters)
+{
+    AddExpectedError(TEXT("World has no context!"),
+        EAutomationExpectedErrorFlags::Contains, 1);
+    FScopedMaintenanceTestWorld TestWorld(TEXT("ObjectPoolTest_MemoryOptimizer"));
+    UWorld* World = TestWorld.Get();
+    if (!TestNotNull(TEXT("应能创建测试世界"), World))
+    {
+        return false;
+    }
+
+    FActorPool Pool(AActor::StaticClass(), 1, 2);
+    Pool.PrewarmPool(World, 1);
+    AActor* ActiveActor = Pool.GetActor(World, FTransform::Identity);
+    if (!TestNotNull(TEXT("应能从预热池获取Actor"), ActiveActor))
+    {
+        return false;
+    }
+
+    FActorPoolMemoryOptimizer Optimizer;
+    TestTrue(TEXT("高使用率且未达到容量上限时应建议预分配"),
+        Optimizer.ShouldPreallocate(Pool));
+
+    Pool.SetMaxSize(Pool.GetPoolSize());
+    TestFalse(TEXT("达到容量上限时不应建议预分配"),
+        Optimizer.ShouldPreallocate(Pool));
+
+    return true;
+}
+
 // M-18 回归：FObjectPoolUtils 中保留的公共旧工具函数行为钉定（仓库内零调用但属于导出 API）
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolUtilsLegacyApiBehaviorTest,
     "XTools.ObjectPool.Utils.LegacyUtilityApiPinned",
@@ -279,11 +317,63 @@ bool FObjectPoolSubsystemRegisterSpawnReturnRoundtripTest::RunTest(const FString
         TestEqual(TEXT("当前活跃数应为1"), AllStats[0].CurrentActive, 1);
         TestEqual(TEXT("当前可用数应为0"), AllStats[0].CurrentAvailable, 0);
         TestEqual(TEXT("累计获取请求数应为2"), AllStats[0].TotalAcquired, 2);
+        TestEqual(TEXT("累计归还数应为1"), AllStats[0].TotalReleased, 1);
+        TestEqual(TEXT("两次获取中一次命中，命中率应为0.5"), AllStats[0].HitRate, 0.5f);
     }
 
     // 按类清空路径回归：清空后池数量归零
     TestTrue(TEXT("按类清空应成功"), Subsystem->ClearPoolByClass(AActor::StaticClass()));
     TestEqual(TEXT("清空后池数量应为0"), Subsystem->GetPoolCount(), 0);
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolConsoleClassResolutionTest,
+    "XTools.ObjectPool.Console.UniqueRegisteredClassResolution",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolConsoleClassResolutionTest::RunTest(const FString& Parameters)
+{
+    UPackage* PackageA = CreatePackage(TEXT("/Temp/ObjectPoolConsoleResolution/A"));
+    UPackage* PackageB = CreatePackage(TEXT("/Temp/ObjectPoolConsoleResolution/B"));
+    UClass* ClassA = NewObject<UClass>(PackageA, TEXT("BP_SharedPoolActor_C"), RF_Transient);
+    UClass* ClassB = NewObject<UClass>(PackageB, TEXT("BP_SharedPoolActor_C"), RF_Transient);
+    if (!TestNotNull(TEXT("应创建第一个同名测试类"), ClassA)
+        || !TestNotNull(TEXT("应创建第二个同名测试类"), ClassB))
+    {
+        return false;
+    }
+
+    bool bAmbiguous = false;
+    TArray<FString> CandidatePaths;
+    const TArray<UClass*> Candidates = {AActor::StaticClass(), ClassA, ClassB, ClassA};
+
+    UClass* Resolved = FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+        TEXT("Actor"), Candidates, bAmbiguous, CandidatePaths);
+    TestTrue(TEXT("唯一原生短类名应解析到已注册候选"), Resolved == AActor::StaticClass());
+    TestFalse(TEXT("唯一短名不应标记歧义"), bAmbiguous);
+
+    Resolved = FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+        ClassA->GetPathName(), Candidates, bAmbiguous, CandidatePaths);
+    TestTrue(TEXT("完整对象路径应精确解析同名类"), Resolved == ClassA);
+    TestFalse(TEXT("完整路径不应标记歧义"), bAmbiguous);
+
+    const FString ExportTextPath = FString::Printf(TEXT("Class'%s'"), *ClassB->GetPathName());
+    Resolved = FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+        ExportTextPath, Candidates, bAmbiguous, CandidatePaths);
+    TestTrue(TEXT("导出文本路径应精确解析同名类"), Resolved == ClassB);
+
+    Resolved = FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+        TEXT("BP_SharedPoolActor_C"), Candidates, bAmbiguous, CandidatePaths);
+    TestNull(TEXT("歧义短名不得静默选择任一类"), Resolved);
+    TestTrue(TEXT("同名短类名应标记歧义"), bAmbiguous);
+    TestEqual(TEXT("歧义诊断应列出两个去重后的完整路径"), CandidatePaths.Num(), 2);
+
+    Resolved = FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+        TEXT("MissingPoolClass"), Candidates, bAmbiguous, CandidatePaths);
+    TestNull(TEXT("不存在的类名应返回空"), Resolved);
+    TestFalse(TEXT("未命中不应误报歧义"), bAmbiguous);
+    TestEqual(TEXT("未命中不应产生候选路径"), CandidatePaths.Num(), 0);
 
     return true;
 }

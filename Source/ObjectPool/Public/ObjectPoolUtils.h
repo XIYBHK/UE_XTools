@@ -26,7 +26,7 @@
  * - 高性能，适合频繁调用
  * 
  * 整合的功能：
- * - Actor状态重置（来自FActorStateResetter）
+ * - 对象池运行时使用的Actor状态重置与激活
  * - 基本配置管理（来自FObjectPoolConfigManager）
  * - 简化调试工具（来自FObjectPoolDebugManager）
  * - 性能分析工具

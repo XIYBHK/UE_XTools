@@ -6,6 +6,7 @@
 #include "ObjectPoolLibrary.h"
 #include "ObjectPoolSettings.h"
 #include "ObjectPoolSubsystem.h"
+#include "ObjectPoolM14TestTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -95,6 +96,18 @@ namespace
         bool bOriginalValue = false;
     };
 
+    /** 负向生成测试会按契约触发多层 Error 日志；仅该测试抑制日志事件，业务断言仍正常记录。 */
+    class FObjectPoolExpectedSpawnFailureTestBase : public FAutomationTestBase
+    {
+    public:
+        FObjectPoolExpectedSpawnFailureTestBase(const FString& InName, bool bInComplexTask)
+            : FAutomationTestBase(InName, bInComplexTask)
+        {
+        }
+
+        virtual bool SuppressLogs() override { return true; }
+    };
+
     /** 构造硬限制已满的池：注册 AActor（初始 0、硬限制 1）并预热 1 个实例，不依赖 Tick 的延迟预热 */
     UObjectPoolSubsystem* BuildFullPool(UWorld* World)
     {
@@ -141,6 +154,11 @@ bool FObjectPoolFallbackSpawnResultCodeTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("回退Actor结果码应为回退生成"), static_cast<int32>(Result), static_cast<int32>(EPoolOpResult::FallbackSpawned));
     TestFalse(TEXT("回退Actor不应受池管理"), UObjectPoolLibrary::IsActorPooled(World, FallbackActor));
 
+    TArray<AActor*> MixedActors = { PooledActor, FallbackActor };
+    TestEqual(TEXT("批量归还应只统计实际归还成功的池对象"),
+        UObjectPoolLibrary::BatchReturnActors(World, MixedActors), 1);
+    TestTrue(TEXT("批量归还不应隐式销毁非池对象"), IsValid(FallbackActor));
+
     const bool bReturned = UObjectPoolLibrary::ReturnActorToPoolEx(World, FallbackActor, Result);
     TestFalse(TEXT("归还非池对象应返回false"), bReturned);
     TestEqual(TEXT("归还非池对象结果码应为非池对象"), static_cast<int32>(Result), static_cast<int32>(EPoolOpResult::NotPooled));
@@ -174,6 +192,84 @@ bool FObjectPoolAcquireOrSpawnFallbackTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("硬限制已满时应回退生成Actor"), FallbackActor != nullptr);
     TestEqual(TEXT("AcquireOrSpawn应透传回退生成结果码"), static_cast<int32>(Result), static_cast<int32>(EPoolOpResult::FallbackSpawned));
     TestFalse(TEXT("回退Actor不应受池管理"), UObjectPoolLibrary::IsActorPooled(World, FallbackActor));
+
+    return true;
+}
+
+// M-14 回归：请求类无法生成时，普通/Ex/获取或生成/批量入口均不得返回 AActor 基类空壳。
+// 合法的池满回退由 FObjectPoolFallbackSpawnResultCodeTest 覆盖，不能因本测试而删除。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST_PRIVATE(FObjectPoolRejectsUnspawnableClassTest,
+    FObjectPoolExpectedSpawnFailureTestBase,
+    "XTools.ObjectPool.Library.RejectsUnspawnableClassWithoutBaseActorFallback",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter,
+    __FILE__, __LINE__)
+namespace
+{
+    FObjectPoolRejectsUnspawnableClassTest FObjectPoolRejectsUnspawnableClassTestAutomationInstance(TEXT("FObjectPoolRejectsUnspawnableClassTest"));
+}
+
+bool FObjectPoolRejectsUnspawnableClassTest::RunTest(const FString& Parameters)
+{
+    FScopedObjectPoolTestWorld TestWorld(TEXT("ObjectPoolTest_M14Unspawnable"));
+    UWorld* World = TestWorld.Get();
+    if (!TestNotNull(TEXT("应能创建测试世界"), World))
+    {
+        return false;
+    }
+
+    const TSubclassOf<AActor> AbstractClass = AObjectPoolM14AbstractTestActor::StaticClass();
+    const FTransform SpawnTransform = FTransform::Identity;
+
+    UObjectPoolSubsystem* Subsystem = World->GetSubsystem<UObjectPoolSubsystem>();
+    if (!TestNotNull(TEXT("应能创建对象池子系统"), Subsystem))
+    {
+        return false;
+    }
+
+    TestNull(TEXT("子系统普通入口对抽象类应返回nullptr"),
+        Subsystem->SpawnActorFromPool(AbstractClass, SpawnTransform));
+    TestNull(TEXT("子系统Deferred入口对抽象类应返回nullptr"),
+        Subsystem->AcquireDeferredFromPool(AbstractClass));
+
+    EPoolOpResult Result = EPoolOpResult::Success;
+    TestNull(TEXT("库普通入口对抽象类应返回nullptr"),
+        UObjectPoolLibrary::SpawnActorFromPool(World, AbstractClass, SpawnTransform));
+
+    TestNull(TEXT("库Ex入口对抽象类应返回nullptr"),
+        UObjectPoolLibrary::SpawnActorFromPoolEx(World, AbstractClass, SpawnTransform, Result));
+    TestEqual(TEXT("Ex失败结果不得报告FallbackSpawned"), static_cast<int32>(Result),
+        static_cast<int32>(EPoolOpResult::InvalidArgs));
+
+    Result = EPoolOpResult::Success;
+    TestNull(TEXT("AcquireOrSpawn对抽象类应返回nullptr"),
+        UObjectPoolLibrary::AcquireOrSpawn(World, AbstractClass, SpawnTransform, Result));
+    TestEqual(TEXT("AcquireOrSpawn失败结果不得报告FallbackSpawned"), static_cast<int32>(Result),
+        static_cast<int32>(EPoolOpResult::InvalidArgs));
+
+    TArray<FTransform> Transforms;
+    Transforms.Add(SpawnTransform);
+    Transforms.Add(FTransform(FRotator::ZeroRotator, FVector(100.0f, 0.0f, 0.0f)));
+    Transforms.Add(FTransform(FRotator::ZeroRotator, FVector(200.0f, 0.0f, 0.0f)));
+
+    TArray<AActor*> BatchActors;
+    const int32 BatchSuccessCount = UObjectPoolLibrary::BatchSpawnActors(
+        World, AbstractClass, Transforms, BatchActors);
+    TestEqual(TEXT("普通批量抽象类成功数应为0"), BatchSuccessCount, 0);
+    TestEqual(TEXT("普通批量输出应保留每个输入的nullptr占位"), BatchActors.Num(), Transforms.Num());
+    for (AActor* Actor : BatchActors)
+    {
+        TestNull(TEXT("普通批量失败项不得返回基类或其他Actor"), Actor);
+    }
+
+    BatchActors.Reset();
+    const int32 BatchExSuccessCount = UObjectPoolLibrary::BatchSpawnActorsEx(
+        World, AbstractClass, Transforms, BatchActors, EBatchFailurePolicy::BestEffort, true);
+    TestEqual(TEXT("Ex批量抽象类成功数应为0"), BatchExSuccessCount, 0);
+    TestEqual(TEXT("Ex批量保持顺序时应保留nullptr占位"), BatchActors.Num(), Transforms.Num());
+    for (AActor* Actor : BatchActors)
+    {
+        TestNull(TEXT("Ex批量失败项不得返回基类或其他Actor"), Actor);
+    }
 
     return true;
 }

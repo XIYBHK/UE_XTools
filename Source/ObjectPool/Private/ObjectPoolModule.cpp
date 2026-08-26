@@ -15,6 +15,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/PackageName.h"
 
 //  定义日志类别
 DEFINE_LOG_CATEGORY(LogObjectPool);
@@ -117,6 +118,72 @@ namespace
         OBJECTPOOL_LOG(Log, TEXT("对象池统计: %d个池, %d次生成, %.1f%%命中率"),
             PoolCount, SysStats.TotalSpawnCalls, HitRate);
     }
+}
+
+UClass* FObjectPoolModule::ResolveUniquePoolClassIdentifier(
+    const FString& ClassIdentifier,
+    TConstArrayView<UClass*> CandidateClasses,
+    bool& bOutAmbiguous,
+    TArray<FString>& OutCandidatePaths)
+{
+    bOutAmbiguous = false;
+    OutCandidatePaths.Reset();
+
+    FString NormalizedIdentifier = ClassIdentifier;
+    NormalizedIdentifier.TrimStartAndEndInline();
+    if (NormalizedIdentifier.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    // 同时接受 /Game/...、/Script/... 和 Class'/Game/...' 导出文本路径。
+    const FString ObjectPath = FPackageName::ExportTextPathToObjectPath(NormalizedIdentifier);
+    TArray<UClass*> UniqueCandidates;
+    TSet<UClass*> SeenClasses;
+    UniqueCandidates.Reserve(CandidateClasses.Num());
+    for (UClass* CandidateClass : CandidateClasses)
+    {
+        if (IsValid(CandidateClass) && !SeenClasses.Contains(CandidateClass))
+        {
+            SeenClasses.Add(CandidateClass);
+            UniqueCandidates.Add(CandidateClass);
+        }
+    }
+
+    TArray<UClass*> Matches;
+    for (UClass* CandidateClass : UniqueCandidates)
+    {
+        if (CandidateClass->GetPathName().Equals(ObjectPath, ESearchCase::IgnoreCase)
+            || CandidateClass->GetFullName().Equals(NormalizedIdentifier, ESearchCase::IgnoreCase))
+        {
+            Matches.Add(CandidateClass);
+        }
+    }
+
+    if (Matches.IsEmpty())
+    {
+        for (UClass* CandidateClass : UniqueCandidates)
+        {
+            if (CandidateClass->GetName().Equals(NormalizedIdentifier, ESearchCase::IgnoreCase))
+            {
+                Matches.Add(CandidateClass);
+            }
+        }
+    }
+
+    for (UClass* Match : Matches)
+    {
+        OutCandidatePaths.Add(Match->GetPathName());
+    }
+    OutCandidatePaths.Sort();
+
+    if (Matches.Num() == 1)
+    {
+        return Matches[0];
+    }
+
+    bOutAmbiguous = Matches.Num() > 1;
+    return nullptr;
 }
 
 void FObjectPoolModule::StartupModule()
@@ -232,35 +299,48 @@ void FObjectPoolModule::RegisterConsoleCommands()
 
             if (Args.Num() > 0)
             {
-                // 按类名查找并清空指定池
-                UClass* FoundClass = FindObject<UClass>(nullptr, *Args[0]);
-                if (!FoundClass)
+                TArray<UClass*> RegisteredClasses;
                 {
-                    FoundClass = FindObject<UClass>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *Args[0]));
+                    FReadScopeLock ReadLock(Subsystem->PoolsRWLock);
+                    RegisteredClasses.Reserve(Subsystem->ActorPools.Num());
+                    for (const auto& PoolPair : Subsystem->ActorPools)
+                    {
+                        if (PoolPair.Value.IsValid() && IsValid(PoolPair.Key))
+                        {
+                            RegisteredClasses.Add(PoolPair.Key);
+                        }
+                    }
                 }
+
+                bool bAmbiguous = false;
+                TArray<FString> CandidatePaths;
+                UClass* FoundClass = ResolveUniquePoolClassIdentifier(
+                    Args[0], RegisteredClasses, bAmbiguous, CandidatePaths);
+
+                if (bAmbiguous)
+                {
+                    OBJECTPOOL_LOG(Warning,
+                        TEXT("objectpool.clear: 短类名 '%s' 存在歧义，请使用完整路径。候选: %s"),
+                        *Args[0], *FString::Join(CandidatePaths, TEXT(", ")));
+                    return;
+                }
+
                 if (FoundClass && Subsystem->ClearPoolByClass(FoundClass))
                 {
-                    OBJECTPOOL_LOG(Log, TEXT("objectpool.clear: 已清空 %s 的对象池"), *Args[0]);
+                    OBJECTPOOL_LOG(Log, TEXT("objectpool.clear: 已清空 %s 的对象池"), *FoundClass->GetPathName());
                 }
                 else
                 {
-                    OBJECTPOOL_LOG(Warning, TEXT("objectpool.clear: 未找到类 '%s' 的对象池"), *Args[0]);
+                    OBJECTPOOL_LOG(Warning,
+                        TEXT("objectpool.clear: 当前已注册池中未找到类 '%s'；请使用短类名或完整对象路径"),
+                        *Args[0]);
                 }
             }
             else
             {
-                // 通过统计信息获取所有池的类名，逐个清空（ClearAllPools 非公开接口）
-                TArray<FObjectPoolStats> AllStats = Subsystem->GetAllPoolStats();
-                int32 ClearedCount = 0;
-                for (const FObjectPoolStats& Stats : AllStats)
-                {
-                    UClass* PoolClass = FindObject<UClass>(nullptr, *Stats.ActorClassName);
-                    if (PoolClass && Subsystem->ClearPoolByClass(PoolClass))
-                    {
-                        ++ClearedCount;
-                    }
-                }
-                OBJECTPOOL_LOG(Log, TEXT("objectpool.clear: 已清空 %d/%d 个对象池"), ClearedCount, AllStats.Num());
+                const int32 PoolCount = Subsystem->GetPoolCount();
+                Subsystem->ClearAllPools();
+                OBJECTPOOL_LOG(Log, TEXT("objectpool.clear: 已清空全部 %d 个对象池"), PoolCount);
             }
         }),
         ECVF_Default

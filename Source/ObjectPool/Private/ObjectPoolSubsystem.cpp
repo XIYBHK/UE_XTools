@@ -624,6 +624,11 @@ void UObjectPoolSubsystem::ClearAllPools()
 
 UObjectPoolSubsystem* UObjectPoolSubsystem::Get(const UObject* WorldContext)
 {
+    if (!GEngine || !WorldContext)
+    {
+        return nullptr;
+    }
+
     if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull))
     {
         return World->GetSubsystem<UObjectPoolSubsystem>();

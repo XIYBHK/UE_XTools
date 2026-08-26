@@ -53,6 +53,16 @@ public:
     }
 
 private:
+    /**
+     * 仅在当前已注册池类中解析控制台输入。
+     * 完整对象路径优先；短名必须唯一，避免同名蓝图类被静默选错。
+     */
+    static UClass* ResolveUniquePoolClassIdentifier(
+        const FString& ClassIdentifier,
+        TConstArrayView<UClass*> CandidateClasses,
+        bool& bOutAmbiguous,
+        TArray<FString>& OutCandidatePaths);
+
     /** 模块启动时的初始化 */
     void InitializeModule();
     
@@ -66,6 +76,10 @@ private:
     void UnregisterConsoleCommands();
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FObjectPoolConsoleClassResolutionTest;
+#endif
+
     /** 控制台命令句柄 */
     TArray<struct IConsoleCommand*> ConsoleCommands;
     

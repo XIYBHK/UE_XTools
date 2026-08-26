@@ -113,12 +113,12 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
         return nullptr;
     }
 
-    ++TotalRequests;
     AActor* ResultActor = nullptr;
 
     // 从可用列表获取Actor，登记 Activating 过渡状态
     {
         FWriteScopeLock WriteLock(PoolLock);
+        ++TotalRequests;
         PeriodicCleanup_RequiresLock();
         ResultActor = TakeFromAvailable_RequiresLock();
         if (ResultActor)
@@ -245,23 +245,23 @@ AActor* FActorPool::AcquireDeferred(UWorld* World)
         return nullptr;
     }
 
-    ++TotalRequests;
     AActor* ResultActor = nullptr;
 
     {
         FWriteScopeLock WriteLock(PoolLock);
+        ++TotalRequests;
         PeriodicCleanup_RequiresLock();
         ResultActor = TakeFromAvailable_RequiresLock();
         if (ResultActor)
         {
             // 复用实例也登记 Pending，确保 FinalizeDeferred 可验证来源
             PendingDeferredActors.Add(ResultActor);
+            UpdateStats(true);
         }
     }
 
     if (ResultActor)
     {
-        UpdateStats(true);
         if (Preallocator.IsValid())
         {
             Preallocator->RecordUsagePattern(ActiveActors.Num() + 1);

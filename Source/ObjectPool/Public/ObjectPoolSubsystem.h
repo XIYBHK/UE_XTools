@@ -18,6 +18,8 @@
 
 #include "ObjectPoolSubsystem.generated.h"
 
+class FObjectPoolModule;
+
 // 前向声明
 class FActorPool;
 
@@ -232,6 +234,8 @@ public:
 
 
 private:
+    friend class FObjectPoolModule;
+
     //  核心数据成员
 
     /** 池存储：Actor类 -> 池实例 (UE官方智能指针最佳实践) */

@@ -25,6 +25,9 @@ class UMeshComponent;
 
 /**
  * Actor状态重置管理器
+ *
+ * @deprecated 兼容性保留，未接入对象池运行时路径且部分扩展接口仍为空实现。
+ * 新代码请使用 FObjectPoolUtils::ResetActorForPooling / ActivateActorFromPool。
  * 
  * 职责：
  * - 提供完整的Actor状态重置功能

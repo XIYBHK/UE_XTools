@@ -22,6 +22,8 @@ class FActorPool;
 
 /**
  * Actor池内存优化器
+ *
+ * 兼容性说明：该导出工具不由 UObjectPoolSubsystem 自动调度，仅供外部代码按需显式调用。
  * 
  * 设计原则：
  * - 单一职责：专注于内存优化和监控

@@ -26,7 +26,7 @@ namespace XTools::ObjectPool
     {
         UWorld* World = nullptr;
 
-        if (WorldContext)
+        if (GEngine && WorldContext)
         {
             World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull);
         }
@@ -543,8 +543,11 @@ int32 UObjectPoolLibrary::BatchReturnActors(const UObject* WorldContext, const T
     {
         if (IsValid(Actor))
         {
-            ReturnActorToPool(WorldContext, Actor);
-            ++SuccessCount;
+            EPoolOpResult Result;
+            if (ReturnActorToPoolEx(WorldContext, Actor, Result))
+            {
+                ++SuccessCount;
+            }
         }
     }
     
