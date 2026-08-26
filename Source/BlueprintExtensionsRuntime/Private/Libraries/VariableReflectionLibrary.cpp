@@ -1,5 +1,8 @@
 ﻿#include "Libraries/VariableReflectionLibrary.h"
 
+#include "BlueprintExtensionsRuntime.h"
+#include "XToolsErrorReporter.h"
+
 TArray<FString> UVariableReflectionLibrary::GetVariableNames(UClass* Class, bool bIncludeSuper)
 {
 	TArray<FString> VariableName;
@@ -31,12 +34,27 @@ void UVariableReflectionLibrary::SetValueByString(UObject* OwnerObject, FString 
 		if (Field->HasAnyPropertyFlags(CPF_BlueprintVisible) &&
 			!Field->HasAnyPropertyFlags(CPF_BlueprintReadOnly))
 		{
-			Field->ImportText_InContainer(
+			const TCHAR* ImportResult = Field->ImportText_InContainer(
 				*Value,
 				OwnerObject,
 				OwnerObject,
 				PPF_None
 			);
+
+			if (!ImportResult)
+			{
+				FXToolsErrorReporter::Warning(
+					LogBlueprintExtensionsRuntime,
+					FString::Printf(TEXT("按字符串设置变量失败：属性 '%s' 无法导入值 '%s'"),
+						*VariableName, *Value),
+					TEXT("SetValueByString"));
+				return;
+			}
+
+#if WITH_EDITOR
+			FPropertyChangedEvent PropertyChangedEvent(Field, EPropertyChangeType::ValueSet);
+			OwnerObject->PostEditChangeProperty(PropertyChangedEvent);
+#endif
 		}
 	}
 }
