@@ -77,6 +77,10 @@ bool FRectangleGridSampling_AppliesTransformAndRejectsInvalidInput::RunTest(cons
 		UFormationSamplingLibrary::GenerateRectangleGrid(
 			2, 2, 0.0f, 100.0f, FVector::ZeroVector, FRotator::ZeroRotator,
 			EPoissonCoordinateSpace::Raw).IsEmpty());
+	TestTrue(TEXT("点数乘积超过int32容量时应在分配前返回空数组"),
+		UFormationSamplingLibrary::GenerateRectangleGrid(
+			50000, 50000, 100.0f, 100.0f, FVector::ZeroVector, FRotator::ZeroRotator,
+			EPoissonCoordinateSpace::Raw).IsEmpty());
 
 	return true;
 }

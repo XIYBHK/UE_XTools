@@ -32,6 +32,48 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPointSamplingCache_UpdatingExistingEntryDoesNotEvict,
+	"XTools.PointSampling.Cache.UpdatingExistingEntryDoesNotEvict",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSamplingCache_UpdatingExistingEntryDoesNotEvict::RunTest(const FString& Parameters)
+{
+	constexpr int32 CacheCapacity = 50;
+	FSamplingCache& Cache = FSamplingCache::Get();
+	Cache.ClearCache();
+
+	TArray<FPoissonCacheKey> Keys;
+	Keys.Reserve(CacheCapacity);
+	for (int32 Index = 0; Index < CacheCapacity; ++Index)
+	{
+		FPoissonCacheKey Key;
+		Key.TargetPointCount = Index + 1;
+		Keys.Add(Key);
+		Cache.Store(Key, {FVector(static_cast<double>(Index), 0.0, 0.0)});
+	}
+
+	const FPoissonCacheKey& UpdatedKey = Keys.Last();
+	const FVector UpdatedValue(999.0, 0.0, 0.0);
+	Cache.Store(UpdatedKey, {UpdatedValue});
+
+	for (int32 Index = 0; Index < Keys.Num(); ++Index)
+	{
+		const TOptional<TArray<FVector>> CachedPoints = Cache.GetCached(Keys[Index]);
+		TestTrue(*FString::Printf(TEXT("更新已有键后缓存项%d不应被淘汰"), Index), CachedPoints.IsSet());
+		if (CachedPoints.IsSet())
+		{
+			const FVector ExpectedValue = Index == Keys.Num() - 1
+				? UpdatedValue
+				: FVector(static_cast<double>(Index), 0.0, 0.0);
+			TestEqual(*FString::Printf(TEXT("缓存项%d应保留最新值"), Index), CachedPoints.GetValue()[0], ExpectedValue);
+		}
+	}
+
+	Cache.ClearCache();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFormationSampling_PrimitiveAlgorithms,
 	"XTools.PointSampling.Formation.PrimitiveAlgorithms",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -91,14 +133,14 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> CachedCircle = UFormationSamplingLibrary::GenerateCircle(
 		12, FVector(100.0f, 0.0f, 0.0f), FRotator::ZeroRotator, 100.0f, false, false,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, EPoissonCoordinateSpace::World,
-		0.0f, 123, true);
+		0.25f, 123, true);
 	int32 CacheHitsAfterFirstCall = 0;
 	int32 CacheMissesAfterFirstCall = 0;
 	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsAfterFirstCall, CacheMissesAfterFirstCall);
 	const TArray<FTransform> CachedCircleAtNewCenter = UFormationSamplingLibrary::GenerateCircle(
 		12, FVector(300.0f, 0.0f, 0.0f), FRotator::ZeroRotator, 100.0f, false, false,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, EPoissonCoordinateSpace::World,
-		0.0f, 123, true);
+		0.25f, 123, true);
 	int32 CacheHitsAfterSecondCall = 0;
 	int32 CacheMissesAfterSecondCall = 0;
 	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsAfterSecondCall, CacheMissesAfterSecondCall);
@@ -114,13 +156,26 @@ bool FFormationSampling_PrimitiveAlgorithms::RunTest(const FString& Parameters)
 	const TArray<FTransform> UncachedCircle = UFormationSamplingLibrary::GenerateCircle(
 		12, FVector(500.0f, 0.0f, 0.0f), FRotator::ZeroRotator, 100.0f, false, false,
 		ECircleDistributionMode::Uniform, 50.0f, 0.0f, true, EPoissonCoordinateSpace::World,
-		0.0f, 123, false);
+		0.25f, 123, false);
 	int32 CacheHitsAfterDisabledCall = 0;
 	int32 CacheMissesAfterDisabledCall = 0;
 	UPointSamplingLibrary::GetPoissonSamplingCacheStats(CacheHitsAfterDisabledCall, CacheMissesAfterDisabledCall);
 	TestEqual(TEXT("关闭圆形缓存不应读取缓存"), CacheHitsAfterDisabledCall, CacheHitsAfterSecondCall);
 	TestEqual(TEXT("关闭圆形缓存不应写入缓存统计"), CacheMissesAfterDisabledCall, CacheMissesAfterSecondCall);
 	TestEqual(TEXT("关闭圆形缓存仍应生成有效结果"), UncachedCircle.Num(), 12);
+	if (CachedCircle.Num() == CachedCircleAtNewCenter.Num() && CachedCircle.Num() == UncachedCircle.Num())
+	{
+		for (int32 Index = 0; Index < CachedCircle.Num(); ++Index)
+		{
+			const FVector FirstLocalPoint = CachedCircle[Index].GetLocation() - FVector(100.0f, 0.0f, 0.0f);
+			const FVector CachedLocalPoint = CachedCircleAtNewCenter[Index].GetLocation() - FVector(300.0f, 0.0f, 0.0f);
+			const FVector UncachedLocalPoint = UncachedCircle[Index].GetLocation() - FVector(500.0f, 0.0f, 0.0f);
+			TestTrue(*FString::Printf(TEXT("同种子扰动点%d命中缓存后应保持局部几何"), Index),
+				CachedLocalPoint.Equals(FirstLocalPoint, UE_KINDA_SMALL_NUMBER));
+			TestTrue(*FString::Printf(TEXT("同种子扰动点%d关闭缓存重算后应保持局部几何"), Index),
+				UncachedLocalPoint.Equals(FirstLocalPoint, UE_KINDA_SMALL_NUMBER));
+		}
+	}
 
 	const TArray<FTransform> SolidCircle = UFormationSamplingLibrary::GenerateCircle(
 		12, FVector::ZeroVector, FRotator::ZeroRotator, 100.0f, false, true,

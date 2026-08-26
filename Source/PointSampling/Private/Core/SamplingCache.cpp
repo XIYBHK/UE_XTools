@@ -28,7 +28,7 @@ void FSamplingCache::Store(const FPoissonCacheKey& Key, const TArray<FVector>& P
 	FScopeLock Lock(&CacheLock);
 	
 	//  LRU淘汰策略：缓存满时移除最久未使用的条目
-	if (Cache.Num() >= MaxCacheSize)
+	if (Cache.Num() >= MaxCacheSize && !Cache.Contains(Key))
 	{
 		RemoveLRUEntry();
 	}
