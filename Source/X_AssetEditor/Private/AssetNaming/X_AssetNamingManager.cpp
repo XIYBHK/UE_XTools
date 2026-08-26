@@ -4,6 +4,7 @@
 */
 
 #include "AssetNaming/X_AssetNamingManager.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "AssetNaming/X_AssetNamingDelegates.h"
 #include "Settings/X_AssetEditorSettings.h"
 #include "X_AssetEditor.h"

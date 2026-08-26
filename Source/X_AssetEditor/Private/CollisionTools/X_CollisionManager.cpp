@@ -15,6 +15,7 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Misc/MessageDialog.h"
+#include "Misc/ScopedSlowTask.h"
 #include "Editor.h"
 #include "ScopedTransaction.h"
 #include "Subsystems/AssetEditorSubsystem.h"
@@ -29,8 +30,13 @@ FX_CollisionOperationResult FX_CollisionManager::RemoveCollisionFromAssets(const
 
     LogOperation(FString::Printf(TEXT("开始移除 %d 个资产的碰撞"), SelectedAssets.Num()));
 
+    FScopedSlowTask Progress(SelectedAssets.Num(), FText::FromString(TEXT("正在移除静态网格体碰撞...")));
+    Progress.MakeDialogDelayed(1.0f);
+
     for (const FAssetData& AssetData : SelectedAssets)
     {
+        Progress.EnterProgressFrame(1.0f, FText::FromName(AssetData.AssetName));
+
         if (!IsStaticMeshAsset(AssetData))
         {
             Result.SkippedCount++;
@@ -73,8 +79,13 @@ FX_CollisionOperationResult FX_CollisionManager::AddConvexCollisionToAssets(cons
 
     LogOperation(FString::Printf(TEXT("开始为 %d 个资产添加凸包碰撞"), SelectedAssets.Num()));
 
+    FScopedSlowTask Progress(SelectedAssets.Num(), FText::FromString(TEXT("正在添加静态网格体凸包碰撞...")));
+    Progress.MakeDialogDelayed(1.0f);
+
     for (const FAssetData& AssetData : SelectedAssets)
     {
+        Progress.EnterProgressFrame(1.0f, FText::FromName(AssetData.AssetName));
+
         if (!IsStaticMeshAsset(AssetData))
         {
             Result.SkippedCount++;
@@ -135,8 +146,13 @@ FX_CollisionOperationResult FX_CollisionManager::SetCollisionComplexity(const TA
     
     LogOperation(FString::Printf(TEXT("开始为 %d 个资产设置碰撞复杂度为: %s"), SelectedAssets.Num(), *ComplexityName));
 
+    FScopedSlowTask Progress(SelectedAssets.Num(), FText::FromString(TEXT("正在设置静态网格体碰撞复杂度...")));
+    Progress.MakeDialogDelayed(1.0f);
+
     for (const FAssetData& AssetData : SelectedAssets)
     {
+        Progress.EnterProgressFrame(1.0f, FText::FromName(AssetData.AssetName));
+
         if (!IsStaticMeshAsset(AssetData))
         {
             Result.SkippedCount++;
@@ -179,6 +195,9 @@ FX_CollisionOperationResult FX_CollisionManager::AddSimpleCollisionToAssets(cons
 
     LogOperation(FString::Printf(TEXT("开始为 %d 个资产添加简单碰撞，类型=%d"), SelectedAssets.Num(), (int32)ShapeType));
 
+    FScopedSlowTask Progress(SelectedAssets.Num(), FText::FromString(TEXT("正在添加静态网格体简单碰撞...")));
+    Progress.MakeDialogDelayed(1.0f);
+
     UStaticMeshEditorSubsystem* SMEditorSubsystem = GEditor ? GEditor->GetEditorSubsystem<UStaticMeshEditorSubsystem>() : nullptr;
     if (!SMEditorSubsystem)
     {
@@ -190,6 +209,8 @@ FX_CollisionOperationResult FX_CollisionManager::AddSimpleCollisionToAssets(cons
 
     for (const FAssetData& AssetData : SelectedAssets)
     {
+        Progress.EnterProgressFrame(1.0f, FText::FromName(AssetData.AssetName));
+
         if (!IsStaticMeshAsset(AssetData))
         {
             Result.SkippedCount++;
@@ -328,8 +349,8 @@ bool FX_CollisionManager::RemoveCollisionFromMesh(UStaticMesh* StaticMesh)
     BodySetup->MarkPackageDirty();
     BodySetup->CreatePhysicsMeshes();
 
-    // 保存修改（内部负责 StaticMesh 标脏与编辑器刷新）
-    SaveStaticMeshChanges(StaticMesh);
+    // 完成修改（内部负责 StaticMesh 标脏与编辑器刷新）
+    FinalizeStaticMeshChanges(StaticMesh);
     return true;
 }
 
@@ -387,8 +408,8 @@ bool FX_CollisionManager::AddConvexCollisionToMesh(UStaticMesh* StaticMesh)
     BodySetup->MarkPackageDirty();
     BodySetup->CreatePhysicsMeshes();
 
-    // 保存修改
-    SaveStaticMeshChanges(StaticMesh);
+    // 完成修改
+    FinalizeStaticMeshChanges(StaticMesh);
     return true;
 }
 
@@ -420,14 +441,14 @@ bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, EC
     // 重新构建碰撞
     BodySetup->CreatePhysicsMeshes();
 
-    // 保存修改
-    SaveStaticMeshChanges(StaticMesh);
+    // 完成修改
+    FinalizeStaticMeshChanges(StaticMesh);
     LogOperation(TEXT("碰撞复杂度设置成功"), false);
 
     return true;
 }
 
-void FX_CollisionManager::SaveStaticMeshChanges(UStaticMesh* StaticMesh)
+void FX_CollisionManager::FinalizeStaticMeshChanges(UStaticMesh* StaticMesh)
 {
     if (!StaticMesh)
     {

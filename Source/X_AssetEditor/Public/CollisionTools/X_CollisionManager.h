@@ -154,10 +154,10 @@ public:
 private:
 
     /**
-     * 保存静态网格体的修改
+     * 完成静态网格体修改：标记包为脏并触发编辑器刷新
      * @param StaticMesh 静态网格体
      */
-    static void SaveStaticMeshChanges(UStaticMesh* StaticMesh);
+    static void FinalizeStaticMeshChanges(UStaticMesh* StaticMesh);
 
     /**
      * 记录操作日志
