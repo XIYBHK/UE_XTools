@@ -6,6 +6,7 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Async/ParallelFor.h"
 #include "RandomSample.h"
 #include "RandomShuffleArrayLibrary.h"
 #include "WeightPoolSample.h"
@@ -327,6 +328,114 @@ bool FRandomShuffle_PRDStateMapCapIsEnforced::RunTest(const FString& Parameters)
 
 	URandomShuffleArrayLibrary::ClearAllPRDStates();
 
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// M-7 回归：自动状态路径（PseudoRandomBool/FromStream）的读-算-写原子性。
+// 通过 friend 注入"始终失败"的受控随机源（0 < BaseChance < 1 时 RandomFunc()=1.0
+// 必然不满足 < OutActualChance，包括概率饱和到 1.0 的严格小于情形），使失败计数
+// 成为完全确定性的递增序列：
+// 1) 单线程：失败计数逐次严格 +1；
+// 2) 上限：持续推进后计数被钳制在 MaxFailureCount；
+// 3) 多线程：同一 StateID 并发必失败调用后，失败计数严格等于总调用次数。
+// 断言不含任何概率成分，也不依赖调度时序——原子实现下恒通过。
+// ---------------------------------------------------------------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRandomShuffle_PRDAutoStateAtomicUpdate,
+	"XTools.RandomShuffles.PRD.AutoStateAtomicUpdate",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRandomShuffle_PRDAutoStateAtomicUpdate::RunTest(const FString& Parameters)
+{
+	// 受控随机源：对任意 0 < P < 1 恒失败（OutActualChance <= 1，1.0 < OutActualChance 恒为假）
+	const TFunction<float()> AlwaysFail = []() { return 1.0f; };
+
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
+
+	// 1) 单线程确定性：失败计数逐次严格 +1，且与输出参数一致
+	const FString SingleID = TEXT("RandomShuffleTest.AutoAtomic.Single");
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		int32 Updated = INDEX_NONE;
+		TestFalse(TEXT("注入必失败随机值时不应触发"),
+			URandomShuffleArrayLibrary::ApplyPRDAutoLocked(0.5f, SingleID, AlwaysFail, Updated));
+		TestEqual(TEXT("失败计数应逐次严格+1"), Updated, Index + 1);
+	}
+
+	// 2) 上限确定性：超过 MaxFailureCount 后计数被钳制在上限
+	const FString CapID = TEXT("RandomShuffleTest.AutoAtomic.Cap");
+	int32 CapUpdated = 0;
+	for (int32 Index = 0; Index < RandomShuffles::Config::MaxFailureCount + 5; ++Index)
+	{
+		URandomShuffleArrayLibrary::ApplyPRDAutoLocked(0.5f, CapID, AlwaysFail, CapUpdated);
+	}
+	TestEqual(TEXT("失败计数应被钳制在MaxFailureCount"), CapUpdated, RandomShuffles::Config::MaxFailureCount);
+
+	// 3) 多线程原子性：同一 StateID 并发必失败调用，失败计数严格等于总调用次数
+	const FString SharedID = TEXT("RandomShuffleTest.AutoAtomic.Concurrent");
+	constexpr int32 NumTasks = 8;
+	constexpr int32 CallsPerTask = 125;
+	constexpr int32 TotalCalls = NumTasks * CallsPerTask; // 1000，远低于上限，排除钳制干扰
+	static_assert(TotalCalls <= RandomShuffles::Config::MaxFailureCount, "并发总次数必须低于失败计数上限");
+
+	TAtomic<int32> ExecutedCalls(0);
+	ParallelFor(NumTasks, [&ExecutedCalls, &AlwaysFail, &SharedID](int32)
+	{
+		for (int32 Index = 0; Index < CallsPerTask; ++Index)
+		{
+			int32 Ignored = 0;
+			URandomShuffleArrayLibrary::ApplyPRDAutoLocked(0.5f, SharedID, AlwaysFail, Ignored);
+			++ExecutedCalls;
+		}
+	});
+	TestEqual(TEXT("并发任务应全部执行完毕"), ExecutedCalls.Load(), TotalCalls);
+
+	// 读取共享状态快照（friend 私有访问；锁内读取与生产路径同一把锁）
+	int32 FinalCount = INDEX_NONE;
+	{
+		FScopeLock Lock(&URandomShuffleArrayLibrary::PRDStateLock);
+		if (const int32* Value = URandomShuffleArrayLibrary::PRDStateMap.Find(FName(*SharedID)))
+		{
+			FinalCount = *Value;
+		}
+	}
+	TestEqual(TEXT("并发后失败计数应严格等于总调用次数（无丢失更新）"), FinalCount, TotalCalls);
+
+	// 清理测试状态，避免影响后续测试的 StateMapSize 断言
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRandomShuffle_PRDInterpolatesBetweenTableEntries,
+	"XTools.RandomShuffles.PRD.InterpolatesBetweenTableEntries",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRandomShuffle_PRDInterpolatesBetweenTableEntries::RunTest(const FString& Parameters)
+{
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
+
+	FRandomStream Stream(12345);
+	int32 FailureCount = 0;
+	float Chance499 = 0.0f;
+	float Chance500 = 0.0f;
+	float Chance501 = 0.0f;
+
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(
+		0.499f, Stream, FailureCount, Chance499, TEXT("RandomShuffleTest.Interpolation.499"), 0);
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(
+		0.500f, Stream, FailureCount, Chance500, TEXT("RandomShuffleTest.Interpolation.500"), 0);
+	URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(
+		0.501f, Stream, FailureCount, Chance501, TEXT("RandomShuffleTest.Interpolation.501"), 0);
+
+	TestTrue(TEXT("PRD实际概率应随基础概率连续递增"), Chance499 < Chance500 && Chance500 < Chance501);
+	TestTrue(TEXT("0.499应使用相邻表项线性插值"), FMath::IsNearlyEqual(Chance499, 0.3010479f, 0.00001f));
+	TestTrue(TEXT("0.501应使用相邻表项线性插值"), FMath::IsNearlyEqual(Chance501, 0.3031604f, 0.00001f));
+
+	URandomShuffleArrayLibrary::ClearAllPRDStates();
 	return true;
 }
 

@@ -313,7 +313,7 @@ namespace RandomShuffles {
             int32 Mid = (Left + Right) / 2;
             const float MidP = PRDConstantTable[Mid].Probability;
 
-            if (FMath::IsNearlyEqual(MidP, P, 0.001f))
+            if (MidP == P)
             {
                 return PRDConstantTable[Mid].Constant;
             }
@@ -486,8 +486,8 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
 
 namespace RandomShuffles
 {
-    // 通用PRD计算逻辑，避免重复代码
-    bool CalculatePRD(float BaseChance, int32 FailureCount, int32& OutFailureCount, float& OutActualChance, TFunction<float()> RandomFunc)
+    // 通用PRD计算逻辑，避免重复代码（纯函数；RandomFunc 可能在 PRDStateLock 临界区内被调用）
+    bool CalculatePRD(float BaseChance, int32 FailureCount, int32& OutFailureCount, float& OutActualChance, const TFunction<float()>& RandomFunc)
     {
         // 边界检查和参数规范化
         const float P = FMath::Clamp(BaseChance, 0.f, 1.f);
@@ -536,16 +536,11 @@ bool URandomShuffleArrayLibrary::PseudoRandomBool(float BaseChance, FString Stat
     // 输入验证：与其他PRD接口保持一致，允许BaseChance=0完全关闭触发
     BaseChance = FMath::Clamp(BaseChance, 0.0f, RandomShuffles::Config::MaxValidChance);
 
-    int32 FailureCount = GetOrCreatePRDStateValue(StateID);
-    float ActualChance = 0.0f;
-    int32 UpdatedFailureCount = FailureCount;
+    int32 UpdatedFailureCount = 0;
+    const bool bResult = ApplyPRDAutoLocked(BaseChance, StateID,
+        []() { return FMath::FRand(); }, UpdatedFailureCount);
 
-    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, UpdatedFailureCount, ActualChance,
-        []() { return FMath::FRand(); });
-
-    SetPRDStateValue(StateID, UpdatedFailureCount);
-
-    // 更新性能统计
+    // 更新性能统计（独立锁，保持在上一步 PRDStateLock 释放之后，禁止双锁同持）
     UpdatePerformanceStats(UpdatedFailureCount);
 
     return bResult;
@@ -574,14 +569,11 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStream(float BaseChance, FR
 {
     BaseChance = FMath::Clamp(BaseChance, 0.0f, RandomShuffles::Config::MaxValidChance);
 
-    int32 FailureCount = GetOrCreatePRDStateValue(StateID);
-    float ActualChance = 0.0f;
-    int32 UpdatedFailureCount = FailureCount;
+    int32 UpdatedFailureCount = 0;
+    const bool bResult = ApplyPRDAutoLocked(BaseChance, StateID,
+        [&Stream]() { return Stream.FRand(); }, UpdatedFailureCount);
 
-    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, UpdatedFailureCount, ActualChance,
-        [&Stream]() { return Stream.FRand(); });
-
-    SetPRDStateValue(StateID, UpdatedFailureCount);
+    // 更新性能统计（独立锁，保持在上一步 PRDStateLock 释放之后，禁止双锁同持）
     UpdatePerformanceStats(UpdatedFailureCount);
 
     return bResult;
@@ -602,6 +594,28 @@ bool URandomShuffleArrayLibrary::PseudoRandomBoolFromStreamAdvanced(float BaseCh
     }
     UpdatePerformanceStats(OutFailureCount);
 
+    return bResult;
+}
+
+// 自动状态路径的原子入口（M-7）：读/建状态 -> 计算 -> 写回在同一临界区内完成
+bool URandomShuffleArrayLibrary::ApplyPRDAutoLocked(float BaseChance, const FString& StateID, const TFunction<float()>& RandomFunc, int32& OutUpdatedFailureCount)
+{
+    // 外层临界区覆盖整个"读取/创建 -> CalculatePRD -> 写回"序列。
+    // 内部复用的 GetOrCreatePRDStateValue/SetPRDStateValue 各自再加同一把锁——
+    // FCriticalSection 在 UE 5.3-5.8 全平台均为递归临界区（Windows CRITICAL_SECTION /
+    // pthread recursive mutex），同线程嵌套 FScopeLock 安全，且既有满表/Reserve/钳制
+    // 语义逐字保留。
+    FScopeLock Lock(&PRDStateLock);
+
+    const int32 FailureCount = GetOrCreatePRDStateValue(StateID);
+
+    float ActualChance = 0.0f;
+    int32 UpdatedFailureCount = FailureCount;
+    const bool bResult = RandomShuffles::CalculatePRD(BaseChance, FailureCount, UpdatedFailureCount, ActualChance, RandomFunc);
+
+    SetPRDStateValue(StateID, UpdatedFailureCount);
+
+    OutUpdatedFailureCount = UpdatedFailureCount;
     return bResult;
 }
 

@@ -627,6 +627,24 @@ public:
 	// 获取或创建PRD状态 - 线程安全版本
 	static int32 GetOrCreatePRDStateValue(const FString& StateID);
 
+	/**
+	 * 自动状态路径的原子入口（M-7）：在单个 PRDStateLock 临界区内完成
+	 * "读取/创建状态 -> CalculatePRD -> 写回状态"，消除 BlueprintThreadSafe 下
+	 * 同一 StateID 并发调用丢失失败计数更新的竞态。
+	 *
+	 * 实现上外层持锁后复用 GetOrCreatePRDStateValue/SetPRDStateValue（依赖
+	 * FCriticalSection 的递归锁语义，UE 5.3-5.8 全平台均为递归临界区），
+	 * 因此满表 Error、Reserve、钳制等既有契约逐字保留。
+	 * 调用方必须负责在该函数返回后再更新性能统计（禁止同时持有两把锁）。
+	 *
+	 * @param	BaseChance				基础触发概率（调用方已按 [0,1] 钳制）
+	 * @param	StateID					状态标识符
+	 * @param	RandomFunc				返回 [0,1] 随机值的回调（锁内调用）
+	 * @param	OutUpdatedFailureCount	输出写回后的失败计数（供性能统计使用）
+	 * @return	是否触发
+	 */
+	static bool ApplyPRDAutoLocked(float BaseChance, const FString& StateID, const TFunction<float()>& RandomFunc, int32& OutUpdatedFailureCount);
+
 	// 更新PRD状态值 - 线程安全版本
 	// bLogWhenFull：映射满且StateID为新键时是否打去重Warning（仅Advanced路径传true；自动路径已由GetOrCreatePRDStateValue的Error覆盖）
 	static void SetPRDStateValue(const FString& StateID, int32 FailureCount, bool bLogWhenFull = false);
@@ -636,4 +654,9 @@ public:
 
 	// 检查被清理世界之外是否仍存在其它未进入拆除流程的 Game/PIE 世界
 	static bool HasOtherLiveGameWorlds(const UWorld* WorldBeingCleaned);
+
+#if WITH_DEV_AUTOMATION_TESTS
+	// 自动化测试需要注入受控随机源并读取单个 StateID 的失败计数（不新增生产公开查询 API）
+	friend class FRandomShuffle_PRDAutoStateAtomicUpdate;
+#endif
 };
