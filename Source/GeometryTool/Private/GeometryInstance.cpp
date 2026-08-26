@@ -336,9 +336,9 @@ TArray<FTransform> UGeometryInstance::GenerateSpherePoints(
     {
         const FVector JitteredPoint = (SafeNoise > KINDA_SMALL_NUMBER)
             ? PointLocation + FVector(
-                RandomStream.RandRange(-SafeNoise, SafeNoise),
-                RandomStream.RandRange(-SafeNoise, SafeNoise),
-                RandomStream.RandRange(-SafeNoise, SafeNoise))
+                RandomStream.FRandRange(-SafeNoise, SafeNoise),
+                RandomStream.FRandRange(-SafeNoise, SafeNoise),
+                RandomStream.FRandRange(-SafeNoise, SafeNoise))
             : PointLocation;
 
         FTransform InstanceTransform;
@@ -444,9 +444,9 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
                     continue;
                 }
 
-                const float NoiseForward = RandomStream.RandRange(-SafeNoise, SafeNoise);
-                const float NoiseRight = RandomStream.RandRange(-SafeNoise, SafeNoise);
-                const float NoiseUp = RandomStream.RandRange(-SafeNoise, SafeNoise);
+                const float NoiseForward = RandomStream.FRandRange(-SafeNoise, SafeNoise);
+                const float NoiseRight = RandomStream.FRandRange(-SafeNoise, SafeNoise);
+                const float NoiseUp = RandomStream.FRandRange(-SafeNoise, SafeNoise);
 
                 FVector Location = Origin
                     + SafeDistance * Index_X * ForwardVector
@@ -529,9 +529,9 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
     auto AddPoint = [&](const FVector& PointLocation)
     {
         FVector JitteredPoint = PointLocation
-            + RandomStream.RandRange(-SafeNoise, SafeNoise) * ForwardVector
-            + RandomStream.RandRange(-SafeNoise, SafeNoise) * RightVector
-            + RandomStream.RandRange(-SafeNoise, SafeNoise) * UpVector;
+            + RandomStream.FRandRange(-SafeNoise, SafeNoise) * ForwardVector
+            + RandomStream.FRandRange(-SafeNoise, SafeNoise) * RightVector
+            + RandomStream.FRandRange(-SafeNoise, SafeNoise) * UpVector;
 
         FTransform InstanceTransform;
         InstanceTransform.SetLocation(JitteredPoint);
@@ -634,17 +634,17 @@ void UGeometryInstance::ApplyTransformParameters(
     if (bIsUseRandomRotation)
     {
         Rotator = FRotator(
-            RandomStream.RandRange(Rotator_A.Pitch, Rotator_B.Pitch),
-            RandomStream.RandRange(Rotator_A.Yaw, Rotator_B.Yaw),
-            RandomStream.RandRange(Rotator_A.Roll, Rotator_B.Roll));
+            RandomStream.FRandRange(FMath::Min(Rotator_A.Pitch, Rotator_B.Pitch), FMath::Max(Rotator_A.Pitch, Rotator_B.Pitch)),
+            RandomStream.FRandRange(FMath::Min(Rotator_A.Yaw, Rotator_B.Yaw), FMath::Max(Rotator_A.Yaw, Rotator_B.Yaw)),
+            RandomStream.FRandRange(FMath::Min(Rotator_A.Roll, Rotator_B.Roll), FMath::Max(Rotator_A.Roll, Rotator_B.Roll)));
     }
 
     if (bIsUseRandomSize)
     {
         Size = FVector(
-            RandomStream.RandRange(Size_A.X, Size_B.X),
-            RandomStream.RandRange(Size_A.Y, Size_B.Y),
-            RandomStream.RandRange(Size_A.Z, Size_B.Z));
+            RandomStream.FRandRange(FMath::Min(Size_A.X, Size_B.X), FMath::Max(Size_A.X, Size_B.X)),
+            RandomStream.FRandRange(FMath::Min(Size_A.Y, Size_B.Y), FMath::Max(Size_A.Y, Size_B.Y)),
+            RandomStream.FRandRange(FMath::Min(Size_A.Z, Size_B.Z), FMath::Max(Size_A.Z, Size_B.Z)));
     }
 
     Rotator += Rotator_Delta;

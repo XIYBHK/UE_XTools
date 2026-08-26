@@ -100,4 +100,68 @@ bool FGeometryInstance_BoxSamplingKeepsOneLayerPerAxisWhenDistanceExceedsLength:
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGeometryInstance_UsesContinuousRandomRanges,
+	"XTools.GeometryTool.GeometryInstance.UsesContinuousRandomRanges",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGeometryInstance_UsesContinuousRandomRanges::RunTest(const FString& Parameters)
+{
+	UGeometryInstance* GeometryInstance = NewObject<UGeometryInstance>();
+	UBoxComponent* Box = NewObject<UBoxComponent>();
+	Box->SetBoxExtent(FVector(50.0f));
+	if (!TestNotNull(TEXT("几何实例组件应可创建"), GeometryInstance) ||
+		!TestNotNull(TEXT("盒体组件应可创建"), Box))
+	{
+		return false;
+	}
+
+	const TArray<FTransform> ForwardRange = GeometryInstance->GetPointsByShape(
+		Box, false, 1000.0f, 0.25f, false,
+		FRotator(0.25f, 0.25f, 0.25f), FRotator(0.75f, 0.75f, 0.75f), true,
+		FVector(0.8f), FVector(1.2f), true, FRotator::ZeroRotator, 17);
+
+	TestEqual(TEXT("单层盒体应生成一个采样点"), ForwardRange.Num(), 1);
+	if (ForwardRange.Num() != 1)
+	{
+		return false;
+	}
+
+	const FTransform& Transform = ForwardRange[0];
+	const FVector Location = Transform.GetLocation();
+	const FVector Scale = Transform.GetScale3D();
+	const FRotator Rotation = Transform.Rotator();
+	TestTrue(TEXT("噪声应保持在小数范围内且不退化为整型量化"),
+		Location.SizeSquared() > 0.0f && Location.SizeSquared() <= FMath::Square(0.25f) * 3.0f);
+	TestTrue(TEXT("随机缩放应落在 0.8 到 1.2 的连续范围"),
+		Scale.X >= 0.8f && Scale.X <= 1.2f && Scale.Y >= 0.8f && Scale.Y <= 1.2f &&
+		Scale.Z >= 0.8f && Scale.Z <= 1.2f);
+	TestTrue(TEXT("随机旋转应落在 0.25 到 0.75 度的连续范围"),
+		Rotation.Pitch >= 0.25f && Rotation.Pitch <= 0.75f &&
+		Rotation.Yaw >= 0.25f && Rotation.Yaw <= 0.75f &&
+		Rotation.Roll >= 0.25f && Rotation.Roll <= 0.75f);
+
+	const TArray<FTransform> ReversedRange = GeometryInstance->GetPointsByShape(
+		Box, false, 1000.0f, 0.0f, false,
+		FRotator(2.0f, 2.0f, 2.0f), FRotator(-2.0f, -2.0f, -2.0f), true,
+		FVector(1.2f), FVector(0.8f), true, FRotator::ZeroRotator, 19);
+	TestEqual(TEXT("反向随机范围仍应生成一个采样点"), ReversedRange.Num(), 1);
+	if (ReversedRange.Num() == 1)
+	{
+		const FTransform& ReversedTransform = ReversedRange[0];
+		const FVector ReversedScale = ReversedTransform.GetScale3D();
+		const FRotator ReversedRotation = ReversedTransform.Rotator();
+		TestTrue(TEXT("反向缩放范围应规范化为 0.8 到 1.2"),
+			ReversedScale.X >= 0.8f && ReversedScale.X <= 1.2f &&
+			ReversedScale.Y >= 0.8f && ReversedScale.Y <= 1.2f &&
+			ReversedScale.Z >= 0.8f && ReversedScale.Z <= 1.2f);
+		TestTrue(TEXT("反向旋转范围应规范化为 -2 到 2 度"),
+			ReversedRotation.Pitch >= -2.0f && ReversedRotation.Pitch <= 2.0f &&
+			ReversedRotation.Yaw >= -2.0f && ReversedRotation.Yaw <= 2.0f &&
+			ReversedRotation.Roll >= -2.0f && ReversedRotation.Roll <= 2.0f);
+	}
+
+	return true;
+}
+
 #endif
