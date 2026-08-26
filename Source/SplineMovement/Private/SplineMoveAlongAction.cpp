@@ -77,6 +77,12 @@ void USplineMoveAlongAction::Interrupt()
 	bInterruptRequested = true;
 }
 
+bool USplineMoveAlongAction::ShouldRepathAIMoveTo(const FVector& NewTarget, const FVector& PreviousTarget,
+	bool bHasPreviousTarget, float RepathMinDistance)
+{
+	return !bHasPreviousTarget || FVector::Dist(NewTarget, PreviousTarget) > RepathMinDistance;
+}
+
 //=============================================================================
 // Ticker 管理
 //=============================================================================
@@ -206,9 +212,11 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 			// 仅当新目标点相对上次下发目标的位移超过 RepathMinDistance（取前瞻距离的一半）
 			// 时才重新发起 MoveToLocation，其余帧沿用 AI 当前移动目标。
 			const float RepathMinDistance = LookaheadDist * 0.5f;
-			if (!bHasLastMoveToTarget ||
-				FVector::Dist(TargetPos, LastMoveToTarget) > RepathMinDistance)
+			if (ShouldRepathAIMoveTo(TargetPos, LastMoveToTarget, bHasLastMoveToTarget, RepathMinDistance))
 			{
+				#if WITH_DEV_AUTOMATION_TESTS
+				++AutomationMoveToRequestCount;
+				#endif
 				AICtrl->MoveToLocation(TargetPos, /*AcceptanceRadius=*/LookaheadDist * 0.25f,
 					/*bStopOnOverlap=*/false, /*bUsePathfinding=*/true,
 					/*bProjectDestinationToNavigation=*/true);

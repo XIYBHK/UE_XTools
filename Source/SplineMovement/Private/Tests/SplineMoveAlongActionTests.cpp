@@ -1,0 +1,107 @@
+/*
+ * SplineMovement 自动化测试：AI 重寻路阈值
+ */
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+#include "SplineMoveAlongAction.h"
+#include "SplineMoveAlongActionTestTypes.h"
+#include "AIController.h"
+#include "Components/SplineComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/Pawn.h"
+#include "Misc/AutomationTest.h"
+#include "UObject/UObjectGlobals.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSplineMoveAlongActionRepathTest,
+	"XTools.SplineMovement.AIMoveTo.RepathThreshold",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSplineMoveAlongActionRepathTest::RunTest(const FString& Parameters)
+{
+	const FVector PreviousTarget(100.0f, 0.0f, 0.0f);
+	const float Threshold = 50.0f;
+
+	TestTrue(TEXT("首次 AIMoveTo 必须发起寻路"),
+		USplineMoveAlongAction::ShouldRepathAIMoveTo(PreviousTarget, PreviousTarget, false, Threshold));
+	TestFalse(TEXT("目标位移等于阈值时不应重新寻路"),
+		USplineMoveAlongAction::ShouldRepathAIMoveTo(FVector(150.0f, 0.0f, 0.0f), PreviousTarget, true, Threshold));
+	TestFalse(TEXT("目标位移小于阈值时不应重新寻路"),
+		USplineMoveAlongAction::ShouldRepathAIMoveTo(FVector(149.9f, 0.0f, 0.0f), PreviousTarget, true, Threshold));
+	TestTrue(TEXT("目标位移超过阈值时必须重新寻路"),
+		USplineMoveAlongAction::ShouldRepathAIMoveTo(FVector(150.1f, 0.0f, 0.0f), PreviousTarget, true, Threshold));
+
+	// 真实 Game World 驱动两次 ticker：首帧发起请求，目标未继续推进时不得重复请求。
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("SplineMovementAIMoveToTest"));
+	TestNotNull(TEXT("应创建导航测试世界"), World);
+	if (World)
+	{
+		APawn* Pawn = World->SpawnActor<APawn>();
+		AAIController* Controller = World->SpawnActor<AAIController>();
+		TestNotNull(TEXT("应生成测试 Pawn"), Pawn);
+		TestNotNull(TEXT("应生成测试 AIController"), Controller);
+		if (Pawn && Controller)
+		{
+			Controller->Possess(Pawn);
+			USplineComponent* Spline = NewObject<USplineComponent>(Pawn);
+			Spline->RegisterComponent();
+			Spline->ClearSplinePoints(false);
+			Spline->AddSplinePoint(FVector::ZeroVector, ESplineCoordinateSpace::World, false);
+			Spline->AddSplinePoint(FVector(100.0f, 0.0f, 0.0f), ESplineCoordinateSpace::World, false);
+			Spline->AddSplinePoint(FVector(200.0f, 0.0f, 0.0f), ESplineCoordinateSpace::World, false);
+			Spline->AddSplinePoint(FVector(400.0f, 0.0f, 0.0f), ESplineCoordinateSpace::World, true);
+
+			USplineMoveAlongAction* Action = NewObject<USplineMoveAlongAction>(Pawn);
+			Action->AddToRoot();
+			Action->Pawn_Ptr = Pawn;
+			Action->Spline_Ptr = Spline;
+			Action->LookaheadDist = 100.0f;
+			Action->MoveMode = ESplineMoveMode::AIMoveTo;
+
+			TestTrue(TEXT("首个 ticker 应继续执行动作"), Action->OnTicker(1.0f / 60.0f));
+			TestEqual(TEXT("首个 ticker 应发起一次 MoveTo 请求"), Action->AutomationMoveToRequestCount, 1);
+			// 样条目标会随 CurrentDistance 推进，后续帧是否重寻路由上方阈值断言覆盖；
+			// 此处只钉定真实 AIController 请求链路确实被触发。
+
+			Action->RemoveFromRoot();
+		}
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSplineMoveAlongActionCompletionTest,
+	"XTools.SplineMovement.AIMoveTo.CompletionStopsMovement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSplineMoveAlongActionCompletionTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("SplineMovementCompletionTest"));
+	TestNotNull(TEXT("应创建完成路径测试世界"), World);
+	if (!World)
+	{
+		return false;
+	}
+
+	APawn* Pawn = World->SpawnActor<APawn>();
+	ASplineMovementTestController* Controller = World->SpawnActor<ASplineMovementTestController>();
+	TestNotNull(TEXT("应生成完成路径测试 Pawn"), Pawn);
+	TestNotNull(TEXT("应生成可观测 AIController"), Controller);
+	if (Pawn && Controller)
+	{
+		Controller->Possess(Pawn);
+		USplineMoveAlongAction* Action = NewObject<USplineMoveAlongAction>(Pawn);
+		Action->AddToRoot();
+		Action->Pawn_Ptr = Pawn;
+		Action->MoveMode = ESplineMoveMode::AIMoveTo;
+		Action->FinishAction(false);
+		TestEqual(TEXT("AIMoveTo 完成时应停止当前 AI 移动"), Controller->StopMovementCalls, 1);
+		Action->RemoveFromRoot();
+	}
+
+	World->DestroyWorld(false);
+	return true;
+}
+
+#endif

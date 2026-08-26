@@ -55,6 +55,11 @@ class SPLINEMOVEMENT_API USplineMoveAlongAction : public UBlueprintAsyncActionBa
 {
 	GENERATED_BODY()
 
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FSplineMoveAlongActionRepathTest;
+	friend class FSplineMoveAlongActionCompletionTest;
+#endif
+
 public:
 	//---------------------------------------------------------------
 	// 输出引脚
@@ -138,6 +143,10 @@ private:
 	/** 结束动作，广播完成或中断事件 */
 	void FinishAction(bool bInterrupted);
 
+	/** 判断新目标是否已移动到需要重新发起寻路请求的距离。 */
+	static bool ShouldRepathAIMoveTo(const FVector& NewTarget, const FVector& PreviousTarget,
+		bool bHasPreviousTarget, float RepathMinDistance);
+
 	//---------------------------------------------------------------
 	// 输入参数（从工厂函数传入）
 	//---------------------------------------------------------------
@@ -168,6 +177,10 @@ private:
 	// 用于判断目标位移是否超过重寻路阈值
 	FVector LastMoveToTarget = FVector::ZeroVector;
 	bool bHasLastMoveToTarget = false;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	int32 AutomationMoveToRequestCount = 0;
+#endif
 
 	FTSTicker::FDelegateHandle TickHandle;
 };

@@ -84,6 +84,8 @@ public class X_AssetEditor : ModuleRules
 			"Projects",
 			"InputCore",
 			"ApplicationCore",
+			"NavigationSystem",
+			"AIModule",
 			"DeveloperSettings",
 			"XToolsCore"   // 统一错误上报：依赖 FXToolsErrorReporter
 		});
