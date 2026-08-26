@@ -12,6 +12,10 @@
 
 class SWindow;
 
+#if WITH_DEV_AUTOMATION_TESTS
+class FXAutoConvexDialogWindowLifecycleTest;
+#endif
+
 /**
  * 自动凸包参数对话框（简易）
  */
@@ -33,6 +37,10 @@ public:
     /** 显示对话框，返回是否确认；输出参数返回配置值 */
     static bool ShowDialog(int32& OutHullCount, int32& OutMaxHullVerts, int32& OutHullPrecision,
                            int32 DefaultHullCount = 1, int32 DefaultMaxHullVerts = 16, int32 DefaultHullPrecision = 100000);
+
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FXAutoConvexDialogWindowLifecycleTest;
+#endif
 
 private:
     int32 HullCount;
