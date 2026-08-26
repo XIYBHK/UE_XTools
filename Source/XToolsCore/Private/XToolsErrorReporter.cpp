@@ -1,5 +1,6 @@
 #include "XToolsErrorReporter.h"
 
+#include "Async/Async.h"
 #include "Engine/Engine.h"
 #include "Misc/OutputDevice.h"
 
@@ -31,6 +32,34 @@ namespace
             return FColor::White;
         }
     }
+
+    void ReportToUser(ELogVerbosity::Type Verbosity,
+                      const FString& FullMessage,
+                      bool bNotifyOnScreen,
+                      float DisplayTime)
+    {
+        check(IsInGameThread());
+
+        if (bNotifyOnScreen && GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(INDEX_NONE, DisplayTime, ResolveColor(Verbosity), FullMessage);
+        }
+
+#if WITH_EDITOR
+        if (Verbosity == ELogVerbosity::Error || Verbosity == ELogVerbosity::Warning)
+        {
+            FMessageLog EditorLog("XToolsCore");
+            if (Verbosity == ELogVerbosity::Error)
+            {
+                EditorLog.Error(FText::FromString(FullMessage));
+            }
+            else
+            {
+                EditorLog.Warning(FText::FromString(FullMessage));
+            }
+        }
+#endif
+    }
 }
 
 void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
@@ -54,26 +83,22 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
         FMsg::Logf(LogFile, LogLine, Category->GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
     }
 
-    if (bNotifyOnScreen && GEngine)
+    const bool bNeedsUserNotification = bNotifyOnScreen
+        || Verbosity == ELogVerbosity::Error
+        || Verbosity == ELogVerbosity::Warning;
+    if (bNeedsUserNotification)
     {
-        GEngine->AddOnScreenDebugMessage(INDEX_NONE, DisplayTime, ResolveColor(Verbosity), FullMessage);
-    }
-
-#if WITH_EDITOR
-    if (Verbosity == ELogVerbosity::Error || Verbosity == ELogVerbosity::Warning)
-    {
-        FMessageLog EditorLog("XToolsCore");
-        switch (Verbosity)
+        if (IsInGameThread())
         {
-        case ELogVerbosity::Error:
-            EditorLog.Error(FText::FromString(FullMessage));
-            break;
-        case ELogVerbosity::Warning:
-            EditorLog.Warning(FText::FromString(FullMessage));
-            break;
-        default:
-            break;
+            ReportToUser(Verbosity, FullMessage, bNotifyOnScreen, DisplayTime);
+        }
+        else
+        {
+            AsyncTask(ENamedThreads::GameThread,
+                [Verbosity, FullMessage, bNotifyOnScreen, DisplayTime]()
+                {
+                    ReportToUser(Verbosity, FullMessage, bNotifyOnScreen, DisplayTime);
+                });
         }
     }
-#endif
 }
