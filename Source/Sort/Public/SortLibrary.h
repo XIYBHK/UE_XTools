@@ -499,7 +499,7 @@ public:
         meta = (
             DisplayName = "清除Actor数组重复项",
             Keywords = "去重,重复,Actor,数组",
-            ToolTip = "清除Actor数组中的重复项（无效和空指针也会被移除）。\n参数:\nInArray - 要处理的Actor数组\n返回值:\nOutArray - 去重后的数组"
+            ToolTip = "清除Actor数组中的重复项，按输入中首次出现的顺序输出（无效和空指针也会被移除）。\n参数:\nInArray - 要处理的Actor数组\n返回值:\nOutArray - 去重后的数组"
         ))
     static void RemoveDuplicateActors(
         UPARAM(DisplayName="输入数组") const TArray<AActor*>& InArray,
@@ -524,7 +524,7 @@ public:
         meta = (
             DisplayName = "清除整数数组重复项",
             Keywords = "去重,重复,整数,数组",
-            ToolTip = "清除整数数组中的重复项。\n参数:\nInArray - 要处理的整数数组\n返回值:\nOutArray - 去重后的数组"
+            ToolTip = "清除整数数组中的重复项，按输入中首次出现的顺序输出。\n参数:\nInArray - 要处理的整数数组\n返回值:\nOutArray - 去重后的数组"
         ))
     static void RemoveDuplicateIntegers(
         UPARAM(DisplayName="输入数组") const TArray<int32>& InArray,
@@ -536,7 +536,7 @@ public:
         meta = (
             DisplayName = "清除字符串数组重复项",
             Keywords = "去重,重复,字符串,数组",
-            ToolTip = "清除字符串数组中的重复项。\n参数:\nInArray - 要处理的字符串数组\nbCaseSensitive - 是否区分大小写\n返回值:\nOutArray - 去重后的数组"
+            ToolTip = "清除字符串数组中的重复项，按输入中首次出现的顺序输出；忽略大小写时保留第一次出现的原始拼写。\n参数:\nInArray - 要处理的字符串数组\nbCaseSensitive - 是否区分大小写\n返回值:\nOutArray - 去重后的数组"
         ))
     static void RemoveDuplicateStrings(
         UPARAM(DisplayName="输入数组") const TArray<FString>& InArray,
@@ -604,6 +604,10 @@ private:
 
     // 属性值比较函数
     static bool ComparePropertyValues(const FProperty* Property, const void* LeftValuePtr, const void* RightValuePtr, bool bAscending);
+
+    // 属性相等时按原始索引决胜，保证升降序都保持输入相对顺序
+    static bool ComparePropertyIndices(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp,
+        int32 LeftIndex, int32 RightIndex, bool bAscending);
 
     // 快速排序实现（带深度限制的IntroSort）
     static void QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending, int32 DepthLimit = -1);

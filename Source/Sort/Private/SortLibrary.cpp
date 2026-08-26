@@ -8,6 +8,7 @@
 #include "Logging/LogMacros.h"
 #include "Internationalization/Text.h"
 #include "Internationalization/TextComparison.h"
+#include "Misc/Crc.h"
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
 #include "Algo/Reverse.h"
@@ -859,14 +860,17 @@ void USortLibrary::RemoveDuplicateActors(const TArray<AActor*>& InArray, TArray<
 {
     TSet<AActor*> UniqueActors;
     UniqueActors.Reserve(InArray.Num());
+    TArray<AActor*> Result;
+    Result.Reserve(InArray.Num());
     for (AActor* Actor : InArray)
     {
-        if (IsValid(Actor))
+        if (IsValid(Actor) && !UniqueActors.Contains(Actor))
         {
             UniqueActors.Add(Actor);
+            Result.Add(Actor);
         }
     }
-    OutArray = UniqueActors.Array();
+    OutArray = MoveTemp(Result);
 }
 
 void USortLibrary::RemoveDuplicateFloats(const TArray<float>& InArray, TArray<float>& OutArray, float Tolerance)
@@ -889,10 +893,39 @@ void USortLibrary::RemoveDuplicateFloats(const TArray<float>& InArray, TArray<fl
 
 void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<int32>& OutArray)
 {
-    // TSet 去重已是 O(N) 平均，且不改变元素相对顺序无要求，无需改为排序+相邻比较
-    TSet<int32> UniqueInts(InArray);
-    OutArray = UniqueInts.Array();
+    TSet<int32> UniqueInts;
+    UniqueInts.Reserve(InArray.Num());
+    TArray<int32> Result;
+    Result.Reserve(InArray.Num());
+    for (int32 Value : InArray)
+    {
+        if (!UniqueInts.Contains(Value))
+        {
+            UniqueInts.Add(Value);
+            Result.Add(Value);
+        }
+    }
+    OutArray = MoveTemp(Result);
 }
+
+// FString 默认相等与哈希均忽略大小写；显式 KeyFuncs 才能实现节点的 bCaseSensitive 契约。
+struct FCaseSensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
+{
+    static FORCEINLINE const FString& GetSetKey(const FString& Element)
+    {
+        return Element;
+    }
+
+    static FORCEINLINE bool Matches(const FString& A, const FString& B)
+    {
+        return A.Equals(B, ESearchCase::CaseSensitive);
+    }
+
+    static FORCEINLINE uint32 GetKeyHash(const FString& Key)
+    {
+        return FCrc::StrCrc32(*Key);
+    }
+};
 
 // 为TSet提供不区分大小写的字符串比较功能，继承 BaseKeyFuncs 保证跨版本编译安全
 struct FCaseInsensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
@@ -924,26 +957,36 @@ struct FCaseInsensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
 
 void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, TArray<FString>& OutArray, bool bCaseSensitive)
 {
-    OutArray.Empty();
-    if (InArray.IsEmpty()) return;
+    TArray<FString> Result;
+    Result.Reserve(InArray.Num());
 
     if (bCaseSensitive)
     {
-        // 区分大小写：使用标准的TSet，性能很好
-        TSet<FString> UniqueStrings(InArray);
-        OutArray = UniqueStrings.Array();
+        TSet<FString, FCaseSensitiveStringKeyFuncs> UniqueStrings;
+        UniqueStrings.Reserve(InArray.Num());
+        for (const FString& Str : InArray)
+        {
+            if (!UniqueStrings.Contains(Str))
+            {
+                UniqueStrings.Add(Str);
+                Result.Add(Str);
+            }
+        }
     }
     else
     {
-        // 不区分大小写：使用自定义KeyFuncs的TSet，实现O(N)的性能
         TSet<FString, FCaseInsensitiveStringKeyFuncs> UniqueStrings;
         UniqueStrings.Reserve(InArray.Num());
         for (const FString& Str : InArray)
         {
-            UniqueStrings.Add(Str);
+            if (!UniqueStrings.Contains(Str))
+            {
+                UniqueStrings.Add(Str);
+                Result.Add(Str);
+            }
         }
-        OutArray = UniqueStrings.Array();
     }
+    OutArray = MoveTemp(Result);
 }
 
 void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, TArray<FVector>& OutArray, float Tolerance)
@@ -1167,19 +1210,6 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
             int32 Index = 0;
             bool bIsNull = false;
 
-            // 空值语义与 ComparePropertyValues 保持一致：升序时空值排在有效值之后
-            bool operator<(const FStringPropertySortPair& Other) const
-            {
-                if (bIsNull || Other.bIsNull)
-                {
-                    if (bIsNull && Other.bIsNull)
-                    {
-                        return false;
-                    }
-                    return Other.bIsNull;
-                }
-                return CompareNaturalSortKeys(Key, Other.Key) < 0;
-            }
         };
 
         TArray<FStringPropertySortPair> Pairs;
@@ -1210,14 +1240,26 @@ void USortLibrary::GenericSortArrayByProperty(void* TargetArray, FArrayProperty*
             }
         }
 
-        if (bAscending)
+        Pairs.Sort([bAscending](const FStringPropertySortPair& A, const FStringPropertySortPair& B)
         {
-            Pairs.Sort();
-        }
-        else
-        {
-            Pairs.Sort([](const FStringPropertySortPair& A, const FStringPropertySortPair& B) { return B < A; });
-        }
+            // 空元素不受排序方向影响，始终位于有效元素之后。
+            if (A.bIsNull || B.bIsNull)
+            {
+                if (A.bIsNull != B.bIsNull)
+                {
+                    return B.bIsNull;
+                }
+                return A.Index < B.Index;
+            }
+
+            const int32 KeyComparison = CompareNaturalSortKeys(A.Key, B.Key);
+            if (KeyComparison != 0)
+            {
+                return bAscending ? KeyComparison < 0 : KeyComparison > 0;
+            }
+
+            return A.Index < B.Index;
+        });
 
         for (int32 i = 0; i < Pairs.Num(); ++i)
         {
@@ -1328,7 +1370,25 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
         {
             const double LeftValue = NumericProp->GetFloatingPointPropertyValue(LeftValuePtr);
             const double RightValue = NumericProp->GetFloatingPointPropertyValue(RightValuePtr);
-            bResult = LeftValue < RightValue;
+
+            // NaN 严格弱序修复（与 GenericSort 的 FSortPair 比较器语义一致）：
+            // 升序时 NaN 视为最大值——所有有限值与 ±Inf 都排在 NaN 前，NaN 与 NaN 等价；
+            // 若沿用裸的 LeftValue < RightValue，NaN 与任意值双向 false（"与一切等价"），
+            // 等价关系不可传递，违反 IntroSort 要求的严格弱序，可能产生错误顺序和性能退化。
+            // 降序无需在此处理：入口处"交换左右比较对象"递归调用本分支后自然让 NaN 居首。
+            if (FMath::IsNaN(LeftValue))
+            {
+                bResult = false;
+            }
+            else if (FMath::IsNaN(RightValue))
+            {
+                bResult = true;
+            }
+            else
+            {
+                // 有限值与 ±Inf：保持原生比较（±0 与 +0 相互等价的既有行为不变）
+                bResult = LeftValue < RightValue;
+            }
         }
         else if (NumericProp->IsInteger())
         {
@@ -1422,6 +1482,24 @@ bool USortLibrary::ComparePropertyValues(const FProperty* Property, const void* 
     return bResult;
 }
 
+bool USortLibrary::ComparePropertyIndices(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp,
+    int32 LeftIndex, int32 RightIndex, bool bAscending)
+{
+    void* LeftValue = GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, LeftIndex);
+    void* RightValue = GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, RightIndex);
+
+    if (ComparePropertyValues(SortProp, LeftValue, RightValue, bAscending))
+    {
+        return true;
+    }
+    if (ComparePropertyValues(SortProp, RightValue, LeftValue, bAscending))
+    {
+        return false;
+    }
+
+    return LeftIndex < RightIndex;
+}
+
 // 成员静态函数，避免 TFunction 堆分配与间接调用（需访问 USortLibrary 的私有属性辅助函数）
 void USortLibrary::HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp,
     TArray<int32>& Indices, int32 Root, int32 End, int32 Low, bool bAscending)
@@ -1432,9 +1510,8 @@ void USortLibrary::HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty*
 
     if (Left <= End)
     {
-        void* LeftValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Left]);
-        void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
-        if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, LeftValue, bAscending))
+        if (USortLibrary::ComparePropertyIndices(
+            ArrayHelper, InnerProp, SortProp, Indices[Largest], Indices[Left], bAscending))
         {
             Largest = Left;
         }
@@ -1442,9 +1519,8 @@ void USortLibrary::HeapifyByProperty(FScriptArrayHelper& ArrayHelper, FProperty*
 
     if (Right <= End)
     {
-        void* RightValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Right]);
-        void* LargestValue = USortLibrary::GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, Indices[Largest]);
-        if (USortLibrary::ComparePropertyValues(SortProp, LargestValue, RightValue, bAscending))
+        if (USortLibrary::ComparePropertyIndices(
+            ArrayHelper, InnerProp, SortProp, Indices[Largest], Indices[Right], bAscending))
         {
             Largest = Right;
         }
@@ -1496,16 +1572,13 @@ void USortLibrary::QuickSortByProperty(FScriptArrayHelper& ArrayHelper, FPropert
 int32 USortLibrary::PartitionByProperty(FScriptArrayHelper& ArrayHelper, FProperty* InnerProp, FProperty* SortProp, TArray<int32>& Indices, int32 Low, int32 High, bool bAscending)
 {
     const int32 PivotIndex = Indices[High];
-    void* PivotValuePtr = GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, PivotIndex);
-
     int32 i = Low - 1;
 
     for (int32 j = Low; j < High; ++j)
     {
         const int32 CurrentIndex = Indices[j];
-        void* CurrentValuePtr = GetPropertyValuePtr(ArrayHelper, InnerProp, SortProp, CurrentIndex);
 
-        if (ComparePropertyValues(SortProp, CurrentValuePtr, PivotValuePtr, bAscending))
+        if (ComparePropertyIndices(ArrayHelper, InnerProp, SortProp, CurrentIndex, PivotIndex, bAscending))
         {
             ++i;
             Indices.Swap(i, j);
@@ -1536,6 +1609,3 @@ void* USortLibrary::GetPropertyValuePtr(FScriptArrayHelper& ArrayHelper, FProper
         return SortProp->ContainerPtrToValuePtr<void>(ElementPtr);
     }
 }
-
-
-
