@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SplineMovement 自动化测试：AI 重寻路阈值
  */
 
@@ -30,6 +30,8 @@ bool FSplineMoveAlongActionRepathTest::RunTest(const FString& Parameters)
 		USplineMoveAlongAction::ShouldRepathAIMoveTo(FVector(149.9f, 0.0f, 0.0f), PreviousTarget, true, Threshold));
 	TestTrue(TEXT("目标位移超过阈值时必须重新寻路"),
 		USplineMoveAlongAction::ShouldRepathAIMoveTo(FVector(150.1f, 0.0f, 0.0f), PreviousTarget, true, Threshold));
+	TestFalse(TEXT("纯垂直起伏（XY 位移为 0）不应触发重寻路——与推进判断同用水平面口径"),
+		USplineMoveAlongAction::ShouldRepathAIMoveTo(FVector(100.0f, 0.0f, 500.0f), PreviousTarget, true, Threshold));
 
 	// 真实 Game World 驱动两次 ticker：首帧发起请求，目标未继续推进时不得重复请求。
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("SplineMovementAIMoveToTest"));

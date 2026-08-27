@@ -1,9 +1,14 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintAsyncActionBase.h"
 #include "Containers/Ticker.h"
 #include "SplineMoveAlongAction.generated.h"
+
+class AAIController;
+class UPathFollowingComponent;
+struct FPathFollowingResult;
+struct FAIRequestID;
 
 //---------------------------------------------------------------
 // 委托声明
@@ -147,6 +152,15 @@ private:
 	static bool ShouldRepathAIMoveTo(const FVector& NewTarget, const FVector& PreviousTarget,
 		bool bHasPreviousTarget, float RepathMinDistance);
 
+	/** AI 寻路失败自愈：请求被中止或失败时清除防抖缓存，下一帧重新发起寻路 */
+	void HandleAIMoveFinished(FAIRequestID RequestID, const FPathFollowingResult& Result);
+
+	/** 确保 PathFollowingComponent 的完成事件已绑定（组件变更时先解绑旧绑定） */
+	void EnsureAIMoveCompletedBound(AAIController* AICtrl);
+
+	/** 解绑移动完成事件，在动作结束时调用 */
+	void UnbindAIMoveCompleted();
+
 	//---------------------------------------------------------------
 	// 输入参数（从工厂函数传入）
 	//---------------------------------------------------------------
@@ -177,6 +191,12 @@ private:
 	// 用于判断目标位移是否超过重寻路阈值
 	FVector LastMoveToTarget = FVector::ZeroVector;
 	bool bHasLastMoveToTarget = false;
+
+	// 已绑定的寻路跟随组件（失败自愈事件的目标，兼作重复绑定判定）
+	TWeakObjectPtr<UPathFollowingComponent> BoundPathFollowing;
+
+	// 缺失 AIController 的告警只打印一次，避免逐帧刷屏
+	bool bHasLoggedMissingAIController = false;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	int32 AutomationMoveToRequestCount = 0;

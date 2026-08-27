@@ -1,4 +1,4 @@
-#include "XToolsErrorReporter.h"
+﻿#include "XToolsErrorReporter.h"
 
 #include "Async/Async.h"
 #include "Engine/Engine.h"
@@ -83,9 +83,16 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
         FMsg::Logf(LogFile, LogLine, Category->GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
     }
 
+    // 屏显依赖引擎屏显通道，仅 Error/Warning 才有意义转发；
+    // 非编辑器构建关闭屏显时避免白付 FString 拷贝与一次 GameThread 任务派发。
+#if WITH_EDITOR
     const bool bNeedsUserNotification = bNotifyOnScreen
         || Verbosity == ELogVerbosity::Error
         || Verbosity == ELogVerbosity::Warning;
+#else
+    const bool bNeedsUserNotification = bNotifyOnScreen
+        && (Verbosity == ELogVerbosity::Error || Verbosity == ELogVerbosity::Warning);
+#endif
     if (bNeedsUserNotification)
     {
         if (IsInGameThread())

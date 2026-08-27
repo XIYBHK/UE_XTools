@@ -1,4 +1,4 @@
-// FormationManagerComponent.cpp - 阵型管理组件实现
+﻿// FormationManagerComponent.cpp - 阵型管理组件实现
 
 #include "FormationManagerComponent.h"
 #include "IFormationInterface.h"
@@ -208,18 +208,12 @@ bool UFormationManagerComponent::StartFormationTransition(
         }
     }
 
-    // 初始化变换状态并启用 Tick 驱动位置更新
-    TransitionState.bIsTransitioning = true;
-    TransitionState.StartTime = GetWorld()->GetTimeSeconds();
-    SetComponentTickEnabled(true);
-    TransitionState.OverallProgress = 0.0f;
-    TransitionState.Config = Config;
-    
-    // 清空并预分配单位变换数据数组
-    TransitionState.UnitTransitions.Empty(Units.Num());
-    TransitionState.UnitTransitions.Reserve(Units.Num());
+    // 先在局部收集有效单位的变换数据：全部无效时直接失败返回，
+    // 不触碰进行中的过渡状态——否则旧过渡会被破坏却既无停止事件也无完成事件，
+    // 绑定其上的监听者将永久悬挂。
+    TArray<FUnitTransitionData> NewUnitTransitions;
+    NewUnitTransitions.Reserve(Units.Num());
 
-    // 为每个单位设置变换数据
     for (int32 i = 0; i < Units.Num(); i++)
     {
         AActor* Actor = Units[i];
@@ -236,7 +230,7 @@ bool UFormationManagerComponent::StartFormationTransition(
         UnitData.StartLocation = Actor->GetActorLocation();
         UnitData.TargetLocation = ToWorldPositions[Assignment[i]];
         UnitData.StartRotation = Actor->GetActorRotation();
-        
+
         // 计算目标朝向（朝向移动方向）
         FVector MovementDirection = UnitData.TargetLocation - UnitData.StartLocation;
         if (!MovementDirection.IsNearlyZero())
@@ -253,18 +247,22 @@ bool UFormationManagerComponent::StartFormationTransition(
         UnitData.Progress = 0.0f;
         UnitData.bCompleted = false;
 
-        // 添加到变换数据数组
-        TransitionState.UnitTransitions.Add(UnitData);
+        NewUnitTransitions.Add(MoveTemp(UnitData));
     }
 
-    if (TransitionState.UnitTransitions.IsEmpty())
+    if (NewUnitTransitions.IsEmpty())
     {
-        TransitionState.bIsTransitioning = false;
-        TransitionState.ConflictInfo = FPathConflictInfo();
-        SetComponentTickEnabled(false);
         UE_LOG(LogFormationSystem, Warning, TEXT("StartFormationTransition: 没有可移动的有效单位"));
         return false;
     }
+
+    // 校验全部通过后才提交状态并驱动 Tick
+    TransitionState.bIsTransitioning = true;
+    TransitionState.StartTime = GetWorld()->GetTimeSeconds();
+    SetComponentTickEnabled(true);
+    TransitionState.OverallProgress = 0.0f;
+    TransitionState.Config = Config;
+    TransitionState.UnitTransitions = MoveTemp(NewUnitTransitions);
 
     // 检测路径冲突
     TransitionState.ConflictInfo = DetectPathConflicts(Assignment, FromWorldPositions, ToWorldPositions);

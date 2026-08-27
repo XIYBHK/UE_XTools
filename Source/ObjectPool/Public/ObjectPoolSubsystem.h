@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -267,6 +267,14 @@ private:
     /** GC回调：垃圾回收后的清理 */
     void OnPostGarbageCollect();
 
+    /**
+     * 非池化回退 Actor 的统一"完成构造 + 激活"入口。
+     * IsActorInitialized() 判据只在此处求值一次并显式传给激活接口，
+     * 避免"补完判定"与"内部激活判定"两处重复评估在加载期造成二次 FinishSpawning。
+     * @param bGuaranteedNeedsFinishSpawning true 表示该 Actor 由本子系统延迟生成、必然未完成构造
+     */
+    void FinishAndActivateFallbackActor(AActor* Actor, const FTransform& SpawnTransform, bool bGuaranteedNeedsFinishSpawning);
+
     //  独立工具类（组合模式，基于UE智能指针）
 
     /** 配置管理器 */
@@ -307,6 +315,9 @@ private:
      * AcquireDeferredFromPool 池空/满时以 SpawnActorDeferred 回退生成，
      * 生成的 Actor 不属于任何池，FinalizeSpawnFromPool 据此走非池化完成分支。
      * 使用 TObjectKey：调用方未 Finalize 的残留键不会悬挂匹配新对象。
+     * 注意：刻意不在 ClearAllPools/Deinitialize 中清空——"Acquire 后 Finalize"
+     * 是跨调用的契约，调用方仍可能在池被清空后合法地完成收尾；
+     * 调用方放弃而不 Finalize 时残留的失效键仅占少量内存（TObjectKey 无悬挂风险）。
      */
     TSet<TObjectKey<AActor>> DeferredFallbackActors;
 

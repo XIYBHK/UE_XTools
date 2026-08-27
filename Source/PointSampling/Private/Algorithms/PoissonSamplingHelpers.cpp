@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -426,10 +426,14 @@ namespace PoissonSamplingHelpers
         const int32 BatchSizeLimit = 2000;
         if (Points.Num() > BatchSizeLimit)
         {
-            UE_LOG(LogTemp, Warning,
+            // 超过批量裁剪上限：降级为 O(N) 截断，保住"返回恰好 TargetCount 个点"的
+            // 数量契约；仅跳过会阻塞游戏线程的 O(N²) 均匀性优化。
+            UE_LOG(LogPointSampling, Warning,
                 TEXT("[TrimToOptimalDistribution] 点数 %d 超过批量裁剪上限 %d，"
-                     "跳过裁剪以避免 O(N²) 卡顿。请考虑增大采样半径以减少点数。"),
-                Points.Num(), BatchSizeLimit);
+                     "降级为普通截断至目标数量 %d，跳过均匀性优化。"
+                     "如需更均匀的结果请增大采样半径以减少点数。"),
+                Points.Num(), BatchSizeLimit, TargetCount);
+            Points.SetNum(TargetCount);
             return;
         }
 

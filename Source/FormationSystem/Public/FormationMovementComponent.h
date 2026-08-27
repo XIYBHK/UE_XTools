@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -141,6 +141,9 @@ private:
      * 达到 StuckTimeSeconds（按 0.5-30 钳制）时返回 true。
      */
     bool CheckStuck(float DistanceToTarget, float DeltaTime);
+
+    /** 制动迟滞：速度跌到下限以下已释放过制动、转回正常输入 */
+    bool bBrakeReleased = false;
 
     /** 卡住检测：历史最优（最小）XY目标距离，StartMoveToLocation 时以起点距离复位 */
     float BestDistanceToTarget = 0.0f;

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -338,6 +338,20 @@ AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
     return FallbackActor;
 }
 
+void UObjectPoolSubsystem::FinishAndActivateFallbackActor(AActor* Actor, const FTransform& SpawnTransform, bool bGuaranteedNeedsFinishSpawning)
+{
+    //  IsActorInitialized() 只在此处求值一次：加载期（AreActorsInitialized()==false）该标志
+    //  在 FinishSpawning 之后仍为 false，若激活内部再用同一判据二次判定会触发
+    //  ensure(!bHasFinishedSpawning)（引擎 Actor.cpp 双版本一致）。因此把求值结果显式传参，
+    //  全链路只判定一次，杜绝二次 FinishSpawning。
+    const bool bNeedsFinishSpawning = bGuaranteedNeedsFinishSpawning || !Actor->IsActorInitialized();
+    if (bNeedsFinishSpawning)
+    {
+        Actor->FinishSpawning(SpawnTransform);
+    }
+    FObjectPoolUtils::ActivatePooledActorFromPool(Actor, SpawnTransform, bNeedsFinishSpawning);
+}
+
 bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform& SpawnTransform)
 {
     checkf(IsInGameThread(), TEXT("UObjectPoolSubsystem::FinalizeSpawnFromPool 只能在游戏线程调用"));
@@ -353,11 +367,7 @@ bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform
     {
         DeferredFallbackActors.Remove(Actor);
         OBJECTPOOL_SUBSYSTEM_LOG(Verbose, TEXT("FinalizeSpawnFromPool: 回退生成的Actor，走非池化完成: %s"), *Actor->GetName());
-        if (!Actor->IsActorInitialized())
-        {
-            Actor->FinishSpawning(SpawnTransform);
-        }
-        FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+        FinishAndActivateFallbackActor(Actor, SpawnTransform, /*bGuaranteedNeedsFinishSpawning=*/true);
         return true;
     }
 
@@ -366,12 +376,8 @@ bool UObjectPoolSubsystem::FinalizeSpawnFromPool(AActor* Actor, const FTransform
     if (!Pool.IsValid())
     {
         OBJECTPOOL_SUBSYSTEM_LOG(Warning, TEXT("FinalizeSpawnFromPool: 找不到对应池，直接回退FinishSpawning+激活"));
-        // 非池管理对象：直接完成构造并返回
-        if (!Actor->IsActorInitialized())
-        {
-            Actor->FinishSpawning(SpawnTransform);
-        }
-        FObjectPoolUtils::ActivateActorFromPool(Actor, SpawnTransform);
+        // 非池管理对象：完成构造状态未知，按实际标志判定
+        FinishAndActivateFallbackActor(Actor, SpawnTransform, /*bGuaranteedNeedsFinishSpawning=*/false);
         return true;
     }
 

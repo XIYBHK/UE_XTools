@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -317,8 +317,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolSettingsDefaultDisabledTest,
 
 bool FObjectPoolSettingsDefaultDisabledTest::RunTest(const FString& Parameters)
 {
-    const UObjectPoolSettings* Settings = GetDefault<UObjectPoolSettings>();
-    if (!TestNotNull(TEXT("对象池设置 CDO 应可用"), Settings))
+    // 断言目标：代码级默认值。CDO 会被 UPROPERTY(config) 在配置加载阶段灌入用户 ini 值，
+    // 在显式开启对象池的项目中跑测试会误报；改用全新瞬态实例（不触发 LoadConfig）
+    // 才能反映"未经明确配置时的出厂默认"。
+    const UObjectPoolSettings* Settings = NewObject<UObjectPoolSettings>(GetTransientPackage());
+    if (!TestNotNull(TEXT("对象池设置实例应可创建"), Settings))
     {
         return false;
     }

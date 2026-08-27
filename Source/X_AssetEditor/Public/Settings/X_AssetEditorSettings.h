@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -228,7 +228,9 @@ public:
 	// 【已废弃】此字段已废弃，开关迁移至 /Script/XTools_EnhancedCodeFlow.ECFSettings（Source/XTools_EnhancedCodeFlow/Public/ECFSettings.h），编辑器内不再生效。
 	UPROPERTY(config, EditAnywhere, Category="子系统开关", meta=(
 		DisplayName="启用增强代码流",
-		ToolTip="提供异步执行、协程等高级代码流功能\n默认启用（轻量级子系统）"))
+		DeprecatedProperty,
+		DeprecationMessage="此开关已迁移至 项目设置 -> 游戏 -> XTools 增强代码流设置，此处修改不再生效；旧配置值将在启动时自动迁移",
+		ToolTip="提供异步执行、协程等高级代码流功能\n默认启用（轻量级子系统）\n【已废弃】请前往 项目设置 -> 游戏 -> XTools 增强代码流设置 修改，旧配置值会在启动时自动迁移过来"))
 	bool bEnableEnhancedCodeFlowSubsystem;
 
 	/**

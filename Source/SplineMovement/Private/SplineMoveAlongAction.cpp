@@ -1,8 +1,9 @@
-#include "SplineMoveAlongAction.h"
+﻿#include "SplineMoveAlongAction.h"
 #include "SplineMovementLog.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Pawn.h"
 #include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "Engine/World.h"
 #include "Math/UnrealMathUtility.h"
 
@@ -65,6 +66,7 @@ void USplineMoveAlongAction::Activate()
 void USplineMoveAlongAction::BeginDestroy()
 {
 	StopTick();
+	UnbindAIMoveCompleted();
 	Super::BeginDestroy();
 }
 
@@ -80,7 +82,10 @@ void USplineMoveAlongAction::Interrupt()
 bool USplineMoveAlongAction::ShouldRepathAIMoveTo(const FVector& NewTarget, const FVector& PreviousTarget,
 	bool bHasPreviousTarget, float RepathMinDistance)
 {
-	return !bHasPreviousTarget || FVector::Dist(NewTarget, PreviousTarget) > RepathMinDistance;
+	// 与 OnTicker 中目标推进判断统一采用水平面（Dist2D）口径，并以平方比较省去每帧开方：
+	// 样条垂直起伏不再虚增重寻路判断距离，防抖阈值与实际沿路位移一致。
+	return !bHasPreviousTarget ||
+		FVector::DistSquared2D(NewTarget, PreviousTarget) > FMath::Square(RepathMinDistance);
 }
 
 //=============================================================================
@@ -208,24 +213,37 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 	{
 		if (AAIController* AICtrl = Cast<AAIController>(Pawn->GetController()))
 		{
+			EnsureAIMoveCompletedBound(AICtrl);
 			// 重寻路防抖：MoveToLocation 会中止当前寻路请求，逐帧调用会导致路径反复重建。
 			// 仅当新目标点相对上次下发目标的位移超过 RepathMinDistance（取前瞻距离的一半）
 			// 时才重新发起 MoveToLocation，其余帧沿用 AI 当前移动目标。
+			// 请求失败或被中止时由 HandleAIMoveFinished 清空缓存，保证自愈重试能力。
 			const float RepathMinDistance = LookaheadDist * 0.5f;
 			if (ShouldRepathAIMoveTo(TargetPos, LastMoveToTarget, bHasLastMoveToTarget, RepathMinDistance))
 			{
 				#if WITH_DEV_AUTOMATION_TESTS
 				++AutomationMoveToRequestCount;
 				#endif
-				AICtrl->MoveToLocation(TargetPos, /*AcceptanceRadius=*/LookaheadDist * 0.25f,
-					/*bStopOnOverlap=*/false, /*bUsePathfinding=*/true,
-					/*bProjectDestinationToNavigation=*/true);
-				LastMoveToTarget = TargetPos;
-				bHasLastMoveToTarget = true;
+				const EPathFollowingRequestResult::Type MoveResult =
+					AICtrl->MoveToLocation(TargetPos, /*AcceptanceRadius=*/LookaheadDist * 0.25f,
+						/*bStopOnOverlap=*/false, /*bUsePathfinding=*/true,
+						/*bProjectDestinationToNavigation=*/true);
+				if (MoveResult == EPathFollowingRequestResult::Failed)
+				{
+					// 下发即失败（如导航数据暂不可用）：不缓存目标，下一帧直接重试
+					UE_LOG(LogSplineMovement, Verbose,
+						TEXT("SplineMoveAlongAction: MoveToLocation 下发失败，下一帧将重试"));
+				}
+				else
+				{
+					LastMoveToTarget = TargetPos;
+					bHasLastMoveToTarget = true;
+				}
 			}
 		}
-		else
+		else if (!bHasLoggedMissingAIController)
 		{
+			bHasLoggedMissingAIController = true;
 			UE_LOG(LogSplineMovement, Warning,
 				TEXT("SplineMoveAlongAction: AIMoveTo 模式下未找到 AIController，请确保 Pawn 由 AI Controller 控制"));
 		}
@@ -237,6 +255,45 @@ bool USplineMoveAlongAction::OnTicker(float DeltaTime)
 	OnTick.Broadcast(TargetPos, TargetDist);
 
 	return true; // 继续下一帧
+}
+
+//=============================================================================
+// AI 寻路失败自愈
+//=============================================================================
+
+void USplineMoveAlongAction::HandleAIMoveFinished(FAIRequestID RequestID, const FPathFollowingResult& Result)
+{
+	// 失败或被外部中止（Blocked/Aborted 等）：清空防抖缓存，
+	// 下一帧应重寻路判断直接放行，重新发起寻路请求。
+	// 注：因自身重寻路而取消旧请求产生的 Skipped 结果发生在 MoveToLocation 调用内部、
+	// 新目标缓存赋值之前，清除后立即被覆盖，不影响防抖语义。
+	if (!bFinished && !Result.IsSuccess())
+	{
+		LastMoveToTarget = FVector::ZeroVector;
+		bHasLastMoveToTarget = false;
+	}
+}
+
+void USplineMoveAlongAction::EnsureAIMoveCompletedBound(AAIController* AICtrl)
+{
+	UPathFollowingComponent* PathFollowing = AICtrl ? AICtrl->GetPathFollowingComponent() : nullptr;
+	if (!PathFollowing || BoundPathFollowing.Get() == PathFollowing)
+	{
+		return;
+	}
+	// 控制器可能被外部替换：先解绑旧组件再绑新组件
+	UnbindAIMoveCompleted();
+	BoundPathFollowing = PathFollowing;
+	PathFollowing->OnRequestFinished.AddUObject(this, &USplineMoveAlongAction::HandleAIMoveFinished);
+}
+
+void USplineMoveAlongAction::UnbindAIMoveCompleted()
+{
+	if (UPathFollowingComponent* PathFollowing = BoundPathFollowing.Get())
+	{
+		PathFollowing->OnRequestFinished.RemoveAll(this);
+	}
+	BoundPathFollowing.Reset();
 }
 
 //=============================================================================
@@ -252,6 +309,7 @@ void USplineMoveAlongAction::FinishAction(bool bInterrupted)
 	bFinished = true;
 
 	StopTick();
+	UnbindAIMoveCompleted();
 
 	// AIMoveTo 模式：停止 AI 当前移动，避免残留目标
 	if (MoveMode == ESplineMoveMode::AIMoveTo)

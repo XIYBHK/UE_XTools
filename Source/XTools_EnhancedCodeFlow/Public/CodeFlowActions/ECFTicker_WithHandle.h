@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+﻿// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
 
 #pragma once
 
@@ -20,6 +20,9 @@ protected:
   TUniqueFunction<void()> CallbackFunc_NoStopped;
   float TickingTime = 0.f;
   float CurrentTime = 0.f;
+  // 单次完成闩锁：用户在 TickFunc 内 Stop 自身会触发 Complete(true)，
+  // 同帧若计时满足再走 Complete(false) 会双播回调；先到者生效，后者空操作
+  bool bCompletionCalled = false;
 
   bool Setup(float InTickingTime,
              TUniqueFunction<void(float, FECFHandle)> &&InTickFunc,
@@ -68,6 +71,10 @@ protected:
   }
 
   void Complete(bool bStopped) override {
+    if (bCompletionCalled) {
+      return;
+    }
+    bCompletionCalled = true;
     // 【防御性编程】：确保 Owner 仍然有效
     if (HasValidOwner() && CallbackFunc) {
       CallbackFunc(bStopped);

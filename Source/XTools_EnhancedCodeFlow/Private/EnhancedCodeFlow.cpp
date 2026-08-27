@@ -1,11 +1,10 @@
-// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
+﻿// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 #include "EnhancedCodeFlow.h"
 #include "ECFSubsystem.h"
 #include "ECFActionsHeader.h"
 #include "ECFActionsHeaderCoroutine.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogEnhancedCodeFlow, Log, All);
+#include "ECFLogs.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
@@ -228,7 +227,7 @@ FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFuncti
 	// 输入验证（与另一个 Delay 重载保持一致）
 	if (!InOwner)
 	{
-		UE_LOG(LogEnhancedCodeFlow, Warning, TEXT("EnhancedCodeFlow::Delay - InOwner 为空，无法创建延迟动作"));
+		UE_LOG(LogECF, Warning, TEXT("EnhancedCodeFlow::Delay - InOwner 为空，无法创建延迟动作"));
 		return FECFHandle();
 	}
 
@@ -236,7 +235,7 @@ FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFuncti
 	const float ClampedDelayTime = FMath::Clamp(InDelayTime, 0.0f, EnhancedCodeFlowConfig::MaxDelayTime);
 	if (ClampedDelayTime != InDelayTime)
 	{
-		UE_LOG(LogEnhancedCodeFlow, Warning, TEXT("EnhancedCodeFlow::Delay - 延迟时间 %.2f 超出范围，已限制为 %.2f"),
+		UE_LOG(LogECF, Warning, TEXT("EnhancedCodeFlow::Delay - 延迟时间 %.2f 超出范围，已限制为 %.2f"),
 			InDelayTime, ClampedDelayTime);
 	}
 
@@ -251,7 +250,7 @@ FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFuncti
 	// 输入验证
 	if (!InOwner)
 	{
-		UE_LOG(LogEnhancedCodeFlow, Warning, TEXT("EnhancedCodeFlow::Delay - InOwner 为空，无法创建延迟动作"));
+		UE_LOG(LogECF, Warning, TEXT("EnhancedCodeFlow::Delay - InOwner 为空，无法创建延迟动作"));
 		return FECFHandle();
 	}
 
@@ -259,7 +258,7 @@ FECFHandle FFlow::Delay(const UObject* InOwner, float InDelayTime, TUniqueFuncti
 	const float ClampedDelayTime = FMath::Clamp(InDelayTime, 0.0f, EnhancedCodeFlowConfig::MaxDelayTime);
 	if (ClampedDelayTime != InDelayTime)
 	{
-		UE_LOG(LogEnhancedCodeFlow, Warning, TEXT("EnhancedCodeFlow::Delay - 延迟时间 %.2f 超出范围，已限制为 %.2f"),
+		UE_LOG(LogECF, Warning, TEXT("EnhancedCodeFlow::Delay - 延迟时间 %.2f 超出范围，已限制为 %.2f"),
 			InDelayTime, ClampedDelayTime);
 	}
 

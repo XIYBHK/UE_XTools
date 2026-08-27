@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -908,24 +908,9 @@ void USortLibrary::RemoveDuplicateIntegers(const TArray<int32>& InArray, TArray<
     OutArray = MoveTemp(Result);
 }
 
-// FString 默认相等与哈希均忽略大小写；显式 KeyFuncs 才能实现节点的 bCaseSensitive 契约。
-struct FCaseSensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
-{
-    static FORCEINLINE const FString& GetSetKey(const FString& Element)
-    {
-        return Element;
-    }
-
-    static FORCEINLINE bool Matches(const FString& A, const FString& B)
-    {
-        return A.Equals(B, ESearchCase::CaseSensitive);
-    }
-
-    static FORCEINLINE uint32 GetKeyHash(const FString& Key)
-    {
-        return FCrc::StrCrc32(*Key);
-    }
-};
+// 说明：FString 的默认哈希（FCrc::StrCrc32）与 operator== 均为大小写敏感，
+// 因此"区分大小写"去重直接使用默认 TSet<FString> 即可，无需自定义 KeyFuncs；
+// 仅"忽略大小写"分支需要下面的自定义 KeyFuncs 覆盖默认语义。
 
 // 为TSet提供不区分大小写的字符串比较功能，继承 BaseKeyFuncs 保证跨版本编译安全
 struct FCaseInsensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
@@ -962,7 +947,7 @@ void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, TArray
 
     if (bCaseSensitive)
     {
-        TSet<FString, FCaseSensitiveStringKeyFuncs> UniqueStrings;
+        TSet<FString> UniqueStrings;
         UniqueStrings.Reserve(InArray.Num());
         for (const FString& Str : InArray)
         {

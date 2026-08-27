@@ -1,4 +1,4 @@
-#include "FormationMovementComponent.h"
+﻿#include "FormationMovementComponent.h"
 #include "FormationLog.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -22,6 +22,7 @@ UFormationMovementComponent::UFormationMovementComponent()
     OwnerCharacter = nullptr;
     BestDistanceToTarget = 0.0f;
     NoProgressElapsed = 0.0f;
+    bBrakeReleased = false;
 }
 
 void UFormationMovementComponent::BeginPlay()
@@ -79,6 +80,8 @@ void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, 
     // 卡住检测状态复位：以起点距离为基准，移动中重定向（再次调用本函数）同样重新计程
     BestDistanceToTarget = GetDistanceToTarget();
     NoProgressElapsed = 0.0f;
+    // 制动迟滞状态复位：新目标从一开始即按常规制动逻辑判定
+    bBrakeReleased = false;
     SetComponentTickEnabled(true);
     
     // 简化日志输出 - 只在VeryVerbose级别输出详细信息
@@ -202,17 +205,41 @@ void UFormationMovementComponent::UpdateMovement(float DeltaTime)
     // 计算速度倍数
     float SpeedMultiplier = 1.0f;
 
-    // 速度阈值：速度已衰减到接近零时不再视为制动——否则在制动带内（接受半径外）速度归零后
-    // 将永久保持零输入、无法重新加速（卡墙或提前减速停下都会触发该死锁）
-    if (bShouldBrake && CurrentSpeed > 1.0f)
+    // 制动迟滞：制动带内停止输入自然减速；速度跌破 BrakeReleaseSpeed 时释放制动恢复
+    // 输入（保持原"速度归零可恢复"语义）；恢复后须重新加速到更高的 BrakeReEnterSpeed
+    // 才会再次进入制动。单一阈值在速度逐帧穿越其两侧时会形成"走-停"振荡蠕行，
+    // 双阈值迟滞把振荡域推开，使减速表现为连续的减速-滑行。
+    constexpr float BrakeReleaseSpeed = 1.0f;   // cm/s：释放制动的速度下限
+    constexpr float BrakeReEnterSpeed = 20.0f;  // cm/s：释放后重新进入制动的加速下限
+
+    if (bShouldBrake && !bBrakeReleased)
     {
-        // 进入制动阶段，停止输入让角色自然减速
+        if (CurrentSpeed <= BrakeReleaseSpeed)
+        {
+            bBrakeReleased = true;
+            UE_LOG(LogFormationSystem, VeryVerbose,
+                TEXT("FormationMovementComponent: 速度=%.2fcm/s 跌至 %.1f 以下，释放制动恢复输入"), CurrentSpeed, BrakeReleaseSpeed);
+        }
+        else
+        {
+            // 进入制动阶段，停止输入让角色自然减速
+            OwnerCharacter->AddMovementInput(FVector::ZeroVector, 0.0f);
+
+            UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 制动中，距离=%.2f，制动距离=%.2f，当前速度=%.2f"),
+                   DistanceToTarget, BrakingDistance, CurrentSpeed);
+
+            // 不执行旋转，让角色自然停止
+            return;
+        }
+    }
+
+    if (bShouldBrake && bBrakeReleased && CurrentSpeed >= BrakeReEnterSpeed)
+    {
+        bBrakeReleased = false;
+
         OwnerCharacter->AddMovementInput(FVector::ZeroVector, 0.0f);
-
-        UE_LOG(LogFormationSystem, VeryVerbose, TEXT("FormationMovementComponent: 制动中，距离=%.2f，制动距离=%.2f，当前速度=%.2f"),
-               DistanceToTarget, BrakingDistance, CurrentSpeed);
-
-        // 不执行旋转，让角色自然停止
+        UE_LOG(LogFormationSystem, VeryVerbose,
+            TEXT("FormationMovementComponent: 恢复后速度回升至 %.2fcm/s（>= %.1f），重新进入制动"), CurrentSpeed, BrakeReEnterSpeed);
         return;
     }
     else if (bEnableSlowDown)

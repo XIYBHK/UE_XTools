@@ -1,4 +1,4 @@
-#include "K2Nodes/K2Node_ForEachLoopWithDelay.h"
+﻿#include "K2Nodes/K2Node_ForEachLoopWithDelay.h"
 #include "K2Nodes/K2NodeHelpers.h"
 
 // 编辑器
@@ -112,6 +112,10 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
           {GetExecPin(), GetArrayPin(), GetDelayPin(), GetLoopBodyPin(),
            GetBreakPin(), GetValuePin(), GetIndexPin(), GetCompletedPin()},
           LOCTEXT("MissingPins", "@@ 节点引脚不完整"))) {
+    // 与同文件其余失败分支保持一致：Super::ExpandNode 可能已创建分割子引脚，
+    // 不先断链会把节点留在"半展开、外部链接挂在原引脚"状态，导致下游执行链静默断开
+    // （引擎 BlueprintGraph 惯例：展开失败分支调用 BreakAllNodeLinks 后再返回）
+    BreakAllNodeLinks();
     return;
   }
   UEdGraphPin *BreakPin = GetBreakPin();
