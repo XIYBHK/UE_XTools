@@ -48,11 +48,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Determine target release
         id: target
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             let tagName = '';
@@ -172,7 +172,7 @@ jobs:
       - name: Download from Artifacts (fallback)
         if: steps.target.outputs.skip != 'true' && steps.get_local.outputs.source == 'download'
         id: download
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: false
         with:
           retries: 3
@@ -277,7 +277,7 @@ jobs:
 
       - name: Update release assets
         if: steps.target.outputs.skip != 'true' && (steps.get_local.outputs.success == 'true' || steps.download.outputs.success == 'true')
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: false  # 上传失败应停止流程
         with:
           retries: 3  # 网络操作重试

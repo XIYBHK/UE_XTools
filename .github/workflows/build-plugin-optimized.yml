@@ -217,7 +217,7 @@ jobs:
     
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
         fetch-tags: true
@@ -513,10 +513,10 @@ jobs:
         $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
     - name: Upload Distribution Package
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ env.ARTIFACT_NAME }}
-        path: ${{ env.OUTPUT_DIR }}  # 直接上传文件夹，v4 会自动压缩
+        path: ${{ env.OUTPUT_DIR }}  # 直接上传文件夹，由 Artifact Action 自动压缩
         retention-days: 30
         # compression-level: 6  # 默认值，可选 0-9
         if-no-files-found: error
@@ -553,7 +553,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       
@@ -679,7 +679,7 @@ jobs:
           }
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
           name: XTools ${{ steps.version.outputs.tag_name }}

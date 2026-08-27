@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -138,7 +138,7 @@ jobs:
 
       - name: Download from Artifacts (fallback)
         if: steps.get_artifacts.outputs.source == 'download'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: false
         with:
           retries: 3
@@ -256,7 +256,7 @@ jobs:
 
       - name: Check if Release exists
         id: check_release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const tagName = '${{ steps.validate.outputs.tag_name }}';
@@ -282,7 +282,7 @@ jobs:
             }
 
       - name: Create or Update Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.validate.outputs.tag_name }}
           name: ${{ steps.validate.outputs.release_name }}
