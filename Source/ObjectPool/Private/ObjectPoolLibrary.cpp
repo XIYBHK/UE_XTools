@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2025 XIYBHK
 * Licensed under UE_XTools License
 */
@@ -543,7 +543,7 @@ int32 UObjectPoolLibrary::BatchReturnActors(const UObject* WorldContext, const T
     {
         if (IsValid(Actor))
         {
-            EPoolOpResult Result;
+            EPoolOpResult Result = EPoolOpResult::Success;
             if (ReturnActorToPoolEx(WorldContext, Actor, Result))
             {
                 ++SuccessCount;

@@ -1,4 +1,4 @@
-#include "MaterialTools/X_MaterialFunctionParamsCustomization.h"
+﻿#include "MaterialTools/X_MaterialFunctionParamsCustomization.h"
 
 #include "DetailWidgetRow.h"
 #include "IDetailChildrenBuilder.h"

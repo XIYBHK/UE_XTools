@@ -1,4 +1,4 @@
-#include "MaterialTools/X_MaterialFunctionOperation.h"
+﻿#include "MaterialTools/X_MaterialFunctionOperation.h"
 
 #include "Editor.h"
 #include "Subsystems/AssetEditorSubsystem.h"

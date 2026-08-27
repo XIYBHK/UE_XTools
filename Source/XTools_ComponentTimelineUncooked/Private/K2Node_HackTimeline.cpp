@@ -1,4 +1,4 @@
-// Copyright 2023 Tomasz Klin. All Rights Reserved.
+﻿// Copyright 2023 Tomasz Klin. All Rights Reserved.
 
 #include "K2Node_HackTimeline.h"
 #include "ComponentTimelineUncooked.h"

@@ -1,4 +1,4 @@
-#include "AutoSizeCommentsUtils.h"
+﻿#include "AutoSizeCommentsUtils.h"
 
 #include "AutoSizeCommentsCacheFile.h"
 #include "AutoSizeCommentsGraphNode.h"

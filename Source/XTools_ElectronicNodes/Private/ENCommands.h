@@ -1,4 +1,4 @@
-/* Copyright (C) 2024 Hugo ATTAL - All Rights Reserved
+﻿/* Copyright (C) 2024 Hugo ATTAL - All Rights Reserved
 * This plugin is downloadable from the Unreal Engine Marketplace
 */
 

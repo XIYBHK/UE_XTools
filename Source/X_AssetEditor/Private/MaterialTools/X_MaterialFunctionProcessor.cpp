@@ -1,4 +1,4 @@
-#include "MaterialTools/X_MaterialFunctionProcessor.h"
+﻿#include "MaterialTools/X_MaterialFunctionProcessor.h"
 
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"

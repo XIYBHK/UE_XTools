@@ -1,4 +1,4 @@
-#include "K2Nodes/K2Node_WhileLoopWithDelay.h"
+﻿#include "K2Nodes/K2Node_WhileLoopWithDelay.h"
 #include "K2Nodes/K2NodeHelpers.h"
 
 #include "BlueprintActionDatabaseRegistrar.h"

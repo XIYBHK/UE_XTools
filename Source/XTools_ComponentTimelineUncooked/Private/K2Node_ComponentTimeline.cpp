@@ -1,4 +1,4 @@
-// Copyright 2023 Tomasz Klin. All Rights Reserved.
+﻿// Copyright 2023 Tomasz Klin. All Rights Reserved.
 
 /**
  * 组件时间轴节点实现文件

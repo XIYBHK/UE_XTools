@@ -1,4 +1,4 @@
-#include "SortGraphPinFactory.h"
+﻿#include "SortGraphPinFactory.h"
 #include "SGraphPinStructPropertyName.h"
 #include "K2Node_SmartSort.h"
 #include "EdGraphSchema_K2.h"

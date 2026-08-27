@@ -1,4 +1,4 @@
-#include "FormationLibrary.h"
+﻿#include "FormationLibrary.h"
 #include "FormationMathUtils.h"
 #include "FormationLog.h"
 #include "XToolsErrorReporter.h"

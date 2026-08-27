@@ -1,4 +1,4 @@
-#include "QueueSplineMovementComponent.h"
+﻿#include "QueueSplineMovementComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 

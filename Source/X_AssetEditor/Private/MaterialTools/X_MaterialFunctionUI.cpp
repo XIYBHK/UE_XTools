@@ -1,4 +1,4 @@
-#include "MaterialTools/X_MaterialFunctionUI.h"
+﻿#include "MaterialTools/X_MaterialFunctionUI.h"
 
 #include "Materials/MaterialFunction.h"
 #include "Widgets/Input/SSearchBox.h"

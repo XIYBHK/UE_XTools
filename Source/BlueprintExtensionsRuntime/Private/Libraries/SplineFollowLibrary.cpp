@@ -1,4 +1,4 @@
-#include "Libraries/SplineFollowLibrary.h"
+﻿#include "Libraries/SplineFollowLibrary.h"
 
 #include "BlueprintExtensionsRuntime.h"
 #include "Components/SplineComponent.h"

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2024 Gradess Games
 * Copyright (c) 2025 XIYBHK (XTools Integration)
 * Licensed under UE_XTools License

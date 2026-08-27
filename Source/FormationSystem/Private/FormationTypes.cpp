@@ -1,4 +1,4 @@
-#include "FormationTypes.h"
+﻿#include "FormationTypes.h"
 #include "FormationLog.h"
 
 TArray<FVector> FFormationData::GetWorldPositions() const

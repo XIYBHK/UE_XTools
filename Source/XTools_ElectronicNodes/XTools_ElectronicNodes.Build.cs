@@ -1,4 +1,4 @@
-/* Copyright (C) 2024 Hugo ATTAL - All Rights Reserved
+﻿/* Copyright (C) 2024 Hugo ATTAL - All Rights Reserved
 * This plugin is downloadable from the UE4 Marketplace
 *
 * Integration Note: Integrated into XTools plugin for local use and customization

@@ -1,4 +1,4 @@
-#include "K2Node_SplineMoveAlong.h"
+﻿#include "K2Node_SplineMoveAlong.h"
 
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintNodeSpawner.h"

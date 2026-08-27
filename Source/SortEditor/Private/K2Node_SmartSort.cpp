@@ -1,4 +1,4 @@
-#include "K2Node_SmartSort.h"
+﻿#include "K2Node_SmartSort.h"
 #include "UObject/TextProperty.h"
 
 #if WITH_EDITOR

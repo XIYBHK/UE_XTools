@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
+﻿// Copyright (c) 2026 Damian Nowakowski. All rights reserved.
 
 /**
  * 用于启动代码流动作的静态函数库

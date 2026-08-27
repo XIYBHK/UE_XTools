@@ -1,4 +1,4 @@
-#include "Misc/AutomationTest.h"
+﻿#include "Misc/AutomationTest.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 

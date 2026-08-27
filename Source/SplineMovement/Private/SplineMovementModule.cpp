@@ -1,4 +1,4 @@
-#include "SplineMovementModule.h"
+﻿#include "SplineMovementModule.h"
 #include "SplineMovementLog.h"
 #include "Modules/ModuleManager.h"
 

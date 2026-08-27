@@ -1,4 +1,4 @@
-#include "FormationMathUtils.h"
+﻿#include "FormationMathUtils.h"
 #include "FormationLog.h"
 
 bool FFormationMathUtils::DoPathsIntersect(

@@ -1,4 +1,4 @@
-// Copyright 2023 Tomasz Klin. All Rights Reserved.
+﻿// Copyright 2023 Tomasz Klin. All Rights Reserved.
 
 /**
  * XTools_ComponentTimelineUncooked 插件模块

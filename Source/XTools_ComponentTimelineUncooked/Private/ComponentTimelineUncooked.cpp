@@ -1,4 +1,4 @@
-// Copyright 2023 Tomasz Klin. All Rights Reserved.
+﻿// Copyright 2023 Tomasz Klin. All Rights Reserved.
 
 /**
  * 组件时间轴未烘焙模块实现文件

@@ -1,4 +1,4 @@
-// FormationSystemCore.cpp - 阵型系统核心管理
+﻿// FormationSystemCore.cpp - 阵型系统核心管理
 //
 // 注意：由于模块化拆分过程中发现原始代码结构复杂，
 // 为了保证功能完整性和编译稳定性，核心实现暂时保留在原始文件中。

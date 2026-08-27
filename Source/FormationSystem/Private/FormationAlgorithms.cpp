@@ -1,4 +1,4 @@
-// FormationAlgorithms.cpp - 基础阵型分配算法
+﻿// FormationAlgorithms.cpp - 基础阵型分配算法
 // 包含基础分配算法、成本矩阵计算、匈牙利算法等核心算法实现
 
 #include "FormationManagerComponent.h"

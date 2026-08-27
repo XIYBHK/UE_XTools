@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+﻿// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
 
 /**
  * 用于在蓝图中启动代码流程功能的静态函数库

@@ -1,4 +1,4 @@
-#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Libraries/MathExtensionsLibrary.h"
 

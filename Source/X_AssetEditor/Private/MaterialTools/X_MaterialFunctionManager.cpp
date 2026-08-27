@@ -1,4 +1,4 @@
-#include "MaterialTools/X_MaterialFunctionManager.h"
+﻿#include "MaterialTools/X_MaterialFunctionManager.h"
 
 // 核心模块
 #include "Modules/ModuleManager.h"

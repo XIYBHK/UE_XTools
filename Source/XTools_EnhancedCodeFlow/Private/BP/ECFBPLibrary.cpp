@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+﻿// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
 
 #include "BP/ECFBPLibrary.h"
 #include "EnhancedCodeFlow.h"

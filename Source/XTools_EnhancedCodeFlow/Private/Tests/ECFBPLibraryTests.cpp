@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
+﻿// Copyright (c) 2024 Damian Nowakowski. All rights reserved.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
