@@ -24,12 +24,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXM21NavigationMapFixtureTest,
 bool FXM21NavigationMapFixtureTest::RunTest(const FString& Parameters)
 {
 	const FString MapPath = TEXT("/Game/样条移动/样条移动Untitled");
-	// fixture 地图属于仓库外内容：缺失的机器/CI 上记为信息并视为通过，
-	// 避免"资产不存在"这种与导航逻辑无关的环境差异污染测试结果
+	// 地图级门禁必须实际执行 fixture；缺失时明确失败，禁止产生未验证的绿色结果。
 	if (!FPackageName::DoesPackageExist(MapPath))
 	{
-		AddInfo(FString::Printf(TEXT("跳过：fixture 测试地图不存在于当前项目：%s"), *MapPath));
-		return true;
+		AddError(FString::Printf(TEXT("fixture 测试地图不存在于当前项目：%s"), *MapPath));
+		return false;
 	}
 	const bool bLoaded = FEditorFileUtils::LoadMap(MapPath, false, false);
 	UWorld* World = bLoaded && GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;

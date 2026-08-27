@@ -340,15 +340,9 @@ AActor* UObjectPoolSubsystem::AcquireDeferredFromPool(UClass* ActorClass)
 
 void UObjectPoolSubsystem::FinishAndActivateFallbackActor(AActor* Actor, const FTransform& SpawnTransform, bool bGuaranteedNeedsFinishSpawning)
 {
-    //  IsActorInitialized() 只在此处求值一次：加载期（AreActorsInitialized()==false）该标志
-    //  在 FinishSpawning 之后仍为 false，若激活内部再用同一判据二次判定会触发
-    //  ensure(!bHasFinishedSpawning)（引擎 Actor.cpp 双版本一致）。因此把求值结果显式传参，
-    //  全链路只判定一次，杜绝二次 FinishSpawning。
+    // IsActorInitialized() 只在此处求值一次，并把结果交给激活层完成生成，
+    // 避免加载期再次按该标志判断而二次调用 FinishSpawning。
     const bool bNeedsFinishSpawning = bGuaranteedNeedsFinishSpawning || !Actor->IsActorInitialized();
-    if (bNeedsFinishSpawning)
-    {
-        Actor->FinishSpawning(SpawnTransform);
-    }
     FObjectPoolUtils::ActivatePooledActorFromPool(Actor, SpawnTransform, bNeedsFinishSpawning);
 }
 

@@ -196,6 +196,41 @@ bool FObjectPoolAcquireOrSpawnFallbackTest::RunTest(const FString& Parameters)
     return true;
 }
 
+// 延迟回退必须遵守 SpawnActorDeferred 的两段式契约：Finalize 仅完成一次生成。
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolDeferredFallbackFinishesOnceTest,
+    "XTools.ObjectPool.Subsystem.DeferredFallbackFinishesOnce",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolDeferredFallbackFinishesOnceTest::RunTest(const FString& Parameters)
+{
+    FScopedObjectPoolTestWorld TestWorld(TEXT("ObjectPoolTest_DeferredFallback"));
+    UObjectPoolSubsystem* Subsystem = BuildFullPool(TestWorld.Get());
+    if (!TestNotNull(TEXT("应能构造硬限制已满的对象池"), Subsystem))
+    {
+        return false;
+    }
+
+    AActor* PooledActor = Subsystem->AcquireDeferredFromPool(AActor::StaticClass());
+    if (!TestNotNull(TEXT("首次延迟获取应取得池内Actor"), PooledActor))
+    {
+        return false;
+    }
+    TestTrue(TEXT("池内Actor应能完成延迟生成"),
+        Subsystem->FinalizeSpawnFromPool(PooledActor, FTransform::Identity));
+
+    AActor* FallbackActor = Subsystem->AcquireDeferredFromPool(AActor::StaticClass());
+    if (!TestNotNull(TEXT("容量已满时应取得延迟回退Actor"), FallbackActor))
+    {
+        return false;
+    }
+    TestFalse(TEXT("延迟回退Actor不应受池管理"),
+        UObjectPoolLibrary::IsActorPooled(TestWorld.Get(), FallbackActor));
+    TestTrue(TEXT("延迟回退Actor应只完成一次生成且成功激活"),
+        Subsystem->FinalizeSpawnFromPool(FallbackActor, FTransform::Identity));
+
+    return true;
+}
+
 // M-14 回归：请求类无法生成时，普通/Ex/获取或生成/批量入口均不得返回 AActor 基类空壳。
 // 合法的池满回退由 FObjectPoolFallbackSpawnResultCodeTest 覆盖，不能因本测试而删除。
 IMPLEMENT_SIMPLE_AUTOMATION_TEST_PRIVATE(FObjectPoolRejectsUnspawnableClassTest,

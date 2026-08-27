@@ -83,15 +83,14 @@ void FXToolsErrorReporter::ReportInternal(FLogCategoryBase* Category,
         FMsg::Logf(LogFile, LogLine, Category->GetCategoryName(), Verbosity, TEXT("%s"), *FullMessage);
     }
 
-    // 屏显依赖引擎屏显通道，仅 Error/Warning 才有意义转发；
-    // 非编辑器构建关闭屏显时避免白付 FString 拷贝与一次 GameThread 任务派发。
+    // 编辑器中的 Error/Warning 即使不屏显也要进入 Message Log；
+    // 非编辑器构建仅在调用方明确请求屏显时派发到游戏线程。
 #if WITH_EDITOR
     const bool bNeedsUserNotification = bNotifyOnScreen
         || Verbosity == ELogVerbosity::Error
         || Verbosity == ELogVerbosity::Warning;
 #else
-    const bool bNeedsUserNotification = bNotifyOnScreen
-        && (Verbosity == ELogVerbosity::Error || Verbosity == ELogVerbosity::Warning);
+    const bool bNeedsUserNotification = bNotifyOnScreen;
 #endif
     if (bNeedsUserNotification)
     {

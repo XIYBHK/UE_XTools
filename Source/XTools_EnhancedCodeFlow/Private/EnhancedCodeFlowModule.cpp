@@ -46,11 +46,17 @@ static void MigrateLegacyECFSubsystemSwitch()
 		UECFSettings* Settings = GetMutableDefault<UECFSettings>();
 		const bool bLegacyEnabled = LegacyValue.ToBool();
 		Settings->bEnableEnhancedCodeFlowSubsystem = bLegacyEnabled;
-		Settings->SaveConfig();
-		GConfig->RemoveKey(LegacySection, SwitchKeyName, GEditorIni);
-		GConfig->Flush(false, GEditorIni);
-		UE_LOG(LogECF, Log, TEXT("已完成子系统开关迁移: bEnableEnhancedCodeFlowSubsystem=%s -> ECFSettings(Game ini)，旧 Editor.ini 配置键已清除"),
-			bLegacyEnabled ? TEXT("true") : TEXT("false"));
+		if (Settings->TryUpdateDefaultConfigFile())
+		{
+			GConfig->RemoveKey(LegacySection, SwitchKeyName, GEditorIni);
+			GConfig->Flush(false, GEditorIni);
+			UE_LOG(LogECF, Log, TEXT("已完成子系统开关迁移: bEnableEnhancedCodeFlowSubsystem=%s -> DefaultGame.ini，旧 Editor.ini 配置键已清除"),
+				bLegacyEnabled ? TEXT("true") : TEXT("false"));
+		}
+		else
+		{
+			UE_LOG(LogECF, Warning, TEXT("无法将子系统开关迁移到 DefaultGame.ini，已保留旧 Editor.ini 配置键"));
+		}
 	}
 }
 
