@@ -149,8 +149,8 @@ void FAutoSizeCommentGraphHandler::UnbindDelegates()
 		GEditor->GetTimerManager()->ClearAllTimersForObject(this);
 	}
 	bPendingSave = false;
-	bPendingGraphVisualRequest = false;
 	bProcessedAltReleased = false;
+	PendingPurge.Reset();
 
 #if ASC_UE_VERSION_OR_LATER(5, 0)
 	FCoreUObjectDelegates::OnObjectPreSave.RemoveAll(this);
@@ -329,21 +329,23 @@ void FAutoSizeCommentGraphHandler::RegisterActiveGraphPanel(TSharedPtr<SGraphPan
 
 void FAutoSizeCommentGraphHandler::RequestGraphVisualRefresh(TSharedPtr<SGraphPanel> GraphPanel)
 {
-	if (bPendingGraphVisualRequest)
+	if (!GraphPanel.IsValid())
 	{
 		return;
 	}
 
-	bPendingGraphVisualRequest = true;
-
-	const auto Delegate = FTimerDelegate::CreateRaw(this, &FAutoSizeCommentGraphHandler::RefreshGraphVisualRefresh, TWeakPtr<SGraphPanel>(GraphPanel));
-	GEditor->GetTimerManager()->SetTimerForNextTick(Delegate);
+	if (FASCPendingGraphPurge* Purge = PendingPurge.Find(GraphPanel))
+	{
+		Purge->Timer = 2;
+	}
+	else
+	{
+		PendingPurge.Add(GraphPanel, FASCPendingGraphPurge());
+	}
 }
 
 void FAutoSizeCommentGraphHandler::RefreshGraphVisualRefresh(TWeakPtr<SGraphPanel> GraphPanel)
 {
-	bPendingGraphVisualRequest = false;
-
 	if (!GraphPanel.IsValid())
 	{
 		return;
@@ -360,6 +362,22 @@ void FAutoSizeCommentGraphHandler::RefreshGraphVisualRefresh(TWeakPtr<SGraphPane
 
 	GEditor->GetTimerManager()->SetTimerForNextTick(
 		FTimerDelegate::CreateRaw(this, &FAutoSizeCommentGraphHandler::UpdateGraphPanel, GraphPanel));
+}
+
+void FAutoSizeCommentGraphHandler::UpdateGraphPurgeTimer()
+{
+	for (auto Iter = PendingPurge.CreateIterator(); Iter; ++Iter)
+	{
+		if (!Iter.Key().IsValid())
+		{
+			Iter.RemoveCurrent();
+		}
+		else if (--Iter.Value().Timer == 0)
+		{
+			RefreshGraphVisualRefresh(Iter.Key());
+			Iter.RemoveCurrent();
+		}
+	}
 }
 
 void FAutoSizeCommentGraphHandler::UpdateGraphPanel(TWeakPtr<SGraphPanel> GraphPanel)
@@ -714,6 +732,7 @@ TArray<TSharedPtr<SGraphPanel>> FAutoSizeCommentGraphHandler::GetActiveGraphPane
 bool FAutoSizeCommentGraphHandler::Tick(float DeltaTime)
 {
 	UpdateNodeUnrelatedState();
+	UpdateGraphPurgeTimer();
 
 	return true;
 }

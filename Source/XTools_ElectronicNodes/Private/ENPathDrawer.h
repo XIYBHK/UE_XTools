@@ -12,7 +12,7 @@
 class FENPathDrawer
 {
 public:
-	FENPathDrawer(int32& LayerId, float& ZoomFactor, bool RightPriority, const FConnectionParams* Params, FSlateWindowElementList* DrawElementsList, FENConnectionDrawingPolicy* ConnectionDrawingPolicy);
+	FENPathDrawer(int32& LayerId, float& ZoomFactor, bool RightPriority, const FConnectionParams* Params, FSlateWindowElementList* DrawElementsList, FENConnectionDrawingPolicy* ConnectionDrawingPolicy, bool bDeferDrawing = false);
 
 	void DrawManhattanWire(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection);
 	void DrawSubwayWire(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection);
@@ -35,8 +35,20 @@ public:
 	void DrawSpline(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection);
 
 	void DebugColor(const FLinearColor& Color);
+	void Flush(float AlphaMultiplier = 1.0f);
 
 private:
+	struct FDeferredWire
+	{
+		FVector2D Start;
+		FVector2D StartDirection;
+		FVector2D End;
+		FVector2D EndDirection;
+		FLinearColor Color;
+	};
+
+	void DrawWire(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection);
+
 	const UElectronicNodesSettings& ElectronicNodesSettings = *GetDefault<UElectronicNodesSettings>();
 
 	int32 LayerId;
@@ -47,6 +59,8 @@ private:
 	const FConnectionParams* Params;
 	FSlateWindowElementList* DrawElementsList;
 	FENConnectionDrawingPolicy* ConnectionDrawingPolicy;
+	bool bDeferDrawing;
+	TArray<FDeferredWire> DeferredWires;
 
 	int32 MaxDepthWire = 5;
 };

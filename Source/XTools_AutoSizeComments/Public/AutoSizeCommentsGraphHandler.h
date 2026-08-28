@@ -24,6 +24,11 @@ struct FASCGraphHandlerData
 	EGraphRenderingLOD::Type LastLOD = EGraphRenderingLOD::Type::DefaultDetail;
 };
 
+struct FASCPendingGraphPurge
+{
+	uint8 Timer = 2;
+};
+
 class FAutoSizeCommentGraphHandler
 {
 public:
@@ -62,6 +67,8 @@ public:
 private:
 	TMap<TWeakObjectPtr<UEdGraph>, FASCGraphHandlerData> GraphDatas;
 
+	TMap<TWeakPtr<SGraphPanel>, FASCPendingGraphPurge> PendingPurge;
+
 	TArray<TWeakPtr<SGraphPanel>> ActiveGraphPanels;
 
 #if ASC_UE_VERSION_OR_LATER(5, 0)
@@ -72,13 +79,12 @@ private:
 
 	bool bPendingSave = false;
 
-	bool bPendingGraphVisualRequest = false;
-
 	bool bProcessedAltReleased = false;
 
 	bool Tick(float DeltaTime);
 
 	void UpdateNodeUnrelatedState();
+	void UpdateGraphPurgeTimer();
 
 	void OnNodeAdded(TWeakObjectPtr<UEdGraphNode> NewNodePtr);
 

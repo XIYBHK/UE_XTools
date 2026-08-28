@@ -8,6 +8,23 @@
 ### CI/CD
 - 调整 Actions 至 Node 24
 
+### XTools_AutoSizeComments
+- 修复 多图表面板刷新请求互相覆盖
+- 保留 上游刷新队列并兼容本地生命周期清理
+
+### XTools_BlueprintAssist
+- 审查 同步上游功能并保留本地配置扩展
+
+### XTools_ElectronicNodes
+- 优化 切片线交叉连线延迟绘制与淡化
+- 兼容 UE 5.6+ 向量类型及 PCG 黑线显示
+
+### XTools_EnhancedCodeFlow
+- 兼容 补齐配置缓存头文件显式包含
+
+### 构建
+- 验证 UE 5.8 StrictIncludes 三目标打包通过
+
 ## 日志格式说明
 
 ### 模块分类

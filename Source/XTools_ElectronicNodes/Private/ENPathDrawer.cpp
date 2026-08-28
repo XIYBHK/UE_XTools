@@ -5,15 +5,20 @@
 #include "ENPathDrawer.h"
 #include "Lib/Utils.h"
 
-FENPathDrawer::FENPathDrawer(int32& LayerId, float& ZoomFactor, bool RightPriority, const FConnectionParams* Params, FSlateWindowElementList* DrawElementsList, FENConnectionDrawingPolicy* ConnectionDrawingPolicy)
+FENPathDrawer::FENPathDrawer(int32& LayerId, float& ZoomFactor, bool RightPriority, const FConnectionParams* Params, FSlateWindowElementList* DrawElementsList, FENConnectionDrawingPolicy* ConnectionDrawingPolicy, bool bDeferDrawing)
 {
 	this->LayerId = LayerId;
 	this->ZoomFactor = ZoomFactor;
 	this->RightPriority = RightPriority;
 	this->Params = Params;
 	WireColor = Params->WireColor;
+	if (WireColor == FLinearColor::Black)
+	{
+		WireColor = FLinearColor::White;
+	}
 	this->DrawElementsList = DrawElementsList;
 	this->ConnectionDrawingPolicy = ConnectionDrawingPolicy;
+	this->bDeferDrawing = bDeferDrawing;
 }
 
 void FENPathDrawer::DrawManhattanWire(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection)
@@ -254,9 +259,7 @@ void FENPathDrawer::DrawDefaultWire(const FVector2D& Start, const FVector2D& Sta
 {
 	const float Tangent = (End - Start).Size();
 
-	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
-	                                       Start, StartDirection * Tangent, End, EndDirection * Tangent,
-	                                       Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
+	DrawWire(Start, StartDirection * Tangent, End, EndDirection * Tangent);
 
 	ConnectionDrawingPolicy->ENComputeClosestPointDefault(Start, StartDirection, End, EndDirection);
 
@@ -551,9 +554,7 @@ void FENPathDrawer::DrawLine(const FVector2D& Start, const FVector2D& End, int32
 		ConnectionDrawingPolicy->CrossingConnections.Emplace(Start, End);
 	}
 
-	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
-	                                       Start, FVector2D::ZeroVector, End, FVector2D::ZeroVector,
-	                                       Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
+	DrawWire(Start, FVector2D::ZeroVector, End, FVector2D::ZeroVector);
 
 	ConnectionDrawingPolicy->ENComputeClosestPoint(Start, End);
 	ConnectionDrawingPolicy->ENDrawBubbles(Start, FVector2D::ZeroVector, End, FVector2D::ZeroVector);
@@ -568,9 +569,7 @@ void FENPathDrawer::DrawRadius(const FVector2D& Start, const FVector2D& StartDir
 	const float Tangent = GetRadiusTangent(AngleDeg);
 	const float Offset = GetRadiusOffset(AngleDeg);
 
-	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
-	                                       Start, StartDirection * Tangent, End, EndDirection * Tangent,
-	                                       Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
+	DrawWire(Start, StartDirection * Tangent, End, EndDirection * Tangent);
 
 	if (ElectronicNodesSettings.ActivateCrossing)
 	{
@@ -584,9 +583,7 @@ void FENPathDrawer::DrawSpline(const FVector2D& Start, const FVector2D& StartDir
 {
 	const float Tangent = GetRadiusTangent();
 
-	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
-	                                       Start, StartDirection * Tangent, End, EndDirection * Tangent,
-	                                       Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
+	DrawWire(Start, StartDirection * Tangent, End, EndDirection * Tangent);
 
 	if (ElectronicNodesSettings.ActivateCrossing)
 	{
@@ -603,4 +600,30 @@ void FENPathDrawer::DebugColor(const FLinearColor& Color)
 	{
 		WireColor = Color;
 	}
+}
+
+void FENPathDrawer::Flush(float AlphaMultiplier)
+{
+	for (const FDeferredWire& Wire : DeferredWires)
+	{
+		FLinearColor Color = Wire.Color;
+		Color.A *= AlphaMultiplier;
+		FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
+			Wire.Start, Wire.StartDirection, Wire.End, Wire.EndDirection,
+			Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, Color);
+	}
+	DeferredWires.Reset();
+}
+
+void FENPathDrawer::DrawWire(const FVector2D& Start, const FVector2D& StartDirection, const FVector2D& End, const FVector2D& EndDirection)
+{
+	if (bDeferDrawing)
+	{
+		DeferredWires.Add({Start, StartDirection, End, EndDirection, WireColor});
+		return;
+	}
+
+	FSlateDrawElement::MakeDrawSpaceSpline(*DrawElementsList, LayerId,
+		Start, StartDirection, End, EndDirection,
+		Params->WireThickness * ElectronicNodesSettings.WireThickness, ESlateDrawEffect::None, WireColor);
 }

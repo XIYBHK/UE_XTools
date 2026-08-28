@@ -4,6 +4,7 @@
 
 #include "ENConnectionDrawingPolicy.h"
 #include "ENPathDrawer.h"
+#include "Lib/Utils.h"
 #include "SGraphPanel.h"
 #include "Framework/Application/SlateApplication.h"
 #include "MaterialGraph/MaterialGraphSchema.h"
@@ -117,7 +118,13 @@ void FENConnectionDrawingPolicy::DrawConnectionInternal(int32 LayerId, const FVe
 	this->_Params = &Params;
 	ClosestDistanceSquared = MAX_FLT;
 
-	FENPathDrawer PathDrawer(LayerId, ZoomFactor, RightPriority, &Params, &DrawElementsList, this);
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+	bSliceLineIntersection = false;
+	const bool bDeferDrawing = Settings->bTreatSplinesLikePins && SliceLine.IsValid();
+#else
+	const bool bDeferDrawing = false;
+#endif
+	FENPathDrawer PathDrawer(LayerId, ZoomFactor, RightPriority, &Params, &DrawElementsList, this, bDeferDrawing);
 	FVector2D StartDirection = (Params.StartDirection == EGPD_Output) ? FVector2D(1.0f, 0.0f) : FVector2D(-1.0f, 0.0f);
 	FVector2D EndDirection = (Params.EndDirection == EGPD_Input) ? FVector2D(1.0f, 0.0f) : FVector2D(-1.0f, 0.0f);
 
@@ -132,6 +139,7 @@ void FENConnectionDrawingPolicy::DrawConnectionInternal(int32 LayerId, const FVe
 			PathDrawer.DrawDefaultWire(Start, StartDirection, End, EndDirection);
 			break;
 		}
+		PathDrawer.Flush();
 		return;
 	}
 
@@ -145,7 +153,7 @@ void FENConnectionDrawingPolicy::DrawConnectionInternal(int32 LayerId, const FVe
 	FVector2D NewEnd = End;
 
 	ENCorrectZoomDisplacement(NewStart, NewEnd);
-	ENProcessRibbon(_LayerId, NewStart, StartDirection, NewEnd, EndDirection, Params);
+	ENProcessRibbon(&PathDrawer, NewStart, StartDirection, NewEnd, EndDirection, Params);
 
 	EWireStyle WireStyle = ElectronicNodesSettings.WireStyle;
 
@@ -185,9 +193,10 @@ void FENConnectionDrawingPolicy::DrawConnectionInternal(int32 LayerId, const FVe
 	if (Settings->bTreatSplinesLikePins)
 	{
 		const float QueryDistanceTriggerThresholdSquared = FMath::Square(Settings->SplineHoverTolerance + Params.WireThickness * 0.5f);
-		const bool bCloseToSpline = ClosestDistanceSquared < QueryDistanceTriggerThresholdSquared;
+		const float QueryDistanceForCloseSquared = FMath::Square(
+			FMath::Sqrt(QueryDistanceTriggerThresholdSquared) + Settings->SplineCloseTolerance);
 
-		if (bCloseToSpline)
+		if (ClosestDistanceSquared < QueryDistanceTriggerThresholdSquared)
 		{
 			if (ClosestDistanceSquared < SplineOverlapResult.GetDistanceSquared())
 			{
@@ -197,7 +206,22 @@ void FENConnectionDrawingPolicy::DrawConnectionInternal(int32 LayerId, const FVe
 				SplineOverlapResult = FGraphSplineOverlapResult(Params.AssociatedPin1, Params.AssociatedPin2, ClosestDistanceSquared, SquaredDistToPin1, SquaredDistToPin2, false);
 			}
 		}
+		else if (ClosestDistanceSquared < QueryDistanceForCloseSquared)
+		{
+			SplineOverlapResult.SetCloseToSpline(true);
+		}
+
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+		if (bSliceLineIntersection)
+		{
+			ConnectionsIntersectingSliceLine.Emplace(Params.AssociatedPin1, Params.AssociatedPin2);
+			PathDrawer.Flush(SliceDeemphasisAlphaMultiplier);
+			return;
+		}
+#endif
 	}
+
+	PathDrawer.Flush();
 }
 
 int8 FENConnectionDrawingPolicy::ENGetPinMembersCount(const UEdGraphPin* Pin)
@@ -279,7 +303,7 @@ void FENConnectionDrawingPolicy::ENCorrectZoomDisplacement(FVector2D& Start, FVe
 	}
 }
 
-void FENConnectionDrawingPolicy::ENProcessRibbon(int32 LayerId, FVector2D& Start, FVector2D& StartDirection, FVector2D& End, FVector2D& EndDirection, const FConnectionParams& Params)
+void FENConnectionDrawingPolicy::ENProcessRibbon(FENPathDrawer* PathDrawer, FVector2D& Start, FVector2D& StartDirection, FVector2D& End, FVector2D& EndDirection, const FConnectionParams& Params)
 {
 	int32 DepthOffsetX = 0;
 	int32 DepthOffsetY = 0;
@@ -364,15 +388,13 @@ void FENConnectionDrawingPolicy::ENProcessRibbon(int32 LayerId, FVector2D& Start
 		FVector2D StartKey(FMath::FloorToInt(Start.X), FMath::FloorToInt(Start.Y));
 		FVector2D EndKey(FMath::FloorToInt(End.X), FMath::FloorToInt(End.Y));
 
-		FENPathDrawer PathDrawer(LayerId, ZoomFactor, true, &Params, &DrawElementsList, this);
-
 		if (DepthOffsetY != 0)
 		{
 			FVector2D NewStart = Start;
 			NewStart.X += ElectronicNodesSettings.RibbonMergeOffset * ZoomFactor * StartDirection.X;
 			NewStart.Y += static_cast<int32>(ElectronicNodesSettings.RibbonOffset) * DepthOffsetY * ZoomFactor;
 
-			PathDrawer.DrawManhattanWire(Start, StartDirection, NewStart, StartDirection);
+			PathDrawer->DrawManhattanWire(Start, StartDirection, NewStart, StartDirection);
 
 			Start = NewStart;
 		}
@@ -384,7 +406,7 @@ void FENConnectionDrawingPolicy::ENProcessRibbon(int32 LayerId, FVector2D& Start
 
 			if (DepthOffsetX * EndDirection.X > 0)
 			{
-				PathDrawer.DrawManhattanWire(NewEnd, EndDirection, End, EndDirection);
+				PathDrawer->DrawManhattanWire(NewEnd, EndDirection, End, EndDirection);
 			}
 
 			End = NewEnd;
@@ -645,6 +667,17 @@ void FENConnectionDrawingPolicy::ENComputeClosestPoint(const FVector2D& Start, c
 		ClosestDistanceSquared = TemporaryDistance;
 		ClosestPoint = TemporaryPoint;
 	}
+
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+	if (SliceLine.IsValid())
+	{
+		const FVector2D SliceStart(SliceLine.StartPoint.X, SliceLine.StartPoint.Y);
+		const FVector2D SliceEnd(SliceLine.EndPoint.X, SliceLine.EndPoint.Y);
+		FVector2D IntersectionPoint;
+		bSliceLineIntersection |= ENIntersectionHelpers::SegmentIntersection2D(
+			SliceStart, SliceEnd, Start, End, IntersectionPoint);
+	}
+#endif
 }
 
 void FENConnectionDrawingPolicy::ENComputeClosestPointDefault(const FVector2D& Start, const FVector2D& StartTangent, const FVector2D& End, const FVector2D& EndTangent)
@@ -683,4 +716,25 @@ void FENConnectionDrawingPolicy::ENComputeClosestPointDefault(const FVector2D& S
 			PointOnSpline1 = PointOnSpline2;
 		}
 	}
+
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+	if (SliceLine.IsValid())
+	{
+		const FVector2D SliceStart(SliceLine.StartPoint.X, SliceLine.StartPoint.Y);
+		const FVector2D SliceEnd(SliceLine.EndPoint.X, SliceLine.EndPoint.Y);
+		const float Tangent = (End - Start).Size();
+		FVector2D PointOnSpline1 = FMath::CubicInterp(Start, StartTangent * Tangent, End, EndTangent * Tangent, 0.0f);
+		for (float TestAlpha = 0.0f; TestAlpha < 1.0f; TestAlpha += 1.0f / 16.0f)
+		{
+			const FVector2D PointOnSpline2 = FMath::CubicInterp(Start, StartTangent * Tangent, End, EndTangent * Tangent, TestAlpha + 1.0f / 16.0f);
+			FVector2D IntersectionPoint;
+			if (ENIntersectionHelpers::SegmentIntersection2D(SliceStart, SliceEnd, PointOnSpline1, PointOnSpline2, IntersectionPoint))
+			{
+				bSliceLineIntersection = true;
+				break;
+			}
+			PointOnSpline1 = PointOnSpline2;
+		}
+	}
+#endif
 }

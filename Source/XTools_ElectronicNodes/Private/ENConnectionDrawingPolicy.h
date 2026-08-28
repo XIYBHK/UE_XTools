@@ -87,13 +87,16 @@ private:
 	float MinXOffset;
 	float ClosestDistanceSquared;
 	FVector2D ClosestPoint;
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+	bool bSliceLineIntersection = false;
+#endif
 	TArray<ENRibbonConnection> RibbonConnections;
 	TMap<FVector2D, int> PinsOffset;
 
 	bool IsTree = false;
 
 	void ENCorrectZoomDisplacement(FVector2D& Start, FVector2D& End) const;
-	void ENProcessRibbon(int32 LayerId, FVector2D& Start, FVector2D& StartDirection, FVector2D& End, FVector2D& EndDirection, const FConnectionParams& Params);
+	void ENProcessRibbon(FENPathDrawer* PathDrawer, FVector2D& Start, FVector2D& StartDirection, FVector2D& End, FVector2D& EndDirection, const FConnectionParams& Params);
 	bool ENIsRightPriority(const FConnectionParams& Params);
 	int32 ENGetZoomLevel();
 	int8 ENGetPinMembersCount(const UEdGraphPin* Pin);

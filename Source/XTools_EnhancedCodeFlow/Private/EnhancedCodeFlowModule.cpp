@@ -2,6 +2,7 @@
 
 #include "Modules/ModuleManager.h"
 #include "CoreGlobals.h"
+#include "Misc/ConfigCacheIni.h"
 #include "UObject/UObjectGlobals.h"
 #include "ECFSettings.h"
 #include "ECFLogs.h"
