@@ -20,7 +20,7 @@ UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* Wor
 				{
 					if (IsProxyValid(StrongProxy))
 					{
-						StrongProxy->OnTick.Broadcast(Value, Time, false);
+						StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None, -1.f);
 					}
 				}
 			},
@@ -30,7 +30,7 @@ UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* Wor
 				{
 					if (IsProxyValid(StrongProxy))
 					{
-						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped);
+						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None, -1.f);
 						StrongProxy->ClearAsyncBPAction();
 					}
 				}
@@ -40,7 +40,7 @@ UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* Wor
 			{
 				if (UECFCustomTimelineBP* StrongProxy = WeakProxy.Get())
 				{
-					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(EventName, EventTime);
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(0.f, EventTime, false, EventName, EventTime);
 				}
 			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
