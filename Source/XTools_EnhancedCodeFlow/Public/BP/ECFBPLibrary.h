@@ -118,6 +118,12 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 设置动作时间", Tooltip = "设置动作内部时间，可选是否立即调用更新回调", Category = "XTools|ECF|时间控制"))
 	static bool SetActionTime(const UObject* WorldContextObject, const FECFHandleBP& Handle, float NewTime, UPARAM(DisplayName = "立即更新") bool bCallUpdate);
 
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 设置动作播放方向", Tooltip = "设置时间轴动作的播放方向，并从当前时间继续播放", Category = "XTools|ECF|时间控制"))
+	static bool SetActionPlayDirection(const UObject* WorldContextObject, const FECFHandleBP& Handle, UPARAM(DisplayName = "播放方向") EECFPlayDirection NewDirection);
+
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject", DisplayName = "ECF - 反转动作", Tooltip = "反转时间轴动作的播放方向，并从当前时间继续播放", Category = "XTools|ECF|时间控制"))
+	static bool ReverseAction(const UObject* WorldContextObject, const FECFHandleBP& Handle);
+
 	/*^^^ 句柄和实例ID ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 	
 	/**

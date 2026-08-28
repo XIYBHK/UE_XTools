@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../ECFActionBP.h"
+#include "ECFTypes.h"
 #include "ECFCustomTimelineVectorBP.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnECFCustomTimelineVectorBPEvent, FVector, Value, float, Time, bool, bStopped);
@@ -20,6 +21,6 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnECFCustomTimelineVectorBPEvent OnFinished;
 	
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, PlayRate", ToolTip = "添加一个由向量曲线驱动的自定义时间轴，可调节 PlayRate", DisplayName = "ECF - 自定义向量时间轴"), Category = "XTools|ECF|时间轴")
-	static UECFCustomTimelineVectorBP* ECFCustomTimelineVector(const UObject* WorldContextObject, class UCurveVector* CurveVector, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate = 1.f);
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, PlayRate, PlayDirection", ToolTip = "添加向量曲线时间轴。反向播放会从曲线末端开始。", DisplayName = "ECF - 自定义向量时间轴"), Category = "XTools|ECF|时间轴")
+	static UECFCustomTimelineVectorBP* ECFCustomTimelineVector(const UObject* WorldContextObject, class UCurveVector* CurveVector, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate = 1.f, EECFPlayDirection PlayDirection = EECFPlayDirection::Forward);
 };

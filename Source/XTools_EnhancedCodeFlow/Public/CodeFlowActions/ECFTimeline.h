@@ -26,17 +26,19 @@ protected:
 	EECFBlendFunc BlendFunc;
 	float BlendExp;
 	float PlayRate = 1.0f;
+	EECFPlayDirection PlayDirection = EECFPlayDirection::Forward;
 
 	float CurrentTime;
 	float CurrentValue;
 
-	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float, bool)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate)
+	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float, bool)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate, EECFPlayDirection InPlayDirection)
 	{
 		StartValue = InStartValue;
 		StopValue = InStopValue;
 		Time = InTime;
 		const float EffectiveRate = FMath::Abs(InPlayRate);
 		PlayRate = (EffectiveRate > KINDA_SMALL_NUMBER) ? EffectiveRate : 1.0f;
+		PlayDirection = InPlayDirection;
 
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
@@ -51,7 +53,8 @@ protected:
 			{
 				SetMaxActionTime(Time / PlayRate);
 			}
-			CurrentTime = 0.f;
+			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? Time : 0.f;
+			CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StopValue : StartValue;
 			return true;
 		}
 		else
@@ -61,7 +64,7 @@ protected:
 		}
 	}
 
-	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate)
+	bool Setup(float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate, EECFPlayDirection InPlayDirection)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), [this](float FwdValue, float FwdTime, bool bStopped)
@@ -70,13 +73,13 @@ protected:
 			{
 				CallbackFunc_NoStopped(FwdValue, FwdTime);
 			}
-		}, InBlendFunc, InBlendExp, InPlayRate);
+		}, InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	}
 
 	bool Reset(bool bCallUpdate) override
 	{
-		CurrentTime = 0.f;
-		CurrentValue = StartValue;
+		CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? Time : 0.f;
+		CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StopValue : StartValue;
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
@@ -99,17 +102,18 @@ protected:
 		}
 		else
 		{
-			const float UnclampedTime = CurrentTime + DeltaTime * PlayRate;
-			if (Settings.bLoop && UnclampedTime > Time)
+			const float DirectionMultiplier = PlayDirection == EECFPlayDirection::Reverse ? -1.f : 1.f;
+			const float UnclampedTime = CurrentTime + DeltaTime * PlayRate * DirectionMultiplier;
+			const bool bCrossedBoundary = PlayDirection == EECFPlayDirection::Reverse ? UnclampedTime < 0.f : UnclampedTime > Time;
+			if (Settings.bLoop && bCrossedBoundary)
 			{
-				// 对齐 UE 原生 FTimeline::TickTimeline：先精确走到终点，再回到起点并消化溢出时间。
-				CurrentTime = Time;
-				CurrentValue = StopValue;
+				// 对齐 UE 原生 FTimeline：先输出越过的边界，再从另一端消化溢出时间。
+				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
+				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
 				TickFunc(CurrentValue, CurrentTime);
 
-				CurrentTime = 0.f;
-				// 使用 FMath::Fmod 替代 while 循环消化溢出时间，避免大溢出时循环次数过多
-				CurrentTime = (Time > 0.f) ? FMath::Fmod(UnclampedTime, Time) : 0.f;
+				const float WrappedTime = FMath::Fmod(UnclampedTime, Time);
+				CurrentTime = WrappedTime < 0.f ? WrappedTime + Time : WrappedTime;
 			}
 			else
 			{
@@ -140,7 +144,8 @@ protected:
 		}
 
 		// 检查是否到达终点
-		if (CurrentTime >= Time)
+		const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
+		if (bReachedEnd)
 		{
 			if (Settings.bLoop)
 			{
@@ -151,8 +156,8 @@ protected:
 			else
 			{
 				// 非循环模式：确保最终值精确到达 StopValue，只调用一次 TickFunc 避免重复
-				CurrentValue = StopValue;
-				CurrentTime = Time;
+				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
+				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
 				TickFunc(CurrentValue, CurrentTime);
 				MarkAsFinished();
 				Complete(false);
@@ -196,12 +201,25 @@ protected:
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
-			if (!Settings.bLoop && CurrentTime >= Time)
+			const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
+			if (!Settings.bLoop && bReachedEnd)
 			{
 				MarkAsFinished();
 				Complete(false);
 			}
 		}
+		return true;
+	}
+
+	bool SetPlayDirection(EECFPlayDirection NewDirection) override
+	{
+		PlayDirection = NewDirection;
+		return true;
+	}
+
+	bool ReversePlayDirection() override
+	{
+		PlayDirection = PlayDirection == EECFPlayDirection::Forward ? EECFPlayDirection::Reverse : EECFPlayDirection::Forward;
 		return true;
 	}
 };

@@ -6,6 +6,7 @@
 #include "ECFHandle.h"
 #include "ECFInstanceId.h"
 #include "ECFActionSettings.h"
+#include "ECFTypes.h"
 #include "ECFStats.h"
 #include "Misc/AssertionMacros.h"
 #include "Engine/World.h"
@@ -179,6 +180,23 @@ protected:
 	{
 #if ECF_LOGS
 		UE_LOG(LogECF, Error, TEXT("ECF - [%s] SetActionTime - this action does not support time tracking."), *Settings.Label);
+#endif
+		return false;
+	}
+
+	// Sets or reverses playback direction for actions that support directional playback.
+	virtual bool SetPlayDirection(EECFPlayDirection NewDirection)
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("ECF - [%s] SetPlayDirection - this action does not support directional playback."), *Settings.Label);
+#endif
+		return false;
+	}
+
+	virtual bool ReversePlayDirection()
+	{
+#if ECF_LOGS
+		UE_LOG(LogECF, Error, TEXT("ECF - [%s] ReversePlayDirection - this action does not support directional playback."), *Settings.Label);
 #endif
 		return false;
 	}

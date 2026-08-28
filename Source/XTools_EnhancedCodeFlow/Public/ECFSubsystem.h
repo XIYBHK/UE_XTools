@@ -189,6 +189,10 @@ protected:
 	// Set the time value associated with the action. Returns false if there is no action or if that action doesn't support time tracking.
 	bool SetActionTime(const FECFHandle& HandleId, float NewTime, bool bCallUpdate);
 
+	// Sets or reverses playback direction for actions that support it.
+	bool SetActionPlayDirection(const FECFHandle& HandleId, EECFPlayDirection NewDirection);
+	bool ReverseAction(const FECFHandle& HandleId);
+
 	// Check if there is an instanced action running with the given instance id and returns it.
 	UECFActionBase* GetInstancedAction(const FECFInstanceId& InstanceId, bool bPrintErrorIfFailed = true) const;
 

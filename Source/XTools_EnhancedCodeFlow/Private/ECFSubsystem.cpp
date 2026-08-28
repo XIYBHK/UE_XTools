@@ -502,6 +502,32 @@ bool UECFSubsystem::SetActionTime(const FECFHandle& HandleId, float NewTime, boo
 	}
 }
 
+bool UECFSubsystem::SetActionPlayDirection(const FECFHandle& HandleId, EECFPlayDirection NewDirection)
+{
+	if (UECFActionBase* ActionFound = FindAction(HandleId))
+	{
+		return ActionFound->SetPlayDirection(NewDirection);
+	}
+
+#if ECF_LOGS
+	UE_LOG(LogECF, Error, TEXT("SetActionPlayDirection can't be called, because of action that can't be found. Id: %s"), *HandleId.ToString());
+#endif
+	return false;
+}
+
+bool UECFSubsystem::ReverseAction(const FECFHandle& HandleId)
+{
+	if (UECFActionBase* ActionFound = FindAction(HandleId))
+	{
+		return ActionFound->ReversePlayDirection();
+	}
+
+#if ECF_LOGS
+	UE_LOG(LogECF, Error, TEXT("ReverseAction can't be called, because of action that can't be found. Id: %s"), *HandleId.ToString());
+#endif
+	return false;
+}
+
 bool UECFSubsystem::HasAction(const FECFHandle& HandleId) const
 {
 	if (UECFActionBase* ActionFound = FindAction(HandleId))

@@ -16,6 +16,14 @@ enum class EECFBlendFunc : uint8
 	ECFBlend_EaseInOut UMETA(DisplayName = "缓入缓出")
 };
 
+// ECF 时间轴的播放方向
+UENUM(BlueprintType)
+enum class EECFPlayDirection : uint8
+{
+	Forward UMETA(DisplayName = "正向"),
+	Reverse UMETA(DisplayName = "反向")
+};
+
 // ECF 系统中异步任务的可用优先级
 UENUM(BlueprintType)
 enum class EECFAsyncPrio : uint8

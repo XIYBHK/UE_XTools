@@ -26,17 +26,19 @@ protected:
 	float CurrentValue = 0.f;
 	float CurrentTime = 0.f;
 	float PlayRate = 1.0f;
+	EECFPlayDirection PlayDirection = EECFPlayDirection::Forward;
 
 
 	UPROPERTY(Transient)
 	UCurveFloat* CurveFloat = nullptr;
 
-	bool Setup(UCurveFloat* InCurveFloat, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float, bool)>&& InCallbackFunc, float InPlayRate)
+	bool Setup(UCurveFloat* InCurveFloat, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float, bool)>&& InCallbackFunc, float InPlayRate, EECFPlayDirection InPlayDirection)
 	{
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
 		CurveFloat = InCurveFloat;
 		PlayRate = (FMath::Abs(InPlayRate) > KINDA_SMALL_NUMBER) ? FMath::Abs(InPlayRate) : 1.0f;
+		PlayDirection = InPlayDirection;
 
 		if (TickFunc && CurveFloat)
 		{
@@ -57,8 +59,14 @@ protected:
 			// 设置Loop模式，让FTimeline内部处理循环
 			MyTimeline.SetLooping(Settings.bLoop);
 			
-			// PlayFromStart设置Position=0并开始播放，不会触发回调
-			MyTimeline.PlayFromStart();
+			if (PlayDirection == EECFPlayDirection::Reverse)
+			{
+				MyTimeline.ReverseFromEnd();
+			}
+			else
+			{
+				MyTimeline.PlayFromStart();
+			}
 
 			return true;
 		}
@@ -69,7 +77,7 @@ protected:
 		}
 	}
 
-	bool Setup(UCurveFloat* InCurveFloat, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float)>&& InCallbackFunc, float InPlayRate)
+	bool Setup(UCurveFloat* InCurveFloat, TUniqueFunction<void(float, float)>&& InTickFunc, TUniqueFunction<void(float, float)>&& InCallbackFunc, float InPlayRate, EECFPlayDirection InPlayDirection)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InCurveFloat, MoveTemp(InTickFunc), [this](float Value, float Time, bool bStopped)
@@ -78,13 +86,16 @@ protected:
 			{
 				CallbackFunc_NoStopped(Value, Time);
 			}
-		}, InPlayRate);
+		}, InPlayRate, InPlayDirection);
 	}
 
 	bool Reset(bool bCallUpdate) override
 	{
-		MyTimeline.SetPlaybackPosition(0.f, false, false);
-		CurrentTime = 0.f;
+		float MinTime = 0.f;
+		float MaxTime = MyTimeline.GetTimelineLength();
+		CurveFloat->GetTimeRange(MinTime, MaxTime);
+		CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MaxTime : 0.f;
+		MyTimeline.SetPlaybackPosition(CurrentTime, false, false);
 		CurrentValue = CurveFloat->GetFloatValue(CurrentTime);
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
@@ -105,10 +116,11 @@ protected:
 		// 从第二次Tick开始正常调用TickTimeline累加时间
 		if (bFirstTick && CurveFloat)
 		{
-			float MinTime, MaxTime;
+			float MinTime = 0.f;
+			float MaxTime = MyTimeline.GetTimelineLength();
 			CurveFloat->GetTimeRange(MinTime, MaxTime);
-			CurrentValue = CurveFloat->GetFloatValue(MinTime);
-			CurrentTime = MinTime;
+			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MaxTime : MinTime;
+			CurrentValue = CurveFloat->GetFloatValue(CurrentTime);
 			if (HasValidOwner() && TickFunc)
 			{
 				TickFunc(CurrentValue, CurrentTime);
@@ -144,13 +156,33 @@ protected:
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
-			if (!Settings.bLoop && CurrentTime >= TimelineLength)
+			const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= TimelineLength;
+			if (!Settings.bLoop && bReachedEnd)
 			{
 				MarkAsFinished();
 				Complete(false);
 			}
 		}
 		return true;
+	}
+
+	bool SetPlayDirection(EECFPlayDirection NewDirection) override
+	{
+		PlayDirection = NewDirection;
+		if (PlayDirection == EECFPlayDirection::Reverse)
+		{
+			MyTimeline.Reverse();
+		}
+		else
+		{
+			MyTimeline.Play();
+		}
+		return true;
+	}
+
+	bool ReversePlayDirection() override
+	{
+		return SetPlayDirection(PlayDirection == EECFPlayDirection::Forward ? EECFPlayDirection::Reverse : EECFPlayDirection::Forward);
 	}
 
 private:
@@ -175,10 +207,11 @@ private:
 		// 确保最终值精确到达曲线终点，避免浮点精度问题
 		if (CurveFloat)
 		{
-			float MinTime, MaxTime;
+			float MinTime = 0.f;
+			float MaxTime = MyTimeline.GetTimelineLength();
 			CurveFloat->GetTimeRange(MinTime, MaxTime);
-			CurrentTime = MaxTime;
-			CurrentValue = CurveFloat->GetFloatValue(MaxTime);
+			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MinTime : MaxTime;
+			CurrentValue = CurveFloat->GetFloatValue(CurrentTime);
 			if (HasValidOwner() && TickFunc)
 			{
 				TickFunc(CurrentValue, CurrentTime);

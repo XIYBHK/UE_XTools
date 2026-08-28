@@ -109,6 +109,16 @@ bool UECFBPLibrary::SetActionTime(const UObject* WorldContextObject, const FECFH
 	return FFlow::SetActionTime(WorldContextObject, Handle.Handle, NewTime, bCallUpdate);
 }
 
+bool UECFBPLibrary::SetActionPlayDirection(const UObject* WorldContextObject, const FECFHandleBP& Handle, EECFPlayDirection NewDirection)
+{
+	return FFlow::SetActionPlayDirection(WorldContextObject, Handle.Handle, NewDirection);
+}
+
+bool UECFBPLibrary::ReverseAction(const UObject* WorldContextObject, const FECFHandleBP& Handle)
+{
+	return FFlow::ReverseAction(WorldContextObject, Handle.Handle);
+}
+
 /*^^^ 句柄和实例ID ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 void UECFBPLibrary::IsECFHandleValid(bool& bOutIsValid, const FECFHandleBP& Handle)

@@ -161,6 +161,20 @@ bool FFlow::SetActionTime(const UObject* WorldContextObject, const FECFHandle& H
 	return false;
 }
 
+bool FFlow::SetActionPlayDirection(const UObject* WorldContextObject, const FECFHandle& Handle, EECFPlayDirection NewDirection)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->SetActionPlayDirection(Handle, NewDirection);
+	return false;
+}
+
+bool FFlow::ReverseAction(const UObject* WorldContextObject, const FECFHandle& Handle)
+{
+	if (UECFSubsystem* ECF = UECFSubsystem::Get(WorldContextObject))
+		return ECF->ReverseAction(Handle);
+	return false;
+}
+
 /*^^^ Ticker ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 FECFHandle FFlow::AddTicker(const UObject* InOwner, TUniqueFunction<void(float/* DeltaTime*/)>&& InTickFunc, TUniqueFunction<void(bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, const FECFActionSettings& Settings/* = {}*/)
@@ -390,18 +404,18 @@ void FFlow::RemoveAllWhileTrueExecutes(const UObject* WorldContextObject, bool b
 
 /*^^^ 时间轴 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
-FECFHandle FFlow::AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTimeline>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate);
+		return ECF->AddAction<UECFTimeline>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
 
-FECFHandle FFlow::AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddTimeline(const UObject* InOwner, float InStartValue, float InStopValue, float InTime, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTimeline>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate);
+		return ECF->AddAction<UECFTimeline>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
@@ -414,18 +428,18 @@ void FFlow::RemoveAllTimelines(const UObject* WorldContextObject, bool bComplete
 
 /*^^^ Timeline Vector ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
-FECFHandle FFlow::AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTimelineVector>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate);
+		return ECF->AddAction<UECFTimelineVector>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
 
-FECFHandle FFlow::AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddTimelineVector(const UObject* InOwner, FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTimelineVector>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate);
+		return ECF->AddAction<UECFTimelineVector>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
@@ -438,18 +452,18 @@ void FFlow::RemoveAllTimelinesVector(const UObject* WorldContextObject, bool bCo
 
 /*^^^ Timeline LinearColor ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
-FECFHandle FFlow::AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate);
+		return ECF->AddAction<UECFTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
 
-FECFHandle FFlow::AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddTimelineLinearColor(const UObject* InOwner, FLinearColor InStartValue, FLinearColor InStopValue, float InTime, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, EECFBlendFunc InBlendFunc/* = EECFBlendFunc::ECFBlend_Linear*/, float InBlendExp/* = 1.f*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate);
+		return ECF->AddAction<UECFTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
@@ -462,18 +476,18 @@ void FFlow::RemoveAllTimelinesLinearColor(const UObject* WorldContextObject, boo
 
 /*^^^ Custom Timeline ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
-FECFHandle FFlow::AddCustomTimeline(const UObject* InOwner, UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddCustomTimeline(const UObject* InOwner, UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFCustomTimeline>(InOwner, Settings, FECFInstanceId(), CurveFloat, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate);
+		return ECF->AddAction<UECFCustomTimeline>(InOwner, Settings, FECFInstanceId(), CurveFloat, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
 
-FECFHandle FFlow::AddCustomTimeline(const UObject* InOwner, UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddCustomTimeline(const UObject* InOwner, UCurveFloat* CurveFloat, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(float/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFCustomTimeline>(InOwner, Settings, FECFInstanceId(), CurveFloat, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate);
+		return ECF->AddAction<UECFCustomTimeline>(InOwner, Settings, FECFInstanceId(), CurveFloat, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
@@ -486,18 +500,18 @@ void FFlow::RemoveAllCustomTimelines(const UObject* WorldContextObject, bool bCo
 
 /*^^^ Custom Timeline Vector ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
-FECFHandle FFlow::AddCustomTimelineVector(const UObject* InOwner, UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddCustomTimelineVector(const UObject* InOwner, UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFCustomTimelineVector>(InOwner, Settings, FECFInstanceId(), CurveVector, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate);
+		return ECF->AddAction<UECFCustomTimelineVector>(InOwner, Settings, FECFInstanceId(), CurveVector, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
 
-FECFHandle FFlow::AddCustomTimelineVector(const UObject* InOwner, UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddCustomTimelineVector(const UObject* InOwner, UCurveVector* CurveVector, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FVector/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFCustomTimelineVector>(InOwner, Settings, FECFInstanceId(), CurveVector, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate);
+		return ECF->AddAction<UECFCustomTimelineVector>(InOwner, Settings, FECFInstanceId(), CurveVector, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
@@ -510,18 +524,18 @@ void FFlow::RemoveAllCustomTimelinesVector(const UObject* WorldContextObject, bo
 
 /*^^^ Custom Timeline Linear Color ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
-FECFHandle FFlow::AddCustomTimelineLinearColor(const UObject* InOwner, UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddCustomTimelineLinearColor(const UObject* InOwner, UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/, bool/* bStopped*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFCustomTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), CurveLinearColor, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate);
+		return ECF->AddAction<UECFCustomTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), CurveLinearColor, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
 
-FECFHandle FFlow::AddCustomTimelineLinearColor(const UObject* InOwner, UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/)
+FECFHandle FFlow::AddCustomTimelineLinearColor(const UObject* InOwner, UCurveLinearColor* CurveLinearColor, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InTickFunc, TUniqueFunction<void(FLinearColor/* Value*/, float/* Time*/)>&& InCallbackFunc/* = nullptr*/, float InPlayRate/* = 1.f*/, const FECFActionSettings& Settings/* = {}*/, EECFPlayDirection InPlayDirection/* = EECFPlayDirection::Forward*/)
 {
 	if (UECFSubsystem* ECF = UECFSubsystem::Get(InOwner))
-		return ECF->AddAction<UECFCustomTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), CurveLinearColor, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate);
+		return ECF->AddAction<UECFCustomTimelineLinearColor>(InOwner, Settings, FECFInstanceId(), CurveLinearColor, MoveTemp(InTickFunc), MoveTemp(InCallbackFunc), InPlayRate, InPlayDirection);
 	else
 		return FECFHandle();
 }
