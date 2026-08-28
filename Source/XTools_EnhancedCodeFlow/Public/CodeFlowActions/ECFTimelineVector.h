@@ -20,6 +20,8 @@ protected:
 	TUniqueFunction<void(FVector, float)> TickFunc;
 	TUniqueFunction<void(FVector, float, bool)> CallbackFunc;
 	TUniqueFunction<void(FVector, float)> CallbackFunc_NoStopped;
+	TArray<FECFTimelineEvent> TimelineEvents;
+	FECFTimelineEventFunc EventFunc;
 	FVector StartValue;
 	FVector StopValue;
 	float Time;
@@ -31,7 +33,7 @@ protected:
 	float CurrentTime;
 	FVector CurrentValue;
 
-	bool Setup(FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float, bool)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate, EECFPlayDirection InPlayDirection)
+	bool Setup(FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float, bool)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate, EECFPlayDirection InPlayDirection, TArray<FECFTimelineEvent>&& InEvents, FECFTimelineEventFunc&& InEventFunc)
 	{
 		StartValue = InStartValue;
 		StopValue = InStopValue;
@@ -42,6 +44,9 @@ protected:
 
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
+		TimelineEvents = MoveTemp(InEvents);
+		EventFunc = MoveTemp(InEventFunc);
+		Algo::StableSort(TimelineEvents, [](const FECFTimelineEvent& A, const FECFTimelineEvent& B) { return A.Time < B.Time; });
 
 		BlendFunc = InBlendFunc;
 		BlendExp = InBlendExp;
@@ -63,7 +68,7 @@ protected:
 		}
 	}
 
-	bool Setup(FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate, EECFPlayDirection InPlayDirection)
+	bool Setup(FVector InStartValue, FVector InStopValue, float InTime, TUniqueFunction<void(FVector, float)>&& InTickFunc, TUniqueFunction<void(FVector, float)>&& InCallbackFunc, EECFBlendFunc InBlendFunc, float InBlendExp, float InPlayRate, EECFPlayDirection InPlayDirection, TArray<FECFTimelineEvent>&& InEvents, FECFTimelineEventFunc&& InEventFunc)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InStartValue, InStopValue, InTime, MoveTemp(InTickFunc), [this](FVector FwdValue, float FwdTime, bool bStopped)
@@ -72,7 +77,7 @@ protected:
 			{
 				CallbackFunc_NoStopped(FwdValue, FwdTime);
 			}
-		}, InBlendFunc, InBlendExp, InPlayRate, InPlayDirection);
+		}, InBlendFunc, InBlendExp, InPlayRate, InPlayDirection, MoveTemp(InEvents), MoveTemp(InEventFunc));
 	}
 
 	bool Reset(bool bCallUpdate) override
@@ -94,6 +99,9 @@ protected:
 #if ECF_INSIGHT_PROFILING
 		TRACE_CPUPROFILER_EVENT_SCOPE("ECF - Timeline Vector Tick");
 #endif
+		bool bDispatchEvents = false;
+		float PreviousTime = CurrentTime;
+		float UnclampedTime = CurrentTime;
 		// 第一次 Tick 直接输出起点值，与 UE 时间轴首帧行为对齐。
 		if (bFirstTick)
 		{
@@ -102,7 +110,9 @@ protected:
 		else
 		{
 			const float DirectionMultiplier = PlayDirection == EECFPlayDirection::Reverse ? -1.f : 1.f;
-			const float UnclampedTime = CurrentTime + DeltaTime * PlayRate * DirectionMultiplier;
+			UnclampedTime = CurrentTime + DeltaTime * PlayRate * DirectionMultiplier;
+			PreviousTime = CurrentTime;
+			bDispatchEvents = true;
 			const bool bCrossedBoundary = PlayDirection == EECFPlayDirection::Reverse ? UnclampedTime < 0.f : UnclampedTime > Time;
 			if (Settings.bLoop && bCrossedBoundary)
 			{
@@ -146,6 +156,10 @@ protected:
 			if (Settings.bLoop)
 			{
 				TickFunc(CurrentValue, CurrentTime);
+				if (bDispatchEvents)
+				{
+					ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, true, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+				}
 				return;
 			}
 			else
@@ -154,6 +168,10 @@ protected:
 				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
 				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
 				TickFunc(CurrentValue, CurrentTime);
+				if (bDispatchEvents)
+				{
+					ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, false, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+				}
 				MarkAsFinished();
 				Complete(false);
 				return;
@@ -161,6 +179,10 @@ protected:
 		}
 
 		TickFunc(CurrentValue, CurrentTime);
+		if (bDispatchEvents)
+		{
+			ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, Settings.bLoop, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+		}
 	}
 
 	void Complete(bool bStopped) override

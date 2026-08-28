@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFCustomTimelineLinearColorBP* UECFCustomTimelineLinearColorBP::ECFCustomTimelineLinearColor(const UObject* WorldContextObject, UCurveLinearColor* CurveLinearColor, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/)
+UECFCustomTimelineLinearColorBP* UECFCustomTimelineLinearColorBP::ECFCustomTimelineLinearColor(const UObject* WorldContextObject, UCurveLinearColor* CurveLinearColor, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, TArray<FECFTimelineEvent> Events)
 {
 	UECFCustomTimelineLinearColorBP* Proxy = NewObject<UECFCustomTimelineLinearColorBP>();
 	if (Proxy)
@@ -35,7 +35,14 @@ UECFCustomTimelineLinearColorBP* UECFCustomTimelineLinearColorBP::ECFCustomTimel
 					}
 				}
 			},
-		PlayRate, Settings, PlayDirection);
+			PlayRate, Settings, PlayDirection, MoveTemp(Events),
+			[WeakProxy](FName EventName, float EventTime)
+			{
+				if (UECFCustomTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
+				{
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(EventName, EventTime);
+				}
+			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}
 

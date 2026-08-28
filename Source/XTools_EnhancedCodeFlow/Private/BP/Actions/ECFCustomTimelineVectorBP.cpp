@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(const UObject* WorldContextObject, UCurveVector* CurveVector, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/)
+UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(const UObject* WorldContextObject, UCurveVector* CurveVector, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, TArray<FECFTimelineEvent> Events)
 {
     UECFCustomTimelineVectorBP* Proxy = NewObject<UECFCustomTimelineVectorBP>();
     if (Proxy)
@@ -33,9 +33,16 @@ UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(
                         StrongProxy->OnFinished.Broadcast(Value, Time, bStopped);
                         StrongProxy->ClearAsyncBPAction();
                     }
-                }
-            },
-		PlayRate, Settings, PlayDirection);
+				}
+			},
+			PlayRate, Settings, PlayDirection, MoveTemp(Events),
+			[WeakProxy](FName EventName, float EventTime)
+			{
+				if (UECFCustomTimelineVectorBP* StrongProxy = WeakProxy.Get())
+				{
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(EventName, EventTime);
+				}
+			});
         Handle = FECFHandleBP(Proxy->Proxy_Handle);
     }
 

@@ -22,6 +22,7 @@
 - [FieldSystemExtensions 测试指南](开发文档/FieldSystemExtensions_测试指南.md)
 - [XTools 采样功能检测逻辑](开发文档/XTools采样功能_检测逻辑说明.md)
 - [曲线与镜头晃动预设生成工具链](开发文档/曲线与镜头晃动预设生成工具链.md)
+- [EnhancedCodeFlow 时间轴事件轨道](开发文档/EnhancedCodeFlow时间轴事件轨道.md)
 
 ## K2Node 与编辑器扩展
 

@@ -21,6 +21,8 @@ protected:
 	TUniqueFunction<void(FLinearColor, float)> TickFunc;
 	TUniqueFunction<void(FLinearColor, float, bool)> CallbackFunc;
 	TUniqueFunction<void(FLinearColor, float)> CallbackFunc_NoStopped;
+	TArray<FECFTimelineEvent> TimelineEvents;
+	FECFTimelineEventFunc EventFunc;
 	FTimeline MyTimeline;
 
 	FLinearColor CurrentValue = FLinearColor::Black;
@@ -32,10 +34,13 @@ protected:
 	UPROPERTY(Transient)
 	UCurveLinearColor* CurveLinearColor = nullptr;
 
-	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float, bool)>&& InCallbackFunc, float InPlayRate, EECFPlayDirection InPlayDirection)
+	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float, bool)>&& InCallbackFunc, float InPlayRate, EECFPlayDirection InPlayDirection, TArray<FECFTimelineEvent>&& InEvents, FECFTimelineEventFunc&& InEventFunc)
 	{
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
+		TimelineEvents = MoveTemp(InEvents);
+		EventFunc = MoveTemp(InEventFunc);
+		Algo::StableSort(TimelineEvents, [](const FECFTimelineEvent& A, const FECFTimelineEvent& B) { return A.Time < B.Time; });
 		CurveLinearColor = InCurveLinearColor;
 		PlayRate = (FMath::Abs(InPlayRate) > KINDA_SMALL_NUMBER) ? FMath::Abs(InPlayRate) : 1.0f;
 		PlayDirection = InPlayDirection;
@@ -77,7 +82,7 @@ protected:
 		}
 	}
 
-	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float)>&& InCallbackFunc, float InPlayRate, EECFPlayDirection InPlayDirection)
+	bool Setup(UCurveLinearColor* InCurveLinearColor, TUniqueFunction<void(FLinearColor, float)>&& InTickFunc, TUniqueFunction<void(FLinearColor, float)>&& InCallbackFunc, float InPlayRate, EECFPlayDirection InPlayDirection, TArray<FECFTimelineEvent>&& InEvents, FECFTimelineEventFunc&& InEventFunc)
 	{
 		CallbackFunc_NoStopped = MoveTemp(InCallbackFunc);
 		return Setup(InCurveLinearColor, MoveTemp(InTickFunc), [this](FLinearColor Value, float Time, bool bStopped)
@@ -86,15 +91,12 @@ protected:
 			{
 				CallbackFunc_NoStopped(Value, Time);
 			}
-		}, InPlayRate, InPlayDirection);
+		}, InPlayRate, InPlayDirection, MoveTemp(InEvents), MoveTemp(InEventFunc));
 	}
 
 	bool Reset(bool bCallUpdate) override
 	{
-		float MinTime = 0.f;
-		float MaxTime = MyTimeline.GetTimelineLength();
-		CurveLinearColor->GetTimeRange(MinTime, MaxTime);
-		CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MaxTime : 0.f;
+		CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MyTimeline.GetTimelineLength() : 0.f;
 		MyTimeline.SetPlaybackPosition(CurrentTime, false, false);
 		CurrentValue = CurveLinearColor->GetLinearColorValue(CurrentTime);
 		if (bCallUpdate && HasValidOwner() && TickFunc)
@@ -116,10 +118,7 @@ protected:
 		// 从第二次Tick开始正常调用TickTimeline累加时间
 		if (bFirstTick && CurveLinearColor)
 		{
-			float MinTime = 0.f;
-			float MaxTime = MyTimeline.GetTimelineLength();
-			CurveLinearColor->GetTimeRange(MinTime, MaxTime);
-			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MaxTime : MinTime;
+			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MyTimeline.GetTimelineLength() : 0.f;
 			CurrentValue = CurveLinearColor->GetLinearColorValue(CurrentTime);
 			if (HasValidOwner() && TickFunc)
 			{
@@ -129,7 +128,11 @@ protected:
 			return;  // 第一次Tick不调用TickTimeline，避免重复触发
 		}
 		
+		const float PreviousTime = CurrentTime;
+		const float TimelineLength = MyTimeline.GetTimelineLength();
+		const float RawNewTime = PreviousTime + DeltaTime * PlayRate * (PlayDirection == EECFPlayDirection::Reverse ? -1.f : 1.f);
 		MyTimeline.TickTimeline(DeltaTime);
+		ECFDispatchTimelineEvents(PreviousTime, RawNewTime, TimelineLength, Settings.bLoop, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
 	}
 
 	void Complete(bool bStopped) override
@@ -207,10 +210,7 @@ private:
 		// 确保最终值精确到达曲线终点，避免浮点精度问题
 		if (CurveLinearColor)
 		{
-			float MinTime = 0.f;
-			float MaxTime = MyTimeline.GetTimelineLength();
-			CurveLinearColor->GetTimeRange(MinTime, MaxTime);
-			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MinTime : MaxTime;
+			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : MyTimeline.GetTimelineLength();
 			CurrentValue = CurveLinearColor->GetLinearColorValue(CurrentTime);
 			if (HasValidOwner() && TickFunc)
 			{

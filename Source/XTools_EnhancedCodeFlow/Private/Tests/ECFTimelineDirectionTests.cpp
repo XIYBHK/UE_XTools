@@ -227,4 +227,107 @@ bool FECFTimelineDirectionControlAndLoopTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FECFTimelineEventTrackTest,
+	"XTools.EnhancedCodeFlow.Timeline.EventTrack",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FECFTimelineEventTrackTest::RunTest(const FString& Parameters)
+{
+	FScopedECFTestWorld TestWorld(TEXT("ECFTimelineEventTrackTest"));
+	if (!TestTrue(TEXT("应创建 ECF 测试世界和子系统"), TestWorld.IsValid()))
+	{
+		return false;
+	}
+
+	TArray<FECFTimelineEvent> Events;
+	Events.Add({0.25f, TEXT("Quarter")});
+	Events.Add({0.75f, TEXT("ThreeQuarter")});
+	TArray<FName> ForwardNames;
+	TArray<float> ForwardTimes;
+	FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, {}, EECFPlayDirection::Forward, Events,
+		[&ForwardNames, &ForwardTimes](FName Name, float Time)
+		{
+			ForwardNames.Add(Name);
+			ForwardTimes.Add(Time);
+		});
+
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(0.8f);
+	TestEqual(TEXT("单次大步进应触发所有跨越的事件"), ForwardNames.Num(), 2);
+	TestTrue(TEXT("正向事件应按时间顺序触发"), ForwardNames == TArray<FName>({TEXT("Quarter"), TEXT("ThreeQuarter")}));
+	TestTrue(TEXT("正向事件应传回事件时间"), ForwardTimes == TArray<float>({0.25f, 0.75f}));
+
+	TArray<FName> ReverseNames;
+	FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, {}, EECFPlayDirection::Reverse, Events,
+		[&ReverseNames](FName Name, float Time) { ReverseNames.Add(Name); });
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(0.8f);
+	TestTrue(TEXT("反向事件应按倒放顺序触发"), ReverseNames == TArray<FName>({TEXT("ThreeQuarter"), TEXT("Quarter")}));
+
+	TArray<FName> StableNames;
+	TArray<FECFTimelineEvent> StableEvents;
+	StableEvents.Add({0.5f, TEXT("FirstAtHalf")});
+	StableEvents.Add({0.5f, TEXT("SecondAtHalf")});
+	FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, {}, EECFPlayDirection::Forward, MoveTemp(StableEvents),
+		[&StableNames](FName Name, float Time) { StableNames.Add(Name); });
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(0.5f);
+	TestWorld.Tick(0.1f);
+	TestEqual(TEXT("同一时间点事件应全部触发"), StableNames.Num(), 2);
+	if (StableNames.Num() == 2)
+	{
+		TestEqual(TEXT("同一时间点第一个事件应保持输入顺序"), StableNames[0], FName(TEXT("FirstAtHalf")));
+		TestEqual(TEXT("同一时间点第二个事件应保持输入顺序"), StableNames[1], FName(TEXT("SecondAtHalf")));
+	}
+
+	UCurveFloat* NonZeroCurve = NewObject<UCurveFloat>(TestWorld.GetWorld());
+	NonZeroCurve->FloatCurve.AddKey(2.f, 10.f);
+	NonZeroCurve->FloatCurve.AddKey(3.f, 20.f);
+	int32 NonZeroEventCount = 0;
+	TArray<FECFTimelineEvent> NonZeroEvents;
+	NonZeroEvents.Add({2.f, TEXT("CurveStart")});
+	FFlow::AddCustomTimeline(TestWorld.GetWorld(), NonZeroCurve,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		1.f, {}, EECFPlayDirection::Forward, MoveTemp(NonZeroEvents),
+		[&NonZeroEventCount](FName Name, float Time) { ++NonZeroEventCount; });
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(2.5f);
+	TestEqual(TEXT("非零起始键曲线的事件应使用原生时间轴坐标"), NonZeroEventCount, 1);
+
+	TArray<FName> MultiLoopNames;
+	TArray<FECFTimelineEvent> MultiLoopEvents;
+	MultiLoopEvents.Add({0.25f, TEXT("LoopQuarter")});
+	FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, ECF_LOOP, EECFPlayDirection::Forward, MoveTemp(MultiLoopEvents),
+		[&MultiLoopNames](FName Name, float Time) { MultiLoopNames.Add(Name); });
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(2.5f);
+	TestEqual(TEXT("单次 Tick 跨越多圈时每圈均应触发事件"), MultiLoopNames.Num(), 3);
+
+	int32 JumpEventCount = 0;
+	const FECFHandle JumpHandle = FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, {}, EECFPlayDirection::Forward, Events,
+		[&JumpEventCount](FName Name, float Time) { ++JumpEventCount; });
+	TestTrue(TEXT("设置时间应成功"), FFlow::SetActionTime(TestWorld.GetWorld(), JumpHandle, 0.8f, false));
+	TestEqual(TEXT("显式设置时间默认不触发事件"), JumpEventCount, 0);
+
+	return true;
+}
+
 #endif

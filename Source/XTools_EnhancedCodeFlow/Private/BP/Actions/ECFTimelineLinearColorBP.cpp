@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc /*= EECFBlendFunc::ECFBlend_Linear*/, float BlendExp /*= 1.f*/, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/)
+UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc /*= EECFBlendFunc::ECFBlend_Linear*/, float BlendExp /*= 1.f*/, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, TArray<FECFTimelineEvent> Events)
 {
 	UECFTimelineLinearColorBP* Proxy = NewObject<UECFTimelineLinearColorBP>();
 	if (Proxy)
@@ -36,7 +36,14 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 					}
 				}
 			},
-			BlendFunc, BlendExp, PlayRate, Settings, PlayDirection);
+			BlendFunc, BlendExp, PlayRate, Settings, PlayDirection, MoveTemp(Events),
+			[WeakProxy](FName EventName, float EventTime)
+			{
+				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
+				{
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(EventName, EventTime);
+				}
+			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
 	}
 
