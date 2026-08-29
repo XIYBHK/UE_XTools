@@ -20,8 +20,7 @@ protected:
 	TUniqueFunction<void(FLinearColor, float)> TickFunc;
 	TUniqueFunction<void(FLinearColor, float, bool)> CallbackFunc;
 	TUniqueFunction<void(FLinearColor, float)> CallbackFunc_NoStopped;
-	TArray<FECFTimelineEvent> TimelineEvents;
-	FECFTimelineEventFunc EventFunc;
+	FECFTimelineEventTrack TimelineEventTrack;
 	FLinearColor StartValue;
 	FLinearColor StopValue;
 	float Time;
@@ -44,9 +43,7 @@ protected:
 
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
-		TimelineEvents = MoveTemp(InEvents);
-		EventFunc = MoveTemp(InEventFunc);
-		Algo::StableSort(TimelineEvents, [](const FECFTimelineEvent& A, const FECFTimelineEvent& B) { return A.Time < B.Time; });
+		TimelineEventTrack.Initialize(MoveTemp(InEvents), MoveTemp(InEventFunc));
 
 		BlendFunc = InBlendFunc;
 		BlendExp = InBlendExp;
@@ -116,9 +113,17 @@ protected:
 			const bool bCrossedBoundary = PlayDirection == EECFPlayDirection::Reverse ? UnclampedTime < 0.f : UnclampedTime > Time;
 			if (Settings.bLoop && bCrossedBoundary)
 			{
-				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
-				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
-				TickFunc(CurrentValue, CurrentTime);
+				const bool bWasAtBoundary = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
+				if (!bWasAtBoundary)
+				{
+					CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
+					CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
+					TickFunc(CurrentValue, CurrentTime);
+					if (!IsValid())
+					{
+						return;
+					}
+				}
 
 				const float WrappedTime = FMath::Fmod(UnclampedTime, Time);
 				CurrentTime = WrappedTime < 0.f ? WrappedTime + Time : WrappedTime;
@@ -156,9 +161,14 @@ protected:
 			if (Settings.bLoop)
 			{
 				TickFunc(CurrentValue, CurrentTime);
+				if (!IsValid())
+				{
+					return;
+				}
 				if (bDispatchEvents)
 				{
-					ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, true, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+					TimelineEventTrack.Dispatch(PreviousTime, UnclampedTime, Time, true,
+						PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
 				}
 				return;
 			}
@@ -168,9 +178,18 @@ protected:
 				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
 				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
 				TickFunc(CurrentValue, CurrentTime);
+				if (!IsValid())
+				{
+					return;
+				}
 				if (bDispatchEvents)
 				{
-					ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, false, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+					TimelineEventTrack.Dispatch(PreviousTime, UnclampedTime, Time, false,
+						PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
+					if (!IsValid())
+					{
+						return;
+					}
 				}
 				MarkAsFinished();
 				Complete(false);
@@ -179,9 +198,14 @@ protected:
 		}
 
 		TickFunc(CurrentValue, CurrentTime);
+		if (!IsValid())
+		{
+			return;
+		}
 		if (bDispatchEvents)
 		{
-			ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, Settings.bLoop, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+			TimelineEventTrack.Dispatch(PreviousTime, UnclampedTime, Time, Settings.bLoop,
+				PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
 		}
 	}
 
@@ -216,6 +240,10 @@ protected:
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
+			if (!IsValid())
+			{
+				return true;
+			}
 			const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
 			if (!Settings.bLoop && bReachedEnd)
 			{

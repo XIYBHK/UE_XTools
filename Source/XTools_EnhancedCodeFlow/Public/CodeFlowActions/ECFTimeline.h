@@ -20,8 +20,7 @@ protected:
 	TUniqueFunction<void(float, float)> TickFunc;
 	TUniqueFunction<void(float, float, bool)> CallbackFunc;
 	TUniqueFunction<void(float, float)> CallbackFunc_NoStopped;
-	TArray<FECFTimelineEvent> TimelineEvents;
-	FECFTimelineEventFunc EventFunc;
+	FECFTimelineEventTrack TimelineEventTrack;
 	float StartValue;
 	float StopValue;
 	float Time;
@@ -44,9 +43,7 @@ protected:
 
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
-		TimelineEvents = MoveTemp(InEvents);
-		EventFunc = MoveTemp(InEventFunc);
-		Algo::StableSort(TimelineEvents, [](const FECFTimelineEvent& A, const FECFTimelineEvent& B) { return A.Time < B.Time; });
+		TimelineEventTrack.Initialize(MoveTemp(InEvents), MoveTemp(InEventFunc));
 
 		BlendFunc = InBlendFunc;
 		BlendExp = InBlendExp;
@@ -118,9 +115,17 @@ protected:
 			if (Settings.bLoop && bCrossedBoundary)
 			{
 				// 对齐 UE 原生 FTimeline：先输出越过的边界，再从另一端消化溢出时间。
-				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
-				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
-				TickFunc(CurrentValue, CurrentTime);
+				const bool bWasAtBoundary = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
+				if (!bWasAtBoundary)
+				{
+					CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
+					CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
+					TickFunc(CurrentValue, CurrentTime);
+					if (!IsValid())
+					{
+						return;
+					}
+				}
 
 				const float WrappedTime = FMath::Fmod(UnclampedTime, Time);
 				CurrentTime = WrappedTime < 0.f ? WrappedTime + Time : WrappedTime;
@@ -161,9 +166,14 @@ protected:
 			{
 				// 循环模式：正常调用 TickFunc（溢出已在上方通过 Fmod 处理）
 				TickFunc(CurrentValue, CurrentTime);
+				if (!IsValid())
+				{
+					return;
+				}
 				if (bDispatchEvents)
 				{
-					ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, true, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+					TimelineEventTrack.Dispatch(PreviousTime, UnclampedTime, Time, true,
+						PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
 				}
 				return;
 			}
@@ -173,9 +183,18 @@ protected:
 				CurrentValue = PlayDirection == EECFPlayDirection::Reverse ? StartValue : StopValue;
 				CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : Time;
 				TickFunc(CurrentValue, CurrentTime);
+				if (!IsValid())
+				{
+					return;
+				}
 				if (bDispatchEvents)
 				{
-					ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, false, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+					TimelineEventTrack.Dispatch(PreviousTime, UnclampedTime, Time, false,
+						PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
+					if (!IsValid())
+					{
+						return;
+					}
 				}
 				MarkAsFinished();
 				Complete(false);
@@ -185,9 +204,14 @@ protected:
 		{
 			// 未到达终点：正常输出当前插值
 			TickFunc(CurrentValue, CurrentTime);
+			if (!IsValid())
+			{
+				return;
+			}
 			if (bDispatchEvents)
 			{
-				ECFDispatchTimelineEvents(PreviousTime, UnclampedTime, Time, Settings.bLoop, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+				TimelineEventTrack.Dispatch(PreviousTime, UnclampedTime, Time, Settings.bLoop,
+					PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
 			}
 		}
 	}
@@ -223,6 +247,10 @@ protected:
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
+			if (!IsValid())
+			{
+				return true;
+			}
 			const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
 			if (!Settings.bLoop && bReachedEnd)
 			{

@@ -224,6 +224,21 @@ bool FECFTimelineDirectionControlAndLoopTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("循环反向播放应先精确输出 0 边界"), LoopTimes.ContainsByPredicate([](float Time) { return FMath::IsNearlyZero(Time); }));
 	TestTrue(TEXT("越过 0 后应从末端消化溢出时间"), LoopTimes.ContainsByPredicate([](float Time) { return FMath::IsNearlyEqual(Time, 0.75f); }));
 
+	TArray<float> ForwardLoopTimes;
+	FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[&ForwardLoopTimes](float Value, float Time) { ForwardLoopTimes.Add(Time); },
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, ECF_LOOP, EECFPlayDirection::Forward);
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(1.f);
+	TestWorld.Tick(0.25f);
+	int32 ForwardEndTickCount = 0;
+	for (const float Time : ForwardLoopTimes)
+	{
+		ForwardEndTickCount += FMath::IsNearlyEqual(Time, 1.f) ? 1 : 0;
+	}
+	TestEqual(TEXT("从精确终点继续循环时不应重复输出终点 Tick"), ForwardEndTickCount, 1);
+
 	return true;
 }
 
@@ -290,6 +305,20 @@ bool FECFTimelineEventTrackTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("同一时间点第二个事件应保持输入顺序"), StableNames[1], FName(TEXT("SecondAtHalf")));
 	}
 
+	TArray<FName> ReverseStableNames;
+	TArray<FECFTimelineEvent> ReverseStableEvents;
+	ReverseStableEvents.Add({0.5f, TEXT("FirstAtHalf")});
+	ReverseStableEvents.Add({0.5f, TEXT("SecondAtHalf")});
+	FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[](float Value, float Time, bool bStopped) {},
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, {}, EECFPlayDirection::Reverse, MoveTemp(ReverseStableEvents),
+		[&ReverseStableNames](FName Name, float Time) { ReverseStableNames.Add(Name); });
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(0.6f);
+	TestTrue(TEXT("反向同一时间点事件也应保持输入顺序"),
+		ReverseStableNames == TArray<FName>({TEXT("FirstAtHalf"), TEXT("SecondAtHalf")}));
+
 	UCurveFloat* NonZeroCurve = NewObject<UCurveFloat>(TestWorld.GetWorld());
 	NonZeroCurve->FloatCurve.AddKey(2.f, 10.f);
 	NonZeroCurve->FloatCurve.AddKey(3.f, 20.f);
@@ -317,6 +346,105 @@ bool FECFTimelineEventTrackTest::RunTest(const FString& Parameters)
 	TestWorld.Tick(0.1f);
 	TestWorld.Tick(2.5f);
 	TestEqual(TEXT("单次 Tick 跨越多圈时每圈均应触发事件"), MultiLoopNames.Num(), 3);
+
+	TArray<FECFTimelineEvent> GuardedEvents;
+	GuardedEvents.Add({0.25f, TEXT("Guarded")});
+	ECFPrepareTimelineEvents(GuardedEvents);
+	int32 GuardedDispatchCount = 0;
+	FECFTimelineEventFunc GuardedEventFunc = [&GuardedDispatchCount](FName Name, float Time)
+	{
+		++GuardedDispatchCount;
+	};
+	const EECFTimelineEventDispatchResult GuardedResult =
+		ECFDispatchTimelineEvents(0.f, 2000.f, 1.f, true, false, GuardedEvents, GuardedEventFunc);
+	TestTrue(TEXT("极端步进应明确报告达到分段上限"),
+		GuardedResult == EECFTimelineEventDispatchResult::SegmentLimitReached);
+	TestEqual(TEXT("极端步进应限制单 Tick 循环分段数量"), GuardedDispatchCount, ECFMaxTimelineEventSegmentsPerTick);
+
+	TArray<FECFTimelineEvent> ForwardEndpointEvents;
+	ForwardEndpointEvents.Add({1.f, TEXT("ForwardEnd")});
+	ECFPrepareTimelineEvents(ForwardEndpointEvents);
+	int32 ForwardEndpointCount = 0;
+	FECFTimelineEventFunc ForwardEndpointFunc = [&ForwardEndpointCount](FName Name, float Time)
+	{
+		++ForwardEndpointCount;
+	};
+	ECFDispatchTimelineEvents(0.f, 1.f, 1.f, true, false, ForwardEndpointEvents, ForwardEndpointFunc);
+	ECFDispatchTimelineEvents(1.f, 1.25f, 1.f, true, false, ForwardEndpointEvents, ForwardEndpointFunc);
+	TestEqual(TEXT("从精确终点继续正向循环时不应重复派发终点事件"), ForwardEndpointCount, 1);
+
+	TArray<FECFTimelineEvent> ReverseEndpointEvents;
+	ReverseEndpointEvents.Add({0.f, TEXT("ReverseEnd")});
+	ECFPrepareTimelineEvents(ReverseEndpointEvents);
+	int32 ReverseEndpointCount = 0;
+	FECFTimelineEventFunc ReverseEndpointFunc = [&ReverseEndpointCount](FName Name, float Time)
+	{
+		++ReverseEndpointCount;
+	};
+	ECFDispatchTimelineEvents(1.f, 0.f, 1.f, true, true, ReverseEndpointEvents, ReverseEndpointFunc);
+	ECFDispatchTimelineEvents(0.f, -0.25f, 1.f, true, true, ReverseEndpointEvents, ReverseEndpointFunc);
+	TestEqual(TEXT("从精确起点继续反向循环时不应重复派发起点事件"), ReverseEndpointCount, 1);
+
+	UCurveFloat* FinalOrderCurve = NewObject<UCurveFloat>(TestWorld.GetWorld());
+	AddLinearKeys(FinalOrderCurve);
+	TArray<FName> FinalOrder;
+	int32 FinalTimeTickCount = 0;
+	TArray<FECFTimelineEvent> FinalOrderEvents;
+	FinalOrderEvents.Add({0.75f, TEXT("Event")});
+	FFlow::AddCustomTimeline(TestWorld.GetWorld(), FinalOrderCurve,
+		[&FinalOrder, &FinalTimeTickCount](float Value, float Time)
+		{
+			if (FMath::IsNearlyEqual(Time, 1.f))
+			{
+				++FinalTimeTickCount;
+				FinalOrder.Add(TEXT("Tick"));
+			}
+		},
+		[&FinalOrder](float Value, float Time, bool bStopped) { FinalOrder.Add(TEXT("Finished")); },
+		1.f, {}, EECFPlayDirection::Forward, MoveTemp(FinalOrderEvents),
+		[&FinalOrder](FName Name, float Time) { FinalOrder.Add(Name); });
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(1.1f);
+	TestEqual(TEXT("曲线时间轴自然结束只应输出一次终点 Tick"), FinalTimeTickCount, 1);
+	TestTrue(TEXT("曲线时间轴结束帧应依次输出 Tick、事件和完成回调"),
+		FinalOrder == TArray<FName>({TEXT("Tick"), TEXT("Event"), TEXT("Finished")}));
+
+	int32 ReentrantEventCount = 0;
+	int32 ReentrantFinishedCount = 0;
+	FECFHandle ReentrantHandle;
+	TArray<FECFTimelineEvent> ReentrantEvents;
+	ReentrantEvents.Add({0.25f, TEXT("Stop")});
+	ReentrantEvents.Add({0.75f, TEXT("MustNotRun")});
+	ReentrantHandle = FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[](float Value, float Time) {},
+		[&ReentrantFinishedCount](float Value, float Time, bool bStopped) { ++ReentrantFinishedCount; },
+		EECFBlendFunc::ECFBlend_Linear, 1.f, 1.f, {}, EECFPlayDirection::Forward, MoveTemp(ReentrantEvents),
+		[&TestWorld, &ReentrantHandle, &ReentrantEventCount](FName Name, float Time)
+		{
+			++ReentrantEventCount;
+			FFlow::StopAction(TestWorld.GetWorld(), ReentrantHandle, false);
+		});
+	TestWorld.Tick(0.1f);
+	TestWorld.Tick(1.f);
+	TestEqual(TEXT("事件回调取消动作后不应继续派发同 Tick 事件"), ReentrantEventCount, 1);
+	TestEqual(TEXT("事件回调取消动作后不应再触发自然完成"), ReentrantFinishedCount, 0);
+
+	int32 TickCancelledFinishedCount = 0;
+	bool bCancelOnTick = false;
+	FECFHandle TickCancelledHandle;
+	TickCancelledHandle = FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+		[&TestWorld, &TickCancelledHandle, &bCancelOnTick](float Value, float Time)
+		{
+			if (bCancelOnTick)
+			{
+				FFlow::StopAction(TestWorld.GetWorld(), TickCancelledHandle, false);
+			}
+		},
+		[&TickCancelledFinishedCount](float Value, float Time, bool bStopped) { ++TickCancelledFinishedCount; });
+	TestWorld.Tick(0.1f);
+	bCancelOnTick = true;
+	TestWorld.Tick(1.f);
+	TestEqual(TEXT("Tick 回调取消动作后不应再触发自然完成"), TickCancelledFinishedCount, 0);
 
 	int32 JumpEventCount = 0;
 	const FECFHandle JumpHandle = FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,

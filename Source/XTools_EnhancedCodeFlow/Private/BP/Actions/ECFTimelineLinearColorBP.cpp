@@ -21,7 +21,7 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 				{
 					if (IsProxyValid(StrongProxy))
 					{
-						StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None, -1.f);
+						StrongProxy->OnTick.Broadcast(Value, Time, false);
 					}
 				}
 			},
@@ -31,7 +31,7 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 				{
 					if (IsProxyValid(StrongProxy))
 					{
-						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None, -1.f);
+						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped);
 						StrongProxy->ClearAsyncBPAction();
 					}
 				}
@@ -41,7 +41,7 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 			{
 				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
 				{
-					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(FLinearColor::Transparent, EventTime, false, EventName, EventTime);
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(EventName, EventTime);
 				}
 			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);

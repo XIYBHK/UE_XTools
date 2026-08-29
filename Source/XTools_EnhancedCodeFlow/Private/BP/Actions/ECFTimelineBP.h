@@ -6,7 +6,7 @@
 #include "ECFTypes.h"
 #include "ECFTimelineBP.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnECFTimelineBPEvent, float, Value, float, Time, bool, bStopped, FName, EventName, float, EventTime);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnECFTimelineBPEvent, float, Value, float, Time, bool, bStopped);
 
 UCLASS()
 class XTOOLS_ENHANCEDCODEFLOW_API UECFTimelineBP : public UECFActionBP
@@ -22,8 +22,8 @@ public:
 	FOnECFTimelineBPEvent OnFinished;
 
 	UPROPERTY(BlueprintAssignable)
-	FOnECFTimelineBPEvent OnEvent;
+	FOnECFTimelineEventBP OnEvent;
 	
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, BlendFunc, BlendExp, PlayRate, PlayDirection", ToolTip = "时间轴动画控制器。反向播放会从结束值开始并在起始值完成。", DisplayName = "ECF - 时间轴"), Category = "XTools|ECF|时间轴")
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, BlendFunc, BlendExp, PlayRate, PlayDirection", CPP_Default_BlendFunc = "ECFBlend_Linear", CPP_Default_BlendExp = "1.0", CPP_Default_PlayRate = "1.0", CPP_Default_PlayDirection = "Forward", ToolTip = "时间轴动画控制器。反向播放会从结束值开始并在起始值完成。", DisplayName = "ECF - 时间轴"), Category = "XTools|ECF|时间轴")
 	static UECFTimelineBP* ECFTimeline(const UObject* WorldContextObject, float StartValue, float StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc, float BlendExp, float PlayRate, EECFPlayDirection PlayDirection, TArray<FECFTimelineEvent> Events);
 };

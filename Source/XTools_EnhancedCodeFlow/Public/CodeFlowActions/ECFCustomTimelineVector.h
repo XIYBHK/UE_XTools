@@ -21,14 +21,14 @@ protected:
 	TUniqueFunction<void(FVector, float)> TickFunc;
 	TUniqueFunction<void(FVector, float, bool)> CallbackFunc;
 	TUniqueFunction<void(FVector, float)> CallbackFunc_NoStopped;
-	TArray<FECFTimelineEvent> TimelineEvents;
-	FECFTimelineEventFunc EventFunc;
+	FECFTimelineEventTrack TimelineEventTrack;
 	FTimeline MyTimeline;
 
 	FVector CurrentValue = FVector::ZeroVector;
 	float CurrentTime = 0.f;
 	float PlayRate = 1.0f;
 	EECFPlayDirection PlayDirection = EECFPlayDirection::Forward;
+	bool bFinishPending = false;
 
 
 	UPROPERTY(Transient)
@@ -38,9 +38,7 @@ protected:
 	{
 		TickFunc = MoveTemp(InTickFunc);
 		CallbackFunc = MoveTemp(InCallbackFunc);
-		TimelineEvents = MoveTemp(InEvents);
-		EventFunc = MoveTemp(InEventFunc);
-		Algo::StableSort(TimelineEvents, [](const FECFTimelineEvent& A, const FECFTimelineEvent& B) { return A.Time < B.Time; });
+		TimelineEventTrack.Initialize(MoveTemp(InEvents), MoveTemp(InEventFunc));
 		CurveVector = InCurveVector;
 		PlayRate = (FMath::Abs(InPlayRate) > KINDA_SMALL_NUMBER) ? FMath::Abs(InPlayRate) : 1.0f;
 		PlayDirection = InPlayDirection;
@@ -96,6 +94,7 @@ protected:
 
 	bool Reset(bool bCallUpdate) override
 	{
+		bFinishPending = false;
 		CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? MyTimeline.GetTimelineLength() : 0.f;
 		MyTimeline.SetPlaybackPosition(CurrentTime, false, false);
 		CurrentValue = CurveVector->GetVectorValue(CurrentTime);
@@ -132,7 +131,22 @@ protected:
 		const float TimelineLength = MyTimeline.GetTimelineLength();
 		const float RawNewTime = PreviousTime + DeltaTime * PlayRate * (PlayDirection == EECFPlayDirection::Reverse ? -1.f : 1.f);
 		MyTimeline.TickTimeline(DeltaTime);
-		ECFDispatchTimelineEvents(PreviousTime, RawNewTime, TimelineLength, Settings.bLoop, PlayDirection == EECFPlayDirection::Reverse, TimelineEvents, EventFunc);
+		if (!IsValid())
+		{
+			return;
+		}
+		TimelineEventTrack.Dispatch(PreviousTime, RawNewTime, TimelineLength, Settings.bLoop,
+			PlayDirection == EECFPlayDirection::Reverse, [this]() { return IsValid(); });
+		if (!IsValid())
+		{
+			return;
+		}
+		if (bFinishPending)
+		{
+			bFinishPending = false;
+			MarkAsFinished();
+			Complete(false);
+		}
 	}
 
 	void Complete(bool bStopped) override
@@ -159,6 +173,10 @@ protected:
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{
 			TickFunc(CurrentValue, CurrentTime);
+			if (!IsValid())
+			{
+				return true;
+			}
 			const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= TimelineLength;
 			if (!Settings.bLoop && bReachedEnd)
 			{
@@ -204,21 +222,20 @@ private:
 	UFUNCTION()
 	void HandleFinish()
 	{
+		if (!IsValid())
+		{
+			return;
+		}
 		// Loop模式由FTimeline内部处理，不会触发HandleFinish
 		// 这里只处理非Loop模式的结束
 		
-		// 确保最终值精确到达曲线终点，避免浮点精度问题
+		// FTimeline 在 Finished 委托前已通过 HandleProgress 输出终点；这里只规范化最终状态并延后完成。
 		if (CurveVector)
 		{
-			CurrentTime = PlayDirection == EECFPlayDirection::Reverse ? 0.f : MyTimeline.GetTimelineLength();
+			CurrentTime = MyTimeline.GetPlaybackPosition();
 			CurrentValue = CurveVector->GetVectorValue(CurrentTime);
-			if (HasValidOwner() && TickFunc)
-			{
-				TickFunc(CurrentValue, CurrentTime);
-			}
 		}
-		MarkAsFinished();
-		Complete(false);
+		bFinishPending = true;
 	}
 };
 
