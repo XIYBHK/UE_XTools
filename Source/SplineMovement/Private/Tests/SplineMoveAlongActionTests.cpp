@@ -7,6 +7,7 @@
 #include "SplineMoveAlongAction.h"
 #include "SplineMoveAlongActionTestTypes.h"
 #include "AIController.h"
+#include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -100,6 +101,69 @@ bool FSplineMoveAlongActionCompletionTest::RunTest(const FString& Parameters)
 		Action->FinishAction(false);
 		TestEqual(TEXT("AIMoveTo 完成时应停止当前 AI 移动"), Controller->StopMovementCalls, 1);
 		Action->RemoveFromRoot();
+	}
+
+	World->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSplineMoveAlongActionEndpointArrivalTest,
+	"XTools.SplineMovement.Endpoint.RequiresPawnArrival",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSplineMoveAlongActionEndpointArrivalTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("SplineMovementEndpointArrivalTest"));
+	TestNotNull(TEXT("应创建端点测试世界"), World);
+	if (!World)
+	{
+		return false;
+	}
+
+	APawn* Pawn = World->SpawnActor<APawn>();
+	USplineComponent* Spline = Pawn ? NewObject<USplineComponent>(Pawn) : nullptr;
+	TestNotNull(TEXT("应生成端点测试 Pawn"), Pawn);
+	TestNotNull(TEXT("应创建端点测试样条"), Spline);
+	if (Pawn && Spline)
+	{
+		USceneComponent* PawnRoot = NewObject<USceneComponent>(Pawn);
+		Pawn->SetRootComponent(PawnRoot);
+		PawnRoot->RegisterComponent();
+		Spline->RegisterComponent();
+		Spline->ClearSplinePoints(false);
+		Spline->AddSplinePoint(FVector::ZeroVector, ESplineCoordinateSpace::World, false);
+		Spline->AddSplinePoint(FVector(1000.f, 0.f, 0.f), ESplineCoordinateSpace::World, true);
+
+		auto CreateAction = [Pawn, Spline](bool bReverse, float CurrentDistance)
+		{
+			USplineMoveAlongAction* Action = NewObject<USplineMoveAlongAction>(Pawn);
+			Action->AddToRoot();
+			Action->Pawn_Ptr = Pawn;
+			Action->Spline_Ptr = Spline;
+			Action->LookaheadDist = 100.f;
+			Action->bReverse = bReverse;
+			Action->bHasCurrentDistance = true;
+			Action->CurrentDistance = CurrentDistance;
+			return Action;
+		};
+
+		Pawn->SetActorLocation(FVector(850.f, 0.f, 0.f));
+		USplineMoveAlongAction* ForwardAction = CreateAction(false, 950.f);
+		TestTrue(TEXT("正向前瞻触及终点但 Pawn 未到达时应继续"), ForwardAction->OnTicker(1.f / 60.f));
+		TestFalse(TEXT("正向未到达终点时不应完成"), ForwardAction->bFinished);
+		Pawn->SetActorLocation(FVector(1000.f, 0.f, 0.f));
+		TestFalse(TEXT("正向 Pawn 到达终点后应停止 ticker"), ForwardAction->OnTicker(1.f / 60.f));
+		TestTrue(TEXT("正向 Pawn 到达终点后应完成"), ForwardAction->bFinished);
+		ForwardAction->RemoveFromRoot();
+
+		Pawn->SetActorLocation(FVector(150.f, 0.f, 0.f));
+		USplineMoveAlongAction* ReverseAction = CreateAction(true, 50.f);
+		TestTrue(TEXT("反向前瞻触及起点但 Pawn 未到达时应继续"), ReverseAction->OnTicker(1.f / 60.f));
+		TestFalse(TEXT("反向未到达起点时不应完成"), ReverseAction->bFinished);
+		Pawn->SetActorLocation(FVector::ZeroVector);
+		TestFalse(TEXT("反向 Pawn 到达起点后应停止 ticker"), ReverseAction->OnTicker(1.f / 60.f));
+		TestTrue(TEXT("反向 Pawn 到达起点后应完成"), ReverseAction->bFinished);
+		ReverseAction->RemoveFromRoot();
 	}
 
 	World->DestroyWorld(false);

@@ -63,6 +63,7 @@ class SPLINEMOVEMENT_API USplineMoveAlongAction : public UBlueprintAsyncActionBa
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FSplineMoveAlongActionRepathTest;
 	friend class FSplineMoveAlongActionCompletionTest;
+	friend class FSplineMoveAlongActionEndpointArrivalTest;
 #endif
 
 public:

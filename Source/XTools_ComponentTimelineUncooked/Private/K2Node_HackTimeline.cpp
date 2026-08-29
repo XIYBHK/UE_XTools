@@ -497,6 +497,7 @@ void UK2Node_HackTimeline::FindDiffs( class UEdGraphNode* OtherNode, struct FDif
 			FindExactTimelineDifference(Results, Diff, Template1->EventTracks, Template2->EventTracks, LOCTEXT("Event", "Event").ToString());
 			FindExactTimelineDifference(Results, Diff, Template1->FloatTracks, Template2->FloatTracks, LOCTEXT("Float", "Float").ToString());
 			FindExactTimelineDifference(Results, Diff, Template1->VectorTracks, Template2->VectorTracks,  LOCTEXT("Vector", "Vector").ToString() );
+			FindExactTimelineDifference(Results, Diff, Template1->LinearColorTracks, Template2->LinearColorTracks, LOCTEXT("LinearColor", "Linear Color").ToString());
 		}
 		
 	}

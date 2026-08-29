@@ -73,6 +73,7 @@ UQueueSplineComponent::UQueueSplineComponent()
 void UQueueSplineComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	bIsEndingPlay = false;
 
 	if (UWorld* World = GetWorld())
 	{

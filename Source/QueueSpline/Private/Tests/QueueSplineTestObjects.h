@@ -83,3 +83,20 @@ public:
 		--InCallbackDepth;
 	}
 };
+
+UCLASS()
+class UQueueSplineLifecycleTestComponent : public UQueueSplineComponent
+{
+	GENERATED_BODY()
+
+public:
+	void InvokeBeginPlay()
+	{
+		BeginPlay();
+	}
+
+	void InvokeEndPlay()
+	{
+		EndPlay(EEndPlayReason::RemovedFromWorld);
+	}
+};

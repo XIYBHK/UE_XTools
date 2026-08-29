@@ -4,12 +4,60 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
 #include "QueueSplineMovementComponent.h"
 #include "QueueSplineTestObjects.h"
 #include "UObject/Package.h"
 #include "UObject/ScriptDelegates.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineLifecycleRestartTest,
+	"XTools.QueueSpline.Component.RestartAfterEndPlay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineLifecycleRestartTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("QueueSplineLifecycleRestartTest"));
+	TestNotNull(TEXT("应创建生命周期测试世界"), World);
+	if (!World)
+	{
+		return false;
+	}
+
+	AActor* QueueOwner = World->SpawnActor<AActor>();
+	USplineComponent* Spline = QueueOwner ? NewObject<USplineComponent>(QueueOwner) : nullptr;
+	UQueueSplineLifecycleTestComponent* Queue = QueueOwner
+		? NewObject<UQueueSplineLifecycleTestComponent>(QueueOwner)
+		: nullptr;
+	TestNotNull(TEXT("应创建队列所属 Actor"), QueueOwner);
+	TestNotNull(TEXT("应创建生命周期测试样条"), Spline);
+	TestNotNull(TEXT("应创建生命周期测试队列"), Queue);
+	if (QueueOwner && Spline && Queue)
+	{
+		QueueOwner->AddInstanceComponent(Spline);
+		Spline->RegisterComponent();
+		Spline->ClearSplinePoints(false);
+		Spline->AddSplinePoint(FVector::ZeroVector, ESplineCoordinateSpace::World, false);
+		Spline->AddSplinePoint(FVector(1000.f, 0.f, 0.f), ESplineCoordinateSpace::World, true);
+		QueueOwner->AddInstanceComponent(Queue);
+		Queue->SplineComponent = Spline;
+		Queue->RegisterComponent();
+
+		Queue->InvokeBeginPlay();
+		Queue->InvokeEndPlay();
+		Queue->InvokeBeginPlay();
+
+		AActor* Member = World->SpawnActor<AActor>();
+		FQueueSplineMemberHandle Handle;
+		TestTrue(TEXT("组件重新 BeginPlay 后应恢复成员注册"), Queue->RegisterQueueMember(Member, Handle));
+		Queue->InvokeEndPlay();
+	}
+
+	World->DestroyWorld(false);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FQueueSplinePlanarArrivalTest,
