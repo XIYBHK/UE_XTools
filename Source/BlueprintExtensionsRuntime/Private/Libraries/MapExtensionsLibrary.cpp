@@ -50,11 +50,15 @@ bool AreArrayInnerTypesCompatible(const FProperty* ExpectedInnerProperty, const 
 	return ExpectedInnerProperty && ArrayProperty && XTools::MapExtensions::ArePropertiesSameType(ExpectedInnerProperty, ArrayProperty->Inner);
 }
 
-void InitializeScriptValue(const FProperty* Property, void* ValuePtr)
+void ClearScriptValue(const FProperty* Property, void* ValuePtr)
 {
 	if (Property && ValuePtr)
 	{
-		Property->InitializeValue(ValuePtr);
+		uint8* ValueBytes = static_cast<uint8*>(ValuePtr);
+		for (int32 ArrayIndex = 0; ArrayIndex < Property->ArrayDim; ++ArrayIndex)
+		{
+			Property->ClearValue(ValueBytes + ArrayIndex * XTOOLS_GET_ELEMENT_SIZE(Property));
+		}
 	}
 }
 
@@ -98,7 +102,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_GetKey)
 	const bool bFound = GenericMap_GetKey(MapAddr, MapProperty, Index, ItemPtr);
 	if (!bFound)
 	{
-		InitializeScriptValue(KeyProp, ItemPtr);
+		ClearScriptValue(KeyProp, ItemPtr);
 	}
 	*(bool*)RESULT_PARAM = bFound;
 	P_NATIVE_END
@@ -167,7 +171,7 @@ DEFINE_FUNCTION(UMapExtensionsLibrary::execMap_GetValue)
 	const bool bFound = GenericMap_GetValue(MapAddr, MapProperty, Index, ItemPtr);
 	if (!bFound)
 	{
-		InitializeScriptValue(ValueProp, ItemPtr);
+		ClearScriptValue(ValueProp, ItemPtr);
 	}
 	*(bool*)RESULT_PARAM = bFound;
 	P_NATIVE_END
@@ -697,8 +701,8 @@ void UMapExtensionsLibrary::GenericMap_RandomItem(const void* MapAddr, const FMa
 			}
 		}
 
-		InitializeScriptValue(MapProperty->KeyProp, OutKeyPtr);
-		InitializeScriptValue(MapProperty->ValueProp, OutValuePtr);
+		ClearScriptValue(MapProperty->KeyProp, OutKeyPtr);
+		ClearScriptValue(MapProperty->ValueProp, OutValuePtr);
 	}
 }
 #pragma endregion
@@ -779,8 +783,8 @@ void UMapExtensionsLibrary::GenericMap_RandomItemFromStream(const void* MapAddr,
 			}
 		}
 
-		InitializeScriptValue(MapProperty->KeyProp, OutKeyPtr);
-		InitializeScriptValue(MapProperty->ValueProp, OutValuePtr);
+		ClearScriptValue(MapProperty->KeyProp, OutKeyPtr);
+		ClearScriptValue(MapProperty->ValueProp, OutValuePtr);
 	}
 }
 #pragma endregion
