@@ -499,6 +499,18 @@ EXToolsSplineFollowStatus USplineFollowLibrary::CalculateSplineFollowTarget(
 		return EXToolsSplineFollowStatus::Invalid;
 	}
 
+	if (State.CachedSplineComponent.Get() != SplineComponent)
+	{
+		State.bHasDistanceCache = false;
+		State.LastTargetDistance = 0.0;
+		State.bLastReverse = false;
+		State.bHasRuntimeReverse = false;
+		State.bRuntimeReverse = false;
+		State.bOpenLoopTransitionActive = false;
+		State.bOpenLoopTransitionToEnd = false;
+		State.CachedSplineComponent = SplineComponent;
+	}
+
 	const FVector ActorLocation = TargetActor->GetActorLocation();
 	const double CurrentDistance = FindSplineDistanceClosestToLocation(SplineComponent, ActorLocation);
 	const FVector CurrentSplineLocation = SplineComponent->GetLocationAtDistanceAlongSpline(

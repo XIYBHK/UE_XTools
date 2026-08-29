@@ -59,6 +59,9 @@ struct BLUEPRINTEXTENSIONSRUNTIME_API FXToolsSplineFollowState
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|样条线|移动", meta = (DisplayName = "开放循环目标为终点"))
 	bool bOpenLoopTransitionToEnd = false;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "XTools|样条线|移动", meta = (DisplayName = "缓存所属样条", AdvancedDisplay))
+	TWeakObjectPtr<USplineComponent> CachedSplineComponent;
+
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "XTools|样条线|移动", meta = (DisplayName = "已捕获基础行走速度"))
 	bool bHasCapturedBaseMaxWalkSpeed = false;
 
