@@ -63,6 +63,7 @@ public:
 	virtual void PinDefaultValueChanged(UEdGraphPin* Pin) override;
 	virtual FText GetMenuCategory() const override;
 	virtual void ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins) override;
+	virtual void ReconstructNode() override;
 	virtual void PostReconstructNode() override;
 	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
 	//~ End UEdGraphNode interface
@@ -104,7 +105,7 @@ private:
 	/**
 	 * @brief 根据当前的数组类型，重新构建节点的动态输入引脚 (如 Location, Axis 等)。
 	 */
-	void RebuildDynamicPins();
+	void RebuildDynamicPins(bool bTreatModeAsConnected = false);
 
 	/**
 	 * @brief 将确定的类型应用到本节点的通配符引脚上。

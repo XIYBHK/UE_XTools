@@ -84,11 +84,72 @@ void UK2Node_SmartSort::ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>&
 {
 	AllocateDefaultPins();
 
-	// 先恢复连接，然后再重建动态引脚
-	RestoreSplitPins(OldPins);
+	UEdGraphPin* OldArrayPin = nullptr;
+	UEdGraphPin* OldModePin = nullptr;
+	for (UEdGraphPin* OldPin : OldPins)
+	{
+		if (!OldPin)
+		{
+			continue;
+		}
+		if (OldPin->PinName == FSmartSort_Helper::PN_TargetArray)
+		{
+			OldArrayPin = OldPin;
+		}
+		else if (OldPin->PinName == FSmartSort_Helper::PN_SortMode)
+		{
+			OldModePin = OldPin;
+		}
+	}
+	if (OldArrayPin)
+	{
+		PropagatePinType(OldArrayPin->PinType);
+	}
 
-	// 重建动态引脚（在连接恢复后）
-	RebuildDynamicPins();
+	if (OldModePin)
+	{
+		if (UEdGraphPin* NewModePin = GetSortModePin())
+		{
+			NewModePin->DefaultValue = OldModePin->DefaultValue;
+			NewModePin->DefaultObject = OldModePin->DefaultObject;
+			NewModePin->DefaultTextValue = OldModePin->DefaultTextValue;
+		}
+	}
+
+	const auto HasOldPin = [&OldPins](const FName PinName)
+	{
+		return OldPins.ContainsByPredicate([PinName](const UEdGraphPin* Pin)
+		{
+			return Pin && Pin->PinName == PinName;
+		});
+	};
+	bool bOldModeWasConnected = OldModePin && !OldModePin->LinkedTo.IsEmpty();
+	if (!bOldModeWasConnected && OldArrayPin)
+	{
+		if (UEnum* OldSortModeEnum = GetSortModeEnumForType(OldArrayPin->PinType))
+		{
+			bOldModeWasConnected = OldSortModeEnum == StaticEnum<EVectorSortMode>()
+				? HasOldPin(FSmartSort_Helper::PN_Direction) && HasOldPin(FSmartSort_Helper::PN_Axis)
+				: OldSortModeEnum == StaticEnum<EActorSortMode>()
+				&& HasOldPin(FSmartSort_Helper::PN_Location)
+				&& HasOldPin(FSmartSort_Helper::PN_Direction)
+				&& HasOldPin(FSmartSort_Helper::PN_Axis);
+		}
+	}
+
+	RestoreSplitPins(OldPins);
+	RebuildDynamicPins(bOldModeWasConnected);
+}
+
+void UK2Node_SmartSort::ReconstructNode()
+{
+#if WITH_EDITORONLY_DATA
+	bIsReconstructingPins = true;
+#endif
+	Super::ReconstructNode();
+#if WITH_EDITORONLY_DATA
+	bIsReconstructingPins = false;
+#endif
 }
 
 void UK2Node_SmartSort::PostReconstructNode()
@@ -101,9 +162,6 @@ void UK2Node_SmartSort::PostReconstructNode()
 	{
 		PropagatePinType(ArrayInputPin->LinkedTo[0]->PinType);
 	}
-
-	// 确保动态引脚正确显示
-	RebuildDynamicPins();
 }
 
 void UK2Node_SmartSort::PinConnectionListChanged(UEdGraphPin* Pin)
@@ -206,6 +264,10 @@ FEdGraphPinType UK2Node_SmartSort::GetResolvedArrayType() const
 		{
 			return ArrayPin->LinkedTo[0]->PinType;
 		}
+		if (ArrayPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+		{
+			return ArrayPin->PinType;
+		}
 	}
 
 	// 返回通配符类型
@@ -237,7 +299,7 @@ UEnum* UK2Node_SmartSort::GetSortModeEnumForType(const FEdGraphPinType& ArrayTyp
 	return nullptr; // 基础类型不需要枚举
 }
 
-void UK2Node_SmartSort::RebuildDynamicPins()
+void UK2Node_SmartSort::RebuildDynamicPins(bool bTreatModeAsConnected)
 {
 	// 递归调用保护（使用实例成员变量，避免静态变量跨实例共享）
 #if WITH_EDITORONLY_DATA
@@ -296,7 +358,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 		ModePin->bHidden = false;
 
 		// 检查排序模式引脚是否被连接（提升为变量）
-		const bool bModePinIsConnected = (ModePin->LinkedTo.Num() > 0);
+		const bool bModePinIsConnected = bTreatModeAsConnected || !ModePin->LinkedTo.IsEmpty();
 
 		if (bModePinIsConnected)
 		{
@@ -452,7 +514,7 @@ void UK2Node_SmartSort::RebuildDynamicPins()
 				if (CurrentDefault.IsEmpty() || !AvailableProperties.Contains(CurrentDefault))
 				{
 					PropertyNamePin->DefaultValue = AvailableProperties[0];
-					UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 设置结构体属性默认值: %s"), *AvailableProperties[0]);
+					UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 设置结构体属性默认值: %s"), *AvailableProperties[0]);
 				}
 			}
 			else
@@ -1197,7 +1259,7 @@ void UK2Node_SmartSort::SetEnumPinDefaultValue(UEdGraphPin* EnumPin, UEnum* Enum
 	{
 		FString FirstEnumName = EnumClass->GetNameStringByIndex(0);
 		EnumPin->DefaultValue = FirstEnumName;
-		UE_LOG(LogSortEditor, Warning, TEXT("[智能排序] 设置枚举默认值: %s = %s"),
+		UE_LOG(LogSortEditor, Verbose, TEXT("[智能排序] 设置枚举默认值: %s = %s"),
 			*EnumPin->PinName.ToString(), *FirstEnumName);
 	}
 }
