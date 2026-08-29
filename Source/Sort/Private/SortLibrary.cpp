@@ -994,20 +994,18 @@ void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, TArray
     OutArray.Empty();
     if (InArray.IsEmpty()) return;
 
-    TArray<FVector> SortedCopy = InArray;
-    SortedCopy.Sort([](const FVector& A, const FVector& B) {
-        if (A.X != B.X) return A.X < B.X;
-        if (A.Y != B.Y) return A.Y < B.Y;
-        return A.Z < B.Z;
-    });
-
-    OutArray.Reserve(SortedCopy.Num());
-    OutArray.Add(SortedCopy[0]);
-    for (int32 i = 1; i < SortedCopy.Num(); ++i)
+    const float SafeTolerance = FMath::IsFinite(Tolerance) ? FMath::Max(0.0f, Tolerance) : 0.0f;
+    OutArray.Reserve(InArray.Num());
+    for (const FVector& Candidate : InArray)
     {
-        if (!SortedCopy[i].Equals(OutArray.Last(), Tolerance))
+        const bool bAlreadyPresent = OutArray.ContainsByPredicate(
+            [&Candidate, SafeTolerance](const FVector& Existing)
+            {
+                return Candidate.Equals(Existing, SafeTolerance);
+            });
+        if (!bAlreadyPresent)
         {
-            OutArray.Add(SortedCopy[i]);
+            OutArray.Add(Candidate);
         }
     }
     OutArray.Shrink();
@@ -1019,32 +1017,18 @@ void USortLibrary::FindDuplicateVectors(const TArray<FVector>& InArray, TArray<i
     DuplicateValues.Empty();
     if (InArray.Num() < 2) return;
 
-    struct FVectorIndexPair { FVector Vector; int32 Index; };
-    TArray<FVectorIndexPair> Pairs;
-    Pairs.Reserve(InArray.Num());
-    for(int32 i=0; i<InArray.Num(); ++i)
-    {
-        Pairs.Add({InArray[i], i});
-    }
-
-    Pairs.Sort([](const FVectorIndexPair& A, const FVectorIndexPair& B) {
-        const FVector& V1 = A.Vector;
-        const FVector& V2 = B.Vector;
-        if (V1.X != V2.X) return V1.X < V2.X;
-        if (V1.Y != V2.Y) return V1.Y < V2.Y;
-        return V1.Z < V2.Z;
-    });
-
+    const float SafeTolerance = FMath::IsFinite(Tolerance) ? FMath::Max(0.0f, Tolerance) : 0.0f;
     TArray<bool> IsDuplicate;
     IsDuplicate.Init(false, InArray.Num());
-    bool bInDuplicateGroup = false;
-
-    for (int32 i = 0; i < Pairs.Num() - 1; ++i)
+    for (int32 LeftIndex = 0; LeftIndex < InArray.Num() - 1; ++LeftIndex)
     {
-        if (Pairs[i].Vector.Equals(Pairs[i+1].Vector, Tolerance))
+        for (int32 RightIndex = LeftIndex + 1; RightIndex < InArray.Num(); ++RightIndex)
         {
-            IsDuplicate[Pairs[i].Index] = true;
-            IsDuplicate[Pairs[i+1].Index] = true;
+            if (InArray[LeftIndex].Equals(InArray[RightIndex], SafeTolerance))
+            {
+                IsDuplicate[LeftIndex] = true;
+                IsDuplicate[RightIndex] = true;
+            }
         }
     }
     

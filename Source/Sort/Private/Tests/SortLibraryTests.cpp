@@ -382,6 +382,20 @@ bool FSortLibrary_ReversesAndDeduplicatesValues::RunTest(const FString& Paramete
     TestTrue(TEXT("重复向量检测应报告重复组的全部成员"),
         DuplicateIndices == TArray<int32>({0, 1}) && DuplicateValues.Num() == 2);
 
+	const TArray<FVector> NonAdjacentDuplicates = {
+		FVector(0.0f, 100.0f, 0.0f),
+		FVector(0.005f, 0.0f, 0.0f),
+		FVector(0.009f, 100.0f, 0.0f)
+	};
+	USortLibrary::RemoveDuplicateVectors(NonAdjacentDuplicates, UniqueVectors, 0.01f);
+	TestTrue(TEXT("容差近似但字典序不相邻的向量仍应去重并保留首现顺序"),
+		UniqueVectors == TArray<FVector>({NonAdjacentDuplicates[0], NonAdjacentDuplicates[1]}));
+
+	USortLibrary::FindDuplicateVectors(NonAdjacentDuplicates, DuplicateIndices, DuplicateValues, 0.01f);
+	TestTrue(TEXT("重复向量查找不应依赖字典序相邻"),
+		DuplicateIndices == TArray<int32>({0, 2}) &&
+		DuplicateValues == TArray<FVector>({NonAdjacentDuplicates[0], NonAdjacentDuplicates[2]}));
+
     return true;
 }
 
