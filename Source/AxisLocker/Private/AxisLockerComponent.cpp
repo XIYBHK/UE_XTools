@@ -217,7 +217,10 @@ void UAxisLockerComponent::PushLockState()
 		return;
 	}
 
-	LockStateStack.Push(UAxisLockLibrary::GetLockState(Target));
+	FStoredAxisLockState StoredState;
+	StoredState.Target = Target;
+	StoredState.State = UAxisLockLibrary::GetLockState(Target);
+	LockStateStack.Push(MoveTemp(StoredState));
 }
 
 void UAxisLockerComponent::PopLockState()
@@ -228,18 +231,20 @@ void UAxisLockerComponent::PopLockState()
 		return;
 	}
 
-	UPrimitiveComponent* Target = ResolveTarget();
+	const FStoredAxisLockState& StoredState = LockStateStack.Last();
+	UPrimitiveComponent* Target = StoredState.Target.Get();
 	if (!Target)
 	{
-		if (TargetComponentName.IsNone())
-		{
-			XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("恢复锁定状态失败：未能解析到目标物理组件"), NAME_None, true, 5.0f);
-		}
+		XTOOLS_LOG_WARNING_EX(LogAxisLocker, TEXT("恢复锁定状态失败：压栈时的目标组件已失效"), NAME_None, true, 5.0f);
+#if XTOOLS_ENGINE_5_8_OR_LATER
+		LockStateStack.Pop(EAllowShrinking::No);
+#else
+		LockStateStack.Pop(false);
+#endif
 		return;
 	}
 
-	const FAxisLockState State = LockStateStack.Last();
-	if (UAxisLockLibrary::ApplyLockState(Target, State))
+	if (UAxisLockLibrary::ApplyLockState(Target, StoredState.State))
 	{
 #if XTOOLS_ENGINE_5_8_OR_LATER
 		LockStateStack.Pop(EAllowShrinking::No);

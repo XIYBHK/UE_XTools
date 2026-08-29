@@ -95,12 +95,18 @@ protected:
 	UPrimitiveComponent* ResolveTargetWithStatus(EAxisLockTargetStatus& OutStatus) const;
 
 private:
+	struct FStoredAxisLockState
+	{
+		TWeakObjectPtr<UPrimitiveComponent> Target;
+		FAxisLockState State;
+	};
+
 	/** 运行时覆盖目标（SetTargetComponent 设置），优先于 TargetComponentName 与挂载父级。*/
 	TWeakObjectPtr<UPrimitiveComponent> TargetComponentOverride;
 
 	/** 是否曾通过 SetTargetComponent 设置过非空覆盖（用于识别覆盖失效；非持久化状态）。*/
 	bool bTargetOverrideWasSet = false;
 
-	/** 临时锁定状态栈。*/
-	TArray<FAxisLockState> LockStateStack;
+	/** 临时锁定状态栈；状态始终恢复到压栈时的原目标。*/
+	TArray<FStoredAxisLockState> LockStateStack;
 };

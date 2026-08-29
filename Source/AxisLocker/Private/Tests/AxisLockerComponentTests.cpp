@@ -6,10 +6,12 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "AxisLockLibrary.h"
 #include "AxisLockerComponent.h"
 #include "AxisLockerComponentTestTypes.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/Actor.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "UObject/Package.h"
 
 namespace AxisLockerComponentTests
@@ -99,6 +101,48 @@ bool FAxisLockerComponent_ResolveTargetStatusIsDeterministic::RunTest(const FStr
 	TestTrue(TEXT("回退解析的 OutTarget 应为挂载父级"),
 		OutTarget == static_cast<UPrimitiveComponent*>(ParentBox));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAxisLockerComponent_RestoresStateToOriginalTarget,
+	"XTools.AxisLocker.Component.RestoresStateToOriginalTarget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAxisLockerComponent_RestoresStateToOriginalTarget::RunTest(const FString& Parameters)
+{
+	using namespace AxisLockerComponentTests;
+
+	AActor* Actor = NewObject<AActor>(GetTransientPackage());
+	UAxisLockerComponent* Locker = NewLocker(Actor);
+	UBoxComponent* OriginalTarget = NewObject<UBoxComponent>(Actor, TEXT("OriginalTarget"));
+	UBoxComponent* NewTarget = NewObject<UBoxComponent>(Actor, TEXT("NewTarget"));
+	Actor->AddOwnedComponent(OriginalTarget);
+	Actor->AddOwnedComponent(NewTarget);
+
+	FBodyInstance* OriginalBody = OriginalTarget->GetBodyInstance();
+	FBodyInstance* NewBody = NewTarget->GetBodyInstance();
+	if (!TestNotNull(TEXT("Original target body must exist"), OriginalBody)
+		|| !TestNotNull(TEXT("New target body must exist"), NewBody))
+	{
+		return false;
+	}
+
+	OriginalBody->bLockXTranslation = true;
+	OriginalBody->bLockYTranslation = false;
+	Locker->SetTargetComponent(OriginalTarget);
+	Locker->PushLockState();
+
+	OriginalBody->bLockXTranslation = false;
+	NewBody->bLockXTranslation = false;
+	NewBody->bLockYTranslation = true;
+	Locker->SetTargetComponent(NewTarget);
+	Locker->PopLockState();
+
+	TestTrue(TEXT("Saved state must be restored to the original target"), OriginalBody->bLockXTranslation);
+	TestFalse(TEXT("The original target must restore its saved Y state"), OriginalBody->bLockYTranslation);
+	TestFalse(TEXT("The new target must not receive the original target X state"), NewBody->bLockXTranslation);
+	TestTrue(TEXT("The new target must keep its own Y state"), NewBody->bLockYTranslation);
 	return true;
 }
 
