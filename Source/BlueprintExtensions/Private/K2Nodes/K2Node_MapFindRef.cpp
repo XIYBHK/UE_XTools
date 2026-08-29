@@ -388,14 +388,14 @@ void UK2Node_MapFindRef::PropagatePinType()
 
 		for (UEdGraphPin* Pin : Pins)
 		{
-			for (TArray<UEdGraphPin*>::TIterator ConnectionIt(Pin->LinkedTo); ConnectionIt; ++ConnectionIt)
+			const TArray<UEdGraphPin*> LinkedPins = Pin->LinkedTo;
+			for (UEdGraphPin* ConnectedPin : LinkedPins)
 			{
-				UEdGraphPin* ConnectedPin = *ConnectionIt;
-				if (!Schema->ArePinsCompatible(Pin, ConnectedPin, CallingContext))
+				if (ConnectedPin && !Schema->ArePinsCompatible(Pin, ConnectedPin, CallingContext))
 				{
 					Pin->BreakLinkTo(ConnectedPin);
 				}
-				else if (ConnectedPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+				else if (ConnectedPin && ConnectedPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
 				{
 					if (UK2Node* ConnectedNode = Cast<UK2Node>(ConnectedPin->GetOwningNode()))
 					{
