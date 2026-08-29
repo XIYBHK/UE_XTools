@@ -155,8 +155,13 @@ FVector FFormationMathUtils::CalculateAlignmentForce(
         return FVector::ZeroVector;
     }
 
-    // 验证两个数组大小匹配
-    ensure(Positions.Num() == Velocities.Num());
+    if (Positions.Num() != Velocities.Num())
+    {
+        UE_LOG(LogFormationSystem, Warning,
+            TEXT("CalculateAlignmentForce: 位置和速度数组大小不一致 (%d != %d)"),
+            Positions.Num(), Velocities.Num());
+        return FVector::ZeroVector;
+    }
 
     const FVector& UnitPos = Positions[UnitIndex];
     FVector AverageVelocity = FVector::ZeroVector;

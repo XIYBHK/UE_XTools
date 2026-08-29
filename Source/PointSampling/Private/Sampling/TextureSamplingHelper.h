@@ -130,6 +130,10 @@ public:
                                  int32 MaxAttempts = 30);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+  friend class FTextureSamplingHelper_ReadsLastG8Pixel;
+#endif
+
 #if WITH_EDITOR
   /**
    * 检查纹理源格式是否受支持（参考 UE SubUVAnimation.cpp）

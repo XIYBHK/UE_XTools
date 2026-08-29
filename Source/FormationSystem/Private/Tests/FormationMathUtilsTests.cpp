@@ -25,4 +25,23 @@ bool FFormationMathUtils_RejectsNegativeSeparationWeight::RunTest(const FString&
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFormationMathUtils_RejectsMismatchedAlignmentInputs,
+    "XTools.Formation.MathUtils.RejectsMismatchedAlignmentInputs",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMathUtils_RejectsMismatchedAlignmentInputs::RunTest(const FString& Parameters)
+{
+    FBoidsMovementParams BoidsParams;
+    TArray<FVector> Positions = { FVector::ZeroVector, FVector(10.0f, 0.0f, 0.0f) };
+    TArray<FVector> Velocities = { FVector::ZeroVector };
+
+    AddExpectedError(TEXT("位置和速度数组大小不一致"), EAutomationExpectedErrorFlags::Contains, 1);
+    const FVector AlignmentForce =
+        FFormationMathUtils::CalculateAlignmentForce(0, Positions, Velocities, BoidsParams);
+
+    TestTrue(TEXT("数组长度不一致时应安全返回零向量"), AlignmentForce.IsNearlyZero());
+    return true;
+}
+
 #endif

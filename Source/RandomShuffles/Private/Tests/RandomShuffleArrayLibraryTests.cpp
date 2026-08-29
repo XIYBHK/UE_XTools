@@ -13,6 +13,14 @@
 
 namespace
 {
+	template<typename ElementPropertyType>
+	FArrayProperty* MakeTestArrayProperty()
+	{
+		FArrayProperty* ArrayProperty = new FArrayProperty(GetTransientPackage(), NAME_None, RF_Transient);
+		ArrayProperty->Inner = new ElementPropertyType(ArrayProperty, TEXT("Element"), RF_Transient);
+		return ArrayProperty;
+	}
+
 	struct FStreamRandom
 	{
 		explicit FStreamRandom(FRandomStream& InStream)
@@ -49,6 +57,33 @@ namespace
 		}
 		return Count;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRandomShuffle_RejectsExtraWeights,
+	"XTools.RandomShuffles.Sampling.RejectsExtraWeights",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRandomShuffle_RejectsExtraWeights::RunTest(const FString& Parameters)
+{
+	FArrayProperty* InputProperty = MakeTestArrayProperty<FIntProperty>();
+	FArrayProperty* WeightsProperty = MakeTestArrayProperty<FFloatProperty>();
+	FArrayProperty* OutputProperty = MakeTestArrayProperty<FIntProperty>();
+	TArray<int32> Input = { 10, 20 };
+	TArray<float> Weights = { 1.0f, 1.0f, 1.0f };
+	TArray<int32> Output = { 99 };
+
+	AddExpectedError(TEXT("Expected exactly 2 weights but found 3"), EAutomationExpectedErrorFlags::Contains, 2);
+	URandomShuffleArrayLibrary::GenericArray_RandomSample(
+		&Input, InputProperty, &Weights, WeightsProperty, 1, nullptr, &Output, OutputProperty);
+	TestTrue(TEXT("普通加权采样拒绝多余权重后应清空输出"), Output.IsEmpty());
+
+	Output = { 99 };
+	URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
+		&Input, InputProperty, &Weights, WeightsProperty, 1, nullptr, &Output, OutputProperty);
+	TestTrue(TEXT("严格权重采样拒绝多余权重后应清空输出"), Output.IsEmpty());
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

@@ -323,6 +323,10 @@ public:
 	void SetCachedFilter(UFieldSystemMetaDataFilter* Filter);
 
 protected:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FXFieldSystemActor_EndPlayClearsRuntimeState;
+#endif
+
 	/** 筛选器是否已应用 */
 	bool bFilterApplied = false;
 

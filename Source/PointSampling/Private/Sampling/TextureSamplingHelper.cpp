@@ -359,8 +359,10 @@ float FTextureSamplingHelper::GetTextureDensityAtCoordinate(
   int64 PixelIndex = ((int64)PixelY * OriginalWidth + PixelX) * BytesPerPixel;
 
   // 边界检查：确保访问的像素数据不会越界
-  // RGBA16 和 RGBA16F 格式需要访问 PixelIndex + 7（4 个通道 × 2 字节）
-  const int64 MaxOffset = (SourceFormat == TSF_RGBA16 || SourceFormat == TSF_RGBA16F) ? 7 : 3;
+  // G8 只访问当前字节；RGBA16/RGBA16F 每像素访问 8 字节，其余支持格式访问 4 字节。
+  const int64 MaxOffset = SourceFormat == TSF_G8
+                              ? 0
+                              : (SourceFormat == TSF_RGBA16 || SourceFormat == TSF_RGBA16F) ? 7 : 3;
   if (PixelIndex + MaxOffset >= (int64)OriginalWidth * OriginalHeight * BytesPerPixel)
   {
     UE_LOG(LogPointSampling, Warning,

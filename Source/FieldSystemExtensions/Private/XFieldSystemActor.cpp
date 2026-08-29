@@ -59,11 +59,8 @@ void AXFieldSystemActor::BeginPlay()
 
 void AXFieldSystemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 注销Spawn监听
-	if (bListenToActorSpawn)
-	{
-		UnregisterSpawnListener();
-	}
+	// 配置可能在运行时改变，按实际句柄状态注销监听。
+	UnregisterSpawnListener();
 
 	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakGC : CachedGeometryCollections)
 	{
@@ -72,6 +69,9 @@ void AXFieldSystemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			GC->InitializationFields.Remove(this);
 		}
 	}
+	CachedGeometryCollections.Reset();
+	CachedFilter = nullptr;
+	bFilterApplied = false;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -572,16 +572,13 @@ void AXFieldSystemActor::RegisterSpawnListener()
 
 void AXFieldSystemActor::UnregisterSpawnListener()
 {
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
 	// 注销回调（使用保存的句柄）
 	if (SpawnListenerHandle.IsValid())
 	{
-		World->RemoveOnActorSpawnedHandler(SpawnListenerHandle);
+		if (UWorld* World = GetWorld())
+		{
+			World->RemoveOnActorSpawnedHandler(SpawnListenerHandle);
+		}
 		SpawnListenerHandle.Reset();
 		
 		UE_LOG(LogFieldSystemExtensions, Log, TEXT("XFieldSystemActor: Unregistered spawn listener"));

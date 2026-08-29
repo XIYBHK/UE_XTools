@@ -388,8 +388,9 @@ void URandomShuffleArrayLibrary::GenericArray_RandomSample(
         }
 
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
-        if (WeightsHelper.Num() < ArrayHelper.Num()) {
-            ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
+        if (WeightsHelper.Num() != ArrayHelper.Num()) {
+            UE_LOG(LogRandomShuffle, Warning, TEXT("Expected exactly %i weights but found %i"),
+                ArrayHelper.Num(), WeightsHelper.Num());
             return;
         }
         if (!AreWeightsValid(WeightsHelper, WeightInnerProp)) {
@@ -460,8 +461,9 @@ void URandomShuffleArrayLibrary::GenericArray_StrictWeightRandomSample(
         }
 
         FScriptArrayHelper WeightsHelper(WeightsProp, Weights);
-        if (WeightsHelper.Num() < ArrayHelper.Num()) {
-            ensureMsgf(false, TEXT("Expected %i weights but only found %i"), ArrayHelper.Num(), WeightsHelper.Num());
+        if (WeightsHelper.Num() != ArrayHelper.Num()) {
+            UE_LOG(LogRandomShuffle, Warning, TEXT("Expected exactly %i weights but found %i"),
+                ArrayHelper.Num(), WeightsHelper.Num());
             return;
         }
         if (!AreWeightsValid(WeightsHelper, WeightInnerProp)) {
