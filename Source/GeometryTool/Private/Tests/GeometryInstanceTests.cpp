@@ -9,6 +9,8 @@
 #include "Components/BoxComponent.h"
 #include "Misc/AutomationTest.h"
 
+#include <limits>
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGeometryInstance_GeneratesConcentricCirclePoints,
 	"XTools.GeometryTool.GeometryInstance.GeneratesConcentricCirclePoints",
@@ -159,6 +161,39 @@ bool FGeometryInstance_UsesContinuousRandomRanges::RunTest(const FString& Parame
 			ReversedRotation.Pitch >= -2.0f && ReversedRotation.Pitch <= 2.0f &&
 			ReversedRotation.Yaw >= -2.0f && ReversedRotation.Yaw <= 2.0f &&
 			ReversedRotation.Roll >= -2.0f && ReversedRotation.Roll <= 2.0f);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGeometryInstance_SanitizesNonFiniteSamplingInputs,
+	"XTools.GeometryTool.GeometryInstance.SanitizesNonFiniteSamplingInputs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGeometryInstance_SanitizesNonFiniteSamplingInputs::RunTest(const FString& Parameters)
+{
+	UGeometryInstance* GeometryInstance = NewObject<UGeometryInstance>();
+	UBoxComponent* Box = NewObject<UBoxComponent>();
+	Box->SetBoxExtent(FVector(50.0f));
+	if (!TestNotNull(TEXT("几何实例组件应可创建"), GeometryInstance) ||
+		!TestNotNull(TEXT("盒体组件应可创建"), Box))
+	{
+		return false;
+	}
+
+	const float QuietNaN = std::numeric_limits<float>::quiet_NaN();
+	const TArray<FTransform> Points = GeometryInstance->GetPointsByShape(
+		Box, false, QuietNaN, QuietNaN, false,
+		FRotator::ZeroRotator, FRotator::ZeroRotator, false,
+		FVector::OneVector, FVector::OneVector, false,
+		FRotator::ZeroRotator, 23);
+
+	TestEqual(TEXT("非有限采样参数应回退为单层采样"), Points.Num(), 1);
+	if (Points.Num() == 1)
+	{
+		TestFalse(TEXT("非有限采样参数不应污染输出变换"), Points[0].ContainsNaN());
+		TestTrue(TEXT("回退后的单层采样点应位于中心"), Points[0].GetLocation().IsNearlyZero());
 	}
 
 	return true;

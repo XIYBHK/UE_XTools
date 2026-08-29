@@ -19,6 +19,7 @@ DEFINE_LOG_CATEGORY(LogGeometryTool);
 namespace GeometryToolInternal
 {
 	constexpr float MinDistance = 1.0f;
+	constexpr float MaxDistance = 100000.0f;
 	constexpr int32 MaxAxisSamples = 128;
 	constexpr int64 MaxPointBudget = 200000;
 
@@ -90,8 +91,10 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
         return FTransforms;
     }
 
-    Distance = FMath::Clamp(Distance, GeometryToolInternal::MinDistance, 100000.f);
-    Noise = FMath::Max(0.0f, Noise);
+    Distance = FMath::IsFinite(Distance)
+        ? FMath::Clamp(Distance, GeometryToolInternal::MinDistance, GeometryToolInternal::MaxDistance)
+        : GeometryToolInternal::MaxDistance;
+    Noise = FMath::IsFinite(Noise) ? FMath::Max(0.0f, Noise) : 0.0f;
 
     // 与 FormationSamplingLibrary 一致：通过种子驱动的 FRandomStream 保证同一种子结果可复现
     FRandomStream RandomStream(RandomSeed);
