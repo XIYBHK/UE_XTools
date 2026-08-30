@@ -14,6 +14,10 @@
 - 修复 通知按钮回调越过模块生命周期
 - 优化 模块关闭时主动清理通知与委托
 
+### XTools_BlueprintScreenshotTool
+- 修复 缩放后截图尺寸越界
+- 测试 增加截图尺寸上下界护栏
+
 ### XTools_BlueprintAssist
 - 审查 同步上游功能并保留本地配置扩展
 
