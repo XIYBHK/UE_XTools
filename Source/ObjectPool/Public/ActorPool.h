@@ -169,6 +169,7 @@ public:
 
     /**
      * 销毁所有不可用的Actor（用于强制清理）
+     * 可由外部直接调用；函数内部负责加锁。
      */
     void CleanupInvalidActors();
 
@@ -303,6 +304,11 @@ private:    //  内部辅助方法
      * 定期清理检查（需持有写锁）
      */
     void PeriodicCleanup_RequiresLock();
+
+    /**
+     * 清理无效Actor引用（需持有写锁）
+     */
+    void CleanupInvalidActors_RequiresLock();
 
     /**
      * 按池侧登记补完延迟构造（每实例至多一次 FinishSpawning）

@@ -64,7 +64,6 @@ FActorPool::FActorPool(UClass* InActorClass, int32 InInitialSize, int32 InHardLi
     {
         GCDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddLambda([this]()
         {
-            FWriteScopeLock WriteLock(PoolLock);
             CleanupInvalidActors();
         });
 
@@ -881,7 +880,14 @@ int64 FActorPool::CalculateMemoryUsage() const
 
 void FActorPool::CleanupInvalidActors()
 {
-    // 注意：调用者必须持有写锁
+    checkf(IsInGameThread(), TEXT("FActorPool::CleanupInvalidActors 只能在游戏线程调用"));
+    FWriteScopeLock WriteLock(PoolLock);
+    CleanupInvalidActors_RequiresLock();
+}
+
+void FActorPool::CleanupInvalidActors_RequiresLock()
+{
+    // 调用者必须持有写锁
 
     // 清理可用列表中的无效引用
     for (int32 i = AvailableActors.Num() - 1; i >= 0; --i)
@@ -980,7 +986,7 @@ void FActorPool::PeriodicCleanup_RequiresLock()
     // 注意：调用者必须持有写锁
     if (TotalRequests % CLEANUP_FREQUENCY == 0)
     {
-        CleanupInvalidActors();
+        CleanupInvalidActors_RequiresLock();
     }
 }
 

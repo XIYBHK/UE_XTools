@@ -126,6 +126,24 @@ bool FObjectPoolManagerMaintenanceApiTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FActorPoolPublicCleanupApiTest,
+    "XTools.ObjectPool.ActorPool.PublicCleanupApi",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FActorPoolPublicCleanupApiTest::RunTest(const FString& Parameters)
+{
+    TSharedPtr<FActorPool> Pool = MakeEmptyPool();
+    if (!TestTrue(TEXT("应能构造空池"), Pool.IsValid()))
+    {
+        return false;
+    }
+
+    Pool->CleanupInvalidActors();
+    TestEqual(TEXT("公开清理接口应安全处理空池"), Pool->GetPoolSize(), 0);
+
+    return true;
+}
+
 // M-17/M-18 回归：自动扩缩容与使用分析的确定性策略行为（Manual 不调整 / Adaptive 空池收敛到推荐值）
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolManagerAutoResizeDeterministicTest,
     "XTools.ObjectPool.Manager.AutoResizeDeterministic",
