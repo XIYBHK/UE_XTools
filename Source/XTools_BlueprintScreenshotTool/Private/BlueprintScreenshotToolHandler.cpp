@@ -35,6 +35,10 @@ DEFINE_LOG_CATEGORY(LogBlueprintScreenshotTool);
 #include "Slate/WidgetRenderer.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
+
 struct FWidgetSnapshotTextureData;
 
 bool UBlueprintScreenshotToolHandler::bTakingScreenshot = false;
@@ -55,6 +59,15 @@ struct FGraphCaptureState
 	float NewZoomAmount = 1.f;
 	FGraphPanelSelectionSet SelectedNodes;
 };
+
+FBSTVector2D CalculateCaptureWindowSize(
+	const FBSTVector2D& InWindowSize,
+	float InScale,
+	int32 InMinSize,
+	int32 InMaxSize)
+{
+	return (InWindowSize * InScale).ClampAxes(InMinSize, InMaxSize);
+}
 
 bool PrepareGraphEditorForCapture(TSharedPtr<SGraphEditor> InGraphEditor, FGraphCaptureState& OutState)
 {
@@ -89,8 +102,11 @@ bool PrepareGraphEditorForCapture(TSharedPtr<SGraphEditor> InGraphEditor, FGraph
 		OutState.WindowSize = SizeOfWidget * DPIScale;
 	}
 
-	OutState.WindowSize = OutState.WindowSize.ClampAxes(Settings->MinScreenshotSize, Settings->MaxScreenshotSize);
-	OutState.WindowSize *= WindowSizeScale;
+	OutState.WindowSize = CalculateCaptureWindowSize(
+		OutState.WindowSize,
+		WindowSizeScale,
+		Settings->MinScreenshotSize,
+		Settings->MaxScreenshotSize);
 
 	InGraphEditor->SetViewLocation(OutState.NewViewLocation, OutState.NewZoomAmount);
 	InGraphEditor->ClearSelectionSet();
@@ -592,3 +608,26 @@ TArray<FString> UBlueprintScreenshotToolHandler::TakeScreenshotWithPaths()
 	TakeScreenshotAsync(FOnBlueprintScreenshotCompleted(), false);
 	return {};
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBlueprintScreenshotCaptureSizeTest,
+	"XTools.BlueprintScreenshot.CaptureSize.ZoomThenClamp",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBlueprintScreenshotCaptureSizeTest::RunTest(const FString& Parameters)
+{
+	const FBSTVector2D MaxClamped = CalculateCaptureWindowSize(FBSTVector2D(10000.f, 9000.f), 2.f, 128, 15360);
+	TestEqual(TEXT("缩放后的宽度不得超过最大尺寸"), static_cast<double>(MaxClamped.X), 15360.0);
+	TestEqual(TEXT("缩放后的高度不得超过最大尺寸"), static_cast<double>(MaxClamped.Y), 15360.0);
+
+	const FBSTVector2D MinClamped = CalculateCaptureWindowSize(FBSTVector2D(1000.f, 800.f), 0.1f, 128, 15360);
+	TestEqual(TEXT("缩放后的宽度不得低于最小尺寸"), static_cast<double>(MinClamped.X), 128.0);
+	TestEqual(TEXT("缩放后的高度不得低于最小尺寸"), static_cast<double>(MinClamped.Y), 128.0);
+
+	const FBSTVector2D Unclamped = CalculateCaptureWindowSize(FBSTVector2D(640.f, 480.f), 1.5f, 128, 15360);
+	TestEqual(TEXT("范围内宽度应保留缩放结果"), static_cast<double>(Unclamped.X), 960.0);
+	TestEqual(TEXT("范围内高度应保留缩放结果"), static_cast<double>(Unclamped.Y), 720.0);
+	return true;
+}
+#endif
