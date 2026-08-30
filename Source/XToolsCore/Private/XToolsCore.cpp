@@ -50,6 +50,7 @@ const TArray<FName>& FXToolsLogCategories::Get()
 		// 第三方汉化模块（类别仍由本插件设置统一管理，保留）
 		TEXT("LogAutoSizeComments"),
 		TEXT("LogBlueprintAssist"),
+		TEXT("LogKnotTrackCreator"),
 		TEXT("LogBlueprintScreenshotTool"),
 	};
 
