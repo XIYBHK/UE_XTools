@@ -20,14 +20,17 @@
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "UObject/UObjectIterator.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
+
 #define LOCTEXT_NAMESPACE "FXTools_SwitchLanguageModule"
 
 namespace
 {
-FString GetNextEditorCulture()
+FString GetNextEditorCulture(const FString& CurrentLanguage)
 {
-	const FString CurrentLanguage = FInternationalization::Get().GetCurrentLanguage()->GetName();
-	if (CurrentLanguage == TEXT("en"))
+	if (CurrentLanguage.StartsWith(TEXT("en")))
 	{
 		return TEXT("zh-Hans");
 	}
@@ -38,6 +41,11 @@ FString GetNextEditorCulture()
 	}
 
 	return TEXT("en");
+}
+
+bool ShouldSyncEditorLocale(const FString& CurrentLanguage, const FString& CurrentLocale)
+{
+	return CurrentLanguage == CurrentLocale;
 }
 
 void RefreshGraphSchemas()
@@ -130,7 +138,9 @@ void FXTools_SwitchLanguageModule::ShutdownModule()
 
 void FXTools_SwitchLanguageModule::PluginButtonClicked()
 {
-	const FString TargetCulture = GetNextEditorCulture();
+	FInternationalization& I18N = FInternationalization::Get();
+	const FString CurrentLanguage = I18N.GetCurrentLanguage()->GetName();
+	const FString TargetCulture = GetNextEditorCulture(CurrentLanguage);
 	const TArray<FString> LocalizedCultureNames = FTextLocalizationManager::Get().GetLocalizedCultureNames(ELocalizationLoadFlags::Editor);
 	if (!LocalizedCultureNames.Contains(TargetCulture))
 	{
@@ -145,14 +155,22 @@ void FXTools_SwitchLanguageModule::PluginButtonClicked()
 		return;
 	}
 
-	FInternationalization& I18N = FInternationalization::Get();
-	if (!I18N.SetCurrentLanguage(TargetCulture))
+	const bool bSyncLocale = ShouldSyncEditorLocale(
+		CurrentLanguage, I18N.GetCurrentLocale()->GetName());
+	const bool bSwitchSucceeded = bSyncLocale
+		? I18N.SetCurrentLanguageAndLocale(TargetCulture)
+		: I18N.SetCurrentLanguage(TargetCulture);
+	if (!bSwitchSucceeded)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("XTools_SwitchLanguage: Failed to switch editor language to '%s'."), *TargetCulture);
 		return;
 	}
 
 	SettingsModel->SetEditorLanguage(TargetCulture);
+	if (bSyncLocale)
+	{
+		SettingsModel->SetEditorLocale(TargetCulture);
+	}
 	FTextLocalizationManager::Get().RefreshResources();
 	RefreshGraphSchemas();
 	RefreshBlueprints();
@@ -228,3 +246,28 @@ void FXTools_SwitchLanguageModule::RegisterMenus()
 #undef LOCTEXT_NAMESPACE
 
 IMPLEMENT_MODULE(FXTools_SwitchLanguageModule, XTools_SwitchLanguage)
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FXToolsSwitchLanguageCultureRoutingTest,
+	"XTools.SwitchLanguage.CultureRouting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXToolsSwitchLanguageCultureRoutingTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("英文应切换到简体中文"), GetNextEditorCulture(TEXT("en")), FString(TEXT("zh-Hans")));
+	TestEqual(TEXT("英语区域应切换到简体中文"), GetNextEditorCulture(TEXT("en-US")), FString(TEXT("zh-Hans")));
+	TestEqual(TEXT("简体中文应切换到英文"), GetNextEditorCulture(TEXT("zh-Hans")), FString(TEXT("en")));
+	TestEqual(TEXT("中文区域应切换到英文"), GetNextEditorCulture(TEXT("zh-CN")), FString(TEXT("en")));
+	TestEqual(TEXT("其他语言应回到英文"), GetNextEditorCulture(TEXT("fr")), FString(TEXT("en")));
+
+	TestTrue(TEXT("语言与地区一致时应同步切换"),
+		ShouldSyncEditorLocale(TEXT("en"), TEXT("en")));
+	TestFalse(TEXT("自定义地区时应保留独立地区设置"),
+		ShouldSyncEditorLocale(TEXT("en"), TEXT("zh-Hans")));
+
+	return true;
+}
+
+#endif // WITH_DEV_AUTOMATION_TESTS
