@@ -30,6 +30,13 @@ USplineMoveAlongAction* USplineMoveAlongAction::SplineMoveAlong(
 		UE_LOG(LogSplineMovement, Warning, TEXT("SplineMoveAlong: Spline 无效，节点不会执行"));
 		return nullptr;
 	}
+	if (!FMath::IsFinite(LookaheadDistance) ||
+		!FMath::IsFinite(RightOffsetRate) ||
+		!FMath::IsFinite(InputWeight))
+	{
+		UE_LOG(LogSplineMovement, Warning, TEXT("SplineMoveAlong: 移动参数包含非有限值，节点不会执行"));
+		return nullptr;
+	}
 
 	USplineMoveAlongAction* Action = NewObject<USplineMoveAlongAction>(Pawn);
 	Action->Pawn_Ptr       = Pawn;

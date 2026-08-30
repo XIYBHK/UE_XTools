@@ -13,6 +13,7 @@
 #include "GameFramework/Pawn.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/UObjectGlobals.h"
+#include <limits>
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSplineMoveAlongActionRepathTest,
 	"XTools.SplineMovement.AIMoveTo.RepathThreshold",
@@ -165,6 +166,41 @@ bool FSplineMoveAlongActionEndpointArrivalTest::RunTest(const FString& Parameter
 		TestTrue(TEXT("反向 Pawn 到达起点后应完成"), ReverseAction->bFinished);
 		ReverseAction->RemoveFromRoot();
 	}
+
+	World->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSplineMoveAlongActionRejectsNonFiniteInputTest,
+	"XTools.SplineMovement.Input.RejectsNonFiniteParameters",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSplineMoveAlongActionRejectsNonFiniteInputTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("SplineMovementNonFiniteInputTest"));
+	if (!TestNotNull(TEXT("应创建输入校验测试世界"), World))
+	{
+		return false;
+	}
+
+	APawn* Pawn = World->SpawnActor<APawn>();
+	USplineComponent* Spline = Pawn ? NewObject<USplineComponent>(Pawn) : nullptr;
+	if (!TestNotNull(TEXT("应生成测试 Pawn"), Pawn) || !TestNotNull(TEXT("应创建测试样条"), Spline))
+	{
+		World->DestroyWorld(false);
+		return false;
+	}
+
+	AddExpectedError(TEXT("移动参数包含非有限值"), EAutomationExpectedErrorFlags::Contains, 3);
+	const float NaN = std::numeric_limits<float>::quiet_NaN();
+	const float Infinity = std::numeric_limits<float>::infinity();
+
+	TestNull(TEXT("非有限前瞻距离不得创建异步动作"),
+		USplineMoveAlongAction::SplineMoveAlong(Pawn, Spline, NaN, 0.0f, 1.0f, false));
+	TestNull(TEXT("非有限横向偏移不得创建异步动作"),
+		USplineMoveAlongAction::SplineMoveAlong(Pawn, Spline, 100.0f, Infinity, 1.0f, false));
+	TestNull(TEXT("非有限输入权重不得创建异步动作"),
+		USplineMoveAlongAction::SplineMoveAlong(Pawn, Spline, 100.0f, 0.0f, NaN, false));
 
 	World->DestroyWorld(false);
 	return true;
