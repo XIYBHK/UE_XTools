@@ -1294,21 +1294,53 @@ void UXToolsLibrary::SamplePointsInsideStaticMeshWithBoxOptimized(
 }
 
 //  输入验证辅助函数（不包含组件查找，避免重复调用）
-static FXToolsSamplingResult ValidateInputs(AActor* TargetActor, UBoxComponent* BoundingBox, float GridSpacing)
+static FXToolsSamplingResult ValidateInputs(
+    UWorld* World,
+    AActor* TargetActor,
+    UBoxComponent* BoundingBox,
+    EXToolsSamplingMethod Method,
+    float GridSpacing,
+    float Noise,
+    float TraceRadius,
+    bool bEnableDebugDraw,
+    float DebugDrawDuration)
 {
-    if (!TargetActor)
+    if (!IsValid(World))
     {
-        return FXToolsSamplingResult::MakeError(TEXT("目标Actor为空"));
+        return FXToolsSamplingResult::MakeError(TEXT("世界上下文无效"));
     }
 
-    if (!BoundingBox)
+    if (!IsValid(TargetActor))
     {
-        return FXToolsSamplingResult::MakeError(TEXT("边界框组件为空"));
+        return FXToolsSamplingResult::MakeError(TEXT("目标Actor无效"));
     }
 
-    if (GridSpacing <= 0.0f)
+    if (!IsValid(BoundingBox))
     {
-        return FXToolsSamplingResult::MakeError(FString::Printf(TEXT("网格间距必须大于0，当前值: %.2f"), GridSpacing));
+        return FXToolsSamplingResult::MakeError(TEXT("边界框组件无效"));
+    }
+
+    if (!FMath::IsFinite(GridSpacing) || GridSpacing <= 0.0f)
+    {
+        return FXToolsSamplingResult::MakeError(TEXT("网格间距必须是大于0的有限值"));
+    }
+
+    if (Method == EXToolsSamplingMethod::SurfaceProximity)
+    {
+        if (!FMath::IsFinite(Noise) || Noise < 0.0f)
+        {
+            return FXToolsSamplingResult::MakeError(TEXT("噪声偏移必须是大于等于0的有限值"));
+        }
+
+        if (!FMath::IsFinite(TraceRadius) || TraceRadius <= 0.0f)
+        {
+            return FXToolsSamplingResult::MakeError(TEXT("检测半径必须是大于0的有限值"));
+        }
+    }
+
+    if (bEnableDebugDraw && (!FMath::IsFinite(DebugDrawDuration) || DebugDrawDuration <= 0.0f))
+    {
+        return FXToolsSamplingResult::MakeError(TEXT("调试持续时间必须是大于0的有限值"));
     }
 
     return FXToolsSamplingResult::MakeSuccess({});
@@ -1673,7 +1705,16 @@ static FXToolsSamplingResult SamplePointsInternal(
     bool bIgnoreSelf)
 {
     // 步骤1：基本输入验证
-    const FXToolsSamplingResult ValidationResult = ValidateInputs(TargetActor, BoundingBox, GridSpacing);
+    const FXToolsSamplingResult ValidationResult = ValidateInputs(
+        World,
+        TargetActor,
+        BoundingBox,
+        Method,
+        GridSpacing,
+        Noise,
+        TraceRadius,
+        bEnableDebugDraw,
+        DebugDrawDuration);
     if (!ValidationResult.bSuccess)
     {
         return ValidationResult;
@@ -1681,7 +1722,7 @@ static FXToolsSamplingResult SamplePointsInternal(
 
     // 步骤2：查找目标组件（只查找一次，避免性能浪费）
     UStaticMeshComponent* TargetMeshComponent = TargetActor->FindComponentByClass<UStaticMeshComponent>();
-    if (!TargetMeshComponent)
+    if (!IsValid(TargetMeshComponent))
     {
         return FXToolsSamplingResult::MakeError(
             FString::Printf(TEXT("Actor '%s' 没有StaticMeshComponent"), *TargetActor->GetName()));
@@ -1809,7 +1850,7 @@ static FXToolsSamplingResult PerformNativeSurfaceSampling(
     
     // 应用边界限制
     const double MinRadius = 1.0;  // 最小半径1单位
-    const double MaxRadius = MeshMaxDim / 10.0;  // 最大半径不超过网格最大尺寸的1/10
+    const double MaxRadius = FMath::Max(MinRadius, MeshMaxDim / 10.0);  // 保证Clamp区间有效
     
     Sampler.SampleRadius = FMath::Clamp(CalculatedRadius, MinRadius, MaxRadius);
     
