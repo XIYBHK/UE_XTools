@@ -15,6 +15,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/UObjectGlobals.h"
+#include <limits>
 
 namespace
 {
@@ -551,6 +552,52 @@ bool FFormationMovementStuckRetargetResetsTimerTest::RunTest(const FString& Para
 
     TickMoveComponentManually(MoveComp, 0.3f); // 累计 0.6s ≥ 0.5s
     TestFalse(TEXT("重定向后对新目标连续无进展达到判定时长应判定卡住"), MoveComp->IsMoving());
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFormationMovementRejectsNonFiniteInputTest,
+    "XTools.Formation.Movement.RejectsNonFiniteInput",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationMovementRejectsNonFiniteInputTest::RunTest(const FString& Parameters)
+{
+    FScopedFormationTestWorld WorldScope(TEXT("FormationMovementTest_NonFiniteInput"));
+    ACharacter* TestCharacter = nullptr;
+    UFormationMovementTestComponent* MoveComp = nullptr;
+    if (!SetupMovementTestEnvironment(WorldScope.Get(), TestCharacter, MoveComp))
+    {
+        AddError(TEXT("测试环境初始化失败"));
+        return false;
+    }
+
+    UCharacterMovementComponent* CMC = TestCharacter->GetCharacterMovement();
+    if (!TestNotNull(TEXT("Character 应持有移动组件"), CMC))
+    {
+        return false;
+    }
+
+    AddExpectedError(TEXT("移动请求包含非有限参数"), EAutomationExpectedErrorFlags::Contains, 3);
+    MoveComp->StartMoveToLocation(FVector(1000.0f, 0.0f, 0.0f), 50.0f, 1.0f);
+    TestTrue(TEXT("有效请求应启动移动"), MoveComp->IsMoving());
+
+    const float NaN = std::numeric_limits<float>::quiet_NaN();
+    MoveComp->StartMoveToLocation(FVector(NaN, 1000.0f, 0.0f), 50.0f, 1.0f);
+    TestTrue(TEXT("非法重定向不应终止既有移动"), MoveComp->IsMoving());
+
+    TickMoveComponentManually(MoveComp, 1.0f / 60.0f);
+    const FVector PendingInput = CMC->ConsumeInputVector();
+    TestTrue(TEXT("非法重定向后仍应沿原目标输出有限的正 X 输入"),
+        !PendingInput.ContainsNaN() && PendingInput.X > 0.1f &&
+        FMath::IsNearlyZero(PendingInput.Y) && FMath::IsNearlyZero(PendingInput.Z));
+
+    MoveComp->StopMovement();
+    MoveComp->StartMoveToLocation(FVector(1000.0f, 0.0f, 0.0f), NaN, 1.0f);
+    TestFalse(TEXT("非有限接受半径不得启动移动"), MoveComp->IsMoving());
+
+    const float Infinity = std::numeric_limits<float>::infinity();
+    MoveComp->StartMoveToLocation(FVector(1000.0f, 0.0f, 0.0f), 50.0f, Infinity);
+    TestFalse(TEXT("非有限移动速度不得启动移动"), MoveComp->IsMoving());
 
     return true;
 }

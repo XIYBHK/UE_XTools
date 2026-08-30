@@ -49,6 +49,17 @@ void UFormationMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 
 void UFormationMovementComponent::StartMoveToLocation(FVector InTargetLocation, float InAcceptanceRadius, float InMoveSpeed)
 {
+    const bool bTargetIsFinite =
+        FMath::IsFinite(InTargetLocation.X) &&
+        FMath::IsFinite(InTargetLocation.Y) &&
+        FMath::IsFinite(InTargetLocation.Z);
+    if (!bTargetIsFinite || !FMath::IsFinite(InAcceptanceRadius) || !FMath::IsFinite(InMoveSpeed))
+    {
+        UE_LOG(LogFormationSystem, Warning,
+            TEXT("FormationMovementComponent: 移动请求包含非有限参数，保持当前移动状态"));
+        return;
+    }
+
     // 动态组件可能在 Owner BeginPlay 前注册，此时 BeginPlay 尚未缓存 Character；
     // Outer 已固定为 Owner，按需解析可避免注册后立即下令时丢失移动指令。
     if (!OwnerCharacter)
