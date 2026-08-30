@@ -234,6 +234,7 @@ void FBlueprintAssistModule::ShutdownModule()
 	}
 
 	FBACommands::Unregister();
+	FBAGraphCommands::Unregister();
 	FBAToolbarCommands::Unregister();
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SBAWelcomeScreen::GetTabId());
