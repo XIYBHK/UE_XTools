@@ -32,10 +32,42 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
+namespace
+{
+FDelegateHandle GGraphEditorContextMenuExtenderHandle;
+}
+
 void FBAGraphExtender::ApplyExtender()
 {
+	if (GGraphEditorContextMenuExtenderHandle.IsValid())
+	{
+		return;
+	}
+
 	FGraphEditorModule& GraphEditorModule = FModuleManager::GetModuleChecked<FGraphEditorModule>(TEXT("GraphEditor"));
-	GraphEditorModule.GetAllGraphEditorContextMenuExtender().Add(FGraphEditorModule::FGraphEditorMenuExtender_SelectedNode::CreateStatic(&FBAGraphExtender::ExtendSelectedNode));
+	FGraphEditorModule::FGraphEditorMenuExtender_SelectedNode Extender =
+		FGraphEditorModule::FGraphEditorMenuExtender_SelectedNode::CreateStatic(&FBAGraphExtender::ExtendSelectedNode);
+	GGraphEditorContextMenuExtenderHandle = Extender.GetHandle();
+	GraphEditorModule.GetAllGraphEditorContextMenuExtender().Add(MoveTemp(Extender));
+}
+
+void FBAGraphExtender::RemoveExtender()
+{
+	if (!GGraphEditorContextMenuExtenderHandle.IsValid())
+	{
+		return;
+	}
+
+	if (FGraphEditorModule* GraphEditorModule = FModuleManager::GetModulePtr<FGraphEditorModule>(TEXT("GraphEditor")))
+	{
+		GraphEditorModule->GetAllGraphEditorContextMenuExtender().RemoveAll(
+			[](const FGraphEditorModule::FGraphEditorMenuExtender_SelectedNode& Extender)
+			{
+				return Extender.GetHandle() == GGraphEditorContextMenuExtenderHandle;
+			});
+	}
+
+	GGraphEditorContextMenuExtenderHandle.Reset();
 }
 
 TSharedRef<FExtender> FBAGraphExtender::ExtendSelectedNode(const TSharedRef<FUICommandList> CommandList, const UEdGraph* Graph, const UEdGraphNode* Node, const UEdGraphPin* Pin, bool bIsEditable)

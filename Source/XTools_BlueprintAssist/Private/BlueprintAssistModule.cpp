@@ -233,6 +233,7 @@ void FBlueprintAssistModule::ShutdownModule()
 		BANodeFactory.Reset();
 	}
 
+	FBAGraphExtender::RemoveExtender();
 	FBACommands::Unregister();
 	FBAGraphCommands::Unregister();
 	FBAToolbarCommands::Unregister();
