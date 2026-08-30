@@ -49,7 +49,20 @@ void FAutoSizeCommentsNotifications::Shutdown()
 		{
 			SourceControlModule->UnregisterProviderChanged(SourceControlNotificationDelegate);
 		}
+		SourceControlNotificationDelegate.Reset();
 	}
+
+	if (TSharedPtr<SNotificationItem> Notification = SourceControlNotification.Pin())
+	{
+		Notification->ExpireAndFadeout();
+	}
+	SourceControlNotification.Reset();
+
+	if (TSharedPtr<SNotificationItem> Notification = BlueprintAssistNotification.Pin())
+	{
+		Notification->ExpireAndFadeout();
+	}
+	BlueprintAssistNotification.Reset();
 }
 
 void FAutoSizeCommentsNotifications::ShowSourceControlNotification()
@@ -92,15 +105,16 @@ void FAutoSizeCommentsNotifications::ShowSourceControlNotification()
 	Info.bUseThrobber = false;
 	Info.bFireAndForget = false;
 
-	const auto OnClose = FSimpleDelegate::CreateLambda([&SourceControlNotification = SourceControlNotification]
+	const TSharedRef<TWeakPtr<SNotificationItem>> NotificationRef = MakeShared<TWeakPtr<SNotificationItem>>();
+	const auto OnClose = FSimpleDelegate::CreateLambda([NotificationRef]
 	{
-		if (TSharedPtr<SNotificationItem> Notification = SourceControlNotification.Pin())
+		if (TSharedPtr<SNotificationItem> Notification = NotificationRef->Pin())
 		{
 			Notification->ExpireAndFadeout();
 		}
 	});
 
-	const auto OnApply = FSimpleDelegate::CreateLambda([&SourceControlNotification = SourceControlNotification, SuggestedResizingMode]
+	const auto OnApply = FSimpleDelegate::CreateLambda([NotificationRef, SuggestedResizingMode]
 	{
 		UAutoSizeCommentsSettings& ASCSettings = UAutoSizeCommentsSettings::GetMutable();
 		ASCSettings.Modify();
@@ -109,7 +123,7 @@ void FAutoSizeCommentsNotifications::ShowSourceControlNotification()
 		FString ResizeModeStr = SuggestedResizingMode == EASCResizingMode::Disabled ? "EASCResizingMode::Disabled" : "EASCResizingMode::Reactive";
 		UE_LOG(LogAutoSizeComments, Log, TEXT("Set 'Resizing Mode' to '%s'"), *ResizeModeStr);
 
-		if (TSharedPtr<SNotificationItem> Notification = SourceControlNotification.Pin())
+		if (TSharedPtr<SNotificationItem> Notification = NotificationRef->Pin())
 		{
 			Notification->ExpireAndFadeout();
 		}
@@ -142,6 +156,7 @@ void FAutoSizeCommentsNotifications::ShowSourceControlNotification()
 	Info.CheckBoxText = FText::FromString(TEXT("Do not show again"));
 
 	SourceControlNotification = FSlateNotificationManager::Get().AddNotification(Info);
+	*NotificationRef = SourceControlNotification;
 	if (TSharedPtr<SNotificationItem> Notification = SourceControlNotification.Pin())
 	{
 		Notification->SetCompletionState(SNotificationItem::CS_Pending);
@@ -190,12 +205,13 @@ void FAutoSizeCommentsNotifications::ShowBlueprintAssistNotification()
 	Info.FadeOutDuration = 0.5f;
 	Info.bUseThrobber = false;
 	Info.bFireAndForget = false;
+	const TSharedRef<TWeakPtr<SNotificationItem>> NotificationRef = MakeShared<TWeakPtr<SNotificationItem>>();
 
 	// Close button
 	{
-		const auto OnClose = FSimpleDelegate::CreateLambda([&BlueprintAssistNotification = BlueprintAssistNotification]
+		const auto OnClose = FSimpleDelegate::CreateLambda([NotificationRef]
 		{
-			if (TSharedPtr<SNotificationItem> Notification = BlueprintAssistNotification.Pin())
+			if (TSharedPtr<SNotificationItem> Notification = NotificationRef->Pin())
 			{
 				Notification->ExpireAndFadeout();
 			}
@@ -211,7 +227,7 @@ void FAutoSizeCommentsNotifications::ShowBlueprintAssistNotification()
 
 	// Apply button
 	{
-		const auto ApplySettings = FSimpleDelegate::CreateLambda([&BlueprintAssistNotification = BlueprintAssistNotification]
+		const auto ApplySettings = FSimpleDelegate::CreateLambda([NotificationRef]
 		{
 			UAutoSizeCommentsSettings& MutableSettings = UAutoSizeCommentsSettings::GetMutable();
 			MutableSettings.Modify();
@@ -220,7 +236,7 @@ void FAutoSizeCommentsNotifications::ShowBlueprintAssistNotification()
 
 			UE_LOG(LogAutoSizeComments, Log, TEXT("Applied suggested settings for Blueprint Assist Module"));
 
-			if (TSharedPtr<SNotificationItem> Notification = BlueprintAssistNotification.Pin())
+			if (TSharedPtr<SNotificationItem> Notification = NotificationRef->Pin())
 			{
 				Notification->ExpireAndFadeout();
 			}
@@ -250,6 +266,7 @@ void FAutoSizeCommentsNotifications::ShowBlueprintAssistNotification()
 	Info.CheckBoxText = FText::FromString(TEXT("Do not show again"));
 
 	BlueprintAssistNotification = FSlateNotificationManager::Get().AddNotification(Info);
+	*NotificationRef = BlueprintAssistNotification;
 	if (TSharedPtr<SNotificationItem> Notification = BlueprintAssistNotification.Pin())
 	{
 		Notification->SetCompletionState(SNotificationItem::CS_Pending);
