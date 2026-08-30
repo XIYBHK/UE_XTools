@@ -21,6 +21,7 @@
 ### XTools_BlueprintAssist
 - 审查 同步上游功能并保留本地配置扩展
 - 修复 图表命令关闭时未注销
+- 修复 全局图表菜单扩展未注销
 
 ### XTools_ElectronicNodes
 - 优化 切片线交叉连线延迟绘制与淡化
