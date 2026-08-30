@@ -19,6 +19,24 @@
 #include "ObjectPoolUtils.h"
 #include "ObjectPoolSubsystem.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
+
+namespace
+{
+int32 CalculatePredictiveAllocationCount(
+    int32 PredictedCount,
+    int32 CurrentCount,
+    int32 TargetCount,
+    int32 MaxAllocationsPerFrame)
+{
+    const int32 PredictedShortfall = FMath::Max(0, PredictedCount - CurrentCount);
+    const int32 RemainingTargetCount = FMath::Max(0, TargetCount - CurrentCount);
+    return FMath::Min3(PredictedShortfall, RemainingTargetCount, FMath::Max(0, MaxAllocationsPerFrame));
+}
+}
+
 FObjectPoolPreallocator::FObjectPoolPreallocator(FActorPool* InOwnerPool)
     : OwnerPool(InOwnerPool)
 {
@@ -293,7 +311,11 @@ void FObjectPoolPreallocator::ExecutePredictivePreallocation(UWorld* World)
 
     if (PredictedCount > CurrentCount)
     {
-        int32 NeedToCreate = FMath::Min(PredictedCount - CurrentCount, Config.MaxAllocationsPerFrame);
+        const int32 NeedToCreate = CalculatePredictiveAllocationCount(
+            PredictedCount,
+            CurrentCount,
+            Config.PreallocationCount,
+            Config.MaxAllocationsPerFrame);
 
         for (int32 i = 0; i < NeedToCreate; ++i)
         {
@@ -549,3 +571,18 @@ void FObjectPoolPreallocator::RecordUsagePattern(int32 UsedCount)
         UsageHistory.RemoveAt(0, UsageHistory.Num() - MaxHistorySize);
     }
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FObjectPoolPredictiveAllocationCountTest,
+    "XTools.ObjectPool.Preallocator.PredictiveTargetBound",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolPredictiveAllocationCountTest::RunTest(const FString& Parameters)
+{
+    TestEqual(TEXT("预测需求不得突破剩余目标"), CalculatePredictiveAllocationCount(20, 7, 10, 8), 3);
+    TestEqual(TEXT("达到目标后不得继续分配"), CalculatePredictiveAllocationCount(20, 10, 10, 8), 0);
+    TestEqual(TEXT("目标充足时仍应遵守单帧上限"), CalculatePredictiveAllocationCount(20, 2, 15, 4), 4);
+    return true;
+}
+#endif
