@@ -172,6 +172,9 @@ private:
      */
     bool CreateSingleActor(UWorld* World);
 
+    /** 记录一次 Actor 预分配失败 */
+    void RecordFailedPreallocation();
+
     /**
      * 更新统计信息
      */

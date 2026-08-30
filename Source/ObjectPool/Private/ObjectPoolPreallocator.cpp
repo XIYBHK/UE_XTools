@@ -20,6 +20,7 @@
 #include "ObjectPoolSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "Engine/Engine.h"
 #include "Misc/AutomationTest.h"
 #include <limits>
 #endif
@@ -176,6 +177,10 @@ void FObjectPoolPreallocator::StopPreallocation()
         FScopeLock Lock(&PreallocatorLock);
         Stats.PreallocationEndTime = FDateTime::Now();
         Stats.TotalPreallocationTimeMs = (Stats.PreallocationEndTime - Stats.PreallocationStartTime).GetTotalMilliseconds();
+        if (Stats.PreallocationOperations > 0)
+        {
+            Stats.AveragePreallocationTimeMs = Stats.TotalPreallocationTimeMs / Stats.PreallocationOperations;
+        }
     }
 
     OBJECTPOOL_LOG(Log, TEXT("StopPreallocation: 停止预分配，完成度: %.1f%%"), 
@@ -272,6 +277,10 @@ void FObjectPoolPreallocator::ExecuteImmediatePreallocation(UWorld* World, int32
         else
         {
             OBJECTPOOL_LOG(Warning, TEXT("ExecuteImmediatePreallocation: 创建Actor失败，索引: %d"), i);
+            if (!OwnerPool->CanCreateMoreActors())
+            {
+                break;
+            }
         }
 
         //  检查内存预算
@@ -301,8 +310,8 @@ void FObjectPoolPreallocator::ExecuteImmediatePreallocation(UWorld* World, int32
     OBJECTPOOL_LOG(Log, TEXT("ExecuteImmediatePreallocation: 完成，成功: %d/%d，耗时: %.2fms"), 
         SuccessCount, Count, TotalTime);
 
-    // 立即预分配完成后停止
-    XTOOLS_ATOMIC_STORE(bIsActive, false);
+    // 立即预分配也走统一收尾，确保结束时间与世界引用状态一致。
+    StopPreallocation();
 }
 
 void FObjectPoolPreallocator::ExecuteProgressivePreallocation(UWorld* World, float DeltaTime)
@@ -354,6 +363,10 @@ void FObjectPoolPreallocator::ExecutePredictivePreallocation(UWorld* World)
             {
                 XTOOLS_ATOMIC_INCREMENT(CurrentProgress);
             }
+            else
+            {
+                break;
+            }
         }
 
         OBJECTPOOL_LOG(Verbose, TEXT("ExecutePredictivePreallocation: 预测需要 %d 个，创建 %d 个"),
@@ -398,6 +411,10 @@ void FObjectPoolPreallocator::ExecuteAdaptivePreallocation(UWorld* World, float 
             {
                 XTOOLS_ATOMIC_INCREMENT(CurrentProgress);
             }
+            else
+            {
+                break;
+            }
         }
 
         OBJECTPOOL_LOG(VeryVerbose, TEXT("ExecuteAdaptivePreallocation: 使用率 %.1f%%，创建 %d 个"),
@@ -409,11 +426,13 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
 {
     if (!World || !OwnerPool)
     {
+        RecordFailedPreallocation();
         return false;
     }
 
     if (!OwnerPool->CanCreateMoreActors())
     {
+        RecordFailedPreallocation();
         return false;
     }
 
@@ -450,6 +469,7 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
         if (!bRegistered)
         {
             NewActor->Destroy();
+            RecordFailedPreallocation();
             return false;
         }
 
@@ -463,7 +483,19 @@ bool FObjectPoolPreallocator::CreateSingleActor(UWorld* World)
             PerformanceMetrics.TotalCreationTimeMs / PerformanceMetrics.CreationCount;
     }
 
-    return NewActor != nullptr;
+    if (!NewActor)
+    {
+        RecordFailedPreallocation();
+        return false;
+    }
+
+    return true;
+}
+
+void FObjectPoolPreallocator::RecordFailedPreallocation()
+{
+    FScopeLock Lock(&PreallocatorLock);
+    ++Stats.FailedPreallocations;
 }
 
 void FObjectPoolPreallocator::UpdateStats()
@@ -484,6 +516,12 @@ bool FObjectPoolPreallocator::ShouldContinuePreallocation() const
 
     //  检查是否达到目标数量
     if (CurrentCount >= Config.PreallocationCount)
+    {
+        return false;
+    }
+
+    // 池已达到硬上限时不可能再取得进展，继续保留 Ticker 只会永久重试。
+    if (OwnerPool && !OwnerPool->CanCreateMoreActors())
     {
         return false;
     }
@@ -639,6 +677,59 @@ bool FObjectPoolPreallocationConfigValidationTest::RunTest(const FString& Parame
     Config.PreallocationCount = 4;
     Config.PreallocationDelay = std::numeric_limits<float>::quiet_NaN();
     TestFalse(TEXT("所有策略都应拒绝非有限延迟"), IsValidPreallocationConfig(Config));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FObjectPoolPreallocationCapacityStopTest,
+    "XTools.ObjectPool.Preallocator.CapacityStop",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolPreallocationCapacityStopTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ObjectPoolTest_PreallocationCapacity"));
+    if (!TestNotNull(TEXT("应能创建预分配测试世界"), World))
+    {
+        return false;
+    }
+    if (!TestNotNull(TEXT("测试运行时应存在引擎实例"), GEngine))
+    {
+        World->DestroyWorld(false);
+        return false;
+    }
+    GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+
+    {
+        FActorPool Pool(AActor::StaticClass(), 1, 1);
+        Pool.PrewarmPool(World, 1);
+        TestEqual(TEXT("预热后应达到池硬上限"), Pool.GetPoolSize(), 1);
+
+        FObjectPoolConfig Config;
+        Config.PreallocationCount = 2;
+        Config.MaxAllocationsPerFrame = 1;
+        Config.PreallocationStrategy = EObjectPoolPreallocationStrategy::Immediate;
+
+        FObjectPoolPreallocator ImmediatePreallocator(&Pool);
+        AddExpectedError(TEXT("ExecuteImmediatePreallocation: 创建Actor失败"), EAutomationExpectedErrorFlags::Contains, 1);
+        TestTrue(TEXT("立即预分配请求应被接受"), ImmediatePreallocator.StartPreallocation(World, Config));
+        TestFalse(TEXT("立即策略返回前应完成统一收尾"), ImmediatePreallocator.IsPreallocating());
+        const FObjectPoolPreallocationStats ImmediateStats = ImmediatePreallocator.GetStats();
+        TestEqual(TEXT("立即策略应记录一次容量失败"), ImmediateStats.FailedPreallocations, 1);
+        TestTrue(TEXT("立即策略应记录结束时间"), ImmediateStats.PreallocationEndTime.GetTicks() > 0);
+
+        Config.PreallocationStrategy = EObjectPoolPreallocationStrategy::Progressive;
+        FObjectPoolPreallocator ProgressivePreallocator(&Pool);
+        AddExpectedError(TEXT("ExecuteProgressivePreallocation: 创建Actor失败"), EAutomationExpectedErrorFlags::Contains, 1);
+        TestTrue(TEXT("渐进预分配请求应被接受"), ProgressivePreallocator.StartPreallocation(World, Config));
+        ProgressivePreallocator.Tick(0.0f);
+        TestFalse(TEXT("池满后渐进策略应停止重试"), ProgressivePreallocator.IsPreallocating());
+        const FObjectPoolPreallocationStats ProgressiveStats = ProgressivePreallocator.GetStats();
+        TestEqual(TEXT("渐进策略应记录一次容量失败"), ProgressiveStats.FailedPreallocations, 1);
+        TestTrue(TEXT("渐进策略应记录结束时间"), ProgressiveStats.PreallocationEndTime.GetTicks() > 0);
+    }
+
+    GEngine->DestroyWorldContext(World);
+    World->DestroyWorld(false);
     return true;
 }
 #endif
