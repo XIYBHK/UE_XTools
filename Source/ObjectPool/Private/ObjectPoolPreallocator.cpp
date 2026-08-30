@@ -21,10 +21,35 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#include <limits>
 #endif
 
 namespace
 {
+bool IsValidPreallocationConfig(const FObjectPoolConfig& Config)
+{
+    if (Config.PreallocationCount <= 0 ||
+        !FMath::IsFinite(Config.PreallocationDelay) ||
+        Config.PreallocationDelay < 0.0f)
+    {
+        return false;
+    }
+
+    switch (Config.PreallocationStrategy)
+    {
+    case EObjectPoolPreallocationStrategy::Immediate:
+        return true;
+
+    case EObjectPoolPreallocationStrategy::Progressive:
+    case EObjectPoolPreallocationStrategy::Predictive:
+    case EObjectPoolPreallocationStrategy::Adaptive:
+        return Config.MaxAllocationsPerFrame > 0;
+
+    default:
+        return false;
+    }
+}
+
 int32 CalculatePredictiveAllocationCount(
     int32 PredictedCount,
     int32 CurrentCount,
@@ -65,6 +90,12 @@ bool FObjectPoolPreallocator::StartPreallocation(UWorld* World, const FObjectPoo
     if (XTOOLS_ATOMIC_LOAD(bIsActive))
     {
         OBJECTPOOL_LOG(Warning, TEXT("StartPreallocation: 预分配已在进行中"));
+        return false;
+    }
+
+    if (!IsValidPreallocationConfig(InConfig))
+    {
+        OBJECTPOOL_LOG(Warning, TEXT("StartPreallocation: 无效的预分配配置"));
         return false;
     }
 
@@ -583,6 +614,31 @@ bool FObjectPoolPredictiveAllocationCountTest::RunTest(const FString& Parameters
     TestEqual(TEXT("预测需求不得突破剩余目标"), CalculatePredictiveAllocationCount(20, 7, 10, 8), 3);
     TestEqual(TEXT("达到目标后不得继续分配"), CalculatePredictiveAllocationCount(20, 10, 10, 8), 0);
     TestEqual(TEXT("目标充足时仍应遵守单帧上限"), CalculatePredictiveAllocationCount(20, 2, 15, 4), 4);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FObjectPoolPreallocationConfigValidationTest,
+    "XTools.ObjectPool.Preallocator.ConfigurationValidation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolPreallocationConfigValidationTest::RunTest(const FString& Parameters)
+{
+    FObjectPoolConfig Config;
+    Config.PreallocationCount = 4;
+    Config.PreallocationStrategy = EObjectPoolPreallocationStrategy::Progressive;
+    Config.MaxAllocationsPerFrame = 0;
+    TestFalse(TEXT("分帧策略应拒绝零单帧分配上限"), IsValidPreallocationConfig(Config));
+
+    Config.PreallocationStrategy = EObjectPoolPreallocationStrategy::Immediate;
+    TestTrue(TEXT("立即策略不依赖单帧分配上限"), IsValidPreallocationConfig(Config));
+
+    Config.PreallocationCount = 0;
+    TestFalse(TEXT("所有策略都应拒绝零目标数量"), IsValidPreallocationConfig(Config));
+
+    Config.PreallocationCount = 4;
+    Config.PreallocationDelay = std::numeric_limits<float>::quiet_NaN();
+    TestFalse(TEXT("所有策略都应拒绝非有限延迟"), IsValidPreallocationConfig(Config));
     return true;
 }
 #endif
