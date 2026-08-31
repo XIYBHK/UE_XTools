@@ -382,19 +382,19 @@ void UK2Node_ForLoopWithDelay::AllocateDefaultPins() {
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetFirstIndexPin() const {
-  return FindPinChecked(ForLoopWithDelayHelper::FirstPinName, EGPD_Input);
+  return FindPin(ForLoopWithDelayHelper::FirstPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetLastIndexPin() const {
-  return FindPinChecked(ForLoopWithDelayHelper::LastPinName, EGPD_Input);
+  return FindPin(ForLoopWithDelayHelper::LastPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetDelayPin() const {
-  return FindPinChecked(ForLoopWithDelayHelper::DelayPinName, EGPD_Input);
+  return FindPin(ForLoopWithDelayHelper::DelayPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetLoopBodyPin() const {
-  return FindPinChecked(ForLoopWithDelayHelper::LoopBodyPinName, EGPD_Output);
+  return FindPin(ForLoopWithDelayHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetBreakPin() const {
@@ -402,11 +402,11 @@ UEdGraphPin *UK2Node_ForLoopWithDelay::GetBreakPin() const {
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetCompletedPin() const {
-  return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+  return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelay::GetIndexPin() const {
-  return FindPinChecked(ForLoopWithDelayHelper::IndexPinName, EGPD_Output);
+  return FindPin(ForLoopWithDelayHelper::IndexPinName, EGPD_Output);
 }
 
 #pragma endregion

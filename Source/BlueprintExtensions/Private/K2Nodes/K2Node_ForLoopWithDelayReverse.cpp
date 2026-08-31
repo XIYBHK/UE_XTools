@@ -386,22 +386,19 @@ void UK2Node_ForLoopWithDelayReverse::AllocateDefaultPins() {
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetFirstIndexPin() const {
-  return FindPinChecked(ForLoopWithDelayReverseHelper::FirstPinName,
-                        EGPD_Input);
+  return FindPin(ForLoopWithDelayReverseHelper::FirstPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetLastIndexPin() const {
-  return FindPinChecked(ForLoopWithDelayReverseHelper::LastPinName, EGPD_Input);
+  return FindPin(ForLoopWithDelayReverseHelper::LastPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetDelayPin() const {
-  return FindPinChecked(ForLoopWithDelayReverseHelper::DelayPinName,
-                        EGPD_Input);
+  return FindPin(ForLoopWithDelayReverseHelper::DelayPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetLoopBodyPin() const {
-  return FindPinChecked(ForLoopWithDelayReverseHelper::LoopBodyPinName,
-                        EGPD_Output);
+  return FindPin(ForLoopWithDelayReverseHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetBreakPin() const {
@@ -409,12 +406,11 @@ UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetBreakPin() const {
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetCompletedPin() const {
-  return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+  return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForLoopWithDelayReverse::GetIndexPin() const {
-  return FindPinChecked(ForLoopWithDelayReverseHelper::IndexPinName,
-                        EGPD_Output);
+  return FindPin(ForLoopWithDelayReverseHelper::IndexPinName, EGPD_Output);
 }
 
 #pragma endregion

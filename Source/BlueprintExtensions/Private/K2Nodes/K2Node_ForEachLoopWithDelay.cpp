@@ -391,11 +391,15 @@ void UK2Node_ForEachLoopWithDelay::PostReconstructNode() {
       if (!bArrayIsWildcard && bValueIsWildcard) {
         ValuePin->PinType = ArrayPin->PinType;
         ValuePin->PinType.ContainerType = EPinContainerType::None;
-        GetGraph()->NotifyGraphChanged();
+        if (UEdGraph *Graph = GetGraph()) {
+          Graph->NotifyGraphChanged();
+        }
       } else if (bArrayIsWildcard && !bValueIsWildcard) {
         ArrayPin->PinType = ValuePin->PinType;
         ArrayPin->PinType.ContainerType = EPinContainerType::Array;
-        GetGraph()->NotifyGraphChanged();
+        if (UEdGraph *Graph = GetGraph()) {
+          Graph->NotifyGraphChanged();
+        }
       }
     }
   }
@@ -475,7 +479,7 @@ void UK2Node_ForEachLoopWithDelay::NotifyPinConnectionListChanged(
 bool UK2Node_ForEachLoopWithDelay::IsConnectionDisallowed(
     const UEdGraphPin *MyPin, const UEdGraphPin *OtherPin,
     FString &OutReason) const {
-  if (MyPin == GetArrayPin() &&
+  if (MyPin && OtherPin && MyPin == GetArrayPin() &&
       MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard) {
     if (OtherPin->PinType.ContainerType != EPinContainerType::Array) {
       OutReason =
@@ -488,16 +492,15 @@ bool UK2Node_ForEachLoopWithDelay::IsConnectionDisallowed(
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetArrayPin() const {
-  return FindPinChecked(ForEachLoopWithDelayHelper::ArrayPinName, EGPD_Input);
+  return FindPin(ForEachLoopWithDelayHelper::ArrayPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetDelayPin() const {
-  return FindPinChecked(ForEachLoopWithDelayHelper::DelayPinName, EGPD_Input);
+  return FindPin(ForEachLoopWithDelayHelper::DelayPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetLoopBodyPin() const {
-  return FindPinChecked(ForEachLoopWithDelayHelper::LoopBodyPinName,
-                        EGPD_Output);
+  return FindPin(ForEachLoopWithDelayHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetBreakPin() const {
@@ -505,15 +508,15 @@ UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetBreakPin() const {
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetCompletedPin() const {
-  return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+  return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetValuePin() const {
-  return FindPinChecked(ForEachLoopWithDelayHelper::ValuePinName, EGPD_Output);
+  return FindPin(ForEachLoopWithDelayHelper::ValuePinName, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForEachLoopWithDelay::GetIndexPin() const {
-  return FindPinChecked(ForEachLoopWithDelayHelper::IndexPinName, EGPD_Output);
+  return FindPin(ForEachLoopWithDelayHelper::IndexPinName, EGPD_Output);
 }
 
 void UK2Node_ForEachLoopWithDelay::PropagatePinType() const {
@@ -640,7 +643,9 @@ void UK2Node_ForEachLoopWithDelay::PropagatePinType() const {
   }
 
   if (bNotifyGraphChanged) {
-    GetGraph()->NotifyGraphChanged();
+    if (UEdGraph *Graph = GetGraph()) {
+      Graph->NotifyGraphChanged();
+    }
   }
 }
 

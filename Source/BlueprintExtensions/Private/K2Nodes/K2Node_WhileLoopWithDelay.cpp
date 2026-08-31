@@ -212,17 +212,17 @@ void UK2Node_WhileLoopWithDelay::AllocateDefaultPins()
 
 UEdGraphPin* UK2Node_WhileLoopWithDelay::GetConditionPin() const
 {
-	return FindPinChecked(WhileLoopWithDelayHelper::ConditionPinName, EGPD_Input);
+	return FindPin(WhileLoopWithDelayHelper::ConditionPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_WhileLoopWithDelay::GetDelayPin() const
 {
-	return FindPinChecked(WhileLoopWithDelayHelper::DelayPinName, EGPD_Input);
+	return FindPin(WhileLoopWithDelayHelper::DelayPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_WhileLoopWithDelay::GetLoopBodyPin() const
 {
-	return FindPinChecked(WhileLoopWithDelayHelper::LoopBodyPinName, EGPD_Output);
+	return FindPin(WhileLoopWithDelayHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_WhileLoopWithDelay::GetBreakPin() const
@@ -232,7 +232,7 @@ UEdGraphPin* UK2Node_WhileLoopWithDelay::GetBreakPin() const
 
 UEdGraphPin* UK2Node_WhileLoopWithDelay::GetCompletedPin() const
 {
-	return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+	return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 #pragma endregion

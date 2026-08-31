@@ -395,6 +395,10 @@ void UK2Node_ForEachArrayReverse::PostReconstructNode() {
   UEdGraphPin *ArrayPin = GetArrayPin();
   UEdGraphPin *ValuePin = GetValuePin();
 
+  if (!ArrayPin || !ValuePin) {
+    return;
+  }
+
   if (ArrayPin->LinkedTo.Num() > 0 || ValuePin->LinkedTo.Num() > 0) {
     PropagatePinType();
   } else {
@@ -407,11 +411,15 @@ void UK2Node_ForEachArrayReverse::PostReconstructNode() {
     if (!bArrayIsWildcard && bValueIsWildcard) {
       ValuePin->PinType = ArrayPin->PinType;
       ValuePin->PinType.ContainerType = EPinContainerType::None;
-      GetGraph()->NotifyGraphChanged();
+      if (UEdGraph *Graph = GetGraph()) {
+        Graph->NotifyGraphChanged();
+      }
     } else if (bArrayIsWildcard && !bValueIsWildcard) {
       ArrayPin->PinType = ValuePin->PinType;
       ArrayPin->PinType.ContainerType = EPinContainerType::Array;
-      GetGraph()->NotifyGraphChanged();
+      if (UEdGraph *Graph = GetGraph()) {
+        Graph->NotifyGraphChanged();
+      }
     }
   }
 }
@@ -493,7 +501,7 @@ bool UK2Node_ForEachArrayReverse::IsConnectionDisallowed(
     const UEdGraphPin *MyPin, const UEdGraphPin *OtherPin,
     FString &OutReason) const {
   // 【修复】添加数组连接验证，参考 ForEachLoopWithDelay.cpp 实现
-  if (MyPin == GetArrayPin() &&
+  if (MyPin && OtherPin && MyPin == GetArrayPin() &&
       MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard) {
     if (OtherPin->PinType.ContainerType != EPinContainerType::Array) {
       OutReason =
@@ -506,38 +514,41 @@ bool UK2Node_ForEachArrayReverse::IsConnectionDisallowed(
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetLoopBodyPin() const {
-  return FindPinChecked(ForEachArrayReverseHelper::LoopBodyPinName,
-                        EGPD_Output);
+  return FindPin(ForEachArrayReverseHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetArrayPin() const {
-  return FindPinChecked(ForEachArrayReverseHelper::ArrayPinName, EGPD_Input);
+  return FindPin(ForEachArrayReverseHelper::ArrayPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetDelayPin() const {
-  return FindPinChecked(ForEachArrayReverseHelper::DelayPinName, EGPD_Input);
+  return FindPin(ForEachArrayReverseHelper::DelayPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetValuePin() const {
-  return FindPinChecked(ForEachArrayReverseHelper::ValuePinName, EGPD_Output);
+  return FindPin(ForEachArrayReverseHelper::ValuePinName, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetCompletedPin() const {
-  return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+  return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetBreakPin() const {
-  return FindPinChecked(ForEachArrayReverseHelper::BreakPinName, EGPD_Input);
+  return FindPin(ForEachArrayReverseHelper::BreakPinName, EGPD_Input);
 }
 
 UEdGraphPin *UK2Node_ForEachArrayReverse::GetIndexPin() const {
-  return FindPinChecked(ForEachArrayReverseHelper::IndexPinName, EGPD_Output);
+  return FindPin(ForEachArrayReverseHelper::IndexPinName, EGPD_Output);
 }
 
 void UK2Node_ForEachArrayReverse::PropagatePinType() const {
   bool bNotifyGraphChanged = false;
   UEdGraphPin *ArrayPin = GetArrayPin();
   UEdGraphPin *ValuePin = GetValuePin();
+
+  if (!ArrayPin || !ValuePin) {
+    return;
+  }
 
   // 【修复】无连接的情况：仅在引脚当前为Wildcard时才重置
   // 这样可以保留加载时已序列化的类型信息
@@ -655,7 +666,9 @@ void UK2Node_ForEachArrayReverse::PropagatePinType() const {
   }
 
   if (bNotifyGraphChanged) {
-    GetGraph()->NotifyGraphChanged();
+    if (UEdGraph *Graph = GetGraph()) {
+      Graph->NotifyGraphChanged();
+    }
   }
 }
 

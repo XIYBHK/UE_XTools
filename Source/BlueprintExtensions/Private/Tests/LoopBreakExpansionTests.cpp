@@ -68,6 +68,37 @@ namespace
 		return Blueprint;
 	}
 
+	template <typename NodeType>
+	bool RejectMissingLoopPin(
+		FAutomationTestBase& Test,
+		const TCHAR* BaseName,
+		const TCHAR* Description,
+		UEdGraphPin* (NodeType::*GetRequiredPin)() const)
+	{
+		UEdGraph* EventGraph = nullptr;
+		UBlueprint* Blueprint = CreateTestBlueprint(BaseName, EventGraph);
+		if (!Test.TestNotNull(*FString::Printf(TEXT("创建%s测试蓝图"), Description), Blueprint)
+			|| !Test.TestNotNull(*FString::Printf(TEXT("获取%s测试事件图"), Description), EventGraph))
+		{
+			return false;
+		}
+
+		NodeType* LoopNode = AddTestNode<NodeType>(EventGraph);
+		UEdGraphPin* RequiredPin = (LoopNode->*GetRequiredPin)();
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s必需引脚存在"), Description), RequiredPin))
+		{
+			return false;
+		}
+		LoopNode->Pins.Remove(RequiredPin);
+
+		FCompilerResultsLog Results;
+		FKismetCompilerOptions Options;
+		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
+		LoopNode->ExpandNode(CompilerContext, EventGraph);
+		return Test.TestEqual(*FString::Printf(TEXT("%s缺失引脚产生编译错误"), Description), Results.NumErrors, 1)
+			&& Test.TestEqual(*FString::Printf(TEXT("%s缺失引脚不降级为警告"), Description), Results.NumWarnings, 0);
+	}
+
 	bool ConnectBreakFromLoopBody(
 		FAutomationTestBase& Test,
 		UEdGraph* Graph,
@@ -312,6 +343,30 @@ namespace
 		Test.TestEqual(TEXT("While: 未Break时才进入延迟判定"), PostBodyBreakGate->GetElsePin()->LinkedTo.Num(), 1);
 		return true;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FLoopNodesRejectMissingRequiredPinsTest,
+	"XTools.BlueprintExtensions.Loops.RejectMissingRequiredPins",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLoopNodesRejectMissingRequiredPinsTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("节点引脚不完整"), EAutomationExpectedErrorFlags::Contains, 5);
+
+	const bool bForLoopPassed = RejectMissingLoopPin<UK2Node_ForLoopWithDelay>(
+		*this, TEXT("XToolsForLoopMissingPinTest"), TEXT("延迟ForLoop"), &UK2Node_ForLoopWithDelay::GetFirstIndexPin);
+	const bool bReverseForLoopPassed = RejectMissingLoopPin<UK2Node_ForLoopWithDelayReverse>(
+		*this, TEXT("XToolsReverseForLoopMissingPinTest"), TEXT("倒序延迟ForLoop"), &UK2Node_ForLoopWithDelayReverse::GetLastIndexPin);
+	const bool bWhileLoopPassed = RejectMissingLoopPin<UK2Node_WhileLoopWithDelay>(
+		*this, TEXT("XToolsWhileLoopMissingPinTest"), TEXT("延迟While"), &UK2Node_WhileLoopWithDelay::GetConditionPin);
+	const bool bForEachPassed = RejectMissingLoopPin<UK2Node_ForEachLoopWithDelay>(
+		*this, TEXT("XToolsForEachMissingPinTest"), TEXT("延迟ForEach"), &UK2Node_ForEachLoopWithDelay::GetValuePin);
+	const bool bReverseForEachPassed = RejectMissingLoopPin<UK2Node_ForEachArrayReverse>(
+		*this, TEXT("XToolsReverseForEachMissingPinTest"), TEXT("倒序延迟ForEach"), &UK2Node_ForEachArrayReverse::GetBreakPin);
+
+	return bForLoopPassed && bReverseForLoopPassed && bWhileLoopPassed && bForEachPassed && bReverseForEachPassed
+		&& !HasAnyErrors();
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
