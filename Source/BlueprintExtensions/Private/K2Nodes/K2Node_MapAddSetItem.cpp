@@ -122,8 +122,7 @@ public:
 	    // 在执行 MapAdd 前进行安全检查
 	    if (!MapTerm || !*MapTerm || !KeyTerm || !ItemTerm)
 	    {
-	        // 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-	        Context.MessageLog.Warning(*NSLOCTEXT("K2Node", "Error_InvalidTerminals", "映射节点编译失败：一个或多个必需引脚未正确连接或类型不匹配。请检查 Map、Key 和 Value 引脚连接。").ToString(), Node);
+	        Context.MessageLog.Error(*NSLOCTEXT("K2Node", "Error_InvalidTerminals", "映射节点 @@ 编译失败：一个或多个必需引脚未正确连接或类型不匹配。请检查 Map、Key 和 Value 引脚连接。").ToString(), Node);
 	        return;
 	    }
 	    
@@ -131,8 +130,7 @@ public:
 	    UFunction* AddSetItemFunc = FindUField<UFunction>(UMapExtensionsLibrary::StaticClass(), TEXT("Map_AddSetItem"));
 	    if (!AddSetItemFunc)
 	    {
-	        // 使用 Warning 而非 Error：与项目约定一致，避免触发 EdGraphNode.h:563 断言崩溃
-	        Context.MessageLog.Warning(*FString::Printf(TEXT("映射节点编译失败：在 UMapExtensionsLibrary 中未找到函数 %s。"), TEXT("Map_AddSetItem")), Node);
+	        Context.MessageLog.Error(*FString::Printf(TEXT("映射节点 @@ 编译失败：在 UMapExtensionsLibrary 中未找到函数 %s。"), TEXT("Map_AddSetItem")), Node);
 	        return;
 	    }
 
@@ -453,7 +451,10 @@ void UK2Node_MapAddSetItem::PropagatePinType()
         FK2NodePinTypeHelpers::ResetPinToWildcard(ItemPin);
     }
 
-    GetGraph()->NotifyGraphChanged();
+    if (UEdGraph* Graph = GetGraph())
+    {
+        Graph->NotifyGraphChanged();
+    }
 }
 
 #pragma endregion
