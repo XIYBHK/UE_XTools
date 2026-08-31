@@ -33,6 +33,9 @@ bool FObjectExtensionsLibrary_FindsObjectsByClass::RunTest(const FString& Parame
 		{ UObject::StaticClass(), FoundObject },
 		{ AActor::StaticClass(), OtherObject }
 	};
+	TestTrue(TEXT("对象函数库应支持直接C++调用"),
+		UObjectExtensionsLibrary::GetObjectFromMap(ObjectMap, UObject::StaticClass()) == FoundObject);
+
 	UFunction* Function = UObjectExtensionsLibrary::StaticClass()->FindFunctionByName(FName(TEXT("GetObjectFromMap")));
 	TestNotNull(TEXT("应找到对象查询反射函数"), Function);
 	if (!Function)

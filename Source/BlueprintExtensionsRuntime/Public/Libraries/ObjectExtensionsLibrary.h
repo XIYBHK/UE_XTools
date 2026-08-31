@@ -13,6 +13,8 @@ class BLUEPRINTEXTENSIONSRUNTIME_API UObjectExtensionsLibrary : public UBlueprin
 {
 	GENERATED_BODY()
 
+public:
+
 //————————————————————————————————————————————————————————————————————————————————————————————————————
 
 #pragma region GetObject
