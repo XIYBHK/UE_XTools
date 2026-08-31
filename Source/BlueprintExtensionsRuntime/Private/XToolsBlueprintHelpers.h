@@ -106,7 +106,7 @@ namespace XToolsBlueprintHelpers
 			if (Property)
 			{
 				AllocatedSize = XTOOLS_GET_ELEMENT_SIZE(Property) * Property->ArrayDim;
-				ValuePtr = FMemory_Alloca(AllocatedSize);
+				ValuePtr = FMemory::Malloc(AllocatedSize, Property->GetMinAlignment());
 				if (ValuePtr)
 				{
 					Property->InitializeValue(ValuePtr);
@@ -119,8 +119,12 @@ namespace XToolsBlueprintHelpers
 			if (ValuePtr && Property)
 			{
 				Property->DestroyValue(ValuePtr);
+				FMemory::Free(ValuePtr);
 			}
 		}
+
+		FScopedPropertyStorage(const FScopedPropertyStorage&) = delete;
+		FScopedPropertyStorage& operator=(const FScopedPropertyStorage&) = delete;
 
 		void* Get() const { return ValuePtr; }
 		int32 GetSize() const { return AllocatedSize; }

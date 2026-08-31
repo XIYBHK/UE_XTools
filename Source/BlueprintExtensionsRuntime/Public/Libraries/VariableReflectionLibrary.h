@@ -12,6 +12,8 @@ class BLUEPRINTEXTENSIONSRUNTIME_API UVariableReflectionLibrary : public UBluepr
 {
 	GENERATED_BODY()
 
+public:
+
 	UFUNCTION(BlueprintPure, Category = "XTools|Blueprint Extensions|Variable", meta = (DisplayName = "获取变量名列表", CompactNodeTitle = "GetVariableNames"))
 	static TArray<FString> GetVariableNames(UClass* Class, bool bIncludeSuper = true);
 

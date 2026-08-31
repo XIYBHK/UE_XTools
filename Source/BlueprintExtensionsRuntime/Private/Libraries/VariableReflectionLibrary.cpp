@@ -1,7 +1,10 @@
 ﻿#include "Libraries/VariableReflectionLibrary.h"
 
 #include "BlueprintExtensionsRuntime.h"
+#include "XToolsBlueprintHelpers.h"
 #include "XToolsErrorReporter.h"
+
+#include "Misc/OutputDeviceNull.h"
 
 TArray<FString> UVariableReflectionLibrary::GetVariableNames(UClass* Class, bool bIncludeSuper)
 {
@@ -34,14 +37,26 @@ void UVariableReflectionLibrary::SetValueByString(UObject* OwnerObject, FString 
 		if (Field->HasAnyPropertyFlags(CPF_BlueprintVisible) &&
 			!Field->HasAnyPropertyFlags(CPF_BlueprintReadOnly))
 		{
-			const TCHAR* ImportResult = Field->ImportText_InContainer(
-				*Value,
-				OwnerObject,
-				OwnerObject,
-				PPF_None
-			);
+			XToolsBlueprintHelpers::FScopedPropertyStorage ParsedValue(Field);
+			if (!ParsedValue.IsValid())
+			{
+				return;
+			}
 
-			if (!ImportResult)
+			FOutputDeviceNull ImportErrors;
+			const TCHAR* ImportResult = Field->ImportText_Direct(
+				*Value,
+				ParsedValue.Get(),
+				OwnerObject,
+				PPF_None,
+				&ImportErrors
+			);
+			while (ImportResult && FChar::IsWhitespace(*ImportResult))
+			{
+				++ImportResult;
+			}
+
+			if (!ImportResult || *ImportResult != TEXT('\0'))
 			{
 				FXToolsErrorReporter::Warning(
 					LogBlueprintExtensionsRuntime,
@@ -51,6 +66,10 @@ void UVariableReflectionLibrary::SetValueByString(UObject* OwnerObject, FString 
 				return;
 			}
 
+#if WITH_EDITOR
+			OwnerObject->PreEditChange(Field);
+#endif
+			Field->SetValue_InContainer(OwnerObject, ParsedValue.Get());
 #if WITH_EDITOR
 			FPropertyChangedEvent PropertyChangedEvent(Field, EPropertyChangeType::ValueSet);
 			OwnerObject->PostEditChangeProperty(PropertyChangedEvent);
