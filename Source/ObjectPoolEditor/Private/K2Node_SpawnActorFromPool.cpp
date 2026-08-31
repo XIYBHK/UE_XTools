@@ -24,7 +24,10 @@ void UK2Node_SpawnActorFromPool::GetMenuActions(FBlueprintActionDatabaseRegistra
     if (ActionRegistrar.IsOpenForRegistration(ActionKey))
     {
         UBlueprintNodeSpawner* Spawner = UBlueprintNodeSpawner::Create(GetClass());
-        ActionRegistrar.AddBlueprintAction(ActionKey, Spawner);
+        if (Spawner)
+        {
+            ActionRegistrar.AddBlueprintAction(ActionKey, Spawner);
+        }
     }
 }
 
@@ -215,8 +218,8 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
     // Pins on this node
     UEdGraphPin* ThisExec = FindPin(UEdGraphSchema_K2::PN_Execute);
     UEdGraphPin* ThisThen = FindPin(UEdGraphSchema_K2::PN_Then);
-    UEdGraphPin* ThisClass = FindPinChecked(TEXT("Class"));
-    UEdGraphPin* ThisTransform = FindPinChecked(TEXT("SpawnTransform"));
+    UEdGraphPin* ThisClass = FindPin(TEXT("Class"));
+    UEdGraphPin* ThisTransform = FindPin(TEXT("SpawnTransform"));
     UEdGraphPin* ThisReturn = GetResultPin();
     UEdGraphPin* ThisWorld = FindPin(TEXT("WorldContextObject"));
     if (!ThisWorld)
@@ -224,31 +227,60 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
         ThisWorld = FindPin(TEXT("WorldContext"));
     }
 
+    if (!K2Schema || !ThisExec || !ThisThen || !ThisClass || !ThisTransform || !ThisReturn)
+    {
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_MissingRequiredPin", "对象池生成节点 @@ 缺少必需引脚或 K2 Schema。请刷新节点后重试。").ToString(),
+            this);
+        BreakAllNodeLinks();
+        return;
+    }
+
     // 解析Class用于GenerateAssignmentNodes（与原生第473行一致）
     UClass* ClassToSpawn = GetClassToSpawn();
-    
-    // 检查Class有效性（与原生第475-482行一致）
-    if (!ThisClass || ((0 == ThisClass->LinkedTo.Num()) && (NULL == ClassToSpawn)))
+    if (ThisClass->LinkedTo.Num() == 0 && !ClassToSpawn)
     {
-        CompilerContext.MessageLog.Warning(*FText::Format(
-            FText::FromString(TEXT("Spawn node {0} must have a {1} specified.")),
-            FText::FromString(GetNodeTitle(ENodeTitleType::ListView).ToString()),
-            FText::FromString(TEXT("Class"))
-        ).ToString(), this, ThisClass);
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_MissingClass", "对象池生成节点 @@ 必须指定 Actor 类。").ToString(),
+            this);
         BreakAllNodeLinks();
         return;
     }
 
     //////////////////////////////////////////////////////////////////////////
     // 创建 'AcquireDeferredFromPool' 调用节点（对应原生BeginSpawn）
+    UFunction* AcquireFunction = FindUField<UFunction>(
+        UObjectPoolLibrary::StaticClass(),
+        GET_FUNCTION_NAME_CHECKED(UObjectPoolLibrary, AcquireDeferredFromPool));
+    UFunction* FinalizeFunction = FindUField<UFunction>(
+        UObjectPoolLibrary::StaticClass(),
+        GET_FUNCTION_NAME_CHECKED(UObjectPoolLibrary, FinalizeSpawnFromPool));
+    if (!AcquireFunction || !FinalizeFunction)
+    {
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_MissingRuntimeFunction", "对象池生成节点 @@ 找不到运行时获取或完成函数。").ToString(),
+            this);
+        BreakAllNodeLinks();
+        return;
+    }
+
     UK2Node_CallFunction* CallAcquireNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-    CallAcquireNode->SetFromFunction(FindUField<UFunction>(UObjectPoolLibrary::StaticClass(), GET_FUNCTION_NAME_CHECKED(UObjectPoolLibrary, AcquireDeferredFromPool)));
+    CallAcquireNode->SetFromFunction(AcquireFunction);
     CallAcquireNode->AllocateDefaultPins();
 
     UEdGraphPin* CallAcquireExec = CallAcquireNode->GetExecPin();
     UEdGraphPin* CallAcquireWorldContextPin = CallAcquireNode->FindPin(TEXT("WorldContext"));
-    UEdGraphPin* CallAcquireActorClassPin = CallAcquireNode->FindPinChecked(TEXT("ActorClass"));
+    UEdGraphPin* CallAcquireActorClassPin = CallAcquireNode->FindPin(TEXT("ActorClass"));
     UEdGraphPin* CallAcquireResult = CallAcquireNode->GetReturnValuePin();
+
+    if (!CallAcquireExec || !CallAcquireWorldContextPin || !CallAcquireActorClassPin || !CallAcquireResult)
+    {
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_InvalidAcquireFunction", "对象池生成节点 @@ 的运行时获取函数签名不兼容。").ToString(),
+            this);
+        BreakAllNodeLinks();
+        return;
+    }
 
     // 移动exec连接（对应原生第501行）
     CompilerContext.MovePinLinksToIntermediate(*ThisExec, *CallAcquireExec);
@@ -272,15 +304,24 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
     //////////////////////////////////////////////////////////////////////////
     // 创建 'FinalizeSpawnFromPool' 调用节点（对应原生FinishSpawn）
     UK2Node_CallFunction* CallFinalizeNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-    CallFinalizeNode->SetFromFunction(FindUField<UFunction>(UObjectPoolLibrary::StaticClass(), GET_FUNCTION_NAME_CHECKED(UObjectPoolLibrary, FinalizeSpawnFromPool)));
+    CallFinalizeNode->SetFromFunction(FinalizeFunction);
     CallFinalizeNode->AllocateDefaultPins();
 
     UEdGraphPin* CallFinalizeExec = CallFinalizeNode->GetExecPin();
     UEdGraphPin* CallFinalizeThen = CallFinalizeNode->GetThenPin();
-    UEdGraphPin* CallFinalizeActor = CallFinalizeNode->FindPinChecked(TEXT("Actor"));
-    UEdGraphPin* CallFinalizeTransform = CallFinalizeNode->FindPinChecked(TEXT("SpawnTransform"));
+    UEdGraphPin* CallFinalizeActor = CallFinalizeNode->FindPin(TEXT("Actor"));
+    UEdGraphPin* CallFinalizeTransform = CallFinalizeNode->FindPin(TEXT("SpawnTransform"));
     UEdGraphPin* CallFinalizeWorldContext = CallFinalizeNode->FindPin(TEXT("WorldContext"));
-    UEdGraphPin* CallFinalizeResult = CallFinalizeNode->GetReturnValuePin();
+
+    if (!CallFinalizeExec || !CallFinalizeThen || !CallFinalizeActor ||
+        !CallFinalizeTransform || !CallFinalizeWorldContext)
+    {
+        CompilerContext.MessageLog.Error(
+            *LOCTEXT("SpawnFromPool_InvalidFinalizeFunction", "对象池生成节点 @@ 的运行时完成函数签名不兼容。").ToString(),
+            this);
+        BreakAllNodeLinks();
+        return;
+    }
 
     // 移动Then连接（对应原生第557行）
     CompilerContext.MovePinLinksToIntermediate(*ThisThen, *CallFinalizeThen);
@@ -289,13 +330,13 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
     CompilerContext.MovePinLinksToIntermediate(*ThisTransform, *CallFinalizeTransform);
 
     // 复制WorldContext连接
-    if (ThisWorld && CallFinalizeWorldContext)
+    if (ThisWorld)
     {
         CompilerContext.CopyPinLinksToIntermediate(*CallAcquireWorldContextPin, *CallFinalizeWorldContext);
     }
 
     // 连接Actor从Acquire到Finalize（对应原生第566行）
-    if (!K2Schema || !K2Schema->TryCreateConnection(CallAcquireResult, CallFinalizeActor))
+    if (!K2Schema->TryCreateConnection(CallAcquireResult, CallFinalizeActor))
     {
         CompilerContext.MessageLog.Error(
             *LOCTEXT("SpawnFromPool_AcquireFinalizeConnectionFailed", "@@ 无法连接对象池获取结果与完成节点。").ToString(),
@@ -333,7 +374,7 @@ void UK2Node_SpawnActorFromPool::ExpandNode(FKismetCompilerContext& CompilerCont
         CompilerContext, SourceGraph, CallAcquireNode, this, CallAcquireResult, ClassToSpawn);
 
     // 连接赋值链到Finalize（完全对应原生第579行）
-    if (!LastThen || !K2Schema || !K2Schema->TryCreateConnection(LastThen, CallFinalizeExec))
+    if (!LastThen || !K2Schema->TryCreateConnection(LastThen, CallFinalizeExec))
     {
         CompilerContext.MessageLog.Error(
             *LOCTEXT("SpawnFromPool_AssignmentFinalizeConnectionFailed", "@@ 无法连接属性赋值链与完成节点。").ToString(),
