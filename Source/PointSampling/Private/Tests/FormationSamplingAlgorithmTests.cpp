@@ -74,6 +74,37 @@ bool FPointSamplingCache_UpdatingExistingEntryDoesNotEvict::RunTest(const FStrin
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPointSamplingCache_EquivalentHalfTurnQuaternionsShareEntry,
+	"XTools.PointSampling.Cache.EquivalentHalfTurnQuaternionsShareEntry",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSamplingCache_EquivalentHalfTurnQuaternionsShareEntry::RunTest(const FString& Parameters)
+{
+	FSamplingCache& Cache = FSamplingCache::Get();
+	Cache.ClearCache();
+
+	FPoissonCacheKey PositiveKey;
+	PositiveKey.Rotation = FQuat(1.0, 0.0, 0.0, 0.0);
+	FPoissonCacheKey NegativeKey = PositiveKey;
+	NegativeKey.Rotation = FQuat(-1.0, 0.0, 0.0, 0.0);
+
+	TestTrue(TEXT("符号相反的半周四元数应视为同一缓存键"), PositiveKey == NegativeKey);
+	TestEqual(TEXT("等价半周四元数应生成相同哈希"), GetTypeHash(PositiveKey), GetTypeHash(NegativeKey));
+
+	const FVector CachedValue(123.0, 456.0, 789.0);
+	Cache.Store(PositiveKey, {CachedValue});
+	const TOptional<TArray<FVector>> CachedPoints = Cache.GetCached(NegativeKey);
+	TestTrue(TEXT("等价半周四元数应命中同一缓存项"), CachedPoints.IsSet());
+	if (CachedPoints.IsSet())
+	{
+		TestEqual(TEXT("等价缓存键应返回原缓存值"), CachedPoints.GetValue()[0], CachedValue);
+	}
+
+	Cache.ClearCache();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFormationSampling_PrimitiveAlgorithms,
 	"XTools.PointSampling.Formation.PrimitiveAlgorithms",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

@@ -14,16 +14,36 @@
  */
 struct FPoissonCacheKey
 {
-	FVector BoxExtent;
-	FVector Position;            // 世界空间位置（仅World空间使用）
-	FQuat Rotation;
-	FVector Scale;               // 父缩放（仅Local/Raw空间使用，用于缩放补偿）
-	float Radius;
-	int32 TargetPointCount;
-	int32 MaxAttempts;
-	float JitterStrength;
-	bool bIs2D;
-	EPoissonCoordinateSpace CoordinateSpace;
+	FVector BoxExtent = FVector::ZeroVector;
+	FVector Position = FVector::ZeroVector;            // 世界空间位置（仅World空间使用）
+	FQuat Rotation = FQuat::Identity;
+	FVector Scale = FVector::OneVector;                 // 父缩放（仅Local/Raw空间使用，用于缩放补偿）
+	float Radius = 0.0f;
+	int32 TargetPointCount = 0;
+	int32 MaxAttempts = 0;
+	float JitterStrength = 0.0f;
+	bool bIs2D = false;
+	EPoissonCoordinateSpace CoordinateSpace = EPoissonCoordinateSpace::World;
+
+private:
+	static FQuat CanonicalizeRotation(FQuat RotationToCanonicalize)
+	{
+		// q 与 -q 表示同一旋转。W 为零时继续按 XYZ 选择唯一符号，覆盖精确 180° 旋转。
+		const bool bShouldFlip = RotationToCanonicalize.W < 0.0f
+			|| (RotationToCanonicalize.W == 0.0f && (RotationToCanonicalize.X < 0.0f
+				|| (RotationToCanonicalize.X == 0.0f && (RotationToCanonicalize.Y < 0.0f
+					|| (RotationToCanonicalize.Y == 0.0f && RotationToCanonicalize.Z < 0.0f)))));
+		if (bShouldFlip)
+		{
+			RotationToCanonicalize.X = -RotationToCanonicalize.X;
+			RotationToCanonicalize.Y = -RotationToCanonicalize.Y;
+			RotationToCanonicalize.Z = -RotationToCanonicalize.Z;
+			RotationToCanonicalize.W = -RotationToCanonicalize.W;
+		}
+		return RotationToCanonicalize;
+	}
+
+public:
 	
 	bool operator==(const FPoissonCacheKey& Other) const
 	{
@@ -50,19 +70,9 @@ struct FPoissonCacheKey
 			);
 		};
 
-		auto CanonicalQuat = [](FQuat Q) -> FQuat
-		{
-			// q 与 -q 表示同一旋转，归一到同一半球，避免缓存键抖动
-			if (Q.W < 0.0f)
-			{
-				Q.X = -Q.X; Q.Y = -Q.Y; Q.Z = -Q.Z; Q.W = -Q.W;
-			}
-			return Q;
-		};
-
 		auto QuantizeQuat = [&](const FQuat& Value, float Step, FIntVector& OutXYZ, int32& OutW) -> void
 		{
-			const FQuat Q = CanonicalQuat(Value);
+			const FQuat Q = CanonicalizeRotation(Value);
 			OutXYZ = FIntVector(
 				QuantizeFloat(Q.X, Step),
 				QuantizeFloat(Q.Y, Step),
@@ -137,18 +147,9 @@ struct FPoissonCacheKey
 			);
 		};
 
-		auto CanonicalQuat = [](FQuat Q) -> FQuat
-		{
-			if (Q.W < 0.0f)
-			{
-				Q.X = -Q.X; Q.Y = -Q.Y; Q.Z = -Q.Z; Q.W = -Q.W;
-			}
-			return Q;
-		};
-
 		auto QuantizeQuat = [&](const FQuat& Value, float Step, FIntVector& OutXYZ, int32& OutW) -> void
 		{
-			const FQuat Q = CanonicalQuat(Value);
+			const FQuat Q = CanonicalizeRotation(Value);
 			OutXYZ = FIntVector(
 				QuantizeFloat(Q.X, Step),
 				QuantizeFloat(Q.Y, Step),
