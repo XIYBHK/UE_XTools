@@ -65,7 +65,9 @@
 
 ### QueueSpline
 - 修复 组件重新 BeginPlay 后拒绝成员注册
+- 修复 移动事件回调注销成员后仍广播陈旧目标
 - 测试 增加 EndPlay 后恢复生命周期护栏
+- 测试 增加移动事件重入注销护栏并清理预期告警
 
 ### XTools_ComponentTimeline
 - 修复 蓝图差异视图遗漏线性颜色轨道
