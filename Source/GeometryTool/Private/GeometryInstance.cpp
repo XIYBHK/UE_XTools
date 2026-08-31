@@ -8,6 +8,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "XToolsErrorReporter.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGeometryTool, Log, All);
 DEFINE_LOG_CATEGORY(LogGeometryTool);
@@ -42,9 +43,19 @@ namespace GeometryToolInternal
 	 * 契约：至少返回 1 —— 当轴长度小于采样间距（Length < Distance）时，该轴只生成一个采样层，
 	 * 保证大间距下盒体采样不会出现零层。
 	 */
+	int32 ClampFloorToSampleRange(double SampleCount, int32 MinSamples, int32 MaxSamples)
+	{
+		if (!FMath::IsFinite(SampleCount) || SampleCount >= MaxSamples)
+		{
+			return MaxSamples;
+		}
+
+		return FMath::Clamp(static_cast<int32>(FMath::FloorToDouble(SampleCount)), MinSamples, MaxSamples);
+	}
+
 	int32 CalcAxisSamples(float Length, float Distance)
 	{
-		return FMath::Clamp(FMath::FloorToInt(Length / Distance) + 1, 1, MaxAxisSamples);
+		return ClampFloorToSampleRange(static_cast<double>(Length) / Distance + 1.0, 1, MaxAxisSamples);
 	}
 
 	bool ExceedsPointBudget(int64 Count)
@@ -94,7 +105,9 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
     Distance = FMath::IsFinite(Distance)
         ? FMath::Clamp(Distance, GeometryToolInternal::MinDistance, GeometryToolInternal::MaxDistance)
         : GeometryToolInternal::MaxDistance;
-    Noise = FMath::IsFinite(Noise) ? FMath::Max(0.0f, Noise) : 0.0f;
+	Noise = FMath::IsFinite(Noise)
+		? FMath::Clamp(Noise, 0.0f, GeometryToolInternal::MaxDistance)
+		: 0.0f;
 
     // 与 FormationSamplingLibrary 一致：通过种子驱动的 FRandomStream 保证同一种子结果可复现
     FRandomStream RandomStream(RandomSeed);
@@ -116,15 +129,15 @@ TArray<FTransform> UGeometryInstance::GetPointsByShape(
     }
     else
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 不支持的形状类型: %s"),
-            *Shape->GetClass()->GetName());
+        XTOOLS_LOG_WARNING(LogGeometryTool, FString::Printf(
+            TEXT("[GeometryInstance] 不支持的形状类型: %s"), *Shape->GetClass()->GetName()));
     }
 
     if (bIsAddInstance)
     {
         if (!GetStaticMesh())
         {
-            UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，跳过 AddInstance。"));
+            XTOOLS_LOG_WARNING(LogGeometryTool, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，跳过 AddInstance。"));
             return FTransforms;
         }
 
@@ -152,7 +165,7 @@ void UGeometryInstance::GetPointsByCustomRect(
 {
     if (!GetStaticMesh())
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，无法添加实例。"));
+        XTOOLS_LOG_WARNING(LogGeometryTool, TEXT("[GeometryInstance] 当前组件未设置 StaticMesh，无法添加实例。"));
         return;
     }
 
@@ -164,14 +177,27 @@ void UGeometryInstance::GetPointsByCustomRect(
 
     if (GeometryToolInternal::ExceedsPointBudget(static_cast<int64>(CountX) * CountY * CountZ))
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 自定义矩形采样点数过大，已取消生成。Count=(%d,%d,%d)"), CountX, CountY, CountZ);
+        XTOOLS_LOG_WARNING(LogGeometryTool, FString::Printf(
+            TEXT("[GeometryInstance] 自定义矩形采样点数过大，已取消生成。Count=(%d,%d,%d)"), CountX, CountY, CountZ));
         return;
     }
 
-    const FVector SafeDistance(
-        FMath::Max(0.0f, Distance3D.X),
-        FMath::Max(0.0f, Distance3D.Y),
-        FMath::Max(0.0f, Distance3D.Z));
+	if (OriginTransform.ContainsNaN())
+	{
+		XTOOLS_LOG_WARNING(LogGeometryTool, TEXT("[GeometryInstance] 原点变换包含非有限值，已取消生成。"));
+		return;
+	}
+
+	const auto SanitizeDistance = [](float Value)
+	{
+		return FMath::IsFinite(Value)
+			? FMath::Clamp(Value, 0.0f, GeometryToolInternal::MaxDistance)
+			: 0.0f;
+	};
+	const FVector SafeDistance(
+		SanitizeDistance(Distance3D.X),
+		SanitizeDistance(Distance3D.Y),
+		SanitizeDistance(Distance3D.Z));
 
     // 统一使用世界空间计算点位，避免本地/世界坐标混用导致偏移。
     const FTransform ComponentWorldTransform = GetComponentTransform();
@@ -231,9 +257,17 @@ TArray<FTransform> UGeometryInstance::GetPointsByCircle(
     int32 Level,
     float RadiusDelta)
 {
-    TArray<FTransform> FTransforms;
-    const AActor* Owner = GetOwner();
-    const FVector OwnerLocation = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
+	TArray<FTransform> FTransforms;
+	const AActor* Owner = GetOwner();
+	const FVector OwnerLocation = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
+	if (OwnerLocation.ContainsNaN())
+	{
+		return FTransforms;
+	}
+	InitAngle = FMath::IsFinite(InitAngle) ? InitAngle : 0.0f;
+	RadiusDelta = FMath::IsFinite(RadiusDelta)
+		? FMath::Clamp(RadiusDelta, 0.0f, GeometryToolInternal::MaxDistance)
+		: 0.0f;
 
     FTransform FirstTransform;
     FirstTransform.SetLocation(OwnerLocation);
@@ -253,7 +287,8 @@ TArray<FTransform> UGeometryInstance::GetPointsByCircle(
         : 1 + RingCount * InitCount;
     if (GeometryToolInternal::ExceedsPointBudget(TotalPointCount))
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 圆形采样点数过大，已取消生成。InitCount=%d, Level=%d"), InitCount, Level);
+        XTOOLS_LOG_WARNING(LogGeometryTool, FString::Printf(
+            TEXT("[GeometryInstance] 圆形采样点数过大，已取消生成。InitCount=%d, Level=%d"), InitCount, Level));
         return FTransforms;
     }
 
@@ -306,34 +341,39 @@ TArray<FTransform> UGeometryInstance::GenerateSpherePoints(
         return FTransforms;
     }
 
-    const float Radius = Sphere->GetScaledSphereRadius();
-    if (Radius <= KINDA_SMALL_NUMBER)
+	const float Radius = Sphere->GetScaledSphereRadius();
+	if (!FMath::IsFinite(Radius) || Radius <= KINDA_SMALL_NUMBER)
     {
         return FTransforms;
     }
 
-    const FVector Origin = Sphere->GetComponentLocation();
+	const FVector Origin = Sphere->GetComponentLocation();
+	if (Origin.ContainsNaN())
+	{
+		return FTransforms;
+	}
     const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
     const float SafeNoise = FMath::Max(0.0f, Noise);
 
     // 等面积纬线环分布：Z 轴等距分层（阿基米德球帽定理保证各环带面积相等），
     // 每层点数按圆周长分配，极点只生成一次。
     // 避免经纬度网格在所有经线共享极点时产生 NumPerRound 个完全重合的点。
-    const int32 LayerCount = FMath::Clamp(
-        FMath::FloorToInt((2.0f * Radius) / SafeDistance) + 1,
-        2,
-        GeometryToolInternal::MaxAxisSamples);
+	const int32 LayerCount = FMath::Clamp(
+		GeometryToolInternal::CalcAxisSamples(2.0f * Radius, SafeDistance),
+		2,
+		GeometryToolInternal::MaxAxisSamples);
 
     // 点数预估：球面面积 / 单点面积
-    const int64 EstimatedCount = static_cast<int64>(FMath::CeilToDouble(
-        4.0 * PI * FMath::Square(static_cast<double>(Radius) / SafeDistance)));
-    if (GeometryToolInternal::ExceedsPointBudget(EstimatedCount))
+	const double EstimatedCount = FMath::CeilToDouble(
+		4.0 * PI * FMath::Square(static_cast<double>(Radius) / SafeDistance));
+	if (!FMath::IsFinite(EstimatedCount) || EstimatedCount > GeometryToolInternal::MaxPointBudget)
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 球体采样点数过大，已取消生成。Radius=%.1f, Distance=%.1f"), Radius, SafeDistance);
+        XTOOLS_LOG_WARNING(LogGeometryTool, FString::Printf(
+            TEXT("[GeometryInstance] 球体采样点数过大，已取消生成。Radius=%.1f, Distance=%.1f"), Radius, SafeDistance));
         return FTransforms;
     }
 
-    FTransforms.Reserve(static_cast<int32>(EstimatedCount));
+	FTransforms.Reserve(static_cast<int32>(EstimatedCount));
 
     auto AddSpherePoint = [&](const FVector& PointLocation)
     {
@@ -417,8 +457,12 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
     const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
     const float SafeNoise = FMath::Max(0.0f, Noise);
 
-    const FVector Origin = Box->GetComponentLocation();
-    const FVector BoxRange3D = 2.0f * Box->GetScaledBoxExtent();
+	const FVector Origin = Box->GetComponentLocation();
+	const FVector BoxRange3D = 2.0f * Box->GetScaledBoxExtent();
+	if (Origin.ContainsNaN() || BoxRange3D.ContainsNaN())
+	{
+		return FTransforms;
+	}
     const FRotator Rotator = Box->GetComponentRotation();
 
     const int32 X = GeometryToolInternal::CalcAxisSamples(BoxRange3D.X, SafeDistance);
@@ -428,7 +472,8 @@ TArray<FTransform> UGeometryInstance::GenerateBoxPoints(
     // Box 仅采样边界，近似上限按完整体积估算做保护
     if (GeometryToolInternal::ExceedsPointBudget(static_cast<int64>(X) * Y * Z))
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 盒体采样点数过大，已取消生成。Count=(%d,%d,%d)"), X, Y, Z);
+        XTOOLS_LOG_WARNING(LogGeometryTool, FString::Printf(
+            TEXT("[GeometryInstance] 盒体采样点数过大，已取消生成。Count=(%d,%d,%d)"), X, Y, Z));
         return FTransforms;
     }
 
@@ -500,7 +545,7 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
     const float Radius = Capsule->GetScaledCapsuleRadius();
     const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
     const float CylinderHalfHeight = FMath::Max(0.0f, HalfHeight - Radius);
-    if (Radius <= KINDA_SMALL_NUMBER)
+	if (!FMath::IsFinite(Radius) || !FMath::IsFinite(HalfHeight) || Radius <= KINDA_SMALL_NUMBER)
     {
         return FTransforms;
     }
@@ -508,24 +553,30 @@ TArray<FTransform> UGeometryInstance::GenerateCapsulePoints(
     const float SafeDistance = FMath::Max(GeometryToolInternal::MinDistance, Distance);
     const float SafeNoise = FMath::Max(0.0f, Noise);
 
-    const FVector Origin = Capsule->GetComponentLocation();
+	const FVector Origin = Capsule->GetComponentLocation();
+	if (Origin.ContainsNaN())
+	{
+		return FTransforms;
+	}
     const FRotator Rotator = Capsule->GetComponentRotation();
     const FVector ForwardVector = Rotator.Quaternion().GetForwardVector();
     const FVector RightVector = Rotator.Quaternion().GetRightVector();
     const FVector UpVector = Rotator.Quaternion().GetUpVector();
 
-    const int32 AroundCount = FMath::Clamp(FMath::FloorToInt((2.0f * PI * Radius) / SafeDistance), 8, 180);
-    const int32 SideCount = (CylinderHalfHeight > KINDA_SMALL_NUMBER)
-        ? FMath::Max(2, FMath::FloorToInt((2.0f * CylinderHalfHeight) / SafeDistance) + 1)
+	const int32 AroundCount = GeometryToolInternal::ClampFloorToSampleRange(
+		(2.0 * PI * static_cast<double>(Radius)) / SafeDistance, 8, 180);
+	const int32 SideCount = (CylinderHalfHeight > KINDA_SMALL_NUMBER)
+		? FMath::Max(2, GeometryToolInternal::CalcAxisSamples(2.0f * CylinderHalfHeight, SafeDistance))
         : 1;
-    const int32 CapArcCount = FMath::Clamp(FMath::FloorToInt((0.5f * PI * Radius) / SafeDistance), 2, 64);
+	const int32 CapArcCount = GeometryToolInternal::ClampFloorToSampleRange(
+		(0.5 * PI * static_cast<double>(Radius)) / SafeDistance, 2, 64);
 
     int64 EstimatedCount = static_cast<int64>(AroundCount) * SideCount; // 圆柱侧面
     EstimatedCount += static_cast<int64>(AroundCount) * (CapArcCount - 1) * 2; // 上下半球
     EstimatedCount += 2; // 两极
     if (GeometryToolInternal::ExceedsPointBudget(EstimatedCount))
     {
-        UE_LOG(LogGeometryTool, Warning, TEXT("[GeometryInstance] 胶囊采样点数过大，已取消生成。"));
+        XTOOLS_LOG_WARNING(LogGeometryTool, TEXT("[GeometryInstance] 胶囊采样点数过大，已取消生成。"));
         return FTransforms;
     }
 
@@ -626,8 +677,32 @@ void UGeometryInstance::ApplyTransformParameters(
     const FVector& PointLocation,
     FRandomStream& RandomStream) const
 {
-    FRotator Rotator = FRotator(0, 0, 0);
-    FVector Size = FVector(1, 1, 1);
+	FRotator Rotator = FRotator(0, 0, 0);
+	FVector Size = FVector(1, 1, 1);
+	const auto FiniteOrFallback = [](float Value, float Fallback)
+	{
+		return FMath::IsFinite(Value) ? Value : Fallback;
+	};
+	const FRotator SafeRotatorA(
+		FiniteOrFallback(Rotator_A.Pitch, FiniteOrFallback(Rotator_B.Pitch, 0.0f)),
+		FiniteOrFallback(Rotator_A.Yaw, FiniteOrFallback(Rotator_B.Yaw, 0.0f)),
+		FiniteOrFallback(Rotator_A.Roll, FiniteOrFallback(Rotator_B.Roll, 0.0f)));
+	const FRotator SafeRotatorB(
+		FiniteOrFallback(Rotator_B.Pitch, SafeRotatorA.Pitch),
+		FiniteOrFallback(Rotator_B.Yaw, SafeRotatorA.Yaw),
+		FiniteOrFallback(Rotator_B.Roll, SafeRotatorA.Roll));
+	const FVector SafeSizeA(
+		FiniteOrFallback(Size_A.X, FiniteOrFallback(Size_B.X, 1.0f)),
+		FiniteOrFallback(Size_A.Y, FiniteOrFallback(Size_B.Y, 1.0f)),
+		FiniteOrFallback(Size_A.Z, FiniteOrFallback(Size_B.Z, 1.0f)));
+	const FVector SafeSizeB(
+		FiniteOrFallback(Size_B.X, SafeSizeA.X),
+		FiniteOrFallback(Size_B.Y, SafeSizeA.Y),
+		FiniteOrFallback(Size_B.Z, SafeSizeA.Z));
+	const FRotator SafeRotatorDelta(
+		FiniteOrFallback(Rotator_Delta.Pitch, 0.0f),
+		FiniteOrFallback(Rotator_Delta.Yaw, 0.0f),
+		FiniteOrFallback(Rotator_Delta.Roll, 0.0f));
 
     if (bIsUseLookAtOrigin)
     {
@@ -637,20 +712,20 @@ void UGeometryInstance::ApplyTransformParameters(
     if (bIsUseRandomRotation)
     {
         Rotator = FRotator(
-            RandomStream.FRandRange(FMath::Min(Rotator_A.Pitch, Rotator_B.Pitch), FMath::Max(Rotator_A.Pitch, Rotator_B.Pitch)),
-            RandomStream.FRandRange(FMath::Min(Rotator_A.Yaw, Rotator_B.Yaw), FMath::Max(Rotator_A.Yaw, Rotator_B.Yaw)),
-            RandomStream.FRandRange(FMath::Min(Rotator_A.Roll, Rotator_B.Roll), FMath::Max(Rotator_A.Roll, Rotator_B.Roll)));
+			RandomStream.FRandRange(FMath::Min(SafeRotatorA.Pitch, SafeRotatorB.Pitch), FMath::Max(SafeRotatorA.Pitch, SafeRotatorB.Pitch)),
+			RandomStream.FRandRange(FMath::Min(SafeRotatorA.Yaw, SafeRotatorB.Yaw), FMath::Max(SafeRotatorA.Yaw, SafeRotatorB.Yaw)),
+			RandomStream.FRandRange(FMath::Min(SafeRotatorA.Roll, SafeRotatorB.Roll), FMath::Max(SafeRotatorA.Roll, SafeRotatorB.Roll)));
     }
 
     if (bIsUseRandomSize)
     {
         Size = FVector(
-            RandomStream.FRandRange(FMath::Min(Size_A.X, Size_B.X), FMath::Max(Size_A.X, Size_B.X)),
-            RandomStream.FRandRange(FMath::Min(Size_A.Y, Size_B.Y), FMath::Max(Size_A.Y, Size_B.Y)),
-            RandomStream.FRandRange(FMath::Min(Size_A.Z, Size_B.Z), FMath::Max(Size_A.Z, Size_B.Z)));
+			RandomStream.FRandRange(FMath::Min(SafeSizeA.X, SafeSizeB.X), FMath::Max(SafeSizeA.X, SafeSizeB.X)),
+			RandomStream.FRandRange(FMath::Min(SafeSizeA.Y, SafeSizeB.Y), FMath::Max(SafeSizeA.Y, SafeSizeB.Y)),
+			RandomStream.FRandRange(FMath::Min(SafeSizeA.Z, SafeSizeB.Z), FMath::Max(SafeSizeA.Z, SafeSizeB.Z)));
     }
 
-    Rotator += Rotator_Delta;
+	Rotator += SafeRotatorDelta;
     OutTransform.SetRotation(Rotator.Quaternion());
     OutTransform.SetScale3D(Size);
 }

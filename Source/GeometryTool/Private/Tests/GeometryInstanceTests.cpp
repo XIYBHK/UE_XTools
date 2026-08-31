@@ -7,6 +7,7 @@
 
 #include "GeometryInstance.h"
 #include "Components/BoxComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Misc/AutomationTest.h"
 
 #include <limits>
@@ -194,6 +195,43 @@ bool FGeometryInstance_SanitizesNonFiniteSamplingInputs::RunTest(const FString& 
 	{
 		TestFalse(TEXT("非有限采样参数不应污染输出变换"), Points[0].ContainsNaN());
 		TestTrue(TEXT("回退后的单层采样点应位于中心"), Points[0].GetLocation().IsNearlyZero());
+	}
+
+	const TArray<FTransform> RandomizedPoints = GeometryInstance->GetPointsByShape(
+		Box, false, 1000.0f, 0.0f, false,
+		FRotator(QuietNaN), FRotator(QuietNaN), true,
+		FVector(QuietNaN), FVector(QuietNaN), true,
+		FRotator(QuietNaN), 29);
+	TestEqual(TEXT("非有限随机变换参数仍应生成单层采样"), RandomizedPoints.Num(), 1);
+	if (RandomizedPoints.Num() == 1)
+	{
+		TestFalse(TEXT("非有限随机变换参数不应污染输出变换"), RandomizedPoints[0].ContainsNaN());
+		TestTrue(TEXT("非有限缩放范围应回退为单位缩放"),
+			RandomizedPoints[0].GetScale3D().Equals(FVector::OneVector));
+	}
+
+	const TArray<FTransform> NonFiniteAnglePoints = GeometryInstance->GetPointsByCircle(3, QuietNaN, 2, 100.0f);
+	TestEqual(TEXT("非有限起始角度应按零角度生成圆环"), NonFiniteAnglePoints.Num(), 4);
+	for (const FTransform& Transform : NonFiniteAnglePoints)
+	{
+		TestFalse(TEXT("非有限起始角度不应污染圆环变换"), Transform.ContainsNaN());
+	}
+
+	const TArray<FTransform> NonFiniteRadiusPoints = GeometryInstance->GetPointsByCircle(3, 0.0f, 2, QuietNaN);
+	TestEqual(TEXT("非有限半径增量应只保留中心点"), NonFiniteRadiusPoints.Num(), 1);
+
+	GeometryInstance->SetStaticMesh(NewObject<UStaticMesh>());
+	GeometryInstance->GetPointsByCustomRect(
+		FTransform::Identity, FIntVector(2, 1, 1), FVector(QuietNaN, 100.0f, 100.0f), true,
+		FRotator::ZeroRotator, FRotator::ZeroRotator, false,
+		FVector::OneVector, FVector::OneVector, false, 31);
+	TestEqual(TEXT("非有限矩形间距应回退为零并保留请求点数"), GeometryInstance->GetInstanceCount(), 2);
+	for (int32 InstanceIndex = 0; InstanceIndex < GeometryInstance->GetInstanceCount(); ++InstanceIndex)
+	{
+		FTransform InstanceTransform;
+		TestTrue(TEXT("矩形实例变换应可读取"),
+			GeometryInstance->GetInstanceTransform(InstanceIndex, InstanceTransform, true));
+		TestFalse(TEXT("非有限矩形间距不应污染实例变换"), InstanceTransform.ContainsNaN());
 	}
 
 	return true;
