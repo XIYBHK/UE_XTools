@@ -8,7 +8,9 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "GameFramework/Actor.h"
+#include "K2Node_CallFunction.h"
 #include "K2Node_TemporaryVariable.h"
+#include "Kismet/KismetArrayLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "UObject/Package.h"
@@ -21,9 +23,12 @@ namespace
 			GetTransientPackage(),
 			UBlueprint::StaticClass(),
 			TEXT("SmartSortReconstructTest"));
+		UPackage* BlueprintPackage = CreatePackage(
+			*FString::Printf(TEXT("/Game/%s"), *BlueprintName.ToString()));
+		BlueprintPackage->SetFlags(RF_Transient);
 		UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
 			AActor::StaticClass(),
-			GetTransientPackage(),
+			BlueprintPackage,
 			BlueprintName,
 			BPTYPE_Normal,
 			UBlueprint::StaticClass(),
@@ -42,6 +47,21 @@ namespace
 		Node->AllocateDefaultPins();
 		return Node;
 	}
+
+	bool AddArrayLengthConsumer(UEdGraph* Graph, UEdGraphPin* ArrayOutputPin)
+	{
+		UK2Node_CallFunction* LengthNode = NewObject<UK2Node_CallFunction>(Graph);
+		Graph->AddNode(LengthNode);
+		LengthNode->CreateNewGuid();
+		LengthNode->FunctionReference.SetExternalMember(
+			GET_FUNCTION_NAME_CHECKED(UKismetArrayLibrary, Array_Length),
+			UKismetArrayLibrary::StaticClass());
+		LengthNode->AllocateDefaultPins();
+
+		UEdGraphPin* LengthArrayPin = LengthNode->FindPin(TEXT("TargetArray"), EGPD_Input);
+		return ArrayOutputPin && LengthArrayPin &&
+			GetDefault<UEdGraphSchema_K2>()->TryCreateConnection(ArrayOutputPin, LengthArrayPin);
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -51,6 +71,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FSmartSortNode_PreservesDynamicPinLinksAfterReconstruct::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Game/SmartSortReconstructTest_"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
 	UEdGraph* EventGraph = nullptr;
 	UBlueprint* Blueprint = CreateSmartSortTestBlueprint(EventGraph);
 	if (!TestNotNull(TEXT("应创建测试蓝图"), Blueprint) ||
@@ -121,6 +144,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FSmartSortNode_PreservesRuntimeModePinsAfterReconstruct::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Game/SmartSortReconstructTest_"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
 	UEdGraph* EventGraph = nullptr;
 	UBlueprint* Blueprint = CreateSmartSortTestBlueprint(EventGraph);
 	if (!TestNotNull(TEXT("应创建测试蓝图"), Blueprint) ||
@@ -183,6 +209,96 @@ bool FSmartSortNode_PreservesRuntimeModePinsAfterReconstruct::RunTest(const FStr
 		ReconstructedDirectionPin->LinkedTo.Contains(DirectionSource->GetVariablePin()));
 	TestNotNull(TEXT("运行时模式重建后应保留坐标轴引脚"),
 		SmartSort->FindPin(FSmartSort_Helper::PN_Axis, EGPD_Input));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSmartSortNode_CompilesVectorExpansion,
+	"XTools.SortEditor.SmartSort.CompilesVectorExpansion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSmartSortNode_CompilesVectorExpansion::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Game/SmartSortReconstructTest_"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
+	UEdGraph* EventGraph = nullptr;
+	UBlueprint* Blueprint = CreateSmartSortTestBlueprint(EventGraph);
+	if (!TestNotNull(TEXT("应创建编译测试蓝图"), Blueprint) ||
+		!TestNotNull(TEXT("应找到编译测试事件图"), EventGraph))
+	{
+		return false;
+	}
+
+	FEdGraphPinType VectorArrayType;
+	VectorArrayType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+	VectorArrayType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
+	VectorArrayType.ContainerType = EPinContainerType::Array;
+	UK2Node_TemporaryVariable* ArraySource = AddTemporaryVariable(EventGraph, VectorArrayType);
+
+	UK2Node_SmartSort* SmartSort = NewObject<UK2Node_SmartSort>(EventGraph);
+	EventGraph->AddNode(SmartSort);
+	SmartSort->CreateNewGuid();
+	SmartSort->AllocateDefaultPins();
+
+	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+	if (!TestTrue(TEXT("应连接编译测试向量数组"),
+		Schema->TryCreateConnection(ArraySource->GetVariablePin(), SmartSort->GetArrayInputPin())))
+	{
+		return false;
+	}
+	TestTrue(TEXT("应连接向量排序输出消费者"),
+		AddArrayLengthConsumer(EventGraph, SmartSort->GetSortedArrayOutputPin()));
+
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	TestEqual(TEXT("向量智能排序展开后蓝图应无警告编译成功"), Blueprint->Status, BS_UpToDate);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSmartSortNode_CompilesStructInPlaceExpansion,
+	"XTools.SortEditor.SmartSort.CompilesStructInPlaceExpansion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSmartSortNode_CompilesStructInPlaceExpansion::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Game/SmartSortReconstructTest_"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
+	UEdGraph* EventGraph = nullptr;
+	UBlueprint* Blueprint = CreateSmartSortTestBlueprint(EventGraph);
+	if (!TestNotNull(TEXT("应创建结构体编译测试蓝图"), Blueprint) ||
+		!TestNotNull(TEXT("应找到结构体编译测试事件图"), EventGraph))
+	{
+		return false;
+	}
+
+	FEdGraphPinType ColorArrayType;
+	ColorArrayType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+	ColorArrayType.PinSubCategoryObject = TBaseStructure<FLinearColor>::Get();
+	ColorArrayType.ContainerType = EPinContainerType::Array;
+	UK2Node_TemporaryVariable* ArraySource = AddTemporaryVariable(EventGraph, ColorArrayType);
+
+	UK2Node_SmartSort* SmartSort = NewObject<UK2Node_SmartSort>(EventGraph);
+	EventGraph->AddNode(SmartSort);
+	SmartSort->CreateNewGuid();
+	SmartSort->AllocateDefaultPins();
+
+	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+	if (!TestTrue(TEXT("应连接结构体数组输入"),
+		Schema->TryCreateConnection(ArraySource->GetVariablePin(), SmartSort->GetArrayInputPin())))
+	{
+		return false;
+	}
+	TestNotNull(TEXT("结构体排序应创建属性名称引脚"),
+		SmartSort->FindPin(FSmartSort_Helper::PN_PropertyName, EGPD_Input));
+	TestTrue(TEXT("应连接结构体排序输出消费者"),
+		AddArrayLengthConsumer(EventGraph, SmartSort->GetSortedArrayOutputPin()));
+
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	TestEqual(TEXT("结构体原地排序展开后蓝图应无警告编译成功"), Blueprint->Status, BS_UpToDate);
 
 	return true;
 }
