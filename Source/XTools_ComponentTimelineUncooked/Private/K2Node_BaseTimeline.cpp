@@ -34,6 +34,11 @@ UK2Node_BaseTimeline::UK2Node_BaseTimeline(const FObjectInitializer& ObjectIniti
  */
 UTimelineTemplate* UK2Node_BaseTimeline::AddNewTimeline(UBlueprint* Blueprint, const FName& TimelineVarName)
 {
+	if (!Blueprint || !Blueprint->GeneratedClass)
+	{
+		return nullptr;
+	}
+
 	// 首先查找是否已存在同名的时间轴
 	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineVarName);
 	if (Timeline != nullptr)
@@ -44,7 +49,6 @@ UTimelineTemplate* UK2Node_BaseTimeline::AddNewTimeline(UBlueprint* Blueprint, c
 	else
 	{
 		Blueprint->Modify();
-		check(nullptr != Blueprint->GeneratedClass);
 		// 使用提供的名称构造新的图表
 		const FName TimelineTemplateName = *UTimelineTemplate::TimelineVariableNameToTemplateName(TimelineVarName);
 			Timeline = NewObject<UTimelineTemplate>(Blueprint->GeneratedClass, TimelineTemplateName, RF_Transactional);
@@ -82,8 +86,11 @@ void UK2Node_BaseTimeline::PostPasteNode()
 {
 	UK2Node::PostPasteNode();
 
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (!Blueprint)
+	{
+		return;
+	}
 
 	UTimelineTemplate* OldTimeline = NULL;
 
@@ -113,10 +120,19 @@ void UK2Node_BaseTimeline::PostPasteNode()
 	}
 	else
 	{
-		check(NULL != Blueprint->GeneratedClass);
+		if (!Blueprint->GeneratedClass)
+		{
+			return;
+		}
+
 		Blueprint->Modify();
 		const FName TimelineTemplateName = *UTimelineTemplate::TimelineVariableNameToTemplateName(TimelineName);
 		UTimelineTemplate* Template = DuplicateObject<UTimelineTemplate>(OldTimeline, Blueprint->GeneratedClass, TimelineTemplateName);
+		if (!Template)
+		{
+			return;
+		}
+
 		bAutoPlay = Template->bAutoPlay;
 		bLoop = Template->bLoop;
 		bReplicated = Template->bReplicated;
@@ -183,7 +199,10 @@ bool UK2Node_BaseTimeline::IsCompatibleWithGraph(const UEdGraph* TargetGraph) co
 		if (Blueprint)
 		{
 			const UEdGraphSchema_K2* K2Schema = Cast<UEdGraphSchema_K2>(TargetGraph->GetSchema());
-			check(K2Schema);
+			if (!K2Schema)
+			{
+				return false;
+			}
 
 			const bool bSupportsEventGraphs = FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint);
 			const bool bAllowEvents = (K2Schema->GetGraphType(TargetGraph) == GT_Ubergraph) && bSupportsEventGraphs &&
@@ -282,7 +301,7 @@ void UK2Node_BaseTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 		{
 			UK2Node_BaseTimeline* TimelineNode = CastChecked<UK2Node_BaseTimeline>(NewNode);
 
-			UBlueprint* Blueprint = TimelineNode->GetBlueprint();
+			UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(TimelineNode);
 			if (Blueprint != nullptr)
 			{
 				TimelineNode->TimelineName = FBlueprintEditorUtils::FindUniqueTimelineName(Blueprint);

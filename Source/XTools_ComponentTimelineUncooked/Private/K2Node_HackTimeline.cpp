@@ -115,8 +115,12 @@ void UK2Node_HackTimeline::AllocateDefaultPins()
 
 	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Byte, FTimeline::GetTimelineDirectionEnum(), DirectionPinName);
 
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (!Blueprint)
+	{
+		UK2Node::AllocateDefaultPins();
+		return;
+	}
 
 	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
 	if(Timeline)
@@ -163,8 +167,8 @@ void UK2Node_HackTimeline::AllocateDefaultPins()
 
 void UK2Node_HackTimeline::PreloadRequiredAssets()
 {
-	UBlueprint* Blueprint = GetBlueprint();
-	if(ensure(Blueprint))
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if(Blueprint)
 	{
 		UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
 		if(Timeline)
@@ -185,19 +189,21 @@ FText UK2Node_HackTimeline::GetToolTipHeading() const
 
 void UK2Node_HackTimeline::DestroyNode()
 {
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
-	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
-	if(Timeline)
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (Blueprint)
 	{
-		FBlueprintEditorUtils::RemoveTimeline(Blueprint, Timeline, true);
+		UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
+		if(Timeline)
+		{
+			FBlueprintEditorUtils::RemoveTimeline(Blueprint, Timeline, true);
 
-		// Move template object out of the way so that we can potentially create a timeline with the same name either through a paste or a new timeline action
+			// Move template object out of the way so that we can potentially create a timeline with the same name either through a paste or a new timeline action
 #if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
-		Timeline->Rename(NULL, GetTransientPackage(), REN_None);
+			Timeline->Rename(NULL, GetTransientPackage(), REN_None);
 #else
-		Timeline->Rename(NULL, GetTransientPackage(), (Blueprint->bIsRegeneratingOnLoad ? REN_ForceNoResetLoaders : REN_None));
+			Timeline->Rename(NULL, GetTransientPackage(), (Blueprint->bIsRegeneratingOnLoad ? REN_ForceNoResetLoaders : REN_None));
 #endif
+		}
 	}
 
 	UK2Node::DestroyNode();
@@ -207,8 +213,11 @@ void UK2Node_HackTimeline::PostPasteNode()
 {
 	UK2Node::PostPasteNode();
 
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (!Blueprint)
+	{
+		return;
+	}
 
 	UTimelineTemplate* OldTimeline = NULL;
 
@@ -238,10 +247,19 @@ void UK2Node_HackTimeline::PostPasteNode()
 	}
 	else
 	{
-		check(NULL != Blueprint->GeneratedClass);
+		if (!Blueprint->GeneratedClass)
+		{
+			return;
+		}
+
 		Blueprint->Modify();
 		const FName TimelineTemplateName = *UTimelineTemplate::TimelineVariableNameToTemplateName(TimelineName);
 		UTimelineTemplate* Template = DuplicateObject<UTimelineTemplate>(OldTimeline, Blueprint->GeneratedClass, TimelineTemplateName);
+		if (!Template)
+		{
+			return;
+		}
+
 		bAutoPlay = Template->bAutoPlay;
 		bLoop = Template->bLoop;
 		bReplicated = Template->bReplicated;
@@ -301,7 +319,10 @@ bool UK2Node_HackTimeline::IsCompatibleWithGraph(const UEdGraph* TargetGraph) co
 		if(Blueprint)
 		{
 			const UEdGraphSchema_K2* K2Schema = Cast<UEdGraphSchema_K2>(TargetGraph->GetSchema());
-			check(K2Schema);
+			if (!K2Schema)
+			{
+				return false;
+			}
 
 			const bool bSupportsEventGraphs = FBlueprintEditorUtils::DoesSupportEventGraphs(Blueprint);
 			const bool bAllowEvents = (K2Schema->GetGraphType(TargetGraph) == GT_Ubergraph) && bSupportsEventGraphs &&
@@ -352,8 +373,11 @@ FText UK2Node_HackTimeline::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	FText Title = FText::FromName(TimelineName);
 	
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint != nullptr);
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (!Blueprint)
+	{
+		return LOCTEXT("NoTimelineTitle", "Add Timeline...");
+	}
 	
 	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
 	// if a node hasn't been spawned for this node yet, then lets title it
@@ -368,12 +392,18 @@ FText UK2Node_HackTimeline::GetNodeTitle(ENodeTitleType::Type TitleType) const
 
 void UK2Node_HackTimeline::PrepareForCopying()
 {
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (!Blueprint)
+	{
+		return;
+	}
+
 	// 设置 GUID 以便识别复制的节点应使用哪个时间轴模板
 	UTimelineTemplate* Template  = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
-	check(Template);
-	TimelineGuid = Template->TimelineGuid; // 保存模板的 GUID，以便在粘贴时匹配
+	if (Template)
+	{
+		TimelineGuid = Template->TimelineGuid; // 保存模板的 GUID，以便在粘贴时匹配
+	}
 }
 
 /** 确定两个数组中包含的所有轨道是否相同 */
@@ -421,16 +451,28 @@ void UK2Node_HackTimeline::FindDiffs( class UEdGraphNode* OtherNode, struct FDif
 {
 	UK2Node_HackTimeline* Timeline1 = this;
 	UK2Node_HackTimeline* Timeline2 = Cast<UK2Node_HackTimeline>(OtherNode);
+	if (!Timeline2)
+	{
+		return;
+	}
 
-	UBlueprint* Blueprint1 = Timeline1->GetBlueprint();
+	UBlueprint* Blueprint1 = FBlueprintEditorUtils::FindBlueprintForNode(Timeline1);
+	UBlueprint* Blueprint2 = FBlueprintEditorUtils::FindBlueprintForNode(Timeline2);
+	if (!Blueprint1 || !Blueprint2)
+	{
+		return;
+	}
+
 	int32 Index1 = FBlueprintEditorUtils::FindTimelineIndex(Blueprint1,Timeline1->TimelineName);
-
-	UBlueprint* Blueprint2 = Timeline2->GetBlueprint();
 	int32 Index2 = FBlueprintEditorUtils::FindTimelineIndex(Blueprint2,Timeline2->TimelineName);
 	if(Index1 != INDEX_NONE && Index2 != INDEX_NONE)
 	{
 		UTimelineTemplate* Template1 = Blueprint1->Timelines[Index1];
 		UTimelineTemplate* Template2 = Blueprint2->Timelines[Index2];
+		if (!Template1 || !Template2)
+		{
+			return;
+		}
 
 		FDiffSingleResult Diff;
 		Diff.Node1 = Timeline2;
@@ -510,7 +552,7 @@ void UK2Node_HackTimeline::OnRenameNode(const FString& NewName)
 
 TSharedPtr<class INameValidatorInterface> UK2Node_HackTimeline::MakeNameValidator() const
 {
-	return MakeShareable(new FKismetNameValidator(GetBlueprint(), TimelineName));
+	return MakeShareable(new FKismetNameValidator(FBlueprintEditorUtils::FindBlueprintForNode(this), TimelineName));
 }
 
 FNodeHandlingFunctor* UK2Node_HackTimeline::CreateNodeHandler(FKismetCompilerContext& CompilerContext) const
@@ -541,9 +583,13 @@ void UK2Node_HackTimeline::ExpandNode(FKismetCompilerContext& CompilerContext, U
 {
 	UK2Node::ExpandNode(CompilerContext, SourceGraph);
 
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	if (!Blueprint)
+	{
+		CompilerContext.MessageLog.Error(*LOCTEXT("ExpandNode_NoBlueprint", "Timeline node @@ does not belong to a Blueprint").ToString(), this);
+		BreakAllNodeLinks();
+		return;
+	}
 
 	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
 	if(Timeline)
@@ -589,10 +635,8 @@ FSlateIcon UK2Node_HackTimeline::GetIconAndTint(FLinearColor& OutColor) const
 
 UObject* UK2Node_HackTimeline::GetJumpTargetForDoubleClick() const
 {
-	UBlueprint* Blueprint = GetBlueprint();
-	check(Blueprint);
-	UTimelineTemplate* Timeline = Blueprint->FindTimelineTemplateByVariableName(TimelineName);
-	return Timeline;
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+	return Blueprint ? Blueprint->FindTimelineTemplateByVariableName(TimelineName) : nullptr;
 }
 
 FString UK2Node_HackTimeline::GetDocumentationExcerptName() const
@@ -627,7 +671,7 @@ void UK2Node_HackTimeline::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 		{
 			UK2Node_HackTimeline* TimelineNode = CastChecked<UK2Node_HackTimeline>(NewNode);
 
-			UBlueprint* Blueprint = TimelineNode->GetBlueprint();
+			UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(TimelineNode);
 			if (Blueprint != nullptr)
 			{
 				TimelineNode->TimelineName = FBlueprintEditorUtils::FindUniqueTimelineName(Blueprint);

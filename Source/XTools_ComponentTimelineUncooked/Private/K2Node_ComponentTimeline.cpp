@@ -40,7 +40,7 @@ FText UK2Node_ComponentTimeline::GetNodeTitle(ENodeTitleType::Type TitleType) co
 {
 	FText Title = FText::FromName(TimelineName);
 
-	UBlueprint* Blueprint = GetBlueprint();
+	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
 	if (Blueprint == nullptr)
 	{
 		return LOCTEXT("NoTimelineTitle", "添加组件时间轴...");
