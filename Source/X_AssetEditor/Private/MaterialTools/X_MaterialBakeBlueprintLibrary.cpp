@@ -11,6 +11,7 @@
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
 #include "Modules/ModuleManager.h"
+#include "ScopedTransaction.h"
 #include "StaticMeshAttributes.h"
 #include "X_AssetEditor.h"
 
@@ -50,14 +51,17 @@ namespace
 			return INDEX_NONE;
 		}
 
-		const FName SlotName = MaterialSlotNames[PolygonGroupID];
 		const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
-		for (int32 MaterialIndex = 0; MaterialIndex < StaticMaterials.Num(); ++MaterialIndex)
+		if (MaterialSlotNames.IsValid())
 		{
-			if (StaticMaterials[MaterialIndex].MaterialSlotName == SlotName ||
-				StaticMaterials[MaterialIndex].ImportedMaterialSlotName == SlotName)
+			const FName SlotName = MaterialSlotNames[PolygonGroupID];
+			for (int32 MaterialIndex = 0; MaterialIndex < StaticMaterials.Num(); ++MaterialIndex)
 			{
-				return MaterialIndex;
+				if (StaticMaterials[MaterialIndex].MaterialSlotName == SlotName ||
+					StaticMaterials[MaterialIndex].ImportedMaterialSlotName == SlotName)
+				{
+					return MaterialIndex;
+				}
 			}
 		}
 
@@ -95,12 +99,9 @@ FX_MaterialBakeVertexColorResult UX_MaterialBakeBlueprintLibrary::BakeStaticMesh
 	TextureSize = FMath::Clamp(TextureSize, 1, 4096);
 	UVChannel = FMath::Max(0, UVChannel);
 
-	FStaticMeshAttributes Attributes(*MeshDescription);
-	Attributes.Register(true);
-	TVertexInstanceAttributesRef<FVector4f> VertexInstanceColors = Attributes.GetVertexInstanceColors();
-	TVertexInstanceAttributesConstRef<FVector2f> VertexInstanceUVs = Attributes.GetVertexInstanceUVs();
-	TPolygonGroupAttributesConstRef<FName> PolygonGroupMaterialSlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
-	if (VertexInstanceUVs.GetNumChannels() <= UVChannel)
+	const FStaticMeshConstAttributes ReadOnlyAttributes(*MeshDescription);
+	const TVertexInstanceAttributesConstRef<FVector2f> ReadOnlyVertexInstanceUVs = ReadOnlyAttributes.GetVertexInstanceUVs();
+	if (!ReadOnlyVertexInstanceUVs.IsValid() || ReadOnlyVertexInstanceUVs.GetNumChannels() <= UVChannel)
 	{
 		Result.Message = FString::Printf(TEXT("LOD%d没有UV%d，无法按材质烘焙写入顶点色"), LODIndex, UVChannel);
 		return Result;
@@ -115,6 +116,12 @@ FX_MaterialBakeVertexColorResult UX_MaterialBakeBlueprintLibrary::BakeStaticMesh
 
 	TArray<FBakedSlot> BakedSlots;
 	const int32 MaterialCount = StaticMesh->GetStaticMaterials().Num();
+	if (MaterialCount == 0)
+	{
+		Result.Message = TEXT("静态网格体没有材质槽，无法烘焙BaseColor");
+		return Result;
+	}
+
 	BakedSlots.SetNum(MaterialCount);
 	IMaterialBakingModule& MaterialBakingModule = FModuleManager::LoadModuleChecked<IMaterialBakingModule>(TEXT("MaterialBaking"));
 
@@ -172,7 +179,31 @@ FX_MaterialBakeVertexColorResult UX_MaterialBakeBlueprintLibrary::BakeStaticMesh
 		return Result;
 	}
 
+	const FScopedTransaction Transaction(NSLOCTEXT("X_MaterialBake", "BakeBaseColorToVertexColors", "Bake Base Color To Vertex Colors"));
+	StaticMesh->SetFlags(RF_Transactional);
 	StaticMesh->Modify();
+	if (!StaticMesh->ModifyMeshDescription(LODIndex))
+	{
+		Result.Message = FString::Printf(TEXT("LOD%d源数据无法加入撤销事务，已取消顶点色写入"), LODIndex);
+		return Result;
+	}
+
+	FStaticMeshAttributes MutableAttributes(*MeshDescription);
+	if (!MutableAttributes.GetVertexInstanceColors().IsValid())
+	{
+		MutableAttributes.Register(true);
+	}
+
+	TVertexInstanceAttributesRef<FVector4f> VertexInstanceColors = MutableAttributes.GetVertexInstanceColors();
+	const FStaticMeshAttributes& ConstAttributes = MutableAttributes;
+	const TVertexInstanceAttributesConstRef<FVector2f> VertexInstanceUVs = ConstAttributes.GetVertexInstanceUVs();
+	const TPolygonGroupAttributesConstRef<FName> PolygonGroupMaterialSlotNames = ConstAttributes.GetPolygonGroupMaterialSlotNames();
+	if (!VertexInstanceColors.IsValid() || !VertexInstanceUVs.IsValid())
+	{
+		Result.Message = FString::Printf(TEXT("LOD%d缺少可写顶点色或UV属性，已取消写入"), LODIndex);
+		return Result;
+	}
+
 	for (const FPolygonID PolygonID : MeshDescription->Polygons().GetElementIDs())
 	{
 		const FPolygonGroupID PolygonGroupID = MeshDescription->GetPolygonPolygonGroup(PolygonID);
