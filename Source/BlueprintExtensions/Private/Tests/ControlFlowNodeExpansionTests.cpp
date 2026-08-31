@@ -193,6 +193,47 @@ bool FControlFlowNodesRejectMalformedPinsTest::RunTest(const FString& Parameters
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCasePairedNodesRejectIncompletePairsTest,
+	"XTools.BlueprintExtensions.ControlFlow.CasePairedNodesRejectIncompletePairs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCasePairedNodesRejectIncompletePairsTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("Conditional Sequence node has invalid case pins"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("Multi Conditional Select node has invalid case pins"), EAutomationExpectedErrorFlags::Contains, 1);
+
+	UBlueprint* Blueprint = CreateControlFlowBlueprint(TEXT("XToolsIncompleteCasePairsTest"));
+	UEdGraph* EventGraph = Blueprint ? FBlueprintEditorUtils::FindEventGraph(Blueprint) : nullptr;
+	if (!TestNotNull(TEXT("创建不完整配对测试蓝图"), Blueprint)
+		|| !TestNotNull(TEXT("获取不完整配对测试事件图"), EventGraph))
+	{
+		return false;
+	}
+
+	FKismetCompilerOptions Options;
+
+	UK2Node_ConditionalSequence* Sequence = AddControlFlowNode<UK2Node_ConditionalSequence>(EventGraph);
+	TestNull(TEXT("空值引脚不能解析出条件引脚"), Sequence->GetCaseKeyPinFromCaseValuePin(nullptr));
+	Sequence->AddCasePinLast();
+	Sequence->Pins.Remove(Sequence->FindPin(TEXT("CaseCond_0")));
+	FCompilerResultsLog SequenceResults;
+	FControlFlowCompilerContext SequenceCompilerContext(Blueprint, SequenceResults, Options);
+	static_cast<UK2Node*>(Sequence)->ExpandNode(SequenceCompilerContext, EventGraph);
+
+	UK2Node_MultiConditionalSelect* Select = AddControlFlowNode<UK2Node_MultiConditionalSelect>(EventGraph);
+	Select->Pins.Remove(Select->FindPin(TEXT("CaseOption_0")));
+	FCompilerResultsLog SelectResults;
+	FControlFlowCompilerContext SelectCompilerContext(Blueprint, SelectResults, Options);
+	static_cast<UK2Node*>(Select)->ExpandNode(SelectCompilerContext, EventGraph);
+
+	return TestEqual(TEXT("条件序列不完整配对产生一次编译错误"), SequenceResults.NumErrors, 1)
+		&& TestEqual(TEXT("多条件选择不完整配对产生一次编译错误"), SelectResults.NumErrors, 1)
+		&& TestEqual(TEXT("条件序列不完整配对不降级为警告"), SequenceResults.NumWarnings, 0)
+		&& TestEqual(TEXT("多条件选择不完整配对不降级为警告"), SelectResults.NumWarnings, 0)
+		&& !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMultiBranchRejectsMissingFunctionPinTest,
 	"XTools.BlueprintExtensions.ControlFlow.MultiBranchRejectsMissingFunctionPin",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

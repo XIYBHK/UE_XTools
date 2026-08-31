@@ -9,7 +9,6 @@
 #include "K2Nodes/K2Node_CasePairedPinsNode.h"
 #include "K2Nodes/K2NodeHelpers.h"
 
-#include "Internationalization/Regex.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "ToolMenu.h"
 
@@ -17,6 +16,46 @@
 
 const FName DefaultExecPinName(TEXT("DefaultExec"));
 const FName DefaultExecPinFriendlyName(TEXT("Default"));
+
+namespace
+{
+	bool TryGetCasePinIndex(const UEdGraphPin* Pin, const FString& Prefix, int32& OutIndex)
+	{
+		if (!Pin)
+		{
+			return false;
+		}
+
+		const FString ExpectedPrefix = Prefix + TEXT("_");
+		const FString PinName = Pin->GetFName().ToString();
+		if (!PinName.StartsWith(ExpectedPrefix, ESearchCase::CaseSensitive))
+		{
+			return false;
+		}
+
+		const FString IndexString = PinName.RightChop(ExpectedPrefix.Len());
+		if (IndexString.IsEmpty())
+		{
+			return false;
+		}
+		for (const TCHAR Character : IndexString)
+		{
+			if (!FChar::IsDigit(Character))
+			{
+				return false;
+			}
+		}
+
+		const int64 ParsedIndex = FCString::Atoi64(*IndexString);
+		if (ParsedIndex > MAX_int32)
+		{
+			return false;
+		}
+
+		OutIndex = static_cast<int32>(ParsedIndex);
+		return true;
+	}
+}
 
 UK2Node_CasePairedPinsNode::UK2Node_CasePairedPinsNode(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
@@ -86,18 +125,19 @@ void UK2Node_CasePairedPinsNode::AddCasePinAfter(UEdGraphPin* Pin)
 		return;
 	}
 
-	UK2Node_CasePairedPinsNode* OwnerNode = Cast<UK2Node_CasePairedPinsNode>(Pin->GetOwningNode());
-
-	if (OwnerNode)
+	if (Pin->GetOwningNode() == this)
 	{
-		Modify();
-
 		CasePinPair Pair = GetCasePinPair(Pin);
-
 		UEdGraphPin* CaseKeyAfterPin = Pair.Key;
 		UEdGraphPin* CaseValueAfterPin = Pair.Value;
-		int32 CaseIndexAfter = GetCaseIndexFromCaseKeyPin(CaseKeyAfterPin);
-		check(CaseIndexAfter == GetCaseIndexFromCaseValuePin(CaseValueAfterPin));
+		const int32 CaseIndexAfter = GetCaseIndexFromCaseKeyPin(CaseKeyAfterPin);
+		if (!CaseKeyAfterPin || !CaseValueAfterPin || CaseIndexAfter == INDEX_NONE ||
+			CaseIndexAfter != GetCaseIndexFromCaseValuePin(CaseValueAfterPin))
+		{
+			return;
+		}
+
+		Modify();
 
 		// Get current key-value pin pair.
 		TArray<CasePinPair> CasePairs = GetCasePinPairs();
@@ -110,6 +150,10 @@ void UK2Node_CasePairedPinsNode::AddCasePinAfter(UEdGraphPin* Pin)
 		{
 			UEdGraphPin* CaseKeyPin = CasePairs[Index].Key;
 			UEdGraphPin* CaseValuePin = CasePairs[Index].Value;
+			if (!CaseKeyPin || !CaseValuePin)
+			{
+				continue;
+			}
 
 			CaseValuePin->PinName = *GetCasePinName(CaseValuePinNamePrefix.ToString(), Index + 1);
 			CaseValuePin->PinFriendlyName =
@@ -133,18 +177,19 @@ void UK2Node_CasePairedPinsNode::AddCasePinBefore(UEdGraphPin* Pin)
 		return;
 	}
 
-	UK2Node_CasePairedPinsNode* OwnerNode = Cast<UK2Node_CasePairedPinsNode>(Pin->GetOwningNode());
-
-	if (OwnerNode)
+	if (Pin->GetOwningNode() == this)
 	{
-		Modify();
-
 		CasePinPair Pair = GetCasePinPair(Pin);
-
 		UEdGraphPin* CaseKeyBeforePin = Pair.Key;
 		UEdGraphPin* CaseValueBeforePin = Pair.Value;
-		int32 CaseIndexBefore = GetCaseIndexFromCaseKeyPin(CaseKeyBeforePin);
-		check(CaseIndexBefore == GetCaseIndexFromCaseValuePin(CaseValueBeforePin));
+		const int32 CaseIndexBefore = GetCaseIndexFromCaseKeyPin(CaseKeyBeforePin);
+		if (!CaseKeyBeforePin || !CaseValueBeforePin || CaseIndexBefore == INDEX_NONE ||
+			CaseIndexBefore != GetCaseIndexFromCaseValuePin(CaseValueBeforePin))
+		{
+			return;
+		}
+
+		Modify();
 
 		// Get current key-value pin pair.
 		TArray<CasePinPair> CasePairs = GetCasePinPairs();
@@ -157,6 +202,10 @@ void UK2Node_CasePairedPinsNode::AddCasePinBefore(UEdGraphPin* Pin)
 		{
 			UEdGraphPin* CaseKeyPin = CasePairs[Index].Key;
 			UEdGraphPin* CaseValuePin = CasePairs[Index].Value;
+			if (!CaseKeyPin || !CaseValuePin)
+			{
+				continue;
+			}
 
 			CaseValuePin->PinName = *GetCasePinName(CaseValuePinNamePrefix.ToString(), Index + 1);
 			CaseValuePin->PinFriendlyName =
@@ -180,13 +229,15 @@ void UK2Node_CasePairedPinsNode::RemoveCasePinAt(UEdGraphPin* Pin)
 		return;
 	}
 
-	UK2Node_CasePairedPinsNode* OwnerNode = Cast<UK2Node_CasePairedPinsNode>(Pin->GetOwningNode());
-
-	if (OwnerNode)
+	if (Pin->GetOwningNode() == this)
 	{
-		Modify();
+		const int32 CaseIndex = GetCaseIndexFromCasePin(Pin);
+		if (CaseIndex == INDEX_NONE)
+		{
+			return;
+		}
 
-		int32 CaseIndex = GetCaseIndexFromCasePin(Pin);
+		Modify();
 		RemoveCasePinAt(CaseIndex);
 	}
 }
@@ -259,15 +310,11 @@ CasePinPair UK2Node_CasePairedPinsNode::GetCasePinPair(UEdGraphPin* Pin) const
 	{
 		Pair.Key = GetCaseKeyPinFromCaseValuePin(Pin);
 		Pair.Value = Pin;
-		check(Pair.Key);
 	}
-	else
+	else if (IsCaseKeyPin(Pin))
 	{
-		check(IsCaseKeyPin(Pin));
-
 		Pair.Key = Pin;
 		Pair.Value = GetCaseValuePinFromCaseKeyPin(Pin);
-		check(Pair.Value);
 	}
 
 	return Pair;
@@ -275,43 +322,26 @@ CasePinPair UK2Node_CasePairedPinsNode::GetCasePinPair(UEdGraphPin* Pin) const
 
 int32 UK2Node_CasePairedPinsNode::GetCaseIndexFromCasePin(UEdGraphPin* Pin) const
 {
-	check(IsCasePin(Pin));
-
 	if (IsCaseValuePin(Pin))
 	{
 		return GetCaseIndexFromCaseValuePin(Pin);
 	}
-	check(IsCaseKeyPin(Pin));
-
-	return GetCaseIndexFromCaseKeyPin(Pin);
+	return IsCaseKeyPin(Pin) ? GetCaseIndexFromCaseKeyPin(Pin) : INDEX_NONE;
 }
 
 int32 UK2Node_CasePairedPinsNode::GetCaseIndexFromCasePin(const FString& Prefix, UEdGraphPin* Pin) const
 {
-	check(IsCasePin(Pin));
-
-	FString PinName = Pin->GetFName().ToString();
-	FString Dummy;
-	FString IndexStr;
-	if (!PinName.Split(Prefix + "_", &Dummy, &IndexStr, ESearchCase::CaseSensitive))
-	{
-		return -1;
-	}
-
-	return FCString::Atoi(*IndexStr);
+	int32 CaseIndex = INDEX_NONE;
+	return TryGetCasePinIndex(Pin, Prefix, CaseIndex) ? CaseIndex : INDEX_NONE;
 }
 
 int32 UK2Node_CasePairedPinsNode::GetCaseIndexFromCaseValuePin(UEdGraphPin* Pin) const
 {
-	check(IsCaseValuePin(Pin));
-
 	return GetCaseIndexFromCasePin(CaseValuePinNamePrefix.ToString(), Pin);
 }
 
 int32 UK2Node_CasePairedPinsNode::GetCaseIndexFromCaseKeyPin(UEdGraphPin* Pin) const
 {
-	check(IsCaseKeyPin(Pin));
-
 	return GetCaseIndexFromCasePin(CaseKeyPinNamePrefix.ToString(), Pin);
 }
 
@@ -319,30 +349,35 @@ void UK2Node_CasePairedPinsNode::RemoveCasePinAt(int32 CaseIndex)
 {
 	UEdGraphPin* CaseValuePinToRemove = GetCaseValuePinFromCaseIndex(CaseIndex);
 	UEdGraphPin* CaseKeyPinToRemove = GetCaseKeyPinFromCaseIndex(CaseIndex);
-	check(CaseValuePinToRemove);
-	check(CaseKeyPinToRemove);
-
-	Pins.Remove(CaseValuePinToRemove);
-	Pins.Remove(CaseKeyPinToRemove);
-	CaseValuePinToRemove->MarkAsGarbage();
-	CaseKeyPinToRemove->MarkAsGarbage();
-
-	int32 Index = 0;
-	for (auto& P : Pins)
+	if (!CaseValuePinToRemove && !CaseKeyPinToRemove)
 	{
-		if (IsCaseValuePin(P))
-		{
-			UEdGraphPin* CaseValuePin = P;
-			UEdGraphPin* CaseKeyPin = GetCaseKeyPinFromCaseValuePin(CaseValuePin);
+		return;
+	}
 
+	if (CaseValuePinToRemove)
+	{
+		Pins.Remove(CaseValuePinToRemove);
+		CaseValuePinToRemove->MarkAsGarbage();
+	}
+	if (CaseKeyPinToRemove)
+	{
+		Pins.Remove(CaseKeyPinToRemove);
+		CaseKeyPinToRemove->MarkAsGarbage();
+	}
+
+	const TArray<CasePinPair> RemainingPairs = GetCasePinPairs();
+	for (int32 Index = 0; Index < RemainingPairs.Num(); ++Index)
+	{
+		UEdGraphPin* CaseKeyPin = RemainingPairs[Index].Key;
+		UEdGraphPin* CaseValuePin = RemainingPairs[Index].Value;
+		if (CaseKeyPin && CaseValuePin)
+		{
 			CaseValuePin->PinName = *GetCasePinName(CaseValuePinNamePrefix.ToString(), Index);
 			CaseValuePin->PinFriendlyName =
 				FText::AsCultureInvariant(GetCasePinFriendlyName(CaseValuePinFriendlyNamePrefix.ToString(), Index));
 			CaseKeyPin->PinName = *GetCasePinName(CaseKeyPinNamePrefix.ToString(), Index);
 			CaseKeyPin->PinFriendlyName =
 				FText::AsCultureInvariant(GetCasePinFriendlyName(CaseKeyPinFriendlyNamePrefix.ToString(), Index));
-
-			++Index;
 		}
 	}
 
@@ -368,17 +403,28 @@ int32 UK2Node_CasePairedPinsNode::GetCasePinCount() const
 
 TArray<CasePinPair> UK2Node_CasePairedPinsNode::GetCasePinPairs() const
 {
-	TArray<CasePinPair> CasePairs;
-	CasePairs.SetNum(GetCasePinCount());
+	TArray<TPair<int32, CasePinPair>> IndexedPairs;
+	IndexedPairs.Reserve(GetCasePinCount());
 
-	for (auto& P : Pins)
+	for (UEdGraphPin* Pin : Pins)
 	{
-		if (IsCaseValuePin(P))
+		const int32 Index = GetCaseIndexFromCaseValuePin(Pin);
+		if (Index != INDEX_NONE)
 		{
-			UEdGraphPin* CaseValuePin = P;
-			int32 Index = GetCaseIndexFromCaseValuePin(CaseValuePin);
-			CasePairs[Index] = GetCasePinPair(CaseValuePin);
+			IndexedPairs.Emplace(Index, CasePinPair(GetCaseKeyPinFromCaseValuePin(Pin), Pin));
 		}
+	}
+
+	IndexedPairs.Sort([](const TPair<int32, CasePinPair>& Left, const TPair<int32, CasePinPair>& Right)
+	{
+		return Left.Key < Right.Key;
+	});
+
+	TArray<CasePinPair> CasePairs;
+	CasePairs.Reserve(IndexedPairs.Num());
+	for (const TPair<int32, CasePinPair>& IndexedPair : IndexedPairs)
+	{
+		CasePairs.Add(IndexedPair.Value);
 	}
 
 	return CasePairs;
@@ -391,22 +437,14 @@ bool UK2Node_CasePairedPinsNode::IsCasePin(const UEdGraphPin* Pin) const
 
 bool UK2Node_CasePairedPinsNode::IsCaseKeyPin(const UEdGraphPin* Pin) const
 {
-	FString PinName = Pin->GetFName().ToString();
-
-	FRegexPattern Pattern = FRegexPattern(FString::Format(TEXT("{0}_[0-9]+"), {CaseKeyPinNamePrefix.ToString()}));
-	FRegexMatcher Matcher(Pattern, PinName);
-
-	return Matcher.FindNext();
+	int32 CaseIndex = INDEX_NONE;
+	return TryGetCasePinIndex(Pin, CaseKeyPinNamePrefix.ToString(), CaseIndex);
 }
 
 bool UK2Node_CasePairedPinsNode::IsCaseValuePin(const UEdGraphPin* Pin) const
 {
-	FString PinName = Pin->GetFName().ToString();
-
-	FRegexPattern Pattern = FRegexPattern(FString::Format(TEXT("{0}_[0-9]+"), {CaseValuePinNamePrefix.ToString()}));
-	FRegexMatcher Matcher(Pattern, PinName);
-
-	return Matcher.FindNext();
+	int32 CaseIndex = INDEX_NONE;
+	return TryGetCasePinIndex(Pin, CaseValuePinNamePrefix.ToString(), CaseIndex);
 }
 
 FString UK2Node_CasePairedPinsNode::GetCasePinName(const FString& Prefix, int32 CaseIndex) const
@@ -421,30 +459,24 @@ FString UK2Node_CasePairedPinsNode::GetCasePinFriendlyName(const FString& Prefix
 
 UEdGraphPin* UK2Node_CasePairedPinsNode::GetCaseKeyPinFromCaseValuePin(const UEdGraphPin* ValuePin) const
 {
-	FString ValuePinName = ValuePin->GetFName().ToString();
-
-	FString Dummy;
-	FString Suffix;
-	if (!ValuePinName.Split(CaseValuePinNamePrefix.ToString(), &Dummy, &Suffix, ESearchCase::CaseSensitive))
+	int32 CaseIndex = INDEX_NONE;
+	if (!TryGetCasePinIndex(ValuePin, CaseValuePinNamePrefix.ToString(), CaseIndex))
 	{
 		return nullptr;
 	}
 
-	return FindPin(CaseKeyPinNamePrefix.ToString() + Suffix);
+	return FindPin(*GetCasePinName(CaseKeyPinNamePrefix.ToString(), CaseIndex));
 }
 
 UEdGraphPin* UK2Node_CasePairedPinsNode::GetCaseValuePinFromCaseKeyPin(const UEdGraphPin* KeyPin) const
 {
-	FString KeyPinName = KeyPin->GetFName().ToString();
-
-	FString Dummy;
-	FString Suffix;
-	if (!KeyPinName.Split(CaseKeyPinNamePrefix.ToString(), &Dummy, &Suffix, ESearchCase::CaseSensitive))
+	int32 CaseIndex = INDEX_NONE;
+	if (!TryGetCasePinIndex(KeyPin, CaseKeyPinNamePrefix.ToString(), CaseIndex))
 	{
 		return nullptr;
 	}
 
-	return FindPin(CaseValuePinNamePrefix.ToString() + Suffix);
+	return FindPin(*GetCasePinName(CaseValuePinNamePrefix.ToString(), CaseIndex));
 }
 
 void UK2Node_CasePairedPinsNode::AddCasePinLast()
