@@ -256,6 +256,10 @@ void UK2Node_ForEachSet::PostReconstructNode()
 	// 参考 UE 源码 K2Node_GetArrayItem::PostReconstructNode 实现
 	UEdGraphPin* SetPin = GetSetPin();
 	UEdGraphPin* ValuePin = GetValuePin();
+	if (!SetPin || !ValuePin)
+	{
+		return;
+	}
 	
 	if (SetPin->LinkedTo.Num() > 0 || ValuePin->LinkedTo.Num() > 0)
 	{
@@ -271,13 +275,19 @@ void UK2Node_ForEachSet::PostReconstructNode()
 		{
 			ValuePin->PinType = SetPin->PinType;
 			ValuePin->PinType.ContainerType = EPinContainerType::None;
-			GetGraph()->NotifyGraphChanged();
+			if (UEdGraph* Graph = GetGraph())
+			{
+				Graph->NotifyGraphChanged();
+			}
 		}
 		else if (bSetIsWildcard && !bValueIsWildcard)
 		{
 			SetPin->PinType = ValuePin->PinType;
 			SetPin->PinType.ContainerType = EPinContainerType::Set;
-			GetGraph()->NotifyGraphChanged();
+			if (UEdGraph* Graph = GetGraph())
+			{
+				Graph->NotifyGraphChanged();
+			}
 		}
 	}
 }
@@ -336,32 +346,32 @@ bool UK2Node_ForEachSet::IsConnectionDisallowed(const UEdGraphPin* MyPin, const 
 
 UEdGraphPin* UK2Node_ForEachSet::GetLoopBodyPin() const
 {
-    return FindPinChecked(ForEachSetHelper::LoopBodyPinName, EGPD_Output);
+    return FindPin(ForEachSetHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachSet::GetSetPin() const
 {
-    return FindPinChecked(ForEachSetHelper::SetPinName, EGPD_Input);
+    return FindPin(ForEachSetHelper::SetPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_ForEachSet::GetValuePin() const
 {
-    return FindPinChecked(ForEachSetHelper::ValuePinName, EGPD_Output);
+    return FindPin(ForEachSetHelper::ValuePinName, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachSet::GetCompletedPin() const
 {
-    return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+    return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachSet::GetBreakPin() const
 {
-    return FindPinChecked(ForEachSetHelper::BreakPinName, EGPD_Input);
+    return FindPin(ForEachSetHelper::BreakPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_ForEachSet::GetIndexPin() const
 {
-    return FindPinChecked(ForEachSetHelper::IndexPinName, EGPD_Output);
+    return FindPin(ForEachSetHelper::IndexPinName, EGPD_Output);
 }
 
 void UK2Node_ForEachSet::PropagatePinType() const
@@ -369,6 +379,10 @@ void UK2Node_ForEachSet::PropagatePinType() const
     bool bNotifyGraphChanged = false;
     UEdGraphPin* SetPin = GetSetPin();
     UEdGraphPin* ValuePin = GetValuePin();
+	if (!SetPin || !ValuePin)
+	{
+		return;
+	}
     
     // 【修复】无连接的情况：仅在引脚当前为Wildcard时才重置
     // 这样可以保留加载时已序列化的类型信息
@@ -482,7 +496,10 @@ void UK2Node_ForEachSet::PropagatePinType() const
     
     if (bNotifyGraphChanged)
     {
-        GetGraph()->NotifyGraphChanged();
+		if (UEdGraph* Graph = GetGraph())
+		{
+			Graph->NotifyGraphChanged();
+		}
     }
 }
 

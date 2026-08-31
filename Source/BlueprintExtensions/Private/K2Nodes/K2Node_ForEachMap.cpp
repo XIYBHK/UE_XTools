@@ -347,6 +347,10 @@ void UK2Node_ForEachMap::PostReconstructNode()
 	UEdGraphPin* MapPin = GetMapPin();
 	UEdGraphPin* KeyPin = GetKeyPin();
 	UEdGraphPin* ValuePin = GetValuePin();
+	if (!MapPin || !KeyPin || !ValuePin)
+	{
+		return;
+	}
 	
 	if (MapPin->LinkedTo.Num() > 0 || KeyPin->LinkedTo.Num() > 0 || ValuePin->LinkedTo.Num() > 0)
 	{
@@ -376,7 +380,10 @@ void UK2Node_ForEachMap::PostReconstructNode()
 				MapPin->PinType.PinValueType.TerminalSubCategory = ValuePin->PinType.PinSubCategory;
 				MapPin->PinType.PinValueType.TerminalSubCategoryObject = ValuePin->PinType.PinSubCategoryObject;
 			}
-			GetGraph()->NotifyGraphChanged();
+			if (UEdGraph* Graph = GetGraph())
+			{
+				Graph->NotifyGraphChanged();
+			}
 		}
 		else if (!bMapKeyIsWildcard || !bMapValueIsWildcard)
 		{
@@ -392,7 +399,10 @@ void UK2Node_ForEachMap::PostReconstructNode()
 				ValuePin->PinType.PinSubCategory = MapPin->PinType.PinValueType.TerminalSubCategory;
 				ValuePin->PinType.PinSubCategoryObject = MapPin->PinType.PinValueType.TerminalSubCategoryObject;
 			}
-			GetGraph()->NotifyGraphChanged();
+			if (UEdGraph* Graph = GetGraph())
+			{
+				Graph->NotifyGraphChanged();
+			}
 		}
 	}
 }
@@ -446,6 +456,11 @@ void UK2Node_ForEachMap::AllocateDefaultPins()
 
 bool UK2Node_ForEachMap::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
+	if (!MyPin || !OtherPin)
+	{
+		return false;
+	}
+
     if (Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason))
     {
         return true;
@@ -492,37 +507,37 @@ bool UK2Node_ForEachMap::IsConnectionDisallowed(const UEdGraphPin* MyPin, const 
 
 UEdGraphPin* UK2Node_ForEachMap::GetLoopBodyPin() const
 {
-	return FindPinChecked(ForEachMapHelper::LoopBodyPinName, EGPD_Output);
+	return FindPin(ForEachMapHelper::LoopBodyPinName, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachMap::GetBreakPin() const
 {
-	return FindPinChecked(ForEachMapHelper::BreakPinName, EGPD_Input);
+	return FindPin(ForEachMapHelper::BreakPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_ForEachMap::GetCompletedPin() const
 {
-	return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+	return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachMap::GetMapPin() const
 {
-	return FindPinChecked(ForEachMapHelper::MapPinName, EGPD_Input);
+	return FindPin(ForEachMapHelper::MapPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_ForEachMap::GetKeyPin() const
 {
-	return FindPinChecked(ForEachMapHelper::KeyPinName, EGPD_Output);
+	return FindPin(ForEachMapHelper::KeyPinName, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachMap::GetValuePin() const
 {
-	return FindPinChecked(ForEachMapHelper::ValuePinName, EGPD_Output);
+	return FindPin(ForEachMapHelper::ValuePinName, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_ForEachMap::GetIndexPin() const
 {
-	return FindPinChecked(ForEachMapHelper::IndexPinName, EGPD_Output);
+	return FindPin(ForEachMapHelper::IndexPinName, EGPD_Output);
 }
 
 void UK2Node_ForEachMap::PropagatePinType() const
@@ -531,6 +546,10 @@ void UK2Node_ForEachMap::PropagatePinType() const
     UEdGraphPin* MapPin = GetMapPin();
     UEdGraphPin* KeyPin = GetKeyPin();
     UEdGraphPin* ValuePin = GetValuePin();
+	if (!MapPin || !KeyPin || !ValuePin)
+	{
+		return;
+	}
 
 	// 【修复】第一种情况：Map引脚无连接
 	if (MapPin->LinkedTo.Num() == 0)
@@ -639,7 +658,10 @@ void UK2Node_ForEachMap::PropagatePinType() const
 
     if (bNotifyGraphChanged)
     {
-        GetGraph()->NotifyGraphChanged();
+		if (UEdGraph* Graph = GetGraph())
+		{
+			Graph->NotifyGraphChanged();
+		}
     }
 }
 

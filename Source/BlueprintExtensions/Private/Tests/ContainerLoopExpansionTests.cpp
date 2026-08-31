@@ -168,4 +168,42 @@ bool FContainerLoopsRejectUnconnectedInputTest::RunTest(const FString& Parameter
 	return bMapPassed && bSetPassed && bArrayPassed && !HasAnyErrors();
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FContainerLoopsRejectMissingPinsTest,
+	"XTools.BlueprintExtensions.ContainerLoops.RejectMissingPins",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FContainerLoopsRejectMissingPinsTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("节点引脚不完整"), EAutomationExpectedErrorFlags::Contains, 2);
+
+	UEdGraph* EventGraph = nullptr;
+	UBlueprint* Blueprint = CreateContainerLoopBlueprint(
+		TEXT("XToolsContainerLoopMissingPinsTest"), EventGraph);
+	if (!TestNotNull(TEXT("创建容器循环残缺节点蓝图"), Blueprint)
+		|| !TestNotNull(TEXT("获取容器循环残缺节点事件图"), EventGraph))
+	{
+		return false;
+	}
+
+	FKismetCompilerOptions Options;
+	UK2Node_ForEachMap* MapLoop = AddContainerLoopNode<UK2Node_ForEachMap>(EventGraph);
+	MapLoop->Pins.Remove(MapLoop->GetKeyPin());
+	FCompilerResultsLog MapResults;
+	FContainerLoopCompilerContext MapCompilerContext(Blueprint, MapResults, Options);
+	MapLoop->ExpandNode(MapCompilerContext, EventGraph);
+
+	UK2Node_ForEachSet* SetLoop = AddContainerLoopNode<UK2Node_ForEachSet>(EventGraph);
+	SetLoop->Pins.Remove(SetLoop->GetValuePin());
+	FCompilerResultsLog SetResults;
+	FContainerLoopCompilerContext SetCompilerContext(Blueprint, SetResults, Options);
+	SetLoop->ExpandNode(SetCompilerContext, EventGraph);
+
+	return TestEqual(TEXT("Map循环缺失引脚产生编译错误"), MapResults.NumErrors, 1)
+		&& TestEqual(TEXT("Set循环缺失引脚产生编译错误"), SetResults.NumErrors, 1)
+		&& TestEqual(TEXT("Map循环缺失引脚不降级为警告"), MapResults.NumWarnings, 0)
+		&& TestEqual(TEXT("Set循环缺失引脚不降级为警告"), SetResults.NumWarnings, 0)
+		&& !HasAnyErrors();
+}
+
 #endif
