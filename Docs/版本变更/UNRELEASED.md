@@ -75,7 +75,11 @@
 ### FieldSystemExtensions
 - 修复 运行时关闭 Spawn 监听配置后 EndPlay 未注销既有监听器
 - 修复 EndPlay 后保留 GC、筛选器及应用状态缓存
+- 修复 刷新筛选缓存后旧 GC 残留 InitializationFields 引用
+- 修复 关闭筛选后重新应用仍保留旧筛选器缓存
+- 优化 Field System 蓝图用户警告接入统一错误报告
 - 测试 增加 Field Actor 生命周期清理护栏
+- 测试 增加筛选刷新解除旧 GC 注册护栏
 
 ### FormationSystem
 - 修复 对齐力输入数组长度不一致时仍继续索引导致的越界风险
