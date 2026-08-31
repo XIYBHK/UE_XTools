@@ -71,6 +71,9 @@
 
 ### XTools_ComponentTimeline
 - 修复 蓝图差异视图遗漏线性颜色轨道
+- 修复 动态时间轴未加入 Actor 实例组件集合
+- 修复 普通 UObject 时间轴所有者无法取得宿主 World
+- 测试 增加动态时间轴组件归属与注册护栏
 
 ### FieldSystemExtensions
 - 修复 运行时关闭 Spawn 监听配置后 EndPlay 未注销既有监听器
