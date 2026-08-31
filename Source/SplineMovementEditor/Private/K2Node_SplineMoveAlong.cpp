@@ -140,7 +140,10 @@ void UK2Node_SplineMoveAlong::GetMenuActions(FBlueprintActionDatabaseRegistrar& 
 	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
 		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+		if (NodeSpawner)
+		{
+			ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+		}
 	}
 }
 
