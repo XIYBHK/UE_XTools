@@ -6,6 +6,7 @@
  */
 
 #include "ComponentTimelineLibrary.h"
+#include "ComponentTimelineLibraryInternal.h"
 #include "Engine/TimelineTemplate.h"
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
@@ -29,6 +30,26 @@ namespace ComponentTimeline
 
 		// IsValid 对已销毁/pending-kill（MarkAsGarbage）的对象返回 false
 		return IsValid(CurrentValue) ? ETimelineBindDecision::Skip : ETimelineBindDecision::RebindStale;
+	}
+}
+
+namespace ComponentTimeline::Private
+{
+	UTimelineComponent* CreateTimelineInstance(AActor* ActorOwner, const FName Name)
+	{
+		if (!IsValid(ActorOwner))
+		{
+			return nullptr;
+		}
+
+		UTimelineComponent* Timeline = NewObject<UTimelineComponent>(ActorOwner, Name);
+		if (!IsValid(Timeline))
+		{
+			return nullptr;
+		}
+
+		ActorOwner->AddInstanceComponent(Timeline);
+		return Timeline;
 	}
 }
 
@@ -74,13 +95,11 @@ namespace
 
 		// 创建唯一的时间轴组件名称
 		FName Name = MakeUniqueObjectName(ActorOwner,  UTimelineComponent::StaticClass(), *FString::Printf(TEXT("%s_%s"), *BlueprintOwner->GetName(), *TimelineTemplate->GetVariableName().ToString()));
-		UTimelineComponent* NewTimeline = NewObject<UTimelineComponent>(ActorOwner, Name);
-
-		// 修复：更改为Instance模式，防止Construction Script重新运行时被销毁
-		// 因为InitializeComponentTimelines是在BeginPlay中调用的，一旦组件被销毁将无法重建
-		NewTimeline->CreationMethod = EComponentCreationMethod::Instance;
-		// NewTimeline->CreationMethod = EComponentCreationMethod::UserConstructionScript; // 标记为蓝图创建，以便在重新运行构造脚本时清理
-		// ActorOwner->BlueprintCreatedComponents.Add(NewTimeline); // 添加到数组以便保存
+		UTimelineComponent* NewTimeline = ComponentTimeline::Private::CreateTimelineInstance(ActorOwner, Name);
+		if (!NewTimeline)
+		{
+			return;
+		}
 
 		NewTimeline->SetNetAddressable();	// 设置组件具有可用于复制的稳定名称
 
@@ -223,10 +242,10 @@ void UComponentTimelineLibrary::InitializeTimelines(UObject* BlueprintOwner, AAc
 	{
 		if (bErrorFree)
 		{
-			UWorld* OwnerWorld = BlueprintOwner->GetWorld();
+			UWorld* OwnerWorld = ActorOwner->GetWorld();
 			if (!IsValid(OwnerWorld))
 			{
-				UE_LOG(LogComponentTimelineRuntime, Warning, TEXT("InitializeTimelines: BlueprintOwner World 无效，跳过时间轴初始化"));
+				UE_LOG(LogComponentTimelineRuntime, Warning, TEXT("InitializeTimelines: ActorOwner World 无效，跳过时间轴初始化"));
 				return;
 			}
 
