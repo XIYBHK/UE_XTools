@@ -35,6 +35,10 @@
 ### BlueprintExtensionsRuntime
 - 修复 Map空结果重复初始化输出
 - 修复 切换样条复用旧距离缓存
+- 修复 字符串反射接受尾随垃圾
+- 优化 反射写入失败保持原值
+- 调整 变量反射开放C++调用
+- 测试 增加反射写入原子性护栏
 
 ### BlueprintExtensions
 - 修复 Map查找漏断不兼容连接
