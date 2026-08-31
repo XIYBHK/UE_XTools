@@ -10,6 +10,7 @@
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "PhysicsProxy/GeometryCollectionPhysicsProxy.h"
 #include "PBDRigidsSolver.h"
+#include "XToolsErrorReporter.h"
 
 AXFieldSystemActor::AXFieldSystemActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -90,6 +91,8 @@ void AXFieldSystemActor::ApplyFilter()
 {
 	if (!bEnableFiltering)
 	{
+		CachedFilter = nullptr;
+		bFilterApplied = false;
 		return;
 	}
 
@@ -283,7 +286,32 @@ void AXFieldSystemActor::CollectGeometryCollections()
 
 void AXFieldSystemActor::RefreshGeometryCollectionCache()
 {
+	const TArray<TWeakObjectPtr<UGeometryCollectionComponent>> PreviousGeometryCollections = CachedGeometryCollections;
 	CollectGeometryCollections();
+
+	for (const TWeakObjectPtr<UGeometryCollectionComponent>& WeakPreviousGC : PreviousGeometryCollections)
+	{
+		UGeometryCollectionComponent* PreviousGC = WeakPreviousGC.Get();
+		if (!PreviousGC)
+		{
+			continue;
+		}
+
+		const bool bStillCached = CachedGeometryCollections.ContainsByPredicate(
+			[PreviousGC](const TWeakObjectPtr<UGeometryCollectionComponent>& WeakCurrentGC)
+			{
+				return WeakCurrentGC.Get() == PreviousGC;
+			});
+		if (!bStillCached)
+		{
+			PreviousGC->InitializationFields.Remove(this);
+		}
+	}
+
+	if (bAutoRegisterToGCs && CachedGeometryCollections.Num() > 0)
+	{
+		RegisterToFilteredGCs();
+	}
 }
 
 void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
@@ -298,7 +326,7 @@ void AXFieldSystemActor::ApplyFieldToFilteredGeometryCollections(
 
 	if (CachedGeometryCollections.Num() == 0)
 	{
-		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
+		XTOOLS_LOG_WARNING(LogFieldSystemExtensions, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
 		return;
 	}
 
@@ -367,7 +395,7 @@ void AXFieldSystemActor::RegisterToFilteredGCs()
 {
 	if (CachedGeometryCollections.Num() == 0)
 	{
-		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections to register!"));
+		XTOOLS_LOG_WARNING(LogFieldSystemExtensions, TEXT("XFieldSystemActor: No cached GeometryCollections to register!"));
 		return;
 	}
 
@@ -408,14 +436,14 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 {
 	if (CachedGeometryCollections.Num() == 0)
 	{
-		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
+		XTOOLS_LOG_WARNING(LogFieldSystemExtensions, TEXT("XFieldSystemActor: No cached GeometryCollections! Call RefreshGeometryCollectionCache or enable filtering in BeginPlay."));
 		return;
 	}
 
 	UFieldSystemComponent* FieldComp = GetFieldSystemComponent();
 	if (!FieldComp)
 	{
-		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: No FieldSystemComponent found!"));
+		XTOOLS_LOG_WARNING(LogFieldSystemExtensions, TEXT("XFieldSystemActor: No FieldSystemComponent found!"));
 		return;
 	}
 
@@ -424,7 +452,7 @@ void AXFieldSystemActor::ApplyCurrentFieldToFilteredGCs()
 	
 	if (ConstructionFields.Num() == 0)
 	{
-		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemActor: FieldSystemComponent has no construction fields configured!"));
+		XTOOLS_LOG_WARNING(LogFieldSystemExtensions, TEXT("XFieldSystemActor: FieldSystemComponent has no construction fields configured!"));
 		return;
 	}
 

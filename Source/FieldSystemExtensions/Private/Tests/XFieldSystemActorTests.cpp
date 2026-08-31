@@ -105,6 +105,68 @@ bool FXFieldSystemActor_FiltersActorsByClassAndTag::RunTest(const FString& Param
 	FieldActor->ExcludeActorTags = { TEXT("Affected") };
 	TestFalse(TEXT("排除标签应优先拒绝Actor"), FieldActor->ShouldAffectActor(TargetActor));
 
+	FieldActor->ApplyFilter();
+	TestNotNull(TEXT("启用筛选后应创建筛选器缓存"), FieldActor->GetCachedFilter());
+	FieldActor->bEnableFiltering = false;
+	FieldActor->ApplyFilter();
+	TestNull(TEXT("关闭筛选后重新应用应释放旧筛选器缓存"), FieldActor->GetCachedFilter());
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FXFieldSystemActor_RefreshRemovesStaleInitializationField,
+	"XTools.FieldSystem.Actor.RefreshRemovesStaleInitializationField",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXFieldSystemActor_RefreshRemovesStaleInitializationField::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("XFieldSystemActorRefreshTest"));
+	TestNotNull(TEXT("应创建缓存刷新测试世界"), World);
+	if (!World)
+	{
+		return false;
+	}
+
+	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
+	WorldContext.SetCurrentWorld(World);
+	FURL URL;
+	World->InitializeActorsForPlay(URL);
+
+	AActor* TargetActor = World->SpawnActor<AActor>();
+	UGeometryCollectionComponent* GeometryCollection = TargetActor
+		? NewObject<UGeometryCollectionComponent>(TargetActor)
+		: nullptr;
+	if (TargetActor && GeometryCollection)
+	{
+		TargetActor->AddInstanceComponent(GeometryCollection);
+		TargetActor->Tags.Add(TEXT("Affected"));
+	}
+
+	AXFieldSystemActor* FieldActor = World->SpawnActor<AXFieldSystemActor>();
+	TestNotNull(TEXT("应创建缓存刷新测试Field Actor"), FieldActor);
+	TestNotNull(TEXT("应创建缓存刷新测试GeometryCollection"), GeometryCollection);
+	if (FieldActor && GeometryCollection)
+	{
+		FieldActor->bEnableFiltering = true;
+		FieldActor->bEnableActorTagFilter = true;
+		FieldActor->IncludeActorTags = { TEXT("Affected") };
+		FieldActor->bAutoRegisterToGCs = true;
+		FieldActor->DispatchBeginPlay();
+
+		TestTrue(TEXT("匹配筛选的GC应注册Field初始化引用"),
+			GeometryCollection->InitializationFields.Contains(FieldActor));
+
+		TargetActor->Tags.Remove(TEXT("Affected"));
+		FieldActor->RefreshGeometryCollectionCache();
+		TestFalse(TEXT("刷新后不再匹配的GC应解除Field初始化引用"),
+			GeometryCollection->InitializationFields.Contains(FieldActor));
+
+		FieldActor->RouteEndPlay(EEndPlayReason::RemovedFromWorld);
+	}
+
+	GEngine->DestroyWorldContext(World);
+	World->DestroyWorld(false);
 	return true;
 }
 

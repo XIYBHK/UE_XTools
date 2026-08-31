@@ -3,6 +3,7 @@
 #include "XFieldSystemLibrary.h"
 #include "XFieldSystemActor.h"
 #include "FieldSystemExtensions.h"
+#include "XToolsErrorReporter.h"
 
 UFieldSystemMetaDataFilter* UXFieldSystemLibrary::CreateBasicFilter(
 	TEnumAsByte<EFieldObjectType> ObjectType,
@@ -42,7 +43,7 @@ UFieldSystemMetaDataFilter* UXFieldSystemLibrary::GetOrCreateActorFilter(AXField
 {
 	if (!Actor)
 	{
-		UE_LOG(LogFieldSystemExtensions, Warning, TEXT("XFieldSystemLibrary: Invalid Actor provided to GetOrCreateActorFilter"));
+		XTOOLS_LOG_WARNING(LogFieldSystemExtensions, TEXT("XFieldSystemLibrary: Invalid Actor provided to GetOrCreateActorFilter"));
 		return nullptr;
 	}
 
