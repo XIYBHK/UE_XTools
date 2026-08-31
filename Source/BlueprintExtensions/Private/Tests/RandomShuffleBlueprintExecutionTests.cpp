@@ -62,6 +62,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRandomShuffleBlueprint_ExecutesCustomThunkArrayNode::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Engine/Transient does not exist"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
 	UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsRandomShuffleBlueprintTest"));
 	TestNotNull(TEXT("应创建瞬态测试蓝图"), Blueprint);
 	if (!Blueprint)

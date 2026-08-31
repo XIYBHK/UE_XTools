@@ -231,8 +231,8 @@ void UK2Node_MultiBranch::CreateFunctionPin()
 	UFunction* Function = FindUField<UFunction>(ConditionPreProcessFuncClass, ConditionPreProcessFuncName);
 	if (Function != nullptr && Function->HasAllFunctionFlags(FUNC_Static))
 	{
-		UBlueprint* Blueprint = GetBlueprint();
-		if (Blueprint != nullptr)
+		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this);
+		if (Blueprint && Blueprint->SkeletonGeneratedClass)
 		{
 			UClass* FunctionOwnerClass = Function->GetOuterUClass();
 			if (!Blueprint->SkeletonGeneratedClass->IsChildOf(FunctionOwnerClass))

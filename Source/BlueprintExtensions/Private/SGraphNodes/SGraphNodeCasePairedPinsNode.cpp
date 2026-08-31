@@ -50,10 +50,16 @@ FReply SGraphNodeCasePairedPinsNode::OnAddPin()
 	CasePairedPinsNode->Modify();
 
 	CasePairedPinsNode->AddCasePinLast();
-	FBlueprintEditorUtils::MarkBlueprintAsModified(CasePairedPinsNode->GetBlueprint());
+	if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(CasePairedPinsNode))
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+	}
 
 	UpdateGraphNode();
-	GraphNode->GetGraph()->NotifyGraphChanged();
+	if (UEdGraph* Graph = GraphNode->GetGraph())
+	{
+		Graph->NotifyGraphChanged();
+	}
 
 	return FReply::Handled();
 }

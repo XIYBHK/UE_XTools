@@ -251,7 +251,10 @@ void UK2Node_MapFindRef::SetDesiredReturnType(bool bAsReference)
 	if (bWasReference != bReturnByRefDesired && Pins.Num() > 0)
 	{
 		ReconstructNode();
-		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
+		if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+		}
 	}
 }
 
@@ -269,7 +272,7 @@ void UK2Node_MapFindRef::PropagatePinType()
 		const bool ValuePinConnected = ValuePin->LinkedTo.Num() > 0;
 
 		UClass const* CallingContext = nullptr;
-		if (UBlueprint const* Blueprint = GetBlueprint())
+		if (UBlueprint const* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this))
 		{
 			CallingContext = Blueprint->GeneratedClass;
 			if (CallingContext == nullptr)

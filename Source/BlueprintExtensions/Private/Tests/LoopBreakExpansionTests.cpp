@@ -321,6 +321,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FLoopBreakExpansionTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Engine/Transient does not exist"),
+		EAutomationExpectedErrorFlags::Contains, 6);
+	AddExpectedError(TEXT("带延迟的ForEachLoop  节点引脚不完整"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
 	{
 		UEdGraph* EventGraph = nullptr;
 		UBlueprint* Blueprint = CreateTestBlueprint(TEXT("XToolsLoopBreakDelayTest"), EventGraph);
@@ -523,6 +528,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FLoopSplitPinValueExpansionTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Engine/Transient does not exist"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+
 	// 回归测试：结构体 Value 引脚被「分割结构体引脚」后，链接挂在子引脚上。
 	// 若 ExpandNode 不先展开拆分引脚，MovePinLinksToIntermediate 只能迁移父引脚的空链接，
 	// 子引脚链接会在收尾断链时丢失，下游静默读到默认值（如 Transform 全 0）。
@@ -661,6 +669,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FLoopDefaultValuePropagationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("ScanPathsSynchronous: Package /Engine/Transient does not exist"),
+		EAutomationExpectedErrorFlags::Contains, 2);
+
 	// 回归测试：CopyPinLinksToIntermediate 只搬链接不搬默认值。
 	// Delay/LastIndex 等输入引脚未连接时，「Delay<=0 判定」「Break 越界哨兵」等
 	// 经 Copy 连接的中间引脚必须与源引脚默认值一致，否则静默走零延迟直通/Break 失效。

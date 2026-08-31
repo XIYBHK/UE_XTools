@@ -119,7 +119,10 @@ void UK2Node_CasePairedPinsNode::AddCasePinAfter(UEdGraphPin* Pin)
 				FText::AsCultureInvariant(GetCasePinFriendlyName(CaseKeyPinFriendlyNamePrefix.ToString(), Index + 1));
 		}
 
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());
+		if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
 	}
 }
 
@@ -163,7 +166,10 @@ void UK2Node_CasePairedPinsNode::AddCasePinBefore(UEdGraphPin* Pin)
 				FText::AsCultureInvariant(GetCasePinFriendlyName(CaseKeyPinFriendlyNamePrefix.ToString(), Index + 1));
 		}
 
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());
+		if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
 	}
 }
 
@@ -340,7 +346,10 @@ void UK2Node_CasePairedPinsNode::RemoveCasePinAt(int32 CaseIndex)
 		}
 	}
 
-	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());
+	if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(this))
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	}
 }
 
 int32 UK2Node_CasePairedPinsNode::GetCasePinCount() const
