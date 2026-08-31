@@ -92,12 +92,13 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 		return;
 	}
 
-	// 【最佳实践 3.1】：Map 必须连接；Key 允许使用默认字面量
-	// 【UE 最佳实践】用户输入错误使用 Warning 而非 Error，避免触发 EdGraphNode.h:563 断言崩溃
+	// Map 必须连接；Key 允许使用默认字面量。
 	if (MapPin->LinkedTo.Num() == 0)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("MapNotConnected", "MapFindRef requires a Map connection @@").ToString(), this);
-		K2NodeHelpers::EndExpandNode(this);
+		K2NodeHelpers::ReportExpandError(
+			CompilerContext,
+			this,
+			LOCTEXT("MapNotConnected", "MapFindRef requires a Map connection @@"));
 		return;
 	}
 
@@ -107,24 +108,33 @@ void UK2Node_MapFindRef::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CallFindNode->AllocateDefaultPins();
 
 	// 【最佳实践 3.3】：使用MovePinLinksToIntermediate转移引脚连接
-	UEdGraphPin* CallMapPin = CallFindNode->FindPinChecked(TEXT("TargetMap"), EGPD_Input);
+	UEdGraphPin* CallMapPin = CallFindNode->FindPin(TEXT("TargetMap"), EGPD_Input);
+	UEdGraphPin* CallKeyPin = CallFindNode->FindPin(TEXT("Key"), EGPD_Input);
+	UEdGraphPin* CallValuePin = CallFindNode->FindPin(TEXT("Value"), EGPD_Output);
+	UEdGraphPin* CallFoundPin = CallFindNode->GetReturnValuePin();
+	if (!K2NodeHelpers::BeginExpandNode(
+		CompilerContext,
+		this,
+		{CallMapPin, CallKeyPin, CallValuePin, CallFoundPin},
+		LOCTEXT("InvalidIntermediatePins", "MapFindRef failed to allocate its function pins @@")))
+	{
+		return;
+	}
+
 	CallMapPin->PinType = MapPin->PinType;
 	CompilerContext.MovePinLinksToIntermediate(*MapPin, *CallMapPin);
 
-	UEdGraphPin* CallKeyPin = CallFindNode->FindPinChecked(TEXT("Key"), EGPD_Input);
 	CallKeyPin->PinType = KeyPin->PinType;
 	CallKeyPin->PinType.ContainerType = EPinContainerType::None;
 	CompilerContext.MovePinLinksToIntermediate(*KeyPin, *CallKeyPin);
 
 	// UBlueprintMapLibrary::Map_Find 始终将值复制到输出，不能伪造引用语义。
-	UEdGraphPin* CallValuePin = CallFindNode->FindPinChecked(TEXT("Value"), EGPD_Output);
 	CallValuePin->PinType = ValuePin->PinType;
 	CallValuePin->PinType.ContainerType = EPinContainerType::None;
 	CallValuePin->PinType.bIsReference = false;
 	CompilerContext.MovePinLinksToIntermediate(*ValuePin, *CallValuePin);
 
 	// 连接Found返回值
-	UEdGraphPin* CallFoundPin = CallFindNode->GetReturnValuePin();
 	CompilerContext.MovePinLinksToIntermediate(*FoundPin, *CallFoundPin);
 
 	// 【最佳实践 3.4】：在末尾必须调用BreakAllNodeLinks清理节点

@@ -230,14 +230,50 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
 	TArray<CasePinPair> CasePinPairs = GetCasePinPairs();
-	if (CasePinPairs.Num() == 0 || !CasePinPairs[0].Key)
+	UEdGraphPin* DefaultOptionPin = GetDefaultOptionPin();
+	UEdGraphPin* ReturnValuePin = GetReturnValuePin();
+	if (CasePinPairs.Num() == 0 || !DefaultOptionPin || !ReturnValuePin)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("MultiConditionalSelect_NoCasePins", "警告：[多条件选择] 节点 @@ 缺少有效条件分支。").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(
+			CompilerContext,
+			this,
+			LOCTEXT("MultiConditionalSelect_InvalidPins", "Multi Conditional Select node has invalid pins @@"));
 		return;
+	}
+	for (const CasePinPair& Pair : CasePinPairs)
+	{
+		if (!Pair.Key || !Pair.Value)
+		{
+			K2NodeHelpers::ReportExpandError(
+				CompilerContext,
+				this,
+				LOCTEXT("MultiConditionalSelect_InvalidCasePins", "Multi Conditional Select node has invalid case pins @@"));
+			return;
+		}
 	}
 
 	UEdGraphPin* ReferenceOptionPin = CasePinPairs[0].Key;
+	if (ReferenceOptionPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+	{
+		K2NodeHelpers::ReportExpandError(
+			CompilerContext,
+			this,
+			LOCTEXT("MultiConditionalSelect_UnresolvedType", "Multi Conditional Select node has an unresolved option type @@"));
+		return;
+	}
+
+	UFunction* ArrayFindFunction = UKismetArrayLibrary::StaticClass()->FindFunctionByName(
+		GET_FUNCTION_NAME_CHECKED(UKismetArrayLibrary, Array_Find));
+	UFunction* EqualEqualIntIntFunction = UKismetMathLibrary::StaticClass()->FindFunctionByName(
+		GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, EqualEqual_IntInt));
+	if (!ArrayFindFunction || !EqualEqualIntIntFunction)
+	{
+		K2NodeHelpers::ReportExpandError(
+			CompilerContext,
+			this,
+			LOCTEXT("MultiConditionalSelect_MissingFunctions", "Multi Conditional Select node failed to resolve engine functions @@"));
+		return;
+	}
 
 	UK2Node_Select* Select1st = CompilerContext.SpawnIntermediateNode<UK2Node_Select>(this, SourceGraph);
 	Select1st->AllocateDefaultPins();
@@ -263,29 +299,57 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	}
 
 	UK2Node_CallFunction* ArrayFind = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	UClass* KismetArrayLibrary = UKismetArrayLibrary::StaticClass();
-	UFunction* ArrayFindFunction = KismetArrayLibrary->FindFunctionByName("Array_Find");
 	ArrayFind->SetFromFunction(ArrayFindFunction);
 	ArrayFind->AllocateDefaultPins();
 
 	UK2Node_CallFunction* IntEqual = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	UClass* KismetMathLibrary = UKismetMathLibrary::StaticClass();
-	UFunction* EqualEqualIntIntFunction = KismetMathLibrary->FindFunctionByName("EqualEqual_IntInt");
 	IntEqual->SetFromFunction(EqualEqualIntIntFunction);
 	IntEqual->AllocateDefaultPins();
 
-	// Link between outer and 1st Select
 	TArray<UEdGraphPin*> Select1stOptionPins;
 	Select1st->GetOptionPins(Select1stOptionPins);
+	TArray<UEdGraphPin*> KeyPins;
+	TArray<UEdGraphPin*> ValuePins;
+	MakeArray->GetKeyAndValuePins(KeyPins, ValuePins);
+	UEdGraphPin* ArrayPin = MakeArray->GetOutputPin();
+	UEdGraphPin* TargetArrayPin = ArrayFind->FindPin(TEXT("TargetArray"), EGPD_Input);
+	UEdGraphPin* ItemToFindPin = ArrayFind->FindPin(TEXT("ItemToFind"), EGPD_Input);
+	UEdGraphPin* ArrayFindOutputPin = ArrayFind->GetReturnValuePin();
+	UEdGraphPin* Select1stIndexPin = Select1st->GetIndexPin();
+	UEdGraphPin* IntEqualAPin = IntEqual->FindPin(TEXT("A"), EGPD_Input);
+	UEdGraphPin* IntEqualBPin = IntEqual->FindPin(TEXT("B"), EGPD_Input);
+	UEdGraphPin* Select1stReturnValuePin = Select1st->GetReturnValuePin();
+	UEdGraphPin* IntEqualReturnValuePin = IntEqual->GetReturnValuePin();
+	UEdGraphPin* Select2ndIndexPin = Select2nd->GetIndexPin();
+	TArray<UEdGraphPin*> Select2ndOptionPins;
+	Select2nd->GetOptionPins(Select2ndOptionPins);
+	UEdGraphPin* Select2ndReturnValuePin = Select2nd->GetReturnValuePin();
+
+	if (Select1stOptionPins.Num() < CasePinPairs.Num() || KeyPins.Num() < CasePinPairs.Num() || Select2ndOptionPins.Num() < 2 ||
+		!K2NodeHelpers::BeginExpandNode(
+			CompilerContext,
+			this,
+			{ArrayPin, TargetArrayPin, ItemToFindPin, ArrayFindOutputPin, Select1stIndexPin, IntEqualAPin, IntEqualBPin,
+			 Select1stReturnValuePin, IntEqualReturnValuePin, Select2ndIndexPin, Select2ndReturnValuePin},
+			LOCTEXT("MultiConditionalSelect_InvalidIntermediatePins", "Multi Conditional Select failed to allocate its intermediate pins @@")))
+	{
+		if (Select1stOptionPins.Num() < CasePinPairs.Num() || KeyPins.Num() < CasePinPairs.Num() || Select2ndOptionPins.Num() < 2)
+		{
+			K2NodeHelpers::ReportExpandError(
+				CompilerContext,
+				this,
+				LOCTEXT("MultiConditionalSelect_InvalidIntermediatePinCounts", "Multi Conditional Select allocated an invalid number of intermediate pins @@"));
+		}
+		return;
+	}
+
+	// Link between outer and 1st Select
 	for (int Index = 0; Index < CasePinPairs.Num(); ++Index)
 	{
 		CompilerContext.MovePinLinksToIntermediate(*CasePinPairs[Index].Key, *Select1stOptionPins[Index]);
 	}
 
 	// Link between outer and Make Array
-	TArray<UEdGraphPin*> KeyPins;
-	TArray<UEdGraphPin*> ValuePins;
-	MakeArray->GetKeyAndValuePins(KeyPins, ValuePins);
 	for (int Index = 0; Index < CasePinPairs.Num(); ++Index)
 	{
 		KeyPins[Index]->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
@@ -293,14 +357,10 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	}
 
 	// Link between Make Array and Array Find
-	UEdGraphPin* ArrayPin = MakeArray->GetOutputPin();
-	UEdGraphPin* TargetArrayPin = ArrayFind->FindPinChecked(TEXT("TargetArray"));
-	UEdGraphPin* ItemToFindPin = ArrayFind->FindPinChecked(TEXT("ItemToFind"));
 	ArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
 	if (!K2NodeHelpers::TryConnect(CompilerContext, ArrayPin, TargetArrayPin))
 	{
-		// 连接失败：TryConnect 内部已记录 Warning 日志，终止展开避免生成残缺数据流
-		BreakAllNodeLinks();
+		K2NodeHelpers::EndExpandNode(this);
 		return;
 	}
 	TargetArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
@@ -308,53 +368,39 @@ void UK2Node_MultiConditionalSelect::ExpandNode(FKismetCompilerContext& Compiler
 	MakeArray->GetSchema()->TrySetDefaultValue(*ItemToFindPin, TEXT("true"));
 
 	// Link between Array Find and 1st Select
-	UEdGraphPin* ArrayFindOutputPin = ArrayFind->GetReturnValuePin();
-	UEdGraphPin* Select1stIndexPin = Select1st->GetIndexPin();
 	if (!K2NodeHelpers::TryConnect(CompilerContext, ArrayFindOutputPin, Select1stIndexPin))
 	{
-		// 连接失败：终止展开避免生成残缺数据流
-		BreakAllNodeLinks();
+		K2NodeHelpers::EndExpandNode(this);
 		return;
 	}
 	Select1st->NotifyPinConnectionListChanged(Select1stIndexPin);
 
 	// Link between Array Find and Int Equal
-	UEdGraphPin* IntEqualAPin = IntEqual->FindPinChecked(TEXT("A"));
-	UEdGraphPin* IntEqualBPin = IntEqual->FindPinChecked(TEXT("B"));
 	if (!K2NodeHelpers::TryConnect(CompilerContext, ArrayFindOutputPin, IntEqualAPin))
 	{
-		// 连接失败：终止展开避免生成残缺数据流
-		BreakAllNodeLinks();
+		K2NodeHelpers::EndExpandNode(this);
 		return;
 	}
 	ArrayFindOutputPin->GetSchema()->TrySetDefaultValue(*IntEqualBPin, TEXT("-1"));
 
 	// Link among 1st Select, 2nd Select and Int Equal
-	UEdGraphPin* Select1stReturnValuePin = Select1st->GetReturnValuePin();
-	UEdGraphPin* IntEqualReturnValuePin = IntEqual->GetReturnValuePin();
-	UEdGraphPin* Select2ndIndexPin = Select2nd->GetIndexPin();
-	TArray<UEdGraphPin*> Select2ndOptionPins;
-	Select2nd->GetOptionPins(Select2ndOptionPins);
 	if (!K2NodeHelpers::TryConnect(CompilerContext, IntEqualReturnValuePin, Select2ndIndexPin))
 	{
-		// 连接失败：终止展开避免生成残缺数据流
-		BreakAllNodeLinks();
+		K2NodeHelpers::EndExpandNode(this);
 		return;
 	}
 	Select2nd->NotifyPinConnectionListChanged(Select2ndIndexPin);
 	if (!K2NodeHelpers::TryConnect(CompilerContext, Select1stReturnValuePin, Select2ndOptionPins[0]))
 	{
-		// 连接失败：终止展开避免生成残缺数据流
-		BreakAllNodeLinks();
+		K2NodeHelpers::EndExpandNode(this);
 		return;
 	}
-	CompilerContext.MovePinLinksToIntermediate(*GetDefaultOptionPin(), *Select2ndOptionPins[1]);
+	CompilerContext.MovePinLinksToIntermediate(*DefaultOptionPin, *Select2ndOptionPins[1]);
 
 	// Link 2nd Select and outer
-	UEdGraphPin* Select2ndReturnValuePin = Select2nd->GetReturnValuePin();
-	CompilerContext.MovePinLinksToIntermediate(*GetReturnValuePin(), *Select2ndReturnValuePin);
+	CompilerContext.MovePinLinksToIntermediate(*ReturnValuePin, *Select2ndReturnValuePin);
 
-	BreakAllNodeLinks();
+	K2NodeHelpers::EndExpandNode(this);
 }
 
 bool UK2Node_MultiConditionalSelect::IsConnectionDisallowed(

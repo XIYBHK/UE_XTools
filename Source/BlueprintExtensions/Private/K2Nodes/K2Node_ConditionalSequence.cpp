@@ -86,6 +86,26 @@ void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerCon
 
 	UEdGraphPin* ExecTriggeringPin = GetExecPin();
 	UEdGraphPin* DefaultExecPin = FindPin(DefaultExecPinName);
+	if (!K2NodeHelpers::BeginExpandNode(
+		CompilerContext,
+		this,
+		{ExecTriggeringPin, DefaultExecPin},
+		LOCTEXT("ConditionalSequence_InvalidPins", "Conditional Sequence node has invalid execution pins @@")))
+	{
+		return;
+	}
+
+	for (const CasePinPair& Pair : CasePairs)
+	{
+		if (!Pair.Key || !Pair.Value)
+		{
+			K2NodeHelpers::ReportExpandError(
+				CompilerContext,
+				this,
+				LOCTEXT("ConditionalSequence_InvalidCasePins", "Conditional Sequence node has invalid case pins @@"));
+			return;
+		}
+	}
 
 	{
 		UK2Node_ExecutionSequence* Sequence = CompilerContext.SpawnIntermediateNode<UK2Node_ExecutionSequence>(this, SourceGraph);
@@ -109,8 +129,7 @@ void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerCon
 
 			if (!K2NodeHelpers::TryConnect(CompilerContext, SequenceExecPin, IfThenElseExecPin))
 			{
-				// 连接失败：TryConnect 内部已记录 Warning 日志，终止展开避免生成残缺执行流
-				BreakAllNodeLinks();
+				K2NodeHelpers::EndExpandNode(this);
 				return;
 			}
 			CompilerContext.MovePinLinksToIntermediate(*CaseExecPin, *IfThenElseThenPin);
@@ -120,7 +139,7 @@ void UK2Node_ConditionalSequence::ExpandNode(FKismetCompilerContext& CompilerCon
 		CompilerContext.MovePinLinksToIntermediate(*DefaultExecPin, *Sequence->GetThenPinGivenIndex(CasePairs.Num()));
 	}
 
-	BreakAllNodeLinks();
+	K2NodeHelpers::EndExpandNode(this);
 }
 
 void UK2Node_ConditionalSequence::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const

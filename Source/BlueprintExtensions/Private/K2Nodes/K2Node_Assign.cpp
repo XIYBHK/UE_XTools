@@ -158,21 +158,18 @@ private:
 
 			if (!(*VariableTerm)->IsTermWritable())
 			{
-				// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-				CompilerContext.MessageLog.Warning(*LOCTEXT("WriteConst_Error", "Cannot write to const @@").ToString(), VariablePin);
+				CompilerContext.MessageLog.Error(*LOCTEXT("WriteConst_Error", "Cannot write to const @@").ToString(), VariablePin);
 			}
 		}
 		else
 		{
 			if (VariablePin != ValuePin)
 			{
-				// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-				CompilerContext.MessageLog.Warning(*LOCTEXT("ResolveValueIntoVariablePin_Error", "Failed to resolve term @@ passed into @@").ToString(), ValuePin, VariablePin);
+				CompilerContext.MessageLog.Error(*LOCTEXT("ResolveValueIntoVariablePin_Error", "Failed to resolve term @@ passed into @@").ToString(), ValuePin, VariablePin);
 			}
 			else
 			{
-				// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-				CompilerContext.MessageLog.Warning(*LOCTEXT("ResolveTermPassed_Error", "Failed to resolve term passed into @@").ToString(), VariablePin);
+				CompilerContext.MessageLog.Error(*LOCTEXT("ResolveTermPassed_Error", "Failed to resolve term passed into @@").ToString(), VariablePin);
 			}
 		}
 	}

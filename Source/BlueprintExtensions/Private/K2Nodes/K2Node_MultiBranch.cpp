@@ -55,9 +55,9 @@ public:
 				Context.FindRequiredPinByName(MultiBranchNode, UEdGraphSchema_K2::PN_Execute, EGPD_Input);
 			if ((ExecTriggeringPin == nullptr) || !Context.ValidatePinType(ExecTriggeringPin, ExpectedExecPinType))
 			{
-				CompilerContext.MessageLog.Warning(
-					*LOCTEXT("NoValidExecutionPinForMultiBranch_Warning", "@@ must have a valid execution pin @@").ToString(),
-					MultiBranchNode, ExecTriggeringPin);
+				CompilerContext.MessageLog.Error(
+					*LOCTEXT("NoValidExecutionPinForMultiBranch_Error", "@@ must have a valid execution pin").ToString(),
+					MultiBranchNode);
 				return;
 			}
 			else if (ExecTriggeringPin->LinkedTo.Num() == 0)
@@ -69,14 +69,44 @@ public:
 		}
 
 		UEdGraphPin* DefaultExecPin = MultiBranchNode->GetDefaultExecPin();
-
 		UEdGraphPin* FunctionPin = MultiBranchNode->GetFunctionPin();
+		if (!DefaultExecPin || !Context.ValidatePinType(DefaultExecPin, ExpectedExecPinType) || !FunctionPin)
+		{
+			CompilerContext.MessageLog.Error(
+				*LOCTEXT("InvalidInternalPinsForMultiBranch_Error", "@@ has invalid internal pins").ToString(),
+				MultiBranchNode);
+			return;
+		}
+
 		FBPTerminal* FunctionContext = Context.NetMap.FindRef(FunctionPin);
 		UClass* FunctionClass = Cast<UClass>(FunctionPin->PinType.PinSubCategoryObject.Get());
-		UFunction* FunctionPtr = FindUField<UFunction>(FunctionClass, FunctionPin->PinName);
-		check(FunctionPtr);
-
+		UFunction* FunctionPtr = FunctionClass ? FunctionClass->FindFunctionByName(FunctionPin->PinName) : nullptr;
 		FBPTerminal* BoolTerm = BoolTermMap.FindRef(MultiBranchNode);
+		if (!FunctionPtr || !BoolTerm)
+		{
+			CompilerContext.MessageLog.Error(
+				*LOCTEXT("InvalidCompilerStateForMultiBranch_Error", "@@ failed to resolve its condition function or compiler term").ToString(),
+				MultiBranchNode);
+			return;
+		}
+
+		for (UEdGraphPin* ExecPin : MultiBranchNode->Pins)
+		{
+			if (!ExecPin || ExecPin->Direction != EGPD_Output || ExecPin->GetFName() == DefaultExecPinName)
+			{
+				continue;
+			}
+
+			UEdGraphPin* CondPin = MultiBranchNode->GetCaseKeyPinFromCaseValuePin(ExecPin);
+			UEdGraphPin* CondNet = CondPin ? FEdGraphUtilities::GetNetFromPin(CondPin) : nullptr;
+			if (!CondPin || !CondNet || !Context.NetMap.FindRef(CondNet))
+			{
+				CompilerContext.MessageLog.Error(
+					*LOCTEXT("InvalidConditionForMultiBranch_Error", "@@ failed to resolve a condition pin").ToString(),
+					MultiBranchNode);
+				return;
+			}
+		}
 
 		for (auto PinIt = MultiBranchNode->Pins.CreateIterator(); PinIt; ++PinIt)
 		{
