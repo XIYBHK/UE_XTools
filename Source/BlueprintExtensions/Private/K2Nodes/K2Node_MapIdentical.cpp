@@ -86,12 +86,14 @@ void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, U
 
 	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
-	// 【最佳实践 3.1】：验证输入类型
-	if(GetMapAPin()->PinType != GetMapBPin()->PinType)
+	// 两端必须已解析为相同 Map 类型，否则 CustomThunk 参数布局不可靠。
+	if (GetMapAPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		GetMapAPin()->PinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		GetMapAPin()->PinType != GetMapBPin()->PinType)
 	{
-		// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-		CompilerContext.MessageLog.Warning(*LOCTEXT("TypeMismatch", "MapA and MapB must be of the same type @@").ToString(), this);
-		// 【最佳实践 3.1】：错误后必须调用BreakAllNodeLinks
+		CompilerContext.MessageLog.Error(
+			*LOCTEXT("TypeMismatch", "@@ 的两个 Map 必须具有相同的有效类型。").ToString(),
+			this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -230,7 +232,10 @@ void UK2Node_MapIdentical::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 			}
 		}
 		
-		GetGraph()->NotifyGraphChanged();
+		if (UEdGraph* Graph = GetGraph())
+		{
+			Graph->NotifyGraphChanged();
+		}
 	}
 }
 

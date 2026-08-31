@@ -82,12 +82,14 @@ void UK2Node_MapAppend::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 
 	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
 
-	// 【最佳实践 3.1】：验证输入类型
-	if(GetTargetMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard || GetSourceMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+	// 两端必须已解析为相同 Map 类型，否则中间 Map_Add 无法安全展开。
+	if (GetTargetMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		GetSourceMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		GetTargetMapPin()->PinType != GetSourceMapPin()->PinType)
 	{
-		// 【修复】使用 Warning 避免触发 EdGraphNode.h:563 断言崩溃
-		CompilerContext.MessageLog.Warning(*LOCTEXT("InvalidMapType", "Target map and source map pins must be of a valid type @@").ToString(), this);
-		// 【最佳实践 3.1】：错误后必须调用BreakAllNodeLinks
+		CompilerContext.MessageLog.Error(
+			*LOCTEXT("InvalidMapType", "@@ 的目标 Map 与源 Map 必须具有相同的有效类型。").ToString(),
+			this);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -225,7 +227,10 @@ void UK2Node_MapAppend::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 			}
 		}
 		
-		GetGraph()->NotifyGraphChanged();
+		if (UEdGraph* Graph = GetGraph())
+		{
+			Graph->NotifyGraphChanged();
+		}
 	}
 }
 
