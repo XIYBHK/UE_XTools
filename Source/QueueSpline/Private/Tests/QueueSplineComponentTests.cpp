@@ -215,6 +215,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FQueueSplineInitialSpawnTransformTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("样条组件尚未注册"), EAutomationExpectedErrorFlags::Contains, 4);
+
 	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
 	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
 	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
@@ -347,6 +349,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FQueueSplineInitialSpawnAutoBindTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("样条组件尚未注册"), EAutomationExpectedErrorFlags::Contains, 2);
+	AddExpectedError(TEXT("所属Actor上没有可用的 USplineComponent"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
 	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
 	QueueOwner->AddInstanceComponent(Spline);
@@ -629,6 +634,52 @@ bool FQueueSplineNotificationSkipInvalidTest::RunTest(const FString& Parameters)
 	// 清空后的再次更新应安全返回（成员为空直接退出）
 	Queue->UpdateQueueTargets(0.0f);
 	TestEqual(TEXT("空队列再次更新应安全返回"), Queue->GetQueueMemberCount(), 0);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineMovementEventUnregisterTest,
+	"XTools.QueueSpline.Component.NotificationSkipsMemberRemovedByMovementEvent",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineMovementEventUnregisterTest::RunTest(const FString& Parameters)
+{
+	AActor* QueueOwner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(QueueOwner);
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(QueueOwner);
+
+	TArray<FVector> SplinePoints;
+	SplinePoints.Add(FVector::ZeroVector);
+	SplinePoints.Add(FVector(1000.0, 0.0, 0.0));
+	Spline->SetSplinePoints(SplinePoints, ESplineCoordinateSpace::Local);
+	Queue->SplineComponent = Spline;
+	Queue->Settings.SideOffset = 0.0;
+	Queue->Settings.SideJitter = 0.0;
+	Queue->Settings.DistanceJitter = 0.0;
+
+	AActor* Member = NewObject<AActor>(GetTransientPackage());
+	USceneComponent* Root = NewObject<USceneComponent>(Member);
+	Member->SetRootComponent(Root);
+	UQueueSplineMovementComponent* Movement = NewObject<UQueueSplineMovementComponent>(Member);
+	Member->AddInstanceComponent(Movement);
+
+	FQueueSplineMemberHandle Handle;
+	TestTrue(TEXT("应成功注册移动事件重入测试成员"), Queue->RegisterQueueMember(Member, Handle));
+
+	UQueueSplineTargetEventRecorder* Recorder = NewObject<UQueueSplineTargetEventRecorder>();
+	Recorder->Queue = Queue;
+	FScriptDelegate MoveStartedDelegate;
+	MoveStartedDelegate.BindUFunction(Recorder, TEXT("HandleMoveStarted"));
+	Movement->OnQueueMoveStarted.Add(MoveStartedDelegate);
+	FScriptDelegate TargetUpdatedDelegate;
+	TargetUpdatedDelegate.BindUFunction(Recorder, TEXT("HandleTargetUpdated"));
+	Queue->OnMemberTargetUpdated.Add(TargetUpdatedDelegate);
+
+	Queue->UpdateQueueTargets(0.0f);
+
+	TestEqual(TEXT("移动开始回调应成功注销成员"), Queue->GetQueueMemberCount(), 0);
+	TestEqual(TEXT("移动回调注销后不应广播陈旧队列目标"), Recorder->ReceivedHandles.Num(), 0);
 
 	return true;
 }

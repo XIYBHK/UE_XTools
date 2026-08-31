@@ -82,6 +82,15 @@ public:
 
 		--InCallbackDepth;
 	}
+
+	UFUNCTION()
+	void HandleMoveStarted(FQueueSplineMoveTarget Target)
+	{
+		if (Queue)
+		{
+			Queue->UnregisterQueueMember(Target.Handle);
+		}
+	}
 };
 
 UCLASS()

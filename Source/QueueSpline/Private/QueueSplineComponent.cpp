@@ -483,6 +483,10 @@ void UQueueSplineComponent::UpdateQueueTargets(float DeltaTime)
 			if (bAutoPushToMovementComponent)
 			{
 				PushTargetToMovementComponent(Actor, Notification.Target);
+				if (!IsHandleCurrent(Notification.Handle, MemberIndex) || !IsValid(Notification.Actor.Get()))
+				{
+					continue;
+				}
 			}
 			OnMemberTargetUpdated.Broadcast(Notification.Handle, Notification.Target);
 		}
