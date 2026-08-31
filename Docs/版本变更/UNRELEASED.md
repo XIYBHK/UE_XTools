@@ -29,6 +29,8 @@
 
 ### AxisLocker
 - 修复 状态恢复误用当前目标
+- 修复 关闭模式误报遗留轴锁
+- 测试 增加关闭模式查询护栏
 
 ### BlueprintExtensionsRuntime
 - 修复 Map空结果重复初始化输出
