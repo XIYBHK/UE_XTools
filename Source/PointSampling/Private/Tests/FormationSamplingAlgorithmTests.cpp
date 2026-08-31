@@ -7,8 +7,11 @@
 
 #include "FormationSamplingLibrary.h"
 #include "PointSamplingLibrary.h"
+#include "Algorithms/PoissonDiskSampling.h"
 #include "Core/SamplingCache.h"
 #include "Misc/AutomationTest.h"
+
+#include <limits>
 
 namespace
 {
@@ -101,6 +104,50 @@ bool FPointSamplingCache_EquivalentHalfTurnQuaternionsShareEntry::RunTest(const 
 	}
 
 	Cache.ClearCache();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPointSamplingPoisson_RejectsNonFiniteInputs,
+	"XTools.PointSampling.Poisson.RejectsNonFiniteInputs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSamplingPoisson_RejectsNonFiniteInputs::RunTest(const FString& Parameters)
+{
+	const float NaN = std::numeric_limits<float>::quiet_NaN();
+	const float Infinity = std::numeric_limits<float>::infinity();
+	const FRandomStream RandomStream(12345);
+
+	AddExpectedError(TEXT("GeneratePoisson2D: 参数无效"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("2D采样应拒绝NaN宽度"),
+		FPoissonDiskSampling::GeneratePoisson2D(NaN, 100.0f, 10.0f).IsEmpty());
+
+	AddExpectedError(TEXT("GeneratePoisson2DFromStream: 参数无效"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("流式2D采样应拒绝无穷半径"),
+		FPoissonDiskSampling::GeneratePoisson2DFromStream(RandomStream, 100.0f, 100.0f, Infinity).IsEmpty());
+
+	AddExpectedError(TEXT("GeneratePoisson3D: 参数无效"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("3D采样应拒绝NaN深度"),
+		FPoissonDiskSampling::GeneratePoisson3D(100.0f, 100.0f, NaN, 10.0f).IsEmpty());
+
+	AddExpectedError(TEXT("GeneratePoisson3DFromStream: 参数无效"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("流式3D采样应拒绝无穷高度"),
+		FPoissonDiskSampling::GeneratePoisson3DFromStream(RandomStream, 100.0f, Infinity, 100.0f, 10.0f).IsEmpty());
+
+	AddExpectedError(TEXT("GeneratePoissonInBoxByVector: Transform或JitterStrength包含非有限值"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("Box采样应拒绝NaN扰动强度"),
+		FPoissonDiskSampling::GeneratePoissonInBoxByVector(
+			FVector(100.0, 100.0, 0.0), FTransform::Identity, 10.0f, 30,
+			EPoissonCoordinateSpace::Local, 0, NaN, false).IsEmpty());
+
+	AddExpectedError(TEXT("GeneratePoissonInBoxByVectorFromStream: Transform或JitterStrength包含非有限值"),
+		EAutomationExpectedErrorFlags::Contains, 1);
+	TestTrue(TEXT("流式Box采样应拒绝无穷扰动强度"),
+		FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
+			RandomStream, FVector(100.0, 100.0, 0.0), FTransform::Identity, 10.0f, 30,
+			EPoissonCoordinateSpace::Local, 0, Infinity).IsEmpty());
+
 	return true;
 }
 

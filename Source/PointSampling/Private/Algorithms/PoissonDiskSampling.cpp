@@ -22,7 +22,8 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2D(
 	float Radius,
 	int32 MaxAttempts)
 {
-	if (Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	if (!FMath::IsFinite(Width) || !FMath::IsFinite(Height) || !FMath::IsFinite(Radius)
+		|| Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
 	{
 		UE_LOG(LogPointSampling, Warning,
 			TEXT("GeneratePoisson2D: 参数无效 (Width=%.2f, Height=%.2f, Radius=%.2f, MaxAttempts=%d)"),
@@ -45,7 +46,8 @@ TArray<FVector2D> FPoissonDiskSampling::GeneratePoisson2DFromStream(
 	float Radius,
 	int32 MaxAttempts)
 {
-	if (Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	if (!FMath::IsFinite(Width) || !FMath::IsFinite(Height) || !FMath::IsFinite(Radius)
+		|| Width <= 0.0f || Height <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
 	{
 		UE_LOG(LogPointSampling, Warning,
 			TEXT("GeneratePoisson2DFromStream: 参数无效 (Width=%.2f, Height=%.2f, Radius=%.2f, MaxAttempts=%d)"),
@@ -68,7 +70,8 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3D(
 	float Radius,
 	int32 MaxAttempts)
 {
-	if (Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	if (!FMath::IsFinite(Width) || !FMath::IsFinite(Height) || !FMath::IsFinite(Depth) || !FMath::IsFinite(Radius)
+		|| Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
 	{
 		UE_LOG(LogPointSampling, Warning,
 			TEXT("GeneratePoisson3D: 参数无效 (Width=%.2f, Height=%.2f, Depth=%.2f, Radius=%.2f, MaxAttempts=%d)"),
@@ -92,7 +95,8 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoisson3DFromStream(
 	float Radius,
 	int32 MaxAttempts)
 {
-	if (Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
+	if (!FMath::IsFinite(Width) || !FMath::IsFinite(Height) || !FMath::IsFinite(Depth) || !FMath::IsFinite(Radius)
+		|| Width <= 0.0f || Height <= 0.0f || Depth <= 0.0f || Radius <= 0.0f || MaxAttempts <= 0)
 	{
 		UE_LOG(LogPointSampling, Warning,
 			TEXT("GeneratePoisson3DFromStream: 参数无效 (Width=%.2f, Height=%.2f, Depth=%.2f, Radius=%.2f, MaxAttempts=%d)"),
@@ -161,7 +165,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 	bool bUseCache)
 {
 	// 输入验证
-	if (BoxExtent.X <= 0.0f || BoxExtent.Y <= 0.0f || BoxExtent.Z < 0.0f)
+	if (BoxExtent.ContainsNaN() || BoxExtent.X <= 0.0f || BoxExtent.Y <= 0.0f || BoxExtent.Z < 0.0f)
 	{
 		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVector: BoxExtent无效 (%s)"), *BoxExtent.ToString());
 		return TArray<FVector>();
@@ -170,6 +174,12 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 	if (MaxAttempts <= 0)
 	{
 		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVector: MaxAttempts必须大于0"));
+		return TArray<FVector>();
+	}
+
+	if (!Transform.IsValid() || !FMath::IsFinite(JitterStrength))
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVector: Transform或JitterStrength包含非有限值"));
 		return TArray<FVector>();
 	}
 
@@ -193,7 +203,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVector(
 	}
 
 	// 验证最终的Radius
-	if (ActualRadius <= 0.0f)
+	if (!FMath::IsFinite(ActualRadius) || ActualRadius <= 0.0f)
 	{
 		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVector: 计算出的Radius无效 (%.2f)"), ActualRadius);
 		return TArray<FVector>();
@@ -373,7 +383,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
 	float JitterStrength)
 {
 	// 输入验证
-	if (BoxExtent.X <= 0.0f || BoxExtent.Y <= 0.0f || BoxExtent.Z < 0.0f)
+	if (BoxExtent.ContainsNaN() || BoxExtent.X <= 0.0f || BoxExtent.Y <= 0.0f || BoxExtent.Z < 0.0f)
 	{
 		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVectorFromStream: BoxExtent无效 (%s)"), *BoxExtent.ToString());
 		return TArray<FVector>();
@@ -382,6 +392,12 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
 	if (MaxAttempts <= 0)
 	{
 		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVectorFromStream: MaxAttempts必须大于0"));
+		return TArray<FVector>();
+	}
+
+	if (!Transform.IsValid() || !FMath::IsFinite(JitterStrength))
+	{
+		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVectorFromStream: Transform或JitterStrength包含非有限值"));
 		return TArray<FVector>();
 	}
 
@@ -398,7 +414,7 @@ TArray<FVector> FPoissonDiskSampling::GeneratePoissonInBoxByVectorFromStream(
 	}
 
 	// 验证最终的Radius
-	if (ActualRadius <= 0.0f)
+	if (!FMath::IsFinite(ActualRadius) || ActualRadius <= 0.0f)
 	{
 		UE_LOG(LogPointSampling, Warning, TEXT("GeneratePoissonInBoxByVectorFromStream: 计算出的Radius无效 (%.2f)，请指定有效的Radius或TargetPointCount"), ActualRadius);
 		return TArray<FVector>();
