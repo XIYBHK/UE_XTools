@@ -98,13 +98,10 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   // 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
   if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this,
                                                    SourceGraph)) {
-    // 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
-    CompilerContext.MessageLog.Warning(
-        *LOCTEXT("LatentGraphOnly",
-                 "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
-             .ToString(),
-        this);
-    BreakAllNodeLinks();
+    K2NodeHelpers::ReportExpandError(
+        CompilerContext, this,
+        LOCTEXT("LatentGraphOnly",
+                "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中"));
     return;
   }
 
@@ -119,11 +116,9 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   // 验证数组引脚连接
   UEdGraphPin *ArrayPin = GetArrayPin();
   if (!ArrayPin || ArrayPin->LinkedTo.Num() == 0) {
-    CompilerContext.MessageLog.Warning(
-        *LOCTEXT("ArrayNotConnected", "Array pin must be connected @@")
-             .ToString(),
-        this);
-    BreakAllNodeLinks();
+    K2NodeHelpers::ReportExpandError(
+        CompilerContext, this,
+        LOCTEXT("ArrayNotConnected", "Array pin must be connected @@"));
     return;
   }
 
@@ -351,10 +346,11 @@ void UK2Node_ForEachArrayReverse::ExpandNode(
   K2NodeHelpers::TryConnect(CompilerContext,
       GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
   UEdGraphPin *ValuePin = GetValue->FindPin(TEXT("Item"), EGPD_Output);
-  if (!ensureMsgf(ValuePin, TEXT("ForEachArrayReverse: 找不到 Item(Value) 引脚，中间节点重建失败")))
+  if (!ValuePin)
   {
-      CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachArrayReverse_NoValuePin", "警告：[ForEachArrayReverse] 节点 @@ 找不到 Value 引脚，展开中止。").ToString(), this);
-      BreakAllNodeLinks();
+      K2NodeHelpers::ReportExpandError(
+          CompilerContext, this,
+          LOCTEXT("ForEachArrayReverse_NoValuePin", "[ForEachArrayReverse] 节点 @@ 找不到 Value 引脚，展开中止。"));
       return;
   }
   ValuePin->PinType = GetValuePin()->PinType;

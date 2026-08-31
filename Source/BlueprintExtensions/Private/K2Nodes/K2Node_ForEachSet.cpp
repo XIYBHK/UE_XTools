@@ -108,8 +108,8 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
     UEdGraphPin* SetPin = GetSetPin();
     if (!SetPin || SetPin->LinkedTo.Num() == 0)
     {
-        CompilerContext.MessageLog.Warning(*LOCTEXT("SetNotConnected", "Set pin must be connected @@").ToString(), this);
-        BreakAllNodeLinks();
+        K2NodeHelpers::ReportExpandError(CompilerContext, this,
+            LOCTEXT("SetNotConnected", "Set pin must be connected @@"));
         return;
     }
 
@@ -217,10 +217,10 @@ void UK2Node_ForEachSet::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
     GetValue->PinConnectionListChanged(GetValueTargetArrayPin);
     K2NodeHelpers::TryConnect(CompilerContext, GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
     UEdGraphPin* ValuePin = GetValue->FindPin(TEXT("Item"), EGPD_Output);
-    if (!ensureMsgf(ValuePin, TEXT("ForEachSet: 找不到 Item(Value) 引脚，中间节点重建失败")))
+    if (!ValuePin)
     {
-        CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachSet_NoValuePin", "警告：[ForEachSet] 节点 @@ 找不到 Value 引脚，展开中止。").ToString(), this);
-        BreakAllNodeLinks();
+        K2NodeHelpers::ReportExpandError(CompilerContext, this,
+            LOCTEXT("ForEachSet_NoValuePin", "[ForEachSet] 节点 @@ 找不到 Value 引脚，展开中止。"));
         return;
     }
     ValuePin->PinType = GetValuePin()->PinType;

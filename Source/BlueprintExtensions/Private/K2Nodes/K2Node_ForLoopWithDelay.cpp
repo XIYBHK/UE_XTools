@@ -92,13 +92,10 @@ void UK2Node_ForLoopWithDelay::ExpandNode(
 
   if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this,
                                                    SourceGraph)) {
-    // 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
-    CompilerContext.MessageLog.Warning(
-        *LOCTEXT("LatentGraphOnly",
-                 "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
-             .ToString(),
-        this);
-    BreakAllNodeLinks();
+    K2NodeHelpers::ReportExpandError(
+        CompilerContext, this,
+        LOCTEXT("LatentGraphOnly",
+                "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中"));
     return;
   }
 

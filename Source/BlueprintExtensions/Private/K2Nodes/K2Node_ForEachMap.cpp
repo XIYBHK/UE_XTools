@@ -135,8 +135,8 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	UEdGraphPin* MapPin = GetMapPin();
 	if (!MapPin || MapPin->LinkedTo.Num() == 0)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("MapNotConnected", "Map pin must be connected @@").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(CompilerContext, this,
+			LOCTEXT("MapNotConnected", "Map pin must be connected @@"));
 		return;
 	}
 
@@ -144,8 +144,8 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	if (MapPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
 		MapPin->PinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Wildcard)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("InvalidMapType", "Map Key and Value types must be valid @@").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(CompilerContext, this,
+			LOCTEXT("InvalidMapType", "Map Key and Value types must be valid @@"));
 		return;
 	}
 
@@ -165,10 +165,10 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *MapKeysTargetMapPin);
 	MapKeys->PinConnectionListChanged(MapKeysTargetMapPin);
 	UEdGraphPin* KeysArrayPin = K2NodeHelpers::ReconstructAndFindPin(MapKeys, TEXT("Keys"), EGPD_Output);
-	if (!ensureMsgf(KeysArrayPin, TEXT("ForEachMap: 找不到 Keys 引脚，中间节点重建失败")))
+	if (!KeysArrayPin)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachMap_NoKeysPin", "警告：[ForEachMap] 节点 @@ 找不到 Keys 引脚，展开中止。").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(CompilerContext, this,
+			LOCTEXT("ForEachMap_NoKeysPin", "[ForEachMap] 节点 @@ 找不到 Keys 引脚，展开中止。"));
 		return;
 	}
 	KeysArrayPin->PinType = GetKeyPin()->PinType;
@@ -186,10 +186,10 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	CompilerContext.CopyPinLinksToIntermediate(*GetMapPin(), *MapValuesTargetMapPin);
 	MapValues->PinConnectionListChanged(MapValuesTargetMapPin);
 	UEdGraphPin* ValuesArrayPin = K2NodeHelpers::ReconstructAndFindPin(MapValues, TEXT("Values"), EGPD_Output);
-	if (!ensureMsgf(ValuesArrayPin, TEXT("ForEachMap: 找不到 Values 引脚，中间节点重建失败")))
+	if (!ValuesArrayPin)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachMap_NoValuesPin", "警告：[ForEachMap] 节点 @@ 找不到 Values 引脚，展开中止。").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(CompilerContext, this,
+			LOCTEXT("ForEachMap_NoValuesPin", "[ForEachMap] 节点 @@ 找不到 Values 引脚，展开中止。"));
 		return;
 	}
 	ValuesArrayPin->PinType = GetValuePin()->PinType;
@@ -287,10 +287,10 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	GetKey->PinConnectionListChanged(GetKeyTargetArrayPin);
 	K2NodeHelpers::TryConnect(CompilerContext, GetKey->FindPinChecked(TEXT("Index")), LoopCounterPin);
 	UEdGraphPin* KeyPin = GetKey->FindPin(TEXT("Item"), EGPD_Output);
-	if (!ensureMsgf(KeyPin, TEXT("ForEachMap: 找不到 Key 引脚，中间节点重建失败")))
+	if (!KeyPin)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachMap_NoKeyPin", "警告：[ForEachMap] 节点 @@ 找不到 Key 引脚，展开中止。").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(CompilerContext, this,
+			LOCTEXT("ForEachMap_NoKeyPin", "[ForEachMap] 节点 @@ 找不到 Key 引脚，展开中止。"));
 		return;
 	}
 	KeyPin->PinType = GetKeyPin()->PinType;
@@ -306,10 +306,10 @@ void UK2Node_ForEachMap::ExpandNode(FKismetCompilerContext& CompilerContext, UEd
 	GetValue->PinConnectionListChanged(GetValueTargetArrayPin);
 	K2NodeHelpers::TryConnect(CompilerContext, GetValue->FindPinChecked(TEXT("Index")), LoopCounterPin);
 	UEdGraphPin* ValuePin = GetValue->FindPin(TEXT("Item"), EGPD_Output);
-	if (!ensureMsgf(ValuePin, TEXT("ForEachMap: 找不到 Value 引脚，中间节点重建失败")))
+	if (!ValuePin)
 	{
-		CompilerContext.MessageLog.Warning(*LOCTEXT("ForEachMap_NoValuePin", "警告：[ForEachMap] 节点 @@ 找不到 Value 引脚，展开中止。").ToString(), this);
-		BreakAllNodeLinks();
+		K2NodeHelpers::ReportExpandError(CompilerContext, this,
+			LOCTEXT("ForEachMap_NoValuePin", "[ForEachMap] 节点 @@ 找不到 Value 引脚，展开中止。"));
 		return;
 	}
 	ValuePin->PinType = GetValuePin()->PinType;

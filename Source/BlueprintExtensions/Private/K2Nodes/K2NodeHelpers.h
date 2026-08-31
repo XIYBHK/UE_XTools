@@ -25,6 +25,27 @@
 namespace K2NodeHelpers
 {
 	/**
+	 * 记录无法继续展开的编译错误，并清理原节点链接
+	 */
+	FORCEINLINE void ReportExpandError(FKismetCompilerContext& CompilerContext, UK2Node* Node, const FText& ErrorMessage)
+	{
+		FString Message = ErrorMessage.ToString();
+		if (Node)
+		{
+			if (!Message.Contains(TEXT("@@")))
+			{
+				Message += TEXT(" @@");
+			}
+			CompilerContext.MessageLog.Error(*Message, Node);
+			Node->BreakAllNodeLinks();
+		}
+		else
+		{
+			CompilerContext.MessageLog.Error(*Message.Replace(TEXT("@@"), TEXT("")));
+		}
+	}
+
+	/**
 	 * 统一连接入口：通过 Schema 校验连接合法性
 	 */
 	FORCEINLINE bool TryConnect(FKismetCompilerContext& CompilerContext, UEdGraphPin* SourcePin, UEdGraphPin* TargetPin)
@@ -83,20 +104,7 @@ namespace K2NodeHelpers
 		{
 			if (!RequiredPin)
 			{
-				FString Message = ErrorMessage.ToString();
-				if (Node)
-				{
-					if (!Message.Contains(TEXT("@@")))
-					{
-						Message += TEXT(" @@");
-					}
-					CompilerContext.MessageLog.Error(*Message, Node);
-					Node->BreakAllNodeLinks();
-				}
-				else
-				{
-					CompilerContext.MessageLog.Error(*Message.Replace(TEXT("@@"), TEXT("")));
-				}
+				ReportExpandError(CompilerContext, Node, ErrorMessage);
 				return false;
 			}
 		}

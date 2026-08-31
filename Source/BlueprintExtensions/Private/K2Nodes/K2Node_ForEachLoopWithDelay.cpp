@@ -97,13 +97,10 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
   // 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
   if (!K2NodeHelpers::IsLatentNodeGraphCompatible(CompilerContext, this,
                                                    SourceGraph)) {
-    // 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
-    CompilerContext.MessageLog.Warning(
-        *LOCTEXT("LatentGraphOnly",
-                 "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中")
-             .ToString(),
-        this);
-    BreakAllNodeLinks();
+    K2NodeHelpers::ReportExpandError(
+        CompilerContext, this,
+        LOCTEXT("LatentGraphOnly",
+                "@@ 是带延迟的 Latent 节点，只能放在事件图中，不能放在蓝图函数或宏图中"));
     return;
   }
 
@@ -119,11 +116,9 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
   // 验证数组引脚连接
   UEdGraphPin *ArrayPin = GetArrayPin();
   if (!ArrayPin || ArrayPin->LinkedTo.Num() == 0) {
-    CompilerContext.MessageLog.Warning(
-        *LOCTEXT("ArrayNotConnected", "Array pin must be connected @@")
-             .ToString(),
-        this);
-    BreakAllNodeLinks();
+    K2NodeHelpers::ReportExpandError(
+        CompilerContext, this,
+        LOCTEXT("ArrayNotConnected", "Array pin must be connected @@"));
     return;
   }
 
@@ -335,12 +330,10 @@ void UK2Node_ForEachLoopWithDelay::ExpandNode(
       GetElement->FindPinChecked(TEXT("Index")), LoopCounterPin);
   UEdGraphPin *ValuePin = GetElement->FindPin(TEXT("Item"), EGPD_Output);
   if (!ValuePin) {
-    CompilerContext.MessageLog.Warning(
-        *LOCTEXT("MissingArrayItemPin",
-                 "@@ 展开失败：Array Get 中间节点缺少 Item 输出引脚")
-             .ToString(),
-        this);
-    BreakAllNodeLinks();
+    K2NodeHelpers::ReportExpandError(
+        CompilerContext, this,
+        LOCTEXT("MissingArrayItemPin",
+                "@@ 展开失败：Array Get 中间节点缺少 Item 输出引脚"));
     return;
   }
   ValuePin->PinType = GetValuePin()->PinType;
