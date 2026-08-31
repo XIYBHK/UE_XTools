@@ -31,8 +31,7 @@ namespace K2NodeHelpers
 	{
 		if (!SourcePin || !TargetPin)
 		{
-			// 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
-			CompilerContext.MessageLog.Warning(TEXT("K2Node internal connection failed: null pin."));
+			CompilerContext.MessageLog.Error(TEXT("K2Node internal connection failed: null pin."));
 			return false;
 		}
 
@@ -50,12 +49,11 @@ namespace K2NodeHelpers
 
 			if (ErrorNode)
 			{
-				// 【修复】使用 Warning 而非 Error：避免触发 EdGraphNode.h:563 断言崩溃
-				CompilerContext.MessageLog.Warning(*Message, ErrorNode);
+				CompilerContext.MessageLog.Error(*Message, ErrorNode);
 			}
 			else
 			{
-				CompilerContext.MessageLog.Warning(*Message);
+				CompilerContext.MessageLog.Error(*Message.Replace(TEXT("@@"), TEXT("")));
 			}
 		}
 
@@ -85,8 +83,20 @@ namespace K2NodeHelpers
 		{
 			if (!RequiredPin)
 			{
-				// 用 Warning 而非 Error：与项目 K2Node 规范一致，避免硬性阻断蓝图编译；调用方据返回值终止展开
-				CompilerContext.MessageLog.Warning(*ErrorMessage.ToString(), Node);
+				FString Message = ErrorMessage.ToString();
+				if (Node)
+				{
+					if (!Message.Contains(TEXT("@@")))
+					{
+						Message += TEXT(" @@");
+					}
+					CompilerContext.MessageLog.Error(*Message, Node);
+					Node->BreakAllNodeLinks();
+				}
+				else
+				{
+					CompilerContext.MessageLog.Error(*Message.Replace(TEXT("@@"), TEXT("")));
+				}
 				return false;
 			}
 		}
@@ -286,7 +296,7 @@ namespace K2NodeHelpers
 		if (ActionRegistrar.IsOpenForRegistration(ActionKey))
 		{
 			UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(NodeType::StaticClass());
-			if (ensureMsgf(NodeSpawner != nullptr, TEXT("RegisterNode: UBlueprintNodeSpawner::Create 返回空，节点注册跳过")))
+			if (NodeSpawner)
 			{
 				ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
 			}

@@ -19,7 +19,7 @@ bool FK2NodeSafetyHelpers::ValidatePin(
 	if (!Pin)
 	{
 		const FString Message = ErrorMessage.IsEmpty()
-			? FString::Printf(TEXT("Pin '%s' not found in node '%s'"), *PinName.ToString(), *Node->GetPathName())
+			? FString::Printf(TEXT("Pin '%s' not found in node '%s'"), *PinName.ToString(), *GetPathNameSafe(Node))
 			: ErrorMessage.ToString();
 
 		LogCompileError(Message, Node, CompilerContext);
@@ -46,17 +46,10 @@ bool FK2NodeSafetyHelpers::ValidatePinConnection(
 		const FString Message = FString::Printf(
 			TEXT("Pin '%s' must be connected in node '%s'"),
 			*PinName.ToString(),
-			*Node->GetPathName()
+			*GetPathNameSafe(Node)
 		);
 
-		// 温和处理：使用 Warning 而非 Error
-		FXToolsErrorReporter::Warning(
-			LogBlueprintExtensions,
-			Message,
-			NAME_None,
-			false
-		);
-		CompilerContext.MessageLog.Warning(*Message, Node);
+		LogCompileError(Message, Node, CompilerContext);
 		return false;
 	}
 
@@ -74,7 +67,7 @@ bool FK2NodeSafetyHelpers::ValidateIntermediateNode(
 		const FString Message = FString::Printf(
 			TEXT("Failed to spawn intermediate node '%s' in node '%s'"),
 			*NodeTypeName,
-			*OwnerNode->GetPathName()
+			*GetPathNameSafe(OwnerNode)
 		);
 
 		LogCompileError(Message, OwnerNode, CompilerContext);
@@ -93,7 +86,7 @@ bool FK2NodeSafetyHelpers::ValidateSchema(
 	{
 		const FString Message = FString::Printf(
 			TEXT("Invalid graph schema in node '%s'"),
-			*Node->GetPathName()
+			*GetPathNameSafe(Node)
 		);
 
 		LogCompileError(Message, Node, CompilerContext);
@@ -230,14 +223,19 @@ void FK2NodeSafetyHelpers::LogCompileError(
 		false  // 编译错误不显示屏幕提示
 	);
 
-	// 【修复】编译器消息使用 Warning 而非 Error
-	// Error 会触发 EdGraphNode.h:563 断言崩溃
-	CompilerContext.MessageLog.Warning(*Message, Node);
-
-	// 清理节点状态
 	if (Node)
 	{
+		FString CompilerMessage = Message;
+		if (!CompilerMessage.Contains(TEXT("@@")))
+		{
+			CompilerMessage += TEXT(" @@");
+		}
+		CompilerContext.MessageLog.Error(*CompilerMessage, Node);
 		Node->BreakAllNodeLinks();
+	}
+	else
+	{
+		CompilerContext.MessageLog.Error(*Message.Replace(TEXT("@@"), TEXT("")));
 	}
 }
 

@@ -477,8 +477,8 @@ bool FLoopBreakExpansionTest::RunTest(const FString& Parameters)
 		FKismetCompilerOptions Options;
 		FExpansionTestCompilerContext CompilerContext(Blueprint, Results, Options);
 		LoopNode->ExpandNode(CompilerContext, EventGraph);
-		TestEqual(TEXT("缺失 Break 引脚不产生编译错误"), Results.NumErrors, 0);
-		TestEqual(TEXT("缺失 Break 引脚产生一次安全诊断"), Results.NumWarnings, 1);
+		TestEqual(TEXT("缺失 Break 引脚产生一次编译错误"), Results.NumErrors, 1);
+		TestEqual(TEXT("缺失 Break 引脚不降级为警告"), Results.NumWarnings, 0);
 	}
 
 	{
