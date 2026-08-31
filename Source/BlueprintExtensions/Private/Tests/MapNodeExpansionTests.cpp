@@ -18,10 +18,24 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "KismetCompiler.h"
 #include "UObject/Package.h"
 
 namespace
 {
+	class FMapNodeCompilerContext : public FKismetCompilerContext
+	{
+	public:
+		FMapNodeCompilerContext(
+			UBlueprint* Blueprint,
+			FCompilerResultsLog& Results,
+			const FKismetCompilerOptions& Options)
+			: FKismetCompilerContext(Blueprint, Results, Options)
+		{
+			Schema = GetMutableDefault<UEdGraphSchema_K2>();
+		}
+	};
+
 	UBlueprint* CreateMapNodeTestBlueprint(const TCHAR* BaseName, UEdGraph*& OutEventGraph)
 	{
 		const FName BlueprintName = MakeUniqueObjectName(
@@ -142,6 +156,47 @@ bool FBlueprintExtensions_MapIdenticalCompilesExpansion::RunTest(const FString& 
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	TestEqual(TEXT("MapIdentical 展开后蓝图应无警告编译成功"), Blueprint->Status, BS_UpToDate);
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBlueprintExtensions_MapNodesRejectMissingPins,
+	"XTools.BlueprintExtensions.MapNodes.RejectMissingPins",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBlueprintExtensions_MapNodesRejectMissingPins::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("节点引脚不完整"), EAutomationExpectedErrorFlags::Contains, 2);
+
+	UEdGraph* EventGraph = nullptr;
+	UBlueprint* Blueprint = CreateMapNodeTestBlueprint(TEXT("XToolsMapNodesMissingPinsTest"), EventGraph);
+	if (!TestNotNull(TEXT("创建Map残缺节点蓝图"), Blueprint)
+		|| !TestNotNull(TEXT("获取Map残缺节点事件图"), EventGraph))
+	{
+		return false;
+	}
+
+	FKismetCompilerOptions Options;
+	UK2Node_MapAppend* AppendNode = NewObject<UK2Node_MapAppend>(EventGraph);
+	EventGraph->AddNode(AppendNode);
+	AppendNode->AllocateDefaultPins();
+	AppendNode->Pins.Remove(AppendNode->FindPin(TEXT("TargetMap"), EGPD_Input));
+	FCompilerResultsLog AppendResults;
+	FMapNodeCompilerContext AppendCompilerContext(Blueprint, AppendResults, Options);
+	AppendNode->ExpandNode(AppendCompilerContext, EventGraph);
+
+	UK2Node_MapIdentical* IdenticalNode = NewObject<UK2Node_MapIdentical>(EventGraph);
+	EventGraph->AddNode(IdenticalNode);
+	IdenticalNode->AllocateDefaultPins();
+	IdenticalNode->Pins.Remove(IdenticalNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue, EGPD_Output));
+	FCompilerResultsLog IdenticalResults;
+	FMapNodeCompilerContext IdenticalCompilerContext(Blueprint, IdenticalResults, Options);
+	IdenticalNode->ExpandNode(IdenticalCompilerContext, EventGraph);
+
+	return TestEqual(TEXT("MapAppend缺失引脚产生编译错误"), AppendResults.NumErrors, 1)
+		&& TestEqual(TEXT("MapIdentical缺失引脚产生编译错误"), IdenticalResults.NumErrors, 1)
+		&& TestEqual(TEXT("MapAppend缺失引脚不降级为警告"), AppendResults.NumWarnings, 0)
+		&& TestEqual(TEXT("MapIdentical缺失引脚不降级为警告"), IdenticalResults.NumWarnings, 0)
+		&& !HasAnyErrors();
 }
 
 #endif

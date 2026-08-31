@@ -85,11 +85,22 @@ void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, U
 	Super::ExpandNode(CompilerContext, SourceGraph);
 
 	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
+	UEdGraphPin* SourceMapAPin = GetMapAPin();
+	UEdGraphPin* SourceMapBPin = GetMapBPin();
+	UEdGraphPin* SourceReturnValuePin = GetReturnValuePin();
+	if (!K2NodeHelpers::BeginExpandNode(
+		CompilerContext,
+		this,
+		{SourceMapAPin, SourceMapBPin, SourceReturnValuePin},
+		LOCTEXT("MissingPins", "@@ 节点引脚不完整")))
+	{
+		return;
+	}
 
 	// 两端必须已解析为相同 Map 类型，否则 CustomThunk 参数布局不可靠。
-	if (GetMapAPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
-		GetMapAPin()->PinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Wildcard ||
-		GetMapAPin()->PinType != GetMapBPin()->PinType)
+	if (SourceMapAPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		SourceMapAPin->PinType.PinValueType.TerminalCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		SourceMapAPin->PinType != SourceMapBPin->PinType)
 	{
 		CompilerContext.MessageLog.Error(
 			*LOCTEXT("TypeMismatch", "@@ 的两个 Map 必须具有相同的有效类型。").ToString(),
@@ -103,38 +114,38 @@ void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, U
 	MapIdentical->SetFromFunction(UMapExtensionsLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UMapExtensionsLibrary, Map_Identical)));
 	MapIdentical->AllocateDefaultPins();
 	UEdGraphPin* MapAPin = MapIdentical->FindPinChecked(TEXT("MapA"), EGPD_Input);
-	MapAPin->PinType = GetMapAPin()->PinType;
+	MapAPin->PinType = SourceMapAPin->PinType;
 	MapAPin->PinType.ContainerType = EPinContainerType::Map;
 	UEdGraphPin* KeysBPin = MapIdentical->FindPinChecked(TEXT("KeysB"), EGPD_Input);
-	KeysBPin->PinType = GetMapAPin()->PinType;
+	KeysBPin->PinType = SourceMapAPin->PinType;
 	KeysBPin->PinType.ContainerType = EPinContainerType::Array;
 	UEdGraphPin* ValueBPin = MapIdentical->FindPinChecked(TEXT("ValuesB"),EGPD_Input);
-	ValueBPin->PinType = FEdGraphPinType::GetPinTypeForTerminalType(GetMapAPin()->PinType.PinValueType);
+	ValueBPin->PinType = FEdGraphPinType::GetPinTypeForTerminalType(SourceMapAPin->PinType.PinValueType);
 	ValueBPin->PinType.ContainerType = EPinContainerType::Array;
 	
 	// MapB GetKeys
 	UK2Node_CallFunction* MapBGetKeys = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	MapBGetKeys->SetFromFunction(UMapExtensionsLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UMapExtensionsLibrary, Map_Keys)));
 	MapBGetKeys->AllocateDefaultPins();
-	GetKeysPin(MapBGetKeys)->PinType = GetMapBPin()->PinType;
+	GetKeysPin(MapBGetKeys)->PinType = SourceMapBPin->PinType;
 	GetKeysPin(MapBGetKeys)->PinType.ContainerType = EPinContainerType::Array;
 
 	// MapB GetValues
 	UK2Node_CallFunction* MapBGetValues = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	MapBGetValues->SetFromFunction(UMapExtensionsLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UMapExtensionsLibrary, Map_Values)));
 	MapBGetValues->AllocateDefaultPins();
-	GetValuesPin(MapBGetValues)->PinType.PinCategory = GetMapBPin()->PinType.PinValueType.TerminalCategory;
-	GetValuesPin(MapBGetValues)->PinType.PinSubCategory = GetMapBPin()->PinType.PinValueType.TerminalSubCategory;
-	GetValuesPin(MapBGetValues)->PinType.PinSubCategoryObject = GetMapBPin()->PinType.PinValueType.TerminalSubCategoryObject;
+	GetValuesPin(MapBGetValues)->PinType.PinCategory = SourceMapBPin->PinType.PinValueType.TerminalCategory;
+	GetValuesPin(MapBGetValues)->PinType.PinSubCategory = SourceMapBPin->PinType.PinValueType.TerminalSubCategory;
+	GetValuesPin(MapBGetValues)->PinType.PinSubCategoryObject = SourceMapBPin->PinType.PinValueType.TerminalSubCategoryObject;
 
 	// Move MapA pin to map identical map A pin
-	CompilerContext.MovePinLinksToIntermediate(*GetMapAPin(), *MapAPin);
+	CompilerContext.MovePinLinksToIntermediate(*SourceMapAPin, *MapAPin);
 
 	// Copy MapB to get keys target map pin
-	CompilerContext.CopyPinLinksToIntermediate(*GetMapBPin(), *GetTargetMapPin(MapBGetKeys));
+	CompilerContext.CopyPinLinksToIntermediate(*SourceMapBPin, *GetTargetMapPin(MapBGetKeys));
 
 	// Copy MapB to get values target map pin
-	CompilerContext.CopyPinLinksToIntermediate(*GetMapBPin(), *GetTargetMapPin(MapBGetValues));
+	CompilerContext.CopyPinLinksToIntermediate(*SourceMapBPin, *GetTargetMapPin(MapBGetValues));
 
 	// Connect get map B keys return value to keys B pin of map identical internal
 	K2NodeHelpers::TryConnect(CompilerContext, KeysBPin, MapBGetKeys->FindPinChecked(TEXT("Keys"), EGPD_Output));
@@ -143,7 +154,7 @@ void UK2Node_MapIdentical::ExpandNode(FKismetCompilerContext& CompilerContext, U
 	K2NodeHelpers::TryConnect(CompilerContext, ValueBPin, MapBGetValues->FindPinChecked(TEXT("Values"), EGPD_Output));
 
 	// Move the map identical return value to this function's return value
-	CompilerContext.MovePinLinksToIntermediate(*GetReturnValuePin(), *MapIdentical->GetReturnValuePin());
+	CompilerContext.MovePinLinksToIntermediate(*SourceReturnValuePin, *MapIdentical->GetReturnValuePin());
 	
 	BreakAllNodeLinks();
 }
@@ -162,8 +173,14 @@ void UK2Node_MapIdentical::GetMenuActions(FBlueprintActionDatabaseRegistrar& Act
 void UK2Node_MapIdentical::PostReconstructNode()
 {
 	Super::PostReconstructNode();
+	UEdGraphPin* MapAPin = GetMapAPin();
+	UEdGraphPin* MapBPin = GetMapBPin();
+	if (!MapAPin || !MapBPin)
+	{
+		return;
+	}
 
-	if(GetMapAPin() && GetMapAPin()->LinkedTo.Num() > 0 && GetMapAPin()->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+	if(MapAPin->LinkedTo.Num() > 0 && MapAPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 	{
 		GetMapAPin()->PinType = GetMapAPin()->LinkedTo[0]->PinType;
 		GetMapAPin()->PinType.PinValueType = FEdGraphTerminalType(GetMapAPin()->PinType.PinValueType);
@@ -171,7 +188,7 @@ void UK2Node_MapIdentical::PostReconstructNode()
 		GetMapBPin()->PinType = GetMapAPin()->LinkedTo[0]->PinType;
 		GetMapBPin()->PinType.PinValueType = FEdGraphTerminalType(GetMapAPin()->PinType.PinValueType);
 	}
-	else if(GetMapBPin() && GetMapBPin()->LinkedTo.Num() > 0 && GetMapBPin()->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+	else if(MapBPin->LinkedTo.Num() > 0 && MapBPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 	{
 		GetMapBPin()->PinType = GetMapBPin()->LinkedTo[0]->PinType;
 		GetMapBPin()->PinType.PinValueType = FEdGraphTerminalType(GetMapBPin()->PinType.PinValueType);
@@ -184,8 +201,14 @@ void UK2Node_MapIdentical::PostReconstructNode()
 void UK2Node_MapIdentical::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 {
 	Super::NotifyPinConnectionListChanged(Pin);
+	UEdGraphPin* MapAPin = GetMapAPin();
+	UEdGraphPin* MapBPin = GetMapBPin();
+	if (!Pin || !MapAPin || !MapBPin)
+	{
+		return;
+	}
 
-	if(Pin == GetMapAPin() || Pin == GetMapBPin())
+	if(Pin == MapAPin || Pin == MapBPin)
 	{
 		if(GetMapAPin()->LinkedTo.Num() == 0 && GetMapBPin()->LinkedTo.Num() == 0)
 		{
@@ -268,17 +291,17 @@ void UK2Node_MapIdentical::AllocateDefaultPins()
 
 UEdGraphPin* UK2Node_MapIdentical::GetMapAPin() const
 {
-	return FindPinChecked(MapIdenticalHelper::MapAPinName, EGPD_Input);
+	return FindPin(MapIdenticalHelper::MapAPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_MapIdentical::GetMapBPin() const
 {
-	return FindPinChecked(MapIdenticalHelper::MapBPinName, EGPD_Input);
+	return FindPin(MapIdenticalHelper::MapBPinName, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_MapIdentical::GetReturnValuePin() const
 {
-	return FindPinChecked(UEdGraphSchema_K2::PN_ReturnValue, EGPD_Output);
+	return FindPin(UEdGraphSchema_K2::PN_ReturnValue, EGPD_Output);
 }
 
 UEdGraphPin* UK2Node_MapIdentical::GetTargetMapPin(const UK2Node_CallFunction* Function) const

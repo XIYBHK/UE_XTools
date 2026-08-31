@@ -81,11 +81,22 @@ void UK2Node_MapAppend::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 	Super::ExpandNode(CompilerContext, SourceGraph);
 
 	// 直接构建中间节点，并在完成引脚迁移后显式断开原节点链接。
+	UEdGraphPin* TargetMapPin = GetTargetMapPin();
+	UEdGraphPin* SourceMapPin = GetSourceMapPin();
+	UEdGraphPin* ThenPin = GetThenPin();
+	if (!K2NodeHelpers::BeginExpandNode(
+		CompilerContext,
+		this,
+		{GetExecPin(), TargetMapPin, SourceMapPin, ThenPin},
+		LOCTEXT("MissingPins", "@@ 节点引脚不完整")))
+	{
+		return;
+	}
 
 	// 两端必须已解析为相同 Map 类型，否则中间 Map_Add 无法安全展开。
-	if (GetTargetMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
-		GetSourceMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
-		GetTargetMapPin()->PinType != GetSourceMapPin()->PinType)
+	if (TargetMapPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		SourceMapPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard ||
+		TargetMapPin->PinType != SourceMapPin->PinType)
 	{
 		CompilerContext.MessageLog.Error(
 			*LOCTEXT("InvalidMapType", "@@ 的目标 Map 与源 Map 必须具有相同的有效类型。").ToString(),
@@ -97,11 +108,11 @@ void UK2Node_MapAppend::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 	// Map for each loop to add map elements
 	UK2Node_ForEachMap* MapForEach = CompilerContext.SpawnIntermediateNode<UK2Node_ForEachMap>(this, SourceGraph);
 	MapForEach->AllocateDefaultPins();
-	MapForEach->GetMapPin()->PinType = GetTargetMapPin()->PinType;
+	MapForEach->GetMapPin()->PinType = TargetMapPin->PinType;
 	MapForEach->GetMapPin()->PinType.ContainerType = EPinContainerType::Map;
-	MapForEach->GetKeyPin()->PinType = GetTargetMapPin()->PinType;
+	MapForEach->GetKeyPin()->PinType = TargetMapPin->PinType;
 	MapForEach->GetKeyPin()->PinType.ContainerType = EPinContainerType::None;
-	MapForEach->GetValuePin()->PinType = FEdGraphPinType::GetPinTypeForTerminalType(GetTargetMapPin()->PinType.PinValueType);
+	MapForEach->GetValuePin()->PinType = FEdGraphPinType::GetPinTypeForTerminalType(TargetMapPin->PinType.PinValueType);
 	MapForEach->GetValuePin()->PinType.ContainerType = EPinContainerType::None;
 
 	// Map add function
@@ -109,26 +120,26 @@ void UK2Node_MapAppend::ExpandNode(FKismetCompilerContext& CompilerContext, UEdG
 	AddElement->SetFromFunction(UBlueprintMapLibrary::StaticClass()->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(UBlueprintMapLibrary, Map_Add)));
 	AddElement->AllocateDefaultPins();
 	UEdGraphPin* AddElemTargetMapPin = AddElement->FindPinChecked(MapAppendHelper::TargetMapPin, EGPD_Input);
-	AddElemTargetMapPin->PinType = GetTargetMapPin()->PinType;
+	AddElemTargetMapPin->PinType = TargetMapPin->PinType;
 	AddElemTargetMapPin->PinType.ContainerType = EPinContainerType::Map;
 	UEdGraphPin* AddElemKeyPin = AddElement->FindPinChecked(TEXT("Key"), EGPD_Input);
-	AddElemKeyPin->PinType = GetTargetMapPin()->PinType;
+	AddElemKeyPin->PinType = TargetMapPin->PinType;
 	AddElemKeyPin->PinType.ContainerType = EPinContainerType::None;
 	UEdGraphPin* AddElemValuePin = AddElement->FindPinChecked(TEXT("Value"), EGPD_Input);
-	AddElemValuePin->PinType = FEdGraphPinType::GetPinTypeForTerminalType(GetTargetMapPin()->PinType.PinValueType);
+	AddElemValuePin->PinType = FEdGraphPinType::GetPinTypeForTerminalType(TargetMapPin->PinType.PinValueType);
 	AddElemValuePin->PinType.ContainerType = EPinContainerType::None;
 
 	// Connect exec with map for each exec
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *MapForEach->GetExecPin());
 
 	// Connect the target map with the add element map pin
-	CompilerContext.MovePinLinksToIntermediate(*GetTargetMapPin(), *AddElemTargetMapPin);
+	CompilerContext.MovePinLinksToIntermediate(*TargetMapPin, *AddElemTargetMapPin);
 	
 	// Connect source map with map for each map pin
-	CompilerContext.MovePinLinksToIntermediate(*GetSourceMapPin(), *MapForEach->GetMapPin());
+	CompilerContext.MovePinLinksToIntermediate(*SourceMapPin, *MapForEach->GetMapPin());
 	
 	// Connect then with map for each completed
-	CompilerContext.MovePinLinksToIntermediate(*GetThenPin(), *MapForEach->GetCompletedPin());
+	CompilerContext.MovePinLinksToIntermediate(*ThenPin, *MapForEach->GetCompletedPin());
 
 	// Connect loop body with add elem exec
 	K2NodeHelpers::TryConnect(CompilerContext, AddElement->GetExecPin(), MapForEach->GetLoopBodyPin());
@@ -156,33 +167,45 @@ void UK2Node_MapAppend::GetMenuActions(FBlueprintActionDatabaseRegistrar& Action
 void UK2Node_MapAppend::PostReconstructNode()
 {
 	Super::PostReconstructNode();
-	
-	if(GetTargetMapPin() && GetTargetMapPin()->LinkedTo.Num() > 0 && GetTargetMapPin()->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+	UEdGraphPin* TargetMapPin = GetTargetMapPin();
+	UEdGraphPin* SourceMapPin = GetSourceMapPin();
+	if (!TargetMapPin || !SourceMapPin)
 	{
-		GetTargetMapPin()->PinType = GetTargetMapPin()->LinkedTo[0]->PinType;
-		GetTargetMapPin()->PinType.PinValueType = FEdGraphTerminalType(GetTargetMapPin()->PinType.PinValueType);
-
-		GetSourceMapPin()->PinType = GetTargetMapPin()->LinkedTo[0]->PinType;
-		GetSourceMapPin()->PinType.PinValueType = FEdGraphTerminalType(GetTargetMapPin()->PinType.PinValueType);
+		return;
 	}
-	else if(GetSourceMapPin() && GetSourceMapPin()->LinkedTo.Num() > 0 && GetSourceMapPin()->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+	
+	if(TargetMapPin->LinkedTo.Num() > 0 && TargetMapPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
 	{
-		GetSourceMapPin()->PinType = GetSourceMapPin()->LinkedTo[0]->PinType;
-		GetSourceMapPin()->PinType.PinValueType = FEdGraphTerminalType(GetSourceMapPin()->PinType.PinValueType);
+		TargetMapPin->PinType = TargetMapPin->LinkedTo[0]->PinType;
+		TargetMapPin->PinType.PinValueType = FEdGraphTerminalType(TargetMapPin->PinType.PinValueType);
 
-		GetTargetMapPin()->PinType = GetSourceMapPin()->LinkedTo[0]->PinType;
-		GetTargetMapPin()->PinType.PinValueType = FEdGraphTerminalType(GetSourceMapPin()->PinType.PinValueType);
+		SourceMapPin->PinType = TargetMapPin->LinkedTo[0]->PinType;
+		SourceMapPin->PinType.PinValueType = FEdGraphTerminalType(TargetMapPin->PinType.PinValueType);
+	}
+	else if(SourceMapPin->LinkedTo.Num() > 0 && SourceMapPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard)
+	{
+		SourceMapPin->PinType = SourceMapPin->LinkedTo[0]->PinType;
+		SourceMapPin->PinType.PinValueType = FEdGraphTerminalType(SourceMapPin->PinType.PinValueType);
+
+		TargetMapPin->PinType = SourceMapPin->LinkedTo[0]->PinType;
+		TargetMapPin->PinType.PinValueType = FEdGraphTerminalType(SourceMapPin->PinType.PinValueType);
 	}
 }
 
 void UK2Node_MapAppend::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 {
 	Super::NotifyPinConnectionListChanged(Pin);
+	UEdGraphPin* TargetMapPin = GetTargetMapPin();
+	UEdGraphPin* SourceMapPin = GetSourceMapPin();
+	if (!Pin || !TargetMapPin || !SourceMapPin)
+	{
+		return;
+	}
 
 	
-	if(Pin == GetTargetMapPin() || Pin == GetSourceMapPin())
+	if(Pin == TargetMapPin || Pin == SourceMapPin)
 	{
-		if(GetTargetMapPin()->LinkedTo.Num() == 0 && GetSourceMapPin()->LinkedTo.Num() == 0)
+		if(TargetMapPin->LinkedTo.Num() == 0 && SourceMapPin->LinkedTo.Num() == 0)
 		{
 			// 仅在引脚当前类型已经是 Wildcard 时才重置，保留已序列化恢复的确定类型
 			if(GetTargetMapPin()->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
@@ -266,17 +289,17 @@ void UK2Node_MapAppend::AllocateDefaultPins()
 
 UEdGraphPin* UK2Node_MapAppend::GetTargetMapPin() const
 {
-	return FindPinChecked(MapAppendHelper::TargetMapPin, EGPD_Input);
+	return FindPin(MapAppendHelper::TargetMapPin, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_MapAppend::GetSourceMapPin() const
 {
-	return FindPinChecked(MapAppendHelper::SourceMapPin, EGPD_Input);
+	return FindPin(MapAppendHelper::SourceMapPin, EGPD_Input);
 }
 
 UEdGraphPin* UK2Node_MapAppend::GetThenPin() const
 {
-	return FindPinChecked(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+	return FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
 }
 
 #pragma endregion
