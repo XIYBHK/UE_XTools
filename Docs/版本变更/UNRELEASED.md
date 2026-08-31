@@ -44,6 +44,10 @@
 
 ### BlueprintExtensions
 - 修复 Map查找漏断不兼容连接
+- 修复 孤立多分支、多条件选择与 Map 节点触发 Checked 蓝图查询
+- 修复 Case 节点编辑时解引用缺失蓝图或图表
+- 测试 增加孤立节点编辑与重建安全护栏
+- 调整 循环与随机洗牌测试显式声明预期日志
 
 ### XTools_EnhancedCodeFlow
 - 兼容 补齐配置缓存头文件显式包含
