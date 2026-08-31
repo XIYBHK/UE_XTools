@@ -15,14 +15,14 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, int32 count, Ran
     //  使用UE容器替代STL - 计算权重总和并存储权重
     TArray<float> weights;
     weights.Reserve(sampleSize);
-    float totalWeight = 0.0f;
+    double totalWeight = 0.0;
     
     // 保存权重并计算总和
     for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = static_cast<float>(*weightBegin++);
         weights.Add(weight);  //  使用UE容器方法
         if(weight > 0.0f) {
-            totalWeight += weight;
+            totalWeight += static_cast<double>(weight);
         }
     }
     
@@ -38,7 +38,8 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, int32 count, Ran
     for(int32 idx = 0; idx < sampleSize; ++idx) {
         float weight = weights[idx];
         // 计算期望的出现次数，四舍五入
-        int32 expectedCount = static_cast<int32>((weight / totalWeight) * count + 0.5f);
+        int32 expectedCount = FMath::RoundToInt(
+            (static_cast<double>(weight) / totalWeight) * static_cast<double>(count));
         expectedCounts.Add(expectedCount);  //  使用UE容器方法
         totalCount += expectedCount;
     }
@@ -106,4 +107,4 @@ Out WeightPoolSample(It begin, It end, Wt weightBegin, Out out, int32 count, Ran
     return out;
 }
 
-} 
+}

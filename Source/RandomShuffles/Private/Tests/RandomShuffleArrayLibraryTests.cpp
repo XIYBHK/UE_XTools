@@ -11,6 +11,8 @@
 #include "RandomShuffleArrayLibrary.h"
 #include "WeightPoolSample.h"
 
+#include <limits>
+
 namespace
 {
 	template<typename ElementPropertyType>
@@ -169,6 +171,30 @@ bool FRandomShuffle_StrictWeightSamplingMatchesAllocation::RunTest(const FString
 	TestEqual(TEXT("权重2应分配4个结果"), CountValue(FirstResult, 20), 4);
 	TestEqual(TEXT("权重3应分配6个结果"), CountValue(FirstResult, 30), 6);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRandomShuffle_StrictWeightSamplingHandlesLargeFiniteWeights,
+	"XTools.RandomShuffles.Sampling.StrictWeightHandlesLargeFiniteWeights",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRandomShuffle_StrictWeightSamplingHandlesLargeFiniteWeights::RunTest(const FString& Parameters)
+{
+	const TArray<int32> Input = { 10, 20, 30 };
+	const float LargeFiniteWeight = std::numeric_limits<float>::max();
+	const TArray<float> Weights = { LargeFiniteWeight, LargeFiniteWeight, LargeFiniteWeight };
+	TArray<int32> Result;
+	Result.SetNumUninitialized(6);
+
+	FRandomStream Stream(556677);
+	RandomShuffles::WeightPoolSample(
+		Input.GetData(), Input.GetData() + Input.Num(), Weights.GetData(),
+		Result.GetData(), Result.Num(), FStreamRandom(Stream));
+
+	TestEqual(TEXT("等大极值权重的第一个元素应分配2个结果"), CountValue(Result, 10), 2);
+	TestEqual(TEXT("等大极值权重的第二个元素应分配2个结果"), CountValue(Result, 20), 2);
+	TestEqual(TEXT("等大极值权重的第三个元素应分配2个结果"), CountValue(Result, 30), 2);
 	return true;
 }
 
