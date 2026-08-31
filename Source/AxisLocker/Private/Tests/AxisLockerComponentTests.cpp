@@ -130,6 +130,7 @@ bool FAxisLockerComponent_RestoresStateToOriginalTarget::RunTest(const FString& 
 
 	OriginalBody->bLockXTranslation = true;
 	OriginalBody->bLockYTranslation = false;
+	OriginalBody->DOFMode = EDOFMode::None;
 	Locker->SetTargetComponent(OriginalTarget);
 	Locker->PushLockState();
 
@@ -137,6 +138,7 @@ bool FAxisLockerComponent_RestoresStateToOriginalTarget::RunTest(const FString& 
 	NewBody->bLockXTranslation = false;
 	NewBody->bLockYTranslation = true;
 	Locker->SetTargetComponent(NewTarget);
+	AddExpectedError(TEXT("目标组件未开启物理模拟"), EAutomationExpectedErrorFlags::Contains, 2);
 	Locker->PopLockState();
 
 	TestTrue(TEXT("Saved state must be restored to the original target"), OriginalBody->bLockXTranslation);

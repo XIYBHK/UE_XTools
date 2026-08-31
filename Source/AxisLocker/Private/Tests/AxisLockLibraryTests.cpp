@@ -7,7 +7,9 @@
 
 #include "AxisLockLibrary.h"
 
+#include "Components/BoxComponent.h"
 #include "Misc/AutomationTest.h"
+#include "PhysicsEngine/BodyInstance.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAxisLockLibrary_MapsPresetsToExpectedAxes,
@@ -58,6 +60,30 @@ bool FAxisLockLibrary_InvalidTargetHasNoLockedAxes::RunTest(const FString& Param
 		State.bLockPositionX || State.bLockPositionY || State.bLockPositionZ ||
 		State.bLockRotationX || State.bLockRotationY || State.bLockRotationZ);
 	TestFalse(TEXT("无效组件不应报告任意轴被锁定"), UAxisLockLibrary::IsAnyAxisLocked(nullptr));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAxisLockLibrary_NoneModeIgnoresStaleAxisFlags,
+	"XTools.AxisLocker.Library.NoneModeIgnoresStaleAxisFlags",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAxisLockLibrary_NoneModeIgnoresStaleAxisFlags::RunTest(const FString& Parameters)
+{
+	UBoxComponent* Target = NewObject<UBoxComponent>();
+	FBodyInstance* BodyInstance = Target->GetBodyInstance();
+	if (!TestNotNull(TEXT("测试组件应具有BodyInstance"), BodyInstance))
+	{
+		return false;
+	}
+
+	BodyInstance->bLockXTranslation = true;
+	BodyInstance->DOFMode = EDOFMode::SixDOF;
+	TestTrue(TEXT("SixDOF模式应报告遗留X位移锁"), UAxisLockLibrary::IsAnyAxisLocked(Target));
+
+	BodyInstance->DOFMode = EDOFMode::None;
+	TestFalse(TEXT("None模式应忽略未清理的六轴标志"), UAxisLockLibrary::IsAnyAxisLocked(Target));
 
 	return true;
 }

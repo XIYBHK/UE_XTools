@@ -119,6 +119,11 @@ bool UAxisLockLibrary::IsAnyAxisLocked(UPrimitiveComponent* Target)
 {
 	const FAxisLockState State = GetLockState(Target);
 	const EDOFMode::Type ResolvedDOFMode = FBodyInstance::ResolveDOFMode(State.DOFMode);
+	if (ResolvedDOFMode == EDOFMode::None)
+	{
+		return false;
+	}
+
 	if (ResolvedDOFMode == EDOFMode::YZPlane
 		|| ResolvedDOFMode == EDOFMode::XZPlane
 		|| ResolvedDOFMode == EDOFMode::XYPlane
