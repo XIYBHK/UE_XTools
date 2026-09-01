@@ -351,6 +351,327 @@ namespace
         return BestIndex;
     }
 
+    struct FSmartConnectionSource
+    {
+        UMaterialExpression* Expression = nullptr;
+        int32 OutputIndex = 0;
+        uint32 OutputType = MCT_Unknown;
+        FString PropertyName;
+        TArray<FString> Aliases;
+        bool bConsumed = false;
+    };
+
+    struct FPendingFunctionInputConnection
+    {
+        int32 InputIndex = INDEX_NONE;
+        UMaterialExpression* SourceExpression = nullptr;
+        int32 SourceOutputIndex = 0;
+        FString PropertyName;
+        FString InputName;
+        int32 MatchScore = 0;
+    };
+
+    void BuildSmartInputConnectionPlan(
+        UMaterialEditorOnlyData* EditorOnlyData,
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        TArray<FPendingFunctionInputConnection>& OutConnections)
+    {
+        OutConnections.Reset();
+        if (!EditorOnlyData || !FunctionCall)
+        {
+            return;
+        }
+
+        TArray<FSmartConnectionSource> Sources;
+        auto AddSource = [&Sources](
+            const FExpressionInput& Input,
+            const FString& PropertyName,
+            const TArray<FString>& Aliases = {})
+        {
+            if (!Input.Expression)
+            {
+                return;
+            }
+
+            const int32 OutputIndex = Input.OutputIndex == INDEX_NONE ? 0 : Input.OutputIndex;
+            Sources.Add({
+                Input.Expression,
+                OutputIndex,
+                GetMaterialOutputType(Input.Expression, OutputIndex),
+                PropertyName,
+                Aliases,
+                false});
+        };
+
+        AddSource(EditorOnlyData->BaseColor, X_MaterialConstants::BaseColor,
+            {X_MaterialConstants::Alias_Albedo, X_MaterialConstants::Alias_Diffuse});
+        AddSource(EditorOnlyData->Metallic, X_MaterialConstants::Metallic,
+            {X_MaterialConstants::Alias_Metalness});
+        AddSource(EditorOnlyData->Specular, X_MaterialConstants::Specular);
+        AddSource(EditorOnlyData->Roughness, X_MaterialConstants::Roughness,
+            {X_MaterialConstants::Alias_Rough});
+        AddSource(EditorOnlyData->EmissiveColor, X_MaterialConstants::EmissiveColor,
+            {X_MaterialConstants::Alias_Emission, X_MaterialConstants::Alias_Emissive});
+        AddSource(EditorOnlyData->Normal, X_MaterialConstants::Normal);
+        AddSource(EditorOnlyData->AmbientOcclusion, X_MaterialConstants::AmbientOcclusion,
+            {X_MaterialConstants::Alias_AO, X_MaterialConstants::Alias_Ambient});
+
+        for (int32 InputIndex = 0; InputIndex < FunctionCall->FunctionInputs.Num(); ++InputIndex)
+        {
+            const FString InputName = FunctionCall->FunctionInputs[InputIndex].Input.InputName.ToString();
+            if (IsIgnoredPinName(InputName))
+            {
+                UE_LOG(LogX_AssetEditor, Verbose, TEXT("输入引脚 %s 被忽略前缀排除"), *InputName);
+                continue;
+            }
+
+            const uint32 TargetInputType = GetMaterialInputType(FunctionCall, InputIndex);
+            int32 BestScore = 0;
+            int32 BestSourceIndex = INDEX_NONE;
+            for (int32 SourceIndex = 0; SourceIndex < Sources.Num(); ++SourceIndex)
+            {
+                const FSmartConnectionSource& Source = Sources[SourceIndex];
+                if (Source.bConsumed
+                    || !AreMaterialTypesCompatible(Source.OutputType, TargetInputType))
+                {
+                    continue;
+                }
+
+                const int32 Score = CalculateMatchScoreWithAliases(
+                    InputName,
+                    Source.PropertyName,
+                    Source.Aliases);
+                if (Score > BestScore)
+                {
+                    BestScore = Score;
+                    BestSourceIndex = SourceIndex;
+                }
+            }
+
+            if (BestSourceIndex != INDEX_NONE)
+            {
+                FSmartConnectionSource& Source = Sources[BestSourceIndex];
+                Source.bConsumed = true;
+                OutConnections.Add({
+                    InputIndex,
+                    Source.Expression,
+                    Source.OutputIndex,
+                    Source.PropertyName,
+                    InputName,
+                    BestScore});
+            }
+        }
+    }
+
+    void ApplySmartInputConnectionPlan(
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        const TArray<FPendingFunctionInputConnection>& Connections)
+    {
+        if (!FunctionCall)
+        {
+            return;
+        }
+
+        for (const FPendingFunctionInputConnection& Connection : Connections)
+        {
+            if (!FunctionCall->FunctionInputs.IsValidIndex(Connection.InputIndex)
+                || !Connection.SourceExpression)
+            {
+                continue;
+            }
+
+            FunctionCall->FunctionInputs[Connection.InputIndex].Input.Connect(
+                Connection.SourceOutputIndex,
+                Connection.SourceExpression);
+            UE_LOG(LogX_AssetEditor, Log, TEXT("自动连接 %s 到函数输入 %s (匹配度: %d)"),
+                *Connection.PropertyName,
+                *Connection.InputName,
+                Connection.MatchScore);
+        }
+    }
+
+    bool ConnectSmartFunctionOutputs(
+        UMaterial* Material,
+        UMaterialExpressionMaterialFunctionCall* FunctionCall)
+    {
+        struct FTargetProperty
+        {
+            EMaterialProperty Property;
+            FString Name;
+            TArray<FString> Aliases;
+        };
+
+        const TArray<FTargetProperty> Targets = {
+            {MP_BaseColor, X_MaterialConstants::BaseColor, {X_MaterialConstants::Alias_Albedo}},
+            {MP_Metallic, X_MaterialConstants::Metallic, {}},
+            {MP_Roughness, X_MaterialConstants::Roughness, {}},
+            {MP_Normal, X_MaterialConstants::Normal, {}},
+            {MP_EmissiveColor, X_MaterialConstants::EmissiveColor,
+                {X_MaterialConstants::Alias_Emission, X_MaterialConstants::Alias_Emissive}},
+            {MP_AmbientOcclusion, X_MaterialConstants::AmbientOcclusion,
+                {X_MaterialConstants::Alias_AO}}
+        };
+
+        bool bHasConnected = false;
+        for (int32 OutputIndex = 0; OutputIndex < FunctionCall->FunctionOutputs.Num(); ++OutputIndex)
+        {
+            const FString OutputName = FunctionCall->FunctionOutputs[OutputIndex].Output.OutputName.ToString();
+            const uint32 OutputType = GetMaterialOutputType(FunctionCall, OutputIndex);
+            int32 BestScore = 0;
+            const FTargetProperty* BestTarget = nullptr;
+
+            for (const FTargetProperty& Target : Targets)
+            {
+                if (!AreMaterialTypesCompatible(
+                    OutputType,
+                    GetExpectedMaterialPropertyType(Target.Property)))
+                {
+                    continue;
+                }
+
+                const int32 Score = CalculateMatchScoreWithAliases(
+                    OutputName,
+                    Target.Name,
+                    Target.Aliases);
+                if (Score > BestScore)
+                {
+                    BestScore = Score;
+                    BestTarget = &Target;
+                }
+            }
+
+            if (BestTarget
+                && FX_MaterialFunctionConnector::ConnectExpressionToMaterialProperty(
+                    Material,
+                    FunctionCall,
+                    BestTarget->Property,
+                    OutputIndex))
+            {
+                UE_LOG(LogX_AssetEditor, Log, TEXT("输出 %s 自动连接到 %s (匹配度: %d)"),
+                    *OutputName,
+                    *BestTarget->Name,
+                    BestScore);
+                bHasConnected = true;
+            }
+        }
+
+        return bHasConnected;
+    }
+
+    int32 FindOutputIndexByName(
+        const TArray<FFunctionExpressionOutput>& FunctionOutputs,
+        const FString& Name)
+    {
+        for (int32 OutputIndex = 0; OutputIndex < FunctionOutputs.Num(); ++OutputIndex)
+        {
+            if (FunctionOutputs[OutputIndex].Output.OutputName.ToString().Contains(Name))
+            {
+                return OutputIndex;
+            }
+        }
+
+        return 0;
+    }
+
+    bool ConnectOutputOnlyFunction(
+        UMaterial* Material,
+        UMaterialExpressionMaterialFunctionCall* FunctionCall,
+        EConnectionMode ConnectionMode,
+        const TSharedPtr<FX_MaterialFunctionParams>& Params)
+    {
+        if (FunctionCall->FunctionOutputs.Num() == 0)
+        {
+            return false;
+        }
+
+        TSharedPtr<FX_MaterialFunctionParams> UsedParams = Params;
+        if (!UsedParams.IsValid())
+        {
+            UsedParams = MakeShared<FX_MaterialFunctionParams>();
+            UsedParams->ConnectionMode = ConnectionMode;
+            const FString FunctionName = FunctionCall->MaterialFunction
+                ? FunctionCall->MaterialFunction->GetName()
+                : FString();
+            UsedParams->SetupConnectionsByFunctionName(FunctionName);
+        }
+
+        auto TryConnect = [&](bool bCondition, const FString& PropertyName, EMaterialProperty Property)
+        {
+            if (!bCondition)
+            {
+                return false;
+            }
+
+            const int32 OutputIndex = FindOutputIndexByName(
+                FunctionCall->FunctionOutputs,
+                PropertyName);
+            bool bConnected = false;
+            if (UsedParams->ConnectionMode == EConnectionMode::Add)
+            {
+                bConnected = FX_MaterialFunctionConnector::CreateAddConnectionToProperty(
+                    Material,
+                    FunctionCall,
+                    OutputIndex,
+                    Property) != nullptr;
+            }
+            else if (UsedParams->ConnectionMode == EConnectionMode::Multiply)
+            {
+                bConnected = FX_MaterialFunctionConnector::CreateMultiplyConnectionToProperty(
+                    Material,
+                    FunctionCall,
+                    OutputIndex,
+                    Property) != nullptr;
+            }
+            else
+            {
+                bConnected = FX_MaterialFunctionConnector::ConnectExpressionToMaterialProperty(
+                    Material,
+                    FunctionCall,
+                    Property,
+                    OutputIndex);
+            }
+
+            if (bConnected)
+            {
+                UE_LOG(LogX_AssetEditor, Log, TEXT("根据函数名称连接到%s"), *PropertyName);
+            }
+            return bConnected;
+        };
+
+        if (TryConnect(UsedParams->bConnectToEmissive, X_MaterialConstants::EmissiveColor, MP_EmissiveColor)
+            || TryConnect(UsedParams->bConnectToBaseColor, X_MaterialConstants::BaseColor, MP_BaseColor)
+            || TryConnect(UsedParams->bConnectToMetallic, X_MaterialConstants::Metallic, MP_Metallic)
+            || TryConnect(UsedParams->bConnectToRoughness, X_MaterialConstants::Roughness, MP_Roughness)
+            || TryConnect(UsedParams->bConnectToNormal, X_MaterialConstants::Normal, MP_Normal)
+            || TryConnect(UsedParams->bConnectToAO, X_MaterialConstants::Alias_AO, MP_AmbientOcclusion))
+        {
+            return true;
+        }
+
+        if (UsedParams->ConnectionMode == EConnectionMode::Add)
+        {
+            return FX_MaterialFunctionConnector::CreateAddConnectionToProperty(
+                Material,
+                FunctionCall,
+                0,
+                MP_EmissiveColor) != nullptr;
+        }
+        if (UsedParams->ConnectionMode == EConnectionMode::Multiply)
+        {
+            return FX_MaterialFunctionConnector::CreateMultiplyConnectionToProperty(
+                Material,
+                FunctionCall,
+                0,
+                MP_EmissiveColor) != nullptr;
+        }
+
+        return FX_MaterialFunctionConnector::ConnectExpressionToMaterialProperty(
+            Material,
+            FunctionCall,
+            MP_BaseColor,
+            0);
+    }
+
     bool InsertFunctionIntoExpressionInput(
         UMaterialExpression* TargetExpression,
         int32 TargetInputIndex,
@@ -689,6 +1010,29 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         return false;
     }
 
+    if (FunctionCall->GetTypedOuter<UMaterial>() != Material)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("函数调用不属于目标材质，拒绝跨材质连接"));
+        return false;
+    }
+
+    FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionConnector", "SetupAutoConnections", "Setup Material Function Connections"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    FunctionCall->SetFlags(RF_Transactional);
+    Material->Modify();
+    FunctionCall->Modify();
+
+    auto Finish = [&Transaction](bool bSuccess)
+    {
+        if (!bSuccess)
+        {
+            Transaction.Cancel();
+        }
+        return bSuccess;
+    };
+
     const bool bSmartConnectEnabled = Params.IsValid() ? Params->bEnableSmartConnect : bEnableSmartConnect;
 
     // 智能连接关闭：优先走手动参数；无参数时使用基础回退策略，保证显式开关始终生效。
@@ -697,27 +1041,31 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         if (Params.IsValid())
         {
             UE_LOG(LogX_AssetEditor, Log, TEXT("用户禁用了智能连接，使用手动配置模式"));
-            return ProcessManualConnections(Material, FunctionCall, ConnectionMode, Params);
+            if (Params->bUseMaterialAttributes)
+            {
+                return Finish(ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0));
+            }
+            return Finish(ProcessManualConnections(Material, FunctionCall, ConnectionMode, Params));
         }
 
         UE_LOG(LogX_AssetEditor, Log, TEXT("智能连接已禁用且未提供手动参数，使用基础连接策略"));
 
         if (IsMaterialAttributesEnabled(Material))
         {
-            return ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0);
+            return Finish(ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0));
         }
 
         if (ConnectionMode == EConnectionMode::Add)
         {
-            return CreateAddConnectionToProperty(Material, FunctionCall, 0, MP_EmissiveColor) != nullptr;
+            return Finish(CreateAddConnectionToProperty(Material, FunctionCall, 0, MP_EmissiveColor) != nullptr);
         }
 
         if (ConnectionMode == EConnectionMode::Multiply)
         {
-            return CreateMultiplyConnectionToProperty(Material, FunctionCall, 0, MP_EmissiveColor) != nullptr;
+            return Finish(CreateMultiplyConnectionToProperty(Material, FunctionCall, 0, MP_EmissiveColor) != nullptr);
         }
 
-        return ConnectExpressionToMaterialProperty(Material, FunctionCall, MP_BaseColor, 0);
+        return Finish(ConnectExpressionToMaterialProperty(Material, FunctionCall, MP_BaseColor, 0));
     }
     
     UE_LOG(LogX_AssetEditor, Log, TEXT("正在对材质 %s 应用智能连接逻辑..."), *Material->GetName());
@@ -757,17 +1105,16 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
     if (bShouldUseMaterialAttributes)
     {
         UE_LOG(LogX_AssetEditor, Log, TEXT("使用MaterialAttributes专用连接逻辑"));
-        return ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0);
+        return Finish(ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0));
     }
 
     UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
     if (!EditorOnlyData)
     {
         UE_LOG(LogX_AssetEditor, Warning, TEXT("无法获取材质编辑器数据"));
-        return false;
+        return Finish(false);
     }
 
-    // 获取函数输入和输出
     const TArray<FFunctionExpressionInput>& FunctionInputs = FunctionCall->FunctionInputs;
     const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
 
@@ -775,272 +1122,33 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
         FunctionCall->MaterialFunction ? *FunctionCall->MaterialFunction->GetName() : TEXT("未知"),
         FunctionInputs.Num(), FunctionOutputs.Num());
 
-    bool bHasConnected = false;
-
-    // 检查是否同时有输入和输出引脚
-    bool bHasInputsAndOutputs = (FunctionInputs.Num() > 0 && FunctionOutputs.Num() > 0);
+    const bool bHasInputsAndOutputs = FunctionInputs.Num() > 0 && FunctionOutputs.Num() > 0;
+    TArray<FPendingFunctionInputConnection> PendingInputConnections;
     if (bHasInputsAndOutputs)
     {
-        // 强制重写连接模式为None，确保不使用Add/Multiply节点
-        ConnectionMode = EConnectionMode::None;
+        BuildSmartInputConnectionPlan(EditorOnlyData, FunctionCall, PendingInputConnections);
     }
 
-    // 记录所有可用的材质属性连接
-    struct FPropertyConnection
+    bool bHasConnected = false;
+
+    if (bHasInputsAndOutputs)
     {
-        FExpressionInput* Input;
-        EMaterialProperty Property;
-        int32 OutputIndex;
-        uint32 OutputType;
-        FString PropertyName;
-        TArray<FString> Aliases;
-        bool bConsumed = false;
-    };
-    TArray<FPropertyConnection> PropertyConnections;
-
-    // 辅助函数：添加连接目标
-    auto AddConnectionTarget = [&](FExpressionInput& Input, EMaterialProperty Prop, const FString& Name, const TArray<FString>& Aliases = {})
-    {
-        if (Input.Expression)
+        bHasConnected = ConnectSmartFunctionOutputs(Material, FunctionCall);
+        if (bHasConnected)
         {
-            const int32 SourceOutputIndex = (Input.OutputIndex == INDEX_NONE) ? 0 : Input.OutputIndex;
-            const uint32 SourceOutputType = GetMaterialOutputType(Input.Expression, SourceOutputIndex);
-            PropertyConnections.Add({&Input, Prop, SourceOutputIndex, SourceOutputType, Name, Aliases, false});
-        }
-    };
-
-    // 检查现有的材质属性连接，并注册别名
-    AddConnectionTarget(EditorOnlyData->BaseColor, MP_BaseColor, X_MaterialConstants::BaseColor, {X_MaterialConstants::Alias_Albedo, X_MaterialConstants::Alias_Diffuse});
-    AddConnectionTarget(EditorOnlyData->Metallic, MP_Metallic, X_MaterialConstants::Metallic, {X_MaterialConstants::Alias_Metalness});
-    AddConnectionTarget(EditorOnlyData->Specular, MP_Specular, X_MaterialConstants::Specular);
-    AddConnectionTarget(EditorOnlyData->Roughness, MP_Roughness, X_MaterialConstants::Roughness, {X_MaterialConstants::Alias_Rough});
-    AddConnectionTarget(EditorOnlyData->EmissiveColor, MP_EmissiveColor, X_MaterialConstants::EmissiveColor, {X_MaterialConstants::Alias_Emission, X_MaterialConstants::Alias_Emissive});
-    AddConnectionTarget(EditorOnlyData->Normal, MP_Normal, X_MaterialConstants::Normal);
-    AddConnectionTarget(EditorOnlyData->AmbientOcclusion, MP_AmbientOcclusion, X_MaterialConstants::AmbientOcclusion, {X_MaterialConstants::Alias_AO, X_MaterialConstants::Alias_Ambient});
-    
-    // 对于每一个输入，尝试找到匹配的现有连接
-    for (int32 FunctionInputIndex = 0; FunctionInputIndex < FunctionInputs.Num(); ++FunctionInputIndex)
-    {
-        const FFunctionExpressionInput& FunctionInput = FunctionInputs[FunctionInputIndex];
-        const FExpressionInput& Input = FunctionInput.Input;
-        const FString InputName = Input.InputName.ToString();
-        const uint32 TargetInputType = GetMaterialInputType(FunctionCall, FunctionInputIndex);
-
-        if (IsIgnoredPinName(InputName))
-        {
-            UE_LOG(LogX_AssetEditor, Verbose, TEXT("输入引脚 %s 被忽略前缀排除"), *InputName);
-            continue;
-        }
-
-        int32 BestScore = 0;
-        FPropertyConnection* BestConnection = nullptr;
-
-        // 遍历所有可能的连接目标，寻找最佳匹配
-        for (FPropertyConnection& Connection : PropertyConnections)
-        {
-            if (Connection.bConsumed)
-            {
-                continue; // 已被占用
-            }
-
-            if (!AreMaterialTypesCompatible(Connection.OutputType, TargetInputType))
-            {
-                continue;
-            }
-
-            int32 Score = CalculateMatchScoreWithAliases(InputName, Connection.PropertyName, Connection.Aliases);
-
-            // 更新最佳匹配
-            if (Score > BestScore)
-            {
-                BestScore = Score;
-                BestConnection = &Connection;
-            }
-        }
-
-        // 如果找到了足够好的匹配（>0分），则建立连接
-        if (BestConnection && BestScore > 0)
-        {
-            // 连接这个材质属性到函数输入
-            FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
-            if (InputPtr)
-            {
-                const int32 SourceOutputIndex = (BestConnection->OutputIndex == INDEX_NONE) ? 0 : BestConnection->OutputIndex;
-                InputPtr->Connect(SourceOutputIndex, BestConnection->Input->Expression);
-                BestConnection->bConsumed = true;
-                UE_LOG(LogX_AssetEditor, Log, TEXT("自动连接 %s 到函数输入 %s (匹配度: %d)"),
-                    *BestConnection->PropertyName, *InputName, BestScore);
-                bHasConnected = true;
-            }
+            ApplySmartInputConnectionPlan(FunctionCall, PendingInputConnections);
         }
     }
-
-    // 对于每一个输出，尝试连接到适当的材质属性
-    if (bHasInputsAndOutputs) // 同时有输入和输出的函数，使用直接连接
+    else
     {
-        for (const FFunctionExpressionOutput& FunctionOutput : FunctionOutputs)
-        {
-            const FExpressionOutput& Output = FunctionOutput.Output;
-            const FString OutputName = Output.OutputName.ToString();
-            
-            // 查找输出索引
-            int32 OutputIndex = 0;
-            for (int32 i = 0; i < FunctionOutputs.Num(); ++i)
-            {
-                if (&FunctionOutputs[i] == &FunctionOutput)
-                {
-                    OutputIndex = i;
-                    break;
-                }
-            }
-
-            // 查找最佳匹配的材质属性
-            int32 BestScore = 0;
-            EMaterialProperty BestProperty = MP_MAX;
-            FString BestPropertyName;
-
-            // 定义要检查的属性列表
-            struct FTargetProp { EMaterialProperty P; FString N; TArray<FString> A; };
-            TArray<FTargetProp> Targets = {
-                {MP_BaseColor, X_MaterialConstants::BaseColor, {X_MaterialConstants::Alias_Albedo}},
-                {MP_Metallic, X_MaterialConstants::Metallic, {}},
-                {MP_Roughness, X_MaterialConstants::Roughness, {}},
-                {MP_Normal, X_MaterialConstants::Normal, {}},
-                {MP_EmissiveColor, X_MaterialConstants::EmissiveColor, {X_MaterialConstants::Alias_Emission, X_MaterialConstants::Alias_Emissive}},
-                {MP_AmbientOcclusion, X_MaterialConstants::AmbientOcclusion, {X_MaterialConstants::Alias_AO}}
-            };
-
-            for (const auto& Target : Targets)
-            {
-                const uint32 OutputType = GetMaterialOutputType(FunctionCall, OutputIndex);
-                const uint32 PropertyType = GetExpectedMaterialPropertyType(Target.P);
-                if (!AreMaterialTypesCompatible(OutputType, PropertyType))
-                {
-                    continue;
-                }
-
-                int32 Score = CalculateMatchScoreWithAliases(OutputName, Target.N, Target.A);
-
-                if (Score > BestScore)
-                {
-                    BestScore = Score;
-                    BestProperty = Target.P;
-                    BestPropertyName = Target.N;
-                }
-            }
-
-            // 如果匹配成功
-            if (BestScore > 0 && BestProperty != MP_MAX)
-            {
-                if (ConnectExpressionToMaterialProperty(Material, FunctionCall, BestProperty, OutputIndex))
-                {
-                    UE_LOG(LogX_AssetEditor, Log, TEXT("输出 %s 自动连接到 %s (匹配度: %d)"),
-                        *OutputName, *BestPropertyName, BestScore);
-                    bHasConnected = true;
-                }
-            }
-        }
+        bHasConnected = ConnectOutputOnlyFunction(
+            Material,
+            FunctionCall,
+            ConnectionMode,
+            Params);
     }
-    // 只有输出引脚的情况，可以使用Add/Multiply节点
-    else if (FunctionOutputs.Num() > 0)
-    {
-        // 创建一个查找输出索引的辅助函数
-        auto FindOutputIndexByNameFunc = [&FunctionOutputs](const FString& Name) -> int32
-        {
-            for (int32 i = 0; i < FunctionOutputs.Num(); ++i)
-            {
-                if (FunctionOutputs[i].Output.OutputName.ToString().Contains(Name))
-                {
-                    return i;
-                }
-            }
-            return 0; // 默认返回第一个输出的索引
-        };
-        
-        // 从函数名称推断可能的连接目标
-        FString FunctionName = FunctionCall->MaterialFunction ? FunctionCall->MaterialFunction->GetName() : TEXT("");
-        
-        // 使用传入的参数或创建临时参数
-        TSharedPtr<FX_MaterialFunctionParams> UsedParams = Params;
-        FX_MaterialFunctionParams TempParams;
-        
-        if (!UsedParams.IsValid())
-        {
-            // 如果没有传入参数，创建一个临时参数并根据函数名称设置
-            TempParams.ConnectionMode = ConnectionMode;
-            TempParams.SetupConnectionsByFunctionName(FunctionName);
-            UsedParams = MakeShareable(new FX_MaterialFunctionParams(TempParams));
-        }
-        
-        // 优先基于函数名称进行连接
-        bool bHasConnectedByName = false;
-        
-        auto TryConnect = [&](bool bCondition, const FString& PropName, EMaterialProperty Prop)
-        {
-            if (bCondition && !bHasConnectedByName)
-            {
-                int32 OutputIdx = FindOutputIndexByNameFunc(PropName);
-                bool bConnected = false;
-                if (UsedParams->ConnectionMode == EConnectionMode::Add)
-                {
-                    bConnected = CreateAddConnectionToProperty(Material, FunctionCall, OutputIdx, Prop) != nullptr;
-                }
-                else if (UsedParams->ConnectionMode == EConnectionMode::Multiply)
-                {
-                    bConnected = CreateMultiplyConnectionToProperty(Material, FunctionCall, OutputIdx, Prop) != nullptr;
-                }
-                else
-                {
-                    bConnected = ConnectExpressionToMaterialProperty(Material, FunctionCall, Prop, OutputIdx);
-                }
 
-                if (bConnected)
-                {
-                    UE_LOG(LogX_AssetEditor, Log, TEXT("根据函数名称连接到%s"), *PropName);
-                    bHasConnected = true;
-                    bHasConnectedByName = true;
-                }
-            }
-        };
-
-        TryConnect(UsedParams->bConnectToEmissive, X_MaterialConstants::EmissiveColor, MP_EmissiveColor);
-        TryConnect(UsedParams->bConnectToBaseColor, X_MaterialConstants::BaseColor, MP_BaseColor);
-        TryConnect(UsedParams->bConnectToMetallic, X_MaterialConstants::Metallic, MP_Metallic);
-        TryConnect(UsedParams->bConnectToRoughness, X_MaterialConstants::Roughness, MP_Roughness);
-        TryConnect(UsedParams->bConnectToNormal, X_MaterialConstants::Normal, MP_Normal);
-        TryConnect(UsedParams->bConnectToAO, X_MaterialConstants::Alias_AO, MP_AmbientOcclusion);
-        
-        // 如果没有根据名称自动连接，则根据用户在UI中的选择进行连接
-        if (!bHasConnectedByName && FunctionOutputs.Num() > 0)
-        {
-            int32 OutputIdx = 0; // 默认使用第一个输出
-            
-            // 基于用户的连接模式和勾选的属性进行连接
-            // 用户勾选项的优先级：Emissive > BaseColor > Metallic > Roughness > Normal > AO
-            
-            // 检查用户可能勾选的属性和连接模式
-            if (UsedParams->ConnectionMode == EConnectionMode::Add)
-            {
-                // 如果用户选择了Add连接模式，默认连接到EmissiveColor
-                bHasConnected = CreateAddConnectionToProperty(
-                    Material, FunctionCall, OutputIdx, MP_EmissiveColor) != nullptr;
-            }
-            else if (UsedParams->ConnectionMode == EConnectionMode::Multiply)
-            {
-                // 如果用户选择了Multiply连接模式，默认连接到EmissiveColor
-                bHasConnected = CreateMultiplyConnectionToProperty(
-                    Material, FunctionCall, OutputIdx, MP_EmissiveColor) != nullptr;
-            }
-            else
-            {
-                // 默认连接到BaseColor
-                bHasConnected = ConnectExpressionToMaterialProperty(
-                    Material, FunctionCall, MP_BaseColor, OutputIdx);
-            }
-        }
-    }
-    
-    return bHasConnected;
+    return Finish(bHasConnected);
 }
 
 UMaterialExpressionAdd* FX_MaterialFunctionConnector::CreateAddConnectionToProperty(
