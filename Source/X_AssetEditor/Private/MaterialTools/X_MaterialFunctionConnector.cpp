@@ -345,7 +345,7 @@ namespace
 
         if (BestIndex == INDEX_NONE)
         {
-            return 0;
+            return INDEX_NONE;
         }
 
         return BestIndex;
@@ -358,8 +358,15 @@ namespace
         UMaterialExpressionMaterialFunctionCall* NewFunctionCall,
         int32 PreferredOutputIndex = INDEX_NONE)
     {
-        if (!TargetExpression || !NewFunctionCall)
+        if (!TargetExpression || !NewFunctionCall || TargetExpression == NewFunctionCall)
         {
+            return false;
+        }
+
+        UMaterial* OwningMaterial = TargetExpression->GetTypedOuter<UMaterial>();
+        if (!OwningMaterial || NewFunctionCall->GetTypedOuter<UMaterial>() != OwningMaterial)
+        {
+            UE_LOG(LogX_AssetEditor, Warning, TEXT("MaterialAttributes表达式不属于同一材质，拒绝连接"));
             return false;
         }
 
@@ -367,24 +374,6 @@ namespace
         if (!TargetInput)
         {
             return false;
-        }
-
-        UMaterialExpression* PreviousExpression = TargetInput->Expression;
-        const int32 PreviousOutputIndex = (TargetInput->OutputIndex == INDEX_NONE) ? 0 : TargetInput->OutputIndex;
-
-        if (PreviousExpression)
-        {
-            const uint32 PreviousSourceType = GetMaterialOutputType(PreviousExpression, PreviousOutputIndex);
-            const int32 FunctionInputIndex = FindBestFunctionInputIndexBySemantic(
-                NewFunctionCall,
-                TargetInputSemantic,
-                PreviousSourceType);
-
-            if (FunctionInputIndex != INDEX_NONE
-                && NewFunctionCall->FunctionInputs.IsValidIndex(FunctionInputIndex))
-            {
-                NewFunctionCall->FunctionInputs[FunctionInputIndex].Input.Connect(PreviousOutputIndex, PreviousExpression);
-            }
         }
 
         const uint32 TargetInputType = GetMaterialInputType(TargetExpression, TargetInputIndex);
@@ -397,6 +386,40 @@ namespace
         if (FunctionOutputIndex == INDEX_NONE)
         {
             return false;
+        }
+
+        UMaterialExpression* PreviousExpression = TargetInput->Expression;
+        const int32 PreviousOutputIndex = (TargetInput->OutputIndex == INDEX_NONE) ? 0 : TargetInput->OutputIndex;
+        int32 FunctionInputIndex = INDEX_NONE;
+
+        if (PreviousExpression)
+        {
+            const uint32 PreviousSourceType = GetMaterialOutputType(PreviousExpression, PreviousOutputIndex);
+            FunctionInputIndex = FindBestFunctionInputIndexBySemantic(
+                NewFunctionCall,
+                TargetInputSemantic,
+                PreviousSourceType);
+
+            if (FunctionInputIndex == INDEX_NONE
+                || !NewFunctionCall->FunctionInputs.IsValidIndex(FunctionInputIndex))
+            {
+                return false;
+            }
+        }
+
+        const FScopedTransaction Transaction(
+            NSLOCTEXT("X_MaterialFunctionConnector", "InsertMaterialAttributesFunction", "Insert Material Attributes Function"),
+            GEditor && !GEditor->IsTransactionActive());
+        OwningMaterial->SetFlags(RF_Transactional);
+        TargetExpression->SetFlags(RF_Transactional);
+        NewFunctionCall->SetFlags(RF_Transactional);
+        OwningMaterial->Modify();
+        TargetExpression->Modify();
+        NewFunctionCall->Modify();
+
+        if (PreviousExpression)
+        {
+            NewFunctionCall->FunctionInputs[FunctionInputIndex].Input.Connect(PreviousOutputIndex, PreviousExpression);
         }
 
         TargetInput->Connect(FunctionOutputIndex, NewFunctionCall);
@@ -1158,6 +1181,12 @@ bool FX_MaterialFunctionConnector::ProcessManualConnections(
     {
         return false;
     }
+
+    if (FunctionCall->GetTypedOuter<UMaterial>() != Material)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("函数调用不属于目标材质，拒绝跨材质连接"));
+        return false;
+    }
     
     bool bHasConnected = false;
     UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
@@ -1254,6 +1283,12 @@ bool FX_MaterialFunctionConnector::ConnectMaterialAttributesToMaterial(
         return false;
     }
 
+    if (FunctionCall->GetTypedOuter<UMaterial>() != Material)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("函数调用不属于目标材质，拒绝跨材质连接"));
+        return false;
+    }
+
     UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
     if (!EditorOnlyData)
     {
@@ -1261,10 +1296,15 @@ bool FX_MaterialFunctionConnector::ConnectMaterialAttributesToMaterial(
         return false;
     }
 
-    // Step 1: 处理输入引脚的自动连接（与原有智能连接逻辑一致）
-    bool bInputConnected = ProcessMaterialAttributesInputConnections(Material, FunctionCall);
+    FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionConnector", "ConnectMaterialAttributes", "Connect Material Attributes"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    FunctionCall->SetFlags(RF_Transactional);
+    Material->Modify();
+    FunctionCall->Modify();
 
-    // Step 2: 处理输出引脚的连接
+    // 先完成主输出连接，避免输出失败时遗留无效的输入接线。
     bool bOutputConnected = false;
 
     // 检查MaterialAttributes引脚是否已有连接
@@ -1283,61 +1323,31 @@ bool FX_MaterialFunctionConnector::ConnectMaterialAttributesToMaterial(
     }
     else
     {
-        // 没有现有连接，直接连接到材质主节点
+        // 没有现有连接，复用统一入口完成所有权、索引和类型预检。
         UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes引脚未连接，直接连接到材质主节点"));
-
-        // 优先按 UE 官方语义传递真实输出名。
-        FString OutputName;
-        bool bSuccess = false;
-        if (TryGetExpressionOutputName(FunctionCall, OutputIndex, OutputName))
-        {
-            bSuccess = UMaterialEditingLibrary::ConnectMaterialProperty(
-                FunctionCall,
-                OutputName,
-                MP_MaterialAttributes
-            );
-        }
-        else
-        {
-            UE_LOG(
-                LogX_AssetEditor,
-                Warning,
-                TEXT("无法解析函数输出 %d 的名称，跳过官方API并尝试直接连接MaterialAttributes"),
-                OutputIndex);
-        }
-
-        if (bSuccess)
-        {
-            UE_LOG(LogX_AssetEditor, Log, TEXT("成功使用官方API连接MaterialAttributes到材质主节点"));
-        }
-        else
-        {
-            UE_LOG(LogX_AssetEditor, Warning, TEXT("使用官方API连接失败，尝试直接连接"));
-            EditorOnlyData->MaterialAttributes.Connect(OutputIndex, FunctionCall);
-            bSuccess = true;
-            UE_LOG(LogX_AssetEditor, Log, TEXT("通过直接连接成功连接MaterialAttributes"));
-        }
-
-        bOutputConnected = bSuccess;
+        bOutputConnected = ConnectExpressionToMaterialProperty(
+            Material,
+            FunctionCall,
+            MP_MaterialAttributes,
+            OutputIndex);
     }
 
-    // 最终结果：输入或输出有任何连接就算成功
-    bool bAnyConnected = bInputConnected || bOutputConnected;
-
-    if (bAnyConnected)
+    if (bOutputConnected)
     {
+        const bool bInputConnected = ProcessMaterialAttributesInputConnections(Material, FunctionCall);
         UE_LOG(LogX_AssetEditor, Log, TEXT("MaterialAttributes连接完成 - 输入连接: %s, 输出连接: %s"),
             bInputConnected ? TEXT("成功") : TEXT("无"),
-            bOutputConnected ? TEXT("成功") : TEXT("无"));
+            TEXT("成功"));
         Material->MarkPackageDirty();
         Material->PostEditChange();
     }
     else
     {
+        Transaction.Cancel();
         UE_LOG(LogX_AssetEditor, Warning, TEXT("MaterialAttributes连接完全失败"));
     }
 
-    return bAnyConnected;
+    return bOutputConnected;
 }
 
 // ========== MaterialAttributes连接相关函数实现 ==========
@@ -1351,6 +1361,12 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
         return false;
     }
 
+    if (FunctionCall->GetTypedOuter<UMaterial>() != Material)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("函数调用不属于目标材质，拒绝输入自动连接"));
+        return false;
+    }
+
     UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
     if (!EditorOnlyData)
     {
@@ -1358,7 +1374,7 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
     }
 
     // 获取函数的输入引脚
-    const TArray<FFunctionExpressionInput>& FunctionInputs = FunctionCall->FunctionInputs;
+    TArray<FFunctionExpressionInput>& FunctionInputs = FunctionCall->FunctionInputs;
 
     if (FunctionInputs.Num() == 0)
     {
@@ -1465,10 +1481,11 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
 
     // 尝试将可用连接匹配到函数的输入引脚
     bool bAnyInputConnected = false;
+    TUniquePtr<FScopedTransaction> Transaction;
 
     for (int32 InputIndex = 0; InputIndex < FunctionInputs.Num(); ++InputIndex)
     {
-        const FExpressionInput& Input = FunctionInputs[InputIndex].Input;
+        FExpressionInput& Input = FunctionInputs[InputIndex].Input;
         const FString InputName = Input.InputName.ToString();
         if (IsIgnoredPinName(InputName))
         {
@@ -1531,15 +1548,19 @@ bool FX_MaterialFunctionConnector::ProcessMaterialAttributesInputConnections(
             continue;
         }
 
-        FExpressionInput* InputPtr = const_cast<FExpressionInput*>(&Input);
-        if (!InputPtr)
-        {
-            continue;
-        }
-
         FAvailableConnection& BestConnection = AvailableConnections[BestConnectionIndex];
         const int32 SourceOutputIndex = (BestConnection.OutputIndex == INDEX_NONE) ? 0 : BestConnection.OutputIndex;
-        InputPtr->Connect(SourceOutputIndex, BestConnection.Expression);
+        if (!Transaction)
+        {
+            Transaction = MakeUnique<FScopedTransaction>(
+                NSLOCTEXT("X_MaterialFunctionConnector", "ConnectMaterialAttributesInputs", "Connect Material Attributes Inputs"),
+                GEditor && !GEditor->IsTransactionActive());
+            Material->SetFlags(RF_Transactional);
+            FunctionCall->SetFlags(RF_Transactional);
+            Material->Modify();
+            FunctionCall->Modify();
+        }
+        Input.Connect(SourceOutputIndex, BestConnection.Expression);
         BestConnection.bConsumed = true;
         bAnyInputConnected = true;
 
@@ -2088,6 +2109,13 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
         return false;
     }
 
+    UMaterial* OwningMaterial = MakeMANode->GetTypedOuter<UMaterial>();
+    if (!OwningMaterial || FunctionCall->GetTypedOuter<UMaterial>() != OwningMaterial)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("MakeMaterialAttributes与函数调用不属于同一材质，拒绝连接"));
+        return false;
+    }
+
     FString FunctionName = FunctionCall->MaterialFunction ? FunctionCall->MaterialFunction->GetName() : TEXT("Unknown");
     UE_LOG(LogX_AssetEditor, Log, TEXT("连接到MakeMaterialAttributes节点，函数: %s"), *FunctionName);
 
@@ -2095,6 +2123,24 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
     const TArray<FFunctionExpressionOutput>& FunctionOutputs = FunctionCall->FunctionOutputs;
     bool bAnyConnected = false;
     TSet<int32> UsedFunctionInputIndices;
+    TUniquePtr<FScopedTransaction> Transaction;
+    auto EnsureTransaction = [&]()
+    {
+        if (Transaction)
+        {
+            return;
+        }
+
+        Transaction = MakeUnique<FScopedTransaction>(
+            NSLOCTEXT("X_MaterialFunctionConnector", "ConnectMakeMaterialAttributes", "Connect Make Material Attributes"),
+            GEditor && !GEditor->IsTransactionActive());
+        OwningMaterial->SetFlags(RF_Transactional);
+        MakeMANode->SetFlags(RF_Transactional);
+        FunctionCall->SetFlags(RF_Transactional);
+        OwningMaterial->Modify();
+        MakeMANode->Modify();
+        FunctionCall->Modify();
+    };
 
     UE_LOG(LogX_AssetEditor, Log, TEXT("函数 %s 有 %d 个输出引脚，开始智能匹配"), *FunctionName, FunctionOutputs.Num());
 
@@ -2208,18 +2254,29 @@ bool FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(
                     PreviousSourceType,
                     &UsedFunctionInputIndices);
 
-                if (FunctionInputIndex != INDEX_NONE
-                    && FunctionCall->FunctionInputs.IsValidIndex(FunctionInputIndex))
+                if (FunctionInputIndex == INDEX_NONE
+                    || !FunctionCall->FunctionInputs.IsValidIndex(FunctionInputIndex))
                 {
-                    FExpressionInput& FunctionInput = FunctionCall->FunctionInputs[FunctionInputIndex].Input;
-                    if (!FunctionInput.Expression)
-                    {
-                        FunctionInput.Connect(PreviousOutputIndex, PreviousExpression);
-                        UsedFunctionInputIndices.Add(FunctionInputIndex);
-                        UE_LOG(LogX_AssetEditor, Log, TEXT("已保留原链路：%s -> 新函数输入[%d]"),
-                            *PreserveSemantic, FunctionInputIndex);
-                    }
+                    UE_LOG(LogX_AssetEditor, Warning, TEXT("无法保留原链路，跳过输出 [%d]"), i);
+                    continue;
                 }
+
+                FExpressionInput& FunctionInput = FunctionCall->FunctionInputs[FunctionInputIndex].Input;
+                if (FunctionInput.Expression)
+                {
+                    UE_LOG(LogX_AssetEditor, Warning, TEXT("目标函数输入 [%d] 已连接，跳过输出 [%d]"), FunctionInputIndex, i);
+                    continue;
+                }
+
+                EnsureTransaction();
+                FunctionInput.Connect(PreviousOutputIndex, PreviousExpression);
+                UsedFunctionInputIndices.Add(FunctionInputIndex);
+                UE_LOG(LogX_AssetEditor, Log, TEXT("已保留原链路：%s -> 新函数输入[%d]"),
+                    *PreserveSemantic, FunctionInputIndex);
+            }
+            else
+            {
+                EnsureTransaction();
             }
 
             TargetInput->Connect(i, FunctionCall);

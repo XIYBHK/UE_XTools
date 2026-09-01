@@ -11,6 +11,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialFunction.h"
 #include "Misc/AutomationTest.h"
@@ -26,6 +27,25 @@ namespace
 			TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 		return TemplateMaterial ? DuplicateObject<UMaterial>(TemplateMaterial, Package, AssetName) : nullptr;
 	}
+
+	UMaterialExpressionMaterialFunctionCall* CreateFresnelFunctionCall(UMaterial* Material)
+	{
+		UMaterialFunction* MaterialFunction = LoadObject<UMaterialFunction>(
+			nullptr,
+			TEXT("/Engine/Functions/Engine_MaterialFunctions02/Fresnel_Function.Fresnel_Function"));
+		if (!Material || !MaterialFunction)
+		{
+			return nullptr;
+		}
+
+		UMaterialExpressionMaterialFunctionCall* FunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(
+			UMaterialEditingLibrary::CreateMaterialExpression(
+				Material,
+				UMaterialExpressionMaterialFunctionCall::StaticClass(),
+				-400,
+				0));
+		return FunctionCall && FunctionCall->SetMaterialFunction(MaterialFunction) ? FunctionCall : nullptr;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXMaterialConnectorDirectConnectionIsUndoable,
@@ -34,6 +54,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXMaterialConnectorDirectConnectionIsUndoable,
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXMaterialConnectorAddConnectionIsAtomicAndUndoable,
 	"XTools.AssetEditor.MaterialConnector.AddConnectionIsAtomicAndUndoable",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXMaterialAttributesRejectsInvalidConnectionsWithoutMutation,
+	"XTools.AssetEditor.MaterialConnector.MaterialAttributes.RejectsInvalidConnectionsWithoutMutation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXMaterialAttributesMakeNodeInsertionIsUndoable,
+	"XTools.AssetEditor.MaterialConnector.MaterialAttributes.MakeNodeInsertionIsUndoable",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FXMaterialConnectorDirectConnectionIsUndoable::RunTest(const FString& Parameters)
@@ -168,6 +196,143 @@ bool FXMaterialConnectorAddConnectionIsAtomicAndUndoable::RunTest(const FString&
 	TestEqual(TEXT("撤销后应移除Add节点"), Material->GetExpressions().Num(), InitialExpressionCount);
 	TestEqual(TEXT("撤销后应恢复原BaseColor来源"), EditorOnlyData->BaseColor.Expression, OriginalExpression);
 	TestEqual(TEXT("撤销后应恢复原输出索引"), EditorOnlyData->BaseColor.OutputIndex, OriginalOutputIndex);
+	return true;
+}
+
+bool FXMaterialAttributesRejectsInvalidConnectionsWithoutMutation::RunTest(const FString& Parameters)
+{
+	UPackage* TestPackage = CreatePackage(TEXT("/Game/__XToolsAutomation__/MaterialAttributesInvalid"));
+	UMaterial* Material = DuplicateBasicShapeMaterial(TestPackage, TEXT("M_AttributesInvalid"));
+	UMaterial* OtherMaterial = DuplicateBasicShapeMaterial(TestPackage, TEXT("M_AttributesOther"));
+	UMaterialExpressionMaterialFunctionCall* FunctionCall = CreateFresnelFunctionCall(Material);
+	UMaterialExpressionMaterialFunctionCall* OtherFunctionCall = CreateFresnelFunctionCall(OtherMaterial);
+	TestNotNull(TEXT("应能创建目标材质副本"), Material);
+	TestNotNull(TEXT("应能创建另一份材质副本"), OtherMaterial);
+	TestNotNull(TEXT("应能创建测试函数调用"), FunctionCall);
+	TestNotNull(TEXT("应能创建跨材质测试函数调用"), OtherFunctionCall);
+	if (!Material || !OtherMaterial || !FunctionCall || !OtherFunctionCall)
+	{
+		return false;
+	}
+
+	UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
+	TestNotNull(TEXT("目标材质应有编辑器数据"), EditorOnlyData);
+	if (!EditorOnlyData)
+	{
+		return false;
+	}
+
+	UMaterialExpression* OriginalAttributesExpression = EditorOnlyData->MaterialAttributes.Expression;
+	TArray<UMaterialExpression*> OriginalFunctionInputs;
+	for (const FFunctionExpressionInput& FunctionInput : FunctionCall->FunctionInputs)
+	{
+		OriginalFunctionInputs.Add(FunctionInput.Input.Expression);
+	}
+
+	AddExpectedError(TEXT("表达式输出类型与材质属性不兼容"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("MaterialAttributes连接完全失败"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestFalse(TEXT("数值输出不应伪装成MaterialAttributes连接成功"),
+		FX_MaterialFunctionConnector::ConnectMaterialAttributesToMaterial(Material, FunctionCall, 0));
+	TestEqual(TEXT("失败后不应改写材质属性主输入"),
+		EditorOnlyData->MaterialAttributes.Expression,
+		OriginalAttributesExpression);
+	for (int32 InputIndex = 0; InputIndex < FunctionCall->FunctionInputs.Num(); ++InputIndex)
+	{
+		TestEqual(
+			FString::Printf(TEXT("失败后不应改写函数输入 %d"), InputIndex),
+			FunctionCall->FunctionInputs[InputIndex].Input.Expression,
+			OriginalFunctionInputs[InputIndex]);
+	}
+
+	UMaterialExpressionMakeMaterialAttributes* MakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(
+		UMaterialEditingLibrary::CreateMaterialExpression(
+			Material,
+			UMaterialExpressionMakeMaterialAttributes::StaticClass(),
+			0,
+			0));
+	TestNotNull(TEXT("应能创建MakeMaterialAttributes节点"), MakeMANode);
+	if (!MakeMANode)
+	{
+		return false;
+	}
+
+	AddExpectedError(TEXT("不属于同一材质"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestFalse(TEXT("跨材质函数不应插入MakeMaterialAttributes节点"),
+		FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(MakeMANode, OtherFunctionCall, 0));
+	TestNull(TEXT("跨材质失败不应改写Emissive输入"), MakeMANode->EmissiveColor.Expression);
+	return true;
+}
+
+bool FXMaterialAttributesMakeNodeInsertionIsUndoable::RunTest(const FString& Parameters)
+{
+	TestNotNull(TEXT("编辑器事务系统应可用"), GEditor);
+	if (!GEditor || GEditor->IsTransactionActive())
+	{
+		return false;
+	}
+
+	UPackage* TestPackage = CreatePackage(TEXT("/Game/__XToolsAutomation__/MaterialAttributesUndo"));
+	UMaterial* Material = DuplicateBasicShapeMaterial(TestPackage, TEXT("M_AttributesUndo"));
+	UMaterialExpressionMaterialFunctionCall* FunctionCall = CreateFresnelFunctionCall(Material);
+	TestNotNull(TEXT("应能创建目标材质副本"), Material);
+	TestNotNull(TEXT("应能创建测试函数调用"), FunctionCall);
+	if (!Material || !FunctionCall)
+	{
+		return false;
+	}
+
+	UMaterialExpressionMakeMaterialAttributes* MakeMANode = Cast<UMaterialExpressionMakeMaterialAttributes>(
+		UMaterialEditingLibrary::CreateMaterialExpression(
+			Material,
+			UMaterialExpressionMakeMaterialAttributes::StaticClass(),
+			0,
+			0));
+	TestNotNull(TEXT("应能创建MakeMaterialAttributes节点"), MakeMANode);
+	if (!MakeMANode)
+	{
+		return false;
+	}
+
+	UMaterialExpressionConstant3Vector* OriginalSource = Cast<UMaterialExpressionConstant3Vector>(
+		UMaterialEditingLibrary::CreateMaterialExpression(
+			Material,
+			UMaterialExpressionConstant3Vector::StaticClass(),
+			-200,
+			0));
+	TestNotNull(TEXT("应能创建原始Emissive来源"), OriginalSource);
+	if (!OriginalSource)
+	{
+		return false;
+	}
+	MakeMANode->EmissiveColor.Connect(0, OriginalSource);
+
+	UMaterialExpression* OriginalExpression = MakeMANode->EmissiveColor.Expression;
+	const int32 OriginalOutputIndex = MakeMANode->EmissiveColor.OutputIndex;
+	TArray<UMaterialExpression*> OriginalFunctionInputs;
+	for (const FFunctionExpressionInput& FunctionInput : FunctionCall->FunctionInputs)
+	{
+		OriginalFunctionInputs.Add(FunctionInput.Input.Expression);
+	}
+	TestTrue(TEXT("Fresnel函数应插入Emissive输入"),
+		FX_MaterialFunctionConnector::ConnectToMakeMaterialAttributesNode(MakeMANode, FunctionCall, 0));
+	TestTrue(TEXT("插入后Emissive输入应指向函数调用"), MakeMANode->EmissiveColor.Expression == FunctionCall);
+	TestTrue(TEXT("插入时应把原Emissive链路迁入函数输入"),
+		FunctionCall->FunctionInputs.ContainsByPredicate(
+			[OriginalSource](const FFunctionExpressionInput& FunctionInput)
+			{
+				return FunctionInput.Input.Expression == OriginalSource;
+			}));
+
+	TestTrue(TEXT("MakeMaterialAttributes插入应生成可撤销事务"), GEditor->UndoTransaction(false));
+	TestEqual(TEXT("撤销后应恢复原Emissive来源"), MakeMANode->EmissiveColor.Expression, OriginalExpression);
+	TestEqual(TEXT("撤销后应恢复原Emissive输出索引"), MakeMANode->EmissiveColor.OutputIndex, OriginalOutputIndex);
+	for (int32 InputIndex = 0; InputIndex < FunctionCall->FunctionInputs.Num(); ++InputIndex)
+	{
+		TestEqual(
+			FString::Printf(TEXT("撤销后应恢复函数输入 %d"), InputIndex),
+			FunctionCall->FunctionInputs[InputIndex].Input.Expression,
+			OriginalFunctionInputs[InputIndex]);
+	}
 	return true;
 }
 
