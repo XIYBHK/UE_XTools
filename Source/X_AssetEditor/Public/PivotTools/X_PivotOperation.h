@@ -101,4 +101,9 @@ private:
      * 结束 Undo 事务
      */
     void EndUndoTransaction();
+
+    /**
+     * 取消尚未产生数据修改的 Undo 事务
+     */
+    void CancelUndoTransaction();
 };

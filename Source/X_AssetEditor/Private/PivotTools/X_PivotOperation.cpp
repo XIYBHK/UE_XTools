@@ -84,7 +84,7 @@ bool FX_PivotOperation::Execute(const FVector& CustomOffset, FString& OutErrorMe
     if (!TransformVertices(CustomOffset))
     {
         OutErrorMessage = TEXT("变换顶点失败");
-        EndUndoTransaction();
+        CancelUndoTransaction();
         return false;
     }
 
@@ -129,7 +129,7 @@ FBox FX_PivotOperation::CalculateMeshBounds()
     FBox TotalBounds(ForceInit);
 
     // 遍历所有 LOD
-    const int32 NumLODs = TargetMesh->GetNumLODs();
+    const int32 NumLODs = TargetMesh->GetNumSourceModels();
     for (int32 LODIndex = 0; LODIndex < NumLODs; ++LODIndex)
     {
         const FMeshDescription* MeshDesc = TargetMesh->GetMeshDescription(LODIndex);
@@ -141,6 +141,10 @@ FBox FX_PivotOperation::CalculateMeshBounds()
         // 获取顶点位置属性
         FStaticMeshConstAttributes Attributes(*MeshDesc);
         TVertexAttributesConstRef<FVector3f> Positions = Attributes.GetVertexPositions();
+        if (!Positions.IsValid())
+        {
+            continue;
+        }
 
         // 遍历所有顶点
         for (FVertexID VertexID : MeshDesc->Vertices().GetElementIDs())
@@ -165,7 +169,15 @@ bool FX_PivotOperation::TransformVertices(const FVector& Offset)
         return false;
     }
 
-    const int32 NumLODs = TargetMesh->GetNumLODs();
+    struct FLODMeshDescription
+    {
+        int32 LODIndex = INDEX_NONE;
+        FMeshDescription* MeshDescription = nullptr;
+    };
+
+    TArray<FLODMeshDescription> EditableLODs;
+    const int32 NumLODs = TargetMesh->GetNumSourceModels();
+    EditableLODs.Reserve(NumLODs);
     for (int32 LODIndex = 0; LODIndex < NumLODs; ++LODIndex)
     {
         FMeshDescription* MeshDesc = TargetMesh->GetMeshDescription(LODIndex);
@@ -177,15 +189,49 @@ bool FX_PivotOperation::TransformVertices(const FVector& Offset)
         // 获取顶点位置属性
         FStaticMeshAttributes Attributes(*MeshDesc);
         TVertexAttributesRef<FVector3f> Positions = Attributes.GetVertexPositions();
+        if (!Positions.IsValid())
+        {
+            UE_LOG(LogX_PivotTools, Error, TEXT("网格 %s 的 LOD%d 缺少顶点位置属性"),
+                *TargetMesh->GetName(), LODIndex);
+            return false;
+        }
+
+        if (MeshDesc->Vertices().Num() > 0)
+        {
+            EditableLODs.Add({LODIndex, MeshDesc});
+        }
+    }
+
+    if (EditableLODs.Num() == 0)
+    {
+        UE_LOG(LogX_PivotTools, Error, TEXT("网格 %s 没有可编辑的源顶点"), *TargetMesh->GetName());
+        return false;
+    }
+
+    // 在写入任何 LOD 前先让全部源数据进入事务，避免中途失败留下半修改状态。
+    for (const FLODMeshDescription& EditableLOD : EditableLODs)
+    {
+        if (!TargetMesh->ModifyMeshDescription(EditableLOD.LODIndex))
+        {
+            UE_LOG(LogX_PivotTools, Error, TEXT("网格 %s 的 LOD%d 无法加入撤销事务"),
+                *TargetMesh->GetName(), EditableLOD.LODIndex);
+            return false;
+        }
+    }
+
+    for (const FLODMeshDescription& EditableLOD : EditableLODs)
+    {
+        FStaticMeshAttributes Attributes(*EditableLOD.MeshDescription);
+        TVertexAttributesRef<FVector3f> Positions = Attributes.GetVertexPositions();
 
         // 应用偏移到每个顶点
-        for (FVertexID VertexID : MeshDesc->Vertices().GetElementIDs())
+        for (FVertexID VertexID : EditableLOD.MeshDescription->Vertices().GetElementIDs())
         {
             Positions[VertexID] += (FVector3f)Offset;
         }
 
         // 提交修改
-        TargetMesh->CommitMeshDescription(LODIndex);
+        TargetMesh->CommitMeshDescription(EditableLOD.LODIndex);
     }
 
     return true;
@@ -204,6 +250,9 @@ bool FX_PivotOperation::TransformSimpleCollision(const FVector& Offset)
         // 没有碰撞，不算错误
         return true;
     }
+
+    BodySetup->SetFlags(RF_Transactional);
+    BodySetup->Modify();
 
     // 盒体碰撞
     for (FKBoxElem& Box : BodySetup->AggGeom.BoxElems)
@@ -267,6 +316,8 @@ bool FX_PivotOperation::TransformSockets(const FVector& Offset)
     {
         if (Socket)
         {
+            Socket->SetFlags(RF_Transactional);
+            Socket->Modify();
             Socket->RelativeLocation += Offset;
         }
     }
@@ -295,6 +346,7 @@ void FX_PivotOperation::BeginUndoTransaction(const FString& TransactionName)
     if (TargetMesh && !ActiveTransaction.IsValid())
     {
         ActiveTransaction = MakeUnique<FScopedTransaction>(FText::FromString(TransactionName));
+        TargetMesh->SetFlags(RF_Transactional);
         TargetMesh->Modify();
     }
 }
@@ -307,6 +359,15 @@ void FX_PivotOperation::EndUndoTransaction()
     }
 
     ActiveTransaction.Reset();
+}
+
+void FX_PivotOperation::CancelUndoTransaction()
+{
+    if (ActiveTransaction.IsValid())
+    {
+        ActiveTransaction->Cancel();
+        ActiveTransaction.Reset();
+    }
 }
 
 #undef LOCTEXT_NAMESPACE
