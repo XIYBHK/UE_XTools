@@ -728,14 +728,10 @@ namespace
         return false;
     }
 
-    TSharedPtr<FJsonObject> NodeSemanticToJson(const UEdGraphNode* Node)
+    bool TryWriteConstructionSemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
     {
-        if (!Node)
-        {
-            return nullptr;
-        }
-
-        TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
         if (const UEdGraphNode_Comment* Comment = Cast<UEdGraphNode_Comment>(Node))
         {
             Json->SetStringField(TEXT("kind"), TEXT("comment"));
@@ -896,7 +892,19 @@ namespace
                 Json->SetStringField(TEXT("expression"), MathExpression->Expression);
             }
         }
-        else if (const UK2Node_Switch* SwitchNode = Cast<UK2Node_Switch>(Node))
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryWriteDataSemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
+    {
+        if (const UK2Node_Switch* SwitchNode = Cast<UK2Node_Switch>(Node))
         {
             Json->SetStringField(TEXT("kind"), TEXT("switch"));
             Json->SetBoolField(TEXT("has_default_pin"), SwitchNode->bHasDefaultPin != 0);
@@ -1049,7 +1057,19 @@ namespace
             }
             Json->SetArrayField(TEXT("arguments"), Arguments);
         }
-        else if (const UK2Node_CallFunction* CallFunction = Cast<UK2Node_CallFunction>(Node))
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryWriteCallableSemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
+    {
+        if (const UK2Node_CallFunction* CallFunction = Cast<UK2Node_CallFunction>(Node))
         {
             Json->SetStringField(TEXT("kind"), TEXT("call_function"));
             Json->SetObjectField(TEXT("function"), MemberReferenceToJson(CallFunction->FunctionReference));
@@ -1120,7 +1140,19 @@ namespace
                 Json->SetStringField(TEXT("delegate_signature"), Signature->GetPathName());
             }
         }
-        else if (const UK2Node_StructOperation* StructOperation = Cast<UK2Node_StructOperation>(Node))
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryWriteValueSemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
+    {
+        if (const UK2Node_StructOperation* StructOperation = Cast<UK2Node_StructOperation>(Node))
         {
             if (Cast<UK2Node_BreakStruct>(Node))
             {
@@ -1180,7 +1212,19 @@ namespace
                 Json->SetStringField(TEXT("access"), TEXT("set"));
             }
         }
-        else if (const UK2Node_ComponentBoundEvent* ComponentEvent = Cast<UK2Node_ComponentBoundEvent>(Node))
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryWriteEventSemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
+    {
+        if (const UK2Node_ComponentBoundEvent* ComponentEvent = Cast<UK2Node_ComponentBoundEvent>(Node))
         {
             Json->SetStringField(TEXT("kind"), TEXT("component_bound_event"));
             Json->SetObjectField(TEXT("event"), MemberReferenceToJson(ComponentEvent->EventReference));
@@ -1295,7 +1339,19 @@ namespace
             Json->SetStringField(TEXT("kind"), TEXT("event"));
             Json->SetObjectField(TEXT("event"), MemberReferenceToJson(Event->EventReference));
         }
-        else if (const UK2Node_FunctionResult* FunctionResult = Cast<UK2Node_FunctionResult>(Node))
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryWriteFunctionBoundarySemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
+    {
+        if (const UK2Node_FunctionResult* FunctionResult = Cast<UK2Node_FunctionResult>(Node))
         {
             Json->SetStringField(TEXT("kind"), TEXT("function_result"));
             Json->SetObjectField(TEXT("function"), MemberReferenceToJson(FunctionResult->FunctionReference));
@@ -1337,7 +1393,19 @@ namespace
                 Json->SetStringField(TEXT("source_blueprint"), SourceBlueprint->GetPathName());
             }
         }
-        else if (const UK2Node_Tunnel* Tunnel = Cast<UK2Node_Tunnel>(Node))
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryWriteControlFlowSemantic(
+        const UEdGraphNode* Node,
+        const TSharedRef<FJsonObject>& Json)
+    {
+        if (const UK2Node_Tunnel* Tunnel = Cast<UK2Node_Tunnel>(Node))
         {
             Json->SetStringField(TEXT("kind"), IsTunnelEntryNode(Tunnel) ? TEXT("tunnel_entry") : TEXT("tunnel_exit"));
         }
@@ -1383,10 +1451,32 @@ namespace
         }
         else
         {
+            return false;
+        }
+
+        return true;
+    }
+
+    TSharedPtr<FJsonObject> NodeSemanticToJson(const UEdGraphNode* Node)
+    {
+        if (!Node)
+        {
             return nullptr;
         }
 
-        return Json;
+        const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+        if (TryWriteConstructionSemantic(Node, Json)
+            || TryWriteDataSemantic(Node, Json)
+            || TryWriteCallableSemantic(Node, Json)
+            || TryWriteValueSemantic(Node, Json)
+            || TryWriteEventSemantic(Node, Json)
+            || TryWriteFunctionBoundarySemantic(Node, Json)
+            || TryWriteControlFlowSemantic(Node, Json))
+        {
+            return Json;
+        }
+
+        return nullptr;
     }
 
     FXPinRef MakePinRef(const UEdGraphPin* Pin, const TMap<const UEdGraphNode*, FString>& NodeIds)
@@ -3158,6 +3248,13 @@ namespace
         FSlateApplication::Get().AddModalWindow(Window, FSlateApplication::Get().GetActiveTopLevelWindow());
     }
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildNodeSemanticJson(const UEdGraphNode* Node)
+{
+    return NodeSemanticToJson(Node);
+}
+#endif
 
 void FX_BlueprintGraphExporter::ExportBlueprints(const TArray<FAssetData>& SelectedAssets)
 {
