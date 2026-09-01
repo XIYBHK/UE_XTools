@@ -349,9 +349,6 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
         }
     }
     
-    // 不使用FScopedTransaction，避免在材质编辑器中撤销时崩溃
-    // 用户可以通过删除节点来移除添加的材质函数
-
     //  检查是否为引擎自带材质
     if (IsEngineMaterial(Material))
     {
@@ -376,6 +373,12 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::AddFuncti
             *Material->GetName(), *Function->GetName());
         return nullptr;
     }
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionOperation", "AddMaterialFunction", "Add Material Function"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    Material->Modify();
     
     // 创建材质函数调用表达式
     UMaterialExpressionMaterialFunctionCall* FunctionCall = CreateMaterialFunctionCallExpression(
@@ -505,6 +508,17 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
     int32 PosX,
     int32 PosY)
 {
+    if (!Material || !Function)
+    {
+        return nullptr;
+    }
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionOperation", "CreateMaterialFunctionCall", "Create Material Function Call"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    Material->Modify();
+
     // 使用UE官方API创建材质表达式（自动处理RF_Transactional、GUID、Material属性等）
     UMaterialExpression* NewExpression = UMaterialEditingLibrary::CreateMaterialExpression(
         Material, UMaterialExpressionMaterialFunctionCall::StaticClass(), PosX, PosY);
@@ -512,6 +526,8 @@ UMaterialExpressionMaterialFunctionCall* FX_MaterialFunctionOperation::CreateMat
     UMaterialExpressionMaterialFunctionCall* FunctionCall = Cast<UMaterialExpressionMaterialFunctionCall>(NewExpression);
     if (FunctionCall)
     {
+        FunctionCall->Modify();
+
         // 设置材质函数引用
         FunctionCall->SetMaterialFunction(Function);
 

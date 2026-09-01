@@ -9,7 +9,9 @@
 #include "MaterialTools/X_MaterialFunctionCollector.h"
 #include "GameFramework/Actor.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
+#include "Editor.h"
 #include "Misc/ScopedSlowTask.h"
+#include "ScopedTransaction.h"
 
 void FX_MaterialFunctionProcessor::ProcessAssetMaterialFunction(
     const TArray<FAssetData>& SelectedAssets,
@@ -94,6 +96,10 @@ void FX_MaterialFunctionProcessor::ProcessMaterialsInternal(
     // 处理所有材质
     int32 SuccessCount = 0;
     int32 FailedCount = 0;
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionProcessor", "ProcessMaterials", "Add Material Function To Materials"),
+        GEditor && !GEditor->IsTransactionActive());
     
     for (UMaterial* Material : Materials)
     {
@@ -196,6 +202,10 @@ FMaterialProcessResult FX_MaterialFunctionProcessor::AddFunctionToMultipleMateri
     int32 SuccessCount = 0;
     int32 FailedCount = 0;
     int32 AlreadyHasFunctionCount = 0;
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionProcessor", "AddFunctionToMultipleMaterials", "Add Material Function To Materials"),
+        GEditor && !GEditor->IsTransactionActive());
     
     // 遍历处理每个材质
     for (UMaterialInterface* MaterialInterface : MaterialsToProcess)
