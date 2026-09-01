@@ -5,6 +5,7 @@
 
 #include "PivotTools/X_PivotManager.h"
 #include "PivotTools/X_PivotOperation.h"
+#include "PivotTools/X_PivotSnapshotSerialization.h"
 #include "X_AssetEditor.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -1060,62 +1061,11 @@ bool FX_PivotManager::LoadSnapshotsFromDisk()
         return false;
     }
     
-    // 解析 JSON
-    TSharedPtr<FJsonObject> RootObject;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
-    
-    if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
+    FString ParseError;
+    if (!XPivotSnapshotSerialization::Deserialize(JsonString, PivotSnapshots, ParseError))
     {
-        LogOperation(TEXT("解析 JSON 失败"), true);
+        LogOperation(FString::Printf(TEXT("加载快照失败，保留现有内存快照：%s"), *ParseError), true);
         return false;
-    }
-    
-    // 读取快照数组
-    const TArray<TSharedPtr<FJsonValue>>* SnapshotsArray;
-    if (!RootObject->TryGetArrayField(TEXT("Snapshots"), SnapshotsArray))
-    {
-        LogOperation(TEXT("JSON 格式错误：缺少 Snapshots 字段"), true);
-        return false;
-    }
-    
-    // 清空现有快照
-    PivotSnapshots.Empty();
-    
-    // 加载快照
-    for (const TSharedPtr<FJsonValue>& Value : *SnapshotsArray)
-    {
-        const TSharedPtr<FJsonObject>* SnapshotObject;
-        if (!Value->TryGetObject(SnapshotObject))
-        {
-            continue;
-        }
-        
-        FX_PivotSnapshot Snapshot;
-        
-        FString MeshPathStr;
-        if ((*SnapshotObject)->TryGetStringField(TEXT("MeshPath"), MeshPathStr))
-        {
-            Snapshot.MeshPath = FSoftObjectPath(MeshPathStr);
-        }
-        
-        double X = 0.0, Y = 0.0, Z = 0.0;
-        if ((*SnapshotObject)->TryGetNumberField(TEXT("CenterX"), X) &&
-            (*SnapshotObject)->TryGetNumberField(TEXT("CenterY"), Y) &&
-            (*SnapshotObject)->TryGetNumberField(TEXT("CenterZ"), Z))
-        {
-            Snapshot.BoundsCenter = FVector(X, Y, Z);
-        }
-        
-        FString TimestampStr;
-        if ((*SnapshotObject)->TryGetStringField(TEXT("Timestamp"), TimestampStr))
-        {
-            FDateTime::Parse(TimestampStr, Snapshot.Timestamp);
-        }
-        
-        if (Snapshot.IsValid())
-        {
-            PivotSnapshots.Add(Snapshot.MeshPath, Snapshot);
-        }
     }
     
     LogOperation(FString::Printf(TEXT("成功加载 %d 个快照从: %s"), PivotSnapshots.Num(), *FilePath));
