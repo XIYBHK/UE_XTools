@@ -338,7 +338,13 @@ bool FX_CollisionManager::RemoveCollisionFromMesh(UStaticMesh* StaticMesh)
         return false;
     }
 
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_CollisionManager", "RemoveCollision", "Remove Static Mesh Collision"),
+        GEditor && !GEditor->IsTransactionActive());
+
     // 记录到事务（配合 FScopedTransaction 实现可靠撤销）
+    StaticMesh->SetFlags(RF_Transactional);
+    BodySetup->SetFlags(RF_Transactional);
     StaticMesh->Modify();
     BodySetup->Modify();
 
@@ -384,7 +390,13 @@ bool FX_CollisionManager::AddConvexCollisionToMesh(UStaticMesh* StaticMesh)
         return false;
     }
 
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_CollisionManager", "AddConvexCollision", "Add Static Mesh Convex Collision"),
+        GEditor && !GEditor->IsTransactionActive());
+
     // 记录到事务（配合 FScopedTransaction 实现可靠撤销）
+    StaticMesh->SetFlags(RF_Transactional);
+    BodySetup->SetFlags(RF_Transactional);
     StaticMesh->Modify();
     BodySetup->Modify();
 
@@ -427,7 +439,13 @@ bool FX_CollisionManager::SetMeshCollisionComplexity(UStaticMesh* StaticMesh, EC
         return false;
     }
 
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_CollisionManager", "SetCollisionComplexity", "Set Static Mesh Collision Complexity"),
+        GEditor && !GEditor->IsTransactionActive());
+
     // 记录到事务（配合 FScopedTransaction 实现可靠撤销）
+    StaticMesh->SetFlags(RF_Transactional);
+    BodySetup->SetFlags(RF_Transactional);
     StaticMesh->Modify();
     BodySetup->Modify();
 
@@ -459,7 +477,6 @@ void FX_CollisionManager::FinalizeStaticMeshChanges(UStaticMesh* StaticMesh)
     StaticMesh->MarkPackageDirty();
 
     // 触发编辑器数据刷新，不强制关闭用户已打开的编辑器窗口。
-    StaticMesh->PreEditChange(nullptr);
     StaticMesh->PostEditChange();
 }
 
