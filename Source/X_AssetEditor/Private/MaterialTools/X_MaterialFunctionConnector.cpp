@@ -16,6 +16,8 @@
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Materials/MaterialAttributeDefinitionMap.h"
 #include "Containers/Queue.h"
+#include "Editor.h"
+#include "ScopedTransaction.h"
 //  引入常量定义
 #include "MaterialTools/X_MaterialConstants.h"
 #include "XToolsVersionCompat.h"
@@ -414,6 +416,39 @@ bool FX_MaterialFunctionConnector::ConnectExpressionToMaterialProperty(
         return false;
     }
 
+    if (Expression->GetTypedOuter<UMaterial>() != Material)
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("表达式不属于目标材质，拒绝跨材质连接"));
+        return false;
+    }
+
+    TArray<FExpressionOutput>& Outputs = Expression->GetOutputs();
+    if (!Outputs.IsValidIndex(OutputIndex))
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("表达式输出索引无效: %d"), OutputIndex);
+        return false;
+    }
+
+    if (!Material->GetExpressionInputForProperty(MaterialProperty))
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("材质属性不支持表达式连接: %d"), static_cast<int32>(MaterialProperty));
+        return false;
+    }
+
+    const uint32 OutputType = GetMaterialOutputType(Expression, OutputIndex);
+    const uint32 PropertyType = GetExpectedMaterialPropertyType(MaterialProperty);
+    if (!AreMaterialTypesCompatible(OutputType, PropertyType))
+    {
+        UE_LOG(LogX_AssetEditor, Warning, TEXT("表达式输出类型与材质属性不兼容"));
+        return false;
+    }
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionConnector", "ConnectMaterialProperty", "Connect Material Property"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    Material->Modify();
+
     // 优先按 UE 官方语义传递真实输出名；拿不到输出名时再回退到索引直连。
     FString OutputName;
     bool bSuccess = false;
@@ -453,7 +488,12 @@ bool FX_MaterialFunctionConnector::ConnectExpressionToMaterialProperty(
     }
 
     //  使用映射表简化属性连接
-    return ConnectToMaterialPropertyDirect(EditorOnlyData, Expression, MaterialProperty, OutputIndex);
+    const bool bDirectSuccess = ConnectToMaterialPropertyDirect(EditorOnlyData, Expression, MaterialProperty, OutputIndex);
+    if (bDirectSuccess)
+    {
+        Material->MarkPackageDirty();
+    }
+    return bDirectSuccess;
 }
 
 //  基于UE最佳实践：使用辅助函数获取材质输入引用
@@ -869,10 +909,12 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
             // 如果匹配成功
             if (BestScore > 0 && BestProperty != MP_MAX)
             {
-                ConnectExpressionToMaterialProperty(Material, FunctionCall, BestProperty, OutputIndex);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("输出 %s 自动连接到 %s (匹配度: %d)"), 
-                    *OutputName, *BestPropertyName, BestScore);
-                bHasConnected = true;
+                if (ConnectExpressionToMaterialProperty(Material, FunctionCall, BestProperty, OutputIndex))
+                {
+                    UE_LOG(LogX_AssetEditor, Log, TEXT("输出 %s 自动连接到 %s (匹配度: %d)"),
+                        *OutputName, *BestPropertyName, BestScore);
+                    bHasConnected = true;
+                }
             }
         }
     }
@@ -915,23 +957,26 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
             if (bCondition && !bHasConnectedByName)
             {
                 int32 OutputIdx = FindOutputIndexByNameFunc(PropName);
+                bool bConnected = false;
                 if (UsedParams->ConnectionMode == EConnectionMode::Add)
                 {
-                    CreateAddConnectionToProperty(Material, FunctionCall, OutputIdx, Prop);
-                    UE_LOG(LogX_AssetEditor, Log, TEXT("根据函数名称使用Add节点连接到%s"), *PropName);
+                    bConnected = CreateAddConnectionToProperty(Material, FunctionCall, OutputIdx, Prop) != nullptr;
                 }
                 else if (UsedParams->ConnectionMode == EConnectionMode::Multiply)
                 {
-                    CreateMultiplyConnectionToProperty(Material, FunctionCall, OutputIdx, Prop);
-                    UE_LOG(LogX_AssetEditor, Log, TEXT("根据函数名称使用Multiply节点连接到%s"), *PropName);
+                    bConnected = CreateMultiplyConnectionToProperty(Material, FunctionCall, OutputIdx, Prop) != nullptr;
                 }
                 else
                 {
-                    ConnectExpressionToMaterialProperty(Material, FunctionCall, Prop, OutputIdx);
-                    UE_LOG(LogX_AssetEditor, Log, TEXT("根据函数名称直接连接到%s"), *PropName);
+                    bConnected = ConnectExpressionToMaterialProperty(Material, FunctionCall, Prop, OutputIdx);
                 }
-                bHasConnected = true;
-                bHasConnectedByName = true;
+
+                if (bConnected)
+                {
+                    UE_LOG(LogX_AssetEditor, Log, TEXT("根据函数名称连接到%s"), *PropName);
+                    bHasConnected = true;
+                    bHasConnectedByName = true;
+                }
             }
         };
 
@@ -954,23 +999,20 @@ bool FX_MaterialFunctionConnector::SetupAutoConnections(
             if (UsedParams->ConnectionMode == EConnectionMode::Add)
             {
                 // 如果用户选择了Add连接模式，默认连接到EmissiveColor
-                CreateAddConnectionToProperty(Material, FunctionCall, OutputIdx, MP_EmissiveColor);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("基于用户Add连接模式设置，创建Add节点连接到EmissiveColor"));
-                bHasConnected = true;
+                bHasConnected = CreateAddConnectionToProperty(
+                    Material, FunctionCall, OutputIdx, MP_EmissiveColor) != nullptr;
             }
             else if (UsedParams->ConnectionMode == EConnectionMode::Multiply)
             {
                 // 如果用户选择了Multiply连接模式，默认连接到EmissiveColor
-                CreateMultiplyConnectionToProperty(Material, FunctionCall, OutputIdx, MP_EmissiveColor);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("基于用户Multiply连接模式设置，创建Multiply节点连接到EmissiveColor"));
-                bHasConnected = true;
+                bHasConnected = CreateMultiplyConnectionToProperty(
+                    Material, FunctionCall, OutputIdx, MP_EmissiveColor) != nullptr;
             }
             else
             {
                 // 默认连接到BaseColor
-                ConnectExpressionToMaterialProperty(Material, FunctionCall, MP_BaseColor, OutputIdx);
-                UE_LOG(LogX_AssetEditor, Log, TEXT("将函数的第一个输出连接到BaseColor（默认行为）"));
-                bHasConnected = true;
+                bHasConnected = ConnectExpressionToMaterialProperty(
+                    Material, FunctionCall, MP_BaseColor, OutputIdx);
             }
         }
     }
@@ -989,11 +1031,25 @@ UMaterialExpressionAdd* FX_MaterialFunctionConnector::CreateAddConnectionToPrope
         return nullptr;
     }
 
-    UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
-    if (!EditorOnlyData)
+    if (FunctionCall->GetTypedOuter<UMaterial>() != Material
+        || !FunctionCall->GetOutputs().IsValidIndex(OutputIndex))
     {
         return nullptr;
     }
+
+    FExpressionInput* CurrentInput = Material->GetExpressionInputForProperty(MaterialProperty);
+    if (!CurrentInput
+        || !IsNumericMaterialType(GetMaterialOutputType(FunctionCall, OutputIndex))
+        || !IsNumericMaterialType(GetExpectedMaterialPropertyType(MaterialProperty)))
+    {
+        return nullptr;
+    }
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionConnector", "CreateAddConnection", "Create Add Material Connection"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    Material->Modify();
 
     // 使用UE官方API创建Add节点（自动处理RF_Transactional、GUID、Material属性等）
     int32 PosX = FunctionCall->MaterialExpressionEditorX + 200;
@@ -1006,31 +1062,24 @@ UMaterialExpressionAdd* FX_MaterialFunctionConnector::CreateAddConnectionToPrope
         return nullptr;
     }
 
+    AddExpression->Modify();
+
     // 连接函数输出到Add节点的A输入
     AddExpression->A.Connect(OutputIndex, FunctionCall);
 
-    // 根据材质属性获取当前连接，并将其连接到Add节点的B输入
-    FExpressionInput* CurrentInput = nullptr;
-    switch (MaterialProperty)
-    {
-        case MP_BaseColor: CurrentInput = &EditorOnlyData->BaseColor; break;
-        case MP_Metallic: CurrentInput = &EditorOnlyData->Metallic; break;
-        case MP_Specular: CurrentInput = &EditorOnlyData->Specular; break;
-        case MP_Roughness: CurrentInput = &EditorOnlyData->Roughness; break;
-        case MP_EmissiveColor: CurrentInput = &EditorOnlyData->EmissiveColor; break;
-        case MP_Normal: CurrentInput = &EditorOnlyData->Normal; break;
-        case MP_AmbientOcclusion: CurrentInput = &EditorOnlyData->AmbientOcclusion; break;
-        default: return AddExpression;
-    }
-
     // 如果有现有连接，连接到Add节点的B输入
-    if (CurrentInput && CurrentInput->Expression)
+    if (CurrentInput->Expression)
     {
-        AddExpression->B.Connect(CurrentInput->OutputIndex, CurrentInput->Expression);
+        const int32 PreviousOutputIndex = CurrentInput->OutputIndex == INDEX_NONE ? 0 : CurrentInput->OutputIndex;
+        AddExpression->B.Connect(PreviousOutputIndex, CurrentInput->Expression);
     }
 
     // 连接Add节点到材质属性
-    ConnectExpressionToMaterialProperty(Material, AddExpression, MaterialProperty);
+    if (!ConnectExpressionToMaterialProperty(Material, AddExpression, MaterialProperty))
+    {
+        UMaterialEditingLibrary::DeleteMaterialExpression(Material, AddExpression);
+        return nullptr;
+    }
 
     return AddExpression;
 }
@@ -1046,11 +1095,25 @@ UMaterialExpressionMultiply* FX_MaterialFunctionConnector::CreateMultiplyConnect
         return nullptr;
     }
 
-    UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
-    if (!EditorOnlyData)
+    if (FunctionCall->GetTypedOuter<UMaterial>() != Material
+        || !FunctionCall->GetOutputs().IsValidIndex(OutputIndex))
     {
         return nullptr;
     }
+
+    FExpressionInput* CurrentInput = Material->GetExpressionInputForProperty(MaterialProperty);
+    if (!CurrentInput
+        || !IsNumericMaterialType(GetMaterialOutputType(FunctionCall, OutputIndex))
+        || !IsNumericMaterialType(GetExpectedMaterialPropertyType(MaterialProperty)))
+    {
+        return nullptr;
+    }
+
+    const FScopedTransaction Transaction(
+        NSLOCTEXT("X_MaterialFunctionConnector", "CreateMultiplyConnection", "Create Multiply Material Connection"),
+        GEditor && !GEditor->IsTransactionActive());
+    Material->SetFlags(RF_Transactional);
+    Material->Modify();
 
     // 使用UE官方API创建Multiply节点（自动处理RF_Transactional、GUID、Material属性等）
     int32 PosX = FunctionCall->MaterialExpressionEditorX + 200;
@@ -1063,31 +1126,24 @@ UMaterialExpressionMultiply* FX_MaterialFunctionConnector::CreateMultiplyConnect
         return nullptr;
     }
 
+    MultiplyExpression->Modify();
+
     // 连接函数输出到Multiply节点的A输入
     MultiplyExpression->A.Connect(OutputIndex, FunctionCall);
 
-    // 根据材质属性获取当前连接，并将其连接到Multiply节点的B输入
-    FExpressionInput* CurrentInput = nullptr;
-    switch (MaterialProperty)
-    {
-        case MP_BaseColor: CurrentInput = &EditorOnlyData->BaseColor; break;
-        case MP_Metallic: CurrentInput = &EditorOnlyData->Metallic; break;
-        case MP_Specular: CurrentInput = &EditorOnlyData->Specular; break;
-        case MP_Roughness: CurrentInput = &EditorOnlyData->Roughness; break;
-        case MP_EmissiveColor: CurrentInput = &EditorOnlyData->EmissiveColor; break;
-        case MP_Normal: CurrentInput = &EditorOnlyData->Normal; break;
-        case MP_AmbientOcclusion: CurrentInput = &EditorOnlyData->AmbientOcclusion; break;
-        default: return MultiplyExpression;
-    }
-
     // 如果有现有连接，连接到Multiply节点的B输入
-    if (CurrentInput && CurrentInput->Expression)
+    if (CurrentInput->Expression)
     {
-        MultiplyExpression->B.Connect(CurrentInput->OutputIndex, CurrentInput->Expression);
+        const int32 PreviousOutputIndex = CurrentInput->OutputIndex == INDEX_NONE ? 0 : CurrentInput->OutputIndex;
+        MultiplyExpression->B.Connect(PreviousOutputIndex, CurrentInput->Expression);
     }
 
     // 连接Multiply节点到材质属性
-    ConnectExpressionToMaterialProperty(Material, MultiplyExpression, MaterialProperty);
+    if (!ConnectExpressionToMaterialProperty(Material, MultiplyExpression, MaterialProperty))
+    {
+        UMaterialEditingLibrary::DeleteMaterialExpression(Material, MultiplyExpression);
+        return nullptr;
+    }
 
     return MultiplyExpression;
 }
@@ -1127,20 +1183,20 @@ bool FX_MaterialFunctionConnector::ProcessManualConnections(
         if (bConnect)
         {
             int32 OutputIdx = FindOutputIndexByNameFunc(PropName);
-            
+            bool bConnected = false;
             if (Params->ConnectionMode == EConnectionMode::Add)
             {
-                CreateAddConnectionToProperty(Material, FunctionCall, OutputIdx, Prop);
+                bConnected = CreateAddConnectionToProperty(Material, FunctionCall, OutputIdx, Prop) != nullptr;
             }
             else if (Params->ConnectionMode == EConnectionMode::Multiply)
             {
-                CreateMultiplyConnectionToProperty(Material, FunctionCall, OutputIdx, Prop);
+                bConnected = CreateMultiplyConnectionToProperty(Material, FunctionCall, OutputIdx, Prop) != nullptr;
             }
             else
             {
-                ConnectExpressionToMaterialProperty(Material, FunctionCall, Prop, OutputIdx);
+                bConnected = ConnectExpressionToMaterialProperty(Material, FunctionCall, Prop, OutputIdx);
             }
-            bHasConnected = true;
+            bHasConnected |= bConnected;
         }
     };
     
