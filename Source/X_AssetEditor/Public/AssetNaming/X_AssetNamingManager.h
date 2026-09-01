@@ -66,6 +66,14 @@ namespace XAssetNaming
 	 * @return 格式化文本；无失败时返回空字符串
 	 */
 	X_ASSETEDITOR_API FString FormatFailureDetails(const FX_RenameOperationResult& Result, int32 MaxEntries);
+
+	/** 返回名称匹配的最长前缀，忽略指定前缀；没有匹配项时返回空字符串 */
+	X_ASSETEDITOR_API FString FindLongestMatchingPrefix(const FString& AssetName,
+		const FString& ExcludedPrefix, const TMap<FString, FString>& PrefixMappings);
+
+	/** 生成未被占用的名称；发生冲突时使用两位数字后缀 */
+	X_ASSETEDITOR_API FString ResolveNameCollision(const FString& BaseName,
+		const TSet<FString>& ExistingNames);
 }
 
 /**

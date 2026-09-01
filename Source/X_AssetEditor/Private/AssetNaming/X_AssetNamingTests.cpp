@@ -65,6 +65,47 @@ bool FXAssetNaming_NormalizeNumericSuffix::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_LongestPrefixWins,
+    "XTools.AssetNaming.Prefix.LongestMatchWins",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXAssetNaming_LongestPrefixWins::RunTest(const FString& Parameters)
+{
+    TMap<FString, FString> PrefixMappings;
+    PrefixMappings.Add(TEXT("Short"), TEXT("T_"));
+    PrefixMappings.Add(TEXT("Long"), TEXT("T_UI_"));
+    PrefixMappings.Add(TEXT("Excluded"), TEXT("T_UI_Icon_"));
+
+    TestEqual(TEXT("应选择最长的非排除匹配前缀"),
+        XAssetNaming::FindLongestMatchingPrefix(TEXT("T_UI_Icon_Close"), TEXT("T_UI_Icon_"), PrefixMappings),
+        FString(TEXT("T_UI_")));
+    TestTrue(TEXT("没有匹配前缀时应返回空字符串"),
+        XAssetNaming::FindLongestMatchingPrefix(TEXT("SM_Chair"), FString(), PrefixMappings).IsEmpty());
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_ResolveNameCollisionUsesNormalizedSuffix,
+    "XTools.AssetNaming.Collision.UsesTwoDigitSuffix",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXAssetNaming_ResolveNameCollisionUsesNormalizedSuffix::RunTest(const FString& Parameters)
+{
+    TSet<FString> ExistingNames;
+    ExistingNames.Add(TEXT("SM_Chair"));
+    ExistingNames.Add(TEXT("SM_Chair_01"));
+    ExistingNames.Add(TEXT("SM_Chair_02"));
+
+    TestEqual(TEXT("冲突名称应跳过已占用的两位数字后缀"),
+        XAssetNaming::ResolveNameCollision(TEXT("SM_Chair"), ExistingNames),
+        FString(TEXT("SM_Chair_03")));
+    TestEqual(TEXT("未冲突名称应保持不变"),
+        XAssetNaming::ResolveNameCollision(TEXT("SM_Table"), ExistingNames),
+        FString(TEXT("SM_Table")));
+
+    return true;
+}
+
 // 失败记录 helper：计数、旧名称数组、详情数组必须同步写入
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetNaming_RecordRenameFailureSyncsAllFields,
     "XTools.AssetNaming.RecordRenameFailure.SyncsAllFields",

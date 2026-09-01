@@ -103,6 +103,40 @@ namespace XAssetNaming
 
         return Output;
     }
+
+    FString FindLongestMatchingPrefix(const FString& AssetName,
+        const FString& ExcludedPrefix, const TMap<FString, FString>& PrefixMappings)
+    {
+        FString LongestMatch;
+        for (const TPair<FString, FString>& Pair : PrefixMappings)
+        {
+            const FString& Prefix = Pair.Value;
+            if (!Prefix.IsEmpty() && Prefix != ExcludedPrefix &&
+                Prefix.Len() > LongestMatch.Len() && AssetName.StartsWith(Prefix))
+            {
+                LongestMatch = Prefix;
+            }
+        }
+
+        return LongestMatch;
+    }
+
+    FString ResolveNameCollision(const FString& BaseName, const TSet<FString>& ExistingNames)
+    {
+        if (!ExistingNames.Contains(BaseName))
+        {
+            return BaseName;
+        }
+
+        int32 Suffix = 1;
+        FString CandidateName;
+        do
+        {
+            CandidateName = FString::Printf(TEXT("%s_%02d"), *BaseName, Suffix++);
+        } while (ExistingNames.Contains(CandidateName));
+
+        return CandidateName;
+    }
 }
 
 FX_AssetNamingManager& FX_AssetNamingManager::Get()
@@ -678,26 +712,12 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     }
 
     // 构建新名称
-    FString BaseName = CurrentName;
-
-    // 只移除错误的前缀（优化后的逻辑）
-    const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
-    if (Settings)
+    const FString BaseName = StripIncorrectPrefix(CurrentName, CorrectPrefix);
+    if (BaseName != CurrentName)
     {
-        const TMap<FString, FString>& AssetPrefixes = Settings->AssetPrefixMappings;
-        for (const auto& Pair : AssetPrefixes)
-        {
-            const FString& ExistingPrefix = Pair.Value;
-            if (!ExistingPrefix.IsEmpty() &&
-                ExistingPrefix != CorrectPrefix &&
-                CurrentName.StartsWith(ExistingPrefix))
-            {
-                BaseName = CurrentName.RightChop(ExistingPrefix.Len());
-                UE_LOG(LogX_AssetNaming, Verbose, TEXT("Removing incorrect prefix '%s' from '%s'"),
-                    *ExistingPrefix, *CurrentName);
-                break;
-            }
-        }
+        const int32 RemovedLength = CurrentName.Len() - BaseName.Len();
+        UE_LOG(LogX_AssetNaming, Verbose, TEXT("Removing incorrect prefix '%s' from '%s'"),
+            *CurrentName.Left(RemovedLength), *CurrentName);
     }
 
     FString NewName = CorrectPrefix + BaseName;
@@ -710,9 +730,6 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
         Result.SkippedCount++;
         return;
     }
-
-    FString FinalNewName = NewName;
-    int32 SuffixCounter = 1;
 
     // ========== 【关键修复】在调用前再次检查 AssetRegistry 状态 ==========
     // 防止在检查后、调用前状态发生变化导致崩溃
@@ -738,11 +755,8 @@ void FX_AssetNamingManager::ProcessSingleAssetRename(const FAssetData& AssetData
     TSet<FString> ExistingNames = *ExistingNamesPtr;
     ExistingNames.Remove(CurrentName);
 
-    // 命名冲突解决：自动添加数字后缀（两位补零，与 NormalizeNumericSuffix 保持一致，避免重命名后二次规范化）
-    while (ExistingNames.Contains(FinalNewName))
-    {
-        FinalNewName = FString::Printf(TEXT("%s_%02d"), *NewName, SuffixCounter++);
-    }
+    // 命名冲突解决：统一使用两位数字后缀
+    FString FinalNewName = XAssetNaming::ResolveNameCollision(NewName, ExistingNames);
 
     // ========== 【UE最佳实践】最终数字后缀规范化 ==========
     // 在所有名称处理完成后，对最终名称进行一次性数字后缀规范化
@@ -996,24 +1010,8 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
         return false;
     }
 
-    // 移除错误的前缀
-    FString BaseName = CurrentName;
-    const UX_AssetEditorSettings* PrefixSettings = GetDefault<UX_AssetEditorSettings>();
-    if (PrefixSettings)
-    {
-        const TMap<FString, FString>& AssetPrefixes = PrefixSettings->AssetPrefixMappings;
-        for (const auto& Pair : AssetPrefixes)
-        {
-            const FString& ExistingPrefix = Pair.Value;
-            if (!ExistingPrefix.IsEmpty() &&
-                ExistingPrefix != CorrectPrefix &&
-                CurrentName.StartsWith(ExistingPrefix))
-            {
-                BaseName = CurrentName.RightChop(ExistingPrefix.Len());
-                break;
-            }
-        }
-    }
+    // 移除最长匹配的错误前缀，避免结果依赖 TMap 迭代顺序
+    const FString BaseName = StripIncorrectPrefix(CurrentName, CorrectPrefix);
 
     // 构建新名称
     FString NewName = CorrectPrefix + BaseName;
@@ -1048,13 +1046,8 @@ bool FX_AssetNamingManager::RenameAssetInternal(const FAssetData& AssetData, FSt
         }
     }
 
-    // 命名冲突解决：自动添加数字后缀
-    FString FinalNewName = NewName;
-    int32 Suffix = 1;
-    while (ExistingNames.Contains(FinalNewName))
-    {
-        FinalNewName = FString::Printf(TEXT("%s_%d"), *NewName, Suffix++);
-    }
+    // 命名冲突解决：与批量路径统一使用两位数字后缀
+    FString FinalNewName = XAssetNaming::ResolveNameCollision(NewName, ExistingNames);
 
     // ========== 【UE最佳实践】最终数字后缀规范化 ==========
     // 在所有名称处理完成后，对最终名称进行一次性数字后缀规范化
@@ -1400,19 +1393,16 @@ FAssetNamingPattern FAssetNamingPattern::ParseFromName(const FString& AssetName,
         const UX_AssetEditorSettings* Settings = GetDefault<UX_AssetEditorSettings>();
         if (Settings)
         {
-            for (const auto& Pair : Settings->AssetPrefixMappings)
+            const FString MatchingPrefix = XAssetNaming::FindLongestMatchingPrefix(
+                RemainingName, FString(), Settings->AssetPrefixMappings);
+            if (!MatchingPrefix.IsEmpty())
             {
-                const FString& TestPrefix = Pair.Value;
-                if (!TestPrefix.IsEmpty() && RemainingName.StartsWith(TestPrefix))
-                {
-                    Pattern.Prefix = TestPrefix;
+                Pattern.Prefix = MatchingPrefix;
 #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
-                    RemainingName.RightChopInline(TestPrefix.Len(), EAllowShrinking::No);
+                RemainingName.RightChopInline(MatchingPrefix.Len(), EAllowShrinking::No);
 #else
-                    RemainingName.RightChopInline(TestPrefix.Len(), false);
+                RemainingName.RightChopInline(MatchingPrefix.Len(), false);
 #endif
-                    break;
-                }
             }
         }
     }
@@ -1537,21 +1527,7 @@ FString FX_AssetNamingManager::GenerateUniqueAssetName(
         }
     }
 
-    // 先尝试直接使用基础名称
-    if (!ExistingAssetNames.Contains(BaseName))
-    {
-        return BaseName;
-    }
-
-    // 存在冲突，添加数字后缀
-    int32 Suffix = 1;
-    FString CandidateName;
-    do
-    {
-        CandidateName = FString::Printf(TEXT("%s_%02d"), *BaseName, Suffix++);
-    } while (ExistingAssetNames.Contains(CandidateName));
-
-    return CandidateName;
+    return XAssetNaming::ResolveNameCollision(BaseName, ExistingAssetNames);
 }
 
 FString FX_AssetNamingManager::ApplyVariantNaming(const FAssetData& AssetData, const FAssetNamingPattern& Pattern) const
@@ -1618,16 +1594,11 @@ FString FX_AssetNamingManager::StripIncorrectPrefix(const FString& CurrentName, 
         return CurrentName;
     }
 
-    const TMap<FString, FString>& AssetPrefixes = Settings->AssetPrefixMappings;
-    for (const auto& Pair : AssetPrefixes)
+    const FString MatchingPrefix = XAssetNaming::FindLongestMatchingPrefix(
+        CurrentName, CorrectPrefix, Settings->AssetPrefixMappings);
+    if (!MatchingPrefix.IsEmpty())
     {
-        const FString& ExistingPrefix = Pair.Value;
-        if (!ExistingPrefix.IsEmpty() &&
-            ExistingPrefix != CorrectPrefix &&
-            CurrentName.StartsWith(ExistingPrefix))
-        {
-            return CurrentName.RightChop(ExistingPrefix.Len());
-        }
+        return CurrentName.RightChop(MatchingPrefix.Len());
     }
 
     return CurrentName;
