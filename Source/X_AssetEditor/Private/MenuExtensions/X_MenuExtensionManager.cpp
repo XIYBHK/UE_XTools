@@ -24,6 +24,7 @@
 #include "ContentBrowserModule.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
+#include "ObjectTools.h"
 #include "LevelEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "ToolMenus.h"
@@ -414,7 +415,20 @@ void FX_MenuExtensionManager::AddMaterialBakeMenuEntry(FMenuBuilder& MenuBuilder
                         else
                         {
                             ++FailedCount;
-                            FailureMessages.Add(FString::Printf(TEXT("%s: %s"), *DuplicatedMesh->GetName(), *BakeResult.Message));
+                            const FString FailedAssetName = DuplicatedMesh->GetName();
+                            const TArray<UObject*> FailedDuplicates{DuplicatedMesh};
+                            const int32 DeletedCount = ObjectTools::DeleteObjects(
+                                FailedDuplicates,
+                                false,
+                                ObjectTools::EAllowCancelDuringDelete::CancelNotAllowed);
+                            const TCHAR* CleanupStatus = DeletedCount > 0
+                                ? TEXT("失败副本已移除")
+                                : TEXT("失败副本清理失败，请手工删除");
+                            FailureMessages.Add(FString::Printf(
+                                TEXT("%s: %s（%s）"),
+                                *FailedAssetName,
+                                *BakeResult.Message,
+                                CleanupStatus));
                         }
                     }
 
