@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(const UObject* WorldContextObject, UCurveVector* CurveVector, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, TArray<FECFTimelineEvent> Events)
+UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(const UObject* WorldContextObject, UCurveVector* CurveVector, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, const TArray<FECFTimelineEvent>& Events)
 {
     UECFCustomTimelineVectorBP* Proxy = NewObject<UECFCustomTimelineVectorBP>();
     if (Proxy)
@@ -20,7 +20,7 @@ UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(
                 {
                     if (IsProxyValid(StrongProxy))
                     {
-                        StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None, -1.f);
+                        StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None);
                     }
                 }
             },
@@ -30,17 +30,17 @@ UECFCustomTimelineVectorBP* UECFCustomTimelineVectorBP::ECFCustomTimelineVector(
                 {
                     if (IsProxyValid(StrongProxy))
                     {
-                        StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None, -1.f);
+                        StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None);
                         StrongProxy->ClearAsyncBPAction();
                     }
 				}
 			},
-			PlayRate, Settings, PlayDirection, MoveTemp(Events),
+			PlayRate, Settings, PlayDirection, Events,
 			[WeakProxy](FName EventName, float EventTime)
 			{
 				if (UECFCustomTimelineVectorBP* StrongProxy = WeakProxy.Get())
 				{
-					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(FVector::ZeroVector, EventTime, false, EventName, EventTime);
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(FVector::ZeroVector, EventTime, false, EventName);
 				}
 			});
         Handle = FECFHandleBP(Proxy->Proxy_Handle);

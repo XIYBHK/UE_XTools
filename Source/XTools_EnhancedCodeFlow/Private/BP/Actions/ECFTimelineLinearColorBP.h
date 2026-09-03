@@ -6,7 +6,7 @@
 #include "ECFTypes.h"
 #include "ECFTimelineLinearColorBP.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnECFTimelineLinearColorBPEvent, FLinearColor, Value, float, Time, bool, bStopped, FName, EventName, float, EventTime);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnECFTimelineLinearColorBPEvent, FLinearColor, Value, float, Time, bool, bStopped, FName, EventName);
 
 UCLASS()
 class XTOOLS_ENHANCEDCODEFLOW_API UECFTimelineLinearColorBP : public UECFActionBP
@@ -24,6 +24,6 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnECFTimelineLinearColorBPEvent OnEvent;
 	
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, BlendFunc, BlendExp, PlayRate, PlayDirection", CPP_Default_BlendFunc = "ECFBlend_Linear", CPP_Default_BlendExp = "1.0", CPP_Default_PlayRate = "1.0", CPP_Default_PlayDirection = "Forward", ToolTip = "添加颜色时间轴。反向播放会从结束值开始并在起始值完成。", DisplayName = "ECF - 颜色时间轴"), Category = "XTools|ECF|时间轴")
-	static UECFTimelineLinearColorBP* ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc, float BlendExp, float PlayRate, EECFPlayDirection PlayDirection, TArray<FECFTimelineEvent> Events);
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject", AdvancedDisplay = "Settings, BlendFunc, BlendExp, PlayRate, PlayDirection, Events", AutoCreateRefTerm = "Events", CPP_Default_BlendFunc = "ECFBlend_Linear", CPP_Default_BlendExp = "1.0", CPP_Default_PlayRate = "1.0", CPP_Default_PlayDirection = "Forward", ToolTip = "添加颜色时间轴。反向播放会从结束值开始并在起始值完成。", DisplayName = "ECF - 颜色时间轴"), Category = "XTools|ECF|时间轴")
+	static UECFTimelineLinearColorBP* ECFTimelineLinearColor(const UObject* WorldContextObject, FLinearColor StartValue, FLinearColor StopValue, float Time, FECFActionSettings Settings, FECFHandleBP& Handle, EECFBlendFunc BlendFunc, float BlendExp, float PlayRate, EECFPlayDirection PlayDirection, const TArray<FECFTimelineEvent>& Events);
 };

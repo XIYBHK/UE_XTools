@@ -28,4 +28,6 @@ FFlow::AddTimeline(
 
 ## 蓝图
 
-六个对应的 ECF 时间轴异步节点新增 `Events` 输入数组和独立的 `On Event` 输出委托。数组元素填写事件时间与事件名称，在 `On Event` 中根据 `Event Name` 分派逻辑；`Event Time` 返回命中的原生时间轴位置。`On Tick` 与 `On Finished` 保持原有值、时间和停止状态参数。
+六个对应的 ECF 时间轴异步节点提供 `Events` 输入数组和独立的 `On Event` 输出委托。`Events` 位于高级参数中，默认折叠；不需要事件轨道时可保持未连接并正常编译。需要事件时，展开高级参数，为每个数组元素填写事件时间与事件名称。
+
+`On Event` 触发后，将 `Event Name` 连接到 `Switch on Name` 的 `Selection` 引脚以分派逻辑。此时节点已有的 `Time` 输出即为命中的原生时间轴位置，不再提供含义重复的 `Event Time` 输出；`On Tick` 与 `On Finished` 仍保持原有值、时间和停止状态参数。

@@ -5,7 +5,7 @@
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
-UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* WorldContextObject, UCurveFloat* CurveFloat, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, TArray<FECFTimelineEvent> Events)
+UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* WorldContextObject, UCurveFloat* CurveFloat, FECFActionSettings Settings, FECFHandleBP& Handle, float PlayRate /*= 1.f*/, EECFPlayDirection PlayDirection /*= EECFPlayDirection::Forward*/, const TArray<FECFTimelineEvent>& Events)
 {
 	UECFCustomTimelineBP* Proxy = NewObject<UECFCustomTimelineBP>();
 	if (Proxy)
@@ -20,7 +20,7 @@ UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* Wor
 				{
 					if (IsProxyValid(StrongProxy))
 					{
-						StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None, -1.f);
+						StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None);
 					}
 				}
 			},
@@ -30,17 +30,17 @@ UECFCustomTimelineBP* UECFCustomTimelineBP::ECFCustomTimeline(const UObject* Wor
 				{
 					if (IsProxyValid(StrongProxy))
 					{
-						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None, -1.f);
+						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None);
 						StrongProxy->ClearAsyncBPAction();
 					}
 				}
 			},
-			PlayRate, Settings, PlayDirection, MoveTemp(Events),
+			PlayRate, Settings, PlayDirection, Events,
 			[WeakProxy](FName EventName, float EventTime)
 			{
 				if (UECFCustomTimelineBP* StrongProxy = WeakProxy.Get())
 				{
-					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(0.f, EventTime, false, EventName, EventTime);
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(0.f, EventTime, false, EventName);
 				}
 			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);

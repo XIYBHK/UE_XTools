@@ -110,17 +110,45 @@ bool FECFTimelineBlueprintOutputContractTest::RunTest(const FString& Parameters)
 		UECFCustomTimelineVectorBP::StaticClass(),
 		UECFCustomTimelineLinearColorBP::StaticClass()
 	};
-
-	for (const UClass* ProxyClass : ProxyClasses)
+	const FName FactoryFunctionNames[] =
 	{
+		GET_FUNCTION_NAME_CHECKED(UECFTimelineBP, ECFTimeline),
+		GET_FUNCTION_NAME_CHECKED(UECFTimelineVectorBP, ECFTimelineVector),
+		GET_FUNCTION_NAME_CHECKED(UECFTimelineLinearColorBP, ECFTimelineLinearColor),
+		GET_FUNCTION_NAME_CHECKED(UECFCustomTimelineBP, ECFCustomTimeline),
+		GET_FUNCTION_NAME_CHECKED(UECFCustomTimelineVectorBP, ECFCustomTimelineVector),
+		GET_FUNCTION_NAME_CHECKED(UECFCustomTimelineLinearColorBP, ECFCustomTimelineLinearColor)
+	};
+
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(ProxyClasses); ++Index)
+	{
+		const UClass* ProxyClass = ProxyClasses[Index];
 		const FMulticastDelegateProperty* OnTick = FindFProperty<FMulticastDelegateProperty>(ProxyClass, TEXT("OnTick"));
 		const FMulticastDelegateProperty* OnFinished = FindFProperty<FMulticastDelegateProperty>(ProxyClass, TEXT("OnFinished"));
 		const FMulticastDelegateProperty* OnEvent = FindFProperty<FMulticastDelegateProperty>(ProxyClass, TEXT("OnEvent"));
+		const UFunction* FactoryFunction = ProxyClass->FindFunctionByName(FactoryFunctionNames[Index]);
 		const FString ClassName = ProxyClass->GetName();
 
 		TestNotNull(*FString::Printf(TEXT("%s 应暴露 OnTick 委托"), *ClassName), OnTick);
 		TestNotNull(*FString::Printf(TEXT("%s 应暴露 OnFinished 委托"), *ClassName), OnFinished);
 		TestNotNull(*FString::Printf(TEXT("%s 应暴露 OnEvent 委托"), *ClassName), OnEvent);
+		TestNotNull(*FString::Printf(TEXT("%s 应暴露时间轴工厂函数"), *ClassName), FactoryFunction);
+		if (FactoryFunction)
+		{
+			const FArrayProperty* EventsProperty = FindFProperty<FArrayProperty>(FactoryFunction, TEXT("Events"));
+			TestNotNull(*FString::Printf(TEXT("%s 应暴露 Events 输入"), *ClassName), EventsProperty);
+			if (EventsProperty)
+			{
+				TestTrue(*FString::Printf(TEXT("%s 的 Events 输入应默认折叠"), *ClassName),
+					EventsProperty->HasAnyPropertyFlags(CPF_AdvancedDisplay));
+				TestTrue(*FString::Printf(TEXT("%s 的 Events 输入应为引用参数"), *ClassName),
+					EventsProperty->HasAnyPropertyFlags(CPF_ReferenceParm));
+				TestTrue(*FString::Printf(TEXT("%s 的 Events 输入应为只读参数"), *ClassName),
+					EventsProperty->HasAnyPropertyFlags(CPF_ConstParm));
+			}
+			TestEqual(*FString::Printf(TEXT("%s 的 Events 输入应允许留空"), *ClassName),
+				FactoryFunction->GetMetaData(TEXT("AutoCreateRefTerm")), FString(TEXT("Events")));
+		}
 		if (!OnTick || !OnFinished || !OnEvent)
 		{
 			continue;
@@ -130,7 +158,7 @@ bool FECFTimelineBlueprintOutputContractTest::RunTest(const FString& Parameters)
 			OnTick->SignatureFunction == OnFinished->SignatureFunction && OnTick->SignatureFunction == OnEvent->SignatureFunction);
 		TestNotNull(*FString::Printf(TEXT("%s 应输出 EventName"), *ClassName),
 			FindFProperty<FNameProperty>(OnTick->SignatureFunction, TEXT("EventName")));
-		TestNotNull(*FString::Printf(TEXT("%s 应输出 EventTime"), *ClassName),
+		TestNull(*FString::Printf(TEXT("%s 不应输出 EventTime"), *ClassName),
 			FindFProperty<FFloatProperty>(OnTick->SignatureFunction, TEXT("EventTime")));
 	}
 
