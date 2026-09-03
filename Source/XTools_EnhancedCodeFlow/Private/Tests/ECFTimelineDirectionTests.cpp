@@ -4,6 +4,12 @@
 
 #include "EnhancedCodeFlow.h"
 #include "ECFSubsystem.h"
+#include "BP/Actions/ECFCustomTimelineBP.h"
+#include "BP/Actions/ECFCustomTimelineLinearColorBP.h"
+#include "BP/Actions/ECFCustomTimelineVectorBP.h"
+#include "BP/Actions/ECFTimelineBP.h"
+#include "BP/Actions/ECFTimelineLinearColorBP.h"
+#include "BP/Actions/ECFTimelineVectorBP.h"
 
 #include "Curves/CurveFloat.h"
 #include "Curves/CurveLinearColor.h"
@@ -13,6 +19,7 @@
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
 #include "Tickable.h"
+#include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace
@@ -85,6 +92,49 @@ namespace
 			RichCurve.AddKey(1.f, 1.f);
 		}
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FECFTimelineBlueprintOutputContractTest,
+	"XTools.EnhancedCodeFlow.Timeline.BlueprintOutputContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FECFTimelineBlueprintOutputContractTest::RunTest(const FString& Parameters)
+{
+	const UClass* ProxyClasses[] =
+	{
+		UECFTimelineBP::StaticClass(),
+		UECFTimelineVectorBP::StaticClass(),
+		UECFTimelineLinearColorBP::StaticClass(),
+		UECFCustomTimelineBP::StaticClass(),
+		UECFCustomTimelineVectorBP::StaticClass(),
+		UECFCustomTimelineLinearColorBP::StaticClass()
+	};
+
+	for (const UClass* ProxyClass : ProxyClasses)
+	{
+		const FMulticastDelegateProperty* OnTick = FindFProperty<FMulticastDelegateProperty>(ProxyClass, TEXT("OnTick"));
+		const FMulticastDelegateProperty* OnFinished = FindFProperty<FMulticastDelegateProperty>(ProxyClass, TEXT("OnFinished"));
+		const FMulticastDelegateProperty* OnEvent = FindFProperty<FMulticastDelegateProperty>(ProxyClass, TEXT("OnEvent"));
+		const FString ClassName = ProxyClass->GetName();
+
+		TestNotNull(*FString::Printf(TEXT("%s 应暴露 OnTick 委托"), *ClassName), OnTick);
+		TestNotNull(*FString::Printf(TEXT("%s 应暴露 OnFinished 委托"), *ClassName), OnFinished);
+		TestNotNull(*FString::Printf(TEXT("%s 应暴露 OnEvent 委托"), *ClassName), OnEvent);
+		if (!OnTick || !OnFinished || !OnEvent)
+		{
+			continue;
+		}
+
+		TestTrue(*FString::Printf(TEXT("%s 的三个异步输出必须共享同一参数签名"), *ClassName),
+			OnTick->SignatureFunction == OnFinished->SignatureFunction && OnTick->SignatureFunction == OnEvent->SignatureFunction);
+		TestNotNull(*FString::Printf(TEXT("%s 应输出 EventName"), *ClassName),
+			FindFProperty<FNameProperty>(OnTick->SignatureFunction, TEXT("EventName")));
+		TestNotNull(*FString::Printf(TEXT("%s 应输出 EventTime"), *ClassName),
+			FindFProperty<FFloatProperty>(OnTick->SignatureFunction, TEXT("EventTime")));
+	}
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

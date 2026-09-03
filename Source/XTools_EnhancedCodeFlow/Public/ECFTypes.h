@@ -22,8 +22,6 @@ struct XTOOLS_ENHANCEDCODEFLOW_API FECFTimelineEvent
 
 using FECFTimelineEventFunc = TUniqueFunction<void(FName EventName, float EventTime)>;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnECFTimelineEventBP, FName, EventName, float, EventTime);
-
 inline constexpr int32 ECFMaxTimelineEventSegmentsPerTick = 1000;
 
 inline void ECFPrepareTimelineEvents(TArray<FECFTimelineEvent>& Events)
