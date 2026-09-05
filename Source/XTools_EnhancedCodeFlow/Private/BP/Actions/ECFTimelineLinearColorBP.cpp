@@ -17,25 +17,31 @@ UECFTimelineLinearColorBP* UECFTimelineLinearColorBP::ECFTimelineLinearColor(con
 			StartValue, StopValue, Time,
 			[WeakProxy](FLinearColor Value, float Time)
 			{
-				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get(); IsProxyValid(StrongProxy))
+				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
 				{
-					StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None);
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None);
+					}
 				}
 			},
 			[WeakProxy](FLinearColor Value, float Time, bool bStopped)
 			{
-				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get(); IsProxyValid(StrongProxy))
+				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
 				{
-					StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None);
-					StrongProxy->ClearAsyncBPAction();
+					if (IsProxyValid(StrongProxy))
+					{
+						StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None);
+						StrongProxy->ClearAsyncBPAction();
+					}
 				}
 			},
 			BlendFunc, BlendExp, PlayRate, Settings, PlayDirection, Events,
 			[WeakProxy](FName EventName, float EventTime)
 			{
-				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get(); IsProxyValid(StrongProxy))
+				if (UECFTimelineLinearColorBP* StrongProxy = WeakProxy.Get())
 				{
-					StrongProxy->OnEvent.Broadcast(FLinearColor::Transparent, EventTime, false, EventName);
+					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(FLinearColor::Transparent, EventTime, false, EventName);
 				}
 			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
