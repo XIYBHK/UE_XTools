@@ -17,31 +17,25 @@ UECFTimelineVectorBP* UECFTimelineVectorBP::ECFTimelineVector(const UObject* Wor
 			StartValue, StopValue, Time,
 			[WeakProxy](FVector Value, float Time)
 			{
-				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get())
+				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get(); IsProxyValid(StrongProxy))
 				{
-					if (IsProxyValid(StrongProxy))
-					{
-                        StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None);
-					}
+					StrongProxy->OnTick.Broadcast(Value, Time, false, NAME_None);
 				}
 			},
 			[WeakProxy](FVector Value, float Time, bool bStopped)
 			{
-				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get())
+				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get(); IsProxyValid(StrongProxy))
 				{
-					if (IsProxyValid(StrongProxy))
-					{
-                        StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None);
-						StrongProxy->ClearAsyncBPAction();
-					}
+					StrongProxy->OnFinished.Broadcast(Value, Time, bStopped, NAME_None);
+					StrongProxy->ClearAsyncBPAction();
 				}
 			},
 			BlendFunc, BlendExp, PlayRate, Settings, PlayDirection, Events,
 			[WeakProxy](FName EventName, float EventTime)
 			{
-				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get())
+				if (UECFTimelineVectorBP* StrongProxy = WeakProxy.Get(); IsProxyValid(StrongProxy))
 				{
-					if (IsProxyValid(StrongProxy)) StrongProxy->OnEvent.Broadcast(FVector::ZeroVector, EventTime, false, EventName);
+					StrongProxy->OnEvent.Broadcast(FVector::ZeroVector, EventTime, false, EventName);
 				}
 			});
 		Handle = FECFHandleBP(Proxy->Proxy_Handle);
