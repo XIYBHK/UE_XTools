@@ -6,6 +6,7 @@
 
 #include "MenuExtensions/X_MenuExtensionManager.h"
 #include "AssetNaming/X_AssetNamingManager.h"
+#include "AssetTools/X_AssetFlattenLibrary.h"
 #include "BlueprintTools/X_BlueprintGraphExporter.h"
 #include "MaterialTools/X_MaterialFunctionOperation.h"
 #include "MaterialTools/X_MaterialBakeBlueprintLibrary.h"
@@ -293,6 +294,16 @@ void FX_MenuExtensionManager::AddAssetNamingMenuEntry(FMenuBuilder& MenuBuilder,
 {
     MenuBuilder.BeginSection("AssetNaming", LOCTEXT("AssetNaming", "资产命名"));
     {
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("FlattenAssets", "扁平移动资产及依赖..."),
+            LOCTEXT("FlattenAssetsTooltip", "将选中资产及 /Game 硬软依赖移动到同一目录，保持名称并修复引用和本次重定向器"),
+            FSlateIcon(),
+            FUIAction(FExecuteAction::CreateLambda([SelectedAssets]() { UX_AssetFlattenLibrary::ShowDialog(SelectedAssets); })));
+        MenuBuilder.AddMenuEntry(
+            LOCTEXT("OrganizeAssets", "按类型移动资产及依赖..."),
+            LOCTEXT("OrganizeAssetsTooltip", "递归收集选中资产及 /Game 硬软依赖，保持名称并移动到目标目录下的分类子目录，修复引用和本次重定向器"),
+            FSlateIcon(),
+            FUIAction(FExecuteAction::CreateLambda([SelectedAssets]() { UX_AssetFlattenLibrary::ShowDialog(SelectedAssets, true); })));
         MenuBuilder.AddMenuEntry(
             LOCTEXT("RenameAssets", "规范化资产命名"),
             LOCTEXT("RenameAssetsTooltip", "根据资产类型自动添加正确的前缀"),
