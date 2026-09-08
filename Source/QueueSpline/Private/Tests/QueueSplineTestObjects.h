@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "QueueSplineComponent.h"
+#include "Templates/Function.h"
 #include "QueueSplineTestObjects.generated.h"
 
 /**
@@ -27,6 +28,7 @@ class UQueueSplineTargetEventRecorder : public UObject
 public:
 	/** 记录每次广播收到的成员句柄，按到达顺序追加 */
 	TArray<FQueueSplineMemberHandle> ReceivedHandles;
+	TUniqueFunction<void()> OnFirstTargetUpdate;
 
 	/** 首个外层回调（回调深度为 0）要注销的成员句柄；Id 无效表示不注销 */
 	FQueueSplineMemberHandle HandleToRemoveOnFirstOuter;
@@ -58,6 +60,11 @@ public:
 		++InCallbackDepth;
 
 		ReceivedHandles.Add(Handle);
+		if (OnFirstTargetUpdate)
+		{
+			TUniqueFunction<void()> Callback = MoveTemp(OnFirstTargetUpdate);
+			Callback();
+		}
 
 		if (bUnregisterCurrentOnEveryCallback)
 		{

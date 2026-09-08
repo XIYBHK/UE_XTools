@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Map.h"
+#include "UObject/WeakObjectPtrTemplates.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "ECFHandle.h"
@@ -65,6 +67,7 @@ protected:
 		{
 			NewAction->Init();
 			PendingAddActions.Add(NewAction);
+			IndexAction(NewAction);
 #if (ECF_LOGS && ECF_LOGS_VERBOSE)
 			if (InstanceId.IsValid())
 			{
@@ -109,6 +112,7 @@ protected:
 			UE_LOG(LogECF, Verbose, TEXT("Started Coroutine Action of class: %s, Label: %s"), *NewAction->GetName(), *Settings.Label);
 #endif
 			PendingAddActions.Add(NewAction);
+			IndexAction(NewAction);
 			return true;
 		}
 		else
@@ -220,6 +224,13 @@ protected:
 	static bool IsActionValid(UECFActionBase* Action);
 
 private:
+	// Arrays retain GC ownership and tick order; indexes only accelerate lookup.
+	TMap<FECFHandle, TWeakObjectPtr<UECFActionBase>> ActionsByHandle;
+	// Init callbacks may reenter before the outer action is registered. Keep that order.
+	using FInstanceActions = TArray<TWeakObjectPtr<UECFActionBase>, TInlineAllocator<1>>;
+	TMap<FECFInstanceId, FInstanceActions> ActionsByInstance;
+	void IndexAction(UECFActionBase* Action);
+	void UnindexAction(UECFActionBase* Action);
 
 	// Indicates if this subsystem should tick
 	bool bCanTick = false;

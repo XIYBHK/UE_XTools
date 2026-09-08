@@ -8,11 +8,14 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "ObjectPoolLifecycleTestTypes.h"
+#include "ActorPool.h"
 #include "Async/TaskGraphInterfaces.h"
 #include "Engine/Engine.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "HAL/PlatformTime.h"
+#include "Math/RandomStream.h"
 
 namespace
 {
@@ -61,6 +64,96 @@ namespace
     {
         FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
     }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolActiveRemovalScaleTest,
+    "XTools.ObjectPool.ActorPool.ActiveRemovalScale",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolActiveRemovalScaleTest::RunTest(const FString& Parameters)
+{
+    FScopedLifecycleTestWorld TestWorld(TEXT("ObjectPoolActiveRemovalScale"));
+    UWorld* World = TestWorld.Get();
+    if (!TestNotNull(TEXT("Test world is valid"), World)) { return false; }
+    for (int32 Count : {100, 1000, 10000})
+    {
+        FActorPool Pool(AActor::StaticClass(), 1, Count);
+        TArray<AActor*> Actors;
+        for (int32 Index = 0; Index < Count; ++Index)
+        {
+            AActor* Actor = Pool.GetActor(World);
+            if (!Actor) { AddError(TEXT("Failed to acquire test Actor")); return false; }
+            Actors.Add(Actor);
+        }
+        FRandomStream Random(72341);
+        for (int32 Index = Actors.Num() - 1; Index > 0; --Index) { Actors.Swap(Index, Random.RandRange(0, Index)); }
+        const double Start = FPlatformTime::Seconds();
+        int32 Returned = 0;
+        for (AActor* Actor : Actors) { Returned += Pool.ReturnActor(Actor) ? 1 : 0; }
+        AddInfo(FString::Printf(TEXT("ActiveRemovalScale: %d shuffled returns, %.3f ms"), Count, (FPlatformTime::Seconds() - Start) * 1000.0));
+        TestEqual(TEXT("Every active actor is returned exactly once"), Returned, Count);
+        TestEqual(TEXT("Active count after batch return"), Pool.GetActiveCount(), 0);
+        TestEqual(TEXT("Available count after batch return"), Pool.GetAvailableCount(), Count);
+
+        // Exercise stale weak keys and swapped indices, then reuse surviving actors.
+        Actors.Reset();
+        for (int32 Index = 0; Index < 64; ++Index) { Actors.Add(Pool.GetActor(World)); }
+        for (int32 Index = 0; Index < Actors.Num(); Index += 7) { Actors[Index]->Destroy(); }
+        Pool.CleanupInvalidActors();
+        for (AActor* Actor : Actors)
+        {
+            if (IsValid(Actor)) { TestTrue(TEXT("Survivor remains returnable after cleanup swaps"), Pool.ReturnActor(Actor)); }
+        }
+        TestEqual(TEXT("Cleanup and reacquisition leave no active entries"), Pool.GetActiveCount(), 0);
+        Pool.ClearPool();
+        AActor* Deferred = Pool.AcquireDeferred(World);
+        TestTrue(TEXT("Deferred finalization after clearing succeeds"), Pool.FinalizeDeferred(Deferred, FTransform::Identity));
+        TestTrue(TEXT("Finalized actor can be returned"), Pool.ReturnActor(Deferred));
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FObjectPoolActiveRemovalReentrancyTest,
+    "XTools.ObjectPool.ActorPool.ActiveRemovalReentrancy",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FObjectPoolActiveRemovalReentrancyTest::RunTest(const FString& Parameters)
+{
+    FScopedLifecycleTestWorld TestWorld(TEXT("ObjectPoolActiveRemovalReentrancy"));
+    UWorld* World = TestWorld.Get();
+    if (!TestNotNull(TEXT("Test world is valid"), World)) { return false; }
+    FActorPool Pool(AObjectPoolLifecycleTestActor::StaticClass(), 1, 512);
+    TArray<AObjectPoolLifecycleTestActor*> Actors;
+    for (int32 Index = 0; Index < 300; ++Index)
+    {
+        AObjectPoolLifecycleTestActor* Actor = Cast<AObjectPoolLifecycleTestActor>(Pool.GetActor(World));
+        if (!Actor) { AddError(TEXT("Failed to acquire test Actor")); return false; }
+        Actors.Add(Actor);
+    }
+    AddExpectedError(TEXT("Actor不在活跃列表中，拒绝归还"), EAutomationExpectedErrorFlags::Contains, 1);
+    bool bNestedReturn = true;
+    Actors[100]->OnReturnOnce = [&]() { bNestedReturn = Pool.ReturnActor(Actors[100]); };
+    TestTrue(TEXT("Outer return succeeds"), Pool.ReturnActor(Actors[100]));
+    TestFalse(TEXT("Returning actor cannot be returned twice during callback"), bNestedReturn);
+    TestEqual(TEXT("Return callback fires once"), Actors[100]->ReturnedCount, 1);
+
+    AddExpectedError(TEXT("ReturnActor: 回调后复核失败"), EAutomationExpectedErrorFlags::Contains, 2);
+    Actors[200]->OnReturnOnce = [&]() { Actors[200]->Destroy(); };
+    TestFalse(TEXT("Destroyed actor is not committed as available"), Pool.ReturnActor(Actors[200]));
+    TestEqual(TEXT("Destroyed return no longer counts as active"), Pool.GetActiveCount(), 298);
+
+    Actors[150]->OnReturnOnce = [&]() { Pool.ClearPool(); };
+    TestFalse(TEXT("ClearPool during return prevents stale commit"), Pool.ReturnActor(Actors[150]));
+    TestEqual(TEXT("Clear removes all active indices"), Pool.GetActiveCount(), 0);
+    TestEqual(TEXT("Clear removes all available actors"), Pool.GetAvailableCount(), 0);
+    for (int32 Index = 0; Index < 300; ++Index)
+    {
+        if (!Pool.GetActor(World)) { AddError(TEXT("Pool failed to refill after ClearPool")); return false; }
+    }
+    AActor* Deferred = Pool.AcquireDeferred(World);
+    TestTrue(TEXT("Deferred path joins an already indexed active array"), Pool.FinalizeDeferred(Deferred, FTransform::Identity));
+    TestTrue(TEXT("Deferred actor has a valid active index"), Pool.ReturnActor(Deferred));
+    return true;
 }
 
 // M-12 回归：CallLifecycleEventEnhanced 对原生 C++ 接口实现者的同步/异步派发。

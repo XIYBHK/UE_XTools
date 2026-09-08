@@ -2,6 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Test UE 5.3 (Incremental)",
+      "type": "shell",
+      "command": "pwsh.exe",
+      "args": ["-NoProfile", "-NonInteractive", "-File", "${workspaceFolder}/Scripts/Test-UE53.ps1"],
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "Build Editor (Full & Formal)",
       "type": "shell",
       "command": "${config:unreal.engine.path}/Engine/Build/BatchFiles/Build.bat",

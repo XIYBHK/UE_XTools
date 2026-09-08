@@ -41,7 +41,9 @@
 
 脚本在 UE 5.4-5.8 启用 `-StrictIncludes`，用于发现隐式包含和模块边界问题。
 
-UE 5.3 的 BuildPlugin 对引擎 UHT include 路径处理不同，脚本会跳过 `-StrictIncludes` 并输出提示。这是脚本的显式兼容策略，不代表 UE 5.3 可以依赖隐式包含；源码仍应遵守 IWYU。
+UE 5.3 的 BuildPlugin 对引擎 UHT include 路径处理不同，脚本会省略 `-StrictIncludes`。这是显式兼容策略，不代表 UE 5.3 可以依赖隐式包含；源码仍应遵守 IWYU。
+
+本地脚本、发布工作流和 `.github/scripts/Build-Plugin.ps1` 共用 `Scripts/UEBuildHelpers.ps1` 的参数构造函数。版本读取引擎 `Engine/Build/Build.version`，不依赖安装目录名称；最终参数由调用入口打印。快速行为验证使用 `Scripts/Test-UE53.ps1`，不需要先执行多版本打包。
 
 ## 4. BuildPlugin 验证范围
 

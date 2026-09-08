@@ -11,6 +11,7 @@ Param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'UEBuildHelpers.ps1')
 
 function Resolve-Engines {
   param([string[]]$Roots)
@@ -47,23 +48,18 @@ function Invoke-BuildPlugin {
   $uat = Join-Path $EngineRoot "Engine\\Build\\BatchFiles\\RunUAT.bat"
   if (!(Test-Path $uat)) { throw "RunUAT not found: $uat" }
 
-  $args = @(
-    'BuildPlugin',
-    "-Plugin=`"$PluginPath`"",
-    "-Package=`"$OutDir`"",
-    "-TargetPlatforms=$Platforms"
-  )
-  if ($UseNoHostProject) { $args += '-NoHostProject' }
-  if ($UseStrict)       { $args += '-StrictIncludes' }
+  $buildArguments = @(Get-XToolsBuildPluginArguments -EngineRoot $EngineRoot -PluginPath $PluginPath -PackagePath $OutDir -TargetPlatforms $Platforms -StrictIncludes:$UseStrict -NoHostProject:$UseNoHostProject)
 
-  Write-Host "[RUN] $uat $($args -join ' ')" -ForegroundColor Cyan
+  Write-Host "[RUN] $uat $($buildArguments -join ' ')" -ForegroundColor Cyan
 
   if ($FollowLogs) {
     # Build expected UAT log directory from engine root
     $sanitized = ($EngineRoot -replace '[:\\]', '+')
     $logRoot = Join-Path "$env:APPDATA\Unreal Engine\AutomationTool\Logs" $sanitized
 
-    $proc = Start-Process -FilePath $uat -ArgumentList $args -PassThru -NoNewWindow
+    # Start-Process joins ArgumentList; quote each whole token to retain spaces.
+    $processArguments = @($buildArguments | ForEach-Object { '"' + $_ + '"' })
+    $proc = Start-Process -FilePath $uat -ArgumentList $processArguments -PassThru -WindowStyle Hidden
     Write-Host "[FOLLOW] $logRoot" -ForegroundColor DarkCyan
 
     $lastStamp = $null
@@ -90,7 +86,7 @@ function Invoke-BuildPlugin {
     return $proc.ExitCode
   }
   else {
-    & $uat @args | Out-Host
+    & $uat @buildArguments | Out-Host
     return $LASTEXITCODE
   }
 }
@@ -117,11 +113,7 @@ $results = @()
 foreach ($e in $engineList) {
   $ver = Split-Path $e -Leaf
   $out = Join-Path $OutputBase ("XTools-" + $ver)
-  $useStrict = $StrictIncludes -and $ver -ne 'UE_5.3'
-  if ($StrictIncludes -and -not $useStrict) {
-    Write-Warning 'UE 5.3 BuildPlugin omits engine UHT include paths with -StrictIncludes; building without it.'
-  }
-  $code = Invoke-BuildPlugin -EngineRoot $e -PluginPath $PluginUplugin -OutDir $out -Platforms $TargetPlatforms -UseStrict:$useStrict -UseNoHostProject:$NoHostProject -FollowLogs:$Follow
+  $code = Invoke-BuildPlugin -EngineRoot $e -PluginPath $PluginUplugin -OutDir $out -Platforms $TargetPlatforms -UseStrict:$StrictIncludes -UseNoHostProject:$NoHostProject -FollowLogs:$Follow
   $results += (New-SummaryRow -Engine $ver -OutDir $out -Code $code)
 }
 

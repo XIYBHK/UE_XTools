@@ -17,6 +17,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/AutomationTest.h"
 #include "Tickable.h"
 #include "UObject/UnrealType.h"
@@ -95,6 +96,146 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FECFActionLookupLifecycleTest,
+	"XTools.EnhancedCodeFlow.Subsystem.LookupLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FECFActionLookupLifecycleTest::RunTest(const FString& Parameters)
+{
+	FScopedECFTestWorld TestWorld(TEXT("ECFLookupLifecycle"));
+	if (!TestTrue(TEXT("Test world is valid"), TestWorld.IsValid())) { return false; }
+	UWorld* World = TestWorld.GetWorld();
+	const FECFInstanceId Id = FECFInstanceId::NewId();
+	FECFHandle Inner;
+	FECFHandle Outer = FFlow::DoOnce(World, [&]()
+	{
+		Inner = FFlow::DoOnce(World, []() {}, Id);
+	}, Id);
+	TestTrue(TEXT("Reentrant initialization creates distinct handles"), Outer != Inner);
+	TestTrue(TEXT("Pending lookup returns first registered instance"), FFlow::DoOnce(World, []() {}, Id) == Inner);
+	TestWorld.Tick(0.01f);
+	TestTrue(TEXT("Active lookup preserves registration order"), FFlow::DoOnce(World, []() {}, Id) == Inner);
+	const FECFHandle StoppedInner = Inner;
+	FFlow::StopAction(World, Inner);
+	TestFalse(TEXT("Finished action disappears before pruning"), FFlow::IsActionRunning(World, StoppedInner));
+	TestTrue(TEXT("Next same-ID action remains available"), FFlow::DoOnce(World, []() {}, Id) == Outer);
+	FFlow::StopAction(World, Outer);
+	FECFHandle Replacement = FFlow::DoOnce(World, []() {}, Id);
+	TestWorld.Tick(0.01f);
+	TestTrue(TEXT("Pruning old instances retains replacement"), FFlow::DoOnce(World, []() {}, Id) == Replacement);
+	FFlow::StopInstancedAction(World, Id);
+	TestFalse(TEXT("Instance stop invalidates indexed lookup"), FFlow::IsActionRunning(World, Replacement));
+
+	FECFHandle Child;
+	FECFHandle Parent = FFlow::AddTicker(World, 0.01f, [](float) {}, [&]()
+	{
+		Child = FFlow::DoOnce(World, []() {}, FECFInstanceId::NewId());
+	});
+	TestWorld.Tick(0.1f);
+	TestFalse(TEXT("Naturally completed action is unavailable"), FFlow::IsActionRunning(World, Parent));
+	TestTrue(TEXT("Action created during Tick is immediately findable"), FFlow::IsActionRunning(World, Child));
+	TestWorld.Tick(0.01f);
+	TestTrue(TEXT("Pending child survives next Tick"), FFlow::IsActionRunning(World, Child));
+	FFlow::StopAction(World, Child);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FECFActionLookupScaleTest,
+	"XTools.EnhancedCodeFlow.Subsystem.LookupScale",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FECFActionLookupScaleTest::RunTest(const FString& Parameters)
+{
+	FScopedECFTestWorld TestWorld(TEXT("ECFLookupScale"));
+	if (!TestTrue(TEXT("Test world is valid"), TestWorld.IsValid())) { return false; }
+	UWorld* World = TestWorld.GetWorld();
+	constexpr int32 Count = 4096;
+	TArray<FECFHandle> Handles;
+	TArray<FECFInstanceId> Ids;
+	Handles.Reserve(Count);
+	Ids.Reserve(Count);
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		Ids.Add(FECFInstanceId::NewId());
+		Handles.Add(FFlow::DoOnce(World, []() {}, Ids.Last()));
+	}
+	TestWorld.Tick(0.01f);
+	const double Start = FPlatformTime::Seconds();
+	int32 Found = 0;
+	for (int32 Repeat = 0; Repeat < 4; ++Repeat)
+	{
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			Found += FFlow::IsActionRunning(World, Handles[Index]) ? 1 : 0;
+			Found += FFlow::DoOnce(World, []() {}, Ids[Index]) == Handles[Index] ? 1 : 0;
+		}
+	}
+	AddInfo(FString::Printf(TEXT("LookupScale: 32768 handle/instance queries, %.3f ms"), (FPlatformTime::Seconds() - Start) * 1000.0));
+	TestEqual(TEXT("Every handle and instance lookup succeeds"), Found, Count * 8);
+	for (FECFHandle& Handle : Handles) { FFlow::StopAction(World, Handle); }
+	TestWorld.Tick(0.01f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FECFTimelineValueConsistencyTest,
+	"XTools.EnhancedCodeFlow.Timeline.ValueConsistency",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FECFTimelineValueConsistencyTest::RunTest(const FString& Parameters)
+{
+	FScopedECFTestWorld TestWorld(TEXT("ECFTimelineValueConsistency"));
+	if (!TestTrue(TEXT("Test world is valid"), TestWorld.IsValid())) { return false; }
+	for (EECFBlendFunc Blend : {EECFBlendFunc::ECFBlend_Linear, EECFBlendFunc::ECFBlend_Cubic,
+		EECFBlendFunc::ECFBlend_EaseIn, EECFBlendFunc::ECFBlend_EaseOut, EECFBlendFunc::ECFBlend_EaseInOut})
+	{
+		for (EECFPlayDirection Direction : {EECFPlayDirection::Forward, EECFPlayDirection::Reverse})
+		{
+			float Scalar = 0.f;
+			FVector Vector = FVector::ZeroVector;
+			FLinearColor Color = FLinearColor::Transparent;
+			FECFHandle ScalarHandle = FFlow::AddTimeline(TestWorld.GetWorld(), 0.f, 1.f, 1.f,
+				[&](float Value, float) { Scalar = Value; }, [](float, float, bool) {}, Blend, 2.f, 1.f, {}, Direction);
+			FECFHandle VectorHandle = FFlow::AddTimelineVector(TestWorld.GetWorld(), FVector::ZeroVector, FVector::OneVector, 1.f,
+				[&](FVector Value, float) { Vector = Value; }, [](FVector, float, bool) {}, Blend, 2.f, 1.f, {}, Direction);
+			FECFHandle ColorHandle = FFlow::AddTimelineLinearColor(TestWorld.GetWorld(), FLinearColor::Transparent, FLinearColor::White, 1.f,
+				[&](FLinearColor Value, float) { Color = Value; }, [](FLinearColor, float, bool) {}, Blend, 2.f, 1.f, {}, Direction);
+			const auto CheckValues = [&](float Alpha)
+			{
+				float Expected = Alpha;
+				switch (Blend)
+				{
+				case EECFBlendFunc::ECFBlend_Cubic: Expected = Alpha * Alpha * (3.f - 2.f * Alpha); break;
+				case EECFBlendFunc::ECFBlend_EaseIn: Expected = Alpha * Alpha; break;
+				case EECFBlendFunc::ECFBlend_EaseOut: Expected = FMath::Sqrt(Alpha); break;
+				case EECFBlendFunc::ECFBlend_EaseInOut: Expected = Alpha < 0.5f ? 2.f * Alpha * Alpha : 1.f - 2.f * (1.f - Alpha) * (1.f - Alpha); break;
+				default: break;
+				}
+				TestTrue(TEXT("Scalar follows the expected blend"), FMath::IsNearlyEqual(Scalar, Expected, 0.00001f));
+				TestTrue(TEXT("Vector follows the same blend"), Vector.Equals(FVector(Expected), 0.00001));
+				TestTrue(TEXT("All four color channels follow the same blend"), Color.Equals(FLinearColor(Expected, Expected, Expected, Expected), 0.00001f));
+			};
+			TestWorld.Tick(0.01f);
+			CheckValues(Direction == EECFPlayDirection::Reverse ? 1.f : 0.f);
+			TestWorld.Tick(0.25f);
+			CheckValues(Direction == EECFPlayDirection::Reverse ? 0.75f : 0.25f);
+			for (float Time : {0.25f, 0.75f})
+			{
+				TestTrue(TEXT("Scalar seek succeeds"), FFlow::SetActionTime(TestWorld.GetWorld(), ScalarHandle, Time, true));
+				TestTrue(TEXT("Vector seek succeeds"), FFlow::SetActionTime(TestWorld.GetWorld(), VectorHandle, Time, true));
+				TestTrue(TEXT("Color seek succeeds"), FFlow::SetActionTime(TestWorld.GetWorld(), ColorHandle, Time, true));
+				CheckValues(Time);
+			}
+			FFlow::StopAction(TestWorld.GetWorld(), ScalarHandle);
+			FFlow::StopAction(TestWorld.GetWorld(), VectorHandle);
+			FFlow::StopAction(TestWorld.GetWorld(), ColorHandle);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FECFTimelineBlueprintOutputContractTest,
 	"XTools.EnhancedCodeFlow.Timeline.BlueprintOutputContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -162,6 +303,52 @@ bool FECFTimelineBlueprintOutputContractTest::RunTest(const FString& Parameters)
 			FindFProperty<FFloatProperty>(OnTick->SignatureFunction, TEXT("EventTime")));
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FECFTimelineCubicColorPreservesAlphaTest,
+	"XTools.EnhancedCodeFlow.Timeline.CubicColorPreservesAlpha",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FECFTimelineCubicColorPreservesAlphaTest::RunTest(const FString& Parameters)
+{
+	FScopedECFTestWorld TestWorld(TEXT("ECFTimelineCubicColorPreservesAlphaTest"));
+	if (!TestTrue(TEXT("应创建 ECF 测试世界和子系统"), TestWorld.IsValid()))
+	{
+		return false;
+	}
+
+	const FLinearColor QuarterColor(0.84375f, 0.f, 0.15625f, 1.f);
+	const FLinearColor ThreeQuarterColor(0.15625f, 0.f, 0.84375f, 1.f);
+	for (EECFPlayDirection Direction : {EECFPlayDirection::Forward, EECFPlayDirection::Reverse})
+	{
+		FLinearColor Value = FLinearColor::Transparent;
+		FECFHandle Handle = FFlow::AddTimelineLinearColor(TestWorld.GetWorld(),
+			FLinearColor::Red, FLinearColor::Blue, 1.f,
+			[&Value](FLinearColor NewValue, float Time) { Value = NewValue; },
+			[](FLinearColor, float, bool) {},
+			EECFBlendFunc::ECFBlend_Cubic, 1.f, 1.f, {}, Direction);
+		if (!TestTrue(TEXT("三次颜色时间轴应成功启动"), Handle.IsValid()))
+		{
+			continue;
+		}
+
+		TestWorld.Tick(0.01f); // 首帧只派发起点
+		TestWorld.Tick(0.25f);
+		const bool bReverse = Direction == EECFPlayDirection::Reverse;
+		TestTrue(TEXT("四分之一播放时间的所有颜色分量应遵循零切线曲线"),
+			Value.Equals(bReverse ? ThreeQuarterColor : QuarterColor, 0.00001f));
+		TestWorld.Tick(0.5f);
+		TestTrue(TEXT("四分之三播放时间应保持恒定 Alpha"),
+			Value.Equals(bReverse ? QuarterColor : ThreeQuarterColor, 0.00001f));
+
+		TestTrue(TEXT("应能设置时间到四分之一"), FFlow::SetActionTime(TestWorld.GetWorld(), Handle, 0.25f, true));
+		TestTrue(TEXT("手动设时应使用同样的颜色曲线"), Value.Equals(QuarterColor, 0.00001f));
+		TestTrue(TEXT("应能设置时间到四分之三"), FFlow::SetActionTime(TestWorld.GetWorld(), Handle, 0.75f, true));
+		TestTrue(TEXT("手动设时不应引入透明度变化"), Value.Equals(ThreeQuarterColor, 0.00001f));
+		FFlow::StopAction(TestWorld.GetWorld(), Handle, false);
+	}
 	return true;
 }
 

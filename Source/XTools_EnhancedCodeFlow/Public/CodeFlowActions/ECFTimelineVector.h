@@ -4,6 +4,7 @@
 
 #include "ECFActionBase.h"
 #include "ECFTypes.h"
+#include "ECFTimelineValue.h"
 #include "ECFTimelineVector.generated.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
@@ -136,24 +137,7 @@ protected:
 
 		const float Alpha = CurrentTime / Time;
 
-		switch (BlendFunc)
-		{
-		case EECFBlendFunc::ECFBlend_Linear:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, Alpha);
-			break;
-		case EECFBlendFunc::ECFBlend_Cubic:
-			CurrentValue = FMath::CubicInterp(StartValue, FVector::ZeroVector, StopValue, FVector::ZeroVector, Alpha);
-			break;
-		case EECFBlendFunc::ECFBlend_EaseIn:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, BlendExp));
-			break;
-		case EECFBlendFunc::ECFBlend_EaseOut:
-			CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, 1.f / BlendExp));
-			break;
-		case EECFBlendFunc::ECFBlend_EaseInOut:
-			CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, Alpha, BlendExp);
-			break;
-		}
+		ECFInternal::EvaluateTimelineValue(CurrentValue, StartValue, StopValue, Alpha, BlendFunc, BlendExp);
 
 		const bool bReachedEnd = PlayDirection == EECFPlayDirection::Reverse ? CurrentTime <= 0.f : CurrentTime >= Time;
 		if (bReachedEnd)
@@ -228,14 +212,7 @@ protected:
 	{
 		CurrentTime = FMath::Clamp(NewTime, 0.f, Time);
 		const float Alpha = CurrentTime / Time;
-		switch (BlendFunc)
-		{
-		case EECFBlendFunc::ECFBlend_Linear: CurrentValue = FMath::Lerp(StartValue, StopValue, Alpha); break;
-		case EECFBlendFunc::ECFBlend_Cubic: CurrentValue = FMath::CubicInterp(StartValue, FVector::ZeroVector, StopValue, FVector::ZeroVector, Alpha); break;
-		case EECFBlendFunc::ECFBlend_EaseIn: CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, BlendExp)); break;
-		case EECFBlendFunc::ECFBlend_EaseOut: CurrentValue = FMath::Lerp(StartValue, StopValue, FMath::Pow(Alpha, 1.f / BlendExp)); break;
-		case EECFBlendFunc::ECFBlend_EaseInOut: CurrentValue = FMath::InterpEaseInOut(StartValue, StopValue, Alpha, BlendExp); break;
-		}
+		ECFInternal::EvaluateTimelineValue(CurrentValue, StartValue, StopValue, Alpha, BlendFunc, BlendExp);
 
 		if (bCallUpdate && HasValidOwner() && TickFunc)
 		{

@@ -12,6 +12,9 @@
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
 #include "Algo/Reverse.h"
+#include "Containers/Map.h"
+#include "Containers/Set.h"
+#include "Math/IntVector.h"
 #include "SortAPI.h"
 #include "XToolsErrorReporter.h"
 #include "XToolsVersionCompat.h"
@@ -875,10 +878,11 @@ void USortLibrary::RemoveDuplicateActors(const TArray<AActor*>& InArray, TArray<
 
 void USortLibrary::RemoveDuplicateFloats(const TArray<float>& InArray, TArray<float>& OutArray, float Tolerance)
 {
-    OutArray.Empty();
-    if (InArray.IsEmpty()) return;
-
+    // 输入和输出允许引用同一数组，必须先保存输入再重置输出。
     TArray<float> SortedCopy = InArray;
+    OutArray.Empty();
+    if (SortedCopy.IsEmpty()) return;
+
     SortedCopy.Sort();
 
     OutArray.Add(SortedCopy[0]);
@@ -991,24 +995,103 @@ void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, TArray
 
 void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, TArray<FVector>& OutArray, float Tolerance)
 {
-    OutArray.Empty();
-    if (InArray.IsEmpty()) return;
-
     const float SafeTolerance = FMath::IsFinite(Tolerance) ? FMath::Max(0.0f, Tolerance) : 0.0f;
-    OutArray.Reserve(InArray.Num());
+    TArray<FVector> Result;
+    Result.Reserve(InArray.Num());
+
+    const auto IsFiniteVector = [](const FVector& Value)
+    {
+        return FMath::IsFinite(Value.X) && FMath::IsFinite(Value.Y) && FMath::IsFinite(Value.Z);
+    };
+    // Measurements favor direct scans for small arrays. Non-finite inputs retain
+    // the original Equals path, including the engine/toolchain's NaN behavior.
+    if (InArray.Num() < 4096 || InArray.ContainsByPredicate([&](const FVector& Value) { return !IsFiniteVector(Value); }))
+    {
+        for (const FVector& Candidate : InArray)
+        {
+            if (!Result.ContainsByPredicate([&Candidate, SafeTolerance](const FVector& Existing) { return Candidate.Equals(Existing, SafeTolerance); }))
+            {
+                Result.Add(Candidate);
+            }
+        }
+        OutArray = MoveTemp(Result);
+        return;
+    }
+
+    if (SafeTolerance == 0.0f)
+    {
+        TSet<FVector> Seen;
+        Seen.Reserve(InArray.Num());
+        for (const FVector& Candidate : InArray)
+        {
+            // FVector hashes raw bytes in UE 5.3; Equals treats both signs of zero alike.
+            const FVector Key(Candidate.X == 0.0 ? 0.0 : Candidate.X,
+                Candidate.Y == 0.0 ? 0.0 : Candidate.Y, Candidate.Z == 0.0 ? 0.0 : Candidate.Z);
+            bool bAlreadyPresent = false;
+            Seen.Add(Key, &bAlreadyPresent);
+            if (!bAlreadyPresent) { Result.Add(Candidate); }
+        }
+        OutArray = MoveTemp(Result);
+        return;
+    }
+
+    using FBucket = TArray<int32, TInlineAllocator<1>>;
+    TMap<FInt64Vector3, FBucket> Buckets;
+    Buckets.Reserve(InArray.Num());
+    TArray<int32> UnquantizedIndices;
+    // A two-tolerance cell leaves room for floating-point division error. Restrict
+    // scaled coordinates to 2^50 so adjacent matches cannot skip a neighbor cell.
+    const double CellSize = 2.0 * static_cast<double>(SafeTolerance);
+    const auto TryGetCell = [CellSize](const FVector& Value, FInt64Vector3& Cell)
+    {
+        const double X = Value.X / CellSize;
+        const double Y = Value.Y / CellSize;
+        const double Z = Value.Z / CellSize;
+        constexpr double MaxCellCoordinate = 1125899906842624.0;
+        if (!FMath::IsFinite(X) || !FMath::IsFinite(Y) || !FMath::IsFinite(Z) ||
+            FMath::Abs(X) >= MaxCellCoordinate || FMath::Abs(Y) >= MaxCellCoordinate || FMath::Abs(Z) >= MaxCellCoordinate)
+        {
+            return false;
+        }
+        Cell = FInt64Vector3(FMath::FloorToInt64(X), FMath::FloorToInt64(Y), FMath::FloorToInt64(Z));
+        return true;
+    };
     for (const FVector& Candidate : InArray)
     {
-        const bool bAlreadyPresent = OutArray.ContainsByPredicate(
-            [&Candidate, SafeTolerance](const FVector& Existing)
+        FInt64Vector3 Cell;
+        const bool bQuantized = TryGetCell(Candidate, Cell);
+        const auto Matches = [&](int32 Index) { return Candidate.Equals(Result[Index], SafeTolerance); };
+        bool bAlreadyPresent = false;
+        if (!bQuantized)
+        {
+            // Extreme coordinate/tolerance ratios retain the exact reference behavior.
+            bAlreadyPresent = Result.ContainsByPredicate([&](const FVector& Existing) { return Candidate.Equals(Existing, SafeTolerance); });
+        }
+        else
+        {
+            bAlreadyPresent = UnquantizedIndices.ContainsByPredicate(Matches);
+            for (int32 X = -1; X <= 1 && !bAlreadyPresent; ++X)
             {
-                return Candidate.Equals(Existing, SafeTolerance);
-            });
+                for (int32 Y = -1; Y <= 1 && !bAlreadyPresent; ++Y)
+                {
+                    for (int32 Z = -1; Z <= 1 && !bAlreadyPresent; ++Z)
+                    {
+                        if (const FBucket* Bucket = Buckets.Find(Cell + FInt64Vector3(X, Y, Z)))
+                        {
+                            bAlreadyPresent = Bucket->ContainsByPredicate(Matches);
+                        }
+                    }
+                }
+            }
+        }
         if (!bAlreadyPresent)
         {
-            OutArray.Add(Candidate);
+            const int32 Index = Result.Add(Candidate);
+            if (bQuantized) { Buckets.FindOrAdd(Cell).Add(Index); }
+            else { UnquantizedIndices.Add(Index); }
         }
     }
-    OutArray.Shrink();
+    OutArray = MoveTemp(Result);
 }
 
 void USortLibrary::FindDuplicateVectors(const TArray<FVector>& InArray, TArray<int32>& DuplicateIndices, TArray<FVector>& DuplicateValues, float Tolerance)

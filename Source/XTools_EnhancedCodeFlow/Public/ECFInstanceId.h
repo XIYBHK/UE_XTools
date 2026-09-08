@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ECFTypes.h"
+#include "Templates/TypeHash.h"
 #include <atomic>
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
@@ -47,6 +48,11 @@ public:
 	bool operator==(const FECFInstanceId& Other) const
 	{
 		return Id == Other.Id;
+	}
+
+	friend uint32 GetTypeHash(const FECFInstanceId& Value)
+	{
+		return ::GetTypeHash(Value.Id);
 	}
 
 	// Compare (not) Ids.

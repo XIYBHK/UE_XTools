@@ -45,6 +45,8 @@ void UECFSubsystem::Deinitialize()
 	RemoveAllActions(false, nullptr);
 	Actions.Empty();
 	PendingAddActions.Empty();
+	ActionsByHandle.Empty();
+	ActionsByInstance.Empty();
 
 	Super::Deinitialize();
 }
@@ -130,14 +132,20 @@ void UECFSubsystem::Tick(float DeltaTime)
 #endif
 
 	// 首先移除所有过期的动作
-	Actions.RemoveAll([](UECFActionBase* Action) { return IsActionValid(Action) == false; });
+	const auto RemoveExpiredAction = [this](UECFActionBase* Action)
+	{
+		if (IsActionValid(Action)) { return false; }
+		UnindexAction(Action);
+		return true;
+	};
+	Actions.RemoveAll(RemoveExpiredAction);
 
 	// 可能存在待添加的动作也无效的情况
-	PendingAddActions.RemoveAll([&](UECFActionBase* PendingAddAction) { return IsActionValid(PendingAddAction) == false; });
+	PendingAddActions.RemoveAll(RemoveExpiredAction);
 
 	// 添加所有待添加的动作
 	Actions.Append(PendingAddActions);
-	PendingAddActions.Empty();
+	PendingAddActions.Reset();
 
 #if STATS
 	SET_DWORD_STAT(STAT_ECF_ActionsCount, Actions.Num());
@@ -162,18 +170,50 @@ void UECFSubsystem::Tick(float DeltaTime)
 
 UECFActionBase* UECFSubsystem::FindAction(const FECFHandle& HandleId) const
 {
-	if (HandleId.IsValid())
+	if (const TWeakObjectPtr<UECFActionBase>* Found = ActionsByHandle.Find(HandleId))
 	{
-		if (UECFActionBase* const* ActionFound = Actions.FindByPredicate([&](UECFActionBase* Action) { return (IsActionValid(Action) && (Action->GetHandleId() == HandleId)); }))
-		{
-			return *ActionFound;
-		}
-		else if (UECFActionBase* const* PendingActionFound = PendingAddActions.FindByPredicate([&](UECFActionBase* PendingAddAction) { return (IsActionValid(PendingAddAction) && (PendingAddAction->GetHandleId() == HandleId)); }))
-		{
-			return *PendingActionFound;
-		}
+		UECFActionBase* Action = Found->Get();
+		return IsActionValid(Action) ? Action : nullptr;
 	}
 	return nullptr;
+}
+
+void UECFSubsystem::IndexAction(UECFActionBase* Action)
+{
+	ActionsByHandle.Add(Action->GetHandleId(), Action);
+	if (Action->GetInstanceId().IsValid())
+	{
+		ActionsByInstance.FindOrAdd(Action->GetInstanceId()).Add(Action);
+	}
+}
+
+void UECFSubsystem::UnindexAction(UECFActionBase* Action)
+{
+	if (Action)
+	{
+		ActionsByHandle.Remove(Action->GetHandleId());
+		const FECFInstanceId InstanceId = Action->GetInstanceId();
+		if (FInstanceActions* Instances = ActionsByInstance.Find(InstanceId))
+		{
+			Instances->RemoveAll([Action](const TWeakObjectPtr<UECFActionBase>& Entry)
+			{
+				return !Entry.IsValid() || Entry.Get() == Action;
+			});
+			if (Instances->IsEmpty()) { ActionsByInstance.Remove(InstanceId); }
+		}
+		return;
+	}
+
+	// GC can null an owning array entry for an explicitly destroyed UObject.
+	for (auto It = ActionsByHandle.CreateIterator(); It; ++It)
+	{
+		if (!It.Value().IsValid()) { It.RemoveCurrent(); }
+	}
+	for (auto It = ActionsByInstance.CreateIterator(); It; ++It)
+	{
+		It.Value().RemoveAll([](const TWeakObjectPtr<UECFActionBase>& Entry) { return !Entry.IsValid(); });
+		if (It.Value().IsEmpty()) { It.RemoveCurrent(); }
+	}
 }
 
 TArray<FECFHandle> UECFSubsystem::GetActionsHandlesByClass(TSubclassOf<UECFActionBase> Class) const
@@ -539,15 +579,12 @@ bool UECFSubsystem::HasAction(const FECFHandle& HandleId) const
 
 UECFActionBase* UECFSubsystem::GetInstancedAction(const FECFInstanceId& InstanceId, bool bPrintErrorIfFailed/* = true*/) const
 {
-	if (InstanceId.IsValid())
+	if (const FInstanceActions* Instances = ActionsByInstance.Find(InstanceId))
 	{
-		if (UECFActionBase* const* ActionFound = Actions.FindByPredicate([&](UECFActionBase* Action) { return IsActionValid(Action) && Action->HasInstanceId(InstanceId); }))
+		for (const TWeakObjectPtr<UECFActionBase>& Entry : *Instances)
 		{
-			return *ActionFound;
-		}
-		else if (UECFActionBase* const* PendingActionFound = PendingAddActions.FindByPredicate([&](UECFActionBase* PendingAction) { return IsActionValid(PendingAction) && PendingAction->HasInstanceId(InstanceId); }))
-		{
-			return *PendingActionFound;
+			UECFActionBase* Action = Entry.Get();
+			if (IsActionValid(Action)) { return Action; }
 		}
 	}
 

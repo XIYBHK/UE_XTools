@@ -7,10 +7,111 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include "HAL/PlatformTime.h"
 #include "QueueSplineMovementComponent.h"
 #include "QueueSplineTestObjects.h"
 #include "UObject/Package.h"
 #include "UObject/ScriptDelegates.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineProjectionSnapshotTest,
+	"XTools.QueueSpline.Component.ProjectionSnapshot",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineProjectionSnapshotTest::RunTest(const FString& Parameters)
+{
+	for (int32 Count : {100, 1000})
+	{
+		for (int32 Segments : {2, 128})
+		{
+			AActor* Owner = NewObject<AActor>(GetTransientPackage());
+			USplineComponent* Spline = NewObject<USplineComponent>(Owner);
+			UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(Owner);
+			Queue->SplineComponent = Spline;
+			TArray<FVector> Points;
+			for (int32 Index = 0; Index <= Segments; ++Index) { Points.Emplace(Index * 1000.0, 0.0, 0.0); }
+			Spline->SetSplinePoints(Points, ESplineCoordinateSpace::Local);
+			for (int32 Index = 0; Index < Count; ++Index)
+			{
+				AActor* Member = NewObject<AActor>(GetTransientPackage());
+				USceneComponent* Root = NewObject<USceneComponent>(Member);
+				Member->SetRootComponent(Root);
+				Root->SetWorldLocation(FVector(Count - Index, 0.0, 0.0));
+				Member->AddInstanceComponent(NewObject<UQueueSplineMovementComponent>(Member));
+				FQueueSplineMemberHandle Handle;
+				if (!Queue->RegisterQueueMember(Member, Handle)) { AddError(TEXT("Member registration failed")); return false; }
+			}
+			for (bool bPaused : {false, true})
+			{
+				// Reproduce a head barrier followed by late joiners without timing setup work.
+				Queue->Members[0].bPauseRequested = bPaused;
+				Queue->Members[0].PauseThroughJoinOrder = Queue->Members[0].JoinOrder;
+				Queue->ProjectionQueryCount = 0;
+				Queue->MovementQueryCount = 0;
+				const double Start = FPlatformTime::Seconds();
+				Queue->UpdateQueueTargets(0.f);
+				AddInfo(FString::Printf(TEXT("QueueSnapshot: members=%d segments=%d pause=%d, %.3f ms, projections=%d components=%d"),
+					Count, Segments, bPaused, (FPlatformTime::Seconds() - Start) * 1000.0, Queue->ProjectionQueryCount, Queue->MovementQueryCount));
+				TestEqual(TEXT("Snapshot retains all members"), Queue->NotificationBuffer.Num(), Count);
+				TestEqual(TEXT("Each member is projected once per update"), Queue->ProjectionQueryCount, Count);
+				TestEqual(TEXT("Pause and target dispatch share one component query"), Queue->MovementQueryCount, Count);
+				for (const FQueueSplineMemberRuntime& Member : Queue->Members)
+				{
+					TestEqual(TEXT("Pause propagates through closely spaced followers"),
+						Member.Actor->FindComponentByClass<UQueueSplineMovementComponent>()->IsQueueMovementPaused(), bPaused);
+				}
+			}
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FQueueSplineSnapshotCallbackTest,
+	"XTools.QueueSpline.Component.SnapshotCallbackInvalidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FQueueSplineSnapshotCallbackTest::RunTest(const FString& Parameters)
+{
+	AActor* Owner = NewObject<AActor>(GetTransientPackage());
+	USplineComponent* Spline = NewObject<USplineComponent>(Owner);
+	Spline->SetSplinePoints({FVector::ZeroVector, FVector(1000, 0, 0)}, ESplineCoordinateSpace::Local);
+	UQueueSplineComponent* Queue = NewObject<UQueueSplineComponent>(Owner);
+	Queue->SplineComponent = Spline;
+	AActor* Actors[2];
+	UQueueSplineMovementComponent* Movements[2];
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		Actors[Index] = NewObject<AActor>(GetTransientPackage());
+		Actors[Index]->SetRootComponent(NewObject<USceneComponent>(Actors[Index]));
+		Movements[Index] = NewObject<UQueueSplineMovementComponent>(Actors[Index]);
+		Actors[Index]->AddInstanceComponent(Movements[Index]);
+		FQueueSplineMemberHandle Handle;
+		TestTrue(TEXT("Member registration succeeds"), Queue->RegisterQueueMember(Actors[Index], Handle));
+	}
+	UQueueSplineMovementComponent* Replacement = nullptr;
+	UQueueSplineTargetEventRecorder* Recorder = NewObject<UQueueSplineTargetEventRecorder>();
+	Recorder->OnFirstTargetUpdate = [&]()
+	{
+		// The old component remains a valid UObject, but no longer belongs to the Actor.
+		Actors[1]->RemoveInstanceComponent(Movements[1]);
+		Actors[1]->RemoveOwnedComponent(Movements[1]);
+		Replacement = NewObject<UQueueSplineMovementComponent>(Actors[1]);
+		Actors[1]->AddInstanceComponent(Replacement);
+		Actors[1]->GetRootComponent()->SetWorldLocation(FVector(400, 0, 0));
+		Spline->SetLocationAtSplinePoint(1, FVector(2000, 0, 0), ESplineCoordinateSpace::Local);
+		Queue->UpdateQueueTargets(0.f);
+	};
+	FScriptDelegate Delegate;
+	Delegate.BindUFunction(Recorder, GET_FUNCTION_NAME_CHECKED(UQueueSplineTargetEventRecorder, HandleTargetUpdated));
+	Queue->OnMemberTargetUpdated.Add(Delegate);
+	Queue->UpdateQueueTargets(0.f);
+	TestTrue(TEXT("Callback installed the replacement component"), IsValid(Replacement));
+	TestFalse(TEXT("Outer dispatch must not use detached cached component"), Movements[1]->HasQueueMoveTarget());
+	TestTrue(TEXT("Replacement receives updates"), Replacement && Replacement->HasQueueMoveTarget());
+	TestEqual(TEXT("Nested updates retain independent notifications"), Recorder->ReceivedHandles.Num(), 4);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FQueueSplineLifecycleRestartTest,
@@ -141,6 +242,9 @@ bool FQueueSplineLateJoinPauseTest::RunTest(const FString& Parameters)
 	LateRoot->SetWorldLocation(FVector(400.0, 0.0, 0.0));
 	Queue->UpdateQueueTargets(0.0f);
 	TestTrue(TEXT("后加入成员补到队尾间距后应暂停"), LateMovement->IsQueueMovementPaused());
+	LateRoot->SetWorldLocation(FVector::ZeroVector);
+	Queue->UpdateQueueTargets(0.0f);
+	TestFalse(TEXT("后退后应使用真实投影解除间距暂停，不能复用单向钳制的进度"), LateMovement->IsQueueMovementPaused());
 
 	TestTrue(TEXT("解除队尾暂停应成功"), Queue->SetMemberHandleAndFollowingPaused(ExistingHandle, false));
 	TestFalse(TEXT("解除后后加入成员应继续移动"), LateMovement->IsQueueMovementPaused());

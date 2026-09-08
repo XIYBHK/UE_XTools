@@ -6,6 +6,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Map.h"
 #include "UObject/NoExportTypes.h"
 #include "Templates/SubclassOf.h"
 #include "GameFramework/Actor.h"
@@ -229,6 +230,11 @@ private:
     /** 活跃的Actor列表 */
     TArray<TWeakObjectPtr<AActor>> ActiveActors;
 
+    /** 大池达到阈值后启用下标索引；小池不分配索引，清空时释放。 */
+    TMap<TWeakObjectPtr<AActor>, int32> ActiveActorIndices;
+    bool bHasActiveActorIndex = false;
+    static constexpr int32 ActiveActorIndexThreshold = 256;
+
     /** 快速查找索引（用于ContainsActor O(1)查找） */
     TSet<TWeakObjectPtr<AActor>> AllActorsSet;
 
@@ -263,6 +269,10 @@ private:
     TUniquePtr<FObjectPoolPreallocator> Preallocator;
 
 private:    //  内部辅助方法
+    void AddActiveActor_RequiresLock(AActor* Actor);
+    bool RemoveActiveActor_RequiresLock(AActor* Actor);
+    void RemoveActiveActorAt_RequiresLock(int32 Index);
+
     /**
      * 创建新的Actor实例
      * @param World 世界上下文

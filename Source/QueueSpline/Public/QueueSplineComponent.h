@@ -189,6 +189,8 @@ private:
 		FQueueSplineMemberHandle Handle;
 		TWeakObjectPtr<AActor> Actor;
 		FQueueSplineMoveTarget Target;
+		double ProjectedDistance = 0.0;
+		TWeakObjectPtr<UQueueSplineMovementComponent> MovementComponent;
 	};
 
 	/** 通知快照缓冲：非重入调用以 Reset 复用容量，避免每次更新重新分配 */
@@ -202,6 +204,11 @@ private:
 	friend class FQueueSplineNotificationReentrancyTest;
 	friend class FQueueSplineNotificationNestedReturnTest;
 	friend class FQueueSplineNotificationSkipInvalidTest;
+	friend class FQueueSplineProjectionSnapshotTest;
+#if WITH_DEV_AUTOMATION_TESTS
+	mutable int32 ProjectionQueryCount = 0;
+	mutable int32 MovementQueryCount = 0;
+#endif
 
 	void RefreshHandleMap();
 	void CleanupInvalidMembers();
@@ -212,8 +219,10 @@ private:
 	bool CalculateSlotForIndex(const USplineComponent* Spline, int32 SlotIndex, int32 MemberSeed, int32 QueueMemberCount, FQueueSplineSlot& OutSlot) const;
 	FQueueSplineMoveTarget BuildMoveTarget(const FQueueSplineMemberRuntime& Member) const;
 	FQueueSplineMoveTarget BuildMoveTargetAtDistance(FQueueSplineMemberHandle Handle, AActor* Actor, double Distance, double RightOffset, EQueueSplineMemberPhase Phase) const;
-	void PushTargetToMovementComponent(AActor* Actor, const FQueueSplineMoveTarget& Target) const;
+	bool PushTargetToMovementComponent(UQueueSplineMovementComponent* MovementComponent, const FQueueSplineMoveTarget& Target) const;
+	UQueueSplineMovementComponent* FindMovementComponent(AActor* Actor) const;
 	void StopMovementComponent(AActor* Actor) const;
-	void RefreshMovementPauseStates();
+	// Returns whether the supplied update snapshot stayed free of external callbacks.
+	bool RefreshMovementPauseStates(TArray<FQueueSplineTargetNotification>* UpdateSnapshot = nullptr);
 	void DrawDebugSlots() const;
 };

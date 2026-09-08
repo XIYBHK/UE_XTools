@@ -13,6 +13,8 @@
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 #include "Containers/Set.h"
+#include "HAL/PlatformTime.h"
+#include "Math/RandomStream.h"
 #include <cmath>
 #include <limits>
 
@@ -149,6 +151,84 @@ namespace
 		}
 		return true;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSortLibrary_VectorDeduplicationReference,
+	"XTools.Sort.Library.VectorDeduplicationReference",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSortLibrary_VectorDeduplicationReference::RunTest(const FString& Parameters)
+{
+	TArray<FVector> Input = {FVector::ZeroVector, FVector(0.75, 0.75, 0.75), FVector(1.5, 1.5, 1.5),
+		FVector(-1.0, -1.0, -1.0), FVector(-0.0, 0.0, -0.0), FVector(1.e300, 0, 0), FVector(1.e300, 0, 0)};
+	FRandomStream Random(89271);
+	for (int32 Index = 0; Index < 4096; ++Index)
+	{
+		const FVector Value(Random.FRandRange(-10.f, 10.f), Random.FRandRange(-10.f, 10.f), Random.FRandRange(-10.f, 10.f));
+		Input.Add(Value);
+		if (Index % 3 == 0) { Input.Add(Value + FVector(0.005, -0.005, 0.005)); }
+		if (Index % 7 == 0) { Input.Add(Value); }
+	}
+	for (bool bIncludeNonFinite : {false, true})
+	{
+	if (bIncludeNonFinite)
+	{
+		// Preserve the engine's behavior for non-finite input; do not invent equality.
+		FVector NonFinite = FVector::ZeroVector;
+		NonFinite.X = TestQuietNaNd;
+		Input.Add(NonFinite);
+		Input.Add(NonFinite);
+		NonFinite.X = std::numeric_limits<double>::infinity();
+		Input.Add(NonFinite);
+		Input.Add(NonFinite);
+	}
+	for (float Tolerance : {0.f, -1.f, TestQuietNaNf, std::numeric_limits<float>::infinity(), 1.e-20f, 0.01f, 1.f, 1.e30f})
+	{
+		const float SafeTolerance = FMath::IsFinite(Tolerance) ? FMath::Max(0.f, Tolerance) : 0.f;
+		TArray<FVector> Reference;
+		for (const FVector& Candidate : Input)
+		{
+			if (!Reference.ContainsByPredicate([&](const FVector& Existing) { return Candidate.Equals(Existing, SafeTolerance); }))
+			{
+				Reference.Add(Candidate);
+			}
+		}
+		TArray<FVector> Actual = Input;
+		USortLibrary::RemoveDuplicateVectors(Actual, Actual, Tolerance);
+		bool bMatches = Actual.Num() == Reference.Num();
+		for (int32 Index = 0; bMatches && Index < Actual.Num(); ++Index)
+		{
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				bMatches &= Actual[Index][Axis] == Reference[Index][Axis] ||
+					(FMath::IsNaN(Actual[Index][Axis]) && FMath::IsNaN(Reference[Index][Axis]));
+			}
+		}
+		TestTrue(FString::Printf(TEXT("First representatives match reference, tolerance=%g, non-finite=%d"), Tolerance, bIncludeNonFinite), bMatches);
+	}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSortLibrary_VectorDeduplicationScale,
+	"XTools.Sort.Library.VectorDeduplicationScale",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSortLibrary_VectorDeduplicationScale::RunTest(const FString& Parameters)
+{
+	for (int32 Count : {100, 1000, 10000})
+	{
+		TArray<FVector> Input;
+		for (int32 Index = 0; Index < Count; ++Index) { Input.Emplace(Index * 2.0, Index % 11, -Index * 3.0); }
+		TArray<FVector> Output;
+		const double Start = FPlatformTime::Seconds();
+		USortLibrary::RemoveDuplicateVectors(Input, Output, 0.01f);
+		AddInfo(FString::Printf(TEXT("VectorDeduplicationScale: %d unique vectors, %.3f ms"), Count, (FPlatformTime::Seconds() - Start) * 1000.0));
+		TestTrue(TEXT("Unique input and first occurrence order are preserved"), Output == Input);
+	}
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -397,6 +477,42 @@ bool FSortLibrary_ReversesAndDeduplicatesValues::RunTest(const FString& Paramete
 		DuplicateValues == TArray<FVector>({NonAdjacentDuplicates[0], NonAdjacentDuplicates[2]}));
 
     return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSortLibrary_DeduplicatesAliasedArrays,
+	"XTools.Sort.Library.DeduplicatesAliasedArrays",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSortLibrary_DeduplicatesAliasedArrays::RunTest(const FString& Parameters)
+{
+	TArray<float> Floats = {2.f, 1.f, 1.001f, 2.f};
+	USortLibrary::RemoveDuplicateFloats(Floats, Floats, 0.01f);
+	TestTrue(TEXT("浮点原地去重应保留按当前规则排序后的结果"), Floats == TArray<float>({1.f, 2.f}));
+	USortLibrary::RemoveDuplicateFloats(Floats, Floats, 0.01f);
+	TestTrue(TEXT("全唯一浮点数组原地去重应保持结果"), Floats == TArray<float>({1.f, 2.f}));
+
+	TArray<FVector> Vectors = {FVector(0.f, 100.f, 0.f), FVector(0.005f, 0.f, 0.f),
+		FVector(0.009f, 100.f, 0.f), FVector(0.005f, 0.f, 0.f)};
+	const TArray<FVector> ExpectedVectors = {Vectors[0], Vectors[1]};
+	USortLibrary::RemoveDuplicateVectors(Vectors, Vectors, 0.01f);
+	TestTrue(TEXT("向量原地去重应保留非相邻重复项的首现代表"), Vectors == ExpectedVectors);
+	USortLibrary::RemoveDuplicateVectors(Vectors, Vectors, 0.01f);
+	TestTrue(TEXT("全唯一向量数组原地去重应保持结果"), Vectors == ExpectedVectors);
+
+	TArray<float> RepeatedFloats = {3.f, 3.f, 3.f};
+	USortLibrary::RemoveDuplicateFloats(RepeatedFloats, RepeatedFloats);
+	TestTrue(TEXT("全重复浮点数组应保留一个值"), RepeatedFloats == TArray<float>({3.f}));
+	TArray<FVector> RepeatedVectors = {FVector::OneVector, FVector::OneVector};
+	USortLibrary::RemoveDuplicateVectors(RepeatedVectors, RepeatedVectors);
+	TestTrue(TEXT("全重复向量数组应保留一个值"), RepeatedVectors == TArray<FVector>({FVector::OneVector}));
+
+	TArray<float> EmptyFloats;
+	TArray<FVector> EmptyVectors;
+	USortLibrary::RemoveDuplicateFloats(EmptyFloats, EmptyFloats);
+	USortLibrary::RemoveDuplicateVectors(EmptyVectors, EmptyVectors);
+	TestTrue(TEXT("空数组原地去重仍为空"), EmptyFloats.IsEmpty() && EmptyVectors.IsEmpty());
+	return true;
 }
 
 // ---------------------------------------------------------------------------

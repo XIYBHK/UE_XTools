@@ -1,0 +1,89 @@
+name: Validate UE 5.3
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Source/**'
+      - 'Scripts/**'
+      - 'XTools.uplugin'
+      - '.github/workflows/validate-ue53.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xtools-ue53-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    # Run code on the installed-engine runner only for trusted same-repository PRs.
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 45
+    env:
+      UE53_ROOT: ${{ vars.XTOOLS_UE53_ROOT }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: false
+          persist-credentials: false
+      - name: Verify build helpers
+        shell: pwsh
+        run: ./Scripts/Tests/UEBuildHelpers.Tests.ps1
+      - name: Prepare isolated validation host
+        shell: pwsh
+        run: |
+          $hostRoot = Join-Path $env:RUNNER_TEMP 'XToolsValidation'
+          $moduleRoot = Join-Path $hostRoot 'Source/XToolsValidation'
+          New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+          $project = @{
+            FileVersion = 3
+            EngineAssociation = '5.3'
+            Modules = @(@{ Name = 'XToolsValidation'; Type = 'Runtime'; LoadingPhase = 'Default' })
+            AdditionalPluginDirectories = @($env:GITHUB_WORKSPACE)
+            Plugins = @(@{ Name = 'XTools'; Enabled = $true })
+          }
+          $project | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $hostRoot 'XToolsValidation.uproject') -Encoding utf8
+          @'
+          using UnrealBuildTool;
+          public class XToolsValidationEditorTarget : TargetRules {
+              public XToolsValidationEditorTarget(TargetInfo Target) : base(Target) {
+                  Type = TargetType.Editor;
+                  DefaultBuildSettings = BuildSettingsVersion.V4;
+                  IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_3;
+                  ExtraModuleNames.Add("XToolsValidation");
+              }
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $hostRoot 'Source/XToolsValidationEditor.Target.cs') -Encoding utf8
+          @'
+          using UnrealBuildTool;
+          public class XToolsValidation : ModuleRules {
+              public XToolsValidation(ReadOnlyTargetRules Target) : base(Target) {
+                  PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+                  PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "XTools" });
+              }
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $moduleRoot 'XToolsValidation.Build.cs') -Encoding utf8
+          @'
+          #include "XToolsModule.h"
+          #include "XToolsLibrary.h"
+          #include "XBlueprintLibraryCleanupTool.h"
+          #include "Modules/ModuleManager.h"
+          IMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, XToolsValidation, "XToolsValidation");
+          '@ | Set-Content -LiteralPath (Join-Path $moduleRoot 'XToolsValidation.cpp') -Encoding utf8
+          "VALIDATION_PROJECT=$(Join-Path $hostRoot 'XToolsValidation.uproject')" >> $env:GITHUB_ENV
+          "VALIDATION_REPORT=$(Join-Path $hostRoot ('Saved/Automation/' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT))" >> $env:GITHUB_ENV
+      - name: Incremental Editor build and automation
+        shell: pwsh
+        run: |
+          if (-not $env:UE53_ROOT) { throw 'Set repository variable XTOOLS_UE53_ROOT to the installed UE 5.3 directory.' }
+          ./Scripts/Test-UE53.ps1 -EngineRoot $env:UE53_ROOT -ProjectPath $env:VALIDATION_PROJECT -EditorTarget XToolsValidationEditor -ReportDirectory $env:VALIDATION_REPORT
+      - name: Upload automation evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ue53-automation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.VALIDATION_REPORT }}
+          if-no-files-found: warn

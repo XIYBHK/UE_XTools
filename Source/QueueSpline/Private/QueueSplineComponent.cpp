@@ -463,8 +463,9 @@ void UQueueSplineComponent::UpdateQueueTargets(float DeltaTime)
 			Notification.Handle = Member.Handle;
 			Notification.Actor = Actor;
 			Notification.Target = Target;
+			Notification.ProjectedDistance = ProjectedDistance;
 		}
-		RefreshMovementPauseStates();
+		bool bCanUseSnapshot = RefreshMovementPauseStates(&Notifications);
 
 		for (const FQueueSplineTargetNotification& Notification : Notifications)
 		{
@@ -482,13 +483,17 @@ void UQueueSplineComponent::UpdateQueueTargets(float DeltaTime)
 
 			if (bAutoPushToMovementComponent)
 			{
-				PushTargetToMovementComponent(Actor, Notification.Target);
+				UQueueSplineMovementComponent* MovementComponent = bCanUseSnapshot
+					? Notification.MovementComponent.Get() : FindMovementComponent(Actor);
+				bCanUseSnapshot &= PushTargetToMovementComponent(MovementComponent, Notification.Target);
 				if (!IsHandleCurrent(Notification.Handle, MemberIndex) || !IsValid(Notification.Actor.Get()))
 				{
 					continue;
 				}
 			}
+			const bool bMayInvokeCallback = OnMemberTargetUpdated.IsBound();
 			OnMemberTargetUpdated.Broadcast(Notification.Handle, Notification.Target);
+			bCanUseSnapshot &= !bMayInvokeCallback;
 		}
 	}
 
@@ -776,6 +781,9 @@ double UQueueSplineComponent::GetPathEndDistance() const
 
 double UQueueSplineComponent::GetActorSplineDistance(const AActor* Actor) const
 {
+#if WITH_DEV_AUTOMATION_TESTS
+	++ProjectionQueryCount;
+#endif
 	if (!IsValid(Actor) || !IsSplineUsable(SplineComponent))
 	{
 		return 0.0;
@@ -953,18 +961,20 @@ FQueueSplineMoveTarget UQueueSplineComponent::BuildMoveTargetAtDistance(
 	return Target;
 }
 
-void UQueueSplineComponent::PushTargetToMovementComponent(AActor* Actor, const FQueueSplineMoveTarget& Target) const
+bool UQueueSplineComponent::PushTargetToMovementComponent(UQueueSplineMovementComponent* MovementComponent, const FQueueSplineMoveTarget& Target) const
 {
-	if (!IsValid(Actor))
+	if (!IsValid(MovementComponent))
 	{
-		return;
+		return true;
 	}
 
-	UQueueSplineMovementComponent* MovementComponent = Actor->FindComponentByClass<UQueueSplineMovementComponent>();
-	if (MovementComponent)
-	{
-		MovementComponent->SetQueueMoveTarget(Target);
-	}
+	// Delegates and the virtual pawn movement stop may mutate any member/component.
+	const bool bMayInvokeCallback = MovementComponent->OnQueueMoveStarted.IsBound()
+		|| MovementComponent->OnQueueMoveArrived.IsBound()
+		|| MovementComponent->OnQueueMoveStopped.IsBound()
+		|| (MovementComponent->UsesArrivalLatch() && Target.bReachedSlot);
+	MovementComponent->SetQueueMoveTarget(Target);
+	return !bMayInvokeCallback;
 }
 
 void UQueueSplineComponent::StopMovementComponent(AActor* Actor) const
@@ -981,8 +991,31 @@ void UQueueSplineComponent::StopMovementComponent(AActor* Actor) const
 	}
 }
 
-void UQueueSplineComponent::RefreshMovementPauseStates()
+UQueueSplineMovementComponent* UQueueSplineComponent::FindMovementComponent(AActor* Actor) const
 {
+#if WITH_DEV_AUTOMATION_TESTS
+	++MovementQueryCount;
+#endif
+	return IsValid(Actor) ? Actor->FindComponentByClass<UQueueSplineMovementComponent>() : nullptr;
+}
+
+bool UQueueSplineComponent::RefreshMovementPauseStates(TArray<FQueueSplineTargetNotification>* UpdateSnapshot)
+{
+	// Standalone pause changes have no projection snapshot. Copy handles so callbacks
+	// from a pawn movement stop cannot invalidate the member array being traversed.
+	TArray<FQueueSplineTargetNotification> LocalSnapshot;
+	bool bCanUseSnapshot = UpdateSnapshot != nullptr;
+	if (!UpdateSnapshot)
+	{
+		LocalSnapshot.Reserve(Members.Num());
+		for (const FQueueSplineMemberRuntime& Member : Members)
+		{
+			FQueueSplineTargetNotification& Entry = LocalSnapshot.AddDefaulted_GetRef();
+			Entry.Handle = Member.Handle;
+			Entry.Actor = Member.Actor;
+		}
+		UpdateSnapshot = &LocalSnapshot;
+	}
 	int32 FirstPauseJoinOrder = MAX_int32;
 	int32 ImmediatePauseThroughJoinOrder = INDEX_NONE;
 	for (const FQueueSplineMemberRuntime& Member : Members)
@@ -997,17 +1030,21 @@ void UQueueSplineComponent::RefreshMovementPauseStates()
 	}
 
 	const bool bHasPauseBarrier = FirstPauseJoinOrder != MAX_int32;
-	const FQueueSplineMemberRuntime* PreviousMember = nullptr;
+	TWeakObjectPtr<AActor> PreviousActor;
+	double PreviousProjectedDistance = 0.0;
 	bool bPreviousMemberPaused = false;
-	for (const FQueueSplineMemberRuntime& Member : Members)
+	for (FQueueSplineTargetNotification& Entry : *UpdateSnapshot)
 	{
-		AActor* Actor = Member.Actor.Get();
-		if (!IsValid(Actor))
+		int32 MemberIndex = INDEX_NONE;
+		AActor* Actor = Entry.Actor.Get();
+		if (!IsValid(Actor) || !IsHandleCurrent(Entry.Handle, MemberIndex))
 		{
 			continue;
 		}
+		const FQueueSplineMemberRuntime& Member = Members[MemberIndex];
 
-		if (UQueueSplineMovementComponent* MovementComponent = Actor->FindComponentByClass<UQueueSplineMovementComponent>())
+		Entry.MovementComponent = FindMovementComponent(Actor);
+		if (UQueueSplineMovementComponent* MovementComponent = Entry.MovementComponent.Get())
 		{
 			const bool bInImmediatePauseRange = bHasPauseBarrier
 				&& Member.JoinOrder >= FirstPauseJoinOrder
@@ -1017,10 +1054,10 @@ void UQueueSplineComponent::RefreshMovementPauseStates()
 			if (bHasPauseBarrier
 				&& Member.JoinOrder > ImmediatePauseThroughJoinOrder
 				&& bPreviousMemberPaused
-				&& PreviousMember)
+				&& PreviousActor.IsValid())
 			{
-				const double PreviousDistance = GetActorSplineDistance(PreviousMember->Actor.Get());
-				const double CurrentDistance = GetActorSplineDistance(Actor);
+				const double PreviousDistance = bCanUseSnapshot ? PreviousProjectedDistance : GetActorSplineDistance(PreviousActor.Get());
+				const double CurrentDistance = bCanUseSnapshot ? Entry.ProjectedDistance : GetActorSplineDistance(Actor);
 				const double DistanceBehindPrevious = Settings.bHeadTowardSplineEnd
 					? PreviousDistance - CurrentDistance
 					: CurrentDistance - PreviousDistance;
@@ -1032,6 +1069,11 @@ void UQueueSplineComponent::RefreshMovementPauseStates()
 			const bool bShouldPause = bQueuePaused
 				|| bInImmediatePauseRange
 				|| bBlockedByFollowingDistance;
+			if (bShouldPause && !MovementComponent->bQueueMovementPaused && MovementComponent->bHasAppliedMovementInput)
+			{
+				// StopMovementImmediately is virtual; everything after it must query live state.
+				bCanUseSnapshot = false;
+			}
 			MovementComponent->ApplyQueueMovementPaused(bShouldPause);
 			bPreviousMemberPaused = bShouldPause;
 		}
@@ -1040,8 +1082,10 @@ void UQueueSplineComponent::RefreshMovementPauseStates()
 			bPreviousMemberPaused = false;
 		}
 
-		PreviousMember = &Member;
+		PreviousActor = Entry.Actor;
+		PreviousProjectedDistance = Entry.ProjectedDistance;
 	}
+	return bCanUseSnapshot;
 }
 
 void UQueueSplineComponent::DrawDebugSlots() const

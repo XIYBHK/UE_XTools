@@ -304,14 +304,9 @@ jobs:
         # Execute BuildPlugin command
         $pluginPath = $env:PLUGIN_FILE
         $packagePath = $temp_output
-        $buildArgs = @(
-          "BuildPlugin",
-          "-Plugin=$pluginPath",
-          "-Package=$packagePath",
-          "-CreateSubFolder",
-          "-NoHostProject",
-          "-Rocket"
-        )
+        . (Join-Path $env:GITHUB_WORKSPACE 'Scripts/UEBuildHelpers.ps1')
+        $buildArgs = @(Get-XToolsBuildPluginArguments -EngineRoot $env:UE_PATH -PluginPath $pluginPath -PackagePath $packagePath -TargetPlatforms Win64 -CreateSubFolder -Rocket)
+        Write-Host "UAT arguments: $($buildArgs -join ' ')"
         
         Write-Host ""
         Write-Host "Starting build..." -ForegroundColor Yellow

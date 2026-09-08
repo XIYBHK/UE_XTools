@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Templates/TypeHash.h"
 
 ECF_PRAGMA_DISABLE_OPTIMIZATION
 
@@ -43,6 +44,11 @@ public:
 	bool operator==(const FECFHandle& Other) const
 	{
 		return Handle == Other.Handle;
+	}
+
+	friend uint32 GetTypeHash(const FECFHandle& Value)
+	{
+		return ::GetTypeHash(Value.Handle);
 	}
 
 	// Compare (not) handles.

@@ -12,6 +12,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ObjectPoolInterface.h"
+#include "Templates/Function.h"
 #include "ObjectPoolLifecycleTestTypes.generated.h"
 
 /**
@@ -27,7 +28,16 @@ class OBJECTPOOL_API AObjectPoolLifecycleTestActor : public AActor, public IObje
 public:
     virtual void OnPoolActorCreated_Implementation() override { CreatedCount++; }
     virtual void OnPoolActorActivated_Implementation() override { ActivatedCount++; }
-    virtual void OnReturnToPool_Implementation() override { ReturnedCount++; }
+    virtual void OnReturnToPool_Implementation() override
+    {
+        ReturnedCount++;
+        if (OnReturnOnce)
+        {
+            TUniqueFunction<void()> Callback = MoveTemp(OnReturnOnce);
+            Callback();
+        }
+    }
+    TUniqueFunction<void()> OnReturnOnce;
 
     /** 各生命周期事件的累计调用次数 */
     int32 CreatedCount = 0;

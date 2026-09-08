@@ -57,15 +57,15 @@ public class XTools : ModuleRules
 		"UMG",
 		"XToolsCore",  // 核心工具和版本兼容性
 		"XTools_ComponentTimelineRuntime",
-		"RandomShuffles",
-		// UE Geometry modules for native surface sampling
-		"GeometryCore",           // FMeshSurfacePointSampling, FDynamicMesh3
-		"MeshConversion",         // StaticMesh <-> DynamicMesh conversion
-		"GeometryFramework"       // Geometry processing framework
+		"RandomShuffles"
 	});
 
 		// Private dependencies
 		PrivateDependencyModuleNames.AddRange(new string[] {
+			// Native surface sampling is implemented privately; public headers expose no geometry types.
+			"GeometryCore",
+			"MeshConversion",
+			"GeometryFramework",
 			"Projects",
 			"ApplicationCore", 
 			"Json",

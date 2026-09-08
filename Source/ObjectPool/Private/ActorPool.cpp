@@ -143,7 +143,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
 
             if (bStillActivating && bStillOwned && IsValid(ResultActor) && bActivateOk)
             {
-                ActiveActors.Add(ResultActor);
+                AddActiveActor_RequiresLock(ResultActor);
                 UpdateStats(true);
                 if (Preallocator.IsValid())
                 {
@@ -201,7 +201,7 @@ AActor* FActorPool::GetActor(UWorld* World, const FTransform& SpawnTransform)
 
                 if (bStillActivating && bStillOwned && IsValid(NewActor) && bActivateOk)
                 {
-                    ActiveActors.Add(NewActor);
+                    AddActiveActor_RequiresLock(NewActor);
                     UpdateStats(false);
                     if (Preallocator.IsValid())
                     {
@@ -351,7 +351,7 @@ bool FActorPool::FinalizeDeferred(AActor* Actor, const FTransform& SpawnTransfor
             return false;
         }
 
-        ActiveActors.Add(Actor);
+        AddActiveActor_RequiresLock(Actor);
     }
 
     return true;
@@ -380,7 +380,7 @@ bool FActorPool::ReturnActor(AActor* Actor)
         }
 
         // 必须处于活跃状态才能归还（防止重复归还及 Activated 回调中提前归还）
-        if (ActiveActors.RemoveSwap(Actor) == 0)
+        if (!RemoveActiveActor_RequiresLock(Actor))
         {
             ACTORPOOL_LOG(Warning, TEXT("ReturnActor: Actor不在活跃列表中，拒绝归还: %s"), *Actor->GetName());
             return false;
@@ -693,6 +693,8 @@ void FActorPool::ClearPool()
 
         AvailableActors.Empty();
         ActiveActors.Empty();
+        ActiveActorIndices.Empty();
+        bHasActiveActorIndex = false;
         AllActorsSet.Empty();
         PendingDeferredActors.Empty();
         FinalizingActors.Empty();
@@ -864,6 +866,7 @@ int64 FActorPool::CalculateMemoryUsage() const
     
     // 活跃和可用Actor容器的内存
     MemoryUsage += ActiveActors.GetAllocatedSize();
+    MemoryUsage += ActiveActorIndices.GetAllocatedSize();
     MemoryUsage += AvailableActors.GetAllocatedSize();
     MemoryUsage += PendingDeferredActors.GetAllocatedSize();
     MemoryUsage += FinalizingActors.GetAllocatedSize();
@@ -905,7 +908,7 @@ void FActorPool::CleanupInvalidActors_RequiresLock()
         if (!ActiveActors[i].IsValid())
         {
             AllActorsSet.Remove(ActiveActors[i]);
-            ActiveActors.RemoveAtSwap(i);
+            RemoveActiveActorAt_RequiresLock(i);
         }
     }
 
@@ -956,6 +959,46 @@ void FActorPool::CleanupInvalidActors_RequiresLock()
     }
 
     ACTORPOOL_DEBUG(TEXT("清理无效引用完成: %s"), *ActorClass->GetName());
+}
+
+void FActorPool::AddActiveActor_RequiresLock(AActor* Actor)
+{
+    const int32 Index = ActiveActors.Add(Actor);
+    if (bHasActiveActorIndex)
+    {
+        ActiveActorIndices.Add(Actor, Index);
+    }
+    else if (ActiveActors.Num() >= ActiveActorIndexThreshold)
+    {
+        ActiveActorIndices.Reserve(ActiveActors.Num());
+        for (int32 ActiveIndex = 0; ActiveIndex < ActiveActors.Num(); ++ActiveIndex)
+        {
+            ActiveActorIndices.Add(ActiveActors[ActiveIndex], ActiveIndex);
+        }
+        bHasActiveActorIndex = true;
+    }
+}
+
+bool FActorPool::RemoveActiveActor_RequiresLock(AActor* Actor)
+{
+    if (!bHasActiveActorIndex)
+    {
+        return ActiveActors.RemoveSwap(Actor) > 0;
+    }
+    const int32* FoundIndex = ActiveActorIndices.Find(Actor);
+    if (!FoundIndex) { return false; }
+    RemoveActiveActorAt_RequiresLock(*FoundIndex);
+    return true;
+}
+
+void FActorPool::RemoveActiveActorAt_RequiresLock(int32 Index)
+{
+    if (bHasActiveActorIndex) { ActiveActorIndices.Remove(ActiveActors[Index]); }
+    ActiveActors.RemoveAtSwap(Index, 1, false);
+    if (bHasActiveActorIndex && ActiveActors.IsValidIndex(Index))
+    {
+        ActiveActorIndices.FindChecked(ActiveActors[Index]) = Index;
+    }
 }
 
 void FActorPool::UpdateStats(bool bWasPoolHit)

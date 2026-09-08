@@ -4,6 +4,27 @@
 
 ## 1. 基本原则
 
+仓内 UE 5.3 增量验证入口是 `Scripts/Test-UE53.ps1`，也可在 VS Code 运行 `Test UE 5.3 (Incremental)`。默认读取插件 `.vscode/settings.json`，使用 `Build Editor (Full & Formal)` 的实际命令和参数；名称中的 Full 不表示清理重编译。脚本不执行 Clean 或 BuildPlugin。
+
+```powershell
+# 增量编译并运行 ECF、Sort、QueueSpline、ObjectPool、PointSampling 测试
+pwsh -NoProfile -NonInteractive -File ./Scripts/Test-UE53.ps1
+
+# 用名称前缀选择本次修改涉及的测试
+./Scripts/Test-UE53.ps1 -Tests @('XTools.QueueSpline', 'XTools.ObjectPool')
+
+# 校验构建参数和报告门禁，不启动 UE
+./Scripts/Tests/UEBuildHelpers.Tests.ps1
+```
+
+每次验证必须使用新的报告目录。脚本从本次源码提取预期测试名，并同时核对退出码、逐项结果、统计字段和漏跑测试；警告仍保留在报告中。渲染测试需要真实 RHI，应另选运行入口，不放进默认 NullRHI 测试集。
+
+`-Tests XTools` 会额外包含依赖宿主资产的测试。例如 `XTools.SplineMovement.NavigationMapFixture` 要求 `/Game/样条移动/样条移动Untitled` 地图存在；缺少地图时应明确失败，不能据此宣称导航行为已验证，也不能将测试改成跳过后视为通过。默认模块集不包含这一地图测试。
+
+`.github/workflows/validate-ue53.yml` 为受信任的同仓 PR 和手动触发提供相同入口。Windows 自托管 Runner 需安装 UE 5.3，并设置仓库变量 `XTOOLS_UE53_ROOT`。CI 创建独立宿主，通过 `AdditionalPluginDirectories` 引用此次 checkout，上传构建日志与 Automation 报告；发布仍使用独立的完整版本矩阵。
+
+本地多版本打包、发布工作流和旧 CI 包装入口共同调用 `Scripts/UEBuildHelpers.ps1` 生成 UAT 参数。版本判断来自引擎 `Build.version`，UE 5.3 统一省略 `-StrictIncludes`，后续版本遵循调用者开关。
+
 1. 构建成功只证明 UHT、编译和链接通过，不等于行为正确。
 2. 使用能复现风险的最小真实 fixture，不用静态扫描替代运行时契约。
 3. 无头、Editor 和 NullRHI 是三个独立维度。

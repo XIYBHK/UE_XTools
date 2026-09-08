@@ -2,6 +2,8 @@
 
 ECF 的六类时间轴动作均支持命名事件轨道：标量、向量、线性颜色，以及对应的 Float、Vector、LinearColor 曲线时间轴。
 
+非曲线的标量、向量和线性颜色时间轴由 `ECFTimelineValue.h` 共用值求值逻辑，Tick 与手动设时使用相同混合公式。颜色的 Cubic 切线为四通道全零，因此起止 Alpha 相同时保持恒定 Alpha；事件调度仍由各动作负责。
+
 ## C++
 
 在 `FFlow::AddTimeline*` 或 `FFlow::AddCustomTimeline*` 的末尾传入事件数组和回调：

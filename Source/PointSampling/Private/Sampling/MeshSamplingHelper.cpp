@@ -1423,6 +1423,770 @@ TArray<FVector> FMeshSamplingHelper::GenerateFromStaticMesh(
 		: GenerateFromMeshTriangles(LOD, Transform, MaxPoints);
 }
 
+namespace
+{
+	// Synchronous, single-use job. Owns temporary buffers only; no asset or global state is changed.
+	class FMeshVoxelizationJob
+	{
+	public:
+		FMeshVoxelizationJob(UStaticMesh* InMesh, const FTransform& InTransform, float InVoxelSize,
+			EMeshVoxelFillMode InFillMode, int32 InLODLevel, int32 InMaxVoxelCount)
+			: StaticMesh(InMesh), Transform(InTransform), VoxelSize(InVoxelSize), FillMode(InFillMode),
+			  LODLevel(InLODLevel), MaxVoxelCount(InMaxVoxelCount)
+		{
+		}
+
+		TArray<FMeshVoxelPoint> Run()
+		{
+			if (!PrepareGeometryAndStorage())
+			{
+				return {};
+			}
+			PrepareColors();
+			if (!ScanSurface())
+			{
+				return {};
+			}
+			FillInterior();
+			return EmitPoints();
+		}
+
+	private:
+		bool PrepareGeometryAndStorage()
+		{
+			if (!StaticMesh || !StaticMesh->HasValidRenderData())
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] StaticMesh为空或没有有效渲染数据"));
+				return false;
+			}
+
+			if (VoxelSize <= KINDA_SMALL_NUMBER || !FMath::IsFinite(VoxelSize))
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] VoxelSize无效: %.4f"), VoxelSize);
+				return false;
+			}
+
+			if (!IsFiniteTransform(Transform))
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] Transform包含NaN/Inf或退化旋转，无法生成稳定体素点位"));
+				return false;
+			}
+
+			const int32 RequestedMaxVoxelCount = MaxVoxelCount;
+			MaxVoxelCount = FMath::Clamp(MaxVoxelCount, 1, MaxAllowedVoxelOutputCount);
+			if (RequestedMaxVoxelCount != MaxVoxelCount)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] MaxVoxelCount=%d已夹取到%d。同步蓝图节点最多返回%d个体素；更大规模建议离线分块预生成"),
+					RequestedMaxVoxelCount, MaxVoxelCount, MaxAllowedVoxelOutputCount);
+			}
+
+			if (!IsValidVoxelFillMode(FillMode))
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] FillMode=%d无效，已回退为仅表面模式"),
+					static_cast<int32>(FillMode));
+				FillMode = EMeshVoxelFillMode::SurfaceOnly;
+			}
+
+			FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
+			if (!RenderData)
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] 无法获取StaticMesh渲染数据"));
+				return false;
+			}
+
+			if (RenderData->LODResources.Num() <= 0)
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] StaticMesh没有LOD资源"));
+				return false;
+			}
+
+			RequestedLODLevel = FMath::Max(0, LODLevel);
+			const int32 ClampedLODLevel = FMath::Min(RequestedLODLevel, RenderData->LODResources.Num() - 1);
+			EffectiveLODLevel = RenderData->GetCurrentFirstLODIdx(ClampedLODLevel);
+			if (!RenderData->LODResources.IsValidIndex(EffectiveLODLevel))
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] StaticMesh没有可用LOD，或请求LOD已被流送卸载"));
+				return false;
+			}
+
+			SelectedLOD = &RenderData->LODResources[EffectiveLODLevel];
+			const FStaticMeshLODResources& LOD = *SelectedLOD;
+			const FPositionVertexBuffer& VertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+			const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
+
+			if (!VertexBuffer.GetAllowCPUAccess() || !IndexBuffer.GetAllowCPUAccess())
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] StaticMesh '%s' 的LOD%d没有CPU可读顶点/索引数据。运行时使用请在资产中启用Allow CPU Access，或改用编辑器预生成结果。"),
+					*StaticMesh->GetName(), EffectiveLODLevel);
+				return false;
+			}
+
+			const int32 NumVertices = VertexBuffer.GetNumVertices();
+			const int32 NumIndices = IndexBuffer.GetNumIndices();
+			const int32 NumTriangles = NumIndices / 3;
+			if (NumVertices == 0 || NumTriangles == 0)
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] LOD没有顶点或三角形数据"));
+				return false;
+			}
+
+			if (NumIndices % 3 != 0)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] LOD%d索引数量%d不是3的倍数，末尾%d个索引将被忽略"),
+					EffectiveLODLevel, NumIndices, NumIndices % 3);
+			}
+
+			BuildSectionTriangleRanges(LOD, NumTriangles, TriangleSectionRanges);
+			if (TriangleSectionRanges.Num() == 0)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] LOD%d没有有效Section材质范围，输出MaterialIndex将为INDEX_NONE，缺少顶点色时颜色会回退为白色"),
+					EffectiveLODLevel);
+			}
+
+			EstimatedSourceBytes = EstimateSourceWorkingBytes(NumVertices, TriangleSectionRanges.Num());
+			if (EstimatedSourceBytes > MaxEstimatedVoxelWorkingBytes)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 源网格预处理预计工作内存约 %.1f MiB，超过保护上限1024 MiB。请降低LOD或简化网格"),
+					static_cast<double>(EstimatedSourceBytes) / (1024.0 * 1024.0));
+				return false;
+			}
+
+			const FVector MeshScale = Transform.GetScale3D();
+			if (HasNearlyZeroScaleAxis(MeshScale))
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] Transform缩放存在接近0的轴 (%.6f, %.6f, %.6f)，无法生成稳定体素点位"),
+					MeshScale.X, MeshScale.Y, MeshScale.Z);
+				return false;
+			}
+
+			// Voxelization runs in scaled-local space: Transform scale is baked into vertices,
+			// while rotation and translation are applied only when emitting world-space points.
+			ScaledLocalPositions.SetNumUninitialized(NumVertices);
+
+			FBox MeshBounds(EForceInit::ForceInit);
+			ScaledLocalToWorld = MakeScaledLocalToWorldTransform(Transform);
+			for (int32 VertexIndex = 0; VertexIndex < NumVertices; ++VertexIndex)
+			{
+				const FVector ScaledLocalPosition = FVector(VertexBuffer.VertexPosition(VertexIndex)) * MeshScale;
+				if (!IsFiniteVector(ScaledLocalPosition))
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] StaticMesh '%s' 的LOD%d包含NaN/Inf顶点数据，顶点索引=%d"),
+						*StaticMesh->GetName(), EffectiveLODLevel, VertexIndex);
+					return false;
+				}
+
+				ScaledLocalPositions[VertexIndex] = ScaledLocalPosition;
+				MeshBounds += ScaledLocalPosition;
+			}
+
+			if (!MeshBounds.IsValid)
+			{
+				UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] 网格包围盒无效"));
+				return false;
+			}
+
+			const FVector MeshSize = MeshBounds.GetSize();
+			if (!TryCalculateVoxelDimensions(MeshSize, VoxelSize, InnerDims, Dims, TotalVoxelCount64))
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 体素网格过大或尺寸无效。MeshSize=(%.2f, %.2f, %.2f), VoxelSize=%.4f，请增大VoxelSize或检查Transform缩放"),
+					MeshSize.X, MeshSize.Y, MeshSize.Z, VoxelSize);
+				return false;
+			}
+
+			const int64 MaxPossibleSolidOutputCount = EstimateVoxelVolume(InnerDims);
+			if (FillMode == EMeshVoxelFillMode::Solid)
+			{
+				if (TotalVoxelCount64 > static_cast<int64>(MAX_int32))
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 内部填充工作网格需要%lld个格子，超过运行时数组索引上限。请增大VoxelSize"),
+						TotalVoxelCount64);
+					return false;
+				}
+
+				const int64 EstimatedSolidBytes = EstimateSolidWorkingBytes(TotalVoxelCount64, MaxPossibleSolidOutputCount, MaxVoxelCount);
+				const int64 EstimatedTotalBytes = SaturatingAdd(EstimatedSourceBytes, EstimatedSolidBytes);
+				if (EstimatedTotalBytes > MaxEstimatedVoxelWorkingBytes)
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 内部填充预计工作内存约 %.1f MiB，超过保护上限1024 MiB。请增大VoxelSize或降低MaxVoxelCount"),
+						static_cast<double>(EstimatedTotalBytes) / (1024.0 * 1024.0));
+					return false;
+				}
+
+				if (EstimatedTotalBytes > WarningEstimatedVoxelWorkingBytes)
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 内部填充预计工作内存约 %.1f MiB，可能造成明显卡顿"),
+						static_cast<double>(EstimatedTotalBytes) / (1024.0 * 1024.0));
+				}
+			}
+
+			if (FillMode == EMeshVoxelFillMode::SurfaceOnly && TotalVoxelCount64 > MaxVoxelCount)
+			{
+				UE_LOG(LogPointSampling, Verbose,
+					TEXT("[体素点位] 表面模式使用稀疏存储，包围盒格子数%lld超过MaxVoxelCount=%d；达到输出上限后会提前停止扫描"),
+					TotalVoxelCount64, MaxVoxelCount);
+			}
+
+			TotalVoxelCount = (FillMode == EMeshVoxelFillMode::Solid) ? static_cast<int32>(TotalVoxelCount64) : 0;
+			GridOrigin = MeshBounds.Min - FVector(VoxelSize);
+
+			if (FillMode == EMeshVoxelFillMode::Solid)
+			{
+				DenseCells.SetNum(TotalVoxelCount);
+				DenseSurfaceIndices.Reserve(static_cast<int32>(FMath::Min<int64>(MaxPossibleSolidOutputCount, MaxVoxelCount)));
+			}
+			else
+			{
+				const int64 ExpectedSurfaceCount = FMath::Min<int64>(
+					MaxVoxelCount,
+					FMath::Max<int64>(
+						64,
+						FMath::Max(SaturatingMultiply(NumTriangles, 2), EstimateBoundsSurfaceVoxelCount(InnerDims))));
+				const int64 SurfaceReserve = FMath::Min<int64>(ExpectedSurfaceCount, MaxInitialSurfaceReserve);
+				const int64 EstimatedSurfaceBytes = SaturatingAdd(EstimatedSourceBytes, EstimateSurfaceWorkingBytes(ExpectedSurfaceCount));
+				if (EstimatedSurfaceBytes > MaxEstimatedVoxelWorkingBytes)
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 表面体素化预估工作内存可能达到 %.1f MiB；将按实际输出动态保护，接近1024 MiB时提前停止"),
+						static_cast<double>(EstimatedSurfaceBytes) / (1024.0 * 1024.0));
+					bSurfaceMemoryWarningEmitted = true;
+				}
+				else if (EstimatedSurfaceBytes > WarningEstimatedVoxelWorkingBytes)
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 表面体素化预计工作内存约 %.1f MiB，可能造成明显卡顿"),
+						static_cast<double>(EstimatedSurfaceBytes) / (1024.0 * 1024.0));
+					bSurfaceMemoryWarningEmitted = true;
+				}
+
+				SurfaceCells.Reserve(static_cast<int32>(SurfaceReserve));
+				SurfaceIndexByKey.Reserve(static_cast<int32>(SurfaceReserve));
+			}
+
+			return true;
+		}
+
+		void PrepareColors()
+		{
+			const FStaticMeshLODResources& LOD = *SelectedLOD;
+			const FStaticMeshVertexBuffer& StaticMeshVertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
+			const FColorVertexBuffer& ColorVertexBuffer = LOD.VertexBuffers.ColorVertexBuffer;
+			const int32 NumVertices = ScaledLocalPositions.Num();
+			const bool bHasMatchingVertexColors = ColorVertexBuffer.GetNumVertices() == NumVertices;
+			bUseVertexColors = bHasMatchingVertexColors && ColorVertexBuffer.GetAllowCPUAccess();
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[体素点位] 顶点色诊断: LOD=%d, 资产顶点色数量=%d, 位置顶点数量=%d, CPU访问=%s, 数量匹配=%s, 启用顶点色=%s"),
+				EffectiveLODLevel,
+				ColorVertexBuffer.GetNumVertices(),
+				NumVertices,
+				ColorVertexBuffer.GetAllowCPUAccess() ? TEXT("是") : TEXT("否"),
+				bHasMatchingVertexColors ? TEXT("是") : TEXT("否"),
+				bUseVertexColors ? TEXT("是") : TEXT("否"));
+			bCanUseTextureColors = !bUseVertexColors &&
+				StaticMeshVertexBuffer.GetAllowCPUAccess() &&
+				StaticMeshVertexBuffer.GetNumTexCoords() > 0;
+			int32 BaseColorTextureCount = 0;
+			int32 TextureParameterCount = 0;
+			int32 UsedTextureCandidateCount = 0;
+			int32 TextureColorCount = 0;
+			int32 UnreadableTextureCount = 0;
+			int32 MaterialParameterColorCount = 0;
+			if (!bUseVertexColors)
+			{
+				BuildMaterialSlotColorCache(
+					StaticMesh,
+					bCanUseTextureColors,
+					MaterialColorSources,
+					BaseColorTextureCount,
+					TextureParameterCount,
+					UsedTextureCandidateCount,
+					TextureColorCount,
+					UnreadableTextureCount,
+					MaterialParameterColorCount);
+			}
+
+			if (ColorVertexBuffer.GetNumVertices() > 0 && !bUseVertexColors)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] LOD%d存在顶点色但无法用于运行时颜色采样（顶点色CPU访问=%s，顶点色数量=%d，位置顶点数量=%d），将尝试使用材质贴图或颜色参数"),
+					EffectiveLODLevel,
+					ColorVertexBuffer.GetAllowCPUAccess() ? TEXT("true") : TEXT("false"),
+					ColorVertexBuffer.GetNumVertices(),
+					NumVertices);
+			}
+			else if (bUseVertexColors)
+			{
+				UE_LOG(LogPointSampling, Log,
+					TEXT("[体素点位] 颜色来源: 顶点色=是, 采样=表面命中点重心插值"));
+			}
+			else if (!bUseVertexColors)
+			{
+				UE_LOG(LogPointSampling, Log,
+					TEXT("[体素点位] 颜色来源: 顶点色=否, UV可读=%s, BaseColor链=%d, 命名贴图=%d, UsedTextures候选=%d, 可读贴图=%d, 不可读贴图=%d, 材质颜色参数/常量=%d"),
+					bCanUseTextureColors ? TEXT("是") : TEXT("否"),
+					BaseColorTextureCount,
+					TextureParameterCount,
+					UsedTextureCandidateCount,
+					TextureColorCount,
+					UnreadableTextureCount,
+					MaterialParameterColorCount);
+
+				if (TextureColorCount == 0 && MaterialParameterColorCount == 0)
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 未找到可用颜色来源，输出将回退白色。请检查材质是否引用/暴露BaseColor贴图或简单颜色参数/常量、贴图源数据或运行时平台数据是否可读、StaticMesh是否有UV0或CPU可读顶点色。"));
+				}
+				else if (TextureColorCount > 0)
+				{
+					TArray<FString> TextureDescriptions;
+					TextureDescriptions.Reserve(FMath::Min(TextureColorCount, 8));
+					for (int32 MaterialIndex = 0; MaterialIndex < MaterialColorSources.Num() && TextureDescriptions.Num() < 8; ++MaterialIndex)
+					{
+						const FMeshVoxelMaterialColorSource& Source = MaterialColorSources[MaterialIndex];
+						if (Source.bHasTextureColor)
+						{
+							TextureDescriptions.Add(FString::Printf(
+								TEXT("%d:%s:%s"),
+								MaterialIndex,
+								*Source.TextureSourceLabel,
+								*Source.TextureName));
+						}
+					}
+
+					UE_LOG(LogPointSampling, Log,
+						TEXT("[体素点位] 颜色贴图: %s%s"),
+						*FString::Join(TextureDescriptions, TEXT(", ")),
+						TextureColorCount > TextureDescriptions.Num() ? TEXT(" ...") : TEXT(""));
+				}
+			}
+
+			if (RequestedLODLevel != EffectiveLODLevel)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 请求LOD%d被夹取或受流送状态调整，使用LOD%d"),
+					RequestedLODLevel, EffectiveLODLevel);
+			}
+
+		}
+
+		bool ScanSurface()
+		{
+			const FStaticMeshLODResources& LOD = *SelectedLOD;
+			const FStaticMeshVertexBuffer& StaticMeshVertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
+			const FColorVertexBuffer& ColorVertexBuffer = LOD.VertexBuffers.ColorVertexBuffer;
+			const int32 NumVertices = ScaledLocalPositions.Num();
+			const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
+			const int32 NumTriangles = IndexBuffer.GetNumIndices() / 3;
+			const FVector BoxExtent(VoxelSize * 0.5f);
+			const int64 SurfaceWorkingBytesPerVoxel = EstimateSurfaceWorkingBytes(1);
+			bool bStopVoxelScan = false;
+			WorkBudget = CalculateVoxelWorkBudget(FillMode, NumTriangles, MaxVoxelCount, TotalVoxelCount64);
+			const int32 MaxVertexIndex = NumVertices - 1;
+			int32 CurrentSectionRangeIndex = 0;
+			const double VoxelSizeDouble = static_cast<double>(VoxelSize);
+			for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles && !bStopVoxelScan; ++TriangleIndex)
+			{
+				++WorkUnits;
+				if (WorkUnits > WorkBudget)
+				{
+					bWorkBudgetExceeded = true;
+					bStopVoxelScan = true;
+					break;
+				}
+
+				const int32 I0 = IndexBuffer.GetIndex(TriangleIndex * 3);
+				const int32 I1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
+				const int32 I2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
+
+				if (I0 < 0 || I1 < 0 || I2 < 0 || I0 > MaxVertexIndex || I1 > MaxVertexIndex || I2 > MaxVertexIndex)
+				{
+					++InvalidTriangleCount;
+					continue;
+				}
+
+				const FVector P0 = ScaledLocalPositions[I0];
+				const FVector P1 = ScaledLocalPositions[I1];
+				const FVector P2 = ScaledLocalPositions[I2];
+				if (FVector::CrossProduct(P1 - P0, P2 - P0).SizeSquared() <= MinVoxelTriangleAxisSizeSquared)
+				{
+					++DegenerateTriangleCount;
+					continue;
+				}
+				const FTriangleBoxTestData TriangleBoxTestData = BuildTriangleBoxTestData(P0, P1, P2);
+
+				const FVector TriMin(
+					FMath::Min3(P0.X, P1.X, P2.X),
+					FMath::Min3(P0.Y, P1.Y, P2.Y),
+					FMath::Min3(P0.Z, P1.Z, P2.Z));
+				const FVector TriMax(
+					FMath::Max3(P0.X, P1.X, P2.X),
+					FMath::Max3(P0.Y, P1.Y, P2.Y),
+					FMath::Max3(P0.Z, P1.Z, P2.Z));
+
+				const FIntVector MinIndex = ClampToInteriorVoxelRange(ScaledLocalPositionToVoxelIndex(TriMin - BoxExtent, GridOrigin, VoxelSize, Dims), InnerDims);
+				const FIntVector MaxIndex = ClampToInteriorVoxelRange(ScaledLocalPositionToVoxelIndex(TriMax + BoxExtent, GridOrigin, VoxelSize, Dims), InnerDims);
+				const int32 MaterialIndex = GetMaterialIndexForTriangle(TriangleIndex, TriangleSectionRanges, CurrentSectionRangeIndex);
+				if (MaterialIndex == INDEX_NONE)
+				{
+					++UnmappedMaterialTriangleCount;
+				}
+
+				const FLinearColor TriangleFallbackColor = bUseVertexColors
+					? (FLinearColor(ColorVertexBuffer.VertexColor(I0)) +
+					   FLinearColor(ColorVertexBuffer.VertexColor(I1)) +
+					   FLinearColor(ColorVertexBuffer.VertexColor(I2))) * (1.0f / 3.0f)
+					: GetMaterialFallbackColor(MaterialIndex, MaterialColorSources);
+				const bool bTriangleUsesTextureColor = bCanUseTextureColors &&
+					MaterialColorSources.IsValidIndex(MaterialIndex) &&
+					MaterialColorSources[MaterialIndex].bHasTextureColor;
+				const FVector2f UV0 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I0, 0) : FVector2f::ZeroVector;
+				const FVector2f UV1 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I1, 0) : FVector2f::ZeroVector;
+				const FVector2f UV2 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I2, 0) : FVector2f::ZeroVector;
+
+				for (int32 Z = MinIndex.Z; Z <= MaxIndex.Z && !bStopVoxelScan; ++Z)
+				{
+					const double CenterZ = GridOrigin.Z + (static_cast<double>(Z) + 0.5) * VoxelSizeDouble;
+					for (int32 Y = MinIndex.Y; Y <= MaxIndex.Y && !bStopVoxelScan; ++Y)
+					{
+						const double CenterY = GridOrigin.Y + (static_cast<double>(Y) + 0.5) * VoxelSizeDouble;
+						double CenterX = GridOrigin.X + (static_cast<double>(MinIndex.X) + 0.5) * VoxelSizeDouble;
+						for (int32 X = MinIndex.X; X <= MaxIndex.X; ++X, CenterX += VoxelSizeDouble)
+						{
+							++CandidateTests;
+							++WorkUnits;
+							if (WorkUnits > WorkBudget)
+							{
+								bWorkBudgetExceeded = true;
+								bStopVoxelScan = true;
+								break;
+							}
+
+							const FVector Center(CenterX, CenterY, CenterZ);
+							if (!TriangleIntersectsBox(Center, BoxExtent, TriangleBoxTestData))
+							{
+								continue;
+							}
+
+							FLinearColor SurfaceColor = TriangleFallbackColor;
+							if (bUseVertexColors)
+							{
+								TrySampleVertexColor(ColorVertexBuffer, Center, P0, P1, P2, I0, I1, I2, SurfaceColor);
+							}
+							else if (bTriangleUsesTextureColor)
+							{
+								TrySampleMaterialTextureColor(MaterialIndex, MaterialColorSources, Center, P0, P1, P2, UV0, UV1, UV2, SurfaceColor);
+							}
+
+							if (FillMode == EMeshVoxelFillMode::SurfaceOnly)
+							{
+								const int64 LinearIndex = ToLinearIndex64(X, Y, Z, Dims);
+								FMeshVoxelCell* Cell = nullptr;
+								if (const int32* ExistingSurfaceIndex = SurfaceIndexByKey.Find(LinearIndex))
+								{
+									Cell = &SurfaceCells[*ExistingSurfaceIndex].Cell;
+								}
+
+								if (!Cell)
+								{
+									if (SurfaceVoxelWrites >= MaxVoxelCount)
+									{
+										bSurfaceOutputTruncated = true;
+										bStopVoxelScan = true;
+										break;
+									}
+
+									const int64 NextSurfaceCount = static_cast<int64>(SurfaceVoxelWrites) + 1;
+									const int64 RuntimeSurfaceBytes = SaturatingAdd(EstimatedSourceBytes, SaturatingMultiply(NextSurfaceCount, SurfaceWorkingBytesPerVoxel));
+									if (RuntimeSurfaceBytes > MaxEstimatedVoxelWorkingBytes)
+									{
+										bSurfaceMemoryBudgetExceeded = true;
+										bStopVoxelScan = true;
+										break;
+									}
+
+									if (!bSurfaceMemoryWarningEmitted && RuntimeSurfaceBytes > WarningEstimatedVoxelWorkingBytes)
+									{
+										UE_LOG(LogPointSampling, Warning,
+											TEXT("[体素点位] 表面体素化工作内存已接近 %.1f MiB，继续生成可能造成明显卡顿"),
+											static_cast<double>(RuntimeSurfaceBytes) / (1024.0 * 1024.0));
+										bSurfaceMemoryWarningEmitted = true;
+									}
+
+									const int32 NewSurfaceIndex = SurfaceCells.AddDefaulted();
+									FMeshVoxelSparseCell& NewSurfaceCell = SurfaceCells[NewSurfaceIndex];
+									NewSurfaceCell.Key = LinearIndex;
+									SurfaceIndexByKey.Add(LinearIndex, NewSurfaceIndex);
+									Cell = &NewSurfaceCell.Cell;
+								}
+
+								AccumulateSurfaceVoxel(*Cell, SurfaceColor, MaterialIndex, SurfaceVoxelWrites);
+								continue;
+							}
+
+							const int32 LinearIndex = ToLinearIndex(X, Y, Z, Dims);
+							FMeshVoxelCell& Cell = DenseCells[LinearIndex];
+							if (AccumulateSurfaceVoxel(Cell, SurfaceColor, MaterialIndex, SurfaceVoxelWrites))
+							{
+								DenseSurfaceIndices.Add(LinearIndex);
+							}
+						}
+					}
+				}
+			}
+
+			if (bWorkBudgetExceeded && FillMode == EMeshVoxelFillMode::Solid)
+			{
+				LogInvalidTriangleCount(InvalidTriangleCount);
+				LogDegenerateTriangleCount(DegenerateTriangleCount);
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 内部填充体素化工作量达到%lld，超过保护预算%lld，已中止并返回空结果。请增大VoxelSize或降低LOD"),
+					WorkUnits, WorkBudget);
+				return false;
+			}
+
+			LogInvalidTriangleCount(InvalidTriangleCount);
+			LogDegenerateTriangleCount(DegenerateTriangleCount);
+			if (UnmappedMaterialTriangleCount > 0)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] %d个有效三角形没有匹配到LOD Section材质范围，相关体素MaterialIndex可能为INDEX_NONE"),
+					UnmappedMaterialTriangleCount);
+			}
+
+			if (SurfaceVoxelWrites == 0)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 未检测到表面体素。请检查LOD、VoxelSize、Allow CPU Access和网格三角形数据"));
+			}
+
+			if (bSurfaceOutputTruncated)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 表面体素数量达到MaxVoxelCount=%d，已提前停止扫描并截断结果。请增大MaxVoxelCount或增大VoxelSize"),
+					MaxVoxelCount);
+			}
+
+			if (bWorkBudgetExceeded)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 表面体素化工作量达到%lld，超过保护预算%lld，已提前停止扫描并返回部分结果。请增大VoxelSize或提高MaxVoxelCount"),
+					WorkUnits, WorkBudget);
+			}
+
+			if (bSurfaceMemoryBudgetExceeded)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 表面体素化达到1024 MiB工作内存保护上限，已提前停止扫描并返回部分结果。请增大VoxelSize、降低LOD或降低MaxVoxelCount"));
+			}
+
+			return true;
+		}
+
+		void FillInterior()
+		{
+			if (FillMode == EMeshVoxelFillMode::Solid)
+			{
+				UE_LOG(LogPointSampling, Verbose,
+					TEXT("[体素点位] 内部填充假定输入网格基本封闭；开口、自交或极薄模型可能只产生表面点或局部误填。"));
+
+				TArray<uint8> Outside;
+				Outside.SetNumZeroed(TotalVoxelCount);
+				FloodFillOutside(Dims, DenseCells, Outside);
+
+				for (int32 Index = 0; Index < TotalVoxelCount; ++Index)
+				{
+					FMeshVoxelCell& Cell = DenseCells[Index];
+					if (!Cell.bOccupied && Outside[Index] == 0)
+					{
+						Cell.bOccupied = true;
+						Cell.bSurface = false;
+						Cell.bColorAssigned = false;
+						++InteriorVoxelCount;
+					}
+				}
+
+				if (InteriorVoxelCount > 0)
+				{
+					PropagateSurfaceColorToInterior(Dims, DenseCells, DenseSurfaceIndices);
+					DenseSurfaceIndices.Empty();
+				}
+				else if (SurfaceVoxelWrites > 0)
+				{
+					UE_LOG(LogPointSampling, Warning,
+						TEXT("[体素点位] 内部填充未检测到内部体素。模型可能不封闭、存在开口/自交，或VoxelSize相对模型过大"));
+				}
+			}
+			else
+			{
+				SurfaceIndexByKey.Empty();
+			}
+
+		}
+
+		TArray<FMeshVoxelPoint> EmitPoints()
+		{
+			TArray<FMeshVoxelPoint> VoxelPoints;
+			const FQuat OutputRotation = ScaledLocalToWorld.GetRotation();
+			const FVector OutputScale = FVector::OneVector;
+			const int64 ExpectedOutputCount = FillMode == EMeshVoxelFillMode::Solid
+				? SaturatingAdd(static_cast<int64>(SurfaceVoxelWrites), static_cast<int64>(InteriorVoxelCount))
+				: static_cast<int64>(SurfaceVoxelWrites);
+			VoxelPoints.Reserve(static_cast<int32>(FMath::Min<int64>(ExpectedOutputCount, MaxVoxelCount)));
+			bool bFinalOutputTruncated = false;
+			auto AppendVoxelPoint = [&](const int32 X, const int32 Y, const int32 Z, const FMeshVoxelCell& Cell) -> bool
+			{
+				if (!Cell.bOccupied)
+				{
+					return true;
+				}
+
+				if (VoxelPoints.Num() >= MaxVoxelCount)
+				{
+					bFinalOutputTruncated = true;
+					return false;
+				}
+
+				FMeshVoxelPoint Point;
+				// Centers are converted back to world space after the scaled-local voxel test.
+				Point.Position = ScaledLocalToWorld.TransformPosition(VoxelCenter(X, Y, Z, GridOrigin, VoxelSize));
+				Point.Transform = FTransform(OutputRotation, Point.Position, OutputScale);
+				Point.VoxelSize = VoxelSize;
+				Point.GridIndex = FIntVector(X - 1, Y - 1, Z - 1);
+				Point.Color = Cell.bColorAssigned ? Cell.Color : FLinearColor::White;
+				Point.MaterialIndex = Cell.MaterialIndex;
+				Point.bIsSurface = Cell.bSurface;
+				VoxelPoints.Add(Point);
+				return true;
+			};
+
+			if (FillMode == EMeshVoxelFillMode::Solid)
+			{
+				for (int32 Z = 1; Z <= InnerDims.Z && !bFinalOutputTruncated; ++Z)
+				{
+					for (int32 Y = 1; Y <= InnerDims.Y && !bFinalOutputTruncated; ++Y)
+					{
+						for (int32 X = 1; X <= InnerDims.X; ++X)
+						{
+							const int32 LinearIndex = ToLinearIndex(X, Y, Z, Dims);
+							if (!AppendVoxelPoint(X, Y, Z, DenseCells[LinearIndex]))
+							{
+								break;
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				SurfaceCells.Sort([](const FMeshVoxelSparseCell& A, const FMeshVoxelSparseCell& B)
+				{
+					return A.Key < B.Key;
+				});
+
+				const int64 DimX = Dims.X;
+				const int64 DimXY = static_cast<int64>(Dims.X) * Dims.Y;
+				for (const FMeshVoxelSparseCell& SurfaceCell : SurfaceCells)
+				{
+					const int64 SurfaceKey = SurfaceCell.Key;
+					const int32 X = static_cast<int32>(SurfaceKey % DimX);
+					const int32 Y = static_cast<int32>((SurfaceKey / DimX) % Dims.Y);
+					const int32 Z = static_cast<int32>(SurfaceKey / DimXY);
+					if (!AppendVoxelPoint(X, Y, Z, SurfaceCell.Cell))
+					{
+						break;
+					}
+				}
+			}
+
+			if (bFinalOutputTruncated && FillMode == EMeshVoxelFillMode::Solid)
+			{
+				UE_LOG(LogPointSampling, Warning,
+					TEXT("[体素点位] 内部填充输出达到MaxVoxelCount=%d，已截断结果。请增大VoxelSize或提高MaxVoxelCount"),
+					MaxVoxelCount);
+			}
+
+			UE_LOG(LogPointSampling, Log,
+				TEXT("[体素点位] 完成: StaticMesh=%s, LOD=%d, 模式=%s, VoxelSize=%.2f, 体素范围=%dx%dx%d, 工作网格=%dx%dx%d, 表面=%d, 内部=%d, 输出=%d, 候选测试=%lld, 工作量=%lld/%lld%s%s"),
+				*StaticMesh->GetName(),
+				EffectiveLODLevel,
+				FillMode == EMeshVoxelFillMode::Solid ? TEXT("内部填充") : TEXT("仅表面"),
+				VoxelSize,
+				InnerDims.X,
+				InnerDims.Y,
+				InnerDims.Z,
+				Dims.X,
+				Dims.Y,
+				Dims.Z,
+				SurfaceVoxelWrites,
+				InteriorVoxelCount,
+				VoxelPoints.Num(),
+				CandidateTests,
+				WorkUnits,
+				WorkBudget,
+				(bSurfaceOutputTruncated || bFinalOutputTruncated) ? TEXT(", 已截断") : TEXT(""),
+				bWorkBudgetExceeded || bSurfaceMemoryBudgetExceeded ? TEXT(", 保护预算提前停止") : TEXT(""));
+
+			return VoxelPoints;
+		}
+
+		// Request and selected geometry, valid after PrepareGeometryAndStorage succeeds.
+		UStaticMesh* const StaticMesh;
+		const FTransform Transform;
+		const float VoxelSize;
+		EMeshVoxelFillMode FillMode;
+		const int32 LODLevel;
+		int32 MaxVoxelCount;
+		const FStaticMeshLODResources* SelectedLOD = nullptr;
+		int32 RequestedLODLevel = 0;
+		int32 EffectiveLODLevel = 0;
+		int64 EstimatedSourceBytes = 0;
+		TArray<FVector> ScaledLocalPositions;
+		TArray<FMeshSectionTriangleRange> TriangleSectionRanges;
+		FTransform ScaledLocalToWorld;
+		FIntVector InnerDims = FIntVector::ZeroValue;
+		FIntVector Dims = FIntVector::ZeroValue;
+		int64 TotalVoxelCount64 = 0;
+		int32 TotalVoxelCount = 0;
+		FVector GridOrigin = FVector::ZeroVector;
+
+		// Sparse surface or dense solid storage, with unchanged memory guards.
+		TArray<FMeshVoxelCell> DenseCells;
+		TArray<int32> DenseSurfaceIndices;
+		TArray<FMeshVoxelSparseCell> SurfaceCells;
+		TMap<int64, int32> SurfaceIndexByKey;
+		bool bSurfaceMemoryWarningEmitted = false;
+
+		// Color source priority is shared by all triangle samples.
+		bool bUseVertexColors = false;
+		bool bCanUseTextureColors = false;
+		TArray<FMeshVoxelMaterialColorSource> MaterialColorSources;
+
+		// Scan results and budgets are retained for fill, output sizing and diagnostics.
+		int32 InvalidTriangleCount = 0;
+		int32 DegenerateTriangleCount = 0;
+		int32 SurfaceVoxelWrites = 0;
+		bool bSurfaceOutputTruncated = false;
+		bool bSurfaceMemoryBudgetExceeded = false;
+		bool bWorkBudgetExceeded = false;
+		int32 UnmappedMaterialTriangleCount = 0;
+		int64 WorkBudget = 0;
+		int64 WorkUnits = 0;
+		int64 CandidateTests = 0;
+		int32 InteriorVoxelCount = 0;
+	};
+}
+
 TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 	UStaticMesh* StaticMesh,
 	const FTransform& Transform,
@@ -1431,685 +2195,7 @@ TArray<FMeshVoxelPoint> FMeshSamplingHelper::GenerateVoxelPointsFromStaticMesh(
 	int32 LODLevel,
 	int32 MaxVoxelCount)
 {
-	TArray<FMeshVoxelPoint> VoxelPoints;
-
-	if (!StaticMesh || !StaticMesh->HasValidRenderData())
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] StaticMesh为空或没有有效渲染数据"));
-		return VoxelPoints;
-	}
-
-	if (VoxelSize <= KINDA_SMALL_NUMBER || !FMath::IsFinite(VoxelSize))
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] VoxelSize无效: %.4f"), VoxelSize);
-		return VoxelPoints;
-	}
-
-	if (!IsFiniteTransform(Transform))
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] Transform包含NaN/Inf或退化旋转，无法生成稳定体素点位"));
-		return VoxelPoints;
-	}
-
-	const int32 RequestedMaxVoxelCount = MaxVoxelCount;
-	MaxVoxelCount = FMath::Clamp(MaxVoxelCount, 1, MaxAllowedVoxelOutputCount);
-	if (RequestedMaxVoxelCount != MaxVoxelCount)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] MaxVoxelCount=%d已夹取到%d。同步蓝图节点最多返回%d个体素；更大规模建议离线分块预生成"),
-			RequestedMaxVoxelCount, MaxVoxelCount, MaxAllowedVoxelOutputCount);
-	}
-
-	if (!IsValidVoxelFillMode(FillMode))
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] FillMode=%d无效，已回退为仅表面模式"),
-			static_cast<int32>(FillMode));
-		FillMode = EMeshVoxelFillMode::SurfaceOnly;
-	}
-
-	FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
-	if (!RenderData)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] 无法获取StaticMesh渲染数据"));
-		return VoxelPoints;
-	}
-
-	if (RenderData->LODResources.Num() <= 0)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] StaticMesh没有LOD资源"));
-		return VoxelPoints;
-	}
-
-	const int32 RequestedLODLevel = FMath::Max(0, LODLevel);
-	const int32 ClampedLODLevel = FMath::Min(RequestedLODLevel, RenderData->LODResources.Num() - 1);
-	const int32 EffectiveLODLevel = RenderData->GetCurrentFirstLODIdx(ClampedLODLevel);
-	if (!RenderData->LODResources.IsValidIndex(EffectiveLODLevel))
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] StaticMesh没有可用LOD，或请求LOD已被流送卸载"));
-		return VoxelPoints;
-	}
-
-	const FStaticMeshLODResources& LOD = RenderData->LODResources[EffectiveLODLevel];
-	const FPositionVertexBuffer& VertexBuffer = LOD.VertexBuffers.PositionVertexBuffer;
-	const FStaticMeshVertexBuffer& StaticMeshVertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
-	const FColorVertexBuffer& ColorVertexBuffer = LOD.VertexBuffers.ColorVertexBuffer;
-	const FRawStaticIndexBuffer& IndexBuffer = LOD.IndexBuffer;
-
-	if (!VertexBuffer.GetAllowCPUAccess() || !IndexBuffer.GetAllowCPUAccess())
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] StaticMesh '%s' 的LOD%d没有CPU可读顶点/索引数据。运行时使用请在资产中启用Allow CPU Access，或改用编辑器预生成结果。"),
-			*StaticMesh->GetName(), EffectiveLODLevel);
-		return VoxelPoints;
-	}
-
-	const int32 NumVertices = VertexBuffer.GetNumVertices();
-	const int32 NumIndices = IndexBuffer.GetNumIndices();
-	const int32 NumTriangles = NumIndices / 3;
-	if (NumVertices == 0 || NumTriangles == 0)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] LOD没有顶点或三角形数据"));
-		return VoxelPoints;
-	}
-
-	if (NumIndices % 3 != 0)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] LOD%d索引数量%d不是3的倍数，末尾%d个索引将被忽略"),
-			EffectiveLODLevel, NumIndices, NumIndices % 3);
-	}
-
-	TArray<FMeshSectionTriangleRange> TriangleSectionRanges;
-	BuildSectionTriangleRanges(LOD, NumTriangles, TriangleSectionRanges);
-	if (TriangleSectionRanges.Num() == 0)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] LOD%d没有有效Section材质范围，输出MaterialIndex将为INDEX_NONE，缺少顶点色时颜色会回退为白色"),
-			EffectiveLODLevel);
-	}
-
-	const int64 EstimatedSourceBytes = EstimateSourceWorkingBytes(NumVertices, TriangleSectionRanges.Num());
-	if (EstimatedSourceBytes > MaxEstimatedVoxelWorkingBytes)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 源网格预处理预计工作内存约 %.1f MiB，超过保护上限1024 MiB。请降低LOD或简化网格"),
-			static_cast<double>(EstimatedSourceBytes) / (1024.0 * 1024.0));
-		return VoxelPoints;
-	}
-
-	const FVector MeshScale = Transform.GetScale3D();
-	if (HasNearlyZeroScaleAxis(MeshScale))
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] Transform缩放存在接近0的轴 (%.6f, %.6f, %.6f)，无法生成稳定体素点位"),
-			MeshScale.X, MeshScale.Y, MeshScale.Z);
-		return VoxelPoints;
-	}
-
-	// Voxelization runs in scaled-local space: Transform scale is baked into vertices,
-	// while rotation and translation are applied only when emitting world-space points.
-	TArray<FVector> ScaledLocalPositions;
-	ScaledLocalPositions.SetNumUninitialized(NumVertices);
-
-	FBox MeshBounds(EForceInit::ForceInit);
-	const FTransform ScaledLocalToWorld = MakeScaledLocalToWorldTransform(Transform);
-	const FQuat OutputRotation = ScaledLocalToWorld.GetRotation();
-	const FVector OutputScale = FVector::OneVector;
-	for (int32 VertexIndex = 0; VertexIndex < NumVertices; ++VertexIndex)
-	{
-		const FVector ScaledLocalPosition = FVector(VertexBuffer.VertexPosition(VertexIndex)) * MeshScale;
-		if (!IsFiniteVector(ScaledLocalPosition))
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] StaticMesh '%s' 的LOD%d包含NaN/Inf顶点数据，顶点索引=%d"),
-				*StaticMesh->GetName(), EffectiveLODLevel, VertexIndex);
-			return VoxelPoints;
-		}
-
-		ScaledLocalPositions[VertexIndex] = ScaledLocalPosition;
-		MeshBounds += ScaledLocalPosition;
-	}
-
-	if (!MeshBounds.IsValid)
-	{
-		UE_LOG(LogPointSampling, Warning, TEXT("[体素点位] 网格包围盒无效"));
-		return VoxelPoints;
-	}
-
-	const FVector MeshSize = MeshBounds.GetSize();
-	FIntVector InnerDims = FIntVector::ZeroValue;
-	FIntVector Dims = FIntVector::ZeroValue;
-	int64 TotalVoxelCount64 = 0;
-	if (!TryCalculateVoxelDimensions(MeshSize, VoxelSize, InnerDims, Dims, TotalVoxelCount64))
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 体素网格过大或尺寸无效。MeshSize=(%.2f, %.2f, %.2f), VoxelSize=%.4f，请增大VoxelSize或检查Transform缩放"),
-			MeshSize.X, MeshSize.Y, MeshSize.Z, VoxelSize);
-		return VoxelPoints;
-	}
-
-	const int64 MaxPossibleSolidOutputCount = EstimateVoxelVolume(InnerDims);
-	if (FillMode == EMeshVoxelFillMode::Solid)
-	{
-		if (TotalVoxelCount64 > static_cast<int64>(MAX_int32))
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 内部填充工作网格需要%lld个格子，超过运行时数组索引上限。请增大VoxelSize"),
-				TotalVoxelCount64);
-			return VoxelPoints;
-		}
-
-		const int64 EstimatedSolidBytes = EstimateSolidWorkingBytes(TotalVoxelCount64, MaxPossibleSolidOutputCount, MaxVoxelCount);
-		const int64 EstimatedTotalBytes = SaturatingAdd(EstimatedSourceBytes, EstimatedSolidBytes);
-		if (EstimatedTotalBytes > MaxEstimatedVoxelWorkingBytes)
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 内部填充预计工作内存约 %.1f MiB，超过保护上限1024 MiB。请增大VoxelSize或降低MaxVoxelCount"),
-				static_cast<double>(EstimatedTotalBytes) / (1024.0 * 1024.0));
-			return VoxelPoints;
-		}
-
-		if (EstimatedTotalBytes > WarningEstimatedVoxelWorkingBytes)
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 内部填充预计工作内存约 %.1f MiB，可能造成明显卡顿"),
-				static_cast<double>(EstimatedTotalBytes) / (1024.0 * 1024.0));
-		}
-	}
-
-	if (FillMode == EMeshVoxelFillMode::SurfaceOnly && TotalVoxelCount64 > MaxVoxelCount)
-	{
-		UE_LOG(LogPointSampling, Verbose,
-			TEXT("[体素点位] 表面模式使用稀疏存储，包围盒格子数%lld超过MaxVoxelCount=%d；达到输出上限后会提前停止扫描"),
-			TotalVoxelCount64, MaxVoxelCount);
-	}
-
-	const int32 TotalVoxelCount = (FillMode == EMeshVoxelFillMode::Solid) ? static_cast<int32>(TotalVoxelCount64) : 0;
-	const FVector GridOrigin = MeshBounds.Min - FVector(VoxelSize);
-	const FVector BoxExtent(VoxelSize * 0.5f);
-
-	TArray<FMeshVoxelCell> DenseCells;
-	TArray<int32> DenseSurfaceIndices;
-	TArray<FMeshVoxelSparseCell> SurfaceCells;
-	TMap<int64, int32> SurfaceIndexByKey;
-	const int64 SurfaceWorkingBytesPerVoxel = EstimateSurfaceWorkingBytes(1);
-	bool bSurfaceMemoryWarningEmitted = false;
-	if (FillMode == EMeshVoxelFillMode::Solid)
-	{
-		DenseCells.SetNum(TotalVoxelCount);
-		DenseSurfaceIndices.Reserve(static_cast<int32>(FMath::Min<int64>(MaxPossibleSolidOutputCount, MaxVoxelCount)));
-	}
-	else
-	{
-		const int64 ExpectedSurfaceCount = FMath::Min<int64>(
-			MaxVoxelCount,
-			FMath::Max<int64>(
-				64,
-				FMath::Max(SaturatingMultiply(NumTriangles, 2), EstimateBoundsSurfaceVoxelCount(InnerDims))));
-		const int64 SurfaceReserve = FMath::Min<int64>(ExpectedSurfaceCount, MaxInitialSurfaceReserve);
-		const int64 EstimatedSurfaceBytes = SaturatingAdd(EstimatedSourceBytes, EstimateSurfaceWorkingBytes(ExpectedSurfaceCount));
-		if (EstimatedSurfaceBytes > MaxEstimatedVoxelWorkingBytes)
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 表面体素化预估工作内存可能达到 %.1f MiB；将按实际输出动态保护，接近1024 MiB时提前停止"),
-				static_cast<double>(EstimatedSurfaceBytes) / (1024.0 * 1024.0));
-			bSurfaceMemoryWarningEmitted = true;
-		}
-		else if (EstimatedSurfaceBytes > WarningEstimatedVoxelWorkingBytes)
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 表面体素化预计工作内存约 %.1f MiB，可能造成明显卡顿"),
-				static_cast<double>(EstimatedSurfaceBytes) / (1024.0 * 1024.0));
-			bSurfaceMemoryWarningEmitted = true;
-		}
-
-		SurfaceCells.Reserve(static_cast<int32>(SurfaceReserve));
-		SurfaceIndexByKey.Reserve(static_cast<int32>(SurfaceReserve));
-	}
-
-	const bool bHasMatchingVertexColors = ColorVertexBuffer.GetNumVertices() == NumVertices;
-	const bool bUseVertexColors = bHasMatchingVertexColors && ColorVertexBuffer.GetAllowCPUAccess();
-	UE_LOG(LogPointSampling, Log,
-		TEXT("[体素点位] 顶点色诊断: LOD=%d, 资产顶点色数量=%d, 位置顶点数量=%d, CPU访问=%s, 数量匹配=%s, 启用顶点色=%s"),
-		EffectiveLODLevel,
-		ColorVertexBuffer.GetNumVertices(),
-		NumVertices,
-		ColorVertexBuffer.GetAllowCPUAccess() ? TEXT("是") : TEXT("否"),
-		bHasMatchingVertexColors ? TEXT("是") : TEXT("否"),
-		bUseVertexColors ? TEXT("是") : TEXT("否"));
-	const bool bCanUseTextureColors = !bUseVertexColors &&
-		StaticMeshVertexBuffer.GetAllowCPUAccess() &&
-		StaticMeshVertexBuffer.GetNumTexCoords() > 0;
-	TArray<FMeshVoxelMaterialColorSource> MaterialColorSources;
-	int32 BaseColorTextureCount = 0;
-	int32 TextureParameterCount = 0;
-	int32 UsedTextureCandidateCount = 0;
-	int32 TextureColorCount = 0;
-	int32 UnreadableTextureCount = 0;
-	int32 MaterialParameterColorCount = 0;
-	if (!bUseVertexColors)
-	{
-		BuildMaterialSlotColorCache(
-			StaticMesh,
-			bCanUseTextureColors,
-			MaterialColorSources,
-			BaseColorTextureCount,
-			TextureParameterCount,
-			UsedTextureCandidateCount,
-			TextureColorCount,
-			UnreadableTextureCount,
-			MaterialParameterColorCount);
-	}
-
-	if (ColorVertexBuffer.GetNumVertices() > 0 && !bUseVertexColors)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] LOD%d存在顶点色但无法用于运行时颜色采样（顶点色CPU访问=%s，顶点色数量=%d，位置顶点数量=%d），将尝试使用材质贴图或颜色参数"),
-			EffectiveLODLevel,
-			ColorVertexBuffer.GetAllowCPUAccess() ? TEXT("true") : TEXT("false"),
-			ColorVertexBuffer.GetNumVertices(),
-			NumVertices);
-	}
-	else if (bUseVertexColors)
-	{
-		UE_LOG(LogPointSampling, Log,
-			TEXT("[体素点位] 颜色来源: 顶点色=是, 采样=表面命中点重心插值"));
-	}
-	else if (!bUseVertexColors)
-	{
-		UE_LOG(LogPointSampling, Log,
-			TEXT("[体素点位] 颜色来源: 顶点色=否, UV可读=%s, BaseColor链=%d, 命名贴图=%d, UsedTextures候选=%d, 可读贴图=%d, 不可读贴图=%d, 材质颜色参数/常量=%d"),
-			bCanUseTextureColors ? TEXT("是") : TEXT("否"),
-			BaseColorTextureCount,
-			TextureParameterCount,
-			UsedTextureCandidateCount,
-			TextureColorCount,
-			UnreadableTextureCount,
-			MaterialParameterColorCount);
-
-		if (TextureColorCount == 0 && MaterialParameterColorCount == 0)
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 未找到可用颜色来源，输出将回退白色。请检查材质是否引用/暴露BaseColor贴图或简单颜色参数/常量、贴图源数据或运行时平台数据是否可读、StaticMesh是否有UV0或CPU可读顶点色。"));
-		}
-		else if (TextureColorCount > 0)
-		{
-			TArray<FString> TextureDescriptions;
-			TextureDescriptions.Reserve(FMath::Min(TextureColorCount, 8));
-			for (int32 MaterialIndex = 0; MaterialIndex < MaterialColorSources.Num() && TextureDescriptions.Num() < 8; ++MaterialIndex)
-			{
-				const FMeshVoxelMaterialColorSource& Source = MaterialColorSources[MaterialIndex];
-				if (Source.bHasTextureColor)
-				{
-					TextureDescriptions.Add(FString::Printf(
-						TEXT("%d:%s:%s"),
-						MaterialIndex,
-						*Source.TextureSourceLabel,
-						*Source.TextureName));
-				}
-			}
-
-			UE_LOG(LogPointSampling, Log,
-				TEXT("[体素点位] 颜色贴图: %s%s"),
-				*FString::Join(TextureDescriptions, TEXT(", ")),
-				TextureColorCount > TextureDescriptions.Num() ? TEXT(" ...") : TEXT(""));
-		}
-	}
-
-	if (RequestedLODLevel != EffectiveLODLevel)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 请求LOD%d被夹取或受流送状态调整，使用LOD%d"),
-			RequestedLODLevel, EffectiveLODLevel);
-	}
-
-	int32 InvalidTriangleCount = 0;
-	int32 DegenerateTriangleCount = 0;
-	int32 SurfaceVoxelWrites = 0;
-	bool bSurfaceOutputTruncated = false;
-	bool bSurfaceMemoryBudgetExceeded = false;
-	bool bStopVoxelScan = false;
-	bool bWorkBudgetExceeded = false;
-	int32 UnmappedMaterialTriangleCount = 0;
-	const int64 WorkBudget = CalculateVoxelWorkBudget(FillMode, NumTriangles, MaxVoxelCount, TotalVoxelCount64);
-	int64 WorkUnits = 0;
-	int64 CandidateTests = 0;
-	const int32 MaxVertexIndex = NumVertices - 1;
-	int32 CurrentSectionRangeIndex = 0;
-	const double VoxelSizeDouble = static_cast<double>(VoxelSize);
-	for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles && !bStopVoxelScan; ++TriangleIndex)
-	{
-		++WorkUnits;
-		if (WorkUnits > WorkBudget)
-		{
-			bWorkBudgetExceeded = true;
-			bStopVoxelScan = true;
-			break;
-		}
-
-		const int32 I0 = IndexBuffer.GetIndex(TriangleIndex * 3);
-		const int32 I1 = IndexBuffer.GetIndex(TriangleIndex * 3 + 1);
-		const int32 I2 = IndexBuffer.GetIndex(TriangleIndex * 3 + 2);
-
-		if (I0 < 0 || I1 < 0 || I2 < 0 || I0 > MaxVertexIndex || I1 > MaxVertexIndex || I2 > MaxVertexIndex)
-		{
-			++InvalidTriangleCount;
-			continue;
-		}
-
-		const FVector P0 = ScaledLocalPositions[I0];
-		const FVector P1 = ScaledLocalPositions[I1];
-		const FVector P2 = ScaledLocalPositions[I2];
-		if (FVector::CrossProduct(P1 - P0, P2 - P0).SizeSquared() <= MinVoxelTriangleAxisSizeSquared)
-		{
-			++DegenerateTriangleCount;
-			continue;
-		}
-		const FTriangleBoxTestData TriangleBoxTestData = BuildTriangleBoxTestData(P0, P1, P2);
-
-		const FVector TriMin(
-			FMath::Min3(P0.X, P1.X, P2.X),
-			FMath::Min3(P0.Y, P1.Y, P2.Y),
-			FMath::Min3(P0.Z, P1.Z, P2.Z));
-		const FVector TriMax(
-			FMath::Max3(P0.X, P1.X, P2.X),
-			FMath::Max3(P0.Y, P1.Y, P2.Y),
-			FMath::Max3(P0.Z, P1.Z, P2.Z));
-
-		const FIntVector MinIndex = ClampToInteriorVoxelRange(ScaledLocalPositionToVoxelIndex(TriMin - BoxExtent, GridOrigin, VoxelSize, Dims), InnerDims);
-		const FIntVector MaxIndex = ClampToInteriorVoxelRange(ScaledLocalPositionToVoxelIndex(TriMax + BoxExtent, GridOrigin, VoxelSize, Dims), InnerDims);
-		const int32 MaterialIndex = GetMaterialIndexForTriangle(TriangleIndex, TriangleSectionRanges, CurrentSectionRangeIndex);
-		if (MaterialIndex == INDEX_NONE)
-		{
-			++UnmappedMaterialTriangleCount;
-		}
-
-		const FLinearColor TriangleFallbackColor = bUseVertexColors
-			? (FLinearColor(ColorVertexBuffer.VertexColor(I0)) +
-			   FLinearColor(ColorVertexBuffer.VertexColor(I1)) +
-			   FLinearColor(ColorVertexBuffer.VertexColor(I2))) * (1.0f / 3.0f)
-			: GetMaterialFallbackColor(MaterialIndex, MaterialColorSources);
-		const bool bTriangleUsesTextureColor = bCanUseTextureColors &&
-			MaterialColorSources.IsValidIndex(MaterialIndex) &&
-			MaterialColorSources[MaterialIndex].bHasTextureColor;
-		const FVector2f UV0 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I0, 0) : FVector2f::ZeroVector;
-		const FVector2f UV1 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I1, 0) : FVector2f::ZeroVector;
-		const FVector2f UV2 = bTriangleUsesTextureColor ? StaticMeshVertexBuffer.GetVertexUV(I2, 0) : FVector2f::ZeroVector;
-
-		for (int32 Z = MinIndex.Z; Z <= MaxIndex.Z && !bStopVoxelScan; ++Z)
-		{
-			const double CenterZ = GridOrigin.Z + (static_cast<double>(Z) + 0.5) * VoxelSizeDouble;
-			for (int32 Y = MinIndex.Y; Y <= MaxIndex.Y && !bStopVoxelScan; ++Y)
-			{
-				const double CenterY = GridOrigin.Y + (static_cast<double>(Y) + 0.5) * VoxelSizeDouble;
-				double CenterX = GridOrigin.X + (static_cast<double>(MinIndex.X) + 0.5) * VoxelSizeDouble;
-				for (int32 X = MinIndex.X; X <= MaxIndex.X; ++X, CenterX += VoxelSizeDouble)
-				{
-					++CandidateTests;
-					++WorkUnits;
-					if (WorkUnits > WorkBudget)
-					{
-						bWorkBudgetExceeded = true;
-						bStopVoxelScan = true;
-						break;
-					}
-
-					const FVector Center(CenterX, CenterY, CenterZ);
-					if (!TriangleIntersectsBox(Center, BoxExtent, TriangleBoxTestData))
-					{
-						continue;
-					}
-
-					FLinearColor SurfaceColor = TriangleFallbackColor;
-					if (bUseVertexColors)
-					{
-						TrySampleVertexColor(ColorVertexBuffer, Center, P0, P1, P2, I0, I1, I2, SurfaceColor);
-					}
-					else if (bTriangleUsesTextureColor)
-					{
-						TrySampleMaterialTextureColor(MaterialIndex, MaterialColorSources, Center, P0, P1, P2, UV0, UV1, UV2, SurfaceColor);
-					}
-
-					if (FillMode == EMeshVoxelFillMode::SurfaceOnly)
-					{
-						const int64 LinearIndex = ToLinearIndex64(X, Y, Z, Dims);
-						FMeshVoxelCell* Cell = nullptr;
-						if (const int32* ExistingSurfaceIndex = SurfaceIndexByKey.Find(LinearIndex))
-						{
-							Cell = &SurfaceCells[*ExistingSurfaceIndex].Cell;
-						}
-
-						if (!Cell)
-						{
-							if (SurfaceVoxelWrites >= MaxVoxelCount)
-							{
-								bSurfaceOutputTruncated = true;
-								bStopVoxelScan = true;
-								break;
-							}
-
-							const int64 NextSurfaceCount = static_cast<int64>(SurfaceVoxelWrites) + 1;
-							const int64 RuntimeSurfaceBytes = SaturatingAdd(EstimatedSourceBytes, SaturatingMultiply(NextSurfaceCount, SurfaceWorkingBytesPerVoxel));
-							if (RuntimeSurfaceBytes > MaxEstimatedVoxelWorkingBytes)
-							{
-								bSurfaceMemoryBudgetExceeded = true;
-								bStopVoxelScan = true;
-								break;
-							}
-
-							if (!bSurfaceMemoryWarningEmitted && RuntimeSurfaceBytes > WarningEstimatedVoxelWorkingBytes)
-							{
-								UE_LOG(LogPointSampling, Warning,
-									TEXT("[体素点位] 表面体素化工作内存已接近 %.1f MiB，继续生成可能造成明显卡顿"),
-									static_cast<double>(RuntimeSurfaceBytes) / (1024.0 * 1024.0));
-								bSurfaceMemoryWarningEmitted = true;
-							}
-
-							const int32 NewSurfaceIndex = SurfaceCells.AddDefaulted();
-							FMeshVoxelSparseCell& NewSurfaceCell = SurfaceCells[NewSurfaceIndex];
-							NewSurfaceCell.Key = LinearIndex;
-							SurfaceIndexByKey.Add(LinearIndex, NewSurfaceIndex);
-							Cell = &NewSurfaceCell.Cell;
-						}
-
-						AccumulateSurfaceVoxel(*Cell, SurfaceColor, MaterialIndex, SurfaceVoxelWrites);
-						continue;
-					}
-
-					const int32 LinearIndex = ToLinearIndex(X, Y, Z, Dims);
-					FMeshVoxelCell& Cell = DenseCells[LinearIndex];
-					if (AccumulateSurfaceVoxel(Cell, SurfaceColor, MaterialIndex, SurfaceVoxelWrites))
-					{
-						DenseSurfaceIndices.Add(LinearIndex);
-					}
-				}
-			}
-		}
-	}
-
-	if (bWorkBudgetExceeded && FillMode == EMeshVoxelFillMode::Solid)
-	{
-		LogInvalidTriangleCount(InvalidTriangleCount);
-		LogDegenerateTriangleCount(DegenerateTriangleCount);
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 内部填充体素化工作量达到%lld，超过保护预算%lld，已中止并返回空结果。请增大VoxelSize或降低LOD"),
-			WorkUnits, WorkBudget);
-		return VoxelPoints;
-	}
-
-	LogInvalidTriangleCount(InvalidTriangleCount);
-	LogDegenerateTriangleCount(DegenerateTriangleCount);
-	if (UnmappedMaterialTriangleCount > 0)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] %d个有效三角形没有匹配到LOD Section材质范围，相关体素MaterialIndex可能为INDEX_NONE"),
-			UnmappedMaterialTriangleCount);
-	}
-
-	if (SurfaceVoxelWrites == 0)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 未检测到表面体素。请检查LOD、VoxelSize、Allow CPU Access和网格三角形数据"));
-	}
-
-	if (bSurfaceOutputTruncated)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 表面体素数量达到MaxVoxelCount=%d，已提前停止扫描并截断结果。请增大MaxVoxelCount或增大VoxelSize"),
-			MaxVoxelCount);
-	}
-
-	if (bWorkBudgetExceeded)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 表面体素化工作量达到%lld，超过保护预算%lld，已提前停止扫描并返回部分结果。请增大VoxelSize或提高MaxVoxelCount"),
-			WorkUnits, WorkBudget);
-	}
-
-	if (bSurfaceMemoryBudgetExceeded)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 表面体素化达到1024 MiB工作内存保护上限，已提前停止扫描并返回部分结果。请增大VoxelSize、降低LOD或降低MaxVoxelCount"));
-	}
-
-	int32 InteriorVoxelCount = 0;
-	if (FillMode == EMeshVoxelFillMode::Solid)
-	{
-		UE_LOG(LogPointSampling, Verbose,
-			TEXT("[体素点位] 内部填充假定输入网格基本封闭；开口、自交或极薄模型可能只产生表面点或局部误填。"));
-
-		TArray<uint8> Outside;
-		Outside.SetNumZeroed(TotalVoxelCount);
-		FloodFillOutside(Dims, DenseCells, Outside);
-
-		for (int32 Index = 0; Index < TotalVoxelCount; ++Index)
-		{
-			FMeshVoxelCell& Cell = DenseCells[Index];
-			if (!Cell.bOccupied && Outside[Index] == 0)
-			{
-				Cell.bOccupied = true;
-				Cell.bSurface = false;
-				Cell.bColorAssigned = false;
-				++InteriorVoxelCount;
-			}
-		}
-
-		if (InteriorVoxelCount > 0)
-		{
-			PropagateSurfaceColorToInterior(Dims, DenseCells, DenseSurfaceIndices);
-			DenseSurfaceIndices.Empty();
-		}
-		else if (SurfaceVoxelWrites > 0)
-		{
-			UE_LOG(LogPointSampling, Warning,
-				TEXT("[体素点位] 内部填充未检测到内部体素。模型可能不封闭、存在开口/自交，或VoxelSize相对模型过大"));
-		}
-	}
-	else
-	{
-		SurfaceIndexByKey.Empty();
-	}
-
-	const int64 ExpectedOutputCount = FillMode == EMeshVoxelFillMode::Solid
-		? SaturatingAdd(static_cast<int64>(SurfaceVoxelWrites), static_cast<int64>(InteriorVoxelCount))
-		: static_cast<int64>(SurfaceVoxelWrites);
-	VoxelPoints.Reserve(static_cast<int32>(FMath::Min<int64>(ExpectedOutputCount, MaxVoxelCount)));
-	bool bFinalOutputTruncated = false;
-	auto AppendVoxelPoint = [&](const int32 X, const int32 Y, const int32 Z, const FMeshVoxelCell& Cell) -> bool
-	{
-		if (!Cell.bOccupied)
-		{
-			return true;
-		}
-
-		if (VoxelPoints.Num() >= MaxVoxelCount)
-		{
-			bFinalOutputTruncated = true;
-			return false;
-		}
-
-		FMeshVoxelPoint Point;
-		// Centers are converted back to world space after the scaled-local voxel test.
-		Point.Position = ScaledLocalToWorld.TransformPosition(VoxelCenter(X, Y, Z, GridOrigin, VoxelSize));
-		Point.Transform = FTransform(OutputRotation, Point.Position, OutputScale);
-		Point.VoxelSize = VoxelSize;
-		Point.GridIndex = FIntVector(X - 1, Y - 1, Z - 1);
-		Point.Color = Cell.bColorAssigned ? Cell.Color : FLinearColor::White;
-		Point.MaterialIndex = Cell.MaterialIndex;
-		Point.bIsSurface = Cell.bSurface;
-		VoxelPoints.Add(Point);
-		return true;
-	};
-
-	if (FillMode == EMeshVoxelFillMode::Solid)
-	{
-		for (int32 Z = 1; Z <= InnerDims.Z && !bFinalOutputTruncated; ++Z)
-		{
-			for (int32 Y = 1; Y <= InnerDims.Y && !bFinalOutputTruncated; ++Y)
-			{
-				for (int32 X = 1; X <= InnerDims.X; ++X)
-				{
-					const int32 LinearIndex = ToLinearIndex(X, Y, Z, Dims);
-					if (!AppendVoxelPoint(X, Y, Z, DenseCells[LinearIndex]))
-					{
-						break;
-					}
-				}
-			}
-		}
-	}
-	else
-	{
-		SurfaceCells.Sort([](const FMeshVoxelSparseCell& A, const FMeshVoxelSparseCell& B)
-		{
-			return A.Key < B.Key;
-		});
-
-		const int64 DimX = Dims.X;
-		const int64 DimXY = static_cast<int64>(Dims.X) * Dims.Y;
-		for (const FMeshVoxelSparseCell& SurfaceCell : SurfaceCells)
-		{
-			const int64 SurfaceKey = SurfaceCell.Key;
-			const int32 X = static_cast<int32>(SurfaceKey % DimX);
-			const int32 Y = static_cast<int32>((SurfaceKey / DimX) % Dims.Y);
-			const int32 Z = static_cast<int32>(SurfaceKey / DimXY);
-			if (!AppendVoxelPoint(X, Y, Z, SurfaceCell.Cell))
-			{
-				break;
-			}
-		}
-	}
-
-	if (bFinalOutputTruncated && FillMode == EMeshVoxelFillMode::Solid)
-	{
-		UE_LOG(LogPointSampling, Warning,
-			TEXT("[体素点位] 内部填充输出达到MaxVoxelCount=%d，已截断结果。请增大VoxelSize或提高MaxVoxelCount"),
-			MaxVoxelCount);
-	}
-
-	UE_LOG(LogPointSampling, Log,
-		TEXT("[体素点位] 完成: StaticMesh=%s, LOD=%d, 模式=%s, VoxelSize=%.2f, 体素范围=%dx%dx%d, 工作网格=%dx%dx%d, 表面=%d, 内部=%d, 输出=%d, 候选测试=%lld, 工作量=%lld/%lld%s%s"),
-		*StaticMesh->GetName(),
-		EffectiveLODLevel,
-		FillMode == EMeshVoxelFillMode::Solid ? TEXT("内部填充") : TEXT("仅表面"),
-		VoxelSize,
-		InnerDims.X,
-		InnerDims.Y,
-		InnerDims.Z,
-		Dims.X,
-		Dims.Y,
-		Dims.Z,
-		SurfaceVoxelWrites,
-		InteriorVoxelCount,
-		VoxelPoints.Num(),
-		CandidateTests,
-		WorkUnits,
-		WorkBudget,
-		(bSurfaceOutputTruncated || bFinalOutputTruncated) ? TEXT(", 已截断") : TEXT(""),
-		bWorkBudgetExceeded || bSurfaceMemoryBudgetExceeded ? TEXT(", 保护预算提前停止") : TEXT(""));
-
-	return VoxelPoints;
+	return FMeshVoxelizationJob(StaticMesh, Transform, VoxelSize, FillMode, LODLevel, MaxVoxelCount).Run();
 }
 
 /**
