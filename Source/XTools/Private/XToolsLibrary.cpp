@@ -38,6 +38,9 @@
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "CollisionShape.h"
+#include "CollisionQueryParams.h"
+#include "PhysicsEngine/PhysicsSettings.h"
+#include "KismetTraceUtils.h"
 #include "Curves/CurveFloat.h"
 #include "Math/RotationMatrix.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -1547,6 +1550,37 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
         }
     }
     
+    // 与 Kismet SphereTraceSingleForObjects 使用相同的查询设置；一次采样复用参数。
+    FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(XToolsSurfaceSampling), bUseComplexCollision);
+    TraceParams.bReturnPhysicalMaterial = true;
+    TraceParams.bReturnFaceIndex = !UPhysicsSettings::Get()->bSuppressFaceRemapTable;
+    TraceParams.AddIgnoredActors(ActorsToIgnore);
+    // 原调用的 WorldContextObject 是 World，仍保留 Kismet 的 Outer Actor 忽略语义。
+    for (const UObject* Context = World; Context; Context = Context->GetOuter())
+    {
+        if (const AActor* ContextActor = Cast<AActor>(Context))
+        {
+            TraceParams.AddIgnoredActor(ContextActor);
+            break;
+        }
+    }
+    FCollisionObjectQueryParams TraceObjectParams;
+    bool bUseKismetFallback = false;
+    for (const TEnumAsByte<EObjectTypeQuery> ObjectType : ObjectTypes)
+    {
+        const ECollisionChannel Channel = UEngineTypes::ConvertToCollisionChannel(ObjectType);
+        if (FCollisionObjectQueryParams::IsValidObjectQuery(Channel))
+        {
+            TraceObjectParams.AddObjectTypesToQuery(Channel);
+        }
+        else
+        {
+            bUseKismetFallback = true; // 保留异常对象类型的引擎诊断。
+        }
+    }
+    bUseKismetFallback |= !TraceObjectParams.IsValid();
+    const FCollisionShape TraceShape = FCollisionShape::MakeSphere(TraceRadius);
+
     // 获取目标模型的AABB用于粗筛
     FBox TargetBounds(EForceInit::ForceInit);
     if (bEnableBoundsCulling)
@@ -1612,7 +1646,7 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
 
                 // 精确碰撞检测
                 FHitResult HitResult;
-                const bool bHit = UKismetSystemLibrary::SphereTraceSingleForObjects(
+                const bool bHit = bUseKismetFallback ? UKismetSystemLibrary::SphereTraceSingleForObjects(
                     World,
                     WorldPoint,
                     WorldPoint,
@@ -1626,7 +1660,16 @@ static FXToolsSamplingResult PerformSurfaceProximitySampling(
                     FLinearColor::Red,
                     FLinearColor::Green,
                     DebugDrawDuration
-                );
+                ) : World->SweepSingleByObjectType(HitResult, WorldPoint, WorldPoint,
+                    FQuat::Identity, TraceObjectParams, TraceShape, TraceParams);
+#if ENABLE_DRAW_DEBUG
+                if (!bUseKismetFallback)
+                {
+                    DrawDebugSphereTraceSingle(World, WorldPoint, WorldPoint, TraceRadius,
+                        DebugDrawType, bHit, HitResult, FLinearColor::Red,
+                        FLinearColor::Green, DebugDrawDuration);
+                }
+#endif
 
                 // 关键修复1：验证命中的Actor是否是目标Actor（避免场景中同名组件的干扰）
                 // 关键修复2：验证命中的Component是否是目标Component（避免检测到Actor的其他组件，如Box）

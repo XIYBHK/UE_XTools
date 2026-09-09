@@ -21,9 +21,12 @@ public:
 #if WITH_DEV_AUTOMATION_TESTS
 class FJsonObject;
 class UEdGraphNode;
+class UEdGraph;
 
 namespace XBlueprintGraphExporterTests
 {
     TSharedPtr<FJsonObject> BuildNodeSemanticJson(const UEdGraphNode* Node);
+    TSharedPtr<FJsonObject> BuildGraphJson(UEdGraph* Graph);
+    FString BuildGraphMarkdown(UEdGraph* Graph);
 }
 #endif

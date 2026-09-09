@@ -8,6 +8,10 @@
 #include "XToolsLibrary.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "HAL/PlatformTime.h"
 #include "Engine/Engine.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Engine/World.h"
@@ -140,6 +144,86 @@ bool FPointSamplingRejectsInvalidRuntimeInputs::RunTest(const FString& Parameter
         TestFalse(TEXT("已销毁Actor应在组件访问前失败"), bSuccess);
     }
 
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPointSamplingKismetEquivalence,
+    "XTools.PointSampling.Surface.KismetEquivalence",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSamplingKismetEquivalence::RunTest(const FString& Parameters)
+{
+    FScopedPointSamplingTestWorld TestWorld(TEXT("XToolsSurfaceEquivalence"));
+    UWorld* World = TestWorld.Get();
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Cube collision fixture"), Cube))
+    {
+        return false;
+    }
+    AActor* Target = World->SpawnActor<AActor>();
+    UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(Target);
+    Target->SetRootComponent(Mesh);
+    Mesh->SetStaticMesh(Cube);
+    Mesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Mesh->SetCollisionResponseToAllChannels(ECR_Block);
+    Mesh->RegisterComponent();
+    AActor* BoundsOwner = World->SpawnActor<AActor>();
+    UBoxComponent* Bounds = AddBoundingBox(BoundsOwner);
+    Bounds->SetBoxExtent(FVector(60));
+    Bounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    AActor* Obstacle = World->SpawnActor<AActor>();
+    UBoxComponent* ObstacleBox = AddBoundingBox(Obstacle);
+    ObstacleBox->SetBoxExtent(FVector(55));
+    ObstacleBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    ObstacleBox->SetCollisionResponseToAllChannels(ECR_Block);
+    const TArray<AActor*> IgnoredActors{BoundsOwner, Obstacle};
+
+    for (int32 Variant = 0; Variant < 8; ++Variant)
+    {
+        FPointSamplingConfig Config;
+        Config.GridSpacing = 6;
+        Config.bUseComplexCollision = (Variant & 1) != 0;
+        Config.bEnableBoundsCulling = (Variant & 2) != 0;
+        Config.bEnableDebugDraw = Variant == 7;
+        Config.bDrawOnlySuccessfulHits = false;
+        const ECollisionChannel Channel = (Variant & 4) ? ECC_WorldDynamic : ECC_WorldStatic;
+        Mesh->SetCollisionObjectType(Channel);
+        Bounds->SetWorldRotation((Variant & 4) ? FRotator(0, 30, 0) : FRotator::ZeroRotator);
+        TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes{UEngineTypes::ConvertToObjectType(Channel)};
+        TArray<FVector> Expected;
+        const FBox CullBounds = Mesh->Bounds.GetBox().ExpandBy(Config.TraceRadius);
+        const double ReferenceStart = FPlatformTime::Seconds();
+        for (int32 X = 0; X <= 20; ++X)
+        for (int32 Y = 0; Y <= 20; ++Y)
+        for (int32 Z = 0; Z <= 20; ++Z)
+        {
+            const FVector Point = Bounds->GetComponentTransform().TransformPosition(
+                FVector(-60 + X * 6, -60 + Y * 6, -60 + Z * 6));
+            if (Config.bEnableBoundsCulling && !CullBounds.IsInsideOrOn(Point))
+            {
+                continue;
+            }
+            FHitResult Hit;
+            if (UKismetSystemLibrary::SphereTraceSingleForObjects(World, Point, Point,
+                Config.TraceRadius, ObjectTypes, Config.bUseComplexCollision, IgnoredActors,
+                EDrawDebugTrace::None, Hit, true)
+                && Hit.GetActor() == Target && Hit.GetComponent() == Mesh)
+            {
+                Expected.Add(Point);
+            }
+        }
+        const double ReferenceMs = (FPlatformTime::Seconds() - ReferenceStart) * 1000;
+        TArray<FVector> Actual;
+        bool bSuccess = false;
+        const double ActualStart = FPlatformTime::Seconds();
+        UXToolsLibrary::SamplePointsInsideMesh(World, Target, Bounds, Config, Actual, bSuccess);
+        const double ActualMs = (FPlatformTime::Seconds() - ActualStart) * 1000;
+        TestTrue(TEXT("Sampling succeeds"), bSuccess);
+        TestTrue(TEXT("Fixture produces collision hits"), Expected.Num() > 0);
+        TestTrue(FString::Printf(TEXT("Kismet point order and hits variant %d"), Variant), Actual == Expected);
+        AddInfo(FString::Printf(TEXT("Surface variant=%d points=%d Kismet=%.3fms sampling=%.3fms debug=%d"),
+            Variant, Actual.Num(), ReferenceMs, ActualMs, Config.bEnableDebugDraw));
+    }
     return true;
 }
 

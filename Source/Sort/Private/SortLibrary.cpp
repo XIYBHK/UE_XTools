@@ -955,7 +955,8 @@ struct FCaseInsensitiveStringKeyFuncs : BaseKeyFuncs<FString, FString, false>
      */
     static FORCEINLINE uint32 GetKeyHash(const FString& Key)
     {
-        return GetTypeHash(Key.ToLower());
+        // FString hashing already uses the same case-insensitive character folding.
+        return GetTypeHash(Key);
     }
 };
 
@@ -970,9 +971,10 @@ void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, TArray
         UniqueStrings.Reserve(InArray.Num());
         for (const FString& Str : InArray)
         {
-            if (!UniqueStrings.Contains(Str))
+            bool bAlreadyPresent = false;
+            UniqueStrings.Add(Str, &bAlreadyPresent);
+            if (!bAlreadyPresent)
             {
-                UniqueStrings.Add(Str);
                 Result.Add(Str);
             }
         }
@@ -983,14 +985,33 @@ void USortLibrary::RemoveDuplicateStrings(const TArray<FString>& InArray, TArray
         UniqueStrings.Reserve(InArray.Num());
         for (const FString& Str : InArray)
         {
-            if (!UniqueStrings.Contains(Str))
+            bool bAlreadyPresent = false;
+            UniqueStrings.Add(Str, &bAlreadyPresent);
+            if (!bAlreadyPresent)
             {
-                UniqueStrings.Add(Str);
                 Result.Add(Str);
             }
         }
     }
     OutArray = MoveTemp(Result);
+}
+
+namespace
+{
+    bool TryGetVectorComparisonCell(const FVector& Value, double CellSize, FInt64Vector3& Cell)
+    {
+        const double X = Value.X / CellSize;
+        const double Y = Value.Y / CellSize;
+        const double Z = Value.Z / CellSize;
+        constexpr double MaxCellCoordinate = 1125899906842624.0;
+        if (!FMath::IsFinite(X) || !FMath::IsFinite(Y) || !FMath::IsFinite(Z) ||
+            FMath::Abs(X) >= MaxCellCoordinate || FMath::Abs(Y) >= MaxCellCoordinate || FMath::Abs(Z) >= MaxCellCoordinate)
+        {
+            return false;
+        }
+        Cell = FInt64Vector3(FMath::FloorToInt64(X), FMath::FloorToInt64(Y), FMath::FloorToInt64(Z));
+        return true;
+    }
 }
 
 void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, TArray<FVector>& OutArray, float Tolerance)
@@ -1044,17 +1065,7 @@ void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, TArray
     const double CellSize = 2.0 * static_cast<double>(SafeTolerance);
     const auto TryGetCell = [CellSize](const FVector& Value, FInt64Vector3& Cell)
     {
-        const double X = Value.X / CellSize;
-        const double Y = Value.Y / CellSize;
-        const double Z = Value.Z / CellSize;
-        constexpr double MaxCellCoordinate = 1125899906842624.0;
-        if (!FMath::IsFinite(X) || !FMath::IsFinite(Y) || !FMath::IsFinite(Z) ||
-            FMath::Abs(X) >= MaxCellCoordinate || FMath::Abs(Y) >= MaxCellCoordinate || FMath::Abs(Z) >= MaxCellCoordinate)
-        {
-            return false;
-        }
-        Cell = FInt64Vector3(FMath::FloorToInt64(X), FMath::FloorToInt64(Y), FMath::FloorToInt64(Z));
-        return true;
+        return TryGetVectorComparisonCell(Value, CellSize, Cell);
     };
     for (const FVector& Candidate : InArray)
     {
@@ -1096,33 +1107,109 @@ void USortLibrary::RemoveDuplicateVectors(const TArray<FVector>& InArray, TArray
 
 void USortLibrary::FindDuplicateVectors(const TArray<FVector>& InArray, TArray<int32>& DuplicateIndices, TArray<FVector>& DuplicateValues, float Tolerance)
 {
-    DuplicateIndices.Empty();
-    DuplicateValues.Empty();
-    if (InArray.Num() < 2) return;
-
     const float SafeTolerance = FMath::IsFinite(Tolerance) ? FMath::Max(0.0f, Tolerance) : 0.0f;
     TArray<bool> IsDuplicate;
     IsDuplicate.Init(false, InArray.Num());
-    for (int32 LeftIndex = 0; LeftIndex < InArray.Num() - 1; ++LeftIndex)
-    {
-        for (int32 RightIndex = LeftIndex + 1; RightIndex < InArray.Num(); ++RightIndex)
+    const bool bLargeFiniteInput = InArray.Num() >= 4096 &&
+        !InArray.ContainsByPredicate([](const FVector& Value)
         {
-            if (InArray[LeftIndex].Equals(InArray[RightIndex], SafeTolerance))
+            return !FMath::IsFinite(Value.X) || !FMath::IsFinite(Value.Y) || !FMath::IsFinite(Value.Z);
+        });
+    if (bLargeFiniteInput && SafeTolerance == 0.f)
+    {
+        TMap<FVector, int32> FirstIndices;
+        FirstIndices.Reserve(InArray.Num());
+        for (int32 Index = 0; Index < InArray.Num(); ++Index)
+        {
+            const FVector& Value = InArray[Index];
+            const FVector Key(Value.X == 0.0 ? 0.0 : Value.X, Value.Y == 0.0 ? 0.0 : Value.Y, Value.Z == 0.0 ? 0.0 : Value.Z);
+            if (const int32* First = FirstIndices.Find(Key))
             {
-                IsDuplicate[LeftIndex] = true;
-                IsDuplicate[RightIndex] = true;
+                IsDuplicate[Index] = IsDuplicate[*First] = true;
+            }
+            else
+            {
+                FirstIndices.Add(Key, Index);
             }
         }
     }
-    
+    else if (bLargeFiniteInput)
+    {
+        using FBucket = TArray<int32, TInlineAllocator<1>>;
+        TMap<FInt64Vector3, FBucket> Buckets;
+        Buckets.Reserve(InArray.Num());
+        TArray<int32> UnquantizedIndices;
+        const double CellSize = 2.0 * static_cast<double>(SafeTolerance);
+        for (int32 Index = 0; Index < InArray.Num(); ++Index)
+        {
+            FInt64Vector3 Cell;
+            if (TryGetVectorComparisonCell(InArray[Index], CellSize, Cell))
+            {
+                Buckets.FindOrAdd(Cell).Add(Index);
+            }
+            else
+            {
+                UnquantizedIndices.Add(Index);
+            }
+        }
+        // Every original point is indexed: approximate equality is not transitive.
+        // A point only needs one other match, so dense duplicates can stop immediately.
+        for (int32 Index = 0; Index < InArray.Num(); ++Index)
+        {
+            const auto Matches = [&](int32 Other)
+            {
+                return Other != Index && InArray[Index].Equals(InArray[Other], SafeTolerance);
+            };
+            FInt64Vector3 Cell;
+            if (!TryGetVectorComparisonCell(InArray[Index], CellSize, Cell))
+            {
+                for (int32 Other = 0; Other < InArray.Num() && !IsDuplicate[Index]; ++Other)
+                {
+                    IsDuplicate[Index] = Matches(Other);
+                }
+                continue;
+            }
+            IsDuplicate[Index] = UnquantizedIndices.ContainsByPredicate(Matches);
+            for (int32 X = -1; X <= 1 && !IsDuplicate[Index]; ++X)
+            {
+                for (int32 Y = -1; Y <= 1 && !IsDuplicate[Index]; ++Y)
+                {
+                    for (int32 Z = -1; Z <= 1 && !IsDuplicate[Index]; ++Z)
+                    {
+                        if (const FBucket* Bucket = Buckets.Find(Cell + FInt64Vector3(X, Y, Z)))
+                        {
+                            IsDuplicate[Index] = Bucket->ContainsByPredicate(Matches);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        // Preserve the original comparison path for small and non-finite inputs.
+        for (int32 LeftIndex = 0; LeftIndex < InArray.Num() - 1; ++LeftIndex)
+        {
+            for (int32 RightIndex = LeftIndex + 1; RightIndex < InArray.Num(); ++RightIndex)
+            {
+                if (InArray[LeftIndex].Equals(InArray[RightIndex], SafeTolerance))
+                {
+                    IsDuplicate[LeftIndex] = IsDuplicate[RightIndex] = true;
+                }
+            }
+        }
+    }
+    TArray<FVector> Result;
+    DuplicateIndices.Reset();
     for(int32 i=0; i < IsDuplicate.Num(); ++i)
     {
         if(IsDuplicate[i])
         {
             DuplicateIndices.Add(i);
-            DuplicateValues.Add(InArray[i]);
+            Result.Add(InArray[i]);
         }
     }
+    DuplicateValues = MoveTemp(Result);
 }
 
 //~ 通用属性排序函数 (基于GitHub项目的改进)

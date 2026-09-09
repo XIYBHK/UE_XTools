@@ -42,13 +42,13 @@ UStaticMeshComponent* TargetMeshComponent = TargetActor->FindComponentByClass<US
 
 **要求**: `Collision Enabled` 必须设置为以下之一：
 - `Query Only`（仅查询）
-- `Physics Only`（仅物理）- 不推荐
 - `Collision Enabled`（查询和物理）✓ 推荐
 
 **不可用的设置**:
 - `No Collision`（无碰撞）❌ - 无法被检测
+- `Physics Only`（仅物理）- 不参与查询
 
-**原因**: `SphereTraceSingleForObjects` 是查询操作（Query），需要启用Query
+**原因**: 球体 Sweep 是查询操作（Query），需要启用 Query。
 
 **检查方法**:
 ```
@@ -174,28 +174,22 @@ if (bEnableBoundsCulling)
 
 ### 第2阶段：精确检测
 
-**代码**: `XToolsLibrary.cpp` 第956-970行
+**实现**: `XToolsLibrary.cpp` 的 `PerformSurfaceProximitySampling`。
 
 ```cpp
-const bool bHit = UKismetSystemLibrary::SphereTraceSingleForObjects(
-    World,
-    WorldPoint,        // 起点
-    WorldPoint,        // 终点（相同=点检测）
-    TraceRadius,       // 检测球体半径
-    ObjectTypes,       // 目标的ObjectType
-    bUseComplexCollision,
-    TArray<AActor*>(), // 忽略列表（空）
-    DebugDrawType,
-    HitResult,
-    true,              // 忽略自身
-    ...
-);
+const bool bHit = World->SweepSingleByObjectType(
+    HitResult, WorldPoint, WorldPoint, FQuat::Identity,
+    TraceObjectParams, TraceShape, TraceParams);
 ```
 
 **关键参数**:
 - `WorldPoint` 起点和终点相同 = 静态球体检测（不是射线）
 - `TraceRadius` 检测半径：点周围TraceRadius范围内有碰撞即命中
 - `ObjectTypes` 只检测目标的对象类型
+
+查询参数、对象类型掩码和球体形状在单次采样的循环外构建。参数保持引擎 `SphereTraceSingleForObjects` 的复杂碰撞、物理材质、面索引及忽略自身语义；忽略列表包含局部重叠查询找到的其他 Actor。异常对象类型仍回退 Kismet 路径以保留诊断。调试绘制复用引擎 `DrawDebugSphereTraceSingle`，噪声生成和边界剔除顺序不变。
+
+回归入口为 `XTools.PointSampling.Surface.KismetEquivalence`：在真实测试世界中用引擎 Cube 碰撞，逐点比较 Kismet 与采样结果及顺序，覆盖简单/复杂碰撞、边界剔除、旋转框、静态/动态对象类型、外部遮挡和调试路径。该测试不代表任意自定义碰撞资产或噪声配置已完成覆盖。
 
 ---
 
@@ -204,7 +198,8 @@ const bool bHit = UKismetSystemLibrary::SphereTraceSingleForObjects(
 **代码**: `XToolsLibrary.cpp` 第974行
 
 ```cpp
-if (bHit && HitResult.GetComponent() == TargetMeshComponent)
+if (bHit && HitResult.GetActor() == TargetActor
+    && HitResult.GetComponent() == TargetMeshComponent)
 {
     ValidPoints.Add(WorldPoint);
 }

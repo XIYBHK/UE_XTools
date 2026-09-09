@@ -124,6 +124,14 @@ bool FFeatureRejectsInvalidInput::RunTest(const FString& Parameters)
 - 临时资产使用唯一包名，并在结束时卸载或删除。
 - 报告目录每次运行唯一，避免误读旧结果。
 
+### 4.4 热点优化的行为对照
+
+- `XTools.Sort.Hotspots`：重复向量查找与独立的两两比较参考实现对照，另用三点非传递容差链断言全部参与项；覆盖同数组输出、零容差、特殊浮点、极端坐标和 Unicode 字符串首现拼写。规模耗时只记录，不设置依赖机器速度的通过阈值。
+- `XTools.PointSampling.Surface.KismetEquivalence`：使用真实世界碰撞，与原始 Kismet 查询逐点比较；调试绘制开关不同的耗时不能直接当作查询性能对比。
+- `XTools.AssetEditor.BlueprintGraphExporter.GraphSnapshot`：固定节点及 Pin GUID，在多入口、共享尾链、转接点和执行环路上输出 JSON／Markdown 的完整字符字节摘要，便于旧版与优化版对照；修改节点标题、位置、连线后再次导出，验证缓存没有跨调用残留。缓存只属于单张图的一次导出，入口各自的执行链保持独立。
+
+选择这些测试时使用完整前缀 `XTools.Sort`，默认的 `XTools.Sort.Library` 不包含 `Hotspots`。UE 5.3 构建与运行通过只能证明实测版本；UE 5.3–5.8 的通用 API 设计不等于所有版本已验证。
+
 ## 5. World 与地图 fixture
 
 ### 5.1 轻量 World

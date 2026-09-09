@@ -1527,11 +1527,11 @@ namespace
     }
 
     TArray<TSharedPtr<FJsonValue>> BuildEntryNodesJson(
-        const UEdGraph* Graph,
+        const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds)
     {
         TArray<TSharedPtr<FJsonValue>> Entries;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (IsEntryNode(Node))
             {
@@ -1542,14 +1542,14 @@ namespace
     }
 
     TArray<TSharedPtr<FJsonValue>> BuildExecChainJson(
-        const UEdGraph* Graph,
+        const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds,
         TSet<const UEdGraphNode*>& OutReachableNodes)
     {
         TArray<TSharedPtr<FJsonValue>> Edges;
         TArray<const UEdGraphNode*> Queue;
         TSet<const UEdGraphNode*> QueuedNodes;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (IsEntryNode(Node))
             {
@@ -1605,12 +1605,12 @@ namespace
     }
 
     TArray<TSharedPtr<FJsonValue>> BuildOrphanExecNodesJson(
-        const UEdGraph* Graph,
+        const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds,
         const TSet<const UEdGraphNode*>& ReachableNodes)
     {
         TArray<TSharedPtr<FJsonValue>> Nodes;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (!Node || IsEntryNode(Node) || !HasExecInputPin(Node) || ReachableNodes.Contains(Node))
             {
@@ -1622,11 +1622,11 @@ namespace
     }
 
     TArray<TSharedPtr<FJsonValue>> BuildUnconnectedExecPinsJson(
-        const UEdGraph* Graph,
+        const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds)
     {
         TArray<TSharedPtr<FJsonValue>> Pins;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (!Node)
             {
@@ -1652,7 +1652,7 @@ namespace
     }
 
     TArray<TSharedPtr<FJsonValue>> BuildEdgesJson(
-        const UEdGraph* Graph,
+        const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds,
         int32& OutExecEdgeCount,
         int32& OutDataEdgeCount)
@@ -1661,7 +1661,7 @@ namespace
         OutDataEdgeCount = 0;
 
         TArray<TSharedPtr<FJsonValue>> Edges;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (!Node)
             {
@@ -1794,18 +1794,11 @@ namespace
         return Json;
     }
 
-    void BuildNodeIds(const UEdGraph* Graph, TMap<const UEdGraphNode*, FString>& OutNodeIds)
+    void BuildNodeIds(const TArray<UEdGraphNode*>& SortedNodes, TMap<const UEdGraphNode*, FString>& OutNodeIds)
     {
         OutNodeIds.Reset();
-        if (!Graph)
-        {
-            return;
-        }
-
-        TArray<UEdGraphNode*> Nodes = GetSortedNodes(Graph);
-
         int32 Index = 0;
-        for (const UEdGraphNode* Node : Nodes)
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (Node)
             {
@@ -1822,29 +1815,29 @@ namespace
             return Json;
         }
 
+        const TArray<UEdGraphNode*> SortedNodes = GetSortedNodes(Graph);
         TMap<const UEdGraphNode*, FString> NodeIds;
-        BuildNodeIds(Graph, NodeIds);
+        BuildNodeIds(SortedNodes, NodeIds);
 
         Json->SetStringField(TEXT("name"), Graph->GetName());
         Json->SetStringField(TEXT("path"), Graph->GetPathName());
         Json->SetStringField(TEXT("type"), GraphTypeToString(Blueprint, Graph));
 
         TSet<const UEdGraphNode*> ReachableNodes;
-        Json->SetArrayField(TEXT("entry_nodes"), BuildEntryNodesJson(Graph, NodeIds));
-        Json->SetArrayField(TEXT("exec_chain"), BuildExecChainJson(Graph, NodeIds, ReachableNodes));
-        Json->SetArrayField(TEXT("orphan_exec_nodes"), BuildOrphanExecNodesJson(Graph, NodeIds, ReachableNodes));
-        Json->SetArrayField(TEXT("unconnected_exec_pins"), BuildUnconnectedExecPinsJson(Graph, NodeIds));
+        Json->SetArrayField(TEXT("entry_nodes"), BuildEntryNodesJson(SortedNodes, NodeIds));
+        Json->SetArrayField(TEXT("exec_chain"), BuildExecChainJson(SortedNodes, NodeIds, ReachableNodes));
+        Json->SetArrayField(TEXT("orphan_exec_nodes"), BuildOrphanExecNodesJson(SortedNodes, NodeIds, ReachableNodes));
+        Json->SetArrayField(TEXT("unconnected_exec_pins"), BuildUnconnectedExecPinsJson(SortedNodes, NodeIds));
 
         int32 ExecEdgeCount = 0;
         int32 DataEdgeCount = 0;
-        TArray<TSharedPtr<FJsonValue>> Edges = BuildEdgesJson(Graph, NodeIds, ExecEdgeCount, DataEdgeCount);
+        TArray<TSharedPtr<FJsonValue>> Edges = BuildEdgesJson(SortedNodes, NodeIds, ExecEdgeCount, DataEdgeCount);
         Json->SetNumberField(TEXT("edge_count"), Edges.Num());
         Json->SetNumberField(TEXT("exec_edge_count"), ExecEdgeCount);
         Json->SetNumberField(TEXT("data_edge_count"), DataEdgeCount);
         Json->SetArrayField(TEXT("edges"), Edges);
 
         TArray<TSharedPtr<FJsonValue>> Nodes;
-        TArray<UEdGraphNode*> SortedNodes = GetSortedNodes(Graph);
 
         for (const UEdGraphNode* Node : SortedNodes)
         {
@@ -2870,14 +2863,43 @@ namespace
         return Root;
     }
 
+    // 生命周期限制在单张图的一次 Markdown 导出；下一次导出重新读取节点与连线。
+    struct FGraphDisplayCache
+    {
+        explicit FGraphDisplayCache(const TMap<const UEdGraphNode*, FString>& InNodeIds)
+            : NodeIds(InNodeIds) {}
+
+        const FString& Label(const UEdGraphNode* Node)
+        {
+            if (const FString* Existing = Labels.Find(Node))
+            {
+                return *Existing;
+            }
+            return Labels.Add(Node, NodeLabel(Node, NodeIds));
+        }
+
+        const TArray<const UEdGraphPin*>& DisplayPins(const UEdGraphPin* Pin)
+        {
+            if (const TArray<const UEdGraphPin*>* Existing = ResolvedPins.Find(Pin))
+            {
+                return *Existing;
+            }
+            return ResolvedPins.Add(Pin, ResolveDisplayPinsAfterKnot(Pin));
+        }
+
+        const TMap<const UEdGraphNode*, FString>& NodeIds;
+        TMap<const UEdGraphNode*, FString> Labels;
+        TMap<const UEdGraphPin*, TArray<const UEdGraphPin*>> ResolvedPins;
+    };
+
     void AppendExecChainMarkdown(
         FString& Markdown,
-        const UEdGraph* Graph,
-        const TMap<const UEdGraphNode*, FString>& NodeIds,
+        const TArray<UEdGraphNode*>& SortedNodes,
+        FGraphDisplayCache& DisplayCache,
         TSet<const UEdGraphNode*>& OutReachableNodes)
     {
         TArray<const UEdGraphNode*> Entries;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (IsEntryNode(Node))
             {
@@ -2893,7 +2915,7 @@ namespace
 
         for (const UEdGraphNode* EntryNode : Entries)
         {
-            Markdown += FString::Printf(TEXT("#### %s\n"), *NodeLabel(EntryNode, NodeIds));
+            Markdown += FString::Printf(TEXT("#### %s\n"), *DisplayCache.Label(EntryNode));
 
             TArray<const UEdGraphNode*> Queue;
             TSet<const UEdGraphNode*> QueuedNodes;
@@ -2928,7 +2950,7 @@ namespace
 
                         if (!IsKnotNode(Node))
                         {
-                            for (const UEdGraphPin* DisplayPin : ResolveDisplayPinsAfterKnot(LinkedPin))
+                            for (const UEdGraphPin* DisplayPin : DisplayCache.DisplayPins(LinkedPin))
                             {
                                 const UEdGraphNode* DisplayTargetNode = DisplayPin ? DisplayPin->GetOwningNode() : nullptr;
                                 if (!DisplayTargetNode)
@@ -2938,9 +2960,9 @@ namespace
 
                                 Markdown += FString::Printf(
                                     TEXT("- %s.`%s` -> %s.`%s`\n"),
-                                    *NodeLabel(Node, NodeIds),
+                                    *DisplayCache.Label(Node),
                                     *Pin->PinName.ToString(),
-                                    *NodeLabel(DisplayTargetNode, NodeIds),
+                                    *DisplayCache.Label(DisplayTargetNode),
                                     *DisplayPin->PinName.ToString());
                                 ++ExecEdgeCount;
                             }
@@ -2964,19 +2986,19 @@ namespace
 
     void AppendUnreachableNodesMarkdown(
         FString& Markdown,
-        const UEdGraph* Graph,
-        const TMap<const UEdGraphNode*, FString>& NodeIds,
+        const TArray<UEdGraphNode*>& SortedNodes,
+        FGraphDisplayCache& DisplayCache,
         const TSet<const UEdGraphNode*>& ReachableNodes)
     {
         int32 Count = 0;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (!Node || IsEntryNode(Node) || !HasExecInputPin(Node) || ReachableNodes.Contains(Node))
             {
                 continue;
             }
 
-            Markdown += FString::Printf(TEXT("- %s\n"), *NodeLabel(Node, NodeIds));
+            Markdown += FString::Printf(TEXT("- %s\n"), *DisplayCache.Label(Node));
             ++Count;
         }
 
@@ -2993,19 +3015,21 @@ namespace
             return;
         }
 
+        const TArray<UEdGraphNode*> SortedNodes = GetSortedNodes(Graph);
         TMap<const UEdGraphNode*, FString> NodeIds;
-        BuildNodeIds(Graph, NodeIds);
+        BuildNodeIds(SortedNodes, NodeIds);
+        FGraphDisplayCache DisplayCache(NodeIds);
 
         Markdown += FString::Printf(TEXT("## %s (%s)\n\n"), *Graph->GetName(), *GraphTypeToString(Blueprint, Graph));
         Markdown += FString::Printf(TEXT("- 节点数: %d\n\n"), NodeIds.Num());
 
         Markdown += TEXT("### 入口节点\n");
         int32 EntryCount = 0;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (IsEntryNode(Node))
             {
-                Markdown += FString::Printf(TEXT("- %s\n"), *NodeLabel(Node, NodeIds));
+                Markdown += FString::Printf(TEXT("- %s\n"), *DisplayCache.Label(Node));
                 ++EntryCount;
             }
         }
@@ -3017,17 +3041,17 @@ namespace
 
         Markdown += TEXT("### 入口可达执行流\n");
         TSet<const UEdGraphNode*> ReachableNodes;
-        AppendExecChainMarkdown(Markdown, Graph, NodeIds, ReachableNodes);
+        AppendExecChainMarkdown(Markdown, SortedNodes, DisplayCache, ReachableNodes);
         Markdown += TEXT("\n");
 
         Markdown += TEXT("### 孤立执行节点\n");
-        AppendUnreachableNodesMarkdown(Markdown, Graph, NodeIds, ReachableNodes);
+        AppendUnreachableNodesMarkdown(Markdown, SortedNodes, DisplayCache, ReachableNodes);
         Markdown += TEXT("\n");
 
         Markdown += TEXT("### 数据连接摘要\n");
         int32 DataEdgeCount = 0;
         const int32 DataEdgeLimit = 100;
-        for (const UEdGraphNode* Node : GetSortedNodes(Graph))
+        for (const UEdGraphNode* Node : SortedNodes)
         {
             if (!Node || IsKnotNode(Node) || DataEdgeCount >= DataEdgeLimit)
             {
@@ -3045,7 +3069,7 @@ namespace
                 }
                 for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
                 {
-                    for (const UEdGraphPin* DisplayPin : ResolveDisplayPinsAfterKnot(LinkedPin))
+                    for (const UEdGraphPin* DisplayPin : DisplayCache.DisplayPins(LinkedPin))
                     {
                         const UEdGraphNode* TargetNode = DisplayPin ? DisplayPin->GetOwningNode() : nullptr;
                         if (!TargetNode)
@@ -3054,9 +3078,9 @@ namespace
                         }
                         Markdown += FString::Printf(
                             TEXT("- %s.`%s` -> %s.`%s`\n"),
-                            *NodeLabel(Node, NodeIds),
+                            *DisplayCache.Label(Node),
                             *Pin->PinName.ToString(),
-                            *NodeLabel(TargetNode, NodeIds),
+                            *DisplayCache.Label(TargetNode),
                             *DisplayPin->PinName.ToString());
                         ++DataEdgeCount;
                         if (DataEdgeCount >= DataEdgeLimit)
@@ -3253,6 +3277,17 @@ namespace
 TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildNodeSemanticJson(const UEdGraphNode* Node)
 {
     return NodeSemanticToJson(Node);
+}
+TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildGraphJson(UEdGraph* Graph)
+{
+    int32 NodeCount = 0;
+    return GraphToJson(nullptr, Graph, NodeCount);
+}
+FString XBlueprintGraphExporterTests::BuildGraphMarkdown(UEdGraph* Graph)
+{
+    FString Markdown;
+    AppendGraphMarkdown(Markdown, nullptr, Graph);
+    return Markdown;
 }
 #endif
 

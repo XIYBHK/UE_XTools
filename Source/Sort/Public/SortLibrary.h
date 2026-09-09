@@ -556,13 +556,17 @@ public:
         UPARAM(DisplayName="输出数组") TArray<FVector>& OutArray,
         UPARAM(DisplayName="容差值", meta=(ClampMin="0.0", UIMin="0.0", UIMax="1.0")) float Tolerance = 0.0001f);
 
-    /** 查找向量数组中的重复向量 */
+    /**
+     * 返回所有与至少一个其他元素按 FVector::Equals 容差相等的输入项，按原始索引排序。
+     * 近似相等不具备传递性；例如 0、0.75、1.5 在容差 1 下全部参与重复。
+     * C++ 调用允许 InArray 与 DuplicateValues 引用同一数组。
+     */
     UFUNCTION(BlueprintPure,
         Category = "XTools|数组操作|去重", 
         meta = (
             DisplayName = "查找重复向量",
             Keywords = "查找,重复,向量,数组,索引",
-            ToolTip = "查找向量数组中完全相同的向量。\n参数:\nInArray - 要处理的向量数组\nTolerance - 判断相等的容差值（默认为KindaSmallNumber）\n返回值:\nDuplicateIndices - 重复向量的索引\nDuplicateValues - 对应的向量值"
+            ToolTip = "按逐分量容差查找重复向量，按原始索引输出所有与其他元素相等的项（包含首次出现项）。\n参数:\nInArray - 要处理的向量数组\nTolerance - 判断相等的容差值（默认为KindaSmallNumber）\n返回值:\nDuplicateIndices - 重复向量的索引\nDuplicateValues - 对应的向量值"
         ))
     static void FindDuplicateVectors(
         UPARAM(DisplayName="输入数组") const TArray<FVector>& InArray,
