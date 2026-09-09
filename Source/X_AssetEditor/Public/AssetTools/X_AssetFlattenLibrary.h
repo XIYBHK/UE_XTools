@@ -17,6 +17,9 @@ struct X_ASSETEDITOR_API FX_AssetFlattenResult
     int32 MovedCount = 0;
     UPROPERTY(BlueprintReadOnly, Category = "XTools|资产整理", meta = (DisplayName = "已在目标目录数"))
     int32 SkippedCount = 0;
+    /** 显式选中的外部资产，去重后保留原位；不计入已在目标目录数。 */
+    UPROPERTY(BlueprintReadOnly, Category = "XTools|资产整理", meta = (DisplayName = "已跳过外部资产"))
+    TArray<FString> SkippedExternalAssets;
     UPROPERTY(BlueprintReadOnly, Category = "XTools|资产整理", meta = (DisplayName = "未修复重定向器"))
     TArray<FString> RemainingRedirectors;
     UPROPERTY(BlueprintReadOnly, Category = "XTools|资产整理", meta = (DisplayName = "问题详情"))

@@ -8,6 +8,7 @@
 #include "Editor.h"
 #include "Engine/World.h"
 #include "Misc/PackageName.h"
+#include "Misc/NamePermissionList.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/App.h"
 #include "XToolsVersionCompat.h"
@@ -20,7 +21,6 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "X_AssetEditor.h"
 #include "XToolsErrorReporter.h"
@@ -30,6 +30,18 @@ namespace XAssetFlatten
 {
     struct FEntry { FAssetData Data; FString Destination; };
     bool bMoving = false;
+
+    bool IsProjectContentFolder(const FString& Path)
+    {
+        // Content Browser virtual paths (/All/...) and filesystem paths are not package paths.
+        return (Path == TEXT("/Game") || Path.StartsWith(TEXT("/Game/"))) &&
+            FPackageName::IsValidLongPackageName(Path / TEXT("Asset"));
+    }
+
+    bool IsProjectAssetPackage(const FString& Path)
+    {
+        return Path.StartsWith(TEXT("/Game/")) && FPackageName::IsValidLongPackageName(Path);
+    }
 
     FString TypeFolder(const FAssetData& Data, IAssetRegistry& Registry)
     {
@@ -80,10 +92,9 @@ namespace XAssetFlatten
     {
         Folder.TrimStartAndEndInline();
         while (Folder.EndsWith(TEXT("/"))) { Folder.LeftChopInline(1); }
-        if (!(Folder == TEXT("/Game") || Folder.StartsWith(TEXT("/Game/"))) ||
-            !FPackageName::IsValidLongPackageName(Folder / TEXT("Asset")))
+        if (!IsProjectContentFolder(Folder))
         {
-            Result.Errors.Add(TEXT("目标必须是 /Game 下的有效内容目录，例如 /Game/Gathered。"));
+            Result.Errors.Add(TEXT("目标只能是项目 /Game 下的内容目录；不允许引擎、插件目录或磁盘路径。"));
             return false;
         }
         if (Assets.IsEmpty())
@@ -97,18 +108,38 @@ namespace XAssetFlatten
         TSet<FName> Seen;
         for (const FAssetData& Data : Assets)
         {
-            if (!Data.IsValid() || !Data.PackageName.ToString().StartsWith(TEXT("/Game/")) || Data.IsRedirector())
+            if (!Data.IsValid())
+            {
+                Result.Errors.Add(FString::Printf(TEXT("请选择 /Game 下的普通资产：%s"), *Data.GetObjectPathString()));
+                continue;
+            }
+            if (!IsProjectAssetPackage(Data.PackageName.ToString()))
+            {
+                Result.SkippedExternalAssets.AddUnique(Data.GetObjectPathString());
+                continue;
+            }
+            if (Data.IsRedirector())
             {
                 Result.Errors.Add(FString::Printf(TEXT("请选择 /Game 下的普通资产：%s"), *Data.GetObjectPathString()));
                 continue;
             }
             if (!Seen.Contains(Data.PackageName)) { Seen.Add(Data.PackageName); Queue.Add(Data.PackageName); }
         }
+        Result.SkippedExternalAssets.Sort();
+        if (Queue.IsEmpty() && Result.Errors.IsEmpty())
+        {
+            Result.Errors.Add(TEXT("没有可移动的项目资产；选中的引擎和插件资产已跳过并保留原位。"));
+        }
         // Package + empty query includes hard/soft and game/editor-only; excludes management/searchable names.
         for (int32 Index = 0; Index < Queue.Num(); ++Index)
         {
             const FName PackageName = Queue[Index];
             const FString Package = PackageName.ToString();
+            if (!IsProjectAssetPackage(Package))
+            {
+                Result.Errors.Add(FString::Printf(TEXT("禁止迁移项目 /Game 以外的资产：%s"), *Package));
+                continue;
+            }
             UPackage* LoadedPackage = FindPackage(nullptr, *Package);
             FString SourceFile;
             if (!FPackageName::DoesPackageExist(Package, &SourceFile) || (LoadedPackage && LoadedPackage->IsDirty()))
@@ -143,7 +174,8 @@ namespace XAssetFlatten
             Dependencies.Sort(FNameLexicalLess());
             for (FName Dependency : Dependencies)
             {
-                if (Dependency.ToString().StartsWith(TEXT("/Game/")) && !Seen.Contains(Dependency))
+                // Engine/plugin dependencies stay at their original paths; never traverse into their mounts.
+                if (IsProjectAssetPackage(Dependency.ToString()) && !Seen.Contains(Dependency))
                 {
                     Seen.Add(Dependency); Queue.Add(Dependency);
                 }
@@ -219,6 +251,12 @@ FX_AssetFlattenResult UX_AssetFlattenLibrary::MoveAssets(const TArray<FAssetData
     TArray<FString> OldPaths;
     for (const XAssetFlatten::FEntry& Entry : Entries)
     {
+        if (!XAssetFlatten::IsProjectAssetPackage(Entry.Data.PackageName.ToString()) ||
+            !XAssetFlatten::IsProjectAssetPackage(Entry.Destination))
+        {
+            Result.Errors.Add(TEXT("移动源和目标都必须位于项目 /Game，已阻止引擎或插件目录操作。"));
+            continue;
+        }
         if (Entry.Data.PackageName == FName(*Entry.Destination)) { continue; }
         UObject* Asset = Entry.Data.GetAsset();
         if (!IsValid(Asset) || Asset->IsA<UWorld>() || Asset->GetOutermost()->IsDirty() ||
@@ -317,27 +355,56 @@ FX_AssetFlattenResult UX_AssetFlattenLibrary::MoveAssets(const TArray<FAssetData
 void UX_AssetFlattenLibrary::ShowDialog(const TArray<FAssetData>& Assets, bool bOrganizeByType)
 {
     TSharedRef<SWindow> Window = SNew(SWindow).Title(bOrganizeByType ? LOCTEXT("OrganizeTitle", "按类型移动资产及依赖") : LOCTEXT("Title", "扁平移动资产及依赖"))
-        .ClientSize(FVector2D(620, 200)).SupportsMinimize(false).SupportsMaximize(false);
-    TSharedRef<SEditableTextBox> PathBox = SNew(SEditableTextBox).Text(FText::FromString(TEXT("/Game/Gathered")));
+        .ClientSize(FVector2D(660, 540)).SupportsMinimize(false).SupportsMaximize(false);
+    TSharedRef<FString> SelectedFolder = MakeShared<FString>();
+    FPathPickerConfig PathConfig;
+    // Require an explicit choice; do not fabricate a directory or rely on version-specific default callbacks.
+    PathConfig.bAllowReadOnlyFolders = false;
+    PathConfig.bAllowClassesFolder = false;
+    PathConfig.bAllowContextMenu = true; // Use the native New Folder action and its validation.
+    PathConfig.bOnPathSelectedPassesVirtualPaths = false;
+    PathConfig.CustomFolderPermissionList = MakeShared<FPathPermissionList>();
+    PathConfig.CustomFolderPermissionList->AddAllowListItem(TEXT("XToolsAssetMove"), TEXT("/Game"));
+    PathConfig.OnPathSelected = FOnPathSelected::CreateLambda([SelectedFolder](const FString& Path)
+    {
+        *SelectedFolder = XAssetFlatten::IsProjectContentFolder(Path) ? Path : FString();
+    });
+    TSharedRef<SWidget> PathPicker = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser").Get().CreatePathPicker(PathConfig);
     const TWeakPtr<SWindow> WeakWindow = Window;
     Window->SetContent(SNew(SVerticalBox)
         + SVerticalBox::Slot().AutoHeight().Padding(12)
         [SNew(STextBlock).AutoWrapText(true).Text(bOrganizeByType
             ? LOCTEXT("OrganizeHelp", "移动选中资产及 /Game 硬软依赖，按类型放入 Blueprints、Materials、Meshes、Textures 等子目录，其他类型放入 Other。请先保存资产；目标路径冲突会阻止移动。")
             : LOCTEXT("Help", "移动选中资产及 /Game 硬软依赖。请先保存资产；同名冲突会阻止移动。"))]
-        + SVerticalBox::Slot().AutoHeight().Padding(12, 0)[PathBox]
-        + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(12)
-        [SNew(SButton).Text(LOCTEXT("Move", "检查并移动")).OnClicked_Lambda([Assets, PathBox, WeakWindow, bOrganizeByType]()
+        + SVerticalBox::Slot().AutoHeight().Padding(12, 0)
+        [SNew(STextBlock).AutoWrapText(true).Text(LOCTEXT("ProjectOnlyHelp", "引擎和插件资产保留原位。请在项目内容目录树中选择目标；右键目录可新建文件夹。"))]
+        + SVerticalBox::Slot().FillHeight(1).Padding(12)[PathPicker]
+        + SVerticalBox::Slot().AutoHeight().Padding(12, 0)
+        [SNew(STextBlock).AutoWrapText(true).Text_Lambda([SelectedFolder]()
         {
-            FString Folder = PathBox->GetText().ToString();
+            return SelectedFolder->IsEmpty() ? LOCTEXT("NoFolder", "请选择项目内容目录")
+                : FText::Format(LOCTEXT("SelectedFolder", "目标目录：{0}"), FText::FromString(*SelectedFolder));
+        })]
+        + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(12)
+        [SNew(SButton).Text(LOCTEXT("Move", "检查并移动"))
+        .IsEnabled_Lambda([SelectedFolder]() { return XAssetFlatten::IsProjectContentFolder(*SelectedFolder); })
+        .OnClicked_Lambda([Assets, SelectedFolder, WeakWindow, bOrganizeByType]()
+        {
+            FString Folder = *SelectedFolder;
             TArray<XAssetFlatten::FEntry> Entries;
             FX_AssetFlattenResult Preview;
             if (!XAssetFlatten::BuildPlan(Assets, Folder, Entries, Preview, bOrganizeByType))
             {
-                FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Join(Preview.Errors, TEXT("\n"))));
+                FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Join(Preview.Errors, TEXT("\n")) +
+                    TEXT("\n") + FString::Join(Preview.SkippedExternalAssets, TEXT("\n"))));
                 return FReply::Handled();
             }
             FString Question = FString::Printf(TEXT("共收集 %d 个资产，%d 个需要移动到 %s。\n"), Preview.CollectedCount, Preview.CollectedCount - Preview.SkippedCount, *Folder);
+            if (!Preview.SkippedExternalAssets.IsEmpty())
+            {
+                Question += FString::Printf(TEXT("已跳过 %d 个外部资产（引擎/插件资产保留原位）：\n%s\n"),
+                    Preview.SkippedExternalAssets.Num(), *FString::Join(Preview.SkippedExternalAssets, TEXT("\n")));
+            }
             if (bOrganizeByType)
             {
                 TMap<FString, int32> Counts;
@@ -353,6 +420,11 @@ void UX_AssetFlattenLibrary::ShowDialog(const TArray<FAssetData>& Assets, bool b
             FString Message = FString::Printf(TEXT("%s\n收集 %d，已移动 %d，已在目标目录 %d，遗留重定向器 %d。"),
                 Result.bSuccess ? TEXT("完成") : TEXT("未全部完成"), Result.CollectedCount, Result.MovedCount, Result.SkippedCount, Result.RemainingRedirectors.Num());
             Message += TEXT("\n") + FString::Join(Result.Errors, TEXT("\n"));
+            if (!Result.SkippedExternalAssets.IsEmpty())
+            {
+                Message += FString::Printf(TEXT("\n已跳过 %d 个外部资产（引擎/插件资产保留原位）：\n%s"),
+                    Result.SkippedExternalAssets.Num(), *FString::Join(Result.SkippedExternalAssets, TEXT("\n")));
+            }
             Message += TEXT("\n") + FString::Join(Result.RemainingRedirectors, TEXT("\n"));
             if (!Result.bSuccess) { XTOOLS_LOG_WARNING(LogX_AssetEditor, Message); }
             FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));

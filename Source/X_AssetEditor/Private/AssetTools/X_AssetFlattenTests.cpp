@@ -18,6 +18,7 @@
 #include "Materials/MaterialInstanceConstant.h"
 #include "Engine/Texture2D.h"
 #include "UObject/ObjectSaveContext.h"
+#include "Misc/FileHelper.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 namespace XAssetFlattenTests
@@ -112,6 +113,94 @@ bool FXAssetFlattenPreflight::RunTest(const FString& Parameters)
     TestTrue(TEXT("Same folder is a no-op"), Result.bSuccess);
     TestEqual(TEXT("Duplicate selection deduplicated"), Result.CollectedCount, 1);
     TestEqual(TEXT("Already in destination skipped"), Result.SkippedCount, 1);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetMoveProtectedMounts, "XTools.AssetEditor.Flatten.ProtectedMounts",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FXAssetMoveProtectedMounts::RunTest(const FString& Parameters)
+{
+    // Emulate a plugin mount in an isolated Saved directory. Never write to real Engine/plugin content.
+    struct FTestMount
+    {
+        FString Id = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+        FString Root = TEXT("/XToolsProtectedPlugin_") + Id + TEXT("/");
+        FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Automation") / (TEXT("ProtectedMount_") + Id)) + TEXT("/");
+        FTestMount()
+        {
+            IFileManager::Get().MakeDirectory(*Directory, true);
+            FPackageName::RegisterMountPoint(Root, Directory);
+        }
+        ~FTestMount()
+        {
+            FPackageName::UnRegisterMountPoint(Root, Directory);
+            const FString OwnerDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Automation"));
+            if (FPaths::IsUnderDirectory(Directory, OwnerDirectory)) { IFileManager::Get().DeleteDirectory(*Directory, false, true); }
+        }
+    } Mount;
+    XAssetFlattenTests::FFixture PluginFixture;
+    PluginFixture.Root = Mount.Root + TEXT("Assets");
+    auto* PluginAsset = PluginFixture.Make(TEXT("PluginDependency"));
+    if (!TestTrue(TEXT("Save isolated plugin asset"), PluginFixture.Save())) { return false; }
+    const FString PluginPath = PluginAsset->GetPathName();
+    const FString PluginFile = FPackageName::LongPackageNameToFilename(PluginAsset->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
+    TArray<uint8> BeforePluginBytes;
+    if (!TestTrue(TEXT("Read protected file before move"), FFileHelper::LoadFileToArray(BeforePluginBytes, *PluginFile))) { return false; }
+
+    for (bool bOrganize : {false, true})
+    {
+        XAssetFlattenTests::FFixture Fixture;
+        auto* RootAsset = Fixture.Make(TEXT("Source/Root"));
+        auto* LocalDependency = Fixture.Make(TEXT("Source/LocalDependency"));
+        RootAsset->HardReference = PluginAsset;
+        RootAsset->SoftReference = LocalDependency;
+        const FSoftObjectPath EnginePath(TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"));
+        RootAsset->ExternalReference = EnginePath;
+        if (!TestTrue(TEXT("Save mixed-mount dependencies"), Fixture.Save())) { return false; }
+        const FString Target = Fixture.Root / TEXT("Target");
+        auto Move = [bOrganize](const TArray<FAssetData>& Assets, const FString& Folder)
+        {
+            return bOrganize ? UX_AssetFlattenLibrary::OrganizeAssets(Assets, Folder) : UX_AssetFlattenLibrary::FlattenAssets(Assets, Folder);
+        };
+        auto Result = Move({FAssetData(PluginAsset), FAssetData(PluginAsset)}, Target);
+        TestFalse(TEXT("External-only selection is not a successful move"), Result.bSuccess);
+        TestEqual(TEXT("External-only selection moves nothing"), Result.MovedCount, 0);
+        TestEqual(TEXT("External selection deduplicated"), Result.SkippedExternalAssets.Num(), 1);
+        TestTrue(TEXT("Skipped plugin path reported"), Result.SkippedExternalAssets.Contains(PluginPath));
+        TestTrue(TEXT("No project assets explained"), !Result.Errors.IsEmpty());
+        for (const FString& Forbidden : {FString(TEXT("/Engine/Target")), Mount.Root + TEXT("Target"), FString(TEXT("/All/Game/Target")), FString(TEXT("/Game/../Engine/Target")), FPaths::ProjectContentDir()})
+        {
+            Result = Move({FAssetData(RootAsset)}, Forbidden);
+            TestFalse(TEXT("Non-project or non-package destination rejected"), Result.bSuccess);
+            TestEqual(TEXT("Invalid target moves nothing"), Result.MovedCount, 0);
+        }
+        // Engine-root metadata must be skipped before attempting to load or modify that asset.
+        FAssetData EngineSelection(RootAsset);
+        EngineSelection.PackageName = TEXT("/Engine/__XToolsProtected/Root");
+        EngineSelection.PackagePath = TEXT("/Engine/__XToolsProtected");
+        Result = Move({EngineSelection}, Target);
+        TestFalse(TEXT("Engine asset selection rejected"), Result.bSuccess);
+        TestEqual(TEXT("Engine selection moves nothing"), Result.MovedCount, 0);
+        TestTrue(TEXT("Skipped engine path reported"), Result.SkippedExternalAssets.Contains(EngineSelection.GetObjectPathString()));
+
+        Result = Move({FAssetData(RootAsset), FAssetData(PluginAsset), EngineSelection, FAssetData(PluginAsset)}, Target);
+        for (const FString& Error : Result.Errors) { AddError(Error); }
+        TestTrue(TEXT("Local asset referencing protected mounts can move"), Result.bSuccess);
+        TestEqual(TEXT("Only Game dependencies gathered"), Result.CollectedCount, 2);
+        TestEqual(TEXT("Only project assets moved"), Result.MovedCount, 2);
+        TestEqual(TEXT("Both external mounts reported once"), Result.SkippedExternalAssets.Num(), 2);
+        TestEqual(TEXT("External skips separate from already-at-target count"), Result.SkippedCount, 0);
+        TestEqual(TEXT("Plugin asset stays at original path"), PluginAsset->GetPathName(), PluginPath);
+        TestTrue(TEXT("Hard plugin reference preserved"), RootAsset->HardReference == PluginAsset);
+        TestEqual(TEXT("Engine soft reference preserves original path"), RootAsset->ExternalReference.ToSoftObjectPath(), EnginePath);
+        TArray<uint8> AfterPluginBytes;
+        TestTrue(TEXT("Read protected file after move"), FFileHelper::LoadFileToArray(AfterPluginBytes, *PluginFile));
+        TestTrue(TEXT("Protected dependency file unchanged"), BeforePluginBytes == AfterPluginBytes);
+        Result = Move({FAssetData(RootAsset), FAssetData(PluginAsset)}, Target);
+        TestTrue(TEXT("Repeated mixed selection succeeds without moves"), Result.bSuccess);
+        TestEqual(TEXT("Already-at-target project assets counted separately"), Result.SkippedCount, 2);
+        TestEqual(TEXT("Repeated selection still reports external skip"), Result.SkippedExternalAssets.Num(), 1);
+    }
     return true;
 }
 

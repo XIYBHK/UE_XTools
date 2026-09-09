@@ -14,4 +14,6 @@ public:
     TObjectPtr<UX_AssetFlattenTestAsset> HardReference;
     UPROPERTY()
     TSoftObjectPtr<UX_AssetFlattenTestAsset> SoftReference;
+    UPROPERTY()
+    TSoftObjectPtr<UObject> ExternalReference;
 };
