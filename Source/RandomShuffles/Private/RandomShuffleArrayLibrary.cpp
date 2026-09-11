@@ -293,6 +293,13 @@ namespace RandomShuffles {
         if (P <= 0.f) return 0.f;
         if (P >= 1.f) return 1.f;
 
+        // 表尾之外 C > 1/2，第二次必定触发：E[N] = C + 2(1-C) = 2-C。
+        // 因此 P = 1/E[N]，直接求 C，避免将 (0.99, 1) 钳成 99%。
+        if (P > PRDConstantTable[UE_ARRAY_COUNT(PRDConstantTable) - 1].Probability)
+        {
+            return static_cast<float>(2.0 - 1.0 / static_cast<double>(P));
+        }
+
         // 低概率区间（P < 0.01）使用二次近似，避免直接贴边到0.01导致偏差过大
         // 基于表首项拟合：C ~= k * P^2, 其中 k = 0.000156 / (0.01^2) = 1.56
         constexpr float MinTableP = 0.01f;
