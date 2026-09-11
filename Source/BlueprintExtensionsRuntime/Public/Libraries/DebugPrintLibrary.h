@@ -5,6 +5,16 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "DebugPrintLibrary.generated.h"
 
+UENUM(BlueprintType)
+enum class EXToolsDebugPrintMode : uint8
+{
+    Inline UMETA(DisplayName="单行追加"),
+    Replace UMETA(DisplayName="单行覆盖"),
+    NewLine UMETA(DisplayName="逐行"),
+    Labels UMETA(DisplayName="逐行带名称"),
+    Columns UMETA(DisplayName="列对齐")
+};
+
 /** DebugPrint 节点的运行时支持。 */
 UCLASS()
 class BLUEPRINTEXTENSIONSRUNTIME_API UDebugPrintLibrary : public UBlueprintFunctionLibrary
@@ -17,9 +27,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category="XTools|调试", meta=(BlueprintInternalUseOnly="true", WorldContext="WorldContextObject", DevelopmentOnly, DisplayName="打印调试值", ToolTip="打印多个已格式化的调试值。"))
     static void PrintDebugValues(const UObject* WorldContextObject, const TArray<FString>& Values,
-        const TArray<FString>& Labels, bool bShowLabels, bool bNewLine, const FString& Separator,
-        bool bPrintToScreen, bool bPrintToLog, FLinearColor TextColor, float Duration, FName Key);
+        const TArray<FString>& Labels, const FString& Separator, bool bPrintToScreen, bool bPrintToLog,
+        FLinearColor TextColor, float Duration, FName Key, EXToolsDebugPrintMode Mode, FName NodeKey);
 
     static FString FormatDebugValues(const TArray<FString>& Values, const TArray<FString>& Labels,
-        bool bShowLabels, bool bNewLine, const FString& Separator);
+        const FString& Separator, EXToolsDebugPrintMode Mode);
 };

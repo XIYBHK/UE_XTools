@@ -4,6 +4,47 @@
 #include "UObject/Stack.h"
 #include "UObject/UnrealType.h"
 
+namespace
+{
+    FString GetDebugLabel(const TArray<FString>& Labels, int32 Index)
+    {
+        return Labels.IsValidIndex(Index) ? Labels[Index] : FString::FromInt(Index + 1);
+    }
+
+    TArray<FString> BuildDebugLines(const TArray<FString>& Values, const TArray<FString>& Labels,
+        EXToolsDebugPrintMode Mode, const FString& Separator)
+    {
+        TArray<FString> Lines;
+        Lines.Reserve(Values.Num());
+        int32 MaxLabelLength = 0;
+        if (Mode == EXToolsDebugPrintMode::Columns)
+        {
+            for (int32 Index = 0; Index < Values.Num(); ++Index)
+            {
+                MaxLabelLength = FMath::Max(MaxLabelLength, GetDebugLabel(Labels, Index).Len());
+            }
+        }
+        for (int32 Index = 0; Index < Values.Num(); ++Index)
+        {
+            const FString Value = Values[Index];
+            if (Mode == EXToolsDebugPrintMode::NewLine)
+            {
+                Lines.Add(Value);
+            }
+            else
+            {
+                FString Label = GetDebugLabel(Labels, Index);
+                if (Mode == EXToolsDebugPrintMode::Columns)
+                {
+                    Label = Label + FString::ChrN(MaxLabelLength - Label.Len(), TCHAR(' '));
+                }
+                Lines.Add(Label + Separator + Value);
+            }
+        }
+        return Lines;
+    }
+}
+
 FString UDebugPrintLibrary::ValueToDebugString(const int32& Value)
 {
     return FString::FromInt(Value);
@@ -28,25 +69,37 @@ DEFINE_FUNCTION(UDebugPrintLibrary::execValueToDebugString)
 }
 
 FString UDebugPrintLibrary::FormatDebugValues(const TArray<FString>& Values, const TArray<FString>& Labels,
-    bool bShowLabels, bool bNewLine, const FString& Separator)
+    const FString& Separator, EXToolsDebugPrintMode Mode)
 {
-    TArray<FString> Parts;
-    Parts.Reserve(Values.Num());
-    for (int32 Index = 0; Index < Values.Num(); ++Index)
+    if (Mode == EXToolsDebugPrintMode::Inline || Mode == EXToolsDebugPrintMode::Replace)
     {
-        const FString Label = Labels.IsValidIndex(Index) ? Labels[Index] : FString::FromInt(Index + 1);
-        Parts.Add(bShowLabels ? Label + TEXT(" = ") + Values[Index] : Values[Index]);
+        return FString::Join(Values, *Separator);
     }
-    return FString::Join(Parts, bNewLine ? TEXT("\n") : *Separator);
+    return FString::Join(BuildDebugLines(Values, Labels, Mode, Separator), TEXT("\n"));
 }
 
 void UDebugPrintLibrary::PrintDebugValues(const UObject* WorldContextObject, const TArray<FString>& Values,
-    const TArray<FString>& Labels, bool bShowLabels, bool bNewLine, const FString& Separator,
-    bool bPrintToScreen, bool bPrintToLog, FLinearColor TextColor, float Duration, FName Key)
+    const TArray<FString>& Labels, const FString& Separator, bool bPrintToScreen, bool bPrintToLog,
+    FLinearColor TextColor, float Duration, FName Key,
+    EXToolsDebugPrintMode Mode, FName NodeKey)
 {
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-    UKismetSystemLibrary::PrintString(WorldContextObject,
-        FormatDebugValues(Values, Labels, bShowLabels, bNewLine, Separator),
-        bPrintToScreen, bPrintToLog, TextColor, Duration, Key);
+    if (Mode == EXToolsDebugPrintMode::Inline || Mode == EXToolsDebugPrintMode::Replace)
+    {
+        const FName PrintKey = Mode == EXToolsDebugPrintMode::Replace && Key.IsNone() ? NodeKey : Key;
+        UKismetSystemLibrary::PrintString(WorldContextObject,
+            FormatDebugValues(Values, Labels, Separator, Mode),
+            bPrintToScreen, bPrintToLog, TextColor, Duration, PrintKey);
+        return;
+    }
+
+    const TArray<FString> Lines = BuildDebugLines(Values, Labels, Mode, Separator);
+    const FString KeyPrefix = (!Key.IsNone() ? Key : NodeKey).ToString();
+    for (int32 Index = 0; Index < Lines.Num(); ++Index)
+    {
+        const FName LineKey = KeyPrefix.IsEmpty() ? NAME_None : FName(*(KeyPrefix + TEXT("_") + FString::FromInt(Index)));
+        UKismetSystemLibrary::PrintString(WorldContextObject, Lines[Index],
+            bPrintToScreen, bPrintToLog, TextColor, Duration, LineKey);
+    }
 #endif
 }

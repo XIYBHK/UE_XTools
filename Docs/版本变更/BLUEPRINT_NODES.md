@@ -107,7 +107,7 @@
 ## BlueprintExtensions - 蓝图扩展
 
 ### 调试
-- **调试打印（DebugPrint）** - 多类型输入、自动来源名称、逐行/单行输出与屏幕覆盖键；详见 [使用说明](../开发文档/DebugPrint多值调试打印.md)
+- **调试打印（DebugPrint / dayin）** - 拖入自动增输入、自定义名称、五种打印模式、列对齐与屏幕覆盖键；详见 [使用说明](../开发文档/DebugPrint多值调试打印.md)
 
 ### 流程控制
 - **带延迟的WhileLoop** - 事件图 Latent 循环节点，支持循环体延迟与 Break 中断
