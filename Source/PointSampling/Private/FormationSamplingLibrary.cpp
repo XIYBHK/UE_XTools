@@ -316,9 +316,10 @@ namespace FormationSamplingInternal
 						return LeftLayer < RightLayer;
 					}
 
-					const float LeftRadius = Left.Size2D();
-					const float RightRadius = Right.Size2D();
-					if (!FMath::IsNearlyEqual(LeftRadius, RightRadius, 0.01f))
+					// 固定径向分组保证等价关系可传递；两两近似相等会形成循环比较。
+					const double LeftRadius = FMath::RoundToDouble(Left.Size2D() / 0.01);
+					const double RightRadius = FMath::RoundToDouble(Right.Size2D() / 0.01);
+					if (LeftRadius != RightRadius)
 					{
 						return LeftRadius < RightRadius;
 					}

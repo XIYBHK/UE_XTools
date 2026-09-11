@@ -9,6 +9,7 @@
 #include "Math/UnrealMathUtility.h"
 #include "Math/RandomStream.h"
 #include "PointSamplingTypes.h"
+#include "XToolsErrorReporter.h"
 
 // ============================================================================
 // 泊松圆盘采样辅助函数实现 (优化版)
@@ -114,12 +115,23 @@ namespace PoissonSamplingHelpers
             const int32 Dimensions = (BoundsMax.Z - BoundsMin.Z > 0.0f) ? 3 : 2;
             const float CellSize = Radius / FMath::Sqrt(static_cast<float>(Dimensions));
 
-            // 计算网格尺寸
-            GridSize = FIntVector(
-                FMath::CeilToInt((BoundsMax.X - BoundsMin.X) / CellSize) + 1,
-                FMath::CeilToInt((BoundsMax.Y - BoundsMin.Y) / CellSize) + 1,
-                (Dimensions == 3) ? FMath::CeilToInt((BoundsMax.Z - BoundsMin.Z) / CellSize) + 1 : 1
-            );
+            // 在整数转换、乘法和分配前校验；邻域搜索还需要预留 +/-2 的索引余量。
+            if (!FMath::IsFinite(CellSize) || CellSize <= 0.0f || BoundsMin.ContainsNaN() || BoundsMax.ContainsNaN())
+            {
+                XTOOLS_LOG_WARNING(LogPointSampling, TEXT("PoissonSampler: 无效的网格尺寸"));
+                return;
+            }
+            for (int32 Axis = 0; Axis < 3; ++Axis)
+            {
+                const double Cells = (Axis == 2 && Dimensions == 2) ? 1.0
+                    : FMath::CeilToDouble((BoundsMax[Axis] - BoundsMin[Axis]) / CellSize) + 1.0;
+                if (!FMath::IsFinite(Cells) || Cells < 1.0 || Cells > MAX_int32 - 2)
+                {
+                    XTOOLS_LOG_WARNING(LogPointSampling, TEXT("PoissonSampler: 网格轴尺寸超出安全范围"));
+                    return;
+                }
+                GridSize[Axis] = static_cast<int32>(Cells);
+            }
 
             if (bUseSparseGrid)
             {
@@ -128,9 +140,17 @@ namespace PoissonSamplingHelpers
             else
             {
                 // 完整区域采样保留稠密网格；有数量上限的采样使用稀疏网格避免按区域体积分配。
-                const int32 TotalCells = GridSize.X * GridSize.Y * GridSize.Z;
-                Grid.Init(-1, TotalCells);
+                // 稠密网格最多 64 MiB；不通过增大半径来悄悄改变最小间距契约。
+                constexpr int64 MaxGridCells = 64LL * 1024 * 1024 / sizeof(int32);
+                const int64 XYCells = static_cast<int64>(GridSize.X) * GridSize.Y;
+                if (XYCells > MaxGridCells / GridSize.Z)
+                {
+                    XTOOLS_LOG_WARNING(LogPointSampling, TEXT("PoissonSampler: 网格超过 64 MiB 预算，请增大半径或缩小区域"));
+                    return;
+                }
+                Grid.Init(-1, static_cast<int32>(XYCells * GridSize.Z));
             }
+            bValid = true;
         }
 
         /**
@@ -139,17 +159,20 @@ namespace PoissonSamplingHelpers
         TArray<FVector> Sample(int32 MaxAttempts = 30)
         {
             TArray<FVector> Samples;
+            if (!bValid)
+            {
+                return Samples;
+            }
             TArray<FVector> ActiveList;
 			int32 ReserveCount = FMath::Min(MaxSampleCount, 10000);
 			if (MaxSampleCount <= 0)
 			{
 				// 预估最大样本数量并预分配内存
-				const float BoundsVolume = (BoundsMax.X - BoundsMin.X) *
+				const double BoundsVolume = (BoundsMax.X - BoundsMin.X) *
 					(BoundsMax.Y - BoundsMin.Y) *
 					FMath::Max(BoundsMax.Z - BoundsMin.Z, 1.0f);
-				const int32 EstimatedMaxSamples = FMath::CeilToInt(
-					BoundsVolume / (Radius * Radius * Radius) * 2.0f);
-				ReserveCount = FMath::Min(EstimatedMaxSamples, 10000);
+				const double Estimate = BoundsVolume / (static_cast<double>(Radius) * Radius * Radius) * 2.0;
+				ReserveCount = FMath::CeilToInt(FMath::Clamp(Estimate, 0.0, 10000.0));
 			}
 
 			Samples.Reserve(ReserveCount);
@@ -223,6 +246,7 @@ namespace PoissonSamplingHelpers
         TFunction<bool(const FVector&)> DomainPredicate;
         int32 MaxSampleCount;
         bool bUseSparseGrid;
+        bool bValid = false;
 
         /**
          * 生成随机点

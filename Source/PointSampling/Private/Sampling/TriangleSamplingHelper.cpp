@@ -49,11 +49,9 @@ TArray<FVector> FTriangleSamplingHelper::GenerateSolidTriangle(
 			float BaseX = StartX + Col * Spacing;
 			float BaseY = bInverted ? -YPos : YPos; // 倒三角时Y坐标取反
 			
-			// 应用行偏移，使点分布更均匀（类似六边形网格）
-			float XOffset = (Row % 2 == 1) ? Spacing * 0.5f : 0.0f;
-			
+			// 每行居中已形成半间距错位，无需再次偏移奇数行。
 			FVector Point(
-				BaseX + XOffset,
+				BaseX,
 				BaseY,
 				0.0f
 			);

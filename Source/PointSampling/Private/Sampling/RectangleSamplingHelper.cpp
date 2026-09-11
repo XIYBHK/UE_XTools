@@ -6,6 +6,13 @@
 #include "RectangleSamplingHelper.h"
 #include "FormationSamplingInternal.h"
 #include "Math/UnrealMathUtility.h"
+#include "XToolsErrorReporter.h"
+
+namespace
+{
+	// 单次矩形结果最多一百万点（FVector 约 24 MiB），先解析自动点数再分配。
+	constexpr int64 MaxRectanglePoints = 1000000;
+}
 
 TArray<FVector> FRectangleSamplingHelper::GenerateRectangleGrid(
 	int32 RowCount,
@@ -55,12 +62,10 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSolidRectangle(
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
-	if (Spacing <= 0.0f)
+	if (!FMath::IsFinite(Spacing) || Spacing <= 0.0f)
 	{
 		return Points;
 	}
-
-	Points.Reserve(PointCount);
 
 	// 计算行列数
 	int32 Rows = RowCount;
@@ -75,12 +80,18 @@ TArray<FVector> FRectangleSamplingHelper::GenerateSolidRectangle(
 	}
 
 	// 计算实际生成的点数
-	int32 ActualPointCount = Rows * Cols;
+	int64 ActualPointCount64 = static_cast<int64>(Rows) * Cols;
 	// 如果指定了 PointCount，则限制生成数量
 	if (PointCount > 0)
 	{
-		ActualPointCount = FMath::Min(PointCount, Rows * Cols);
+		ActualPointCount64 = FMath::Min(static_cast<int64>(PointCount), ActualPointCount64);
 	}
+	if (ActualPointCount64 <= 0 || ActualPointCount64 > MaxRectanglePoints)
+	{
+		XTOOLS_LOG_WARNING(LogPointSampling, TEXT("GenerateSolidRectangle: 点数超过安全预算"));
+		return Points;
+	}
+	const int32 ActualPointCount = static_cast<int32>(ActualPointCount64);
 	Points.Reserve(ActualPointCount);
 
 	// 计算起始偏移（使阵型居中）
@@ -121,12 +132,10 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	FRandomStream& RandomStream)
 {
 	TArray<FVector> Points;
-	if (Spacing <= 0.0f)
+	if (!FMath::IsFinite(Spacing) || Spacing <= 0.0f)
 	{
 		return Points;
 	}
-
-	Points.Reserve(PointCount);
 
 	// 计算行列数
 	int32 Rows = RowCount;
@@ -135,14 +144,21 @@ TArray<FVector> FRectangleSamplingHelper::GenerateHollowRectangle(
 	{
 		// 自动模式采用正方形边框，并保证边框容量不小于目标点数。
 		const int32 EffectivePointCount = (PointCount > 0) ? PointCount : 20;
-		const int32 PointsPerSide = FMath::Max(2, FMath::CeilToInt((EffectivePointCount + 4) / 4.0f));
+		const int32 PointsPerSide = FMath::Max(2, FMath::CeilToInt((static_cast<double>(EffectivePointCount) + 4.0) / 4.0));
 		Rows = PointsPerSide;
 		Cols = PointsPerSide;
 	}
 
 	// 计算最大可能生成的点数（空心矩形周长）
-	int32 MaxPoints = 2 * (Rows + Cols) - 4; // 四条边的总点数（去掉重复的角点）
-	int32 ActualPointCount = (PointCount > 0) ? FMath::Min(PointCount, MaxPoints) : MaxPoints;
+	const int64 MaxPoints = Rows == 1 ? Cols : Cols == 1 ? Rows
+		: 2LL * (static_cast<int64>(Rows) + Cols) - 4;
+	const int64 ActualPointCount64 = PointCount > 0 ? FMath::Min(static_cast<int64>(PointCount), MaxPoints) : MaxPoints;
+	if (ActualPointCount64 <= 0 || ActualPointCount64 > MaxRectanglePoints)
+	{
+		XTOOLS_LOG_WARNING(LogPointSampling, TEXT("GenerateHollowRectangle: 点数超过安全预算"));
+		return Points;
+	}
+	const int32 ActualPointCount = static_cast<int32>(ActualPointCount64);
 	Points.Reserve(ActualPointCount);
 
 	// 计算起始偏移
