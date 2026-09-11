@@ -22,8 +22,8 @@
 /**
  * 自然排序预解析键（Schwartzian 变换）：每个字符串只解析一次，比较器复用解析结果，
  * 消除排序期间对同一子串的重复提取与重复文化敏感比较。
- * 段提取与比较语义与逐字符实现完全一致：数字段识别、前导零处理、
- * 文本段文化敏感比较（当前文化的 FText Primary 级别）、末尾按原串总长度决胜。
+ * 数字段忽略前导零，文本段采用当前文化的 FText Primary 级别比较；
+ * 分段序列按字典序比较，完整键等价后按原串总长度决胜。
  */
 struct FNaturalSortKey
 {
@@ -80,11 +80,11 @@ static FNaturalSortKey BuildNaturalSortKey(const FString& Source)
 }
 
 /**
- * 比较两个自然排序键，语义与逐字符比较逐条对齐：
+ * 比较两个自然排序键：
  * - 数字段 vs 数字段：先比有效数字长度，再逐字符比较；
  * - 文本段 vs 文本段：当前文化的文化敏感比较（与 FText::CompareTo 的 Primary 级别一致）；
- * - 段类型不匹配（一侧数字一侧文本）：数字侧相当于空文本段，与逐字符实现的提取行为一致；
- * - 全部公共段相等后：按原串总长度决胜（含前导零差异）。
+ * - 段类型不匹配：数字段先于文本段；
+ * - 公共段相等后：较短分段序列优先，完整键等价才按原串长度决胜。
  */
 static int32 CompareNaturalSortKeys(const FNaturalSortKey& A, const FNaturalSortKey& B)
 {
@@ -121,17 +121,16 @@ static int32 CompareNaturalSortKeys(const FNaturalSortKey& A, const FNaturalSort
         }
         else
         {
-            // 一侧数字段一侧文本段：逐字符实现中数字侧提取出的非数字段为空串
-            const int32 Result = SegmentA.bNumeric
-                ? FTextComparison::CompareTo(FString(), SegmentB.Text, ETextComparisonLevel::Primary)
-                : FTextComparison::CompareTo(SegmentA.Text, FString(), ETextComparisonLevel::Primary);
-            if (Result != 0)
-            {
-                return Result;
-            }
+            // 段类型必须有固定顺序，不能让文化比较中可忽略的文本与数字等价。
+            return SegmentA.bNumeric ? -1 : 1;
         }
     }
 
+    // 分段键按字典序比较：真前缀先于带后缀的键；仅完整键等价时按原串长度决胜。
+    if (A.Segments.Num() != B.Segments.Num())
+    {
+        return A.Segments.Num() < B.Segments.Num() ? -1 : 1;
+    }
     if (A.TotalLength < B.TotalLength) return -1;
     if (A.TotalLength > B.TotalLength) return 1;
 
