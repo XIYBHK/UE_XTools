@@ -159,7 +159,7 @@ bool FFormationMathUtils_ProducesBoundedForces::RunTest(const FString& Parameter
 	TestFalse(TEXT("平行分离路径不应相交"),
 		FFormationMathUtils::DoPathsIntersect(
 			FVector(-10.0f, 10.0f, 0.0f), FVector(10.0f, 10.0f, 0.0f),
-			FVector(-10.0f, -10.0f, 0.0f), FVector(10.0f, -10.0f, 0.0f)));
+			FVector(-10.0f, -10.0f, 0.0f), FVector(10.0f, -10.0f, 0.0f), 0.0f));
 
 	TestTrue(TEXT("分离力应远离邻居"), FFormationMathUtils::CalculateSeparationForce(0, Positions, Params).X < 0.0f);
 	TestTrue(TEXT("对齐力应朝邻居速度方向"), FFormationMathUtils::CalculateAlignmentForce(0, Positions, Velocities, Params).X > 0.0f);

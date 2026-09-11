@@ -154,7 +154,18 @@
 - 把“结果不稳定”夸大为越界或崩溃，却没有算法控制流证据。
 - 为消除疑点引入比问题更复杂的全局缓存、兼容层或重复抽象。
 
-## 9. 审查交付格式
+## 9. 算法契约与参考资料
+
+算法修复先明确数学契约，再用小规模反例、全排列或参考计算验证，避免仅对照实现自身的公式。
+
+- 排序：遵守 [C++ 严格弱序](https://eel.is/c++draft/concept.strictweakorder)，比较关系及等价关系都必须传递。[字典序](https://en.cppreference.com/w/cpp/algorithm/lexicographical_compare.html)对公共前缀相同的序列先比较段数；浮点容差分组使用固定键，不能用成对近似相等充当排序等价关系。
+- 容量：[SEI CERT MEM35-C](https://wiki.sei.cmu.edu/confluence/display/c/MEM35-C.+Allocate+sufficient+memory+for+an+object)要求在整数转换、容量乘法和分配前验证范围。整数上限与应用内存预算是两层约束；64 MiB 泊松稠密网格、一百万矩形点是本项目的防护预算，并非算法标准。
+- 泊松采样：[SciPy PoissonDisk 文档](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.qmc.PoissonDisk.html)说明最小间距及小半径下的内存成本。容量防护不能通过静默修改半径破坏调用方指定的间距。
+- 路径距离：参考 [Geometric Tools 线段距离实现](https://raw.githubusercontent.com/davideberly/GeometricTools/master/GTE/Mathematics/DistSegmentSegment.h)中的参数区间与退化处理。XY 平面内先判相交，不相交时取四个端点到对侧线段距离的最小值；核验 UE 原生投影函数的零长度语义，测试近似平行及交换对称性。
+- 三角网格：[MPB 三角晶格示例](https://mpb.readthedocs.io/en/latest/Scheme_Tutorial/#bands-of-a-triangular-lattice)给出 60° 基向量。行距为间距乘以 `sqrt(3)/2`，逐行居中已经形成半间距错位，不再叠加奇偶偏移。
+- PRD：项目使用的[社区推导](https://gaming.stackexchange.com/questions/161430/calculating-the-constant-c-in-dota-2-pseudo-random-distribution)以长期概率 `P = 1 / E[N]` 求常数，不属于 Valve 官方规范。在 `C > 1/2` 区间最多等待两次，故 `E[N] = 2-C`，得到 `C = 2-1/P`；测试应枚举等待时间分布验证请求概率。
+
+## 10. 审查交付格式
 
 每项发现至少包含：
 

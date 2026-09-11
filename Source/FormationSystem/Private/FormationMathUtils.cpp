@@ -1,92 +1,38 @@
 ﻿#include "FormationMathUtils.h"
 #include "FormationLog.h"
+#include "Math/UnrealMathUtility.h"
 
 bool FFormationMathUtils::DoPathsIntersect(
     const FVector& Start1, const FVector& End1,
     const FVector& Start2, const FVector& End2,
     float Threshold)
 {
-    // 使用2D投影进行路径相交检测（忽略Z轴）
-    FVector2D A(Start1.X, Start1.Y);
-    FVector2D B(End1.X, End1.Y);
-    FVector2D C(Start2.X, Start2.Y);
-    FVector2D D(End2.X, End2.Y);
-
-    // 计算线段AB和CD的方向向量
-    FVector2D AB = B - A;
-    FVector2D CD = D - C;
-    FVector2D AC = C - A;
-
-    // 使用叉积判断相交
-    float CrossAB_CD = AB.X * CD.Y - AB.Y * CD.X;
-    
-    // 如果线段平行，检查是否重叠
-    if (FMath::IsNearlyZero(CrossAB_CD, 1e-6f))
+    if (Start1.ContainsNaN() || End1.ContainsNaN() || Start2.ContainsNaN() || End2.ContainsNaN()
+        || !FMath::IsFinite(Threshold))
     {
-        // 平行线段，检查是否在同一直线上且重叠
-        float CrossAC_AB = AC.X * AB.Y - AC.Y * AB.X;
-        if (FMath::IsNearlyZero(CrossAC_AB, 1e-6f))
-        {
-            // 在同一直线上，检查重叠
-            float DotAB = FVector2D::DotProduct(AB, AB);
-            if (DotAB > 1e-6f)
-            {
-                float t1 = FVector2D::DotProduct(AC, AB) / DotAB;
-                FVector2D AD = D - A;
-                float t2 = FVector2D::DotProduct(AD, AB) / DotAB;
-                
-                float tMin = FMath::Min(t1, t2);
-                float tMax = FMath::Max(t1, t2);
-                
-                return (tMax >= 0.0f && tMin <= 1.0f);
-            }
-        }
         return false;
     }
 
-    // 计算交点参数
-    float t = (AC.X * CD.Y - AC.Y * CD.X) / CrossAB_CD;
-    float u = (AC.X * AB.Y - AC.Y * AB.X) / CrossAB_CD;
-
-    // 检查交点是否在两条线段上（精确相交）
-    if (t >= 0.0f && t <= 1.0f && u >= 0.0f && u <= 1.0f)
+    // 保持 XY 投影契约。先处理相交，否则平面线段的最近点对至少包含一个端点。
+    const FVector A(Start1.X, Start1.Y, 0.0);
+    const FVector B(End1.X, End1.Y, 0.0);
+    const FVector C(Start2.X, Start2.Y, 0.0);
+    const FVector D(End2.X, End2.Y, 0.0);
+    const double Cross = (B.X - A.X) * (D.Y - C.Y) - (B.Y - A.Y) * (D.X - C.X);
+    FVector Intersection;
+    if (Cross != 0.0 && FMath::SegmentIntersection2D(A, B, C, D, Intersection))
     {
         return true;
     }
 
-    // 如果 Threshold > 0，检查两条线段的最短距离是否小于阈值
-    if (Threshold > 0.0f)
-    {
-        // 将 t 和 u 限制到 [0,1] 范围，计算两条线段间最近点对的距离
-        float ClampedT = FMath::Clamp(t, 0.0f, 1.0f);
-        float ClampedU = FMath::Clamp(u, 0.0f, 1.0f);
-
-        FVector2D ClosestOnAB = A + AB * ClampedT;
-        FVector2D ClosestOnCD = C + CD * ClampedU;
-
-        // 重新计算：从 ClosestOnAB 到 CD 的最近点
-        float CDLenSq = FVector2D::DotProduct(CD, CD);
-        if (CDLenSq > 1e-6f)
-        {
-            FVector2D AClosestToC = ClosestOnAB - C;
-            ClampedU = FMath::Clamp(FVector2D::DotProduct(AClosestToC, CD) / CDLenSq, 0.0f, 1.0f);
-            ClosestOnCD = C + CD * ClampedU;
-        }
-
-        // 从 ClosestOnCD 到 AB 的最近点
-        float ABLenSq = FVector2D::DotProduct(AB, AB);
-        if (ABLenSq > 1e-6f)
-        {
-            FVector2D CClosestToA = ClosestOnCD - A;
-            ClampedT = FMath::Clamp(FVector2D::DotProduct(CClosestToA, AB) / ABLenSq, 0.0f, 1.0f);
-            ClosestOnAB = A + AB * ClampedT;
-        }
-
-        float DistSq = FVector2D::DistSquared(ClosestOnAB, ClosestOnCD);
-        return (DistSq <= Threshold * Threshold);
-    }
-
-    return false;
+    // UE 的点到线段投影支持零长度线段；四个方向同时检查保证交换路径后结果一致。
+    const double MinDistanceSquared = FMath::Min(
+        FMath::Min(FVector::DistSquared(A, FMath::ClosestPointOnSegment(A, C, D)),
+                   FVector::DistSquared(B, FMath::ClosestPointOnSegment(B, C, D))),
+        FMath::Min(FVector::DistSquared(C, FMath::ClosestPointOnSegment(C, A, B)),
+                   FVector::DistSquared(D, FMath::ClosestPointOnSegment(D, A, B))));
+    const double SafeThreshold = FMath::Max(0.0, static_cast<double>(Threshold));
+    return MinDistanceSquared <= SafeThreshold * SafeThreshold;
 }
 
 // TODO: 使用空间分区将 O(N^2) 邻域查询优化为 O(N)

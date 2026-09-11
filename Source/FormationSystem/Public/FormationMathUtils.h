@@ -11,12 +11,12 @@ class FORMATIONSYSTEM_API FFormationMathUtils
 {
 public:
     /**
-     * 检测两条路径是否相交
+     * 检测两条路径的 XY 投影是否相交或距离在阈值内，支持静止路径
      * @param Start1 第一条路径的起点
      * @param End1 第一条路径的终点
      * @param Start2 第二条路径的起点
      * @param End2 第二条路径的终点
-     * @param Threshold 相交检测阈值
+     * @param Threshold 最小距离阈值（厘米）；非正值只检测相交
      * @return 是否相交
      */
     static bool DoPathsIntersect(
@@ -91,4 +91,4 @@ public:
      * @return 缓动后的进度
      */
     static float ApplyEasing(float Progress, float Strength);
-}; 
+};
