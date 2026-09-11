@@ -27,6 +27,7 @@
 
 ## K2Node 与编辑器扩展
 
+- [DebugPrint 多值调试打印](开发文档/DebugPrint多值调试打印.md)
 - [资产移动与按类型归类](开发文档/资产扁平移动.md)
 - [UE K2Node 开发指南](开发文档/UE%20K2Node%20开发指南.md)
 - [UE K2Node 最佳实践清单](开发文档/UE%20K2Node%20最佳实践清单.md)
