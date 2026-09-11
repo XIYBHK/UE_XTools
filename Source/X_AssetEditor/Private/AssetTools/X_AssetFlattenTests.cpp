@@ -88,6 +88,51 @@ namespace XAssetFlattenTests
     };
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetFlattenAutoRenameExecution, "XTools.AssetEditor.Flatten.AutoRenameExecution",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FXAssetFlattenAutoRenameExecution::RunTest(const FString& Parameters)
+{
+    for (bool bOrganize : {false, true})
+    {
+        XAssetFlattenTests::FFixture Fixture;
+        auto* A = Fixture.Make(TEXT("A/Same"));
+        auto* B = Fixture.Make(TEXT("B/Same"));
+        auto* Ref = Fixture.Make(TEXT("Outside/Referencer"));
+        Ref->HardReference = A;
+        Ref->SoftReference = B;
+        if (!TestTrue(TEXT("Save fixtures"), Fixture.Save())) { return false; }
+        const FString Target = Fixture.Root / TEXT("Target");
+        const auto Result = bOrganize
+            ? UX_AssetFlattenLibrary::OrganizeAssetsAutoRename({FAssetData(B), FAssetData(A)}, Target)
+            : UX_AssetFlattenLibrary::FlattenAssetsAutoRename({FAssetData(B), FAssetData(A)}, Target);
+        TestEqual(TEXT("Both same-name assets actually moved"), Result.MovedCount, 2);
+        const FString Folder = bOrganize ? Target / TEXT("Data") : Target;
+        TestEqual(TEXT("Lexically first keeps name"), A->GetOutermost()->GetName(), Folder / TEXT("Same"));
+        TestEqual(TEXT("RenameAssets receives planned suffix"), B->GetOutermost()->GetName(), Folder / TEXT("Same_01"));
+        TestEqual(TEXT("One mapping recorded"), Result.AutoRenamedAssets.Num(), 1);
+        TestTrue(TEXT("Hard reference still points to first asset"), Ref->HardReference == A);
+        TestTrue(TEXT("Soft reference still resolves to second asset"), Ref->SoftReference.LoadSynchronous() == B);
+        TestTrue(TEXT("Renamed package saved"), FPackageName::DoesPackageExist(Folder / TEXT("Same_01")));
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetFlattenMissingDependency, "XTools.AssetEditor.Flatten.MissingDependencyDiagnostic",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FXAssetFlattenMissingDependency::RunTest(const FString& Parameters)
+{
+    XAssetFlattenTests::FFixture Fixture;
+    auto* Ref = Fixture.Make(TEXT("Source/Referencer"));
+    const FString Missing = Fixture.Root / TEXT("Old/Missing");
+    Ref->SoftReference = FSoftObjectPath(Missing + TEXT(".Missing"));
+    if (!TestTrue(TEXT("Save missing-path fixture"), Fixture.Save())) { return false; }
+    const auto Result = UX_AssetFlattenLibrary::FlattenAssets({FAssetData(Ref)}, Fixture.Root / TEXT("Target"));
+    TestEqual(TEXT("Missing dependency prevents partial moves"), Result.MovedCount, 0);
+    TestTrue(TEXT("Report missing package and referencing source"), Result.Errors.ContainsByPredicate(
+        [&](const FString& Error) { return Error.Contains(TEXT("依赖包不存在")) && Error.Contains(Missing) && Error.Contains(Ref->GetOutermost()->GetName()); }));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXAssetFlattenPreflight, "XTools.AssetEditor.Flatten.Preflight",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FXAssetFlattenPreflight::RunTest(const FString& Parameters)

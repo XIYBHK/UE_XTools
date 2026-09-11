@@ -21,6 +21,7 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "X_AssetEditor.h"
 #include "XToolsErrorReporter.h"
@@ -88,7 +89,7 @@ namespace XAssetFlatten
         return TEXT("Other");
     }
 
-    bool BuildPlan(const TArray<FAssetData>& Assets, FString& Folder, TArray<FEntry>& Entries, FX_AssetFlattenResult& Result, bool bOrganizeByType = false)
+    bool BuildPlan(const TArray<FAssetData>& Assets, FString& Folder, TArray<FEntry>& Entries, FX_AssetFlattenResult& Result, bool bOrganizeByType = false, bool bAutoRename = false)
     {
         Folder.TrimStartAndEndInline();
         while (Folder.EndsWith(TEXT("/"))) { Folder.LeftChopInline(1); }
@@ -106,6 +107,7 @@ namespace XAssetFlatten
         Registry.SearchAllAssets(true);
         TArray<FName> Queue;
         TSet<FName> Seen;
+        TMap<FName, TArray<FString>> DependencySources;
         for (const FAssetData& Data : Assets)
         {
             if (!Data.IsValid())
@@ -142,7 +144,14 @@ namespace XAssetFlatten
             }
             UPackage* LoadedPackage = FindPackage(nullptr, *Package);
             FString SourceFile;
-            if (!FPackageName::DoesPackageExist(Package, &SourceFile) || (LoadedPackage && LoadedPackage->IsDirty()))
+            if (!FPackageName::DoesPackageExist(Package, &SourceFile))
+            {
+                const TArray<FString>* Sources = DependencySources.Find(PackageName);
+                Result.Errors.Add(FString::Printf(TEXT("依赖包不存在：%s；引用来源：%s。可能是旧路径或缺失资产，请修复来源引用或恢复原资产；不能通过保存不存在的包解决。"),
+                    *Package, Sources ? *FString::Join(*Sources, TEXT("、")) : TEXT("直接选择的资产")));
+                continue;
+            }
+            if (LoadedPackage && LoadedPackage->IsDirty())
             {
                 Result.Errors.Add(FString::Printf(TEXT("请先保存资产，再收集磁盘依赖：%s"), *Package));
                 continue;
@@ -174,6 +183,7 @@ namespace XAssetFlatten
             Dependencies.Sort(FNameLexicalLess());
             for (FName Dependency : Dependencies)
             {
+                DependencySources.FindOrAdd(Dependency).AddUnique(Package);
                 // Engine/plugin dependencies stay at their original paths; never traverse into their mounts.
                 if (IsProjectAssetPackage(Dependency.ToString()) && !Seen.Contains(Dependency))
                 {
@@ -184,15 +194,40 @@ namespace XAssetFlatten
         Entries.Sort([](const FEntry& A, const FEntry& B) { return A.Data.PackageName.LexicalLess(B.Data.PackageName); });
         Result.CollectedCount = Entries.Num();
         TMap<FName, FName> Destinations;
-        for (const FEntry& Entry : Entries)
+        TSet<FName> Occupied;
+        for (FEntry& Entry : Entries)
         {
-            const FName Destination(*Entry.Destination);
+            FName Destination(*Entry.Destination);
+            if (Destination == Entry.Data.PackageName)
+            {
+                Destinations.Add(Destination, Entry.Data.PackageName);
+                Occupied.Add(Destination);
+                ++Result.SkippedCount;
+                continue;
+            }
+            if (bAutoRename)
+            {
+                const FString Base = Entry.Destination;
+                int32 Suffix = 0;
+                while (true)
+                {
+                    const FName Candidate(*Entry.Destination);
+                    TArray<FAssetData> Existing;
+                    Registry.GetAssetsByPackageName(Candidate, Existing);
+                    if (!Occupied.Contains(Candidate) && Existing.IsEmpty() && !FindPackage(nullptr, *Candidate.ToString()) && !FPackageName::DoesPackageExist(Candidate.ToString())) { Destination = Candidate; break; }
+                    ++Suffix;
+                    Entry.Destination = Base + FString::Printf(TEXT("_%02d"), Suffix);
+                }
+                if (Destination != FName(*Base))
+                {
+                    Result.AutoRenamedAssets.Add(FString::Printf(TEXT("%s -> %s"), *Entry.Data.PackageName.ToString(), *Destination.ToString()));
+                }
+            }
             if (const FName* Other = Destinations.Find(Destination))
             {
                 Result.Errors.Add(FString::Printf(TEXT("同名冲突：%s 与 %s -> %s"), *Other->ToString(), *Entry.Data.PackageName.ToString(), *Entry.Destination));
             }
-            Destinations.Add(Destination, Entry.Data.PackageName);
-            if (Destination == Entry.Data.PackageName) { ++Result.SkippedCount; continue; }
+            Destinations.Add(Destination, Entry.Data.PackageName); Occupied.Add(Destination);
             TArray<FAssetData> Existing;
             Registry.GetAssetsByPackageName(Destination, Existing);
             if (!Existing.IsEmpty() || FindPackage(nullptr, *Entry.Destination) || FPackageName::DoesPackageExist(Entry.Destination))
@@ -216,9 +251,19 @@ FX_AssetFlattenResult UX_AssetFlattenLibrary::FlattenAssets(const TArray<FAssetD
     return MoveAssets(Assets, TargetFolder, false);
 }
 
+FX_AssetFlattenResult UX_AssetFlattenLibrary::FlattenAssetsAutoRename(const TArray<FAssetData>& Assets, const FString& TargetFolder)
+{
+    return MoveAssets(Assets, TargetFolder, false, true);
+}
+
 FX_AssetFlattenResult UX_AssetFlattenLibrary::OrganizeAssets(const TArray<FAssetData>& Assets, const FString& TargetFolder)
 {
     return MoveAssets(Assets, TargetFolder, true);
+}
+
+FX_AssetFlattenResult UX_AssetFlattenLibrary::OrganizeAssetsAutoRename(const TArray<FAssetData>& Assets, const FString& TargetFolder)
+{
+    return MoveAssets(Assets, TargetFolder, true, true);
 }
 
 FX_AssetFlattenResult UX_AssetFlattenLibrary::OrganizeSelectedAssets(const FString& TargetFolder)
@@ -228,9 +273,8 @@ FX_AssetFlattenResult UX_AssetFlattenLibrary::OrganizeSelectedAssets(const FStri
     return OrganizeAssets(Assets, TargetFolder);
 }
 
-FX_AssetFlattenResult UX_AssetFlattenLibrary::MoveAssets(const TArray<FAssetData>& Assets, const FString& TargetFolder, bool bOrganizeByType)
+static FX_AssetFlattenResult ExecutePlan(const TArray<XAssetFlatten::FEntry>& Entries, FX_AssetFlattenResult Result)
 {
-    FX_AssetFlattenResult Result;
     if (!IsInGameThread() || !GEditor || GEditor->PlayWorld || XAssetFlatten::bMoving)
     {
         Result.Errors.Add(TEXT("只能在编辑器游戏线程、非 PIE 且没有正在执行的资产移动时操作。"));
@@ -243,9 +287,6 @@ FX_AssetFlattenResult UX_AssetFlattenLibrary::MoveAssets(const TArray<FAssetData
         Result.Errors.Add(TEXT("请等待当前重定向器修复完成。"));
         return Result;
     }
-    FString Folder = TargetFolder;
-    TArray<XAssetFlatten::FEntry> Entries;
-    if (!XAssetFlatten::BuildPlan(Assets, Folder, Entries, Result, bOrganizeByType)) { return Result; }
     TArray<TStrongObjectPtr<UObject>> KeepAlive;
     TArray<FAssetRenameData> Renames;
     TArray<FString> OldPaths;
@@ -266,7 +307,124 @@ FX_AssetFlattenResult UX_AssetFlattenLibrary::MoveAssets(const TArray<FAssetData
             continue;
         }
         KeepAlive.Emplace(Asset);
-        Renames.Emplace(Asset, FPackageName::GetLongPackagePath(Entry.Destination), Entry.Data.AssetName.ToString());
+        Renames.Emplace(Asset, FPackageName::GetLongPackagePath(Entry.Destination), FPackageName::GetShortName(Entry.Destination));
+        OldPaths.Add(Entry.Data.GetObjectPathString());
+    }
+    if (!Result.Errors.IsEmpty()) { return Result; }
+    if (Renames.IsEmpty()) { Result.bSuccess = true; return Result; }
+    IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+    TSet<FName> PackagesToRefresh;
+    for (const FString& OldPath : OldPaths)
+    {
+        const FName OldPackage(*FPackageName::ObjectPathToPackageName(OldPath));
+        PackagesToRefresh.Add(OldPackage);
+        TArray<FName> Referencers;
+        Registry.GetReferencers(OldPackage, Referencers, UE::AssetRegistry::EDependencyCategory::Package);
+        PackagesToRefresh.Append(Referencers);
+    }
+    const bool bRenamed = AssetTools.RenameAssets(Renames);
+    TArray<UObjectRedirector*> Redirectors;
+    bool bSaved = true;
+    for (int32 Index = 0; Index < Renames.Num(); ++Index)
+    {
+        UObject* Asset = KeepAlive[Index].Get();
+        const FString Expected = Renames[Index].NewPackagePath / Renames[Index].NewName;
+        if (Asset->GetOutermost()->GetName() != Expected)
+        {
+            Result.Errors.Add(FString::Printf(TEXT("未移动：%s"), *OldPaths[Index]));
+            continue;
+        }
+        ++Result.MovedCount;
+        PackagesToRefresh.Add(Asset->GetOutermost()->GetFName());
+        if (Asset->GetOutermost()->IsDirty() || !FPackageName::DoesPackageExist(Expected))
+        {
+            bSaved = false;
+            Result.Errors.Add(FString::Printf(TEXT("移动后的包未成功保存，保留重定向器：%s"), *Expected));
+        }
+        if (UObjectRedirector* Redirector = FindObject<UObjectRedirector>(nullptr, *OldPaths[Index]))
+        {
+            Redirectors.Add(Redirector);
+        }
+    }
+    TArray<FString> FilesToRefresh;
+    for (FName PackageName : PackagesToRefresh)
+    {
+        FString Filename;
+        if (FPackageName::DoesPackageExist(PackageName.ToString(), &Filename)) { FilesToRefresh.Add(Filename); }
+    }
+    Registry.ScanModifiedAssetFiles(FilesToRefresh);
+    if (bSaved && !Redirectors.IsEmpty())
+    {
+#if XTOOLS_ENGINE_5_4_OR_LATER
+        if (FApp::IsUnattended() || GIsRunningUnattendedScript || IsRunningCommandlet())
+        {
+            Result.Errors.Add(TEXT("资产已移动；此引擎版本的重定向器修复需要交互窗口。已保留重定向器，请在内容浏览器中修复引用。"));
+        }
+        else
+#endif
+        {
+            AssetTools.FixupReferencers(Redirectors, true, ERedirectFixupMode::DeleteFixedUpRedirectors);
+        }
+    }
+    for (const FString& OldPath : OldPaths)
+    {
+        const FAssetData Data = Registry.GetAssetByObjectPath(FSoftObjectPath(OldPath));
+        if (Data.IsValid() && Data.IsRedirector()) { Result.RemainingRedirectors.Add(OldPath); }
+    }
+    for (FName PackageName : PackagesToRefresh)
+    {
+        if (UPackage* Package = FindPackage(nullptr, *PackageName.ToString()))
+        {
+            if (Package->IsDirty())
+            {
+                Result.Errors.Add(FString::Printf(TEXT("关联包仍有未保存修改，无法确认引用已落盘，请保存后检查：%s"), *PackageName.ToString()));
+            }
+        }
+    }
+    if (!bRenamed) { Result.Errors.Add(TEXT("引擎批量重命名未全部成功；已移动项目不会自动回滚。")); }
+    Result.bSuccess = bRenamed && Result.Errors.IsEmpty() && Result.RemainingRedirectors.IsEmpty();
+    return Result;
+}
+
+FX_AssetFlattenResult UX_AssetFlattenLibrary::MoveAssets(const TArray<FAssetData>& Assets, const FString& TargetFolder, bool bOrganizeByType, bool bAutoRename)
+{
+    FX_AssetFlattenResult Result;
+    if (!IsInGameThread() || !GEditor || GEditor->PlayWorld || XAssetFlatten::bMoving)
+    {
+        Result.Errors.Add(TEXT("只能在编辑器游戏线程、非 PIE 且没有正在执行的资产移动时操作。"));
+        return Result;
+    }
+    TGuardValue<bool> Guard(XAssetFlatten::bMoving, true);
+    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+    if (AssetTools.IsFixupReferencersInProgress())
+    {
+        Result.Errors.Add(TEXT("请等待当前重定向器修复完成。"));
+        return Result;
+    }
+    FString Folder = TargetFolder;
+    TArray<XAssetFlatten::FEntry> Entries;
+    if (!XAssetFlatten::BuildPlan(Assets, Folder, Entries, Result, bOrganizeByType, bAutoRename)) { return Result; }
+    TArray<TStrongObjectPtr<UObject>> KeepAlive;
+    TArray<FAssetRenameData> Renames;
+    TArray<FString> OldPaths;
+    for (const XAssetFlatten::FEntry& Entry : Entries)
+    {
+        if (!XAssetFlatten::IsProjectAssetPackage(Entry.Data.PackageName.ToString()) ||
+            !XAssetFlatten::IsProjectAssetPackage(Entry.Destination))
+        {
+            Result.Errors.Add(TEXT("移动源和目标都必须位于项目 /Game，已阻止引擎或插件目录操作。"));
+            continue;
+        }
+        if (Entry.Data.PackageName == FName(*Entry.Destination)) { continue; }
+        UObject* Asset = Entry.Data.GetAsset();
+        if (!IsValid(Asset) || Asset->IsA<UWorld>() || Asset->GetOutermost()->IsDirty() ||
+            Asset->GetOutermost()->GetFName() != Entry.Data.PackageName)
+        {
+            Result.Errors.Add(FString::Printf(TEXT("加载失败或加载后包状态改变，请保存并重试：%s"), *Entry.Data.GetObjectPathString()));
+            continue;
+        }
+        KeepAlive.Emplace(Asset);
+        Renames.Emplace(Asset, FPackageName::GetLongPackagePath(Entry.Destination), FPackageName::GetShortName(Entry.Destination));
         OldPaths.Add(Entry.Data.GetObjectPathString());
     }
     if (!Result.Errors.IsEmpty()) { return Result; } // Preflight all assets before the first mutation.
@@ -357,6 +515,7 @@ void UX_AssetFlattenLibrary::ShowDialog(const TArray<FAssetData>& Assets, bool b
     TSharedRef<SWindow> Window = SNew(SWindow).Title(bOrganizeByType ? LOCTEXT("OrganizeTitle", "按类型移动资产及依赖") : LOCTEXT("Title", "扁平移动资产及依赖"))
         .ClientSize(FVector2D(660, 540)).SupportsMinimize(false).SupportsMaximize(false);
     TSharedRef<FString> SelectedFolder = MakeShared<FString>();
+    TSharedRef<bool> bAutoRename = MakeShared<bool>(false);
     FPathPickerConfig PathConfig;
     // Require an explicit choice; do not fabricate a directory or rely on version-specific default callbacks.
     PathConfig.bAllowReadOnlyFolders = false;
@@ -377,6 +536,11 @@ void UX_AssetFlattenLibrary::ShowDialog(const TArray<FAssetData>& Assets, bool b
             ? LOCTEXT("OrganizeHelp", "移动选中资产及 /Game 硬软依赖，按类型放入 Blueprints、Materials、Meshes、Textures 等子目录，其他类型放入 Other。请先保存资产；目标路径冲突会阻止移动。")
             : LOCTEXT("Help", "移动选中资产及 /Game 硬软依赖。请先保存资产；同名冲突会阻止移动。"))]
         + SVerticalBox::Slot().AutoHeight().Padding(12, 0)
+        [SNew(SCheckBox)
+            .IsChecked_Lambda([bAutoRename]() { return *bAutoRename ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+            .OnCheckStateChanged_Lambda([bAutoRename](ECheckBoxState State) { *bAutoRename = (State == ECheckBoxState::Checked); })
+            [SNew(STextBlock).Text(LOCTEXT("AutoRename", "同名冲突时自动追加 _01、_02 后缀"))]]
+        + SVerticalBox::Slot().AutoHeight().Padding(12, 0)
         [SNew(STextBlock).AutoWrapText(true).Text(LOCTEXT("ProjectOnlyHelp", "引擎和插件资产保留原位。请在项目内容目录树中选择目标；右键目录可新建文件夹。"))]
         + SVerticalBox::Slot().FillHeight(1).Padding(12)[PathPicker]
         + SVerticalBox::Slot().AutoHeight().Padding(12, 0)
@@ -388,12 +552,12 @@ void UX_AssetFlattenLibrary::ShowDialog(const TArray<FAssetData>& Assets, bool b
         + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(12)
         [SNew(SButton).Text(LOCTEXT("Move", "检查并移动"))
         .IsEnabled_Lambda([SelectedFolder]() { return XAssetFlatten::IsProjectContentFolder(*SelectedFolder); })
-        .OnClicked_Lambda([Assets, SelectedFolder, WeakWindow, bOrganizeByType]()
+        .OnClicked_Lambda([Assets, SelectedFolder, WeakWindow, bOrganizeByType, bAutoRename]()
         {
             FString Folder = *SelectedFolder;
             TArray<XAssetFlatten::FEntry> Entries;
             FX_AssetFlattenResult Preview;
-            if (!XAssetFlatten::BuildPlan(Assets, Folder, Entries, Preview, bOrganizeByType))
+            if (!XAssetFlatten::BuildPlan(Assets, Folder, Entries, Preview, bOrganizeByType, *bAutoRename))
             {
                 FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Join(Preview.Errors, TEXT("\n")) +
                     TEXT("\n") + FString::Join(Preview.SkippedExternalAssets, TEXT("\n"))));
@@ -414,9 +578,13 @@ void UX_AssetFlattenLibrary::ShowDialog(const TArray<FAssetData>& Assets, bool b
                 Folders.Sort();
                 for (const FString& DestinationFolder : Folders) { Question += FString::Printf(TEXT("%s：%d\n"), *DestinationFolder, Counts[DestinationFolder]); }
             }
+            if (!Preview.AutoRenamedAssets.IsEmpty())
+            {
+                Question += TEXT("自动改名：\n") + FString::Join(Preview.AutoRenamedAssets, TEXT("\n")) + TEXT("\n");
+            }
             Question += TEXT("共享依赖也会移动，其他引用者由引擎更新。此操作会保存资产，不能依赖普通撤销恢复。\n是否执行？");
             if (FMessageDialog::Open(EAppMsgType::YesNo, FText::FromString(Question)) != EAppReturnType::Yes) { return FReply::Handled(); }
-            const FX_AssetFlattenResult Result = MoveAssets(Assets, Folder, bOrganizeByType);
+            const FX_AssetFlattenResult Result = ExecutePlan(Entries, Preview);
             FString Message = FString::Printf(TEXT("%s\n收集 %d，已移动 %d，已在目标目录 %d，遗留重定向器 %d。"),
                 Result.bSuccess ? TEXT("完成") : TEXT("未全部完成"), Result.CollectedCount, Result.MovedCount, Result.SkippedCount, Result.RemainingRedirectors.Num());
             Message += TEXT("\n") + FString::Join(Result.Errors, TEXT("\n"));
