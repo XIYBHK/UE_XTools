@@ -4,6 +4,8 @@
 */
 
 #include "BlueprintTools/X_BlueprintGraphExporter.h"
+#include "BlueprintTools/X_BlueprintAIWriter.h"
+#include "BlueprintTools/X_BlueprintReadPack.h"
 
 #include "X_AssetEditor.h"
 
@@ -31,6 +33,7 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "HAL/PlatformProcess.h"
+#include "Interfaces/IPluginManager.h"
 #include "InputCoreTypes.h"
 #include "K2Node_ActorBoundEvent.h"
 #include "K2Node_AddDelegate.h"
@@ -109,6 +112,9 @@
 #include "Misc/FileHelper.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/Paths.h"
+#include "Misc/SecureHash.h"
+#include "Misc/PackageName.h"
+#include "Containers/StringConv.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -135,7 +141,14 @@ namespace
         FString NodeGuid;
         FString PinName;
         FString PinId;
+        int32 PinIndex = INDEX_NONE;
     };
+
+    int32 PinIndexInNode(const UEdGraphPin* Pin)
+    {
+        const UEdGraphNode* Node = Pin ? Pin->GetOwningNode() : nullptr;
+        return Node ? Node->Pins.IndexOfByKey(Pin) : INDEX_NONE;
+    }
 
     FString SanitizeFileName(const FString& Name)
     {
@@ -522,10 +535,30 @@ namespace
         Json->SetStringField(TEXT("sub_category_object"), ObjectName(PinType.PinSubCategoryObject.Get()));
         Json->SetStringField(TEXT("sub_category_object_path"), ObjectPathName(PinType.PinSubCategoryObject.Get()));
         Json->SetStringField(TEXT("container"), ContainerTypeToString(PinType.ContainerType));
+        Json->SetBoolField(TEXT("is_reference"), PinType.bIsReference);
+        Json->SetBoolField(TEXT("is_const"), PinType.bIsConst);
+        Json->SetBoolField(TEXT("is_weak_pointer"), PinType.bIsWeakPointer);
+        Json->SetBoolField(TEXT("is_uobject_wrapper"), PinType.bIsUObjectWrapper);
+        Json->SetBoolField(TEXT("serialize_as_single_precision_float"), PinType.bSerializeAsSinglePrecisionFloat);
+        const FSimpleMemberReference& Member = PinType.PinSubCategoryMemberReference;
+        TSharedPtr<FJsonObject> MemberJson = MakeShared<FJsonObject>();
+        MemberJson->SetStringField(TEXT("name"), Member.MemberName.ToString());
+        MemberJson->SetStringField(TEXT("guid"), Member.MemberGuid.ToString());
+        MemberJson->SetStringField(TEXT("parent"), ObjectPathName(Member.MemberParent.Get()));
+        Json->SetObjectField(TEXT("member_reference"), MemberJson);
         if (PinType.ContainerType == EPinContainerType::Map)
         {
             Json->SetStringField(TEXT("value_type"), TerminalTypeToString(PinType.PinValueType));
             Json->SetStringField(TEXT("value_type_object_path"), ObjectPathName(PinType.PinValueType.TerminalSubCategoryObject.Get()));
+            const FEdGraphTerminalType& ValueType = PinType.PinValueType;
+            TSharedPtr<FJsonObject> ValueJson = MakeShared<FJsonObject>();
+            ValueJson->SetStringField(TEXT("category"), ValueType.TerminalCategory.ToString());
+            ValueJson->SetStringField(TEXT("sub_category"), ValueType.TerminalSubCategory.ToString());
+            ValueJson->SetStringField(TEXT("sub_category_object_path"), ObjectPathName(ValueType.TerminalSubCategoryObject.Get()));
+            ValueJson->SetBoolField(TEXT("is_const"), ValueType.bTerminalIsConst);
+            ValueJson->SetBoolField(TEXT("is_weak_pointer"), ValueType.bTerminalIsWeakPointer);
+            ValueJson->SetBoolField(TEXT("is_uobject_wrapper"), ValueType.bTerminalIsUObjectWrapper);
+            Json->SetObjectField(TEXT("value_type_details"), ValueJson);
         }
         return Json;
     }
@@ -612,9 +645,24 @@ namespace
         Json->SetStringField(TEXT("name"), Variable.VarName.ToString());
         Json->SetStringField(TEXT("guid"), Variable.VarGuid.ToString());
         Json->SetObjectField(TEXT("type"), PinTypeToJson(Variable.VarType));
-        if (!Variable.DefaultValue.IsEmpty())
+        // Empty serialized defaults still carry information: UE initializes locals by type.
+        Json->SetStringField(TEXT("default"), Variable.DefaultValue);
+        Json->SetStringField(TEXT("default_source"), Variable.DefaultValue.IsEmpty() ? TEXT("type_default") : TEXT("explicit"));
+        if (Variable.DefaultValue.IsEmpty() && Variable.VarType.ContainerType == EPinContainerType::None)
         {
-            Json->SetStringField(TEXT("default"), Variable.DefaultValue);
+            // ScriptCore zeroes local storage before initializing non-zero-construct properties.
+            // Only expose effective values for scalar types with an unambiguous zero representation.
+            const FName Category = Variable.VarType.PinCategory;
+            if (Category == UEdGraphSchema_K2::PC_Boolean)
+            {
+                Json->SetStringField(TEXT("effective_default"), TEXT("false"));
+            }
+            else if (Category == UEdGraphSchema_K2::PC_Int || Category == UEdGraphSchema_K2::PC_Int64
+                || Category == UEdGraphSchema_K2::PC_Real || Category == UEdGraphSchema_K2::PC_Float
+                || Category == UEdGraphSchema_K2::PC_Double)
+            {
+                Json->SetStringField(TEXT("effective_default"), TEXT("0"));
+            }
         }
         return Json;
     }
@@ -1495,6 +1543,7 @@ namespace
         Ref.NodeGuid = Node ? Node->NodeGuid.ToString() : FString();
         Ref.PinName = Pin->PinName.ToString();
         Ref.PinId = Pin->PinId.ToString();
+        Ref.PinIndex = PinIndexInNode(Pin);
         return Ref;
     }
 
@@ -1505,6 +1554,7 @@ namespace
         Json->SetStringField(TEXT("node_guid"), Ref.NodeGuid);
         Json->SetStringField(TEXT("pin_name"), Ref.PinName);
         Json->SetStringField(TEXT("pin_id"), Ref.PinId);
+        Json->SetNumberField(TEXT("pin_index"), Ref.PinIndex);
         return Json;
     }
 
@@ -1587,9 +1637,11 @@ namespace
                     Edge->SetObjectField(TEXT("from_node"), NodeRefToJson(Node, NodeIds));
                     Edge->SetStringField(TEXT("from_pin"), Pin->PinName.ToString());
                     Edge->SetStringField(TEXT("from_pin_id"), Pin->PinId.ToString());
+                    Edge->SetNumberField(TEXT("from_pin_index"), PinIndexInNode(Pin));
                     Edge->SetObjectField(TEXT("to_node"), NodeRefToJson(TargetNode, NodeIds));
                     Edge->SetStringField(TEXT("to_pin"), LinkedPin->PinName.ToString());
                     Edge->SetStringField(TEXT("to_pin_id"), LinkedPin->PinId.ToString());
+                    Edge->SetNumberField(TEXT("to_pin_index"), PinIndexInNode(LinkedPin));
                     Edges.Add(MakeShared<FJsonValueObject>(Edge));
 
                     if (!QueuedNodes.Contains(TargetNode))
@@ -1690,9 +1742,11 @@ namespace
                     Edge->SetObjectField(TEXT("from_node"), NodeRefToJson(Node, NodeIds));
                     Edge->SetStringField(TEXT("from_pin"), Pin->PinName.ToString());
                     Edge->SetStringField(TEXT("from_pin_id"), Pin->PinId.ToString());
+                    Edge->SetNumberField(TEXT("from_pin_index"), PinIndexInNode(Pin));
                     Edge->SetObjectField(TEXT("to_node"), NodeRefToJson(TargetNode, NodeIds));
                     Edge->SetStringField(TEXT("to_pin"), LinkedPin->PinName.ToString());
                     Edge->SetStringField(TEXT("to_pin_id"), LinkedPin->PinId.ToString());
+                    Edge->SetNumberField(TEXT("to_pin_index"), PinIndexInNode(LinkedPin));
                     Edges.Add(MakeShared<FJsonValueObject>(Edge));
 
                     if (bExecEdge)
@@ -1719,6 +1773,7 @@ namespace
         }
 
         Json->SetStringField(TEXT("id"), Pin->PinId.ToString());
+        Json->SetNumberField(TEXT("index"), PinIndexInNode(Pin));
         Json->SetStringField(TEXT("persistent_guid"), Pin->PersistentGuid.ToString());
         Json->SetStringField(TEXT("name"), Pin->PinName.ToString());
         Json->SetStringField(TEXT("direction"), DirectionToString(Pin->Direction));
@@ -1726,12 +1781,28 @@ namespace
         Json->SetBoolField(TEXT("is_exec"), IsExecPin(Pin));
         Json->SetBoolField(TEXT("connected"), Pin->LinkedTo.Num() > 0);
         Json->SetBoolField(TEXT("hidden"), Pin->bHidden);
+        Json->SetBoolField(TEXT("orphaned"), Pin->bOrphanedPin);
+        Json->SetBoolField(TEXT("default_value_ignored"), Pin->bDefaultValueIsIgnored);
+        Json->SetBoolField(TEXT("default_value_read_only"), Pin->bDefaultValueIsReadOnly);
+        Json->SetBoolField(TEXT("not_connectable"), Pin->bNotConnectable);
+        Json->SetStringField(TEXT("parent_pin_id"), Pin->ParentPin ? Pin->ParentPin->PinId.ToString() : FString());
+        Json->SetNumberField(TEXT("parent_pin_index"), PinIndexInNode(Pin->ParentPin));
+        TArray<TSharedPtr<FJsonValue>> SubPins;
+        TArray<TSharedPtr<FJsonValue>> SubPinIndices;
+        for (const UEdGraphPin* SubPin : Pin->SubPins)
+        {
+            if (SubPin)
+            {
+                SubPins.Add(MakeShared<FJsonValueString>(SubPin->PinId.ToString()));
+                SubPinIndices.Add(MakeShared<FJsonValueNumber>(PinIndexInNode(SubPin)));
+            }
+        }
+        Json->SetArrayField(TEXT("sub_pin_ids"), SubPins);
+        Json->SetArrayField(TEXT("sub_pin_indices"), SubPinIndices);
 
         const FString DefaultValue = Pin->GetDefaultAsString();
-        if (!DefaultValue.IsEmpty())
-        {
-            Json->SetStringField(TEXT("default"), DefaultValue);
-        }
+        // 空字符串也是原始默认值；不能将它与缺失信息混为一谈。
+        Json->SetStringField(TEXT("default"), DefaultValue);
         if (!Pin->AutogeneratedDefaultValue.IsEmpty())
         {
             Json->SetStringField(TEXT("autogenerated_default"), Pin->AutogeneratedDefaultValue);
@@ -1757,6 +1828,39 @@ namespace
         return Json;
     }
 
+    TArray<TSharedPtr<FJsonValue>> NodePropertiesToJson(const UEdGraphNode* Node)
+    {
+        TArray<TSharedPtr<FJsonValue>> Values;
+        // 图结构和 UEdGraphNode 基类状态已显式保存；这里补充派生类的持久反射属性。
+        // 保留默认值，避免离线 AI 需要另行查找 CDO 才能解释省略字段。
+        for (const UClass* Class = Node->GetClass(); Class && Class != UEdGraphNode::StaticClass(); Class = Class->GetSuperClass())
+        {
+            for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+            {
+                const FProperty* Property = *It;
+                if (Property->HasAnyPropertyFlags(CPF_Transient | CPF_DuplicateTransient | CPF_NonPIEDuplicateTransient | CPF_Deprecated | CPF_SkipSerialization))
+                {
+                    continue;
+                }
+                TSharedPtr<FJsonObject> Value = MakeShared<FJsonObject>();
+                Value->SetStringField(TEXT("owner"), Class->GetPathName());
+                Value->SetStringField(TEXT("name"), Property->GetName());
+                Value->SetStringField(TEXT("cpp_type"), Property->GetCPPType());
+                TArray<TSharedPtr<FJsonValue>> Elements;
+                for (int32 Index = 0; Index < Property->ArrayDim; ++Index)
+                {
+                    FString Text;
+                    Property->ExportTextItem_Direct(Text, Property->ContainerPtrToValuePtr<void>(Node, Index),
+                        nullptr, const_cast<UEdGraphNode*>(Node), PPF_None);
+                    Elements.Add(MakeShared<FJsonValueString>(Text));
+                }
+                Value->SetArrayField(TEXT("values"), Elements);
+                Values.Add(MakeShared<FJsonValueObject>(Value));
+            }
+        }
+        return Values;
+    }
+
     TSharedPtr<FJsonObject> NodeToJson(const UEdGraphNode* Node, const TMap<const UEdGraphNode*, FString>& NodeIds)
     {
         TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
@@ -1770,6 +1874,7 @@ namespace
         Json->SetStringField(TEXT("node_guid"), Node->NodeGuid.ToString());
         Json->SetStringField(TEXT("name"), Node->GetName());
         Json->SetStringField(TEXT("class"), Node->GetClass()->GetName());
+        Json->SetStringField(TEXT("class_path"), Node->GetClass()->GetPathName());
         Json->SetStringField(TEXT("title"), NodeTitle(Node));
         Json->SetStringField(TEXT("comment"), Node->NodeComment);
         Json->SetNumberField(TEXT("pos_x"), Node->NodePosX);
@@ -1780,7 +1885,14 @@ namespace
         if (TSharedPtr<FJsonObject> Semantic = NodeSemanticToJson(Node))
         {
             Json->SetObjectField(TEXT("semantic"), Semantic);
+            // 识别到一类节点不代表理解了其全部行为（派生 K2Node 仍可能改变展开逻辑）。
+            Json->SetStringField(TEXT("semantic_status"), TEXT("classified"));
         }
+        else
+        {
+            Json->SetStringField(TEXT("semantic_status"), TEXT("unclassified"));
+        }
+        Json->SetArrayField(TEXT("reflected_properties"), NodePropertiesToJson(Node));
 
         TArray<TSharedPtr<FJsonValue>> Pins;
         for (const UEdGraphPin* Pin : Node->Pins)
@@ -1821,6 +1933,9 @@ namespace
 
         Json->SetStringField(TEXT("name"), Graph->GetName());
         Json->SetStringField(TEXT("path"), Graph->GetPathName());
+        Json->SetStringField(TEXT("graph_guid"), Graph->GraphGuid.ToString());
+        Json->SetStringField(TEXT("exec_chain_interpretation"), TEXT("static_reachability_not_execution_order"));
+        Json->SetBoolField(TEXT("truncated"), false);
         Json->SetStringField(TEXT("type"), GraphTypeToString(Blueprint, Graph));
 
         TSet<const UEdGraphNode*> ReachableNodes;
@@ -1839,14 +1954,21 @@ namespace
 
         TArray<TSharedPtr<FJsonValue>> Nodes;
 
+        TArray<TSharedPtr<FJsonValue>> UnclassifiedNodes;
         for (const UEdGraphNode* Node : SortedNodes)
         {
             if (Node)
             {
-                Nodes.Add(MakeShared<FJsonValueObject>(NodeToJson(Node, NodeIds)));
+                TSharedPtr<FJsonObject> NodeJson = NodeToJson(Node, NodeIds);
+                if (NodeJson->GetStringField(TEXT("semantic_status")) == TEXT("unclassified"))
+                {
+                    UnclassifiedNodes.Add(MakeShared<FJsonValueString>(NodeJson->GetStringField(TEXT("id"))));
+                }
+                Nodes.Add(MakeShared<FJsonValueObject>(NodeJson));
                 ++InOutNodeCount;
             }
         }
+        Json->SetArrayField(TEXT("unclassified_node_ids"), UnclassifiedNodes);
         Json->SetNumberField(TEXT("node_count"), Nodes.Num());
         Json->SetArrayField(TEXT("nodes"), Nodes);
         return Json;
@@ -2820,12 +2942,19 @@ namespace
     TSharedPtr<FJsonObject> BlueprintToJson(UBlueprint* Blueprint)
     {
         TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
-        Root->SetStringField(TEXT("schema_version"), TEXT("1.0"));
+        Root->SetStringField(TEXT("schema_version"), TEXT("1.1"));
         Root->SetStringField(TEXT("generated_by"), TEXT("XTools Blueprint Graph Exporter"));
         Root->SetStringField(TEXT("asset_name"), Blueprint->GetName());
         Root->SetStringField(TEXT("asset_path"), Blueprint->GetPathName());
         Root->SetStringField(TEXT("blueprint_class"), Blueprint->GetClass()->GetName());
         Root->SetStringField(TEXT("parent_class"), Blueprint->ParentClass ? Blueprint->ParentClass->GetPathName() : FString());
+        TSharedPtr<FJsonObject> Coverage = MakeShared<FJsonObject>();
+        Coverage->SetStringField(TEXT("graph_scope"), TEXT("asset_owned_graphs"));
+        Coverage->SetStringField(TEXT("node_properties"), TEXT("non_transient_reflected_subclass_properties_as_ue_text"));
+        Coverage->SetBoolField(TEXT("external_implementations_included"), false);
+        Coverage->SetBoolField(TEXT("semantic_analysis_exhaustive"), false);
+        Coverage->SetBoolField(TEXT("truncated"), false);
+        Root->SetObjectField(TEXT("coverage"), Coverage);
         Root->SetObjectField(TEXT("class_defaults"), ClassDefaultsToJson(Blueprint));
 
         TArray<TSharedPtr<FJsonValue>> Variables = BuildBlueprintVariablesJson(Blueprint);
@@ -2860,6 +2989,39 @@ namespace
         Root->SetNumberField(TEXT("graph_count"), GraphValues.Num());
         Root->SetNumberField(TEXT("node_count"), NodeCount);
         Root->SetArrayField(TEXT("graphs"), GraphValues);
+        TSet<FString> IncludedGraphPaths;
+        for (const TSharedPtr<FJsonValue>& GraphValue : GraphValues)
+        {
+            IncludedGraphPaths.Add(GraphValue->AsObject()->GetStringField(TEXT("path")));
+        }
+        TArray<FString> ExternalMacroPaths;
+        for (const TSharedPtr<FJsonValue>& GraphValue : GraphValues)
+        {
+            for (const TSharedPtr<FJsonValue>& NodeValue : GraphValue->AsObject()->GetArrayField(TEXT("nodes")))
+            {
+                const TSharedPtr<FJsonObject>* Semantic = nullptr;
+                if (NodeValue->AsObject()->TryGetObjectField(TEXT("semantic"), Semantic)
+                    && (*Semantic)->GetStringField(TEXT("kind")) == TEXT("macro_instance"))
+                {
+                    FString MacroPath;
+                    (*Semantic)->TryGetStringField(TEXT("macro_graph"), MacroPath);
+                    const bool bIncluded = IncludedGraphPaths.Contains(MacroPath);
+                    (*Semantic)->SetStringField(TEXT("definition_status"), MacroPath.IsEmpty()
+                        ? TEXT("unresolved") : (bIncluded ? TEXT("included") : TEXT("external_not_included")));
+                    if (!MacroPath.IsEmpty() && !bIncluded)
+                    {
+                        ExternalMacroPaths.AddUnique(MacroPath);
+                    }
+                }
+            }
+        }
+        ExternalMacroPaths.Sort();
+        TArray<TSharedPtr<FJsonValue>> ExternalMacros;
+        for (const FString& Path : ExternalMacroPaths)
+        {
+            ExternalMacros.Add(MakeShared<FJsonValueString>(Path));
+        }
+        Coverage->SetArrayField(TEXT("external_macro_graphs"), ExternalMacros);
         return Root;
     }
 
@@ -3135,15 +3297,58 @@ namespace
         return Markdown;
     }
 
-    bool SaveJson(const TSharedPtr<FJsonObject>& Json, const FString& FilePath)
+    FString BlueprintExportDirectoryName(const FString& AssetPath, const FString& AssetName)
     {
-        FString JsonText;
-        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonText);
-        if (!FJsonSerializer::Serialize(Json.ToSharedRef(), Writer))
+        FTCHARToUTF8 Utf8Path(*AssetPath);
+        uint8 Digest[FSHA1::DigestSize];
+        FSHA1::HashBuffer(Utf8Path.Get(), Utf8Path.Length(), Digest);
+        return SanitizeFileName(AssetName) + TEXT("_") + BytesToHex(Digest, UE_ARRAY_COUNT(Digest)).ToLower();
+    }
+
+    bool ReadAssetEvidencePath(const FString& Directory, FString& OutAssetPath)
+    {
+        FString Text;
+        if (!FFileHelper::LoadFileToString(Text, *(Directory / TEXT("20_Evidence/00_Asset.json"))))
         {
             return false;
         }
-        return FFileHelper::SaveStringToFile(JsonText, *FilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+        TSharedPtr<FJsonObject> Object;
+        const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Text);
+        return FJsonSerializer::Deserialize(Reader, Object) && Object.IsValid()
+            && Object->TryGetStringField(TEXT("asset_path"), OutAssetPath) && !OutAssetPath.IsEmpty();
+    }
+
+    FString BuildBlueprintRootEntry(const FString& RootDirectory, const FString& AssetPath, const FString& PackageDirName)
+    {
+        IFileManager& Files = IFileManager::Get();
+        TArray<FString> AssetDirs;
+        Files.FindFiles(AssetDirs, *(RootDirectory / TEXT("*")), false, true);
+        AssetDirs.Sort();
+        TMap<FString, FString> AssetDirByPath;
+        for (const FString& AssetDir : AssetDirs)
+        {
+            FString ExistingAssetPath;
+            const FString CandidateDir = RootDirectory / AssetDir;
+            if (!Files.FileExists(*(CandidateDir / TEXT("00_START_HERE.md")))
+                || !ReadAssetEvidencePath(CandidateDir, ExistingAssetPath)) { continue; }
+            const FString CanonicalName = BlueprintExportDirectoryName(ExistingAssetPath, FPackageName::ObjectPathToObjectName(ExistingAssetPath));
+            const FString* ExistingCandidate = AssetDirByPath.Find(ExistingAssetPath);
+            if (!ExistingCandidate || AssetDir == CanonicalName)
+            {
+                AssetDirByPath.Add(ExistingAssetPath, AssetDir);
+            }
+        }
+        AssetDirByPath.Add(AssetPath, PackageDirName);
+        AssetDirs.Reset();
+        AssetDirByPath.GenerateValueArray(AssetDirs);
+        AssetDirs.Sort();
+        FString RootEntry = TEXT("# 蓝图导出入口\n\n请选择一个资产目录后，只读取该目录下的 `00_START_HERE.md`；禁止递归读取全部导出内容。旧目录可能保留为备份，以本索引为准。\n\n");
+        for (const FString& AssetDir : AssetDirs)
+        {
+            const FString Label = AssetDir.Replace(TEXT("["), TEXT("\\[")).Replace(TEXT("]"), TEXT("\\]"));
+            RootEntry += FString::Printf(TEXT("- [%s](<%s/00_START_HERE.md>)\n"), *Label, *AssetDir);
+        }
+        return RootEntry;
     }
 
     bool ExportOneBlueprint(UBlueprint* Blueprint, FString& OutOutputDir, FString& OutError)
@@ -3154,32 +3359,187 @@ namespace
             return false;
         }
 
-        const FString PackageDirName = SanitizeFileName(Blueprint->GetOutermost()->GetName().Replace(TEXT("/"), TEXT("_")));
-        OutOutputDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("XTools") / TEXT("BlueprintExports") / PackageDirName);
-        if (!IFileManager::Get().MakeDirectory(*OutOutputDir, true))
-        {
-            OutError = FString::Printf(TEXT("%s: 输出目录创建失败"), *Blueprint->GetName());
-            return false;
-        }
-
+        const FString AssetPath = Blueprint->GetPathName();
         const FString BaseName = SanitizeFileName(Blueprint->GetName());
-        const FString JsonPath = OutOutputDir / (BaseName + TEXT(".json"));
-        const FString MarkdownPath = OutOutputDir / (BaseName + TEXT(".md"));
-
-        if (!SaveJson(BlueprintToJson(Blueprint), JsonPath))
+        const FString PackageDirName = BlueprintExportDirectoryName(AssetPath, BaseName);
+        OutOutputDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("XTools") / TEXT("BlueprintExports") / PackageDirName);
+        IFileManager& Files = IFileManager::Get();
+        if (Files.DirectoryExists(*OutOutputDir))
         {
-            OutError = FString::Printf(TEXT("%s: JSON写入失败"), *Blueprint->GetName());
+            FString ExistingAssetPath;
+            if (!ReadAssetEvidencePath(OutOutputDir, ExistingAssetPath))
+            {
+                TArray<FString> ExistingEntries;
+                // A failed first staging pass may leave empty folders; retry is safe when no files exist.
+                Files.FindFilesRecursive(ExistingEntries, *OutOutputDir, TEXT("*"), true, false);
+                if (ExistingEntries.Num() > 0)
+                {
+                    OutError = FString::Printf(TEXT("输出目录缺少有效资产证据，拒绝覆盖: %s"), *OutOutputDir);
+                    return false;
+                }
+            }
+            if (!ExistingAssetPath.IsEmpty() && ExistingAssetPath != AssetPath)
+            {
+                OutError = FString::Printf(TEXT("输出目录资产身份不匹配，拒绝覆盖: %s"), *OutOutputDir);
+                return false;
+            }
+        }
+        const TSharedRef<FJsonObject> Snapshot = BlueprintToJson(Blueprint).ToSharedRef();
+        const FString SnapshotAssetPath = Snapshot->GetStringField(TEXT("asset_path"));
+        if (SnapshotAssetPath != AssetPath)
+        {
+            OutError = TEXT("资产路径在导出期间发生变化，保留原导出。");
             return false;
         }
-
-        const FString Markdown = BlueprintToMarkdown(Blueprint);
-        if (!FFileHelper::SaveStringToFile(Markdown, *MarkdownPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+        const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot);
+        TMap<FString, FString> Outputs;
+        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".json"), TEXT(""));
+        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".ai.md"), XBlueprintAIWriter::Write(Snapshot));
+        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".md"), BlueprintToMarkdown(Blueprint));
+        for (const TPair<FString, FString>& Pair : ReadPack)
         {
-            OutError = FString::Printf(TEXT("%s: Markdown写入失败"), *Blueprint->GetName());
+            Outputs.Add(Pair.Key, Pair.Value);
+        }
+        const TSharedPtr<IPlugin> XToolsPlugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
+        const FString QueryPath = XToolsPlugin.IsValid() ? XToolsPlugin->GetBaseDir() / TEXT("Resources/BlueprintExport/05_Query.py") : FString();
+        FString QueryText;
+        if (QueryPath.IsEmpty() || !FFileHelper::LoadFileToString(QueryText, *QueryPath))
+        {
+            OutError = TEXT("读取 05_Query.py 失败，保留原导出。");
             return false;
         }
-
-        return true;
+        Outputs.Add(TEXT("05_Query.py"), QueryText);
+        const bool bGameAsset = AssetPath.StartsWith(TEXT("/Game/"));
+        const FString RootEntryKey = TEXT("../00_START_HERE.md");
+        if (bGameAsset)
+        {
+            Outputs.Add(RootEntryKey, BuildBlueprintRootEntry(FPaths::GetPath(OutOutputDir), AssetPath, PackageDirName));
+        }
+        FString JsonText;
+        TSharedRef<TJsonWriter<>> JsonWriter = TJsonWriterFactory<>::Create(&JsonText);
+        if (!FJsonSerializer::Serialize(Snapshot, JsonWriter))
+        {
+            OutError = TEXT("JSON 序列化失败，保留原导出。");
+            return false;
+        }
+        Outputs[TEXT("90_Full/") + BaseName + TEXT(".json")] = JsonText;
+        TArray<FString> RelativePaths;
+        Outputs.GetKeys(RelativePaths);
+        RelativePaths.Sort();
+        RelativePaths.Remove(TEXT("00_START_HERE.md"));
+        RelativePaths.Remove(RootEntryKey);
+        if (Outputs.Contains(TEXT("00_START_HERE.md")))
+        {
+            RelativePaths.Add(TEXT("00_START_HERE.md"));
+        }
+        if (Outputs.Contains(RootEntryKey))
+        {
+            RelativePaths.Add(RootEntryKey);
+        }
+        TArray<FString> Paths;
+        for (const FString& RelativePath : RelativePaths)
+        {
+            Paths.Add(OutOutputDir / RelativePath);
+            const FString Parent = FPaths::GetPath(Paths.Last());
+            if (!Files.MakeDirectory(*Parent, true) || Files.DirectoryExists(*Paths.Last()) || Files.IsReadOnly(*Paths.Last()))
+            {
+                OutError = FString::Printf(TEXT("输出路径不可写，保留原导出: %s"), *Paths.Last());
+                return false;
+            }
+        }
+        const FString Suffix = TEXT(".") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+        bool bStaged = true;
+        for (const FString& RelativePath : RelativePaths)
+        {
+            bStaged = bStaged && FFileHelper::SaveStringToFile(Outputs[RelativePath], *(OutOutputDir / RelativePath + Suffix), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+        }
+        TSet<FString> BackedUp;
+        TSet<FString> RetainedBackups;
+        bool bSuccess = bStaged;
+        if (!bStaged)
+        {
+            OutError = TEXT("暂存写入失败，保留原导出。");
+        }
+        if (bSuccess)
+        {
+            for (const FString& Path : Paths)
+            {
+                if (Files.FileExists(*Path))
+                {
+                    if (Files.Copy(*(Path + Suffix + TEXT(".bak")), *Path, false) != COPY_OK)
+                    {
+                        OutError = FString::Printf(TEXT("备份失败，保留原导出: %s"), *Path);
+                        bSuccess = false;
+                        break;
+                    }
+                    BackedUp.Add(Path);
+                }
+            }
+        }
+        if (bSuccess)
+        {
+            for (int32 Index = 0; Index < Paths.Num(); ++Index)
+            {
+                const FString& Path = Paths[Index];
+                if (!Files.Move(*Path, *(Path + Suffix), true, false, false, true))
+                {
+                    OutError = FString::Printf(TEXT("替换失败: %s"), *Path);
+                    bSuccess = false;
+                    // Move 失败也可能已改变目标，因此一并恢复本次尝试的文件。
+                    for (int32 Restore = 0; Restore <= Index; ++Restore)
+                    {
+                        const FString& RestorePath = Paths[Restore];
+                        if (BackedUp.Contains(RestorePath))
+                        {
+                            const FString Backup = RestorePath + Suffix + TEXT(".bak");
+                            if (Files.Copy(*RestorePath, *Backup) != COPY_OK)
+                            {
+                                RetainedBackups.Add(RestorePath);
+                                OutError += FString::Printf(TEXT("\n恢复失败，备份保留在: %s"), *Backup);
+                            }
+                        }
+                        else if (!Files.Delete(*RestorePath, false, false, true))
+                        {
+                            OutError += FString::Printf(TEXT("\n未完成文件清理失败: %s"), *RestorePath);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        for (const FString& Path : Paths)
+        {
+            Files.Delete(*(Path + Suffix), false, false, true);
+            if (!RetainedBackups.Contains(Path))
+            {
+                Files.Delete(*(Path + Suffix + TEXT(".bak")), false, false, true);
+            }
+        }
+        if (bSuccess)
+        {
+            const FString LegacyJsonPath = OutOutputDir / (BaseName + TEXT(".json"));
+            FString LegacyJson;
+            TSharedPtr<FJsonObject> LegacyObject;
+            bool bLegacyMatches = false;
+            if (Files.FileExists(*LegacyJsonPath) && FFileHelper::LoadFileToString(LegacyJson, *LegacyJsonPath))
+            {
+                TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(LegacyJson);
+                FString GeneratedBy;
+                FString LegacyAssetPath;
+                bLegacyMatches = FJsonSerializer::Deserialize(Reader, LegacyObject) && LegacyObject.IsValid()
+                    && LegacyObject->TryGetStringField(TEXT("generated_by"), GeneratedBy)
+                    && LegacyObject->TryGetStringField(TEXT("asset_path"), LegacyAssetPath)
+                    && GeneratedBy == TEXT("XTools Blueprint Graph Exporter")
+                    && LegacyAssetPath == AssetPath;
+            }
+            if (bLegacyMatches)
+            {
+                Files.Delete(*LegacyJsonPath, false, false, true);
+                Files.Delete(*(OutOutputDir / (BaseName + TEXT(".ai.md"))), false, false, true);
+                Files.Delete(*(OutOutputDir / (BaseName + TEXT(".md"))), false, false, true);
+            }
+        }
+        return bSuccess;
     }
 
     void ShowExportResultDialog(const FString& Message, const FString& OutputRoot)
@@ -3289,6 +3649,19 @@ FString XBlueprintGraphExporterTests::BuildGraphMarkdown(UEdGraph* Graph)
     AppendGraphMarkdown(Markdown, nullptr, Graph);
     return Markdown;
 }
+TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildBlueprintJson(UBlueprint* Blueprint)
+{
+    return BlueprintToJson(Blueprint);
+}
+bool XBlueprintGraphExporterTests::ExportBlueprintFiles(UBlueprint* Blueprint, FString& OutDirectory, FString& OutError)
+{
+    return ExportOneBlueprint(Blueprint, OutDirectory, OutError);
+}
+
+FString XBlueprintGraphExporterTests::BuildRootEntry(const FString& RootDirectory, const FString& AssetPath)
+{
+    return BuildBlueprintRootEntry(RootDirectory, AssetPath, BlueprintExportDirectoryName(AssetPath, FPackageName::ObjectPathToObjectName(AssetPath)));
+}
 #endif
 
 void FX_BlueprintGraphExporter::ExportBlueprints(const TArray<FAssetData>& SelectedAssets)
@@ -3367,6 +3740,7 @@ void FX_BlueprintGraphExporter::ExportBlueprints(const TArray<FAssetData>& Selec
     {
         const FString DisplayOutputDir = SuccessfulOutputDirs.Num() == 1 ? SuccessfulOutputDirs[0] : OutputRoot;
         Message += FString::Printf(TEXT("\n\n输出目录:\n%s"), *DisplayOutputDir);
+        Message += TEXT("\n\n交给 AI 分析时，请先阅读 00_START_HERE.md；完整快照位于 90_Full，证据位于 20_Evidence。");
     }
     if (Errors.Num() > 0)
     {

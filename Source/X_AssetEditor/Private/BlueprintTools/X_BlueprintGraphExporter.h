@@ -10,7 +10,7 @@
 
 /**
  * Blueprint graph readback exporter.
- * Exports selected Blueprint assets to JSON and Markdown under Saved/XTools.
+ * Exports selected Blueprint assets to JSON, AI context and Markdown under Saved/XTools.
  */
 class FX_BlueprintGraphExporter
 {
@@ -22,11 +22,15 @@ public:
 class FJsonObject;
 class UEdGraphNode;
 class UEdGraph;
+class UBlueprint;
 
 namespace XBlueprintGraphExporterTests
 {
     TSharedPtr<FJsonObject> BuildNodeSemanticJson(const UEdGraphNode* Node);
     TSharedPtr<FJsonObject> BuildGraphJson(UEdGraph* Graph);
+    TSharedPtr<FJsonObject> BuildBlueprintJson(UBlueprint* Blueprint);
+    bool ExportBlueprintFiles(UBlueprint* Blueprint, FString& OutDirectory, FString& OutError);
+    FString BuildRootEntry(const FString& RootDirectory, const FString& AssetPath);
     FString BuildGraphMarkdown(UEdGraph* Graph);
 }
 #endif
