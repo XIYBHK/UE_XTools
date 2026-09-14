@@ -3494,15 +3494,10 @@ namespace
             OutError = TEXT("资产路径在导出期间发生变化，保留原导出。");
             return false;
         }
-        const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot);
         TMap<FString, FString> Outputs;
         Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".json"), TEXT(""));
         Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".ai.md"), XBlueprintAIWriter::Write(Snapshot));
         Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".md"), BlueprintToMarkdown(Blueprint));
-        for (const TPair<FString, FString>& Pair : ReadPack)
-        {
-            Outputs.Add(Pair.Key, Pair.Value);
-        }
         const TSharedPtr<IPlugin> XToolsPlugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
         const FString QueryPath = XToolsPlugin.IsValid() ? XToolsPlugin->GetBaseDir() / TEXT("Resources/BlueprintExport/05_Query.py") : FString();
         FString QueryText;
@@ -3511,7 +3506,11 @@ namespace
             OutError = TEXT("读取 05_Query.py 失败，保留原导出。");
             return false;
         }
-        Outputs.Add(TEXT("05_Query.py"), QueryText);
+        const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot, QueryText);
+        for (const TPair<FString, FString>& Pair : ReadPack)
+        {
+            Outputs.Add(Pair.Key, Pair.Value);
+        }
         const bool bGameAsset = AssetPath.StartsWith(TEXT("/Game/"));
         const FString RootEntryKey = TEXT("../00_START_HERE.md");
         if (bGameAsset)

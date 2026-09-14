@@ -24,10 +24,31 @@ def safe(base, relative):
     return path
 
 
+def _version(value, label):
+    if type(value) is not int or value != 1:
+        raise ValueError("unsupported " + label)
+
+
 def manifest(base):
     data = json.loads((base / "01_Manifest.json").read_text(encoding="utf-8-sig"))
     if data.get("format_version") != 2:
         raise ValueError("unsupported manifest format_version")
+    if "pseudo_format_version" in data:
+        _version(data["pseudo_format_version"], "pseudo_format_version")
+    query = data.get("query")
+    if query is not None:
+        _version(query.get("protocol_version"), "query protocol_version")
+        query_path = safe(base, query["path"])
+        if query_path == Path(__file__).resolve():
+            digest = hashlib.sha1(query_path.read_bytes()).hexdigest()
+            if digest != query.get("sha1"):
+                raise ValueError("query script hash mismatch")
+    contract = data.get("reading_contract")
+    if contract is not None:
+        _version(contract.get("version"), "reading_contract version")
+        path = safe(base, contract["path"])
+        if hashlib.sha1(path.read_bytes()).hexdigest() != contract.get("sha1"):
+            raise ValueError("reading contract hash mismatch")
     records = data["graphs"]
     macros = data.get("macro_definitions", [])
     for key in ("id", "path"):
@@ -56,14 +77,19 @@ def graphs(data, selector):
 def logic_blocks(text):
     blocks, current = {}, None
     in_code = False
+    fence_count = 0
     for line in text.splitlines():
         if line == "```text":
+            fence_count += 1
+            if fence_count > 1 or in_code:
+                raise ValueError("invalid pseudo code fences")
             in_code = True
             continue
         if not in_code:
             continue
         if line == "```":
-            break
+            in_code = False
+            continue
         match = re.match(r"^(?:(?:disabled|development_only) )*@([^:\s]+):", line)
         comment = re.match(r"^author_comment @([^\s]+) =", line)
         if match or comment:
@@ -71,8 +97,12 @@ def logic_blocks(text):
             if current in blocks:
                 raise ValueError("duplicate pseudo node: " + current)
             blocks[current] = [line]
+        elif line.strip() and (current is None or not line[0].isspace()):
+            raise ValueError("invalid pseudo statement or continuation")
         elif current is not None:
             blocks[current].append(line)
+    if in_code or fence_count != 1:
+        raise ValueError("invalid pseudo code fences")
     return {node_id: "\n".join(lines).rstrip() for node_id, lines in blocks.items()}
 
 
@@ -314,6 +344,7 @@ def main(argv=None):
     parser.add_argument("command", choices=("outline", "find", "node", "slice", "deps"))
     parser.add_argument("--directory", type=Path, default=Path(__file__).parent)
     parser.add_argument("--graph", help="graph ID, full path, or unique name")
+    parser.add_argument("--include-macros", action="store_true", help="include macro headers in outline")
     parser.add_argument("--query")
     parser.add_argument("--node")
     parser.add_argument("--evidence", action="store_true", help="raw evidence for the node command only")
@@ -325,6 +356,10 @@ def main(argv=None):
             raise ValueError("--max-nodes must be positive; --max-chars must be at least 256")
         if args.evidence and args.command != "node":
             raise ValueError("--evidence is supported only by node")
+        if args.include_macros and args.command != "outline":
+            raise ValueError("--include-macros is supported only by outline")
+        if args.include_macros and args.graph:
+            raise ValueError("--include-macros cannot be combined with --graph")
         if args.command in ("node", "slice") and (not args.graph or not args.node):
             raise ValueError("--graph and --node are required")
         if args.command == "deps" and not args.graph:
@@ -335,13 +370,17 @@ def main(argv=None):
         data = manifest(base)
         identity = {"asset_path": data["asset_path"], "snapshot_id": data["snapshot_id"]}
         records = graphs(data, args.graph)
+        if args.include_macros:
+            records = data["graphs"] + data.get("macro_definitions", [])
         index = dependency_index(base) if args.command == "deps" else []
         items = []
         if args.command == "outline":
+            identity["macro_definition_count"] = len(data.get("macro_definitions", []))
             # Each graph header and entry is separately budgeted; no graph file is read.
             for record in records:
                 items.append({"graph": record["id"], "name": record["name"], "path": record["path"],
-                              "node_count": record["node_count"], "entry_count": len(record["entries"])})
+                              "node_count": record["node_count"], "entry_count": len(record["entries"]),
+                              **({k: record[k] for k in ("logic_bytes", "evidence_bytes") if k in record})})
                 items.extend({"graph": record["id"], "entry": entry} for entry in record["entries"])
         else:
             for record in records:

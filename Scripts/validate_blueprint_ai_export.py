@@ -393,6 +393,15 @@ def validate(asset):
                 check(manifest.get("asset_path") == metadata["asset_path"], "Manifest asset identity differs")
                 check(len(manifest.get("graphs", [])) == len(detailed["graphs"]), "Manifest graph coverage differs")
                 check((directory / "05_Query.py").is_file(), "Missing offline query tool")
+                if "format_contract" in manifest.get("features", []):
+                    check(manifest.get("pseudo_format_version") == 1, "Unsupported pseudo grammar")
+                    query = manifest.get("query", {})
+                    check(query.get("protocol_version") == 1 and query.get("path") == "05_Query.py", "Query protocol identity differs")
+                    check(query.get("sha1") == hashlib.sha1((directory / "05_Query.py").read_bytes()).hexdigest(), "Query file identity differs")
+                    contract = manifest.get("reading_contract", {})
+                    check(contract.get("version") == 1 and contract.get("path") == "02_ReadingContract.md", "Reading contract identity differs")
+                    check(contract.get("sha1") == hashlib.sha1((directory / "02_ReadingContract.md").read_bytes()).hexdigest(), "Reading contract content differs")
+                    check("02_ReadingContract.md" in entry and contract["sha1"] in entry, "Entry missing reusable contract identity")
             check("90_Full/" in entry and ("10_Logic/" in entry or not detailed["graphs"]), "Read order missing")
             logic_bytes = 0
             graph_sizes = []
@@ -411,6 +420,9 @@ def validate(asset):
                     for key, filename in (("logic_sha1", logic_file), ("evidence_sha1", evidence_file)):
                         check(record.get(key) == hashlib.sha1((directory / filename).read_bytes()).hexdigest(),
                               f"Manifest {graph_id}.{key} differs")
+                    if "format_contract" in manifest.get("features", []):
+                        for key, filename in (("logic_bytes", logic_file), ("evidence_bytes", evidence_file)):
+                            check(record.get(key) == (directory / filename).stat().st_size, f"Manifest {graph_id}.{key} differs")
                 logic = (directory / logic_file).read_text(encoding="utf-8-sig")
                 for node in graph["nodes"]:
                     check(f"@{node['id']}:" in logic or f"author_comment @{node['id']} =" in logic, f"Missing pseudo node: {graph_id}/{node['id']}")
@@ -422,6 +434,9 @@ def validate(asset):
                 logic_bytes += size
                 graph_sizes.append({"id": graph_id, "name": graph["name"], "logic_bytes": size, "evidence_bytes": (directory / evidence_file).stat().st_size})
             pack_sizes = {"entry_bytes": entry_path.stat().st_size, "logic_bytes": logic_bytes, "graph_sizes": graph_sizes}
+            if manifest and "reading_contract" in manifest:
+                pack_sizes["contract_bytes"] = (directory / "02_ReadingContract.md").stat().st_size
+                pack_sizes["contract_sha1"] = manifest["reading_contract"]["sha1"]
             definitions = detailed.get("macro_definitions", [])
             if "source_macro_definitions" in asset:
                 original_definitions = asset["source_macro_definitions"]
@@ -458,6 +473,8 @@ def validate(asset):
                 check(load(directory / record["evidence"]) == definition, "Macro evidence differs")
                 for key in ("logic", "evidence"):
                     check(hashlib.sha1((directory / record[key]).read_bytes()).hexdigest() == record[key + "_sha1"], "Macro file hash differs")
+                    if "format_contract" in manifest.get("features", []):
+                        check(record.get(key + "_bytes") == (directory / record[key]).stat().st_size, "Macro file byte budget differs")
                 for error in validate_pseudo(definition, (directory / record["logic"]).read_text(encoding="utf-8-sig"), require_locals=True, semantic_hints=True):
                     check(False, f"{record['id']}: {error}")
             result["macro_definitions"] = len(definitions)

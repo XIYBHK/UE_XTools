@@ -1,5 +1,6 @@
 """Offline query regressions; no Unreal installation or network required."""
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -301,6 +302,88 @@ class QueryTests(unittest.TestCase):
         del data["macro_definitions"]
         path.write_text(json.dumps(data), encoding="utf-8")
         self.invoke("outline")
+
+    def test_protocol_version_and_outline_macro_opt_in_metadata(self):
+        data = json.loads((self.root / "01_Manifest.json").read_text())
+        data["pseudo_format_version"] = 2
+        (self.root / "01_Manifest.json").write_text(json.dumps(data), encoding="utf-8")
+        self.invoke("outline", success=False)
+        data["pseudo_format_version"] = 1
+        data["query"] = {"path": "05_Query.py", "protocol_version": 2, "sha1": "x"}
+        (self.root / "01_Manifest.json").write_text(json.dumps(data), encoding="utf-8")
+        self.invoke("outline", success=False)
+        data.pop("query")
+        data["macro_definitions"] = [{"id": "M0001", "name": "Macro", "path": "/Engine/A.A:M",
+                                       "node_count": 0, "entries": [], "logic": "x", "evidence": "y"}]
+        (self.root / "01_Manifest.json").write_text(json.dumps(data), encoding="utf-8")
+        result = self.invoke("outline", "--include-macros", "--max-nodes", "1")
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["macro_definition_count"], 1)
+        complete = self.invoke("outline", "--include-macros")
+        self.assertIn("M0001", [item["graph"] for item in complete["results"]])
+        self.assertNotIn("M0001", [item["graph"] for item in self.invoke("outline")["results"]])
+        self.invoke("outline", "--include-macros", "--max-chars", "400")
+        self.assertLessEqual(len(self.last_output), 400)
+        self.invoke("find", "--query", "X", "--include-macros", success=False)
+        self.invoke("outline", "--graph", "G0001", "--include-macros", success=False)
+
+    def test_protocol_types_contract_hash_and_budget_metadata(self):
+        path = self.root / "01_Manifest.json"
+        original = json.loads(path.read_text())
+        for version in (True, "1", 1.0, None, 2):
+            data = {**original, "pseudo_format_version": version}
+            path.write_text(json.dumps(data), encoding="utf-8")
+            self.invoke("outline", success=False)
+        contract_path = self.root / "02_ReadingContract.md"
+        contract_path.write_text("阅读契约", encoding="utf-8")
+        data = {**original, "pseudo_format_version": 1, "reading_contract": {
+            "path": contract_path.name, "version": 1,
+            "sha1": hashlib.sha1(contract_path.read_bytes()).hexdigest()}}
+        data["graphs"][0].update(logic_bytes=123, evidence_bytes=456)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        header = self.invoke("outline")["results"][0]
+        self.assertEqual((header["logic_bytes"], header["evidence_bytes"]), (123, 456))
+        contract_path.write_text("changed", encoding="utf-8")
+        self.assertIn("contract hash", self.invoke("outline", success=False)["error"])
+        data["reading_contract"]["path"] = "../escape"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertIn("escapes", self.invoke("outline", success=False)["error"])
+
+    def test_packaged_query_identity_and_external_compatible_reader(self):
+        packaged = self.root / "05_Query.py"
+        packaged.write_bytes(TOOL.read_bytes())
+        path = self.root / "01_Manifest.json"
+        data = json.loads(path.read_text())
+        data["query"] = {"path": "05_Query.py", "protocol_version": 1,
+                         "sha1": hashlib.sha1(packaged.read_bytes()).hexdigest()}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        command = [sys.executable, "-B", "-X", "utf8", str(packaged), "outline"]
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        packaged.write_bytes(packaged.read_bytes() + b"\n# different reader copy\n")
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("query script hash mismatch", result.stdout)
+        self.invoke("outline")  # Explicit compatible central reader may differ from snapshot reader.
+
+    def test_pseudo_v1_block_grammar_independent_of_evidence(self):
+        spec = importlib.util.spec_from_file_location("query_grammar", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        text = ('@Outside: ignored()\n```text\n'
+                'disabled development_only @N0: call "Run"()\n'
+                '  author_comment: "\\n@Fake: not_a_node()\\u0060"\n\n'
+                'author_comment @N1 = "comment"\n```\n@Footer: ignored()\n')
+        expected = module.logic_blocks(text)
+        self.assertEqual(set(expected), {"N0", "N1"})
+        self.assertEqual(module.logic_blocks(text.replace("\n", "\r\n")), expected)
+        for invalid in (text.replace("```text\n", ""), text.replace("\n```\n", "\n"),
+                        text + "```text\n```\n", text.replace('author_comment @N1', 'author_comment @N0'),
+                        text.replace('disabled development_only', 'invented'),
+                        text.replace('  author_comment:', 'author_comment:')):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    module.logic_blocks(invalid)
 
 
 if __name__ == "__main__":

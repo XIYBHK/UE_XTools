@@ -473,7 +473,7 @@ bool FXBlueprintGraphExporterAIFileExportTest::RunTest(const FString& Parameters
     TestTrue(TEXT("New AI file observes source change"), UpdatedAI != OriginalAI);
     TArray<FString> ExportedFiles;
     Files.FindFilesRecursive(ExportedFiles, *Directory, TEXT("*"), true, false);
-    TestEqual(TEXT("Fixture has seven files without graph evidence"), ExportedFiles.Num(), 7);
+    TestEqual(TEXT("Fixture has eight files including standalone reading contract"), ExportedFiles.Num(), 8);
     const FString RootDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("XTools/BlueprintExports"));
     const FString RootPrefix = RootDirectory.EndsWith(TEXT("/")) || RootDirectory.EndsWith(TEXT("\\")) ? RootDirectory : RootDirectory + TEXT("/");
     TestTrue(TEXT("Remove test-owned export directory"), Directory.StartsWith(RootPrefix)

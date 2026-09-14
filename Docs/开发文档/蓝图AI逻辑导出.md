@@ -7,6 +7,7 @@
 <资产>/
 ├── 00_START_HERE.md             # 资产入口、图索引、外部宏依赖和停止条件
 ├── 01_Manifest.json             # v2 机器清单：图身份、候选入口与内容摘要
+├── 02_ReadingContract.md        # 通用阅读边界与伪代码语法；相同摘要只读一次
 ├── 05_Query.py                  # Python 标准库只读查询器
 ├── 10_Logic/G0001.pseudo.md     # 按图生成、带标签的确定性伪代码
 ├── 20_Evidence/00_Asset.json    # 资产元数据，不含图与宏定义正文
@@ -15,7 +16,7 @@
 └── 90_Full/                     # 原完整 JSON、.ai.md、.md 三种格式
 ```
 
-入口禁止递归全读或把全部文件塞进上下文。先读总目录和资产入口，按问题选择图的 `10_Logic/Gxxxx.pseudo.md`；证据足够时停止。只有缺少类型、pin 属性或未知节点细节时，才查询同编号的 `20_Evidence/Gxxxx.json`；变量、组件、时间轴或类信息不足时，查询 `20_Evidence/00_Asset.json` 的对应键。`90_Full/` 仅用于全局审计、工具解析或最后查证，不是常规初始上下文。
+入口禁止递归全读或把全部文件塞进上下文。先读总目录和资产入口；首次使用读取 `02_ReadingContract.md`，本次上下文已读相同 SHA1 的契约可跳过。契约副本随每个资产目录分发，移动单个目录后仍可独立使用；这是阅读去重，不是磁盘去重。按问题选择图的 `10_Logic/Gxxxx.pseudo.md`，证据足够时停止。只有缺少类型、pin 属性或未知节点细节时，才查询同编号的 `20_Evidence/Gxxxx.json`；变量、组件、时间轴或类信息不足时，查询 `20_Evidence/00_Asset.json` 的对应键。`90_Full/` 仅用于全局审计、工具解析或最后查证，不是常规初始上下文。
 
 ## 大图按入口或节点读取
 
@@ -23,19 +24,24 @@
 
 ```text
 python 05_Query.py outline
+python 05_Query.py outline --include-macros
 python 05_Query.py find --query BeginPlay
 python 05_Query.py slice --graph G0001 --node N0 --max-nodes 40 --max-chars 16000
 python 05_Query.py node --graph G0001 --node N0
 python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 ```
 
-`outline` 只读机器清单，列出图及候选入口；候选入口仍可能禁用，不保证实际执行。`find` 在选定图或所有所属图的事实中搜索，只返回匹配节点摘要，不把原文件回填上下文。未指定 `--graph` 时不读取标准宏定义；显式选择 `M0001` 才读取对应定义。`--graph` 接受图编号、完整路径或唯一图名，同名图必须进一步消歧。
+`outline` 从机器清单列出图及候选入口，不读取图正文；候选入口仍可能禁用，不保证实际执行。默认只列所属图，并给出 `macro_definition_count`；加 `--include-macros` 同时列出 M 编号宏定义索引，仍受结果数和字符预算限制。图头的 `logic_bytes`/`evidence_bytes` 为 UTF-8 文件字节量，资产入口也显示这两个数。`find` 在选定图或所有所属图的事实中搜索，只返回匹配节点摘要，不把原文件回填上下文。未指定 `--graph` 时不读取标准宏定义正文；显式选择 `M0001` 才读取对应定义。`--graph` 接受图编号、完整路径或唯一图名，同名图必须进一步消歧。
 
 `slice` 从指定节点沿执行边取可达节点，再收集上游数据依赖；默认输出带节点标签的伪代码和精确 pin 索引连接，不重复输出完整节点 JSON。循环、共享目标和扇出保留。只作为数据来源纳入的节点标记 `data_dependency`，其中带执行 pin 的节点附加 `requires_prior_execution`，不能据此认定它由当前入口调用，也不继续追踪它的其他执行出口。外部宏、函数和原生节点实现仍未展开。`node --evidence` 才返回单节点原始属性、引脚及相邻边。
 
 默认最多 40 个节点/结果、最终 JSON（含换行）最多 16,000 个 Unicode 字符，字符数不是 token 数或 UTF-8 字节数。截断结果附有 `truncated`、剩余节点/结果数量；子图另外报告跨边界连接总数、最多 8 条样例和省略数。先看结果是否足够回答；不足时沿引用的节点继续查询或缩小问题范围，必要时显式提高预算。`truncated=false` 只表示本次范围内没有预算省略，不代表外部实现已包含或运行时顺序已证明。
 
 `01_Manifest.json` 为每张图记录完整图路径、入口列表、节点数及伪代码/证据文件的 SHA1。查询器仅校验所选图，拒绝内容摘要或图身份不符、路径越界及节点覆盖不一致的文件。摘要用于检测快照混用，不是安全签名；图编号和 `snapshot_id` 也不替代持久对象身份。没有 Python 时仍可按图阅读。
+
+清单另外声明 `pseudo_format_version=1`、`query={path, protocol_version, sha1}`、`reading_contract={path, version, sha1}`。查询器启动时检查支持的协议版本和契约摘要；执行本包声明的脚本时也检查自身摘要。显式使用另一份兼容查询器读取旧包是允许的，不要求它与旧副本逐字节相同。旧 v2 包缺少新增字段时仍可读取，新协议不支持时明确拒绝。插件资源是查询器的维护来源，随包副本固定在导出时刻；重新导出更新整包，不依赖插件安装路径或环境变量启动器。文件摘要不提供访问控制，直接读文件也不受 CLI 的输出预算约束。
+
+`02_ReadingContract.md` 把伪代码块语法作为 v1 契约：每图一个 `text` 代码块，顶格节点头、已知启用状态前缀、缩进延续行和独立注释头。文本内的作者换行、引号及反引号经 JSON 转义，不能伪装为新节点。查询器只解析块边界，操作、参数与连接继续由语义校验器核对。改变块边界或节点头语法需提升伪代码协议版本；重新排版必须同步生成摘要。独立语法测试覆盖 CRLF、转义作者文本、重复节点、未知前缀、未缩进延续行及缺失/重复/未闭合代码块。
 
 ## 阅读边界
 
@@ -94,9 +100,13 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 
 导出核心使用 UE 5.3 起已有的 C++ 图对象和反射接口，设计覆盖 UE 5.3–5.8，不依赖 5.8 MCP 或新增蓝图脚本接口。自动化前缀为 `XTools.AssetEditor.BlueprintGraphExporter`，使用 `Scripts/Test-UE53.ps1 -Tests XTools.AssetEditor.BlueprintGraphExporter` 运行。
 
-UE 5.3.2 Editor Development 编译及 11 项自动化全部通过；组件临时蓝图测试触发 1 条 AssetRegistry `/Engine/Transient` 不存在的警告。ReadPack 测试覆盖局部变量初始化及作用域、组件属性与 SCS 绑定、同名局部变量隔离、标准宏去重/调用实例保留、赋值和临时变量、纯节点多边进入同一消费者，以及原有连接、回调、执行环、摘要和文件写入保护。另有 27 项 Python 查询/语义回归全部通过，包括本包标准宏及跨库导航、重复身份/损坏证据拒绝、旧包兼容、布尔序列化大小写及语义标记篡改检测，运行 `python -B -m unittest discover -s Scripts -p "test_blueprint_*.py"`。UE 5.4–5.8 尚未执行此次改动的构建验证。
+UE 5.3.2 Editor Development 编译及 11 项自动化全部通过；组件临时蓝图测试触发 1 条 AssetRegistry `/Engine/Transient` 不存在的警告。ReadPack 测试覆盖局部变量初始化及作用域、组件属性与 SCS 绑定、同名局部变量隔离、标准宏去重/调用实例保留、赋值和临时变量、纯节点多边进入同一消费者，以及原有连接、回调、执行环、摘要和文件写入保护。另有 31 项 Python 查询/语义回归全部通过，包括本包标准宏及跨库导航、重复身份/损坏证据拒绝、旧包兼容、布尔序列化大小写及语义标记篡改检测，以及协议类型/版本、阅读契约和脚本摘要、宏索引预算与伪代码块语法，运行 `python -B -m unittest discover -s Scripts -p "test_blueprint_*.py"`。UE 5.4–5.8 尚未执行此次改动的构建验证。
 
 ### 现有项目资产验证
+
+2026-09-14 DeepSeek 审查优化后，同一组 18 个资产重新导出通过：255 张所属图及 50 份标准宏定义通过源图对照，1249 次实际包查询及 21 次新增协议/宏索引查询通过。305 份图伪代码的 SHA1 与改动前一致；跨次加载的源图清单中 34 个 pin ID 不同（导出前后清单各记录一次，共 68 处），同时观测到 15 份证据摘要变化。旧证据正文未另行备份，不能穷尽归因摘要差异，也不能宣称跨进程完整快照逐字节稳定。本次每个资产导出前后内存状态/dirty 一致，5557 个源资产文件 SHA256 无变化。
+
+18 个资产入口由 155616 字节降至 68076 字节，通用契约为 3438 字节；若本次上下文跨资产只读一次相同契约，入口加契约合计 71514 字节，比旧入口合计减少 54.04%。这是这组样本的导航阅读字节量，不是 token 测量或图逻辑压缩率；单个小资产首次读取入口加契约可能增加，完整包仍保留副本。证据见宿主项目 `Saved/XTools/BlueprintExportValidation/deepseek-review-20260914/`；编译/自动化报告为 `Saved/Automation/Reports/BlueprintDeepSeek-review-20260914/`。
 
 开发构建提供 `XTools.BlueprintExport.ValidateAssets /Game/Folder/BP_Name ...`，加载指定资产、调用相同导出后端，并独立记录 UE 图对象的节点、引脚、连接、导出前后内存状态及 package dirty 标志，不编译或保存源资产。清单位于 `Saved/XTools/BlueprintExportValidation/source-inventory.json`。
 

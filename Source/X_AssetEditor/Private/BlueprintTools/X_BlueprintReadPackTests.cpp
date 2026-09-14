@@ -48,7 +48,7 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     FString Before;
     FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&Before));
     const auto Files = XBlueprintReadPack::Build(Snapshot.ToSharedRef());
-    TestEqual(TEXT("Three routing files plus a pair per graph"), Files.Num(), 5);
+    TestEqual(TEXT("Four routing/contract files plus a pair per graph"), Files.Num(), 6);
     const FString* Start = Files.Find(TEXT("00_START_HERE.md"));
     const FString* Logic = Files.Find(TEXT("10_Logic/G0001.pseudo.md"));
     const FString* Evidence = Files.Find(TEXT("20_Evidence/G0001.json"));
@@ -58,6 +58,9 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Full snapshots are not initial context"), Start->Contains(TEXT("90_Full/")));
     TestTrue(TEXT("Entry identifies actual external macro dependencies"), Start->Contains(TEXT("/Engine/Fixture:Gate")));
     TestTrue(TEXT("Stop when evidence is sufficient"), Start->Contains(TEXT("立即停止")));
+    const FString Contract = Files.FindRef(TEXT("02_ReadingContract.md"));
+    TestTrue(TEXT("Shared contract linked separately"), Start->Contains(TEXT("02_ReadingContract.md")) && Contract.Contains(TEXT("伪代码语法 v1")));
+    TestTrue(TEXT("Empty default does not imply unset"), Contract.Contains(TEXT("不能判定 unset")));
     TestFalse(TEXT("Entry excludes full graph facts"), Start->Contains(TEXT("WRONG_DEFAULT")));
     TestTrue(TEXT("Value_5 joins actual index 7"), Logic->Contains(TEXT("\"Value_5\"=@N3[\"ReturnValue\"]")));
     TestTrue(TEXT("Value_6 joins actual index 6"), Logic->Contains(TEXT("\"Value_6\"=@N4[\"self\"]")));
@@ -103,6 +106,13 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
         TestEqual(TEXT("Manifest binds exact UTF8 logic bytes"), Record->GetStringField(TEXT("logic_sha1")), BytesToHex(Digest, FSHA1::DigestSize).ToLower());
         TestEqual(TEXT("Disabled event remains an explicit entry candidate"), Record->GetArrayField(TEXT("entries")).Num(), 2);
         TestEqual(TEXT("Manifest graph identity"), Record->GetStringField(TEXT("path")), Graph->GetStringField(TEXT("path")));
+        TestEqual(TEXT("Pseudo grammar is versioned independently"), Manifest->GetIntegerField(TEXT("pseudo_format_version")), 1);
+        TestEqual(TEXT("Logic budget uses exact UTF8 bytes"), Record->GetIntegerField(TEXT("logic_bytes")), Bytes.Length());
+        TestEqual(TEXT("Evidence budget uses exact UTF8 bytes"), Record->GetIntegerField(TEXT("evidence_bytes")), FTCHARToUTF8(**Evidence).Length());
+        uint8 ContractDigest[FSHA1::DigestSize];
+        const FTCHARToUTF8 ContractBytes(*Contract);
+        FSHA1::HashBuffer(ContractBytes.Get(), ContractBytes.Length(), ContractDigest);
+        TestEqual(TEXT("Contract content identity is reproducible"), Manifest->GetObjectField(TEXT("reading_contract"))->GetStringField(TEXT("sha1")), BytesToHex(ContractDigest, FSHA1::DigestSize).ToLower());
     }
 
     // Pin names are not unique identities: duplicate declarations and references use the same actual index.
@@ -181,6 +191,14 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Assignment preserves connected input arguments"), Hints.Contains(TEXT("assign [Variable_is_write_target](")) && Hints.Contains(TEXT("\"Value_5\"=@N3[\"ReturnValue\"]")));
     TestTrue(TEXT("Temporary flag does not assert per-call lifetime"), Hints.Contains(TEXT("[compiler_local; persistent_savegame; no_lifetime_inference]")));
+    const FString QueryText = TEXT("# portable query fixture\n");
+    const auto WithQuery = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), QueryText);
+    TestEqual(TEXT("Standalone query text preserved"), WithQuery.FindRef(TEXT("05_Query.py")), QueryText);
+    TSharedPtr<FJsonObject> QueryManifest;
+    FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(WithQuery.FindRef(TEXT("01_Manifest.json"))), QueryManifest);
+    TestEqual(TEXT("Query compatibility protocol recorded"), QueryManifest->GetObjectField(TEXT("query"))->GetIntegerField(TEXT("protocol_version")), 1);
+    Snapshot->SetStringField(TEXT("asset_path"), TEXT("/Game/Other.Other"));
+    TestEqual(TEXT("Contract shared by content across assets"), XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("02_ReadingContract.md")), Contract);
     return true;
 }
 #endif
