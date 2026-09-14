@@ -93,6 +93,8 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 变量的 `binding_origin` 区分 `local`、`self_member`、`external_member` 与 `unresolved`。`component_read` 仅用于反射解析到组件对象属性的读取；`component_binding=object_property` 不表示 SCS 声明，只有通过属性所属蓝图的 SCS 名称及有效 GUID 核对后才标记 `scs_property`，并附 `scs_node_path`、模板及声明 GUID。成员类型本身不证明它是 SCS 组件；声明绑定也不保证运行时指针有效或未被重新赋值。同名局部变量保持局部身份。`function_entry` 的 `local_scope` 给出完整所属图路径，与已有 `local` 初始声明配合，不推断运行时生命周期。
 
+`spawn_exposure_hints` 功能将重要初始化元数据提前到相关节点的 `binding:` 行：`expose_on_spawn=true [spawn_argument_possible; default_not_constant]`。渲染器按完整有效且唯一的 GUID 与名称匹配本资产 `variables[].metadata.ExposeOnSpawn`，只标注已解析的 self_member，局部/外部成员及外部宏不复用本资产声明。`node` 和 `slice` 直接保留该行，无需全量读取资产证据。它表示可以由生成调用传入，既不证明某次实际赋值，也不穷尽所有外部写入路径；没有提示不等于默认值恒定。`class_defaults.properties[].flags` 是常用标志摘要，不能替代变量完整元数据。该提示不改变节点头语法，保留 pseudo v1；独立校验器按清单功能标记联合图证据与资产变量声明核验。
+
 ### 标准宏定义的按需读取
 
 导出器收集当前本地引擎 `/Engine/EditorBlueprintResources/StandardMacros.StandardMacros` 中实际引用的宏图及其标准宏依赖，按完整图路径去重，保存到 `30_Dependencies/Mxxxx.pseudo.md` 与同编号 JSON。`01_Manifest.json.macro_definitions` 与所属资产的 `graphs` 分开，原图及节点计数不膨胀。每包最多 64 张定义图、10000 个定义节点，按整图采集；达到上限时 `coverage.macro_dependency_limit_reached=true`，未采集引用继续明确标记，`macro_definition_engine_version` 记录来源引擎版本。

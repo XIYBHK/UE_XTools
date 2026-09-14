@@ -92,6 +92,17 @@ class QueryTests(unittest.TestCase):
         self.assertNotIn('"pins"', self.last_output)
         self.assertIn('"flag"=false', result["nodes"][0]["logic"])
 
+    def test_spawn_exposure_survives_node_and_slice_retrieval(self):
+        path = self.root / self.records[1]["logic"]
+        hint = '  binding: "self_member" expose_on_spawn=true [spawn_argument_possible; default_not_constant]'
+        path.write_text('```text\n@N0: read "CoinRotate"()\n' + hint + '\n```\n', encoding="utf-8")
+        self.rehash()
+        node = self.invoke("node", "--graph", "G0002", "--node", "N0")
+        sliced = self.invoke("slice", "--graph", "G0002", "--node", "N0")
+        followed = self.invoke("slice", "--graph", "G0002", "--node", "N0", "--follow")
+        for result in (node["results"][0], sliced["nodes"][0], followed["results"][0]):
+            self.assertIn(hint, result["logic"])
+
     def test_result_prefix_matches_full_collection_bytes_and_counts(self):
         module = self.query_module()
 

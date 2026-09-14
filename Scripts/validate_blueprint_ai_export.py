@@ -11,6 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import uuid
 
 
 def load(path):
@@ -50,7 +51,8 @@ def _q(value):
     return json.dumps(str(value), ensure_ascii=False, separators=(",", ":")).replace("`", "\\u0060")
 
 
-def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, semantic_hints=False, classified_fallback=False):
+def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, semantic_hints=False, classified_fallback=False,
+                    spawn_exposure_hints=False, variables=()):
     """Independently validate the semantic records in one ReadPack pseudo file.
 
     This intentionally parses the stable pseudo grammar and derives expected records
@@ -58,6 +60,18 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
     generated copy of the C++ text.
     """
     errors = []
+    def guid(value):
+        try:
+            parsed = uuid.UUID(str(value))
+            return parsed.hex if parsed.int else None
+        except (ValueError, AttributeError):
+            return None
+
+    declarations = {}
+    for variable in variables:
+        identity = guid(variable.get("guid"))
+        if identity:
+            declarations.setdefault(identity, []).append(variable)
     nodes = {str(n.get("id")): n for n in graph.get("nodes", [])}
     pins = {(str(n.get("id")), int(p.get("index", -1))): p
             for n in graph.get("nodes", []) for p in n.get("pins", [])}
@@ -290,6 +304,14 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
                                     ("component", semantic.get("component_binding")), ("scs", semantic.get("scs_node_path"))):
                     if val:
                         binding += " " + prefix + "=" + _q(val)
+                reference = semantic.get("variable", {})
+                matches = declarations.get(guid(reference.get("guid")), [])
+                if (spawn_exposure_hints and semantic["binding_origin"] == "self_member"
+                        and reference.get("is_self_context") and not reference.get("is_local_scope")
+                        and not reference.get("member_scope") and len(matches) == 1
+                        and matches[0].get("name", "").casefold() == reference.get("name", "").casefold()
+                        and str(matches[0].get("metadata", {}).get("ExposeOnSpawn", "")).casefold() == "true"):
+                    binding += " expose_on_spawn=true [spawn_argument_possible; default_not_constant]"
                 expected_hints.append(binding)
             if kind == "function_entry" and semantic.get("local_scope"):
                 expected_hints.append("local_scope: " + _q(semantic["local_scope"]))
@@ -452,7 +474,9 @@ def validate(asset):
                 for pseudo_error in validate_pseudo(graph, logic, legacy_labels=manifest is None,
                                                     require_locals=manifest is not None and "local_initialization" in manifest.get("features", []),
                                                     semantic_hints=manifest is not None and "semantic_hints" in manifest.get("features", []),
-                                                    classified_fallback=manifest is not None and "classified_fallback" in manifest.get("features", [])):
+                                                    classified_fallback=manifest is not None and "classified_fallback" in manifest.get("features", []),
+                                                    spawn_exposure_hints=manifest is not None and "spawn_exposure_hints" in manifest.get("features", []),
+                                                    variables=evidence_metadata.get("variables", []) if manifest is not None else ()):
                     check(False, f"{graph_id}: {pseudo_error}")
                 size = (directory / logic_file).stat().st_size
                 logic_bytes += size

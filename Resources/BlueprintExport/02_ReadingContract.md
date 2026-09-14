@@ -23,6 +23,8 @@
 - classified "kind" "title" 表示已有分类但采用通用展示；semantic 行保留采集到的语义 JSON，参数及 exit 仍按真实 pin/边展示，不据此承诺完整编译语义。缺少分类才使用 opaque；精确连接仍可独立查证。
 - 表达式中的数据重路由最多追溯 64 个来源引用；到达上限保留当前引用并标注 continue_in_evidence，数据环标注 data_cycle。节点和原始边仍保留，可继续查询，不等于剩余逻辑被丢弃。
 
+- binding 的 `expose_on_spawn=true` 表示可在 Spawn 时传入，不证明实际已传值。依据为资产证据 `variables[].metadata.ExposeOnSpawn`，按完整唯一 GUID/名称匹配 self_member；局部、外部成员和外部宏不套用。缺少提示不证明变量恒定：仍需检查实例配置、其他图及 Blueprint/C++ 写入。`class_defaults.properties[].flags` 仅为常用标志摘要；默认值不是运行时不变量。
+
 ## 跨图与快照查询
 
 - slice --follow --depth 3 --max-graphs 40 按静态调用引用导航；按包/图/入口去重，同图的不同自定义事件仍会跟随。保留每个调用点、共享/递归目标和外部状态，entry_nodes 标明当前入口区域。结果按 node/call 记录预算裁剪，depth_boundaries、pending_graphs、pending_entries 和 traversal_truncated 另报遍历边界；不展开调用栈，不承诺动态派发、可执行调用或运行时顺序。

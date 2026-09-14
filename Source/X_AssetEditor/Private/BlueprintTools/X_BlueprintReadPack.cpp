@@ -5,6 +5,7 @@
 #include "Dom/JsonValue.h"
 #include "Containers/StringConv.h"
 #include "Misc/SecureHash.h"
+#include "Misc/Guid.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
@@ -82,13 +83,14 @@ FString ContentHash(const FString& Text)
 struct FGraphView
 {
     FObject Graph;
+    const TMap<FGuid, FObject>& Variables;
     TMap<FString, FObject> Nodes;
     TMap<FString, FObject> Pins;
     TMap<FString, TMap<FString, int32>> PinNameCounts;
     TMap<FString, TArray<FObject>> Incoming;
     TMap<FString, TArray<FObject>> Outgoing;
 
-    explicit FGraphView(const FObject& InGraph) : Graph(InGraph)
+    FGraphView(const FObject& InGraph, const TMap<FGuid, FObject>& InVariables) : Graph(InGraph), Variables(InVariables)
     {
         for (const auto& V : Array(Graph, TEXT("nodes")))
         {
@@ -311,6 +313,20 @@ struct FGraphView
             if (!Str(Obj(S, TEXT("variable")), TEXT("member_scope")).IsEmpty()) { Out += TEXT(" scope=") + Quote(Str(Obj(S, TEXT("variable")), TEXT("member_scope"))); }
             if (!Str(S, TEXT("component_binding")).IsEmpty()) { Out += TEXT(" component=") + Quote(Str(S, TEXT("component_binding"))); }
             if (!Str(S, TEXT("scs_node_path")).IsEmpty()) { Out += TEXT(" scs=") + Quote(Str(S, TEXT("scs_node_path"))); }
+            const FObject Reference = Obj(S, TEXT("variable"));
+            FGuid Guid;
+            if (Str(S, TEXT("binding_origin")) == TEXT("self_member") && Flag(Reference, TEXT("is_self_context"))
+                && !Flag(Reference, TEXT("is_local_scope")) && Str(Reference, TEXT("member_scope")).IsEmpty()
+                && FGuid::Parse(Str(Reference, TEXT("guid")), Guid) && Guid.IsValid())
+            {
+                const FObject* Declaration = Variables.Find(Guid);
+                if (Declaration && Declaration->IsValid()
+                    && Str(*Declaration, TEXT("name")).Equals(Str(Reference, TEXT("name")), ESearchCase::IgnoreCase)
+                    && Str(Obj(*Declaration, TEXT("metadata")), TEXT("ExposeOnSpawn")).Equals(TEXT("true"), ESearchCase::IgnoreCase))
+                {
+                    Out += TEXT(" expose_on_spawn=true [spawn_argument_possible; default_not_constant]");
+                }
+            }
             Out += TEXT("\n");
         }
         if (Kind == TEXT("function_entry"))
@@ -362,9 +378,9 @@ struct FGraphView
     }
 };
 
-FString GraphLogic(const FObject& Graph, const FString& EvidencePath)
+FString GraphLogic(const FObject& Graph, const FString& EvidencePath, const TMap<FGuid, FObject>& Variables)
 {
-    const FGraphView View(Graph);
+    const FGraphView View(Graph, Variables);
     FString Out = TEXT("# 图伪代码\n\n");
     Out += TEXT("图路径：") + Quote(Str(Graph, TEXT("path"))) + TEXT("\n\n");
     Out += TEXT("按需查证：[本图完整事实](../") + EvidencePath + TEXT(")。只有需要精确类型、GUID、隐藏属性、拆分 pin 或 opaque 节点细节时才读取。\n\n");
@@ -386,7 +402,7 @@ TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FStr
         MakeShared<FJsonValueString>(TEXT("semantic_hints")), MakeShared<FJsonValueString>(TEXT("standard_macro_definitions")),
         MakeShared<FJsonValueString>(TEXT("reading_contract")), MakeShared<FJsonValueString>(TEXT("format_contract")),
         MakeShared<FJsonValueString>(TEXT("classified_fallback")), MakeShared<FJsonValueString>(TEXT("persistent_identity")),
-        MakeShared<FJsonValueString>(TEXT("standard_macro_iteration"))});
+        MakeShared<FJsonValueString>(TEXT("standard_macro_iteration")), MakeShared<FJsonValueString>(TEXT("spawn_exposure_hints"))});
     Manifest->SetStringField(TEXT("asset_path"), Str(Snapshot, TEXT("asset_path")));
     Manifest->SetStringField(TEXT("snapshot_id"), ContentHash(Compact(Snapshot)));
     const FObject ContractRecord = MakeShared<FJsonObject>();
@@ -430,6 +446,19 @@ TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FStr
     TArray<TSharedPtr<FJsonValue>> AllGraphs = Array(Snapshot, TEXT("graphs"));
     const int32 OwnedCount = AllGraphs.Num();
     AllGraphs.Append(Array(Snapshot, TEXT("macro_definitions")));
+    TMap<FGuid, FObject> Variables;
+    const TMap<FGuid, FObject> NoVariables;
+    for (const auto& V : Array(Snapshot, TEXT("variables")))
+    {
+        const FObject Declaration = V->AsObject();
+        FGuid Guid;
+        if (FGuid::Parse(Str(Declaration, TEXT("guid")), Guid) && Guid.IsValid())
+        {
+            // A duplicate identity cannot safely identify a declaration, even when names agree.
+            if (Variables.Contains(Guid)) { Variables[Guid].Reset(); }
+            else { Variables.Add(Guid, Declaration); }
+        }
+    }
     int32 Index = 0;
     for (const auto& V : AllGraphs)
     {
@@ -443,7 +472,7 @@ TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FStr
         ++Index;
         const FString Logic = (bMacro ? TEXT("30_Dependencies/") : TEXT("10_Logic/")) + Id + TEXT(".pseudo.md");
         const FString Evidence = (bMacro ? TEXT("30_Dependencies/") : TEXT("20_Evidence/")) + Id + TEXT(".json");
-        const FString LogicText = GraphLogic(G, Evidence);
+        const FString LogicText = GraphLogic(G, Evidence, bMacro ? NoVariables : Variables);
         const FString EvidenceText = Compact(G) + TEXT("\n");
         Files.Add(Logic, LogicText);
         Files.Add(Evidence, EvidenceText);

@@ -1,4 +1,5 @@
 import json
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -42,6 +43,34 @@ def good_text():
 
 
 class PseudoValidationTests(unittest.TestCase):
+    def test_spawn_exposure_hint_matches_declaration_and_scope(self):
+        identity = "FA33A0754A87952E34F4E0827334A86D"
+        variable = {"name": "CoinRotate", "guid": identity, "metadata": {"ExposeOnSpawn": "true"}}
+        reference = {"name": "CoinRotate", "guid": identity, "is_self_context": True}
+        semantic = {"kind": "variable", "access": "get", "binding_origin": "self_member", "variable": reference}
+        graph = {"nodes": [{"id": "A", "semantic": semantic, "pins": []}], "edges": []}
+        base = ('```text\n@A: read "CoinRotate"()\n'
+                '  demand: data_edges=0 consumers=0 [static_direct; not_call_count]\n'
+                '  binding: "self_member"\n```\n')
+        suffix = ' expose_on_spawn=true [spawn_argument_possible; default_not_constant]'
+        hinted = base.replace('"self_member"\n', '"self_member"' + suffix + '\n')
+        options = dict(semantic_hints=True, spawn_exposure_hints=True, variables=[variable])
+        self.assertEqual(validate_pseudo(graph, hinted, **options), [])
+        self.assertTrue(validate_pseudo(graph, base, **options))
+        self.assertTrue(validate_pseudo(graph, hinted.replace('=true', '=false'), **options))
+        for replacements in ({"guid": "0" * 32}, {"guid": "F" * 32}, {"name": "Other"},
+                             {"is_self_context": False}, {"is_local_scope": True}):
+            modified = copy.deepcopy(graph)
+            modified["nodes"][0]["semantic"]["variable"].update(replacements)
+            text = base.replace('"CoinRotate"', '"Other"') if "name" in replacements else base
+            self.assertEqual(validate_pseudo(modified, text, **options), [])
+            self.assertTrue(validate_pseudo(modified, text.replace('"self_member"\n', '"self_member"' + suffix + '\n'), **options))
+        for declarations in ([], [variable, variable], [{**variable, "metadata": {"ExposeOnSpawn": "false"}}]):
+            self.assertEqual(validate_pseudo(graph, base, **{**options, "variables": declarations}), [])
+            self.assertTrue(validate_pseudo(graph, hinted, **{**options, "variables": declarations}))
+        # Old packs remain valid and do not silently acquire new claims.
+        self.assertEqual(validate_pseudo(graph, base, semantic_hints=True), [])
+
     def test_iteration_hint_requires_exact_evidence_and_cannot_be_invented(self):
         iteration = {"kind": "array", "loop_body_pin": "LoopBody", "definition_graph": "/Engine/Macros:ForEachLoop"}
         semantic = {"kind": "macro_instance", "macro_graph": "/Engine/Macros:ForEachLoop",

@@ -810,6 +810,72 @@ bool FXBlueprintGraphExporterStandardMacrosTest::RunTest(const FString& Paramete
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintReadPackSpawnExposureTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.SpawnExposure",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintReadPackSpawnExposureTest::RunTest(const FString& Parameters)
+{
+    TSharedPtr<FJsonObject> Snapshot;
+    const FString Fixture = TEXT(R"JSON({
+        "asset_path":"/Game/Test.Test",
+        "variables":[{"name":"CoinRotate","guid":"FA33A0754A87952E34F4E0827334A86D",
+            "property_flags":"5","metadata":{"ExposeOnSpawn":"true"}}],
+        "graphs":[{"name":"EventGraph","path":"/Game/Test.Test:EventGraph","edges":[],"nodes":[
+            {"id":"N20","is_enabled":true,"pins":[],"semantic":{"kind":"variable","access":"get",
+                "binding_origin":"self_member","variable":{"name":"CoinRotate",
+                    "guid":"FA33A0754A87952E34F4E0827334A86D","is_self_context":true,"is_local_scope":false}}}
+        ]}]
+    })JSON");
+    if (!TestTrue(TEXT("ReadPack fixture parses"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Fixture), Snapshot))) { return false; }
+    const auto Graph = Snapshot->GetArrayField(TEXT("graphs"))[0]->AsObject();
+    const auto Semantic = Graph->GetArrayField(TEXT("nodes"))[0]->AsObject()->GetObjectField(TEXT("semantic"));
+    const auto Reference = Semantic->GetObjectField(TEXT("variable"));
+    const auto Declaration = Snapshot->GetArrayField(TEXT("variables"))[0]->AsObject();
+    const FString Identity = Reference->GetStringField(TEXT("guid"));
+    const FString Hint = TEXT("expose_on_spawn=true [spawn_argument_possible; default_not_constant]");
+    const auto Render = [&Snapshot]() { return XBlueprintReadPack::Build(Snapshot.ToSharedRef(), TEXT("fixture contract")); };
+    auto Pack = Render();
+    TestTrue(TEXT("Metadata reaches the variable block even when raw declaration flags are only 5"), Pack.FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    TestTrue(TEXT("Manifest advertises additive hint support"), Pack.FindChecked(TEXT("01_Manifest.json")).Contains(TEXT("spawn_exposure_hints")));
+    for (const FString& Origin : {FString(TEXT("local")), FString(TEXT("external_member")), FString(TEXT("unresolved"))})
+    {
+        Semantic->SetStringField(TEXT("binding_origin"), Origin);
+        TestFalse(TEXT("Non-self bindings do not borrow this asset's metadata"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    }
+    Semantic->SetStringField(TEXT("binding_origin"), TEXT("self_member"));
+    Reference->SetBoolField(TEXT("is_local_scope"), true);
+    TestFalse(TEXT("Local identity takes precedence"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    Reference->SetBoolField(TEXT("is_local_scope"), false);
+    Reference->SetBoolField(TEXT("is_self_context"), false);
+    TestFalse(TEXT("External receiver cannot reuse a local declaration"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    Reference->SetBoolField(TEXT("is_self_context"), true);
+    for (const FString& BadGuid : {FString(TEXT("00000000000000000000000000000000")), FGuid::NewGuid().ToString(), FString(TEXT("FA33A075"))})
+    {
+        Reference->SetStringField(TEXT("guid"), BadGuid);
+        TestFalse(TEXT("Missing, invalid or unmatched identity cannot fall back to name"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    }
+    Reference->SetStringField(TEXT("guid"), Identity);
+    Reference->SetStringField(TEXT("name"), TEXT("Other"));
+    TestFalse(TEXT("GUID and declaration name must agree"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    Reference->SetStringField(TEXT("name"), TEXT("CoinRotate"));
+    Declaration->GetObjectField(TEXT("metadata"))->SetStringField(TEXT("ExposeOnSpawn"), TEXT("false"));
+    TestFalse(TEXT("False metadata does not become a positive claim"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    Declaration->GetObjectField(TEXT("metadata"))->SetStringField(TEXT("ExposeOnSpawn"), TEXT("true"));
+    auto Variables = Snapshot->GetArrayField(TEXT("variables"));
+    const auto DuplicateDeclaration = Variables[0];
+    Variables.Add(DuplicateDeclaration);
+    Snapshot->SetArrayField(TEXT("variables"), Variables);
+    TestFalse(TEXT("Duplicate GUID is ambiguous"), Render().FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    Variables.SetNum(1);
+    Snapshot->SetArrayField(TEXT("variables"), Variables);
+    Snapshot->SetArrayField(TEXT("macro_definitions"), Snapshot->GetArrayField(TEXT("graphs")));
+    Pack = Render();
+    TestTrue(TEXT("Owned graph retains the hint"), Pack.FindChecked(TEXT("10_Logic/G0001.pseudo.md")).Contains(Hint));
+    TestFalse(TEXT("External macro does not inherit caller variable declarations"), Pack.FindChecked(TEXT("30_Dependencies/M0001.pseudo.md")).Contains(Hint));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterMacroIterationTest,
     "XTools.AssetEditor.BlueprintGraphExporter.MacroIteration",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
