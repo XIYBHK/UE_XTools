@@ -31,6 +31,7 @@ python 05_Query.py find --query BeginPlay
 python 05_Query.py slice --graph G0001 --node N0 --max-nodes 40 --max-chars 16000
 python 05_Query.py node --graph G0001 --node N0
 python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
+python 05_Query.py assets --graph G0001 --node N0
 ```
 
 `outline` 从机器清单列出图及候选入口，不读取图正文；候选入口仍可能禁用，不保证实际执行。默认只列所属图，并给出 `macro_definition_count`；加 `--include-macros` 同时列出 M 编号宏定义索引，仍受结果数和字符预算限制。图头的 `logic_bytes`/`evidence_bytes` 为 UTF-8 文件字节量，资产入口也显示这两个数。`find` 在选定图或所有所属图的事实中搜索，只返回匹配节点摘要，不把原文件回填上下文。未指定 `--graph` 时不读取标准宏定义正文；显式选择 `M0001` 才读取对应定义。`--graph` 接受图编号、完整路径或唯一图名，同名图必须进一步消歧。
@@ -48,6 +49,12 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 `02_ReadingContract.md` 把伪代码块语法作为 v1 契约：每图一个 `text` 代码块，顶格节点头、已知启用状态前缀、缩进延续行和独立注释头。文本内的作者换行、引号及反引号经 JSON 转义，不能伪装为新节点。查询器只解析块边界，操作、参数与连接继续由语义校验器核对。改变块边界或节点头语法需提升伪代码协议版本；重新排版必须同步生成摘要。独立语法测试覆盖 CRLF、转义作者文本、重复节点、未知前缀、未缩进延续行及缺失/重复/未闭合代码块。
 
 ## 阅读边界
+
+有分类但没有专用展示模板的节点使用 `classified "kind" "title"`，后接 `semantic:` JSON 行，完整保留该节点已采集的语义字段；参数、数据输出和执行出口继续独立列出。只有没有分类的节点才走 `opaque` 兜底；分类不代表实现已展开或编译器语义完备。清单用 `classified_fallback` 声明这种展示能力，校验器核对种类、标题及完整语义对象，旧包仍按旧规则校验。节点头和缩进延续行语法没有改变，`pseudo_format_version` 保持 1。通用兜底自动适用后续新增分类，不另外维护模板白名单。
+
+`assets` 查询有类型依据、未连接且有效的输入引脚默认资产引用；支持对象、类、软对象、软类及插件挂载路径。默认查询所属图，显式 `--graph Mxxxx` 可查询标准宏定义；`--node` 必须同时指定图。输出包含图、节点、引脚位置、引用类型和 `reference_only` 状态，沿用结果数/字符预算。它不加载资产，也不将普通字符串、容器文本或任意反射属性猜成依赖；返回范围及未解析/未支持候选计数。`complete_asset_graph=false` 明确表示这不是完整资产依赖图，空结果不能证明没有依赖。
+
+`deps` 仍是函数/宏的正向调用导航，不提供项目级反向影响分析；`assets` 补充另一种证据查询，不改变已有调用定位和规范目录优先规则。不支持的协议继续拒绝读取，错误结果同时给出 `field`、`received` 和 `supported`，帮助选择兼容查询器。
 
 函数入口用 `local` 声明局部变量，始终保留原始 `default`。`default_source=explicit` 表示显式序列化值，`type_default` 表示原始值为空、使用类型初始化；非容器数值和布尔类型另给出 `effective_default`（0 或 false）。例如 `local "Val": "real:double" = type_default(0) [raw_default=""]`。结构体、容器等复杂类型保留 `type_default [see_evidence]`，不凭空补零。这些是初始化语义，不代表变量在后续执行中的值。
 
@@ -71,7 +78,7 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 
 `id`、节点别名和 pin `index` 只在本次快照内定位；陈述引脚来源时同时核对 pin 名称与类型。`90_Full` 中的三个文件保留原有完整 JSON、AI 文本和 Markdown 输出，原 `AIWriter` 不变；新的 `XBlueprintReadPack::Build` 只消费 JSON 生成按需阅读包。
 
-图编号按本次快照分配，不用于跨导出比对；持久定位结合 `asset_path`、图 `path`、`node_guid` 与 pin `id`，无效或重复 GUID 不保证稳定。同一节点同名 pin 在参数声明、数据输出、执行出口及引用中统一附加 `#index` 消歧，包括跨输入/输出方向重名。数据重路由在表达式引用中折叠，但节点仍保留；超过 64 级的重路由保留余下节点引用并提示查证据，不递归展开任意长链。
+图编号按本次快照分配，不用于跨导出比对；持久定位结合 `asset_path`、图 `path`、`node_guid` 与 pin `id`，无效或重复 GUID 不保证稳定。同一节点同名 pin 在参数声明、数据输出、执行出口及引用中统一附加 `#index` 消歧，包括跨输入/输出方向重名。数据重路由在表达式引用中折叠，但节点仍保留；访问达到 64 个来源引用时保留当前引用并提示 `continue_in_evidence`，遇环提示 `data_cycle`。所有原节点/边仍在证据中，不递归展开任意长链。引脚重名计数按节点预先建立，避免每次生成标签重复扫描。
 
 ## 详细事实格式
 
@@ -104,7 +111,9 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 
 导出核心使用 UE 5.3 起已有的 C++ 图对象和反射接口，设计覆盖 UE 5.3–5.8，不依赖 5.8 MCP 或新增蓝图脚本接口。自动化前缀为 `XTools.AssetEditor.BlueprintGraphExporter`，使用 `Scripts/Test-UE53.ps1 -Tests XTools.AssetEditor.BlueprintGraphExporter` 运行。
 
-UE 5.3.2 Editor Development 编译及 12 项自动化全部通过；组件临时蓝图测试触发 1 条 AssetRegistry `/Engine/Transient` 不存在的警告。ReadPack 测试覆盖局部变量初始化及作用域、组件属性与 SCS 绑定、同名局部变量隔离、标准宏去重/调用实例保留、赋值和临时变量、纯节点多边进入同一消费者，以及原有连接、回调、执行环、摘要和文件写入保护。另有 31 项 Python 查询/语义回归全部通过，包括本包标准宏及跨库导航、重复身份/损坏证据拒绝、旧包兼容、布尔序列化大小写及语义标记篡改检测，以及协议类型/版本、阅读契约和脚本摘要、宏索引预算与伪代码块语法，运行 `python -B -m unittest discover -s Scripts -p "test_blueprint_*.py"`。UE 5.4–5.8 尚未执行此次改动的构建验证。
+UE 5.3.2 Editor Development 编译及 14 项自动化全部通过；组件临时蓝图测试触发 1 条 AssetRegistry `/Engine/Transient` 不存在的警告。ReadPack 测试覆盖局部变量初始化及作用域、组件属性与 SCS 绑定、同名局部变量隔离、标准宏去重/调用实例保留、赋值和临时变量、纯节点多边进入同一消费者，以及原有连接、回调、执行环、摘要和文件写入保护；新增全部 70 种当前分类及未来分类的渲染、数据重路由 64 级边界和环回归。另有 36 项 Python 查询/语义回归全部通过，包括本包标准宏及跨库导航、重复身份/损坏证据拒绝、旧包兼容、布尔序列化大小写及语义标记篡改检测，以及协议类型/版本、阅读契约和脚本摘要、宏索引预算与伪代码块语法、分类事实篡改和有类型依据的默认资产引用，运行 `python -B -m unittest discover -s Scripts -p "test_blueprint_*.py"`。UE 5.4–5.8 尚未执行此次改动的构建验证。
+
+2026-09-14 实现审查修复后，18 个资产的 255 张所属图和 50 份宏定义通过源图对照；1249 次原有查询及 305 次资产引用查询通过。实际 191 个节点使用分类兜底并逐一核对语义对象，20 个未分类节点仍为 opaque。原 BP_子弹包的 G0002/N67 可被新版查询器定位到爆炸特效引用。305 份伪代码总字节数由 1,718,095 增至 1,808,352，默认 slice 截断由 44 增至 45，均明确标记。5557 个源资产文件哈希不变。报告位于宿主项目 `Saved/XTools/BlueprintExportValidation/implementation-review-20260914/review-report.md`；这不是完整依赖图、运行时验证或模型准确率评测。
 
 ### 现有项目资产验证
 

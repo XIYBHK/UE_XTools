@@ -208,4 +208,86 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Contract shared by content across assets"), XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("02_ReadingContract.md")), Contract);
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterKindCoverageTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.KindCoverage",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterKindCoverageTest::RunTest(const FString& Parameters)
+{
+    // Renderer coverage, not a claim that these fixtures exercise every native K2 expansion.
+    const FString KindsText = TEXT("actor_bound_event add_component_by_class add_delegate array_get assign_delegate assignment async_action async_task bitmask_literal branch break_struct call_delegate call_function cast_byte_to_enum clear_delegate comment component_bound_event composite construct_object create_delegate custom_event delegate_set do_once_multi_input dynamic_cast enum_equality enum_inequality enum_literal event format_text function_entry function_result get_class_defaults get_data_table_row get_input_axis_key_value get_input_axis_value get_input_vector_axis_value get_subsystem input_action input_action_event input_axis_event input_axis_key_event input_key input_key_event input_touch input_touch_event input_vector_axis_event macro_instance make_array make_map make_set make_struct math_expression multi_gate multicast_delegate remove_delegate reroute select self sequence set_fields_in_struct spawn_actor struct_member_get struct_member_set struct_operation switch temporary_variable timeline tunnel_entry tunnel_exit variable future_classified_kind");
+    TArray<FString> Kinds;
+    KindsText.ParseIntoArray(Kinds, TEXT(" "), true);
+    const auto Snapshot = MakeShared<FJsonObject>();
+    const auto Graph = MakeShared<FJsonObject>();
+    Graph->SetStringField(TEXT("path"), TEXT("/Game/Test.Test:Kinds"));
+    TArray<TSharedPtr<FJsonValue>> Nodes;
+    for (int32 Index = 0; Index < Kinds.Num(); ++Index)
+    {
+        const auto Node = MakeShared<FJsonObject>();
+        Node->SetStringField(TEXT("id"), FString::Printf(TEXT("N%d"), Index));
+        Node->SetStringField(TEXT("title"), TEXT("带换行\n与反引号`的标题"));
+        Node->SetStringField(TEXT("class_path"), TEXT("/Script/Test.Node"));
+        const auto Semantic = MakeShared<FJsonObject>();
+        Semantic->SetStringField(TEXT("kind"), Kinds[Index]);
+        Semantic->SetNumberField(TEXT("observed_value"), 42);
+        Semantic->SetArrayField(TEXT("cases"), {MakeShared<FJsonValueString>(TEXT("测试1")), MakeShared<FJsonValueString>(TEXT("测试2"))});
+        Node->SetObjectField(TEXT("semantic"), Semantic);
+        Node->SetArrayField(TEXT("pins"), {});
+        Nodes.Add(MakeShared<FJsonValueObject>(Node));
+    }
+    Graph->SetArrayField(TEXT("nodes"), Nodes);
+    Graph->SetArrayField(TEXT("edges"), {});
+    Snapshot->SetArrayField(TEXT("graphs"), {MakeShared<FJsonValueObject>(Graph)});
+    const auto Files = XBlueprintReadPack::Build(Snapshot, TEXT("fixture contract"));
+    const FString Logic = Files.FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestEqual(TEXT("All current kinds plus a future classifier kind"), Kinds.Num(), 71);
+    TestFalse(TEXT("Classified kinds never fall back to opaque"), Logic.Contains(TEXT(": opaque ")));
+    TestTrue(TEXT("Switch classification and case values remain visible"), Logic.Contains(TEXT("classified \"switch\"")) && Logic.Contains(TEXT("\"cases\":[\"测试1\",\"测试2\"]")));
+    TestTrue(TEXT("Future kinds retain their collected facts without a template"), Logic.Contains(TEXT("classified \"future_classified_kind\"")) && Logic.Contains(TEXT("\"observed_value\":42")));
+    TestTrue(TEXT("Generic titles cannot create statements or code fences"), Logic.Contains(TEXT("带换行\\n与反引号\\u0060的标题")));
+    TestTrue(TEXT("New capability is discoverable"), Files.FindRef(TEXT("01_Manifest.json")).Contains(TEXT("classified_fallback")));
+    Nodes[0]->AsObject()->RemoveField(TEXT("semantic"));
+    const FString Unknown = XBlueprintReadPack::Build(Snapshot, TEXT("fixture contract")).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Unclassified node retains opaque warning"), Unknown.Contains(TEXT("@N0: opaque \"/Script/Test.Node\" [see_evidence; do_not_assume_noop]")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterRerouteBoundTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.RerouteBound",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterRerouteBoundTest::RunTest(const FString& Parameters)
+{
+    const auto Snapshot = MakeShared<FJsonObject>();
+    const auto Graph = MakeShared<FJsonObject>();
+    Graph->SetStringField(TEXT("path"), TEXT("/Game/Test.Test:Reroutes"));
+    TArray<TSharedPtr<FJsonValue>> Nodes, Edges;
+    for (int32 Index = 0; Index <= 66; ++Index)
+    {
+        const FString Json = FString::Printf(TEXT("{\"id\":\"N%d\",\"semantic\":{\"kind\":\"%s\"},\"pins\":[{\"index\":0,\"name\":\"In\",\"direction\":\"input\"},{\"index\":1,\"name\":\"Out\",\"direction\":\"output\"}]}"), Index, Index == 0 ? TEXT("self") : TEXT("reroute"));
+        TSharedPtr<FJsonObject> Node;
+        if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Node)) { return false; }
+        Nodes.Add(MakeShared<FJsonValueObject>(Node));
+        if (Index > 0)
+        {
+            const FString EdgeJson = FString::Printf(TEXT("{\"kind\":\"data\",\"from_node\":{\"node_id\":\"N%d\"},\"from_pin_index\":1,\"to_node\":{\"node_id\":\"N%d\"},\"to_pin_index\":0}"), Index - 1, Index);
+            TSharedPtr<FJsonObject> Edge;
+            if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(EdgeJson), Edge)) { return false; }
+            Edges.Add(MakeShared<FJsonValueObject>(Edge));
+        }
+    }
+    Graph->SetArrayField(TEXT("nodes"), Nodes);
+    Graph->SetArrayField(TEXT("edges"), Edges);
+    Snapshot->SetArrayField(TEXT("graphs"), {MakeShared<FJsonValueObject>(Graph)});
+    const FString Logic = XBlueprintReadPack::Build(Snapshot, TEXT("fixture contract")).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("63 reroutes reach original source"), Logic.Contains(TEXT("@N64: reroute(\"In\"=@N0[\"Out\"])")));
+    TestTrue(TEXT("64 reroutes retain source reference at limit"), Logic.Contains(TEXT("@N65: reroute(\"In\"=@N0[\"Out\"] [continue_in_evidence])")));
+    TestTrue(TEXT("65 reroutes retain next unresolved node at limit"), Logic.Contains(TEXT("@N66: reroute(\"In\"=@N1[\"Out\"] [continue_in_evidence])")));
+    const auto SourceRef = Edges[0]->AsObject()->GetObjectField(TEXT("from_node"));
+    SourceRef->SetStringField(TEXT("node_id"), TEXT("N2"));
+    const FString Cycle = XBlueprintReadPack::Build(Snapshot, TEXT("fixture contract")).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Data cycle is explicit without recursive expansion"), Cycle.Contains(TEXT("@N2: reroute(\"In\"=@N1[\"Out\"] [data_cycle])")));
+    return true;
+}
 #endif

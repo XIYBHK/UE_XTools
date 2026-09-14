@@ -18,6 +18,8 @@
 - component_read 证明解析到组件对象属性；scs_property 才包含 SCS 声明证据，object_property 不等于 SCS。声明不证明运行时指针有效或未被重赋值。
 - 标准宏定义保留实例边界：相同定义不共享 Gate/DoOnce 状态，隧道按 pin 名/类型对应调用端；泛型定义还需实例类型。assign 将 Value 写入 Variable 网络；temp 保留编译器局部类型和持久标记，不推断初始化/生命周期。
 - disabled 节点、环、共享目标仍保留；opaque/特殊派生类不是无操作。classified 不是编译语义穷尽证明，未知实现需明确说明。
+- classified "kind" "title" 表示已有分类但采用通用展示；semantic 行保留采集到的语义 JSON，参数及 exit 仍按真实 pin/边展示，不据此承诺完整编译语义。缺少分类才使用 opaque；精确连接仍可独立查证。
+- 表达式中的数据重路由最多追溯 64 个来源引用；到达上限保留当前引用并标注 continue_in_evidence，数据环标注 data_cycle。节点和原始边仍保留，可继续查询，不等于剩余逻辑被丢弃。
 
 ## 伪代码语法 v1
 

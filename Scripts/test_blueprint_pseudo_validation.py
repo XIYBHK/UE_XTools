@@ -42,6 +42,30 @@ def good_text():
 
 
 class PseudoValidationTests(unittest.TestCase):
+    def test_classified_fallback_retains_switch_facts_and_rejects_tampering(self):
+        semantic = {"kind": "switch", "cases": ["测试1", "测试2"], "switch_type": "name"}
+        graph = {"nodes": [{"id": "A", "title": "切换名称", "class_path": "/Script/BlueprintGraph.K2Node_SwitchName",
+                            "semantic": semantic, "pins": []}], "edges": []}
+        head = '@A: classified "switch" "切换名称" [class="/Script/BlueprintGraph.K2Node_SwitchName"; see_evidence; not_full_compiler_semantics]()'
+        text = '```text\n' + head + '\n  semantic: ' + json.dumps(semantic, ensure_ascii=False) + '\n```\n'
+        self.assertEqual(validate_pseudo(graph, text, classified_fallback=True), [])
+        for broken in (text.replace('"switch"', '"select"', 1), text.replace('"测试2"', '"Wrong"'),
+                       text.replace('  semantic:', '  removed:'), text.replace('切换名称', 'Wrong title'),
+                       text.replace('  semantic:', '  semantic: {}\n  semantic:')):
+            self.assertTrue(validate_pseudo(graph, broken, classified_fallback=True))
+        legacy = '```text\n@A: opaque "/Script/BlueprintGraph.K2Node_SwitchName" [see_evidence; do_not_assume_noop]()\n```\n'
+        self.assertEqual(validate_pseudo(graph, legacy), [])
+        self.assertTrue(validate_pseudo(graph, legacy, classified_fallback=True))
+
+    def test_unknown_node_still_requires_opaque_and_future_kind_retains_facts(self):
+        graph = {"nodes": [{"id": "A", "class_path": "/Script/Test.Special", "pins": []}], "edges": []}
+        text = '```text\n@A: opaque "/Script/Test.Special" [see_evidence; do_not_assume_noop]()\n```\n'
+        self.assertEqual(validate_pseudo(graph, text, classified_fallback=True), [])
+        graph['nodes'][0]['semantic'] = {'kind': 'future_kind', 'observed_value': 42}
+        text = ('```text\n@A: classified "future_kind" "" [class="/Script/Test.Special"; see_evidence; not_full_compiler_semantics]()\n'
+                '  semantic: {"observed_value":42,"kind":"future_kind"}\n```\n')
+        self.assertEqual(validate_pseudo(graph, text, classified_fallback=True), [])
+
     def test_component_binding_and_static_demand_not_fabricated(self):
         graph = {"nodes": [{"id": "A", "semantic": {"kind": "variable", "access": "get",
             "variable": {"name": "Mesh"}, "component_binding": "scs_property", "binding_origin": "self_member",

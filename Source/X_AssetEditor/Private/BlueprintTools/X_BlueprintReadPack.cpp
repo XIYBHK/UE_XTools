@@ -84,6 +84,7 @@ struct FGraphView
     FObject Graph;
     TMap<FString, FObject> Nodes;
     TMap<FString, FObject> Pins;
+    TMap<FString, TMap<FString, int32>> PinNameCounts;
     TMap<FString, TArray<FObject>> Incoming;
     TMap<FString, TArray<FObject>> Outgoing;
 
@@ -94,10 +95,12 @@ struct FGraphView
             const FObject N = V->AsObject();
             const FString Id = Str(N, TEXT("id"));
             Nodes.Add(Id, N);
+            TMap<FString, int32>& NameCounts = PinNameCounts.FindOrAdd(Id);
             for (const auto& PV : Array(N, TEXT("pins")))
             {
                 const FObject P = PV->AsObject();
                 Pins.Add(Key(Id, Number(P, TEXT("index"))), P);
+                ++NameCounts.FindOrAdd(Str(P, TEXT("name")));
             }
         }
         for (const auto& V : Array(Graph, TEXT("edges")))
@@ -114,8 +117,8 @@ struct FGraphView
     {
         const FObject* P = Pins.Find(Key(Id, Index));
         const FString Name = P ? Str(*P, TEXT("name")) : TEXT("unresolved_pin_") + FString::FromInt(Index);
-        int32 SameNames = 0;
-        for (const auto& V : Array(Nodes.FindRef(Id), TEXT("pins"))) { SameNames += Str(V->AsObject(), TEXT("name")) == Name ? 1 : 0; }
+        const TMap<FString, int32>* NameCounts = PinNameCounts.Find(Id);
+        const int32 SameNames = NameCounts ? NameCounts->FindRef(Name) : 0;
         const FString Disambiguator = SameNames > 1 ? TEXT("#") + FString::FromInt(Index) : TEXT("");
         return Quote(Name) + Disambiguator;
     }
@@ -218,6 +221,7 @@ struct FGraphView
         const FString Kind = Str(S, TEXT("kind"));
         const bool bAsync = Kind == TEXT("async_action") || Kind == TEXT("async_task");
         const FString Class = Str(N, TEXT("class"));
+        bool bGenericClassified = false;
         FString Out;
         if (!Flag(N, TEXT("is_enabled"))) { Out += TEXT("disabled "); }
         if (Str(N, TEXT("enabled_state")) == TEXT("DevelopmentOnly")) { Out += TEXT("development_only "); }
@@ -261,8 +265,19 @@ struct FGraphView
             Head = TEXT("macro ") + Quote(Str(S, TEXT("macro_graph"))) + TEXT(" [") + Str(S, TEXT("definition_status")) + TEXT("]");
         }
         else if (Kind == TEXT("comment")) { return TEXT("author_comment @") + Id + TEXT(" = ") + Quote(Str(N, TEXT("comment"))) + TEXT("\n"); }
+        else if (!Kind.IsEmpty())
+        {
+            bGenericClassified = true;
+            Head = TEXT("classified ") + Quote(Kind) + TEXT(" ") + Quote(Str(N, TEXT("title")))
+                + TEXT(" [class=") + Quote(Str(N, TEXT("class_path"))) + TEXT("; see_evidence; not_full_compiler_semantics]");
+        }
         else { Head = TEXT("opaque ") + Quote(Str(N, TEXT("class_path"))) + TEXT(" [see_evidence; do_not_assume_noop]"); }
         Out += TEXT("@") + Id + TEXT(": ") + Head + TEXT("(") + Arguments(N) + TEXT(")\n");
+        if (bGenericClassified)
+        {
+            // Preserve every already-collected semantic field; no second kind registry/template engine.
+            Out += TEXT("  semantic: ") + Compact(S).Replace(TEXT("`"), TEXT("\\u0060")) + TEXT("\n");
+        }
         bool bHasExec = false;
         int32 DataEdges = 0;
         TSet<FString> Consumers;
@@ -365,7 +380,8 @@ TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FStr
     Manifest->SetNumberField(TEXT("pseudo_format_version"), 1);
     Manifest->SetArrayField(TEXT("features"), {MakeShared<FJsonValueString>(TEXT("local_initialization")), MakeShared<FJsonValueString>(TEXT("dependency_navigation")),
         MakeShared<FJsonValueString>(TEXT("semantic_hints")), MakeShared<FJsonValueString>(TEXT("standard_macro_definitions")),
-        MakeShared<FJsonValueString>(TEXT("reading_contract")), MakeShared<FJsonValueString>(TEXT("format_contract"))});
+        MakeShared<FJsonValueString>(TEXT("reading_contract")), MakeShared<FJsonValueString>(TEXT("format_contract")),
+        MakeShared<FJsonValueString>(TEXT("classified_fallback"))});
     Manifest->SetStringField(TEXT("asset_path"), Str(Snapshot, TEXT("asset_path")));
     Manifest->SetStringField(TEXT("snapshot_id"), ContentHash(Compact(Snapshot)));
     const FObject ContractRecord = MakeShared<FJsonObject>();

@@ -159,6 +159,85 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(result["results"][1]["status"], "unresolved")
         self.invoke("deps", success=False)
 
+    def test_assets_filters_pin_defaults_and_reports_scope(self):
+        evidence_path = self.root / self.records[0]["evidence"]
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        pins = [
+            {"name": "Hard", "direction": "input", "type": {"category": "object"},
+             "default_object": "/Game/Foo.Bar"},
+            {"name": "Soft", "direction": "input", "type": {"category": "softobject"},
+             "default": "/MyPlugin/Assets.Icon"},
+            {"name": "Class", "direction": "input", "type": {"category": "softclass"},
+             "default": "Texture2D'/Engine/BasicShapes.Cube_C'"},
+            {"name": "Connected", "direction": "input", "type": {"category": "object"},
+             "default_object": "/Game/Nope.Asset", "connected": True},
+            {"name": "String", "direction": "input", "type": {"category": "string"},
+             "default": "/Game/Fake.Asset"},
+            {"name": "Bad", "direction": "input", "type": {"category": "object"},
+             "default_object": "not-a-path"},
+        ]
+        evidence["nodes"][0]["pins"] = pins
+        evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+        self.rehash()
+        result = self.invoke("assets")
+        self.assertEqual([item["pin"] for item in result["results"]], ["Hard", "Soft", "Class"])
+        self.assertEqual(result["metadata"]["scope"], "typed_unconnected_input_defaults")
+        self.assertFalse(result["metadata"]["complete_asset_graph"])
+        self.assertEqual(result["metadata"]["unresolved"], 1)
+        self.assertEqual(result["results"][1]["reference_kind"], "soft_object")
+        self.invoke("assets", "--node", "N0", success=False)
+        empty = self.invoke("assets", "--graph", "G0002")
+        self.assertEqual(empty["results"], [])
+
+    def test_assets_real_schema_guards_paths_and_budgets(self):
+        def pin(value="/Game/特效/爆炸.爆炸", **overrides):
+            return {"direction": "input", "name": "Asset", "default": value,
+                    "type": {"category": "softobject", "container": "none"}, **overrides}
+        valid = [pin(), pin("Texture2D'/Game/T.T'"),
+                 pin("/Script/Engine.Texture2D'/Game/T.T'"),
+                 pin("SoftObjectPath'/Plugin/Asset.Asset'"),
+                 pin(default_object="/Game/BP.BP_C", type={"category": "class"})]
+        ignored = [pin(connected=True), pin(linked_to=[{}]), pin(orphaned=True),
+                   pin(default_value_ignored=True), pin(direction="output"), pin(is_exec=True),
+                   pin(""), pin("None"), pin(direction="")]
+        unsupported = [pin(type={"category": "object", "container": "array"}),
+                       pin(type={"category": "string"})]
+        invalid = [pin(value) for value in ("/Game/Bad Path.A", "/Game/A.A'",
+                   "/Game/A.A\n", "/Script/Engine.Actor", "/Temp/A.A", "/Memory/A.A",
+                   "/Transient/A.A", "/Game/../A.A", "/Game/A.A;evil", "garbage'/Game/A.A")]
+        evidence_path = self.root / self.records[0]["evidence"]
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        evidence["nodes"][0]["pins"] = valid + ignored + unsupported + invalid
+        evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+        self.rehash()
+        result = self.invoke("assets", "--graph", "G0001", "--node", "Other")
+        self.assertEqual(len(result["results"]), len(valid))
+        self.assertEqual(result["metadata"]["unresolved"], len(invalid))
+        self.assertEqual(result["metadata"]["unsupported"], len(unsupported))
+        self.assertTrue(all(item["status"] == "reference_only" for item in result["results"]))
+        self.assertEqual(result["results"][-1]["reference_kind"], "hard_class")
+        limited = self.invoke("assets", "--graph", "G0001", "--max-nodes", "1")
+        self.assertTrue(limited["truncated"])
+        self.assertEqual(limited["remaining_results"], len(valid) - 1)
+        self.invoke("assets", "--max-chars", "600")
+        self.assertLessEqual(len(self.last_output), 600)
+        self.invoke("assets", "--graph", "G0001", "--node", "missing", success=False)
+        deps = self.invoke("deps", "--graph", "G0001")
+        self.assertEqual(deps["metadata"]["scope"], "forward_function_and_macro_calls")
+        self.assertIn("assets", deps["metadata"]["asset_reference_hint"])
+
+    def test_assets_macro_body_requires_explicit_selection(self):
+        self.make_graph("M0001", "Macro", ["N0"])
+        self.macros = [self.records.pop()]
+        path = self.root / self.macros[0]["evidence"]
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+        evidence["nodes"][0]["pins"] = [{"direction": "input", "name": "Asset",
+            "type": {"category": "object"}, "default_object": "/Engine/T.T"}]
+        path.write_text(json.dumps(evidence), encoding="utf-8")
+        self.rehash()
+        self.assertEqual(self.invoke("assets")["results"], [])
+        self.assertEqual(self.invoke("assets", "--graph", "M0001")["results"][0]["path"], "/Engine/T.T")
+
     def test_node_dependency_hint_does_not_scan(self):
         evidence_path = self.root / self.records[0]["evidence"]
         evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
@@ -307,7 +386,10 @@ class QueryTests(unittest.TestCase):
         data = json.loads((self.root / "01_Manifest.json").read_text())
         data["pseudo_format_version"] = 2
         (self.root / "01_Manifest.json").write_text(json.dumps(data), encoding="utf-8")
-        self.invoke("outline", success=False)
+        error = self.invoke("outline", success=False)
+        self.assertEqual(error["received"], 2)
+        self.assertEqual(error["supported"], [1])
+        self.assertEqual(error["field"], "pseudo_format_version")
         data["pseudo_format_version"] = 1
         data["query"] = {"path": "05_Query.py", "protocol_version": 2, "sha1": "x"}
         (self.root / "01_Manifest.json").write_text(json.dumps(data), encoding="utf-8")

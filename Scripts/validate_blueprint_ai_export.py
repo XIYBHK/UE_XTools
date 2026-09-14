@@ -50,7 +50,7 @@ def _q(value):
     return json.dumps(str(value), ensure_ascii=False, separators=(",", ":")).replace("`", "\\u0060")
 
 
-def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, semantic_hints=False):
+def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, semantic_hints=False, classified_fallback=False):
     """Independently validate the semantic records in one ReadPack pseudo file.
 
     This intentionally parses the stable pseudo grammar and derives expected records
@@ -185,6 +185,9 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
                 if semantic.get("is_" + flag):
                     head += " [" + flag + "]"
             return head
+        if classified_fallback and kind:
+            return ("classified " + _q(kind) + " " + _q(node.get("title", ""))
+                    + " [class=" + _q(node.get("class_path", "")) + "; see_evidence; not_full_compiler_semantics]")
         return "opaque " + _q(node.get("class_path", "")) + " [see_evidence; do_not_assume_noop]"
 
     expected = {}
@@ -254,6 +257,16 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
             continue
         semantic = node.get("semantic", {})
         kind = semantic.get("kind")
+        if classified_fallback:
+            facts = [line.strip()[len("semantic: "):] for line in body if line.strip().startswith("semantic: ")]
+            if operation(node).startswith("classified "):
+                try:
+                    if len(facts) != 1 or json.loads(facts[0]) != semantic:
+                        errors.append(f"Pseudo classified facts differ: {node_id}")
+                except (ValueError, TypeError):
+                    errors.append(f"Invalid pseudo classified facts: {node_id}")
+            elif facts:
+                errors.append(f"Unexpected pseudo classified facts: {node_id}")
         if semantic_hints:
             expected_hints = []
             if not any(p.get("is_exec") for p in node.get("pins", [])) and (
@@ -428,7 +441,8 @@ def validate(asset):
                     check(f"@{node['id']}:" in logic or f"author_comment @{node['id']} =" in logic, f"Missing pseudo node: {graph_id}/{node['id']}")
                 for pseudo_error in validate_pseudo(graph, logic, legacy_labels=manifest is None,
                                                     require_locals=manifest is not None and "local_initialization" in manifest.get("features", []),
-                                                    semantic_hints=manifest is not None and "semantic_hints" in manifest.get("features", [])):
+                                                    semantic_hints=manifest is not None and "semantic_hints" in manifest.get("features", []),
+                                                    classified_fallback=manifest is not None and "classified_fallback" in manifest.get("features", [])):
                     check(False, f"{graph_id}: {pseudo_error}")
                 size = (directory / logic_file).stat().st_size
                 logic_bytes += size
@@ -475,7 +489,8 @@ def validate(asset):
                     check(hashlib.sha1((directory / record[key]).read_bytes()).hexdigest() == record[key + "_sha1"], "Macro file hash differs")
                     if "format_contract" in manifest.get("features", []):
                         check(record.get(key + "_bytes") == (directory / record[key]).stat().st_size, "Macro file byte budget differs")
-                for error in validate_pseudo(definition, (directory / record["logic"]).read_text(encoding="utf-8-sig"), require_locals=True, semantic_hints=True):
+                for error in validate_pseudo(definition, (directory / record["logic"]).read_text(encoding="utf-8-sig"), require_locals=True, semantic_hints=True,
+                                             classified_fallback="classified_fallback" in manifest.get("features", [])):
                     check(False, f"{record['id']}: {error}")
             result["macro_definitions"] = len(definitions)
         counts = Counter()

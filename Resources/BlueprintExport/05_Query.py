@@ -24,9 +24,16 @@ def safe(base, relative):
     return path
 
 
+class UnsupportedVersion(ValueError):
+    def __init__(self, label, received):
+        super().__init__("unsupported " + label)
+        self.payload = {"error": str(self), "supported": [1],
+                        "received": received, "field": label}
+
+
 def _version(value, label):
     if type(value) is not int or value != 1:
-        raise ValueError("unsupported " + label)
+        raise UnsupportedVersion(label, value)
 
 
 def manifest(base):
@@ -252,6 +259,62 @@ def dependency_hint(record, node_id):
     return "python 05_Query.py deps --graph " + record["id"] + " --node " + node_id
 
 
+_ASSET_PATH = re.compile(r"^(/[\w-]+(?:/[\w-]+)+)\.([\w-]+)(?::([\w.-]+))?$")
+_ASSET_WRAPPED = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*|/Script/[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)'([^']+)'$")
+
+
+def asset_reference(pin):
+    """Return a validated typed default reference, or (reason, None)."""
+    pin_type = pin.get("type") or {}
+    category = pin_type.get("category", pin.get("category", ""))
+    container = pin_type.get("container", "none")
+    if container not in (None, "", "none"):
+        return "unsupported", None
+    if category not in ("object", "class", "softobject", "softclass"):
+        return "unsupported", None
+    value = pin.get("default_object")
+    kind = {"object": "hard_object", "class": "hard_class",
+            "softobject": "soft_object", "softclass": "soft_class"}[category]
+    if not value and category in ("softobject", "softclass"):
+        value = pin.get("default")
+    if not isinstance(value, str) or not value:
+        return "unresolved", None
+    if any(ch.isspace() for ch in value):
+        return "unresolved", None
+    wrapped = _ASSET_WRAPPED.fullmatch(value)
+    if wrapped:
+        value = wrapped.group(1)
+    match = _ASSET_PATH.fullmatch(value)
+    if not match or match.group(1).startswith(("/Script/", "/Temp/", "/Memory/", "/Transient/")):
+        return "unresolved", None
+    return None, (value, kind)
+
+
+def asset_items(record, nodes):
+    items, unresolved, unsupported = [], 0, 0
+    for node_id, node in nodes.items():
+        for index, pin in enumerate(node.get("pins", [])):
+            if (pin.get("direction", "").casefold() != "input"
+                    or pin.get("is_exec")
+                    or pin.get("connected") or pin.get("linked_to") or pin.get("default_value_ignored") or pin.get("orphaned")):
+                continue
+            if not pin.get("default_object") and pin.get("default") in (None, "", "None"):
+                continue
+            reason, reference = asset_reference(pin)
+            if reason == "unsupported":
+                if pin.get("default_object") or pin.get("default"):
+                    unsupported += 1
+                continue
+            if reason:
+                unresolved += 1
+                continue
+            path, kind = reference
+            items.append({"graph": record["id"], "node": node_id, "pin": pin.get("name", ""),
+                          "pin_index": index, "role": "pin_default", "path": path,
+                          "reference_kind": kind, "status": "reference_only"})
+    return items, unresolved, unsupported
+
+
 def selection(seed, nodes, edges):
     execution, incoming = {}, {}
     for edge in edges:
@@ -341,7 +404,7 @@ def slice_result(record, seed, nodes, edges, blocks, args, identity):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("outline", "find", "node", "slice", "deps"))
+    parser.add_argument("command", choices=("outline", "find", "node", "slice", "deps", "assets"))
     parser.add_argument("--directory", type=Path, default=Path(__file__).parent)
     parser.add_argument("--graph", help="graph ID, full path, or unique name")
     parser.add_argument("--include-macros", action="store_true", help="include macro headers in outline")
@@ -362,6 +425,8 @@ def main(argv=None):
             raise ValueError("--include-macros cannot be combined with --graph")
         if args.command in ("node", "slice") and (not args.graph or not args.node):
             raise ValueError("--graph and --node are required")
+        if args.command == "assets" and args.node and not args.graph:
+            raise ValueError("--node requires --graph")
         if args.command == "deps" and not args.graph:
             raise ValueError("--graph is required")
         if args.command == "find" and not args.query:
@@ -374,6 +439,7 @@ def main(argv=None):
             records = data["graphs"] + data.get("macro_definitions", [])
         index = dependency_index(base) if args.command == "deps" else []
         items = []
+        asset_unresolved = asset_unsupported = 0
         if args.command == "outline":
             identity["macro_definition_count"] = len(data.get("macro_definitions", []))
             # Each graph header and entry is separately budgeted; no graph file is read.
@@ -398,8 +464,20 @@ def main(argv=None):
                             raise ValueError("node not found: " + node_id)
                         for kind, raw in dependency_targets(nodes[node_id]):
                             result = resolve_dependency(base, raw, kind, index, data)
-                            result.update({"node": node_id, "kind": kind})
+                            result.update({"node": node_id, "kind": kind,
+                                           "scope": "direct_dependency_targets",
+                                           "hint": "Use assets for typed unconnected input asset references."})
                             items.append(result)
+                    continue
+                if args.command == "assets":
+                    selected_nodes = ([args.node.lstrip("@")] if args.node else list(nodes))
+                    for node_id in selected_nodes:
+                        if node_id not in nodes:
+                            raise ValueError("node not found: " + node_id)
+                        found, missing, unsupported = asset_items(record, {node_id: nodes[node_id]})
+                        items.extend(found)
+                        asset_unresolved += missing
+                        asset_unsupported += unsupported
                     continue
                 seed = args.node.lstrip("@")
                 if seed not in nodes:
@@ -415,8 +493,22 @@ def main(argv=None):
                     if dependency_targets(nodes[seed]):
                         item["dependency_hint"] = dependency_hint(record, seed)
                     items.append(item)
+        if args.command == "assets":
+            identity = {**identity, "metadata": {
+                "scope": "typed_unconnected_input_defaults",
+                "complete_asset_graph": False,
+                "unresolved": asset_unresolved,
+                "unsupported": asset_unsupported}}
+        elif args.command == "deps":
+            identity = {**identity, "metadata": {
+                "scope": "forward_function_and_macro_calls",
+                "complete_asset_graph": False,
+                "asset_reference_hint": "python 05_Query.py assets --graph " + records[0]["id"]}}
         print(encode(bounded_results(args.command, items, args, identity)))
         return 0
+    except UnsupportedVersion as error:
+        print(encode(error.payload))
+        return 1
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(encode({"error": str(error)}))
         return 1
