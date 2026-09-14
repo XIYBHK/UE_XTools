@@ -1,0 +1,3 @@
+# Keep portable Blueprint export resources byte-identical across Git checkouts.
+/Resources/BlueprintExport/*.py text eol=lf
+/Resources/BlueprintExport/*.md text eol=lf

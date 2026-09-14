@@ -31,6 +31,7 @@ namespace XBlueprintGraphExporterTests
     TSharedPtr<FJsonObject> BuildBlueprintJson(UBlueprint* Blueprint);
     bool ExportBlueprintFiles(UBlueprint* Blueprint, FString& OutDirectory, FString& OutError);
     FString BuildRootEntry(const FString& RootDirectory, const FString& AssetPath);
+    FString BuildAIPrompt(const FString& RootDirectory, const TArray<FString>& SuccessfulOutputDirs);
     FString BuildGraphMarkdown(UEdGraph* Graph);
 }
 #endif

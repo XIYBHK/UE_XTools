@@ -3445,7 +3445,7 @@ namespace
         AssetDirs.Reset();
         AssetDirByPath.GenerateValueArray(AssetDirs);
         AssetDirs.Sort();
-        FString RootEntry = TEXT("# 蓝图导出入口\n\n请选择一个资产目录后，只读取该目录下的 `00_START_HERE.md`；禁止递归读取全部导出内容。旧目录可能保留为备份，以本索引为准。\n\n");
+        FString RootEntry = TEXT("# 蓝图导出入口\n\n按问题选择资产，再读其 `00_START_HERE.md`；按该入口指引读取契约，相同契约摘要在本次上下文只需读一次。各包的协议与文件字节量见其清单和索引。默认避免无目的全量读取；全局审计或证据不足时可扩大范围并调整查询预算。旧目录可能保留为备份，以本索引为准。\n\n");
         for (const FString& AssetDir : AssetDirs)
         {
             const FString Label = AssetDir.Replace(TEXT("["), TEXT("\\[")).Replace(TEXT("]"), TEXT("\\]"));
@@ -3506,7 +3506,14 @@ namespace
             OutError = TEXT("读取 05_Query.py 失败，保留原导出。");
             return false;
         }
-        const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot, QueryText);
+        const FString ContractPath = XToolsPlugin->GetBaseDir() / TEXT("Resources/BlueprintExport/02_ReadingContract.md");
+        FString Contract;
+        if (!FFileHelper::LoadFileToString(Contract, *ContractPath) || Contract.TrimStartAndEnd().IsEmpty())
+        {
+            OutError = TEXT("读取 02_ReadingContract.md 失败或内容为空，保留原导出。");
+            return false;
+        }
+        const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot, Contract, QueryText);
         for (const TPair<FString, FString>& Pair : ReadPack)
         {
             Outputs.Add(Pair.Key, Pair.Value);
@@ -3644,7 +3651,24 @@ namespace
         return bSuccess;
     }
 
-    void ShowExportResultDialog(const FString& Message, const FString& OutputRoot)
+    FString BuildBlueprintAIPrompt(const FString& OutputRoot, const TArray<FString>& SuccessfulOutputDirs)
+    {
+        if (SuccessfulOutputDirs.IsEmpty()) { return FString(); }
+        const FString EntryDirectory = SuccessfulOutputDirs.Num() == 1 ? SuccessfulOutputDirs[0] : OutputRoot;
+        const FString EntryPath = FPaths::ConvertRelativePathToFull(EntryDirectory / TEXT("00_START_HERE.md"));
+        FString Prompt = FString::Printf(TEXT("请先阅读以下入口，按当前问题分析蓝图逻辑；按需查阅相关图和证据，必要时扩大范围，并注明缺失信息。\n入口：\"%s\""), *EntryPath);
+        if (SuccessfulOutputDirs.Num() > 1)
+        {
+            Prompt += TEXT("\n本次成功导出的资产目录（相对于入口目录）：");
+            for (const FString& Directory : SuccessfulOutputDirs)
+            {
+                Prompt += TEXT("\n- ") + FPaths::GetCleanFilename(Directory);
+            }
+        }
+        return Prompt;
+    }
+
+    void ShowExportResultDialog(const FString& Message, const FString& OutputRoot, const FString& AIPrompt)
     {
         const bool bHasOutputRoot = !OutputRoot.IsEmpty();
 
@@ -3718,6 +3742,22 @@ namespace
                     + SUniformGridPanel::Slot(2, 0)
                     [
                         SNew(SButton)
+                        .Text(LOCTEXT("CopyBlueprintGraphAIPrompt", "复制 AI 提示词"))
+                        .ToolTipText(LOCTEXT("CopyBlueprintGraphAIPromptTooltip", "复制简短阅读说明和入口文件的绝对路径"))
+                        .IsEnabled(!AIPrompt.IsEmpty())
+                        .OnClicked_Lambda([AIPrompt]()
+                        {
+                            FPlatformApplicationMisc::ClipboardCopy(*AIPrompt);
+                            FNotificationInfo NotificationInfo(LOCTEXT("BlueprintGraphAIPromptCopied", "已复制 AI 提示词与入口路径"));
+                            NotificationInfo.ExpireDuration = 2.0f;
+                            FSlateNotificationManager::Get().AddNotification(NotificationInfo);
+                            return FReply::Handled();
+                        })
+                    ]
+
+                    + SUniformGridPanel::Slot(3, 0)
+                    [
+                        SNew(SButton)
                         .Text(LOCTEXT("CloseBlueprintGraphExportResult", "关闭"))
                         .OnClicked_Lambda([WeakWindow]()
                         {
@@ -3763,6 +3803,11 @@ bool XBlueprintGraphExporterTests::ExportBlueprintFiles(UBlueprint* Blueprint, F
 FString XBlueprintGraphExporterTests::BuildRootEntry(const FString& RootDirectory, const FString& AssetPath)
 {
     return BuildBlueprintRootEntry(RootDirectory, AssetPath, BlueprintExportDirectoryName(AssetPath, FPackageName::ObjectPathToObjectName(AssetPath)));
+}
+
+FString XBlueprintGraphExporterTests::BuildAIPrompt(const FString& RootDirectory, const TArray<FString>& SuccessfulOutputDirs)
+{
+    return BuildBlueprintAIPrompt(RootDirectory, SuccessfulOutputDirs);
 }
 #endif
 
@@ -3842,7 +3887,7 @@ void FX_BlueprintGraphExporter::ExportBlueprints(const TArray<FAssetData>& Selec
     {
         const FString DisplayOutputDir = SuccessfulOutputDirs.Num() == 1 ? SuccessfulOutputDirs[0] : OutputRoot;
         Message += FString::Printf(TEXT("\n\n输出目录:\n%s"), *DisplayOutputDir);
-        Message += TEXT("\n\n交给 AI 分析时，请先阅读 00_START_HERE.md；完整快照位于 90_Full，证据位于 20_Evidence。");
+        Message += TEXT("\n\n可使用“复制 AI 提示词”将阅读说明和入口路径交给 AI，按问题查阅相关图与证据。");
     }
     if (Errors.Num() > 0)
     {
@@ -3850,7 +3895,7 @@ void FX_BlueprintGraphExporter::ExportBlueprints(const TArray<FAssetData>& Selec
         Message += FString::Join(Errors, TEXT("\n"));
     }
     const FString ActionOutputDir = SuccessfulOutputDirs.Num() == 1 ? SuccessfulOutputDirs[0] : OutputRoot;
-    ShowExportResultDialog(Message, SuccessCount > 0 ? ActionOutputDir : FString());
+    ShowExportResultDialog(Message, SuccessCount > 0 ? ActionOutputDir : FString(), BuildBlueprintAIPrompt(OutputRoot, SuccessfulOutputDirs));
 }
 
 #undef LOCTEXT_NAMESPACE

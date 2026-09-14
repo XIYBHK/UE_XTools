@@ -6,6 +6,9 @@
 #include "Dom/JsonValue.h"
 #include "Containers/StringConv.h"
 #include "Misc/AutomationTest.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -17,6 +20,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterReadPackTest,
 
 bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
 {
+    const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
+    FString ContractText;
+    if (!TestTrue(TEXT("Plugin resource available"), Plugin.IsValid())
+        || !TestTrue(TEXT("Read contract resource"), FFileHelper::LoadFileToString(ContractText, *(Plugin->GetBaseDir() / TEXT("Resources/BlueprintExport/02_ReadingContract.md"))))) { return false; }
     // Non-monotonic pin indices and duplicate GUIDs intentionally prevent name/order-based joins.
     const FString Input = TEXT(R"JSON({"asset_path":"/Game/Fixture.Fixture","graphs":[
       {"name":"EventGraph","path":"/Game/Fixture.Fixture:EventGraph","nodes":[
@@ -47,7 +54,7 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     Snapshot->SetObjectField(TEXT("coverage"), Coverage);
     FString Before;
     FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&Before));
-    const auto Files = XBlueprintReadPack::Build(Snapshot.ToSharedRef());
+    const auto Files = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText);
     TestEqual(TEXT("Four routing/contract files plus a pair per graph"), Files.Num(), 6);
     const FString* Start = Files.Find(TEXT("00_START_HERE.md"));
     const FString* Logic = Files.Find(TEXT("10_Logic/G0001.pseudo.md"));
@@ -57,7 +64,7 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Entry routes metadata separately"), Start->Contains(TEXT("20_Evidence/00_Asset.json")));
     TestTrue(TEXT("Full snapshots are not initial context"), Start->Contains(TEXT("90_Full/")));
     TestTrue(TEXT("Entry identifies actual external macro dependencies"), Start->Contains(TEXT("/Engine/Fixture:Gate")));
-    TestTrue(TEXT("Stop when evidence is sufficient"), Start->Contains(TEXT("立即停止")));
+    TestTrue(TEXT("Stop when evidence is sufficient"), Start->Contains(TEXT("即可停止")));
     const FString Contract = Files.FindRef(TEXT("02_ReadingContract.md"));
     TestTrue(TEXT("Shared contract linked separately"), Start->Contains(TEXT("02_ReadingContract.md")) && Contract.Contains(TEXT("伪代码语法 v1")));
     TestTrue(TEXT("Empty default does not imply unset"), Contract.Contains(TEXT("不能判定 unset")));
@@ -87,10 +94,10 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     FString After;
     FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&After));
     TestEqual(TEXT("Writer is read-only"), After, Before);
-    const auto Again = XBlueprintReadPack::Build(Snapshot.ToSharedRef());
+    const auto Again = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText);
     for (const auto& F : Files) { TestEqual(TEXT("Deterministic output"), Again.FindRef(F.Key), F.Value); }
     Graph->GetArrayField(TEXT("nodes"))[1]->AsObject()->GetObjectField(TEXT("semantic"))->SetStringField(TEXT("kind"), TEXT("async_task"));
-    const FString TaskLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    const FString TaskLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Base async tasks preserve callbacks"), TaskLogic.Contains(TEXT("callback \"OnFinished\" -> @N2[\"execute\"]")));
     TestTrue(TEXT("Base async tasks are not opaque"), TaskLogic.Contains(TEXT("@N1: async ")));
 
@@ -130,7 +137,7 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
         Pins.Add(MakeShared<FJsonValueObject>(Pin));
     }
     Node->SetArrayField(TEXT("pins"), Pins);
-    const FString DuplicateLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    const FString DuplicateLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Duplicate input zero retained with identity"), DuplicateLogic.Contains(TEXT("\"duplicate\"#20=0")));
     TestTrue(TEXT("Duplicate input false retained with identity"), DuplicateLogic.Contains(TEXT("\"duplicate\"#21=false")));
     TestTrue(TEXT("Duplicate output identity retained"), DuplicateLogic.Contains(TEXT("\"result\"#22 [unconnected], \"result\"#23 [unconnected]")));
@@ -143,7 +150,7 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Local declaration fixture parses"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(LocalFixture), EntrySemantic));
     EntrySemantic->SetStringField(TEXT("local_scope"), TEXT("/Game/Fixture:Sum"));
     Node->SetObjectField(TEXT("semantic"), EntrySemantic);
-    const FString LocalLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    const FString LocalLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Accumulator zero and raw empty both visible"), LocalLogic.Contains(TEXT("local \"Val\": \"real:double\" = type_default(0) [raw_default=\"\"]")));
     TestTrue(TEXT("Explicit false visible"), LocalLogic.Contains(TEXT("local \"Flag\": \"bool\" = serialized(\"false\") [explicit]")));
     TestTrue(TEXT("Complex type requires evidence"), LocalLogic.Contains(TEXT("local \"Struct\": \"struct\" = type_default [see_evidence] [raw_default=\"\"]")));
@@ -156,7 +163,7 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     ExtraEdge->SetNumberField(TEXT("to_pin_index"), 6);
     Edges.Add(MakeShared<FJsonValueObject>(ExtraEdge));
     Graph->SetArrayField(TEXT("edges"), Edges);
-    FString Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    FString Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Data uses and consumers are separate static facts"), Hints.Contains(TEXT("demand: data_edges=2 consumers=1 [static_direct; not_call_count]")));
     auto ComponentSemantic = MakeShared<FJsonObject>();
     ComponentSemantic->SetStringField(TEXT("kind"), TEXT("variable"));
@@ -168,14 +175,14 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     ComponentSemantic->SetStringField(TEXT("component_binding"), TEXT("scs_property"));
     ComponentSemantic->SetStringField(TEXT("scs_node_path"), TEXT("/Game/Fixture:MeshNode"));
     Graph->GetArrayField(TEXT("nodes"))[4]->AsObject()->SetObjectField(TEXT("semantic"), ComponentSemantic);
-    Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Component declaration readable without asset metadata"), Hints.Contains(TEXT("component_read \"Mesh\"")));
     TestTrue(TEXT("SCS identity stays explicit"), Hints.Contains(TEXT("component=\"scs_property\" scs=\"/Game/Fixture:MeshNode\"")));
     auto Macro = MakeShared<FJsonObject>();
     Macro->Values = Graph->Values;
     Macro->SetStringField(TEXT("path"), TEXT("/Engine/Fixture.Fixture:Gate"));
     Snapshot->SetArrayField(TEXT("macro_definitions"), {MakeShared<FJsonValueObject>(Macro)});
-    const auto DependencyFiles = XBlueprintReadPack::Build(Snapshot.ToSharedRef());
+    const auto DependencyFiles = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText);
     TestTrue(TEXT("Macro definition has separate pseudo"), DependencyFiles.Contains(TEXT("30_Dependencies/M0001.pseudo.md")));
     TestTrue(TEXT("Macro definition has separate evidence"), DependencyFiles.Contains(TEXT("30_Dependencies/M0001.json")));
     TSharedPtr<FJsonObject> AssetMetadata;
@@ -188,17 +195,17 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     auto Assignment = MakeShared<FJsonObject>();
     Assignment->SetStringField(TEXT("kind"), TEXT("assignment"));
     Node->SetObjectField(TEXT("semantic"), Assignment);
-    Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Assignment preserves connected input arguments"), Hints.Contains(TEXT("assign [Variable_is_write_target](")) && Hints.Contains(TEXT("\"Value_5\"=@N3[\"ReturnValue\"]")));
     TestTrue(TEXT("Temporary flag does not assert per-call lifetime"), Hints.Contains(TEXT("[compiler_local; persistent_savegame; no_lifetime_inference]")));
     const FString QueryText = TEXT("# portable query fixture\n");
-    const auto WithQuery = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), QueryText);
+    const auto WithQuery = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText, QueryText);
     TestEqual(TEXT("Standalone query text preserved"), WithQuery.FindRef(TEXT("05_Query.py")), QueryText);
     TSharedPtr<FJsonObject> QueryManifest;
     FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(WithQuery.FindRef(TEXT("01_Manifest.json"))), QueryManifest);
     TestEqual(TEXT("Query compatibility protocol recorded"), QueryManifest->GetObjectField(TEXT("query"))->GetIntegerField(TEXT("protocol_version")), 1);
     Snapshot->SetStringField(TEXT("asset_path"), TEXT("/Game/Other.Other"));
-    TestEqual(TEXT("Contract shared by content across assets"), XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("02_ReadingContract.md")), Contract);
+    TestEqual(TEXT("Contract shared by content across assets"), XBlueprintReadPack::Build(Snapshot.ToSharedRef(), ContractText).FindRef(TEXT("02_ReadingContract.md")), Contract);
     return true;
 }
 #endif

@@ -530,6 +530,7 @@ bool FXBlueprintGraphExporterAssetIdentityTest::RunTest(const FString& Parameter
     const FString IndexAfterB = XBlueprintGraphExporterTests::BuildRootEntry(IndexRoot, B->GetPathName());
     const FString IndexAfterA = XBlueprintGraphExporterTests::BuildRootEntry(IndexRoot, A->GetPathName());
     TestEqual(TEXT("Root index independent of latest exported asset"), IndexAfterA, IndexAfterB);
+    TestTrue(TEXT("Root routes to per-asset contracts and permits wider queries"), IndexAfterB.Contains(TEXT("相同契约摘要")) && IndexAfterB.Contains(TEXT("可扩大范围")));
     TestFalse(TEXT("Old asset duplicate excluded"), IndexAfterB.Contains(TEXT("000_old_A")));
     TestTrue(TEXT("Both current asset entries included"), IndexAfterB.Contains(AName) && IndexAfterB.Contains(BName));
     TArray<FString> Lines;
@@ -547,6 +548,25 @@ bool FXBlueprintGraphExporterAssetIdentityTest::RunTest(const FString& Parameter
     const FString SafeIndexRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("XTools"));
     TestTrue(TEXT("Remove uniquely owned index fixture"), FPaths::GetPath(IndexRoot) == SafeIndexRoot
         && FPaths::GetCleanFilename(IndexRoot) == TEXT("BlueprintIndexTest_") + Unique && Files.DeleteDirectory(*IndexRoot, true, true));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterAIPromptTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.AIPrompt",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterAIPromptTest::RunTest(const FString& Parameters)
+{
+    const FString Root = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("提示词 测试"));
+    const FString A = Root / TEXT("同名_A");
+    const FString B = Root / TEXT("同名_B");
+    const FString Single = XBlueprintGraphExporterTests::BuildAIPrompt(Root, {A});
+    TestTrue(TEXT("Single result links exact absolute entry, including spaces and Unicode"), Single.Contains(TEXT("\"") + A / TEXT("00_START_HERE.md") + TEXT("\"")));
+    TestFalse(TEXT("Single result does not route through historical root assets"), Single.Contains(Root / TEXT("00_START_HERE.md")));
+    const FString Batch = XBlueprintGraphExporterTests::BuildAIPrompt(Root, {A, B});
+    TestTrue(TEXT("Multiple successes link the root and identify this batch"), Batch.Contains(Root / TEXT("00_START_HERE.md")) && Batch.Contains(TEXT("同名_A")) && Batch.Contains(TEXT("同名_B")));
+    TestTrue(TEXT("No successful exports cannot copy stale output"), XBlueprintGraphExporterTests::BuildAIPrompt(Root, {}).IsEmpty());
+    TestTrue(TEXT("Reading scope remains adjustable"), Single.Contains(TEXT("必要时扩大范围")));
     return true;
 }
 

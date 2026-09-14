@@ -8,5 +8,5 @@ class FJsonObject;
 namespace XBlueprintReadPack
 {
     /** Deterministic, read-only presentation of a snapshot. Keys are controlled relative paths. */
-    TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FString& QueryText = FString());
+    TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FString& Contract, const FString& QueryText = FString());
 }
