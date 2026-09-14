@@ -174,6 +174,63 @@ bool FXBlueprintGraphExporterGraphSnapshotTest::RunTest(const FString& Parameter
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterPinIndicesTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.PinIndices",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterPinIndicesTest::RunTest(const FString& Parameters)
+{
+    UBlueprint* Blueprint = NewObject<UBlueprint>();
+    Blueprint->ParentClass = AActor::StaticClass();
+    UEdGraph* Graph = NewObject<UEdGraph>(Blueprint);
+    Blueprint->UbergraphPages.Add(Graph);
+    Graph->Schema = UEdGraphSchema_K2::StaticClass();
+    UEdGraphNode* Source = NewObject<UK2Node_ExecutionSequence>(Graph);
+    UEdGraphNode* Target = NewObject<UK2Node_ExecutionSequence>(Graph);
+    Graph->AddNode(Source);
+    Graph->AddNode(Target);
+    UEdGraphPin* Output = Source->CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_String, TEXT("Value"));
+    for (int32 Index = 0; Index < 256; ++Index)
+    {
+        UEdGraphPin* Input = Target->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_String, TEXT("SameName"));
+        TestTrue(TEXT("Wide node connection"), Graph->GetSchema()->TryCreateConnection(Output, Input));
+    }
+    // Valid owning node deliberately absent from Graph->Nodes: retain its pin reference.
+    UEdGraphNode* External = NewObject<UK2Node_ExecutionSequence>(Graph);
+    External->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_String, TEXT("Unused"));
+    UEdGraphPin* ExternalInput = External->CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_String, TEXT("Linked"));
+    TestTrue(TEXT("Non-enumerated owner connection"), Graph->GetSchema()->TryCreateConnection(Output, ExternalInput));
+    auto Verify = [this, Graph, Source, Target, External, Output, ExternalInput]()
+    {
+        const auto Json = XBlueprintGraphExporterTests::BuildGraphJson(Graph);
+        TestEqual(TEXT("All links retained"), Json->GetArrayField(TEXT("edges")).Num(), 257);
+        for (const auto& Value : Json->GetArrayField(TEXT("nodes")))
+        {
+            const auto Node = Value->AsObject();
+            for (const auto& PinValue : Node->GetArrayField(TEXT("pins")))
+            {
+                const auto Pin = PinValue->AsObject();
+                if (Pin->GetStringField(TEXT("name")) != TEXT("Value")) { continue; }
+                TestEqual(TEXT("Source index matches native array lookup"), static_cast<int32>(Pin->GetNumberField(TEXT("index"))), Source->Pins.IndexOfByKey(Output));
+                const auto& Links = Pin->GetArrayField(TEXT("linked_to"));
+                if (!TestEqual(TEXT("All linked pin references retained"), Links.Num(), 257)) { return; }
+                for (int32 Index = 0; Index < Links.Num(); ++Index)
+                {
+                    const UEdGraphPin* Linked = Output->LinkedTo[Index];
+                    TestEqual(TEXT("Linked index matches native array lookup"), static_cast<int32>(Links[Index]->AsObject()->GetNumberField(TEXT("pin_index"))), Linked->GetOwningNode()->Pins.IndexOfByKey(Linked));
+                }
+                TestEqual(TEXT("Non-enumerated node keeps its actual pin index"), static_cast<int32>(Links.Last()->AsObject()->GetNumberField(TEXT("pin_index"))), External->Pins.IndexOfByKey(ExternalInput));
+            }
+        }
+    };
+    Verify();
+    Target->Pins.Swap(0, 255);
+    External->Pins.Swap(0, 1);
+    Verify(); // A new serialization must rebuild indices, even for the same UObject pointers.
+    Output->BreakAllPinLinks();
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterAIFidelityTest,
     "XTools.AssetEditor.BlueprintGraphExporter.AIFidelity",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

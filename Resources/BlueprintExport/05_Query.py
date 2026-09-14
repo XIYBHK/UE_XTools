@@ -186,17 +186,44 @@ def candidate_manifests(base):
     return found
 
 
-def dependency_index(base):
+def dependency_index(base, current_data=None):
     index = []
     for root in candidate_manifests(base):
         try:
-            index.append((root, manifest(root)))
+            index.append((root, current_data if root == base and current_data is not None else manifest(root)))
         except (OSError, ValueError, KeyError, TypeError, UnicodeError):
             index.append((root, None))
     return index
 
 
-def resolve_dependency(base, raw, kind, index, current_data=None):
+class GraphValidation:
+    """Per-query validation outcomes only; never retain graph bodies or exceptions."""
+    def __init__(self):
+        self.outcomes = {}
+
+    @staticmethod
+    def key(base, record):
+        return (base.resolve(), *(record.get(key) for key in
+                ("id", "path", "logic", "evidence", "logic_sha1", "evidence_sha1", "node_count")))
+
+    def remember(self, base, record):
+        self.outcomes[self.key(base, record)] = True
+
+    def valid(self, base, record):
+        key = self.key(base, record)
+        if key not in self.outcomes:
+            try:
+                graph_data(base, record)
+            except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+                self.outcomes[key] = False
+            else:
+                self.outcomes[key] = True
+        return self.outcomes[key]
+
+
+def resolve_dependency(base, raw, kind, index, current_data=None, validation=None):
+    if validation is None:
+        validation = GraphValidation()
     target = normalize_blueprint_target(raw, kind)
     if "status" in target:
         return target
@@ -207,8 +234,7 @@ def resolve_dependency(base, raw, kind, index, current_data=None):
             record = declared[0]
             target["status"] = "invalid_export"
             try:
-                graph_data(base, record)
-                if not safe(base, "00_START_HERE.md").is_file():
+                if not validation.valid(base, record) or not safe(base, "00_START_HERE.md").is_file():
                     return target
             except (OSError, ValueError, KeyError, TypeError, UnicodeError):
                 return target
@@ -240,8 +266,7 @@ def resolve_dependency(base, raw, kind, index, current_data=None):
         return target
     record = records[0]
     try:
-        graph_data(root, record)
-        if not safe(root, "00_START_HERE.md").is_file():
+        if not validation.valid(root, record) or not safe(root, "00_START_HERE.md").is_file():
             return target
     except (OSError, ValueError, KeyError, TypeError, UnicodeError):
         return target
@@ -290,8 +315,8 @@ def asset_reference(pin):
     return None, (value, kind)
 
 
-def asset_items(record, nodes):
-    items, unresolved, unsupported = [], 0, 0
+def asset_items(record, nodes, items):
+    unresolved, unsupported = 0, 0
     for node_id, node in nodes.items():
         for index, pin in enumerate(node.get("pins", [])):
             if (pin.get("direction", "").casefold() != "input"
@@ -312,7 +337,7 @@ def asset_items(record, nodes):
             items.append({"graph": record["id"], "node": node_id, "pin": pin.get("name", ""),
                           "pin_index": index, "role": "pin_default", "path": path,
                           "reference_kind": kind, "status": "reference_only"})
-    return items, unresolved, unsupported
+    return unresolved, unsupported
 
 
 def selection(seed, nodes, edges):
@@ -345,12 +370,29 @@ def fits(result, max_chars):
     return len(encode(result)) + 1 <= max_chars
 
 
-def bounded_results(command, items, args, identity):
+class ResultItems:
+    """Count every match while retaining only the prefix that can be returned."""
+    def __init__(self, limit):
+        self.limit, self.total, self.kept = limit, 0, []
+
+    def append(self, item):
+        self.total += 1
+        if len(self.kept) < self.limit:
+            self.kept.append(item)
+
+    def extend(self, items):
+        for item in items:
+            self.append(item)
+
+
+def bounded_results(command, items, args, identity, total=None):
+    if total is None:
+        total = len(items)
     kept = items[:args.max_nodes]
     while True:
         result = {"command": command, **identity, "results": kept,
-                  "truncated": len(kept) < len(items), "remaining_results": len(items) - len(kept)}
-        if not kept and items:
+                  "truncated": len(kept) < total, "remaining_results": total - len(kept)}
+        if not kept and total:
             result["hint"] = "Increase --max-chars or narrow the query."
         if fits(result, args.max_chars):
             return result
@@ -437,8 +479,9 @@ def main(argv=None):
         records = graphs(data, args.graph)
         if args.include_macros:
             records = data["graphs"] + data.get("macro_definitions", [])
-        index = dependency_index(base) if args.command == "deps" else []
-        items = []
+        index = dependency_index(base, data) if args.command == "deps" else []
+        validation = GraphValidation()
+        items = ResultItems(args.max_nodes)
         asset_unresolved = asset_unsupported = 0
         if args.command == "outline":
             identity["macro_definition_count"] = len(data.get("macro_definitions", []))
@@ -451,6 +494,8 @@ def main(argv=None):
         else:
             for record in records:
                 nodes, edges, blocks = graph_data(base, record)
+                if args.command == "deps":
+                    validation.remember(base, record)
                 if args.command == "find":
                     for node in nodes.values():
                         if args.query.casefold() in encode(node).casefold():
@@ -463,7 +508,7 @@ def main(argv=None):
                         if node_id not in nodes:
                             raise ValueError("node not found: " + node_id)
                         for kind, raw in dependency_targets(nodes[node_id]):
-                            result = resolve_dependency(base, raw, kind, index, data)
+                            result = resolve_dependency(base, raw, kind, index, data, validation)
                             result.update({"node": node_id, "kind": kind,
                                            "scope": "direct_dependency_targets",
                                            "hint": "Use assets for typed unconnected input asset references."})
@@ -474,8 +519,7 @@ def main(argv=None):
                     for node_id in selected_nodes:
                         if node_id not in nodes:
                             raise ValueError("node not found: " + node_id)
-                        found, missing, unsupported = asset_items(record, {node_id: nodes[node_id]})
-                        items.extend(found)
+                        missing, unsupported = asset_items(record, {node_id: nodes[node_id]}, items)
                         asset_unresolved += missing
                         asset_unsupported += unsupported
                     continue
@@ -504,7 +548,7 @@ def main(argv=None):
                 "scope": "forward_function_and_macro_calls",
                 "complete_asset_graph": False,
                 "asset_reference_hint": "python 05_Query.py assets --graph " + records[0]["id"]}}
-        print(encode(bounded_results(args.command, items, args, identity)))
+        print(encode(bounded_results(args.command, items.kept, args, identity, items.total)))
         return 0
     except UnsupportedVersion as error:
         print(encode(error.payload))

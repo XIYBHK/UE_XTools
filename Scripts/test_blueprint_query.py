@@ -1,17 +1,34 @@
 """Offline query regressions; no Unreal installation or network required."""
 import hashlib
 import importlib.util
+import contextlib
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 TOOL = Path(__file__).parents[1] / "Resources/BlueprintExport/05_Query.py"
 
 
 class QueryTests(unittest.TestCase):
+    @staticmethod
+    def query_module():
+        spec = importlib.util.spec_from_file_location("query_performance", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def in_process(self, module, *args):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = module.main([*args, "--directory", str(self.root)])
+        return code, output.getvalue()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / "Caller"
@@ -74,6 +91,133 @@ class QueryTests(unittest.TestCase):
         self.assertFalse(result["truncated"])
         self.assertNotIn('"pins"', self.last_output)
         self.assertIn('"flag"=false', result["nodes"][0]["logic"])
+
+    def test_result_prefix_matches_full_collection_bytes_and_counts(self):
+        module = self.query_module()
+
+        def legacy(items, args, identity):
+            kept = items[:args.max_nodes]
+            while True:
+                result = {"command": "assets", **identity, "results": kept,
+                          "truncated": len(kept) < len(items),
+                          "remaining_results": len(items) - len(kept)}
+                if not kept and items:
+                    result["hint"] = "Increase --max-chars or narrow the query."
+                if module.fits(result, args.max_chars):
+                    return module.encode(result) + "\n"
+                if not kept:
+                    raise ValueError("budget too small for JSON envelope")
+                kept = kept[:-1]
+
+        for size in (0, 1, 40, 10000):
+            source = [{"id": index, "title": "中文" * (index % 17 + 1)} for index in range(size)]
+            for limit in (1, 7, 40):
+                items = module.ResultItems(limit)
+                for item in source:
+                    items.append(item)
+                    self.assertLessEqual(len(items.kept), limit)
+                self.assertEqual(items.total, size)
+                for chars in (256, 400, 800, 16000):
+                    args = SimpleNamespace(max_nodes=limit, max_chars=chars)
+                    identity = {"asset_path": "路径", "snapshot_id": "fixture"}
+                    expected = legacy(source, args, identity)
+                    actual = module.bounded_results("assets", items.kept, args, identity, items.total)
+                    self.assertEqual(module.encode(actual) + "\n", expected)
+        args = SimpleNamespace(max_nodes=1, max_chars=256)
+        identity = {"asset_path": "too long" * 100}
+        with self.assertRaisesRegex(ValueError, "budget too small for JSON envelope"):
+            module.bounded_results("assets", [], args, identity, 10000)
+
+    def test_large_single_node_assets_retains_only_budgeted_prefix(self):
+        module = self.query_module()
+        pins = [{"name": str(i), "direction": "input", "type": {"category": "softobject"},
+                 "default": "/Game/Asset.Asset"} for i in range(10000)]
+        pins.extend([{"direction": "input", "type": {"category": "softobject"}, "default": "bad"},
+                     {"direction": "input", "type": {"category": "string"}, "default": "text"}])
+        path = self.root / self.records[0]["evidence"]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["nodes"][0]["pins"] = pins
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.rehash()
+        original = module.ResultItems
+        collectors = []
+
+        class ObservedItems(original):
+            def __init__(self, limit):
+                super().__init__(limit)
+                collectors.append(self)
+
+            def append(self, item):
+                super().append(item)
+                self.peak = max(getattr(self, "peak", 0), len(self.kept))
+
+        with mock.patch.object(module, "ResultItems", ObservedItems):
+            code, output = self.in_process(module, "assets", "--graph", "G0001", "--max-nodes", "3")
+        self.assertEqual(code, 0, output)
+        result = json.loads(output)
+        self.assertEqual(result["remaining_results"], 9997)
+        self.assertEqual([item["pin"] for item in result["results"]], ["0", "1", "2"])
+        self.assertEqual((result["metadata"]["unresolved"], result["metadata"]["unsupported"]), (1, 1))
+        self.assertEqual((collectors[0].peak, collectors[0].total), (3, 10000))
+
+    def test_deps_reuses_validation_but_rechecks_on_next_main(self):
+        module = self.query_module()
+        self.set_dependency("/Game/库/Target.Target_C:Sum")
+        path = self.root / self.records[0]["evidence"]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for node in data["nodes"]:
+            node["semantic"] = {"kind": "call_function", "resolved_function": "/Game/库/Target.Target_C:Sum"}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.rehash()
+        target = self.target_export()
+        with mock.patch.object(module, "manifest", wraps=module.manifest) as manifests, \
+                mock.patch.object(module, "graph_data", wraps=module.graph_data) as validations:
+            code, output = self.in_process(module, "deps", "--graph", "G0001")
+            self.assertEqual(code, 0, output)
+            self.assertEqual([item["status"] for item in json.loads(output)["results"]], ["ok"] * 7)
+            self.assertEqual(manifests.call_count, 2)  # Caller once, target once.
+            self.assertEqual(validations.call_count, 2)
+            (target / "logic.md").write_text("corrupt", encoding="utf-8")
+            code, output = self.in_process(module, "deps", "--graph", "G0001")
+            self.assertEqual(code, 0, output)
+            self.assertEqual([item["status"] for item in json.loads(output)["results"]], ["invalid_export"] * 7)
+            self.assertEqual(manifests.call_count, 4)
+            self.assertEqual(validations.call_count, 4)  # Failed validation also reused in this invocation.
+            (target / "01_Manifest.json").write_text("corrupt", encoding="utf-8")
+            code, output = self.in_process(module, "deps", "--graph", "G0001")
+            self.assertEqual(code, 0, output)
+            self.assertEqual([item["status"] for item in json.loads(output)["results"]], ["invalid_export"] * 7)
+            self.assertEqual(manifests.call_count, 6)
+
+    def test_validation_keys_include_directory_and_full_record_identity(self):
+        module = self.query_module()
+        target = self.target_export()
+        data = json.loads((target / "01_Manifest.json").read_text(encoding="utf-8"))
+        record = data["graphs"][0]
+        cache = module.GraphValidation()
+        with mock.patch.object(module, "graph_data", wraps=module.graph_data) as validations:
+            self.assertTrue(cache.valid(target, record))
+            self.assertTrue(cache.valid(target / ".", dict(record)))
+            self.assertEqual(validations.call_count, 1)
+            self.assertFalse(cache.valid(self.root, record))
+            self.assertEqual(validations.call_count, 2)
+            for key in ("id", "path", "logic", "evidence", "logic_sha1", "evidence_sha1", "node_count"):
+                changed = {**record, key: 2 if key == "node_count" else "changed"}
+                cache.valid(target, changed)
+            self.assertEqual(validations.call_count, 9)
+            self.assertTrue(all(type(value) is bool for value in cache.outcomes.values()))
+
+    def test_same_graph_dependency_reuses_current_validation(self):
+        module = self.query_module()
+        (self.root / "00_START_HERE.md").write_text("entry", encoding="utf-8")
+        self.set_dependency("/Game/Test.Test_C:Event")
+        with mock.patch.object(module, "manifest", wraps=module.manifest) as manifests, \
+                mock.patch.object(module, "graph_data", wraps=module.graph_data) as validations:
+            code, output = self.in_process(module, "deps", "--graph", "G0001", "--node", "N0")
+            self.assertEqual(code, 0, output)
+            self.assertEqual(json.loads(output)["results"][0]["status"], "ok")
+            self.assertEqual(manifests.call_count, 1)
+            self.assertEqual(validations.call_count, 1)
 
     def test_budget_preserves_seed_and_recomputes_edges(self):
         result = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--max-nodes", "1")

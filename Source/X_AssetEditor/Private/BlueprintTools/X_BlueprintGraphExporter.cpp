@@ -148,11 +148,31 @@ namespace
         int32 PinIndex = INDEX_NONE;
     };
 
-    int32 PinIndexInNode(const UEdGraphPin* Pin)
+    // Scoped to one graph serialization. Linked pins may belong to nodes outside
+    // SortedNodes, so index each owning node lazily without changing link coverage.
+    struct FPinIndexCache
     {
-        const UEdGraphNode* Node = Pin ? Pin->GetOwningNode() : nullptr;
-        return Node ? Node->Pins.IndexOfByKey(Pin) : INDEX_NONE;
-    }
+        TMap<const UEdGraphNode*, TMap<const UEdGraphPin*, int32>> ByNode;
+
+        int32 Get(const UEdGraphPin* Pin)
+        {
+            const UEdGraphNode* Node = Pin ? Pin->GetOwningNode() : nullptr;
+            if (!Node) { return INDEX_NONE; }
+            TMap<const UEdGraphPin*, int32>* Indices = ByNode.Find(Node);
+            if (!Indices)
+            {
+                Indices = &ByNode.Add(Node);
+                Indices->Reserve(Node->Pins.Num());
+                for (int32 Index = 0; Index < Node->Pins.Num(); ++Index)
+                {
+                    const UEdGraphPin* Candidate = Node->Pins[Index];
+                    if (Candidate && !Indices->Contains(Candidate)) { Indices->Add(Candidate, Index); }
+                }
+            }
+            const int32* Index = Indices->Find(Pin);
+            return Index ? *Index : INDEX_NONE;
+        }
+    };
 
     FString SanitizeFileName(const FString& Name)
     {
@@ -425,6 +445,24 @@ namespace
         });
         return Nodes;
     }
+
+    // One export owns this cache; no UObject pointers survive into another export.
+    struct FBlueprintGraphCache
+    {
+        TArray<UEdGraph*> Graphs;
+        TMap<const UEdGraph*, TArray<UEdGraphNode*>> NodesByGraph;
+
+        explicit FBlueprintGraphCache(UBlueprint* Blueprint = nullptr)
+        {
+            if (Blueprint) { Blueprint->GetAllGraphs(Graphs); }
+        }
+
+        const TArray<UEdGraphNode*>& Nodes(const UEdGraph* Graph)
+        {
+            if (const auto* Found = NodesByGraph.Find(Graph)) { return *Found; }
+            return NodesByGraph.Add(Graph, GetSortedNodes(Graph));
+        }
+    };
 
     FString NodeTitle(const UEdGraphNode* Node)
     {
@@ -1582,7 +1620,7 @@ namespace
         return nullptr;
     }
 
-    FXPinRef MakePinRef(const UEdGraphPin* Pin, const TMap<const UEdGraphNode*, FString>& NodeIds)
+    FXPinRef MakePinRef(const UEdGraphPin* Pin, const TMap<const UEdGraphNode*, FString>& NodeIds, FPinIndexCache& PinIndices)
     {
         FXPinRef Ref;
         if (!Pin)
@@ -1598,7 +1636,7 @@ namespace
         Ref.NodeGuid = Node ? Node->NodeGuid.ToString() : FString();
         Ref.PinName = Pin->PinName.ToString();
         Ref.PinId = Pin->PinId.ToString();
-        Ref.PinIndex = PinIndexInNode(Pin);
+        Ref.PinIndex = PinIndices.Get(Pin);
         return Ref;
     }
 
@@ -1649,6 +1687,7 @@ namespace
     TArray<TSharedPtr<FJsonValue>> BuildExecChainJson(
         const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds,
+        FPinIndexCache& PinIndices,
         TSet<const UEdGraphNode*>& OutReachableNodes)
     {
         TArray<TSharedPtr<FJsonValue>> Edges;
@@ -1692,11 +1731,11 @@ namespace
                     Edge->SetObjectField(TEXT("from_node"), NodeRefToJson(Node, NodeIds));
                     Edge->SetStringField(TEXT("from_pin"), Pin->PinName.ToString());
                     Edge->SetStringField(TEXT("from_pin_id"), Pin->PinId.ToString());
-                    Edge->SetNumberField(TEXT("from_pin_index"), PinIndexInNode(Pin));
+                    Edge->SetNumberField(TEXT("from_pin_index"), PinIndices.Get(Pin));
                     Edge->SetObjectField(TEXT("to_node"), NodeRefToJson(TargetNode, NodeIds));
                     Edge->SetStringField(TEXT("to_pin"), LinkedPin->PinName.ToString());
                     Edge->SetStringField(TEXT("to_pin_id"), LinkedPin->PinId.ToString());
-                    Edge->SetNumberField(TEXT("to_pin_index"), PinIndexInNode(LinkedPin));
+                    Edge->SetNumberField(TEXT("to_pin_index"), PinIndices.Get(LinkedPin));
                     Edges.Add(MakeShared<FJsonValueObject>(Edge));
 
                     if (!QueuedNodes.Contains(TargetNode))
@@ -1730,7 +1769,8 @@ namespace
 
     TArray<TSharedPtr<FJsonValue>> BuildUnconnectedExecPinsJson(
         const TArray<UEdGraphNode*>& SortedNodes,
-        const TMap<const UEdGraphNode*, FString>& NodeIds)
+        const TMap<const UEdGraphNode*, FString>& NodeIds,
+        FPinIndexCache& PinIndices)
     {
         TArray<TSharedPtr<FJsonValue>> Pins;
         for (const UEdGraphNode* Node : SortedNodes)
@@ -1749,7 +1789,7 @@ namespace
 
                 TSharedPtr<FJsonObject> PinJson = MakeShared<FJsonObject>();
                 PinJson->SetObjectField(TEXT("node"), NodeRefToJson(Node, NodeIds));
-                PinJson->SetObjectField(TEXT("pin"), PinRefToJson(MakePinRef(Pin, NodeIds)));
+                PinJson->SetObjectField(TEXT("pin"), PinRefToJson(MakePinRef(Pin, NodeIds, PinIndices)));
                 PinJson->SetStringField(TEXT("direction"), DirectionToString(Pin->Direction));
                 PinJson->SetBoolField(TEXT("node_enabled"), Node->IsNodeEnabled());
                 Pins.Add(MakeShared<FJsonValueObject>(PinJson));
@@ -1761,6 +1801,7 @@ namespace
     TArray<TSharedPtr<FJsonValue>> BuildEdgesJson(
         const TArray<UEdGraphNode*>& SortedNodes,
         const TMap<const UEdGraphNode*, FString>& NodeIds,
+        FPinIndexCache& PinIndices,
         int32& OutExecEdgeCount,
         int32& OutDataEdgeCount)
     {
@@ -1797,11 +1838,11 @@ namespace
                     Edge->SetObjectField(TEXT("from_node"), NodeRefToJson(Node, NodeIds));
                     Edge->SetStringField(TEXT("from_pin"), Pin->PinName.ToString());
                     Edge->SetStringField(TEXT("from_pin_id"), Pin->PinId.ToString());
-                    Edge->SetNumberField(TEXT("from_pin_index"), PinIndexInNode(Pin));
+                    Edge->SetNumberField(TEXT("from_pin_index"), PinIndices.Get(Pin));
                     Edge->SetObjectField(TEXT("to_node"), NodeRefToJson(TargetNode, NodeIds));
                     Edge->SetStringField(TEXT("to_pin"), LinkedPin->PinName.ToString());
                     Edge->SetStringField(TEXT("to_pin_id"), LinkedPin->PinId.ToString());
-                    Edge->SetNumberField(TEXT("to_pin_index"), PinIndexInNode(LinkedPin));
+                    Edge->SetNumberField(TEXT("to_pin_index"), PinIndices.Get(LinkedPin));
                     Edges.Add(MakeShared<FJsonValueObject>(Edge));
 
                     if (bExecEdge)
@@ -1819,7 +1860,7 @@ namespace
         return Edges;
     }
 
-    TSharedPtr<FJsonObject> PinToJson(const UEdGraphPin* Pin, const TMap<const UEdGraphNode*, FString>& NodeIds)
+    TSharedPtr<FJsonObject> PinToJson(const UEdGraphPin* Pin, const TMap<const UEdGraphNode*, FString>& NodeIds, FPinIndexCache& PinIndices)
     {
         TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
         if (!Pin)
@@ -1828,7 +1869,7 @@ namespace
         }
 
         Json->SetStringField(TEXT("id"), Pin->PinId.ToString());
-        Json->SetNumberField(TEXT("index"), PinIndexInNode(Pin));
+        Json->SetNumberField(TEXT("index"), PinIndices.Get(Pin));
         Json->SetStringField(TEXT("persistent_guid"), Pin->PersistentGuid.ToString());
         Json->SetStringField(TEXT("name"), Pin->PinName.ToString());
         Json->SetStringField(TEXT("direction"), DirectionToString(Pin->Direction));
@@ -1841,7 +1882,7 @@ namespace
         Json->SetBoolField(TEXT("default_value_read_only"), Pin->bDefaultValueIsReadOnly);
         Json->SetBoolField(TEXT("not_connectable"), Pin->bNotConnectable);
         Json->SetStringField(TEXT("parent_pin_id"), Pin->ParentPin ? Pin->ParentPin->PinId.ToString() : FString());
-        Json->SetNumberField(TEXT("parent_pin_index"), PinIndexInNode(Pin->ParentPin));
+        Json->SetNumberField(TEXT("parent_pin_index"), PinIndices.Get(Pin->ParentPin));
         TArray<TSharedPtr<FJsonValue>> SubPins;
         TArray<TSharedPtr<FJsonValue>> SubPinIndices;
         for (const UEdGraphPin* SubPin : Pin->SubPins)
@@ -1849,7 +1890,7 @@ namespace
             if (SubPin)
             {
                 SubPins.Add(MakeShared<FJsonValueString>(SubPin->PinId.ToString()));
-                SubPinIndices.Add(MakeShared<FJsonValueNumber>(PinIndexInNode(SubPin)));
+                SubPinIndices.Add(MakeShared<FJsonValueNumber>(PinIndices.Get(SubPin)));
             }
         }
         Json->SetArrayField(TEXT("sub_pin_ids"), SubPins);
@@ -1876,7 +1917,7 @@ namespace
         {
             if (LinkedPin)
             {
-                Links.Add(MakeShared<FJsonValueObject>(PinRefToJson(MakePinRef(LinkedPin, NodeIds))));
+                Links.Add(MakeShared<FJsonValueObject>(PinRefToJson(MakePinRef(LinkedPin, NodeIds, PinIndices))));
             }
         }
         Json->SetArrayField(TEXT("linked_to"), Links);
@@ -1916,7 +1957,7 @@ namespace
         return Values;
     }
 
-    TSharedPtr<FJsonObject> NodeToJson(const UEdGraphNode* Node, const TMap<const UEdGraphNode*, FString>& NodeIds)
+    TSharedPtr<FJsonObject> NodeToJson(const UEdGraphNode* Node, const TMap<const UEdGraphNode*, FString>& NodeIds, FPinIndexCache& PinIndices)
     {
         TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
         if (!Node)
@@ -1954,7 +1995,7 @@ namespace
         {
             if (Pin)
             {
-                Pins.Add(MakeShared<FJsonValueObject>(PinToJson(Pin, NodeIds)));
+                Pins.Add(MakeShared<FJsonValueObject>(PinToJson(Pin, NodeIds, PinIndices)));
             }
         }
         Json->SetArrayField(TEXT("pins"), Pins);
@@ -1974,7 +2015,7 @@ namespace
         }
     }
 
-    TSharedPtr<FJsonObject> GraphToJson(const UBlueprint* Blueprint, const UEdGraph* Graph, int32& InOutNodeCount)
+    TSharedPtr<FJsonObject> GraphToJson(const UBlueprint* Blueprint, const UEdGraph* Graph, int32& InOutNodeCount, FBlueprintGraphCache& GraphCache)
     {
         TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
         if (!Graph)
@@ -1982,7 +2023,8 @@ namespace
             return Json;
         }
 
-        const TArray<UEdGraphNode*> SortedNodes = GetSortedNodes(Graph);
+        const TArray<UEdGraphNode*>& SortedNodes = GraphCache.Nodes(Graph);
+        FPinIndexCache PinIndices;
         TMap<const UEdGraphNode*, FString> NodeIds;
         BuildNodeIds(SortedNodes, NodeIds);
 
@@ -1995,13 +2037,13 @@ namespace
 
         TSet<const UEdGraphNode*> ReachableNodes;
         Json->SetArrayField(TEXT("entry_nodes"), BuildEntryNodesJson(SortedNodes, NodeIds));
-        Json->SetArrayField(TEXT("exec_chain"), BuildExecChainJson(SortedNodes, NodeIds, ReachableNodes));
+        Json->SetArrayField(TEXT("exec_chain"), BuildExecChainJson(SortedNodes, NodeIds, PinIndices, ReachableNodes));
         Json->SetArrayField(TEXT("orphan_exec_nodes"), BuildOrphanExecNodesJson(SortedNodes, NodeIds, ReachableNodes));
-        Json->SetArrayField(TEXT("unconnected_exec_pins"), BuildUnconnectedExecPinsJson(SortedNodes, NodeIds));
+        Json->SetArrayField(TEXT("unconnected_exec_pins"), BuildUnconnectedExecPinsJson(SortedNodes, NodeIds, PinIndices));
 
         int32 ExecEdgeCount = 0;
         int32 DataEdgeCount = 0;
-        TArray<TSharedPtr<FJsonValue>> Edges = BuildEdgesJson(SortedNodes, NodeIds, ExecEdgeCount, DataEdgeCount);
+        TArray<TSharedPtr<FJsonValue>> Edges = BuildEdgesJson(SortedNodes, NodeIds, PinIndices, ExecEdgeCount, DataEdgeCount);
         Json->SetNumberField(TEXT("edge_count"), Edges.Num());
         Json->SetNumberField(TEXT("exec_edge_count"), ExecEdgeCount);
         Json->SetNumberField(TEXT("data_edge_count"), DataEdgeCount);
@@ -2014,7 +2056,7 @@ namespace
         {
             if (Node)
             {
-                TSharedPtr<FJsonObject> NodeJson = NodeToJson(Node, NodeIds);
+                TSharedPtr<FJsonObject> NodeJson = NodeToJson(Node, NodeIds, PinIndices);
                 if (NodeJson->GetStringField(TEXT("semantic_status")) == TEXT("unclassified"))
                 {
                     UnclassifiedNodes.Add(MakeShared<FJsonValueString>(NodeJson->GetStringField(TEXT("id"))));
@@ -2994,7 +3036,7 @@ namespace
         return Timelines;
     }
 
-    TSharedPtr<FJsonObject> BlueprintToJson(UBlueprint* Blueprint)
+    TSharedPtr<FJsonObject> BlueprintToJson(UBlueprint* Blueprint, FBlueprintGraphCache& GraphCache)
     {
         TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
         Root->SetStringField(TEXT("schema_version"), TEXT("1.1"));
@@ -3028,8 +3070,7 @@ namespace
         Root->SetNumberField(TEXT("timeline_count"), Timelines.Num());
         Root->SetArrayField(TEXT("timelines"), Timelines);
 
-        TArray<UEdGraph*> Graphs;
-        Blueprint->GetAllGraphs(Graphs);
+        const TArray<UEdGraph*>& Graphs = GraphCache.Graphs;
 
         int32 NodeCount = 0;
         TArray<TSharedPtr<FJsonValue>> GraphValues;
@@ -3037,7 +3078,7 @@ namespace
         {
             if (Graph)
             {
-                GraphValues.Add(MakeShared<FJsonValueObject>(GraphToJson(Blueprint, Graph, NodeCount)));
+                GraphValues.Add(MakeShared<FJsonValueObject>(GraphToJson(Blueprint, Graph, NodeCount, GraphCache)));
             }
         }
 
@@ -3082,7 +3123,7 @@ namespace
             UEdGraph* Definition = StandardMacros.FindChecked(Path);
             int32 Count = 0;
             MacroDefinitions.Add(MakeShared<FJsonValueObject>(GraphToJson(
-                FBlueprintEditorUtils::FindBlueprintForGraph(Definition), Definition, Count)));
+                FBlueprintEditorUtils::FindBlueprintForGraph(Definition), Definition, Count, GraphCache)));
         }
         Root->SetArrayField(TEXT("macro_definitions"), MacroDefinitions);
         Coverage->SetStringField(TEXT("macro_definition_scope"), TEXT("referenced_standard_macros_transitive"));
@@ -3273,14 +3314,14 @@ namespace
         }
     }
 
-    void AppendGraphMarkdown(FString& Markdown, UBlueprint* Blueprint, UEdGraph* Graph)
+    void AppendGraphMarkdown(FString& Markdown, UBlueprint* Blueprint, UEdGraph* Graph, FBlueprintGraphCache& GraphCache)
     {
         if (!Graph)
         {
             return;
         }
 
-        const TArray<UEdGraphNode*> SortedNodes = GetSortedNodes(Graph);
+        const TArray<UEdGraphNode*>& SortedNodes = GraphCache.Nodes(Graph);
         TMap<const UEdGraphNode*, FString> NodeIds;
         BuildNodeIds(SortedNodes, NodeIds);
         FGraphDisplayCache DisplayCache(NodeIds);
@@ -3371,15 +3412,14 @@ namespace
         Markdown += TEXT("\n");
     }
 
-    FString BlueprintToMarkdown(UBlueprint* Blueprint)
+    FString BlueprintToMarkdown(UBlueprint* Blueprint, FBlueprintGraphCache& GraphCache)
     {
         FString Markdown;
         Markdown += FString::Printf(TEXT("# %s 蓝图逻辑流\n\n"), *Blueprint->GetName());
         Markdown += FString::Printf(TEXT("- 资产路径: `%s`\n"), *Blueprint->GetPathName());
         Markdown += FString::Printf(TEXT("- 父类: `%s`\n\n"), Blueprint->ParentClass ? *Blueprint->ParentClass->GetPathName() : TEXT(""));
 
-        TArray<UEdGraph*> Graphs;
-        Blueprint->GetAllGraphs(Graphs);
+        const TArray<UEdGraph*>& Graphs = GraphCache.Graphs;
         int32 ValidGraphCount = 0;
         for (const UEdGraph* Graph : Graphs)
         {
@@ -3395,7 +3435,7 @@ namespace
 
         for (UEdGraph* Graph : Graphs)
         {
-            AppendGraphMarkdown(Markdown, Blueprint, Graph);
+            AppendGraphMarkdown(Markdown, Blueprint, Graph, GraphCache);
         }
         return Markdown;
     }
@@ -3487,7 +3527,8 @@ namespace
                 return false;
             }
         }
-        const TSharedRef<FJsonObject> Snapshot = BlueprintToJson(Blueprint).ToSharedRef();
+        FBlueprintGraphCache GraphCache(Blueprint);
+        const TSharedRef<FJsonObject> Snapshot = BlueprintToJson(Blueprint, GraphCache).ToSharedRef();
         const FString SnapshotAssetPath = Snapshot->GetStringField(TEXT("asset_path"));
         if (SnapshotAssetPath != AssetPath)
         {
@@ -3497,7 +3538,7 @@ namespace
         TMap<FString, FString> Outputs;
         Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".json"), TEXT(""));
         Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".ai.md"), XBlueprintAIWriter::Write(Snapshot));
-        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".md"), BlueprintToMarkdown(Blueprint));
+        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".md"), BlueprintToMarkdown(Blueprint, GraphCache));
         const TSharedPtr<IPlugin> XToolsPlugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
         const FString QueryPath = XToolsPlugin.IsValid() ? XToolsPlugin->GetBaseDir() / TEXT("Resources/BlueprintExport/05_Query.py") : FString();
         FString QueryText;
@@ -3783,17 +3824,20 @@ TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildNodeSemanticJson(cons
 TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildGraphJson(UEdGraph* Graph)
 {
     int32 NodeCount = 0;
-    return GraphToJson(nullptr, Graph, NodeCount);
+    FBlueprintGraphCache GraphCache;
+    return GraphToJson(nullptr, Graph, NodeCount, GraphCache);
 }
 FString XBlueprintGraphExporterTests::BuildGraphMarkdown(UEdGraph* Graph)
 {
     FString Markdown;
-    AppendGraphMarkdown(Markdown, nullptr, Graph);
+    FBlueprintGraphCache GraphCache;
+    AppendGraphMarkdown(Markdown, nullptr, Graph, GraphCache);
     return Markdown;
 }
 TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildBlueprintJson(UBlueprint* Blueprint)
 {
-    return BlueprintToJson(Blueprint);
+    FBlueprintGraphCache GraphCache(Blueprint);
+    return BlueprintToJson(Blueprint, GraphCache);
 }
 bool XBlueprintGraphExporterTests::ExportBlueprintFiles(UBlueprint* Blueprint, FString& OutDirectory, FString& OutError)
 {
