@@ -268,6 +268,16 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
             elif facts:
                 errors.append(f"Unexpected pseudo classified facts: {node_id}")
         if semantic_hints:
+            iteration_lines = [line.strip()[len("iteration: "):] for line in body if line.strip().startswith("iteration: ")]
+            iteration = semantic.get("iteration") if kind == "macro_instance" else None
+            try:
+                if iteration is not None:
+                    if len(iteration_lines) != 1 or json.loads(iteration_lines[0]) != iteration:
+                        errors.append(f"Pseudo iteration hint differs: {node_id}")
+                elif iteration_lines:
+                    errors.append(f"Unexpected pseudo iteration hint: {node_id}")
+            except (ValueError, TypeError):
+                errors.append(f"Invalid pseudo iteration hint: {node_id}")
             expected_hints = []
             if not any(p.get("is_exec") for p in node.get("pins", [])) and (
                     kind == "call_function" and semantic.get("is_pure") or kind == "variable" and semantic.get("access") == "get"):

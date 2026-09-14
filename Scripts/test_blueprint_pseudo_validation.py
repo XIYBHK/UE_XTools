@@ -42,6 +42,17 @@ def good_text():
 
 
 class PseudoValidationTests(unittest.TestCase):
+    def test_iteration_hint_requires_exact_evidence_and_cannot_be_invented(self):
+        iteration = {"kind": "array", "loop_body_pin": "LoopBody", "definition_graph": "/Engine/Macros:ForEachLoop"}
+        semantic = {"kind": "macro_instance", "macro_graph": "/Engine/Macros:ForEachLoop",
+                    "definition_status": "dependency_included", "iteration": iteration}
+        graph = {"nodes": [{"id": "A", "semantic": semantic, "pins": []}], "edges": []}
+        text = '```text\n@A: macro "/Engine/Macros:ForEachLoop" [dependency_included]()\n  iteration: ' + json.dumps(iteration) + '\n```\n'
+        self.assertEqual(validate_pseudo(graph, text, semantic_hints=True), [])
+        self.assertTrue(validate_pseudo(graph, text.replace('"LoopBody"', '"Completed"'), semantic_hints=True))
+        del semantic["iteration"]
+        self.assertTrue(validate_pseudo(graph, text, semantic_hints=True))
+
     def test_classified_fallback_retains_switch_facts_and_rejects_tampering(self):
         semantic = {"kind": "switch", "cases": ["测试1", "测试2"], "switch_type": "name"}
         graph = {"nodes": [{"id": "A", "title": "切换名称", "class_path": "/Script/BlueprintGraph.K2Node_SwitchName",

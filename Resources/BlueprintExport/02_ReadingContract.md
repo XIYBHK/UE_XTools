@@ -6,20 +6,29 @@
 
 - 先按入口/outline 选图。大图用 slice（执行可达节点 + 上游数据依赖），不足再用 node --evidence。资产类、组件、时间轴事实在 20_Evidence/00_Asset.json，按键查询。默认避免无目的全量读取；全局审计或证据不足时可扩大范围，包括 90_Full。
 - CLI 默认最多 40 节点/结果、16000 Unicode 字符；truncated、remaining 与 boundary 指出省略范围。清单的 *_bytes 是 UTF-8 字节，不是 token 或字符。直接读文件不受 CLI 预算约束。
-- deps 返回调用目标路径，不返回正文。定义可能在本包 30_Dependencies 或同级资产目录；未找到不等于原生实现不存在。宏定义需显式选 M 编号，outline --include-macros 仅列索引。
+- deps 返回调用目标路径，不返回正文。自定义事件按成员 GUID（缺失时按唯一事件名）定位到所属图的 entry_node，保留 callable_path；有效 GUID 不匹配时不静默按名字改配，SKEL_ 生成类会正规化。定义可能在本包 30_Dependencies 或同级资产目录；未找到不等于原生实现不存在。宏定义需显式选 M 编号，outline --include-macros 仅列索引。
 - 查询器随包固定，插件模板是生成来源。query 的协议版本决定兼容性，sha1 标识副本内容；重新导出更新整包。显式使用另一查询器时须协议兼容，SHA1 不是安全签名。
 
 ## 语义
 
 - @N 只在所属图/本次快照内定位；持久对照结合完整资产/图路径、node_guid 与 pin.id，无效或重复 GUID 不保证稳定。
+- find/node/slice 默认附完整 node_guid；--node-guid 接受完整非零且唯一的 GUID，仍须选图；--snapshot 可拒绝过期快照。outline 中旧包可能缺少 GUID，应按需查 evidence。
 - exit/callback 是控制流边；sequence 按引脚顺序派发，不等待异步完成。条目顺序、静态可达和数据来源不证明运行时执行顺序；requires_prior_execution 不能当作本入口调用。
 - expr/read/component_read 表示数据依赖，不声明求值或缓存次数。demand 仅计直接数据边和不同直接消费者，含重路由及静态未执行路径。
 - 参数优先保留连接来源；serialized 是原始默认文本，serialized("") 不能判定 unset、显式空或运行时 self。split_input 指向子引脚。local 声明保留 explicit/type_default：确定数值/布尔类型可给 0/false，复杂类型查证据；local_scope 是所属图，不是运行时生命周期。
 - component_read 证明解析到组件对象属性；scs_property 才包含 SCS 声明证据，object_property 不等于 SCS。声明不证明运行时指针有效或未被重赋值。
 - 标准宏定义保留实例边界：相同定义不共享 Gate/DoOnce 状态，隧道按 pin 名/类型对应调用端；泛型定义还需实例类型。assign 将 Value 写入 Variable 网络；temp 保留编译器局部类型和持久标记，不推断初始化/生命周期。
+- iteration 是核验标准宏路径和实例引脚后的签名提示；loop_body_pin 指向调用方业务逻辑，definition_graph 是宏内部实现，两者不能混为同一图。提示不替代宏定义证据。
 - disabled 节点、环、共享目标仍保留；opaque/特殊派生类不是无操作。classified 不是编译语义穷尽证明，未知实现需明确说明。
 - classified "kind" "title" 表示已有分类但采用通用展示；semantic 行保留采集到的语义 JSON，参数及 exit 仍按真实 pin/边展示，不据此承诺完整编译语义。缺少分类才使用 opaque；精确连接仍可独立查证。
 - 表达式中的数据重路由最多追溯 64 个来源引用；到达上限保留当前引用并标注 continue_in_evidence，数据环标注 data_cycle。节点和原始边仍保留，可继续查询，不等于剩余逻辑被丢弃。
+
+## 跨图与快照查询
+
+- slice --follow --depth 3 --max-graphs 40 按静态调用引用导航；按包/图/入口去重，同图的不同自定义事件仍会跟随。保留每个调用点、共享/递归目标和外部状态，entry_nodes 标明当前入口区域。结果按 node/call 记录预算裁剪，depth_boundaries、pending_graphs、pending_entries 和 traversal_truncated 另报遍历边界；不展开调用栈，不承诺动态派发、可执行调用或运行时顺序。
+- impact --target <完整图/函数/自定义事件路径> --depth 3 在发现的导出包内反查调用。source_entries 标明调用点所在的静态入口区域，事件间反查按事件成员路径继续，孤立调用不虚构所属入口。范围不含完整资产引用、反射或动态委托派发；coverage_complete 仅描述扫描范围，invalid_exports/unresolved_calls 须一起检查。原生函数也可作目标。
+- 跨包查询优先使用父目录 00_INDEX.json；--index 可显式指定含嵌套相对目录的索引。索引身份与实际清单不符时拒绝查询；无索引退回当前包与直接兄弟包。移动整个目录保留相对路径；新增/移动单包后需重新导出维护索引。索引不代表完整 UE 项目。
+- diff --against <旧资产包目录> 比较旧包到当前包的所属图 evidence，优先 graph_guid、回退完整图路径，节点必须有完整有效且唯一 GUID。布局、展示、默认值、引脚身份、连接与其他逻辑字段分别报告；短序号和由画布导致的边数组排序不构成变化。缺失/重复 GUID 或不完整图标记 not_comparable；不猜身份，不包含 CDO/组件/资产元数据与外部宏定义，GUID 重建不等于已证明逻辑改变。
 
 ## 伪代码语法 v1
 

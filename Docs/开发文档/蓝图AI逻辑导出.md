@@ -6,6 +6,7 @@
 
 ```text
 00_START_HERE.md                 # 总目录：选择相关资产目录
+00_INDEX.json                   # 根机器索引：直接资产包路径/身份/快照，遗漏目录单列
 <资产>/
 ├── 00_START_HERE.md             # 资产入口、图索引、外部宏依赖和停止条件
 ├── 01_Manifest.json             # v2 机器清单：图身份、候选入口与内容摘要
@@ -40,7 +41,7 @@ python 05_Query.py assets --graph G0001 --node N0
 
 默认最多 40 个节点/结果、最终 JSON（含换行）最多 16,000 个 Unicode 字符，字符数不是 token 数或 UTF-8 字节数。截断结果附有 `truncated`、剩余节点/结果数量；子图另外报告跨边界连接总数、最多 8 条样例和省略数。先看结果是否足够回答；不足时沿引用的节点继续查询或缩小问题范围，必要时显式提高预算。`truncated=false` 只表示本次范围内没有预算省略，不代表外部实现已包含或运行时顺序已证明。
 
-列表查询最多保留 `max_nodes` 条候选结果，继续扫描以精确计算剩余数量，再按最终字符预算裁剪；`assets` 逐引脚写入同一收集器，不先构造单节点完整引用列表。图证据仍整图解析，因此这不是整个查询的恒定内存保证。`deps` 在单次调用内复用已读取的当前清单与图校验结果，缓存按完整目录、图身份、文件路径、摘要和节点数隔离，仅保存成功/失败，不囤积图正文；下一次调用重新读取和校验。预算、命中顺序、文件损坏提示及阅读自由保持原有含义。
+列表查询最多保留 `max_nodes` 条候选结果，继续扫描以精确计算剩余数量，再按最终字符预算裁剪；`assets` 逐引脚写入同一收集器，不先构造单节点完整引用列表。图证据仍整图解析，因此这不是整个查询的恒定内存保证。`deps` 在单次调用内复用已读取的当前清单与图校验结果，缓存按完整目录、图身份、文件路径、摘要和节点数隔离，保存成功/失败及紧凑自定义事件身份索引，不囤积图正文；下一次调用重新读取和校验。预算、命中顺序、文件损坏提示及阅读自由保持原有含义。
 
 `01_Manifest.json` 为每张图记录完整图路径、入口列表、节点数及伪代码/证据文件的 SHA1。查询器仅校验所选图，拒绝内容摘要或图身份不符、路径越界及节点覆盖不一致的文件。摘要用于检测快照混用，不是安全签名；图编号和 `snapshot_id` 也不替代持久对象身份。没有 Python 时仍可按图阅读。
 
@@ -49,6 +50,30 @@ python 05_Query.py assets --graph G0001 --node N0
 阅读契约与查询器均来自插件 `Resources/BlueprintExport/`，导出时读取并随包保存。纯文案变更可修改 `02_ReadingContract.md` 后重新导出，无需重新编译；语法/协议变化仍须同步代码版本与测试。契约缺失、不可读或为空时拒绝导出并保留原包。`.gitattributes` 仅将该资源目录的 `.py`/`.md` 固定为 LF，减少不同 Git checkout 的字节摘要噪音；SHA1 标识文件字节，兼容性由协议版本决定。UE 5.3 的插件打包器默认包含 `Resources/...`，无需额外安装路径依赖。
 
 `02_ReadingContract.md` 把伪代码块语法作为 v1 契约：每图一个 `text` 代码块，顶格节点头、已知启用状态前缀、缩进延续行和独立注释头。文本内的作者换行、引号及反引号经 JSON 转义，不能伪装为新节点。查询器只解析块边界，操作、参数与连接继续由语义校验器核对。改变块边界或节点头语法需提升伪代码协议版本；重新排版必须同步生成摘要。独立语法测试覆盖 CRLF、转义作者文本、重复节点、未知前缀、未缩进延续行及缺失/重复/未闭合代码块。
+
+## 跨图、反向调用与快照对比
+
+短 `N` 编号继续用于本图本次快照的阅读。`find/node/slice` 默认返回完整 `node_guid`；`node/slice/deps/assets --node-guid <完整GUID>` 在选定图内定位，零值、缺失和重复身份会拒绝。可加 `--snapshot <snapshot_id>` 防止误用旧序号。新清单的图头与入口分别提供 `graph_guid`、`node_guid`，旧包仍可按需读取证据。
+
+```text
+python 05_Query.py node --graph G0002 --node-guid <完整GUID>
+python 05_Query.py slice --graph G0002 --node N0 --follow --depth 3 --max-graphs 40
+python 05_Query.py impact --target "/Game/Library.Library:Function" --depth 3
+python 05_Query.py deps --graph G0002 --index "../00_INDEX.json"
+python 05_Query.py diff --against "<旧资产包绝对目录>"
+```
+
+`slice --follow` 返回带资产、快照、图、层数及入口区域上下文的 node/call 记录。沿引用的目标入口追踪，按包/图/入口去重，同一 EventGraph 的不同自定义事件可以继续访问；重复/递归调用仍保留调用记录。宏实现与调用方后续逻辑不混成一段。没有目标入口、原生/缺失实现、深度上限与图预算均显式呈现。`--max-nodes` 限制返回的 node/call 记录数；`remaining_results` 只计已遍历范围，未探索范围另见 `pending_graphs`/`pending_entries`/`depth_boundaries`，不能当作完整调用栈或运行时顺序。`--max-graphs` 按不同图计数，不会阻止已访问图的其他事件入口。
+
+自定义事件不是同名独立函数图。`deps` 先正规化生成类（含 SKEL_）路径；独立图不存在时，在目标资产所属图中按 `function.guid → custom_event.node_guid` 定位，缺少有效成员 GUID 才允许唯一事件名回退。返回 `callable_path`、实际 `graph_path`、`entry_node`/`entry_node_guid` 和可直接执行的 slice 参数；源调用节点仍使用 `node`/`node_guid` 字段。重复身份、有效 GUID 不匹配或索引所需图损坏时显式报告，不猜另一入口。这个导航是定义级静态引用，不证明 self、RPC、实例或网络端的运行时派发。
+
+`impact` 对已发现包中的函数/宏引用建立反向边，支持图路径、生成类函数路径、自定义事件成员路径和原生 `/Script/...:Function`。输出带调用点、距离及 `source_entries` 静态所属入口；事件之间按成员路径继续反查，孤立调用保留记录但不虚构入口。损坏包/图、无法解析的引用均计数，不将不完整扫描包装成没有调用者。它不覆盖资产引用、动态派发或 UE 项目全部引用。扫描范围和深度之外的影响仍需单独调查。
+
+根 `00_INDEX.json` 为 format_version 1，包含 `packages:[{directory,asset_path,snapshot_id}]` 及 `unindexed_directories`。与根 Markdown 共用资产路径去重，规范目录优先；本次包使用内存清单，并与其他导出文件一起暂存、提交和失败回滚。自动索引只覆盖根目录的直接资产包；跨包查询优先使用父索引，缺失则回退兄弟目录扫描。显式 `--index` 可选择包含嵌套相对目录的索引；拒绝路径逃逸、未知版本和过期身份。整体移动导出根保留相对路径，单独搬动包需更新索引；它不是完整项目 AssetRegistry。
+
+`diff` 方向为 `--against` 旧包到 `--directory` 当前包，默认目录为查询器所在包，只比较相同资产路径下的所属图证据。图先按唯一有效 GUID 匹配，否则按完整路径；节点按完整唯一 GUID 对齐，缺失/重复身份或截断图报告 `not_comparable`。分别报告 layout、presentation、defaults、pin_identity、pins、connections、logic。节点编号重排及边数组因画布重排不报变化，单个 pin 的链接顺序仍保留；原始 pin GUID 改变不会被抹除。输出摘要覆盖比较范围，详细结果继续受预算约束。CDO、组件、资产元数据与外部宏定义不在此次比较范围；不使用结构猜测来掩盖 GUID 重建。
+
+标准引擎 `ForEachLoop`、`ForEachLoopWithBreak`、`ForLoop`、`ForLoopWithBreak`、`WhileLoop` 在资产身份和实际 pin 签名匹配时附 `iteration` 摘要；自定义同名宏不推断。`loop_body_pin` 是调用方循环体出口，`definition_graph` 才是宏内部实现路径。伪代码仍保持 v1 节点头语法，新增字段/缩进行不改变块解析；新查询功能随包脚本和 SHA1 分发，旧副本需要重新导出才能获得。
 
 ## 阅读边界
 

@@ -457,6 +457,8 @@ namespace
             if (Blueprint) { Blueprint->GetAllGraphs(Graphs); }
         }
 
+        // Borrowed TMap value: a cache miss in a later Nodes() call may invalidate this reference.
+        // Finish using it before requesting another graph; copy the array if both must be retained.
         const TArray<UEdGraphNode*>& Nodes(const UEdGraph* Graph)
         {
             if (const auto* Found = NodesByGraph.Find(Graph)) { return *Found; }
@@ -1487,6 +1489,8 @@ namespace
         return true;
     }
 
+    TSharedPtr<FJsonObject> StandardMacroIteration(const UK2Node_MacroInstance* Instance);
+
     bool TryWriteFunctionBoundarySemantic(
         const UEdGraphNode* Node,
         const TSharedRef<FJsonObject>& Json)
@@ -1533,6 +1537,10 @@ namespace
             {
                 Json->SetStringField(TEXT("source_blueprint"), SourceBlueprint->GetPathName());
             }
+            if (const auto Iteration = StandardMacroIteration(MacroInstance))
+            {
+                Json->SetObjectField(TEXT("iteration"), Iteration);
+            }
         }
         else
         {
@@ -1540,6 +1548,52 @@ namespace
         }
 
         return true;
+    }
+
+    // A signature hint for a known engine definition, not an inferred/flattened loop body.
+    TSharedPtr<FJsonObject> StandardMacroIteration(const UK2Node_MacroInstance* Instance)
+    {
+        const UEdGraph* Definition = Instance ? Instance->GetMacroGraph() : nullptr;
+        const UBlueprint* Owner = Instance ? Instance->GetSourceBlueprint() : nullptr;
+        if (!Definition || !Owner || Owner->GetPathName() != TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros")
+            || Definition->GetOuter() != Owner) { return nullptr; }
+        const FString Name = Definition->GetName();
+        const bool bArray = Name == TEXT("ForEachLoop") || Name == TEXT("ForEachLoopWithBreak");
+        const bool bRange = Name == TEXT("ForLoop") || Name == TEXT("ForLoopWithBreak");
+        const bool bWhile = Name == TEXT("WhileLoop");
+        if (!bArray && !bRange && !bWhile) { return nullptr; }
+        const auto Hint = MakeShared<FJsonObject>();
+        auto Pin = [&](const TCHAR* Role, const TCHAR* PinName, EEdGraphPinDirection Direction, const FName& Category, EPinContainerType Container = EPinContainerType::None)
+        {
+            const UEdGraphPin* Match = nullptr;
+            for (const UEdGraphPin* Candidate : Instance->Pins)
+            {
+                if (!Candidate || Candidate->PinName != PinName || Candidate->Direction != Direction) { continue; }
+                if (Match || Candidate->bOrphanedPin || Candidate->PinType.ContainerType != Container
+                    || (!Category.IsNone() && Candidate->PinType.PinCategory != Category)
+                    || (Category.IsNone() && Candidate->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)) { return false; }
+                Match = Candidate;
+            }
+            if (!Match) { return false; }
+            Hint->SetStringField(Role, Match->PinName.ToString());
+            return true;
+        };
+        if (!Pin(TEXT("entry_pin"), bArray ? TEXT("Exec") : TEXT("Execute"), EGPD_Input, UEdGraphSchema_K2::PC_Exec)
+            || !Pin(TEXT("loop_body_pin"), TEXT("LoopBody"), EGPD_Output, UEdGraphSchema_K2::PC_Exec)
+            || !Pin(TEXT("completed_pin"), TEXT("Completed"), EGPD_Output, UEdGraphSchema_K2::PC_Exec)) { return nullptr; }
+        if (bArray && (!Pin(TEXT("array_pin"), TEXT("Array"), EGPD_Input, NAME_None, EPinContainerType::Array)
+            || !Pin(TEXT("element_pin"), TEXT("Array Element"), EGPD_Output, NAME_None)
+            || !Pin(TEXT("index_pin"), TEXT("Array Index"), EGPD_Output, UEdGraphSchema_K2::PC_Int))) { return nullptr; }
+        if (bRange && (!Pin(TEXT("first_index_pin"), TEXT("FirstIndex"), EGPD_Input, UEdGraphSchema_K2::PC_Int)
+            || !Pin(TEXT("last_index_pin"), TEXT("LastIndex"), EGPD_Input, UEdGraphSchema_K2::PC_Int)
+            || !Pin(TEXT("index_pin"), TEXT("Index"), EGPD_Output, UEdGraphSchema_K2::PC_Int))) { return nullptr; }
+        if (bWhile && !Pin(TEXT("condition_pin"), TEXT("Condition"), EGPD_Input, UEdGraphSchema_K2::PC_Boolean)) { return nullptr; }
+        if (Name.EndsWith(TEXT("WithBreak")) && !Pin(TEXT("break_pin"), TEXT("Break"), EGPD_Input, UEdGraphSchema_K2::PC_Exec)) { return nullptr; }
+        Hint->SetStringField(TEXT("kind"), bArray ? TEXT("array") : (bRange ? TEXT("index_range") : TEXT("while")));
+        Hint->SetStringField(TEXT("provenance"), TEXT("engine_standard_macro_signature"));
+        Hint->SetStringField(TEXT("definition_graph"), Definition->GetPathName());
+        Hint->SetStringField(TEXT("body_scope"), TEXT("caller_continuation_from_loop_body_pin"));
+        return Hint;
     }
 
     bool TryWriteControlFlowSemantic(
@@ -3461,7 +3515,8 @@ namespace
             && Object->TryGetStringField(TEXT("asset_path"), OutAssetPath) && !OutAssetPath.IsEmpty();
     }
 
-    FString BuildBlueprintRootEntry(const FString& RootDirectory, const FString& AssetPath, const FString& PackageDirName)
+    FString BuildBlueprintRootEntry(const FString& RootDirectory, const FString& AssetPath, const FString& PackageDirName,
+        const TSharedPtr<FJsonObject>& CurrentManifest = nullptr, FString* OutIndex = nullptr)
     {
         IFileManager& Files = IFileManager::Get();
         TArray<FString> AssetDirs;
@@ -3490,6 +3545,46 @@ namespace
         {
             const FString Label = AssetDir.Replace(TEXT("["), TEXT("\\[")).Replace(TEXT("]"), TEXT("\\]"));
             RootEntry += FString::Printf(TEXT("- [%s](<%s/00_START_HERE.md>)\n"), *Label, *AssetDir);
+        }
+        if (OutIndex)
+        {
+            TArray<TSharedPtr<FJsonValue>> Packages;
+            TArray<TSharedPtr<FJsonValue>> Unindexed;
+            for (const FString& AssetDir : AssetDirs)
+            {
+                TSharedPtr<FJsonObject> Manifest;
+                if (AssetDir == PackageDirName) { Manifest = CurrentManifest; }
+                else
+                {
+                    FString Text;
+                    if (FFileHelper::LoadFileToString(Text, *(RootDirectory / AssetDir / TEXT("01_Manifest.json"))))
+                    {
+                        FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Manifest);
+                    }
+                }
+                FString ManifestPath, SnapshotId;
+                if (!Manifest.IsValid() || !Manifest->TryGetStringField(TEXT("asset_path"), ManifestPath)
+                    || !Manifest->TryGetStringField(TEXT("snapshot_id"), SnapshotId) || SnapshotId.IsEmpty()
+                    || AssetDirByPath.FindRef(ManifestPath) != AssetDir)
+                {
+                    Unindexed.Add(MakeShared<FJsonValueString>(AssetDir));
+                    continue;
+                }
+                const auto Package = MakeShared<FJsonObject>();
+                Package->SetStringField(TEXT("directory"), AssetDir);
+                Package->SetStringField(TEXT("asset_path"), ManifestPath);
+                Package->SetStringField(TEXT("snapshot_id"), SnapshotId);
+                Packages.Add(MakeShared<FJsonValueObject>(Package));
+            }
+            const auto Index = MakeShared<FJsonObject>();
+            Index->SetNumberField(TEXT("format_version"), 1);
+            Index->SetStringField(TEXT("scope"), TEXT("direct_child_export_packages"));
+            Index->SetArrayField(TEXT("packages"), Packages);
+            Index->SetArrayField(TEXT("unindexed_directories"), Unindexed);
+            OutIndex->Reset();
+            FJsonSerializer::Serialize(Index, TJsonWriterFactory<>::Create(OutIndex));
+            *OutIndex += TEXT("\n");
+            RootEntry += TEXT("\n机器可读目录见 `00_INDEX.json`；仅覆盖本目录直接资产包，未索引目录单独列出，非项目完整资产索引。\n");
         }
         return RootEntry;
     }
@@ -3561,9 +3656,18 @@ namespace
         }
         const bool bGameAsset = AssetPath.StartsWith(TEXT("/Game/"));
         const FString RootEntryKey = TEXT("../00_START_HERE.md");
+        const FString RootIndexKey = TEXT("../00_INDEX.json");
         if (bGameAsset)
         {
-            Outputs.Add(RootEntryKey, BuildBlueprintRootEntry(FPaths::GetPath(OutOutputDir), AssetPath, PackageDirName));
+            TSharedPtr<FJsonObject> Manifest;
+            if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ReadPack.FindChecked(TEXT("01_Manifest.json"))), Manifest) || !Manifest.IsValid())
+            {
+                OutError = TEXT("读取本次内存清单失败，保留原导出。");
+                return false;
+            }
+            FString Index;
+            Outputs.Add(RootEntryKey, BuildBlueprintRootEntry(FPaths::GetPath(OutOutputDir), AssetPath, PackageDirName, Manifest, &Index));
+            Outputs.Add(RootIndexKey, MoveTemp(Index));
         }
         FString JsonText;
         TSharedRef<TJsonWriter<>> JsonWriter = TJsonWriterFactory<>::Create(&JsonText);
@@ -3578,12 +3682,14 @@ namespace
         RelativePaths.Sort();
         RelativePaths.Remove(TEXT("00_START_HERE.md"));
         RelativePaths.Remove(RootEntryKey);
+        RelativePaths.Remove(RootIndexKey);
         if (Outputs.Contains(TEXT("00_START_HERE.md")))
         {
             RelativePaths.Add(TEXT("00_START_HERE.md"));
         }
         if (Outputs.Contains(RootEntryKey))
         {
+            RelativePaths.Add(RootIndexKey);
             RelativePaths.Add(RootEntryKey);
         }
         TArray<FString> Paths;
@@ -3847,6 +3953,14 @@ bool XBlueprintGraphExporterTests::ExportBlueprintFiles(UBlueprint* Blueprint, F
 FString XBlueprintGraphExporterTests::BuildRootEntry(const FString& RootDirectory, const FString& AssetPath)
 {
     return BuildBlueprintRootEntry(RootDirectory, AssetPath, BlueprintExportDirectoryName(AssetPath, FPackageName::ObjectPathToObjectName(AssetPath)));
+}
+
+FString XBlueprintGraphExporterTests::BuildRootIndex(const FString& RootDirectory, const TSharedPtr<FJsonObject>& Manifest)
+{
+    const FString AssetPath = Manifest->GetStringField(TEXT("asset_path"));
+    FString Index;
+    BuildBlueprintRootEntry(RootDirectory, AssetPath, BlueprintExportDirectoryName(AssetPath, FPackageName::ObjectPathToObjectName(AssetPath)), Manifest, &Index);
+    return Index;
 }
 
 FString XBlueprintGraphExporterTests::BuildAIPrompt(const FString& RootDirectory, const TArray<FString>& SuccessfulOutputDirs)

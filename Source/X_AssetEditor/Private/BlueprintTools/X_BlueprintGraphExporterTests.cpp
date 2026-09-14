@@ -6,6 +6,7 @@
 
 #include "BlueprintTools/X_BlueprintGraphExporter.h"
 #include "BlueprintTools/X_BlueprintAIWriter.h"
+#include "BlueprintTools/X_BlueprintReadPack.h"
 
 #include "Dom/JsonObject.h"
 #include "EdGraph/EdGraphNode.h"
@@ -596,6 +597,37 @@ bool FXBlueprintGraphExporterAssetIdentityTest::RunTest(const FString& Parameter
     for (const FString& Line : Lines) { Links += Line.StartsWith(TEXT("- [")) ? 1 : 0; }
     TestEqual(TEXT("Exactly one root entry per asset"), Links, 2);
 
+    auto Parse = [](const FString& Text)
+    {
+        TSharedPtr<FJsonObject> Result;
+        FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Result);
+        return Result;
+    };
+    const auto AManifest = Parse(Read(ADir / TEXT("01_Manifest.json")));
+    const auto BManifest = Parse(Read(BDir / TEXT("01_Manifest.json")));
+    TestTrue(TEXT("Seed older disk manifest A"), FFileHelper::SaveStringToFile(Read(ADir / TEXT("01_Manifest.json")), *(IndexRoot / AName / TEXT("01_Manifest.json"))));
+    TestTrue(TEXT("Seed other asset disk manifest B"), FFileHelper::SaveStringToFile(Read(BDir / TEXT("01_Manifest.json")), *(IndexRoot / BName / TEXT("01_Manifest.json"))));
+    AManifest->SetStringField(TEXT("snapshot_id"), TEXT("current-in-memory-snapshot"));
+    const auto FirstIndex = Parse(XBlueprintGraphExporterTests::BuildRootIndex(IndexRoot / TEXT("not_created"), AManifest));
+    TestEqual(TEXT("First export indexes in-memory package before any disk files exist"), FirstIndex->GetArrayField(TEXT("packages")).Num(), 1);
+    const auto Index = Parse(XBlueprintGraphExporterTests::BuildRootIndex(IndexRoot, AManifest));
+    TestEqual(TEXT("Machine index version"), Index->GetIntegerField(TEXT("format_version")), 1);
+    TestEqual(TEXT("Machine index scope is explicitly local"), Index->GetStringField(TEXT("scope")), FString(TEXT("direct_child_export_packages")));
+    TestEqual(TEXT("Machine index deduplicates old copies"), Index->GetArrayField(TEXT("packages")).Num(), 2);
+    for (const auto& Value : Index->GetArrayField(TEXT("packages")))
+    {
+        const auto Package = Value->AsObject();
+        const bool bA = Package->GetStringField(TEXT("asset_path")) == A->GetPathName();
+        TestEqual(TEXT("Relative package directory"), Package->GetStringField(TEXT("directory")), bA ? AName : BName);
+        TestEqual(TEXT("Current package uses staged manifest, sibling uses disk manifest"), Package->GetStringField(TEXT("snapshot_id")),
+            bA ? FString(TEXT("current-in-memory-snapshot")) : BManifest->GetStringField(TEXT("snapshot_id")));
+    }
+    // An unusable selected package is disclosed, never silently replaced with an old duplicate.
+    TestTrue(TEXT("Remove sibling manifest for legacy fixture"), Files.Delete(*(IndexRoot / BName / TEXT("01_Manifest.json"))));
+    const auto LegacyIndex = Parse(XBlueprintGraphExporterTests::BuildRootIndex(IndexRoot, AManifest));
+    TestEqual(TEXT("Legacy package omitted from machine targets"), LegacyIndex->GetArrayField(TEXT("packages")).Num(), 1);
+    TestEqual(TEXT("Legacy omission is explicit"), LegacyIndex->GetArrayField(TEXT("unindexed_directories"))[0]->AsString(), BName);
+
     const FString ExportsRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("XTools/BlueprintExports"));
     for (const FString& Dir : {ADir, BDir})
     {
@@ -775,6 +807,81 @@ bool FXBlueprintGraphExporterStandardMacrosTest::RunTest(const FString& Paramete
     TestEqual(TEXT("Own graph count not inflated with definitions"), Snapshot->GetArrayField(TEXT("graphs")).Num(), 1);
     TestEqual(TEXT("Separate call instances preserved"), Snapshot->GetArrayField(TEXT("graphs"))[0]->AsObject()->GetArrayField(TEXT("nodes")).Num(), 4);
     TestEqual(TEXT("Engine macro package not dirtied"), Standard->GetOutermost()->IsDirty(), DirtyBefore);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterMacroIterationTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.MacroIteration",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterMacroIterationTest::RunTest(const FString& Parameters)
+{
+    UBlueprint* Standard = LoadObject<UBlueprint>(nullptr, TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"));
+    if (!TestNotNull(TEXT("Current engine standard macro asset"), Standard)) { return false; }
+    const bool DirtyBefore = Standard->GetOutermost()->IsDirty();
+    UBlueprint* BP = NewObject<UBlueprint>(GetTransientPackage());
+    BP->ParentClass = AActor::StaticClass();
+    UEdGraph* Graph = NewObject<UEdGraph>(BP, TEXT("IterationCaller"));
+    Graph->Schema = UEdGraphSchema_K2::StaticClass();
+    Graph->GraphGuid = FGuid::NewGuid();
+    BP->UbergraphPages.Add(Graph);
+    UK2Node_CustomEvent* Entry = NewObject<UK2Node_CustomEvent>(Graph, TEXT("IterationEntry"));
+    Entry->CustomFunctionName = TEXT("Start");
+    Entry->NodeGuid = FGuid::NewGuid();
+    Graph->AddNode(Entry);
+    Entry->AllocateDefaultPins();
+    int32 Supported = 0;
+    for (UEdGraph* Macro : Standard->MacroGraphs)
+    {
+        const FString Name = Macro->GetName();
+        if (Name != TEXT("ForEachLoop") && Name != TEXT("ForEachLoopWithBreak")
+            && Name != TEXT("ForLoop") && Name != TEXT("ForLoopWithBreak") && Name != TEXT("WhileLoop")) { continue; }
+        UK2Node_MacroInstance* Instance = NewObject<UK2Node_MacroInstance>(Graph);
+        Instance->SetMacroGraph(Macro);
+        Graph->AddNode(Instance);
+        Instance->AllocateDefaultPins();
+        const auto Semantic = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Instance);
+        const TSharedPtr<FJsonObject>* Iteration = nullptr;
+        if (!TestTrue(*FString::Printf(TEXT("%s actual engine pins produce a hint"), *Name), Semantic->TryGetObjectField(TEXT("iteration"), Iteration))) { continue; }
+        ++Supported;
+        TestEqual(TEXT("Definition points to the real macro graph"), (*Iteration)->GetStringField(TEXT("definition_graph")), Macro->GetPathName());
+        TestEqual(TEXT("Loop body is a caller continuation, not the macro definition"), (*Iteration)->GetStringField(TEXT("body_scope")), FString(TEXT("caller_continuation_from_loop_body_pin")));
+        for (const auto& Field : (*Iteration)->Values)
+        {
+            if (!Field.Key.EndsWith(TEXT("_pin"))) { continue; }
+            TestNotNull(TEXT("Every summarized pin exists on this instance"), Instance->FindPin(*Field.Value->AsString()));
+        }
+        UEdGraphPin* Body = Instance->FindPin(TEXT("LoopBody"), EGPD_Output);
+        Body->Direction = EGPD_Input;
+        TestFalse(TEXT("Malformed signature does not claim a loop hint"), XBlueprintGraphExporterTests::BuildNodeSemanticJson(Instance)->HasField(TEXT("iteration")));
+        Body->Direction = EGPD_Output;
+        UEdGraph* Impostor = NewObject<UEdGraph>(BP, *Name);
+        Instance->SetMacroGraph(Impostor);
+        TestFalse(TEXT("Same-named custom macro does not inherit engine semantics"), XBlueprintGraphExporterTests::BuildNodeSemanticJson(Instance)->HasField(TEXT("iteration")));
+        Instance->SetMacroGraph(Macro);
+    }
+    TestEqual(TEXT("All five supported signatures exercised"), Supported, 5);
+    const auto Snapshot = XBlueprintGraphExporterTests::BuildBlueprintJson(BP);
+    const auto Pack = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), TEXT("fixture contract"));
+    const FString Logic = Pack.FindChecked(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Compact loop hints reach pseudocode"), Logic.Contains(TEXT("\n  iteration: {")));
+    TestTrue(TEXT("Definition and caller body scopes remain separate"), Logic.Contains(TEXT("caller_continuation_from_loop_body_pin")) && Logic.Contains(TEXT("definition_graph")));
+    TSharedPtr<FJsonObject> Manifest;
+    FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Pack.FindChecked(TEXT("01_Manifest.json"))), Manifest);
+    const auto Record = Manifest->GetArrayField(TEXT("graphs"))[0]->AsObject();
+    TestEqual(TEXT("Manifest exposes full graph GUID"), Record->GetStringField(TEXT("graph_guid")), Graph->GraphGuid.ToString());
+    TestEqual(TEXT("Manifest exposes entry node GUID"), Record->GetArrayField(TEXT("entries"))[0]->AsObject()->GetStringField(TEXT("node_guid")), Entry->NodeGuid.ToString());
+    const FString OriginalEntryId = Record->GetArrayField(TEXT("entries"))[0]->AsObject()->GetStringField(TEXT("id"));
+    Entry->NodePosY = 10000;
+    const auto MovedPack = XBlueprintReadPack::Build(XBlueprintGraphExporterTests::BuildBlueprintJson(BP).ToSharedRef(), TEXT("fixture contract"));
+    TSharedPtr<FJsonObject> MovedManifest;
+    FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(MovedPack.FindChecked(TEXT("01_Manifest.json"))), MovedManifest);
+    const auto MovedRecord = MovedManifest->GetArrayField(TEXT("graphs"))[0]->AsObject();
+    const auto MovedEntry = MovedRecord->GetArrayField(TEXT("entries"))[0]->AsObject();
+    TestNotEqual(TEXT("Moving a node may change its snapshot-local id"), MovedEntry->GetStringField(TEXT("id")), OriginalEntryId);
+    TestEqual(TEXT("Moving a node preserves its full identity"), MovedEntry->GetStringField(TEXT("node_guid")), Entry->NodeGuid.ToString());
+    TestEqual(TEXT("Graph identity remains available across snapshots"), MovedRecord->GetStringField(TEXT("graph_guid")), Record->GetStringField(TEXT("graph_guid")));
+    TestEqual(TEXT("Read-only hints do not dirty the engine macro asset"), Standard->GetOutermost()->IsDirty(), DirtyBefore);
     return true;
 }
 

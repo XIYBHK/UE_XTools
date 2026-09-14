@@ -611,6 +611,237 @@ class QueryTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     module.logic_blocks(invalid)
 
+    def test_guid_selection_snapshot_and_duplicate_rejection(self):
+        path = self.root / self.records[0]["evidence"]
+        evidence = json.loads(path.read_text())
+        guid = "12345678123456781234567812345678"
+        next(n for n in evidence["nodes"] if n["id"] == "N0")["node_guid"] = guid
+        path.write_text(json.dumps(evidence), encoding="utf-8")
+        self.rehash()
+        result = self.invoke("node", "--graph", "G0001", "--node-guid", guid, "--snapshot", "fixture")
+        self.assertEqual(result["results"][0]["node_guid"], guid)
+        self.assertEqual(result["results"][0]["id"], "N0")
+        found = self.invoke("find", "--query", guid)["results"]
+        self.assertEqual(found[0]["node_guid"], guid)
+        sliced = self.invoke("slice", "--graph", "G0001", "--node-guid", guid)
+        self.assertEqual(sliced["nodes"][0]["node_guid"], guid)
+        self.invoke("node", "--graph", "G0001", "--node-guid", guid[:8], success=False)
+        self.invoke("node", "--graph", "G0001", "--node-guid", "0" * 32, success=False)
+        self.invoke("node", "--graph", "G0001", "--node", "N0", "--snapshot", "old", success=False)
+        evidence["nodes"][0]["node_guid"] = guid
+        path.write_text(json.dumps(evidence), encoding="utf-8")
+        self.rehash()
+        self.assertIn("ambiguous", self.invoke("node", "--graph", "G0001", "--node-guid", guid, success=False)["error"])
+
+    def make_cross_graph_cycle(self):
+        (self.root / "00_START_HERE.md").write_text("entry", encoding="utf-8")
+        self.set_dependency("/Game/Test.Test_C:Other")
+        path = self.root / self.records[1]["evidence"]
+        evidence = json.loads(path.read_text())
+        evidence["nodes"][0]["semantic"] = {"kind": "call_function", "resolved_function": "/Game/Test.Test_C:Event"}
+        path.write_text(json.dumps(evidence), encoding="utf-8")
+        self.rehash()
+
+    def test_follow_cycle_depth_graph_budget_and_output_budget(self):
+        self.make_cross_graph_cycle()
+        result = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--follow")
+        self.assertEqual(result["metadata"]["visited_graphs"], 2)
+        self.assertEqual({r["graph"] for r in result["results"]}, {"G0001", "G0002"})
+        self.assertTrue(any(r.get("traversal") == "already_visited" for r in result["results"]))
+        limited = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--follow", "--depth", "0")
+        self.assertEqual(limited["metadata"]["depth_boundaries"], 1)
+        self.assertTrue(limited["truncated"])
+        limited = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--follow", "--max-graphs", "1")
+        self.assertEqual(limited["metadata"]["pending_graphs"], 1)
+        limited = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--follow", "--max-nodes", "1", "--max-chars", "1500")
+        self.assertEqual(len(limited["results"]), 1)
+        self.assertGreater(limited["remaining_results"], 0)
+        self.assertLessEqual(len(self.last_output), 1500)
+
+    def test_impact_transitive_calls_cycle_and_corrupt_coverage(self):
+        self.make_cross_graph_cycle()
+        result = self.invoke("impact", "--target", "/Game/Test.Test:Other")
+        self.assertEqual([r["distance"] for r in result["results"]], [1, 2])
+        self.assertFalse(result["metadata"]["complete_asset_graph"])
+        limited = self.invoke("impact", "--target", "/Game/Test.Test_C:Other", "--depth", "1")
+        self.assertEqual(len(limited["results"]), 1)
+        self.assertTrue(limited["truncated"])
+        self.invoke("impact", "--target", "/Game/FX.FX", success=False)
+        (self.root / self.records[1]["logic"]).write_text("broken", encoding="utf-8")
+        broken = self.invoke("impact", "--target", "/Game/Test.Test:Other")
+        self.assertFalse(broken["metadata"]["coverage_complete"])
+        self.assertEqual(broken["metadata"]["invalid_exports"], 1)
+
+    def test_index_nested_packages_move_stale_and_escape(self):
+        self.set_dependency("/Game/库/Target.Target_C:Sum")
+        target = self.target_export()
+        nested = self.root.parent / "nested"
+        nested.mkdir()
+        moved = target.rename(nested / target.name)
+        self.assertEqual(self.deps()["results"][0]["status"], "not_exported")
+        index_path = self.root.parent / "00_INDEX.json"
+        entry = {"directory": moved.relative_to(self.root.parent).as_posix(),
+                 "asset_path": "/Game/库/Target.Target", "snapshot_id": "target"}
+        payload = {"format_version": 1, "packages": [entry]}
+        index_path.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertEqual(self.deps()["results"][0]["status"], "ok")
+        self.assertEqual(self.deps("--index", str(index_path))["results"][0]["status"], "ok")
+        entry["snapshot_id"] = "old"
+        index_path.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertIn("stale package index", self.invoke("deps", "--graph", "G0001", success=False)["error"])
+        entry["directory"] = "../outside"
+        index_path.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertIn("escapes", self.invoke("deps", "--graph", "G0001", success=False)["error"])
+
+    def test_index_unindexed_directories_are_visible_as_coverage_failures(self):
+        missing = self.root.parent / "broken"
+        missing.mkdir()
+        (self.root.parent / "00_INDEX.json").write_text(json.dumps({
+            "format_version": 1, "packages": [], "unindexed_directories": ["broken"]}), encoding="utf-8")
+        result = self.invoke("impact", "--target", "/Game/Test.Test:Other")
+        self.assertEqual(result["metadata"]["invalid_exports"], 1)
+
+    def test_follow_cross_asset_entry_missing_and_invalid_target(self):
+        self.set_dependency("/Game/库/Target.Target_C:Sum")
+        target = self.target_export()
+        args = ("slice", "--graph", "G0001", "--node", "N0", "--follow")
+        missing = self.invoke(*args)
+        self.assertTrue(any(r.get("traversal") == "no_entry_candidates" for r in missing["results"]))
+        path = target / "01_Manifest.json"
+        package = json.loads(path.read_text())
+        package["graphs"][0]["entries"] = [{"id": "N0"}]
+        path.write_text(json.dumps(package), encoding="utf-8")
+        followed = self.invoke(*args)
+        self.assertEqual(followed["metadata"]["visited_graphs"], 2)
+        self.assertTrue(any(r["asset_path"] == package["asset_path"] and r["type"] == "node"
+                            for r in followed["results"]))
+        (target / "logic.md").write_text("corrupt", encoding="utf-8")
+        broken = self.invoke(*args)
+        self.assertTrue(any(r.get("target", {}).get("status") == "invalid_export" for r in broken["results"]))
+
+    def test_index_unindexed_valid_manifest_stays_incomplete(self):
+        target = self.target_export()
+        (self.root.parent / "00_INDEX.json").write_text(json.dumps({
+            "format_version": 1, "packages": [], "unindexed_directories": [target.name]}), encoding="utf-8")
+        result = self.invoke("impact", "--target", "/Game/Test.Test:Other")
+        self.assertEqual(result["metadata"]["invalid_exports"], 1)
+        self.assertFalse(result["metadata"]["coverage_complete"])
+
+    def test_validation_resolves_each_base_once_per_query(self):
+        module = self.query_module()
+        cache = module.GraphValidation()
+        original = Path.resolve
+        calls = []
+        def counted(path, *args, **kwargs):
+            calls.append(path)
+            return original(path, *args, **kwargs)
+        with mock.patch.object(Path, "resolve", counted):
+            cache.key(self.root, self.records[0])
+            cache.key(self.root, self.records[1])
+        self.assertEqual(calls, [self.root])
+
+    def custom_event_fixture(self):
+        self.make_graph("G0003", "EventGraph", ["Start", "Call", "EA", "FromA", "EB", "FromB", "Unused"])
+        record = self.records[-1]
+        path = self.root / record["evidence"]
+        graph = json.loads(path.read_text())
+        nodes = {n["id"]: n for n in graph["nodes"]}
+        for i, node in enumerate(nodes.values()):
+            node["node_guid"] = f"{i+1:032X}"
+        for entry in ("EA", "EB", "Unused"):
+            nodes[entry]["semantic"] = {"kind": "custom_event", "custom_function_name": entry}
+        for caller, entry in (("Call", "EA"), ("FromA", "EB"), ("FromB", "EA")):
+            nodes[caller]["semantic"] = {"kind": "call_function", "resolved_function": "/Game/Test.SKEL_Test_C:" + entry,
+                "function": {"name": entry, "guid": nodes[entry]["node_guid"], "is_self_context": True}}
+        graph["edges"] = [{"kind": "exec", "from_node": {"node_id": a}, "from_pin_index": 1,
+                           "to_node": {"node_id": b}, "to_pin_index": 0}
+                          for a, b in (("Start", "Call"), ("EA", "FromA"), ("EB", "FromB"))]
+        record["entries"] = [{"id": entry} for entry in ("Start", "EA", "EB", "Unused")]
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        (self.root / "00_START_HERE.md").write_text("entry", encoding="utf-8")
+        self.rehash()
+        return path, graph, nodes
+
+    def test_custom_event_guid_navigation_and_same_graph_entry_cycle(self):
+        _, _, nodes = self.custom_event_fixture()
+        dep = self.invoke("deps", "--graph", "G0003", "--node", "Call")["results"][0]
+        self.assertEqual((dep["status"], dep["graph"], dep["entry_node"]), ("ok", "G0003", "EA"))
+        self.assertEqual(dep["node"], "Call")
+        self.assertEqual(dep["entry_node_guid"], nodes["EA"]["node_guid"])
+        self.assertEqual(dep["matched_by"], "member_guid")
+        self.assertEqual(dep["query_args"][-2:], ["--node", "EA"])
+        followed = self.invoke("slice", "--graph", "G0003", "--node", "Start", "--follow", "--max-graphs", "1")
+        self.assertEqual(followed["metadata"]["visited_graphs"], 1)
+        self.assertEqual(followed["metadata"]["entry_expansions"], 3)
+        self.assertEqual({n["id"] for n in followed["results"] if n["type"] == "node"},
+                         {"Start", "Call", "EA", "FromA", "EB", "FromB"})
+        self.assertTrue(any(n.get("traversal") == "already_visited" for n in followed["results"]))
+        limited = self.invoke("slice", "--graph", "G0003", "--node", "Start", "--follow", "--depth", "0")
+        self.assertEqual(limited["metadata"]["depth_boundaries"], 1)
+        self.assertNotIn("EA", [n.get("id") for n in limited["results"]])
+
+    def test_custom_event_guid_disambiguation_and_no_silent_name_fallback(self):
+        path, graph, nodes = self.custom_event_fixture()
+        nodes["Unused"]["semantic"]["custom_function_name"] = "EA"
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        dep = lambda: self.invoke("deps", "--graph", "G0003", "--node", "Call")["results"][0]
+        self.assertEqual(dep()["entry_node"], "EA")
+        nodes["Call"]["semantic"]["function"]["guid"] = "F" * 32
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        self.assertEqual(dep()["reason"], "custom_event_guid_mismatch")
+        nodes["Call"]["semantic"]["function"]["guid"] = "0" * 32
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        self.assertEqual(dep()["status"], "ambiguous")
+        nodes["Unused"]["semantic"]["custom_function_name"] = "Unused"
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        self.assertEqual(dep()["matched_by"], "unique_custom_event_name")
+        nodes["Unused"]["node_guid"] = nodes["EA"]["node_guid"]
+        nodes["Call"]["semantic"]["function"]["guid"] = nodes["EA"]["node_guid"]
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        self.assertEqual(dep()["status"], "ambiguous")
+
+    def test_custom_event_damaged_graph_prevents_unique_resolution(self):
+        self.custom_event_fixture()
+        (self.root / self.records[1]["logic"]).write_text("broken", encoding="utf-8")
+        result = self.invoke("deps", "--graph", "G0003", "--node", "Call")["results"][0]
+        self.assertEqual((result["status"], result["reason"]), ("invalid_export", "custom_event_index_incomplete"))
+
+    def test_custom_event_index_reused_within_query_and_impact_tracks_entry_owners(self):
+        self.custom_event_fixture()
+        module = self.query_module()
+        with mock.patch.object(module, "graph_data", wraps=module.graph_data) as reads:
+            code, output = self.in_process(module, "deps", "--graph", "G0003")
+            self.assertEqual(code, 0, output)
+            self.assertEqual(reads.call_count, 3)  # Caller plus other two owned graphs, not once per call.
+        impact = self.invoke("impact", "--target", "/Game/Test.Test:EB")
+        pairs = {(r.get("node"), r.get("distance")) for r in impact["results"]}
+        self.assertEqual(pairs, {("FromA", 1), ("Call", 2), ("FromB", 2)})
+        first = next(r for r in impact["results"] if r["node"] == "FromA")
+        self.assertEqual(first["source_entries"][0]["callable_path"], "/Game/Test.Test:EA")
+
+    def test_graph_budget_does_not_block_already_loaded_graph_other_event(self):
+        path, graph, nodes = self.custom_event_fixture()
+        target = self.target_export()
+        manifest_path = target / "01_Manifest.json"
+        package = json.loads(manifest_path.read_text())
+        package["graphs"][0]["entries"] = [{"id": "N0"}]
+        manifest_path.write_text(json.dumps(package), encoding="utf-8")
+        nodes["Call"]["semantic"] = {"kind": "call_function", "resolved_function": "/Game/库/Target.Target_C:Sum"}
+        graph["edges"].append({"kind": "exec", "from_node": {"node_id": "Call"}, "from_pin_index": 1,
+                               "to_node": {"node_id": "FromA"}, "to_pin_index": 0})
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        result = self.invoke("slice", "--graph", "G0003", "--node", "Start", "--follow", "--max-graphs", "1")
+        self.assertEqual(result["metadata"]["visited_graphs"], 1)
+        self.assertEqual(result["metadata"]["pending_graphs"], 1)
+        self.assertIn("EB", {r.get("id") for r in result["results"]})
+        self.assertTrue(result["truncated"])
+
 
 if __name__ == "__main__":
     unittest.main()
