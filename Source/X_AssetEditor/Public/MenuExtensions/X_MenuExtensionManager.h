@@ -13,6 +13,7 @@
 
 class FExtender;
 class AActor;
+class FSlateStyleSet;
 
 /**
  * 菜单扩展管理器
@@ -64,6 +65,9 @@ public:
 private:
     /** 单例实例 */
     static TUniquePtr<FX_MenuExtensionManager> Instance;
+
+    /** 随菜单注册/注销的单色矢量图标资源 */
+    TSharedPtr<FSlateStyleSet> MenuStyle;
 
     /** 内容浏览器扩展器委托句柄 */
     FDelegateHandle ContentBrowserExtenderDelegateHandle;

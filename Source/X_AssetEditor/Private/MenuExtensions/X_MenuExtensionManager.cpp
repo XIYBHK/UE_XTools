@@ -37,8 +37,18 @@
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/Actor.h"
+#include "Brushes/SlateImageBrush.h"
+#include "Interfaces/IPluginManager.h"
+#include "Styling/AppStyle.h"
+#include "Styling/SlateStyle.h"
+#include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "X_MenuExtensionManager"
+
+namespace
+{
+    const FName AssetMenuStyleName(TEXT("XTools.AssetEditor.Menu"));
+}
 
 TUniquePtr<FX_MenuExtensionManager> FX_MenuExtensionManager::Instance = nullptr;
 
@@ -61,6 +71,11 @@ void FX_MenuExtensionManager::UnregisterMenuExtensions()
 {
     UnregisterContentBrowserContextMenuExtender();
     UnregisterLevelEditorContextMenuExtender();
+    if (MenuStyle.IsValid())
+    {
+        FSlateStyleRegistry::UnRegisterSlateStyle(*MenuStyle);
+        MenuStyle.Reset();
+    }
 }
 
 void FX_MenuExtensionManager::RegisterContentBrowserContextMenuExtender()
@@ -71,6 +86,21 @@ void FX_MenuExtensionManager::RegisterContentBrowserContextMenuExtender()
     }
 
     FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+    if (!MenuStyle.IsValid())
+    {
+        const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
+        if (Plugin.IsValid())
+        {
+            MenuStyle = MakeShared<FSlateStyleSet>(AssetMenuStyleName);
+            MenuStyle->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources/AssetEditor"));
+            const FVector2D IconSize(16.0f, 16.0f);
+            // White SVGs inherit the menu's foreground/disabled tint through Slate.
+            MenuStyle->Set(TEXT("Assets.Flatten"), new FSlateVectorImageBrush(MenuStyle->RootToContentDir(TEXT("FlattenAssets"), TEXT(".svg")), IconSize));
+            MenuStyle->Set(TEXT("Assets.OrganizeByType"), new FSlateVectorImageBrush(MenuStyle->RootToContentDir(TEXT("OrganizeAssets"), TEXT(".svg")), IconSize));
+            MenuStyle->Set(TEXT("Assets.NormalizeNames"), new FSlateVectorImageBrush(MenuStyle->RootToContentDir(TEXT("NormalizeAssetNames"), TEXT(".svg")), IconSize));
+            FSlateStyleRegistry::RegisterSlateStyle(*MenuStyle);
+        }
+    }
     TArray<FContentBrowserMenuExtender_SelectedAssets>& CBMenuExtenderDelegates = ContentBrowserModule.GetAllAssetViewContextMenuExtenders();
     
     CBMenuExtenderDelegates.Add(FContentBrowserMenuExtender_SelectedAssets::CreateRaw(this, &FX_MenuExtensionManager::OnExtendContentBrowserAssetSelectionMenu));
@@ -297,17 +327,17 @@ void FX_MenuExtensionManager::AddAssetNamingMenuEntry(FMenuBuilder& MenuBuilder,
         MenuBuilder.AddMenuEntry(
             LOCTEXT("FlattenAssets", "扁平移动资产及依赖..."),
             LOCTEXT("FlattenAssetsTooltip", "将选中资产及 /Game 硬软依赖移动到同一目录，保持名称并修复引用和本次重定向器"),
-            FSlateIcon(),
+            FSlateIcon(AssetMenuStyleName, TEXT("Assets.Flatten")),
             FUIAction(FExecuteAction::CreateLambda([SelectedAssets]() { UX_AssetFlattenLibrary::ShowDialog(SelectedAssets); })));
         MenuBuilder.AddMenuEntry(
             LOCTEXT("OrganizeAssets", "按类型移动资产及依赖..."),
             LOCTEXT("OrganizeAssetsTooltip", "递归收集选中资产及 /Game 硬软依赖，保持名称并移动到目标目录下的分类子目录，修复引用和本次重定向器"),
-            FSlateIcon(),
+            FSlateIcon(AssetMenuStyleName, TEXT("Assets.OrganizeByType")),
             FUIAction(FExecuteAction::CreateLambda([SelectedAssets]() { UX_AssetFlattenLibrary::ShowDialog(SelectedAssets, true); })));
         MenuBuilder.AddMenuEntry(
             LOCTEXT("RenameAssets", "规范化资产命名"),
             LOCTEXT("RenameAssetsTooltip", "根据资产类型自动添加正确的前缀"),
-            FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Rename"),
+            FSlateIcon(AssetMenuStyleName, TEXT("Assets.NormalizeNames")),
             FUIAction(
                 FExecuteAction::CreateLambda([SelectedAssets]()
                 {
