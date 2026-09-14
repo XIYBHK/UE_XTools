@@ -29,9 +29,11 @@ def manifest(base):
     if data.get("format_version") != 2:
         raise ValueError("unsupported manifest format_version")
     records = data["graphs"]
+    macros = data.get("macro_definitions", [])
     for key in ("id", "path"):
-        if len({g[key] for g in records}) != len(records):
-            raise ValueError("duplicate manifest graph " + key)
+        all_records = records + macros
+        if len({g[key] for g in all_records}) != len(all_records):
+            raise ValueError("duplicate manifest record " + key)
     return data
 
 
@@ -39,9 +41,11 @@ def graphs(data, selector):
     records = data["graphs"]
     if selector is None:
         return records
-    matches = [g for g in records if selector in (g["id"], g["path"])]
+    matches = [g for g in records + data.get("macro_definitions", [])
+               if selector in (g["id"], g["path"])]
     if not matches:
-        matches = [g for g in records if g["name"] == selector]
+        matches = [g for g in records + data.get("macro_definitions", [])
+                   if g["name"] == selector]
     if len(matches) > 1:
         raise ValueError("non-unique graph name: " + selector)
     if not matches:
@@ -155,10 +159,31 @@ def dependency_index(base):
     return index
 
 
-def resolve_dependency(base, raw, kind, index):
+def resolve_dependency(base, raw, kind, index, current_data=None):
     target = normalize_blueprint_target(raw, kind)
     if "status" in target:
         return target
+    if kind == "macro_instance" and current_data is not None:
+        declared = [m for m in current_data.get("macro_definitions", [])
+                    if m.get("path") == target["graph_path"]]
+        if declared:
+            record = declared[0]
+            target["status"] = "invalid_export"
+            try:
+                graph_data(base, record)
+                if not safe(base, "00_START_HERE.md").is_file():
+                    return target
+            except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+                return target
+            relative = lambda path: os.path.relpath(path, base).replace(os.sep, "/")
+            target.update({"status": "ok", "graph": record["id"],
+                           "entry": relative(base / "00_START_HERE.md"),
+                           "logic": relative(safe(base, record["logic"])),
+                           "evidence": relative(safe(base, record["evidence"])),
+                           "query_directory": ".",
+                           "query_args": ["outline", "--directory", ".", "--graph", record["id"]],
+                           "export_owner_asset_path": current_data["asset_path"]})
+            return target
     canonical_name = (target["asset_path"].rsplit(".", 1)[1] + "_"
                       + hashlib.sha1(target["asset_path"].encode("utf-8")).hexdigest())
     matches = [(root, data) for root, data in index
@@ -333,7 +358,7 @@ def main(argv=None):
                         if node_id not in nodes:
                             raise ValueError("node not found: " + node_id)
                         for kind, raw in dependency_targets(nodes[node_id]):
-                            result = resolve_dependency(base, raw, kind, index)
+                            result = resolve_dependency(base, raw, kind, index, data)
                             result.update({"node": node_id, "kind": kind})
                             items.append(result)
                     continue

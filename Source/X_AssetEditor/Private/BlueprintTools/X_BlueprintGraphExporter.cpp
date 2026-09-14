@@ -34,11 +34,14 @@
 #include "HAL/PlatformApplicationMisc.h"
 #include "HAL/PlatformProcess.h"
 #include "Interfaces/IPluginManager.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Misc/EngineVersion.h"
 #include "InputCoreTypes.h"
 #include "K2Node_ActorBoundEvent.h"
 #include "K2Node_AddDelegate.h"
 #include "K2Node_AddComponentByClass.h"
 #include "K2Node_AssignDelegate.h"
+#include "K2Node_AssignmentStatement.h"
 #include "K2Node_AsyncAction.h"
 #include "K2Node_BaseAsyncTask.h"
 #include "K2Node_BaseMCDelegate.h"
@@ -94,6 +97,7 @@
 #include "K2Node_Select.h"
 #include "K2Node_SetFieldsInStruct.h"
 #include "K2Node_Self.h"
+#include "K2Node_TemporaryVariable.h"
 #include "K2Node_SpawnActor.h"
 #include "K2Node_SpawnActorFromClass.h"
 #include "K2Node_StructMemberGet.h"
@@ -568,6 +572,9 @@ namespace
         TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
         Json->SetStringField(TEXT("name"), Reference.GetMemberName().ToString());
         Json->SetStringField(TEXT("guid"), Reference.GetMemberGuid().ToString());
+        Json->SetBoolField(TEXT("is_local_scope"), Reference.IsLocalScope());
+        Json->SetBoolField(TEXT("is_self_context"), Reference.IsSelfContext());
+        Json->SetStringField(TEXT("member_scope"), Reference.GetMemberScopeName());
         if (UClass* ParentClass = Reference.GetMemberParentClass())
         {
             Json->SetStringField(TEXT("parent_class"), ParentClass->GetPathName());
@@ -1247,10 +1254,57 @@ namespace
                 }
             }
         }
+        else if (const UK2Node_AssignmentStatement* Assignment = Cast<UK2Node_AssignmentStatement>(Node))
+        {
+            Json->SetStringField(TEXT("kind"), TEXT("assignment"));
+            Json->SetObjectField(TEXT("target_pin"), SemanticPinToJson(Assignment->GetVariablePin()));
+            Json->SetObjectField(TEXT("value_pin"), SemanticPinToJson(Assignment->GetValuePin()));
+        }
+        else if (const UK2Node_TemporaryVariable* Temporary = Cast<UK2Node_TemporaryVariable>(Node))
+        {
+            Json->SetStringField(TEXT("kind"), TEXT("temporary_variable"));
+            Json->SetObjectField(TEXT("variable_type"), PinTypeToJson(Temporary->VariableType));
+            Json->SetObjectField(TEXT("variable_pin"), SemanticPinToJson(Temporary->FindPin(TEXT("Variable"), EGPD_Output)));
+            Json->SetBoolField(TEXT("is_persistent"), Temporary->bIsPersistent);
+            Json->SetStringField(TEXT("storage_scope"), TEXT("compiler_local"));
+        }
         else if (const UK2Node_Variable* Variable = Cast<UK2Node_Variable>(Node))
         {
             Json->SetStringField(TEXT("kind"), TEXT("variable"));
             Json->SetObjectField(TEXT("variable"), MemberReferenceToJson(Variable->VariableReference));
+            const FMemberReference& Reference = Variable->VariableReference;
+            const FProperty* Property = Variable->GetPropertyForVariable();
+            Json->SetStringField(TEXT("binding_origin"), Reference.IsLocalScope() ? TEXT("local")
+                : (!Property ? TEXT("unresolved") : (Reference.IsSelfContext() ? TEXT("self_member") : TEXT("external_member"))));
+            if (Property)
+            {
+                Json->SetStringField(TEXT("property_path"), Property->GetPathName());
+                const UClass* OwnerClass = Property->GetOwnerClass();
+                Json->SetStringField(TEXT("property_owner_class"), OwnerClass ? OwnerClass->GetPathName() : FString());
+                const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property);
+                if (!Reference.IsLocalScope() && ObjectProperty && ObjectProperty->PropertyClass
+                    && ObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+                {
+                    Json->SetStringField(TEXT("component_binding"), TEXT("object_property"));
+                    Json->SetStringField(TEXT("component_class"), ObjectProperty->PropertyClass->GetPathName());
+                    const UBlueprint* Owner = OwnerClass ? Cast<UBlueprint>(OwnerClass->ClassGeneratedBy) : nullptr;
+                    if (Owner && Owner->SimpleConstructionScript)
+                    {
+                        for (const USCS_Node* Component : Owner->SimpleConstructionScript->GetAllNodes())
+                        {
+                            if (Component && Component->GetVariableName() == Property->GetFName()
+                                && (!Reference.GetMemberGuid().IsValid() || Reference.GetMemberGuid() == Component->VariableGuid))
+                            {
+                                Json->SetStringField(TEXT("component_binding"), TEXT("scs_property"));
+                                Json->SetStringField(TEXT("scs_node_path"), Component->GetPathName());
+                                Json->SetStringField(TEXT("scs_variable_guid"), Component->VariableGuid.ToString());
+                                Json->SetStringField(TEXT("component_template"), ObjectPathName(Component->ComponentTemplate));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             if (Cast<UK2Node_VariableGet>(Node))
             {
                 Json->SetStringField(TEXT("access"), TEXT("get"));
@@ -1428,6 +1482,7 @@ namespace
             }
             Json->SetNumberField(TEXT("local_variable_count"), FunctionEntry->LocalVariables.Num());
             Json->SetArrayField(TEXT("local_variables"), LocalVariablesToJson(FunctionEntry->LocalVariables));
+            Json->SetStringField(TEXT("local_scope"), FunctionEntry->GetGraph() ? FunctionEntry->GetGraph()->GetPathName() : FString());
         }
         else if (const UK2Node_MacroInstance* MacroInstance = Cast<UK2Node_MacroInstance>(Node))
         {
@@ -2989,13 +3044,60 @@ namespace
         Root->SetNumberField(TEXT("graph_count"), GraphValues.Num());
         Root->SetNumberField(TEXT("node_count"), NodeCount);
         Root->SetArrayField(TEXT("graphs"), GraphValues);
+        // Preserve actual definitions from this engine installation. Do not replace stateful
+        // macro instances with name-based branch/loop guesses or merge their temporary state.
+        TMap<FString, UEdGraph*> StandardMacros;
+        TArray<UEdGraph*> Pending = Graphs;
+        TSet<const UEdGraph*> Visited;
+        int32 DependencyNodes = 0;
+        bool bDependencyLimit = false;
+        for (int32 Index = 0; Index < Pending.Num(); ++Index)
+        {
+            UEdGraph* Graph = Pending[Index];
+            if (!Graph || Visited.Contains(Graph)) { continue; }
+            Visited.Add(Graph);
+            for (const UEdGraphNode* Node : Graph->Nodes)
+            {
+                const UK2Node_MacroInstance* Instance = Cast<UK2Node_MacroInstance>(Node);
+                UEdGraph* Definition = Instance ? Instance->GetMacroGraph() : nullptr;
+                UBlueprint* Owner = Definition ? FBlueprintEditorUtils::FindBlueprintForGraph(Definition) : nullptr;
+                if (!Owner || Owner->GetPathName() != TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros")
+                    || Graphs.Contains(Definition) || StandardMacros.Contains(Definition->GetPathName())) { continue; }
+                if (StandardMacros.Num() >= 64 || DependencyNodes + Definition->Nodes.Num() > 10000)
+                {
+                    bDependencyLimit = true;
+                    continue;
+                }
+                StandardMacros.Add(Definition->GetPathName(), Definition);
+                DependencyNodes += Definition->Nodes.Num();
+                Pending.Add(Definition);
+            }
+        }
+        TArray<FString> DefinitionPaths;
+        StandardMacros.GetKeys(DefinitionPaths);
+        DefinitionPaths.Sort();
+        TArray<TSharedPtr<FJsonValue>> MacroDefinitions;
+        for (const FString& Path : DefinitionPaths)
+        {
+            UEdGraph* Definition = StandardMacros.FindChecked(Path);
+            int32 Count = 0;
+            MacroDefinitions.Add(MakeShared<FJsonValueObject>(GraphToJson(
+                FBlueprintEditorUtils::FindBlueprintForGraph(Definition), Definition, Count)));
+        }
+        Root->SetArrayField(TEXT("macro_definitions"), MacroDefinitions);
+        Coverage->SetStringField(TEXT("macro_definition_scope"), TEXT("referenced_standard_macros_transitive"));
+        Coverage->SetStringField(TEXT("macro_definition_engine_version"), FEngineVersion::Current().ToString());
+        Coverage->SetBoolField(TEXT("macro_dependency_limit_reached"), bDependencyLimit);
+        Coverage->SetNumberField(TEXT("macro_definition_count"), MacroDefinitions.Num());
         TSet<FString> IncludedGraphPaths;
         for (const TSharedPtr<FJsonValue>& GraphValue : GraphValues)
         {
             IncludedGraphPaths.Add(GraphValue->AsObject()->GetStringField(TEXT("path")));
         }
         TArray<FString> ExternalMacroPaths;
-        for (const TSharedPtr<FJsonValue>& GraphValue : GraphValues)
+        TArray<TSharedPtr<FJsonValue>> AllGraphValues = GraphValues;
+        AllGraphValues.Append(MacroDefinitions);
+        for (const TSharedPtr<FJsonValue>& GraphValue : AllGraphValues)
         {
             for (const TSharedPtr<FJsonValue>& NodeValue : GraphValue->AsObject()->GetArrayField(TEXT("nodes")))
             {
@@ -3006,9 +3108,10 @@ namespace
                     FString MacroPath;
                     (*Semantic)->TryGetStringField(TEXT("macro_graph"), MacroPath);
                     const bool bIncluded = IncludedGraphPaths.Contains(MacroPath);
+                    const bool bDependencyIncluded = StandardMacros.Contains(MacroPath);
                     (*Semantic)->SetStringField(TEXT("definition_status"), MacroPath.IsEmpty()
-                        ? TEXT("unresolved") : (bIncluded ? TEXT("included") : TEXT("external_not_included")));
-                    if (!MacroPath.IsEmpty() && !bIncluded)
+                        ? TEXT("unresolved") : (bIncluded ? TEXT("included") : (bDependencyIncluded ? TEXT("dependency_included") : TEXT("external_not_included"))));
+                    if (!MacroPath.IsEmpty() && !bIncluded && !bDependencyIncluded)
                     {
                         ExternalMacroPaths.AddUnique(MacroPath);
                     }

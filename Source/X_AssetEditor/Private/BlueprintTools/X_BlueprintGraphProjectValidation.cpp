@@ -10,6 +10,8 @@
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "K2Node_FunctionEntry.h"
+#include "K2Node_MacroInstance.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
@@ -27,10 +29,38 @@
 namespace
 {
     // Independent source inventory: do not reuse the exporter's JSON/edge helpers.
-    TArray<TSharedPtr<FJsonValue>> InventoryGraphs(UBlueprint* Blueprint)
+    TArray<TSharedPtr<FJsonValue>> InventoryGraphs(UBlueprint* Blueprint, bool bMacroDefinitions = false)
     {
         TArray<UEdGraph*> Graphs;
         Blueprint->GetAllGraphs(Graphs);
+        if (bMacroDefinitions)
+        {
+            TArray<UEdGraph*> Pending = Graphs;
+            TSet<UEdGraph*> Visited;
+            Graphs.Reset();
+            for (int32 Index = 0; Index < Pending.Num(); ++Index)
+            {
+                UEdGraph* Graph = Pending[Index];
+                if (!Graph || Visited.Contains(Graph)) continue;
+                Visited.Add(Graph);
+                UBlueprint* Owner = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
+                if (Owner && Owner->GetPathName() == TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"))
+                {
+                    Graphs.Add(Graph);
+                }
+                for (UEdGraphNode* Node : Graph->Nodes)
+                {
+                    const UK2Node_MacroInstance* Macro = Cast<UK2Node_MacroInstance>(Node);
+                    UEdGraph* Definition = Macro ? Macro->GetMacroGraph() : nullptr;
+                    UBlueprint* DefinitionOwner = Definition ? FBlueprintEditorUtils::FindBlueprintForGraph(Definition) : nullptr;
+                    if (DefinitionOwner && DefinitionOwner->GetPathName() == TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"))
+                    {
+                        Pending.Add(Definition);
+                    }
+                }
+            }
+            Graphs.Sort([](const UEdGraph& A, const UEdGraph& B) { return A.GetPathName() < B.GetPathName(); });
+        }
         TArray<TSharedPtr<FJsonValue>> Result;
         for (UEdGraph* Graph : Graphs)
         {
@@ -131,6 +161,7 @@ namespace
             Asset->SetStringField(TEXT("asset_path"), Blueprint->GetPathName());
             Asset->SetBoolField(TEXT("dirty_before"), Blueprint->GetOutermost()->IsDirty());
             Asset->SetArrayField(TEXT("source_graphs"), InventoryGraphs(Blueprint));
+            Asset->SetArrayField(TEXT("source_macro_definitions"), InventoryGraphs(Blueprint, true));
             FString Directory;
             FString Error;
             Asset->SetBoolField(TEXT("export_succeeded"), XBlueprintGraphExporterTests::ExportBlueprintFiles(Blueprint, Directory, Error));
@@ -138,6 +169,7 @@ namespace
             Asset->SetStringField(TEXT("error"), Error);
             Asset->SetBoolField(TEXT("dirty_after"), Blueprint->GetOutermost()->IsDirty());
             Asset->SetArrayField(TEXT("source_graphs_after"), InventoryGraphs(Blueprint));
+            Asset->SetArrayField(TEXT("source_macro_definitions_after"), InventoryGraphs(Blueprint, true));
         }
         Report->SetArrayField(TEXT("assets"), Assets);
         FString Text;

@@ -131,12 +131,56 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
       {"name":"Struct","type":{"display":"struct"},"default":"","default_source":"type_default"}
     ]})JSON");
     TestTrue(TEXT("Local declaration fixture parses"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(LocalFixture), EntrySemantic));
+    EntrySemantic->SetStringField(TEXT("local_scope"), TEXT("/Game/Fixture:Sum"));
     Node->SetObjectField(TEXT("semantic"), EntrySemantic);
     const FString LocalLogic = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Accumulator zero and raw empty both visible"), LocalLogic.Contains(TEXT("local \"Val\": \"real:double\" = type_default(0) [raw_default=\"\"]")));
     TestTrue(TEXT("Explicit false visible"), LocalLogic.Contains(TEXT("local \"Flag\": \"bool\" = serialized(\"false\") [explicit]")));
     TestTrue(TEXT("Complex type requires evidence"), LocalLogic.Contains(TEXT("local \"Struct\": \"struct\" = type_default [see_evidence] [raw_default=\"\"]")));
     TestTrue(TEXT("Cross-asset implementation lookup explained"), LocalLogic.Contains(TEXT("05_Query.py deps")));
+    TestTrue(TEXT("Function scope appears next to declarations"), LocalLogic.Contains(TEXT("local_scope: \"/Game/Fixture:Sum\"")));
+    // Two output links into one consumer are not two consumer nodes or two calls.
+    auto Edges = Graph->GetArrayField(TEXT("edges"));
+    auto ExtraEdge = MakeShared<FJsonObject>();
+    ExtraEdge->Values = Edges[4]->AsObject()->Values;
+    ExtraEdge->SetNumberField(TEXT("to_pin_index"), 6);
+    Edges.Add(MakeShared<FJsonValueObject>(ExtraEdge));
+    Graph->SetArrayField(TEXT("edges"), Edges);
+    FString Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Data uses and consumers are separate static facts"), Hints.Contains(TEXT("demand: data_edges=2 consumers=1 [static_direct; not_call_count]")));
+    auto ComponentSemantic = MakeShared<FJsonObject>();
+    ComponentSemantic->SetStringField(TEXT("kind"), TEXT("variable"));
+    ComponentSemantic->SetStringField(TEXT("access"), TEXT("get"));
+    auto Member = MakeShared<FJsonObject>();
+    Member->SetStringField(TEXT("name"), TEXT("Mesh"));
+    ComponentSemantic->SetObjectField(TEXT("variable"), Member);
+    ComponentSemantic->SetStringField(TEXT("binding_origin"), TEXT("self_member"));
+    ComponentSemantic->SetStringField(TEXT("component_binding"), TEXT("scs_property"));
+    ComponentSemantic->SetStringField(TEXT("scs_node_path"), TEXT("/Game/Fixture:MeshNode"));
+    Graph->GetArrayField(TEXT("nodes"))[4]->AsObject()->SetObjectField(TEXT("semantic"), ComponentSemantic);
+    Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Component declaration readable without asset metadata"), Hints.Contains(TEXT("component_read \"Mesh\"")));
+    TestTrue(TEXT("SCS identity stays explicit"), Hints.Contains(TEXT("component=\"scs_property\" scs=\"/Game/Fixture:MeshNode\"")));
+    auto Macro = MakeShared<FJsonObject>();
+    Macro->Values = Graph->Values;
+    Macro->SetStringField(TEXT("path"), TEXT("/Engine/Fixture.Fixture:Gate"));
+    Snapshot->SetArrayField(TEXT("macro_definitions"), {MakeShared<FJsonValueObject>(Macro)});
+    const auto DependencyFiles = XBlueprintReadPack::Build(Snapshot.ToSharedRef());
+    TestTrue(TEXT("Macro definition has separate pseudo"), DependencyFiles.Contains(TEXT("30_Dependencies/M0001.pseudo.md")));
+    TestTrue(TEXT("Macro definition has separate evidence"), DependencyFiles.Contains(TEXT("30_Dependencies/M0001.json")));
+    TSharedPtr<FJsonObject> AssetMetadata;
+    FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(DependencyFiles.FindRef(TEXT("20_Evidence/00_Asset.json"))), AssetMetadata);
+    TestFalse(TEXT("Macro bodies do not inflate initial asset metadata"), AssetMetadata->HasField(TEXT("macro_definitions")));
+    auto Temporary = MakeShared<FJsonObject>();
+    Temporary->SetStringField(TEXT("kind"), TEXT("temporary_variable"));
+    Temporary->SetBoolField(TEXT("is_persistent"), true);
+    Graph->GetArrayField(TEXT("nodes"))[4]->AsObject()->SetObjectField(TEXT("semantic"), Temporary);
+    auto Assignment = MakeShared<FJsonObject>();
+    Assignment->SetStringField(TEXT("kind"), TEXT("assignment"));
+    Node->SetObjectField(TEXT("semantic"), Assignment);
+    Hints = XBlueprintReadPack::Build(Snapshot.ToSharedRef()).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Assignment preserves connected input arguments"), Hints.Contains(TEXT("assign [Variable_is_write_target](")) && Hints.Contains(TEXT("\"Value_5\"=@N3[\"ReturnValue\"]")));
+    TestTrue(TEXT("Temporary flag does not assert per-call lifetime"), Hints.Contains(TEXT("[compiler_local; persistent_savegame; no_lifetime_inference]")));
     return true;
 }
 #endif

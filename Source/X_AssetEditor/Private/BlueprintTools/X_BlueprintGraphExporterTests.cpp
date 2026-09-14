@@ -13,6 +13,12 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Components/StaticMeshComponent.h"
+#include "K2Node_VariableGet.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
 #include "GameFramework/Actor.h"
 #include "K2Node_CustomEvent.h"
 #include "K2Node_FunctionEntry.h"
@@ -29,6 +35,8 @@
 #include "K2Node_InputKeyEvent.h"
 #include "K2Node_MathExpression.h"
 #include "K2Node_MacroInstance.h"
+#include "K2Node_AssignmentStatement.h"
+#include "K2Node_TemporaryVariable.h"
 #include "K2Node_SetFieldsInStruct.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/UObjectGlobals.h"
@@ -585,6 +593,111 @@ bool FXBlueprintGraphExporterLocalDefaultsTest::RunTest(const FString& Parameter
         TestFalse(TEXT("Complex defaults not fabricated as scalar zero"), Locals[Index]->AsObject()->HasField(TEXT("effective_default")));
     }
     TestTrue(TEXT("Source raw default not mutated"), Entry->LocalVariables[0].DefaultValue.IsEmpty());
+    TestEqual(TEXT("Local declaration scope is the owning graph"), Semantic->GetStringField(TEXT("local_scope")), Graph->GetPathName());
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterComponentBindingsTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.ComponentBindings",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterComponentBindingsTest::RunTest(const FString& Parameters)
+{
+    UBlueprint* BP = FKismetEditorUtilities::CreateBlueprint(AActor::StaticClass(), GetTransientPackage(),
+        MakeUniqueObjectName(GetTransientPackage(), UBlueprint::StaticClass(), TEXT("ComponentBindingFixture")), BPTYPE_Normal);
+    USCS_Node* Component = BP->SimpleConstructionScript->CreateNode(UStaticMeshComponent::StaticClass(), TEXT("Mesh"));
+    BP->SimpleConstructionScript->AddNode(Component);
+    FEdGraphPinType Type;
+    Type.PinCategory = UEdGraphSchema_K2::PC_Object;
+    Type.PinSubCategoryObject = UStaticMeshComponent::StaticClass();
+    TestTrue(TEXT("Plain component pointer member fixture"), FBlueprintEditorUtils::AddMemberVariable(BP, TEXT("ComponentPointer"), Type));
+    FKismetEditorUtilities::CompileBlueprint(BP);
+    UEdGraph* Graph = NewObject<UEdGraph>(BP);
+    UK2Node_VariableGet* Getter = NewObject<UK2Node_VariableGet>(Graph);
+    Getter->VariableReference.SetSelfMember(TEXT("Mesh"), Component->VariableGuid);
+    const auto SCS = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Getter);
+    TestEqual(TEXT("SCS declaration proven through property owner"), SCS->GetStringField(TEXT("component_binding")), FString(TEXT("scs_property")));
+    TestEqual(TEXT("SCS identity retained"), SCS->GetStringField(TEXT("scs_node_path")), Component->GetPathName());
+    Getter->VariableReference.SetSelfMember(TEXT("ComponentPointer"));
+    const auto Plain = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Getter);
+    TestEqual(TEXT("Component pointer alone is not SCS"), Plain->GetStringField(TEXT("component_binding")), FString(TEXT("object_property")));
+    TestFalse(TEXT("Plain pointer has no fabricated SCS path"), Plain->HasField(TEXT("scs_node_path")));
+    Getter->VariableReference.SetExternalMember(TEXT("Mesh"), BP->GeneratedClass, Component->VariableGuid);
+    TestEqual(TEXT("External receiver preserved"), XBlueprintGraphExporterTests::BuildNodeSemanticJson(Getter)->GetStringField(TEXT("binding_origin")), FString(TEXT("external_member")));
+    Getter->VariableReference.SetLocalMember(TEXT("Mesh"), FString(TEXT("FunctionScope")), FGuid::NewGuid());
+    const auto Local = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Getter);
+    TestEqual(TEXT("Local scope wins over same-named SCS member"), Local->GetStringField(TEXT("binding_origin")), FString(TEXT("local")));
+    TestFalse(TEXT("Local is not relabeled as component property"), Local->HasField(TEXT("component_binding")));
+    Getter->VariableReference.SetSelfMember(TEXT("DoesNotExist"));
+    TestEqual(TEXT("Unresolved member stays explicit"), XBlueprintGraphExporterTests::BuildNodeSemanticJson(Getter)->GetStringField(TEXT("binding_origin")), FString(TEXT("unresolved")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterStandardMacrosTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.StandardMacros",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterStandardMacrosTest::RunTest(const FString& Parameters)
+{
+    UBlueprint* Standard = LoadObject<UBlueprint>(nullptr, TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"));
+    if (!TestNotNull(TEXT("Current engine standard macro asset"), Standard)) { return false; }
+    UBlueprint* BP = NewObject<UBlueprint>(GetTransientPackage());
+    BP->ParentClass = UObject::StaticClass();
+    UEdGraph* Graph = NewObject<UEdGraph>(BP);
+    BP->FunctionGraphs.Add(Graph);
+    const bool DirtyBefore = Standard->GetOutermost()->IsDirty();
+    int32 References = 0;
+    for (UEdGraph* Macro : Standard->MacroGraphs)
+    {
+        if (Macro->GetName() != TEXT("IsValid") && Macro->GetName() != TEXT("Gate")) { continue; }
+        for (int32 Copy = 0; Copy < 2; ++Copy)
+        {
+            UK2Node_MacroInstance* Instance = NewObject<UK2Node_MacroInstance>(Graph);
+            Instance->SetMacroGraph(Macro);
+            Graph->Nodes.Add(Instance);
+            ++References;
+        }
+    }
+    TestEqual(TEXT("Two instances of two engine macros"), References, 4);
+    const auto Snapshot = XBlueprintGraphExporterTests::BuildBlueprintJson(BP);
+    const auto& Definitions = Snapshot->GetArrayField(TEXT("macro_definitions"));
+    TestTrue(TEXT("Referenced definitions captured once including transitive macros"), Definitions.Num() >= 2);
+    TSet<FString> Paths;
+    int32 Assignments = 0;
+    int32 Temporaries = 0;
+    for (const auto& V : Definitions)
+    {
+        const auto Definition = V->AsObject();
+        TestFalse(TEXT("Definition path deduplicated"), Paths.Contains(Definition->GetStringField(TEXT("path"))));
+        Paths.Add(Definition->GetStringField(TEXT("path")));
+        UEdGraph* Source = FindObject<UEdGraph>(nullptr, *Definition->GetStringField(TEXT("path")));
+        TestNotNull(TEXT("Definition references a real engine graph"), Source);
+        if (Source) { TestEqual(TEXT("Definition preserves every source node"), Definition->GetArrayField(TEXT("nodes")).Num(), Source->Nodes.Num()); }
+        if (Source)
+        {
+            for (UEdGraphNode* SourceNode : Source->Nodes)
+            {
+                if (const auto* Temporary = Cast<UK2Node_TemporaryVariable>(SourceNode))
+                {
+                    const auto Semantic = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Temporary);
+                    TestEqual(TEXT("Macro temporary storage classified"), Semantic->GetStringField(TEXT("kind")), FString(TEXT("temporary_variable")));
+                    TestEqual(TEXT("Actual persistent flag retained"), Semantic->GetBoolField(TEXT("is_persistent")), Temporary->bIsPersistent);
+                    ++Temporaries;
+                }
+                if (const auto* Assignment = Cast<UK2Node_AssignmentStatement>(SourceNode))
+                {
+                    const auto Semantic = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Assignment);
+                    TestEqual(TEXT("Macro assignment classified"), Semantic->GetStringField(TEXT("kind")), FString(TEXT("assignment")));
+                    TestEqual(TEXT("Write target pin retained"), Semantic->GetObjectField(TEXT("target_pin"))->GetStringField(TEXT("name")), Assignment->GetVariablePin()->PinName.ToString());
+                    ++Assignments;
+                }
+            }
+        }
+    }
+    TestTrue(TEXT("Stateful macro fixture covers assignments and temporaries"), Assignments > 0 && Temporaries > 0);
+    TestEqual(TEXT("Own graph count not inflated with definitions"), Snapshot->GetArrayField(TEXT("graphs")).Num(), 1);
+    TestEqual(TEXT("Separate call instances preserved"), Snapshot->GetArrayField(TEXT("graphs"))[0]->AsObject()->GetArrayField(TEXT("nodes")).Num(), 4);
+    TestEqual(TEXT("Engine macro package not dirtied"), Standard->GetOutermost()->IsDirty(), DirtyBefore);
     return true;
 }
 

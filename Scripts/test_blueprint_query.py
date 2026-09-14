@@ -25,7 +25,7 @@ class QueryTests(unittest.TestCase):
     def write_manifest(self):
         (self.root / "01_Manifest.json").write_text(json.dumps({
             "format_version": 2, "asset_path": "/Game/Test.Test", "snapshot_id": "fixture",
-            "graphs": self.records}), encoding="utf-8")
+            "graphs": self.records, "macro_definitions": getattr(self, "macros", [])}), encoding="utf-8")
 
     def make_graph(self, gid, name, ids):
         logic = "# Graph\n```text\n" + "\n\n".join(
@@ -51,7 +51,7 @@ class QueryTests(unittest.TestCase):
         self.rehash()
 
     def rehash(self):
-        for record in self.records:
+        for record in self.records + getattr(self, "macros", []):
             for key in ("logic", "evidence"):
                 record[key + "_sha1"] = hashlib.sha1((self.root / record[key]).read_bytes()).hexdigest()
         self.write_manifest()
@@ -250,6 +250,57 @@ class QueryTests(unittest.TestCase):
         data["graphs"][0]["logic"] = "../Caller/10_Logic/G0001.pseudo.md"
         path.write_text(json.dumps(data), encoding="utf-8")
         self.assertEqual(self.deps()["results"][0]["status"], "invalid_export")
+
+    def make_macro_definition(self):
+        (self.root / "30_Dependencies").mkdir(exist_ok=True)
+        lp, ep = "30_Dependencies/M0001.pseudo.md", "30_Dependencies/M0001.json"
+        logic = '```text\n@N0: opaque "N0"()\n```\n'
+        evidence = {"path": "/Engine/BasicShapes/BasicShapes.BasicShapes:EngineMacro",
+                    "nodes": [{"id": "N0"}], "edges": []}
+        (self.root / lp).write_text(logic, encoding="utf-8")
+        (self.root / ep).write_text(json.dumps(evidence), encoding="utf-8")
+        (self.root / "00_START_HERE.md").write_text("entry", encoding="utf-8")
+        self.macros = [{"id": "M0001", "name": "EngineMacro",
+                        "path": evidence["path"], "logic": lp, "evidence": ep,
+                        "node_count": 1, "entries": []}]
+        self.rehash()
+
+    def test_macro_definitions_are_selectable_only_explicitly_and_deps_stay_local(self):
+        self.make_macro_definition()
+        outline = self.invoke("outline")
+        self.assertNotIn("M0001", {item.get("graph") for item in outline["results"]})
+        node = self.invoke("node", "--graph", "M0001", "--node", "N0")
+        self.assertEqual(node["results"][0]["graph"], "M0001")
+        self.set_dependency("/Engine/BasicShapes/BasicShapes.BasicShapes:EngineMacro", "macro_instance")
+        result = self.deps()["results"][0]
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["export_owner_asset_path"], "/Game/Test.Test")
+        self.assertEqual(result["query_directory"], ".")
+        self.assertEqual(result["asset_path"], "/Engine/BasicShapes/BasicShapes.BasicShapes")
+        self.assertEqual(result["logic"], "30_Dependencies/M0001.pseudo.md")
+        self.assertTrue(self.deps("--max-chars", "400")["truncated"])
+        self.assertLessEqual(len(self.last_output), 400)
+
+    def test_macro_duplicate_identity_and_corrupt_definition_do_not_fallback(self):
+        self.make_macro_definition()
+        self.macros[0]["id"] = "G0001"
+        self.write_manifest()
+        self.invoke("outline", success=False)
+        self.make_macro_definition()
+        self.set_dependency("/Engine/BasicShapes/BasicShapes.BasicShapes:EngineMacro", "macro_instance")
+        (self.root / self.macros[0]["logic"]).write_text("corrupt", encoding="utf-8")
+        self.assertEqual(self.deps()["results"][0]["status"], "invalid_export")
+
+    def test_macro_path_duplicates_and_legacy_manifest(self):
+        self.make_macro_definition()
+        self.macros[0]["path"] = self.records[0]["path"]
+        self.write_manifest()
+        self.invoke("outline", success=False)
+        path = self.root / "01_Manifest.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        del data["macro_definitions"]
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.invoke("outline")
 
 
 if __name__ == "__main__":

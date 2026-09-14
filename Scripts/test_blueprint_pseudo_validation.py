@@ -42,8 +42,37 @@ def good_text():
 
 
 class PseudoValidationTests(unittest.TestCase):
+    def test_component_binding_and_static_demand_not_fabricated(self):
+        graph = {"nodes": [{"id": "A", "semantic": {"kind": "variable", "access": "get",
+            "variable": {"name": "Mesh"}, "component_binding": "scs_property", "binding_origin": "self_member",
+            "scs_node_path": "/Game/Test:MeshNode"}, "pins": []}], "edges": []}
+        text = ('```text\n@A: component_read "Mesh"()\n'
+                '  demand: data_edges=0 consumers=0 [static_direct; not_call_count]\n'
+                '  binding: "self_member" component="scs_property" scs="/Game/Test:MeshNode"\n```\n')
+        self.assertEqual(validate_pseudo(graph, text, semantic_hints=True), [])
+        for old, new in (("consumers=0", "consumers=3"), ("scs_property", "object_property"), ("MeshNode", "Wrong")):
+            self.assertTrue(validate_pseudo(graph, text.replace(old, new), semantic_hints=True))
+
     def test_valid_text_passes(self):
         self.assertEqual(validate_pseudo(fixture(), good_text()), [])
+
+    def test_engine_macro_boolean_spelling_is_preserved(self):
+        graph = fixture()
+        graph["nodes"][1]["pins"][3]["default"] = "TRUE"
+        text = good_text().replace('"Value"#3=false', '"Value"#3=TRUE')
+        self.assertEqual(validate_pseudo(graph, text), [])
+        self.assertTrue(validate_pseudo(graph, text.replace("=TRUE", "=false")))
+
+    def test_macro_temporary_persistence_and_assignment_are_distinct(self):
+        graph = {"nodes": [
+            {"id": "A", "semantic": {"kind": "temporary_variable", "is_persistent": True,
+                                     "variable_type": {"display": "bool"}}, "pins": []},
+            {"id": "B", "semantic": {"kind": "assignment"}, "pins": []}], "edges": []}
+        text = ('```text\n@A: temp "bool" [compiler_local; persistent_savegame; no_lifetime_inference]()\n'
+                '@B: assign [Variable_is_write_target]()\n```\n')
+        self.assertEqual(validate_pseudo(graph, text, semantic_hints=True), [])
+        self.assertTrue(validate_pseudo(graph, text.replace("persistent_savegame; ", ""), semantic_hints=True))
+        self.assertTrue(validate_pseudo(graph, text.replace("assign", "read"), semantic_hints=True))
 
     def test_deleted_exec_edge_fails(self):
         text = good_text().replace('exit "then" -> @B["execute"]', 'exit "then" -> unconnected')

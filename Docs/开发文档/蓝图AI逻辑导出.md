@@ -9,8 +9,9 @@
 ├── 01_Manifest.json             # v2 机器清单：图身份、候选入口与内容摘要
 ├── 05_Query.py                  # Python 标准库只读查询器
 ├── 10_Logic/G0001.pseudo.md     # 按图生成、带标签的确定性伪代码
-├── 20_Evidence/00_Asset.json    # 完整资产元数据，不含 graphs
+├── 20_Evidence/00_Asset.json    # 资产元数据，不含图与宏定义正文
 ├── 20_Evidence/G0001.json       # 对应图的原完整 JSON
+├── 30_Dependencies/M0001.*      # 按需标准宏定义：.pseudo.md 与 .json
 └── 90_Full/                     # 原完整 JSON、.ai.md、.md 三种格式
 ```
 
@@ -28,7 +29,7 @@ python 05_Query.py node --graph G0001 --node N0
 python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 ```
 
-`outline` 只读机器清单，列出图及候选入口；候选入口仍可能禁用，不保证实际执行。`find` 在选定图或所有图的事实中搜索，只返回匹配节点摘要，不把原文件回填上下文。`--graph` 接受图编号、完整路径或唯一图名，同名图必须进一步消歧。
+`outline` 只读机器清单，列出图及候选入口；候选入口仍可能禁用，不保证实际执行。`find` 在选定图或所有所属图的事实中搜索，只返回匹配节点摘要，不把原文件回填上下文。未指定 `--graph` 时不读取标准宏定义；显式选择 `M0001` 才读取对应定义。`--graph` 接受图编号、完整路径或唯一图名，同名图必须进一步消歧。
 
 `slice` 从指定节点沿执行边取可达节点，再收集上游数据依赖；默认输出带节点标签的伪代码和精确 pin 索引连接，不重复输出完整节点 JSON。循环、共享目标和扇出保留。只作为数据来源纳入的节点标记 `data_dependency`，其中带执行 pin 的节点附加 `requires_prior_execution`，不能据此认定它由当前入口调用，也不继续追踪它的其他执行出口。外部宏、函数和原生节点实现仍未展开。`node --evidence` 才返回单节点原始属性、引脚及相邻边。
 
@@ -42,11 +43,21 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 
 本图未展开的调用可能已在其他资产目录导出。运行 `python 05_Query.py deps --graph G0029 --node N16`（图和节点按实际清单替换）获取被调图的入口、伪代码和证据相对路径；省略 `--node` 列出该图调用。`node`/`slice` 对调用节点给出此查询提示，`deps` 本身不返回被调实现正文。它只扫描当前资产和同级目录的清单，按完整资产及图路径匹配，优先完整对象路径 SHA1 的规范目录；目标库后来导出也可直接发现，无须重新导出调用方。
 
-查询结果明确区分 `ok`、`native_implementation`、`unresolved`、`not_exported`、`graph_not_exported`、`ambiguous` 和 `invalid_export`；重复历史副本不能唯一定位或文件校验失败时不会猜选。仍受 `--max-nodes`/`--max-chars` 预算限制，发现路径不等于已读取实现。新版 v2 清单通过 `features` 声明 `local_initialization` 与 `dependency_navigation`，旧包需重新导出才能获得新内容。
+查询结果明确区分 `ok`、`native_implementation`、`unresolved`、`not_exported`、`graph_not_exported`、`ambiguous` 和 `invalid_export`；重复历史副本不能唯一定位或文件校验失败时不会猜选。仍受 `--max-nodes`/`--max-chars` 预算限制，发现路径不等于已读取实现。新版 v2 清单通过 `features` 声明 `local_initialization`、`dependency_navigation`、`semantic_hints` 和 `standard_macro_definitions`，旧包需重新导出才能获得新内容。
 
-伪代码是确定性阅读表示，不是可执行程序。`expr` 和 `read` 按需取值，不假定缓存；执行顺序以 `exit`/callback 引用为准。环、共享目标、数据扇出和多入口均保留。未知或特殊节点标记为 `opaque`/`see_evidence`，不能据名称补造实现。
+伪代码是确定性阅读表示，不是可执行程序。`expr` 和 `read` 按需取值，不声明运行时缓存策略；`demand: data_edges=2 consumers=1 [static_direct; not_call_count]` 表示两条直接数据边进入同一个目标节点，不等于两次求值。计数保留静态未执行路径和重路由目标，不作为性能估算。UE 5.3 编译器会按非纯消费者收集纯节点依赖，同一个消费者内会去重；循环、分支和编译后的图仍会影响实际求值。直接内联或添加一次性缓存赋值可能改变读者对求值时机的理解，因此保留节点引用和拓扑。环、共享目标、数据扇出和多入口均保留；未知或特殊节点标记为 `opaque`/`see_evidence`，不能据名称补造实现。
 
-伪代码保留已连接来源，不用默认值覆盖连线语义；空默认值仍以 serialized 形式保留。外部函数、父类、自定义 K2Node 和外部宏的实现不自动展开；本地导出图集合内的宏才可标记为已包含。完整图 JSON 是逐图事实证据，资产 JSON 是完整资产元数据且不含 `graphs`。
+变量的 `binding_origin` 区分 `local`、`self_member`、`external_member` 与 `unresolved`。`component_read` 仅用于反射解析到组件对象属性的读取；`component_binding=object_property` 不表示 SCS 声明，只有通过属性所属蓝图的 SCS 名称及有效 GUID 核对后才标记 `scs_property`，并附 `scs_node_path`、模板及声明 GUID。成员类型本身不证明它是 SCS 组件；声明绑定也不保证运行时指针有效或未被重新赋值。同名局部变量保持局部身份。`function_entry` 的 `local_scope` 给出完整所属图路径，与已有 `local` 初始声明配合，不推断运行时生命周期。
+
+### 标准宏定义的按需读取
+
+导出器收集当前本地引擎 `/Engine/EditorBlueprintResources/StandardMacros.StandardMacros` 中实际引用的宏图及其标准宏依赖，按完整图路径去重，保存到 `30_Dependencies/Mxxxx.pseudo.md` 与同编号 JSON。`01_Manifest.json.macro_definitions` 与所属资产的 `graphs` 分开，原图及节点计数不膨胀。每包最多 64 张定义图、10000 个定义节点，按整图采集；达到上限时 `coverage.macro_dependency_limit_reached=true`，未采集引用继续明确标记，`macro_definition_engine_version` 记录来源引擎版本。
+
+`deps` 优先定位当前包声明的宏定义并验证文件摘要；正文仍需显式 `node/slice --graph Mxxxx` 读取。已声明文件损坏时返回 `invalid_export`，不会悄悄选另一个引擎版本的副本。返回的 `asset_path` 仍是引擎宏资产，`export_owner_asset_path` 表明它保存在当前哪个导出包中。
+
+这不是宏展开或按名称降级。调用节点与定义使用各自的节点编号，按隧道 pin 和类型对应；泛型定义的具体类型需要结合调用实例引脚。不同 Gate/DoOnce 调用保留各自实例，不能因为共用一份定义就合并状态。`tunnel_entry/exit` 表示定义边界，`assign [Variable_is_write_target]` 表示把 `Value` 写入 `Variable` 引用的网络，原始参数、默认值和执行出口均保留。`temp` 是编译器局部临时变量，记录声明类型和 `persistent_savegame` 标记；实际引脚类型另在证据中保留，不据此推断每次调用初始化或完整生命周期。其他引擎原生行为、非标准宏和未支持的节点仍保持证据边界。
+
+伪代码保留已连接来源，不用默认值覆盖连线语义；空默认值仍以 serialized 形式保留。外部函数、父类、自定义 K2Node 和非标准外部宏的实现不自动展开；实际包含的宏由清单与 `definition_status` 标识。完整图 JSON 是逐图事实证据，资产 JSON 排除 `graphs` 与 `macro_definitions` 正文。
 
 `id`、节点别名和 pin `index` 只在本次快照内定位；陈述引脚来源时同时核对 pin 名称与类型。`90_Full` 中的三个文件保留原有完整 JSON、AI 文本和 Markdown 输出，原 `AIWriter` 不变；新的 `XBlueprintReadPack::Build` 只消费 JSON 生成按需阅读包。
 
@@ -54,7 +65,7 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 
 ## 详细事实格式
 
-逐图证据与 `90_Full/<蓝图名>.json` 中对应图对象完全相同；`00_Asset.json` 与完整快照去掉 `graphs` 后相同。完整 JSON 为 schema 1.1，保留原有字段并补充以下信息：
+逐图证据与 `90_Full/<蓝图名>.json` 中对应图对象完全相同；`00_Asset.json` 与完整快照去掉 `graphs` 和 `macro_definitions` 后相同。完整 JSON 为 schema 1.1，保留原有字段并补充以下信息：
 
 | 位置 | 字段与含义 |
 | --- | --- |
@@ -62,8 +73,12 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 | pin | `index`、父子 pin GUID 与索引、`orphaned`、默认值忽略/只读、不可连接标志；空 `default` 也保留 |
 | node | `class_path`、`semantic_status`、`reflected_properties` |
 | graph | `graph_guid`、`unclassified_node_ids`、`truncated`、完整节点/边和静态可达信息 |
-| root.coverage | 所属资产图范围、属性提取范围、外部实现未包含、非穷尽语义及外部宏路径 |
-| macro semantic | `definition_status` 为 `included`、`external_not_included` 或 `unresolved` |
+| root.coverage | 所属资产图范围、属性提取范围、非穷尽语义、未包含宏路径、标准宏来源引擎版本及采集上限；`external_implementations_included=false` 表示未承诺所有外部实现 |
+| root.macro_definitions | 实际采集的标准宏图对象，与资产自身 graphs 分开 |
+| macro semantic | `definition_status` 为 `included`、`dependency_included`、`external_not_included` 或 `unresolved` |
+| variable semantic | 成员作用域、反射属性路径、组件属性与 SCS 声明证据 |
+| function_entry semantic | `local_scope` 与局部变量初值声明 |
+| assignment / temporary_variable semantic | 写目标/值引脚、临时变量声明类型/输出引脚和持久标记 |
 
 `classified` 只表示匹配已有提取分支，不保证派生类展开行为完整。`reflected_properties` 保存节点派生类的非 transient、非废弃且可序列化的反射属性，包括固定长度 C++ 数组各元素；值是 UE 文本，不是可执行代码，也不覆盖非反射的原生状态。
 
@@ -79,7 +94,7 @@ python 05_Query.py node --graph G0001 --node N0 --evidence --max-chars 32000
 
 导出核心使用 UE 5.3 起已有的 C++ 图对象和反射接口，设计覆盖 UE 5.3–5.8，不依赖 5.8 MCP 或新增蓝图脚本接口。自动化前缀为 `XTools.AssetEditor.BlueprintGraphExporter`，使用 `Scripts/Test-UE53.ps1 -Tests XTools.AssetEditor.BlueprintGraphExporter` 运行。
 
-UE 5.3.2 Editor Development 编译及 9 项自动化全部通过、无警告。ReadPack 测试覆盖局部变量初始化、索引/名字不连续和重复 GUID 的精确数据来源、已连接与忽略默认值、共享回调、两类异步节点、执行环、作者文本转义、未知/禁用节点、同名 pin 消歧、清单内容摘要及只读输出；文件测试覆盖写入回滚、碰撞路径隔离、身份不符拒绝和交替导出时根索引去重。另有 21 项 Python 查询/语义回归全部通过，包括跨库函数/宏导航、后续导出发现、规范目录优先、重复副本歧义及损坏证据拒绝，运行 `python -B -m unittest discover -s Scripts -p "test_blueprint_*.py"`。UE 5.4–5.8 尚未执行此次改动的构建验证。
+UE 5.3.2 Editor Development 编译及 11 项自动化全部通过；组件临时蓝图测试触发 1 条 AssetRegistry `/Engine/Transient` 不存在的警告。ReadPack 测试覆盖局部变量初始化及作用域、组件属性与 SCS 绑定、同名局部变量隔离、标准宏去重/调用实例保留、赋值和临时变量、纯节点多边进入同一消费者，以及原有连接、回调、执行环、摘要和文件写入保护。另有 27 项 Python 查询/语义回归全部通过，包括本包标准宏及跨库导航、重复身份/损坏证据拒绝、旧包兼容、布尔序列化大小写及语义标记篡改检测，运行 `python -B -m unittest discover -s Scripts -p "test_blueprint_*.py"`。UE 5.4–5.8 尚未执行此次改动的构建验证。
 
 ### 现有项目资产验证
 
@@ -92,6 +107,10 @@ python Scripts/validate_blueprint_ai_export.py <source-inventory.json> --report 
 ```
 
 校验器同时支持旧单层目录及 ReadPack v1/v2，比较独立源图、详细 JSON、完整 AI JSONL，以及逐图/资产证据。除节点覆盖外，还从完整图推导并校验伪代码的操作目标、启用状态、参数来源/默认值、执行出口、回调和数据输出；v2 同时检查机器清单、图身份及内容摘要。该检查针对导出语法和图事实，不验证 UE 运行时行为。
+
+2026-09-14 IR 审查修复后，重新导出 17 个迁入库及 MasterField：255 张所属图、6525 节点、20609 引脚、8224 连接通过；50 份按包去重的标准宏定义（12 种完整宏路径，637 节点、1678 引脚、851 连接）也通过独立引擎源图对照，导出前后内存图和 dirty 状态一致。1249 次实际包查询通过，覆盖 264 次标准宏导航、505 个局部声明及 99 处 SCS 绑定；默认预算下 44 个 slice、4 个 deps 显式截断。Content 的 5557 个源资产文件前后 SHA256 一致。证据位于宿主项目 `Saved/XTools/BlueprintExportValidation/ir-review-20260914/`，编译与自动化报告为 `Saved/Automation/Reports/BlueprintIR-review-20260914-r6/`。已知 WorldContext 断言不在本轮处理范围。
+
+该轮独立上下文读取者从两个资产入口出发，通过 `deps` 找到 MengAdvancedLib 的 `M0004`，还原 IsValid 原生判断调用和两个隧道出口；从 MasterField `G0002/N87` 识别 PlaneVolume 的 SCS 声明，并正确解释 `demand` 不等于求值次数。模型未直接读取原始 JSON、源码或 `90_Full`，查询器内部仍按需读取清单/证据进行校验。这是三个定向问题的理解回归，不是通用准确率或运行时验证。
 
 2026-09-12 使用 v2 重新导出 18 个现有蓝图，对照 44 张图、1422 个节点、4554 个 pin、1510 条边全部通过；387 个 `.uasset/.umap` 前后 SHA256 无变化。总入口仅有这 18 个资产的新版链接。44 张图均通过导出查询器校验，93 次离线查询检查通过；直接修改 MasterField 伪代码的执行目标或默认值，绕过摘要校验后仍被语义检查拒绝。
 

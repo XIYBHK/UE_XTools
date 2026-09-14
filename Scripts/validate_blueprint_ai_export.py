@@ -50,7 +50,7 @@ def _q(value):
     return json.dumps(str(value), ensure_ascii=False, separators=(",", ":")).replace("`", "\\u0060")
 
 
-def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False):
+def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, semantic_hints=False):
     """Independently validate the semantic records in one ReadPack pseudo file.
 
     This intentionally parses the stable pseudo grammar and derives expected records
@@ -113,7 +113,7 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False):
             return "split_input [see_child_arguments]"
         default = str(pin.get("default", ""))
         category = pin.get("type", {}).get("category", "")
-        if ((category == "bool" and default in ("true", "false")) or
+        if ((category == "bool" and default.lower() in ("true", "false")) or
                 (category in ("int", "int64", "real", "float", "double") and
                  re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", default))):
             return default
@@ -154,11 +154,18 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False):
                   "sequence": "sequence [outputs_dispatch_in_pin_order; not_await]", "branch": "branch"}
         if kind in simple:
             return simple[kind]
+        if semantic_hints and kind in ("tunnel_entry", "tunnel_exit"):
+            return kind
+        if kind == "assignment":
+            return "assign [Variable_is_write_target]"
+        if kind == "temporary_variable":
+            persistent = "persistent_savegame; " if semantic.get("is_persistent") else ""
+            return "temp " + _q(semantic.get("variable_type", {}).get("display", "")) + " [compiler_local; " + persistent + "no_lifetime_inference]"
         targets = {
             "event": ("event", semantic.get("event", {}).get("name", "")),
             "custom_event": ("event", semantic.get("custom_function_name", "")),
             "function_entry": ("function_entry", semantic.get("function", {}).get("name", "")),
-            "variable": ("set" if semantic.get("access") == "set" else "read", semantic.get("variable", {}).get("name", "")),
+            "variable": ("set" if semantic.get("access") == "set" else "component_read" if semantic.get("component_binding") else "read", semantic.get("variable", {}).get("name", "")),
             "dynamic_cast": ("cast", semantic.get("target_type", "")),
         }
         if kind in targets:
@@ -245,6 +252,27 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False):
                 errors.append(f"Pseudo comment differs: {node_id}")
             actual[node_id] = ([], [])
             continue
+        semantic = node.get("semantic", {})
+        kind = semantic.get("kind")
+        if semantic_hints:
+            expected_hints = []
+            if not any(p.get("is_exec") for p in node.get("pins", [])) and (
+                    kind == "call_function" and semantic.get("is_pure") or kind == "variable" and semantic.get("access") == "get"):
+                uses = [e for e in graph.get("edges", []) if e.get("kind") == "data" and e.get("from_node", {}).get("node_id") == node_id]
+                consumers = {e.get("to_node", {}).get("node_id") for e in uses}
+                expected_hints.append(f"demand: data_edges={len(uses)} consumers={len(consumers)} [static_direct; not_call_count]")
+            if kind == "variable" and semantic.get("binding_origin"):
+                binding = "binding: " + _q(semantic["binding_origin"])
+                for prefix, val in (("scope", semantic.get("variable", {}).get("member_scope")),
+                                    ("component", semantic.get("component_binding")), ("scs", semantic.get("scs_node_path"))):
+                    if val:
+                        binding += " " + prefix + "=" + _q(val)
+                expected_hints.append(binding)
+            if kind == "function_entry" and semantic.get("local_scope"):
+                expected_hints.append("local_scope: " + _q(semantic["local_scope"]))
+            actual_hints = [line.strip() for line in body if line.strip().startswith(("demand:", "binding:", "local_scope:"))]
+            if actual_hints != expected_hints:
+                errors.append(f"Pseudo semantic hints differ: {node_id}")
         locals_ = node.get("semantic", {}).get("local_variables", [])
         if require_locals or any("default_source" in local for local in locals_):
             expected_locals = []
@@ -357,7 +385,7 @@ def validate(asset):
             entry_path = directory / "00_START_HERE.md"
             entry = entry_path.read_text(encoding="utf-8-sig")
             evidence_metadata = load(directory / "20_Evidence/00_Asset.json")
-            check(evidence_metadata == metadata, "Read pack asset evidence differs")
+            check(evidence_metadata == {k: v for k, v in metadata.items() if k != "macro_definitions"}, "Read pack asset evidence differs")
             manifest_path = directory / "01_Manifest.json"
             manifest = load(manifest_path) if manifest_path.exists() else None
             if manifest is not None:
@@ -387,12 +415,52 @@ def validate(asset):
                 for node in graph["nodes"]:
                     check(f"@{node['id']}:" in logic or f"author_comment @{node['id']} =" in logic, f"Missing pseudo node: {graph_id}/{node['id']}")
                 for pseudo_error in validate_pseudo(graph, logic, legacy_labels=manifest is None,
-                                                    require_locals=manifest is not None and "local_initialization" in manifest.get("features", [])):
+                                                    require_locals=manifest is not None and "local_initialization" in manifest.get("features", []),
+                                                    semantic_hints=manifest is not None and "semantic_hints" in manifest.get("features", [])):
                     check(False, f"{graph_id}: {pseudo_error}")
                 size = (directory / logic_file).stat().st_size
                 logic_bytes += size
                 graph_sizes.append({"id": graph_id, "name": graph["name"], "logic_bytes": size, "evidence_bytes": (directory / evidence_file).stat().st_size})
             pack_sizes = {"entry_bytes": entry_path.stat().st_size, "logic_bytes": logic_bytes, "graph_sizes": graph_sizes}
+            definitions = detailed.get("macro_definitions", [])
+            if "source_macro_definitions" in asset:
+                original_definitions = asset["source_macro_definitions"]
+                check(original_definitions == asset["source_macro_definitions_after"], "Export mutated macro source graph")
+                original_by_path = {g["path"]: g for g in original_definitions}
+                check(set(original_by_path) == {g["path"] for g in definitions}, "Source macro definition coverage differs")
+                macro_counts = Counter()
+                for definition in definitions:
+                    original = original_by_path[definition["path"]]
+                    nodes = {n["name"]: n for n in definition["nodes"]}
+                    check(len(nodes) == len(definition["nodes"]) == len(original["nodes"]), "Macro source node count differs")
+                    check(set(nodes) == {n["name"] for n in original["nodes"]}, "Macro source node coverage differs")
+                    for source_node in original["nodes"]:
+                        node = nodes[source_node["name"]]
+                        for field in ("node_guid", "class_path", "comment", "is_enabled"):
+                            check(node[field] == source_node[field], f"Macro source node {node['name']}.{field}")
+                        check(len(node["pins"]) == len(source_node["pins"]), "Macro source pin count differs")
+                        for pin, source_pin in zip(node["pins"], source_node["pins"]):
+                            for field, value in source_pin.items():
+                                actual = pin["type"][field] if field in ("is_reference", "is_const") else pin[field]
+                                check(actual == value, f"Macro source pin {node['name']}:{pin['index']}.{field}")
+                        macro_counts["pins"] += len(node["pins"])
+                    aliases = {n["id"]: n["name"] for n in definition["nodes"]}
+                    source_edges = Counter((e["kind"], e["from_name"], e["from_index"], e["to_name"], e["to_index"]) for e in original["edges"])
+                    exported_edges = Counter((e["kind"], aliases[e["from_node"]["node_id"]], e["from_pin_index"], aliases[e["to_node"]["node_id"]], e["to_pin_index"]) for e in definition["edges"])
+                    check(source_edges == exported_edges, "Macro source edge multiset differs")
+                    macro_counts["nodes"] += len(nodes)
+                    macro_counts["edges"] += len(original["edges"])
+                result["macro_source_counts"] = dict(macro_counts)
+            records = manifest.get("macro_definitions", []) if manifest else []
+            check(len(definitions) == len(records), "Macro definition coverage differs")
+            for index, (definition, record) in enumerate(zip(definitions, records), 1):
+                check(record["id"] == f"M{index:04d}" and record["path"] == definition["path"], "Macro definition identity differs")
+                check(load(directory / record["evidence"]) == definition, "Macro evidence differs")
+                for key in ("logic", "evidence"):
+                    check(hashlib.sha1((directory / record[key]).read_bytes()).hexdigest() == record[key + "_sha1"], "Macro file hash differs")
+                for error in validate_pseudo(definition, (directory / record["logic"]).read_text(encoding="utf-8-sig"), require_locals=True, semantic_hints=True):
+                    check(False, f"{record['id']}: {error}")
+            result["macro_definitions"] = len(definitions)
         counts = Counter()
         semantics = Counter()
         unclassified = Counter()
