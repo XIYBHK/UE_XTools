@@ -1,4 +1,4 @@
-"""Compare project-asset source inventory, detailed JSON and AI JSONL exports.
+"""Compare project-asset source inventory, full JSON and ReadPack evidence/pseudocode.
 
 Generate the inventory in a development Editor with
 XTools.BlueprintExport.ValidateAssets /Game/Path/Blueprint [...].
@@ -16,34 +16,6 @@ import uuid
 
 def load(path):
     return json.loads(Path(path).read_text(encoding="utf-8-sig"))
-
-
-def parse_ai(path):
-    metadata = None
-    graphs = {}
-    current = None
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        if not line.startswith("{"):
-            continue
-        value = json.loads(line)
-        if "asset_path" in value:
-            if metadata is not None:
-                raise ValueError("Duplicate asset metadata")
-            metadata = value
-        elif "path" in value and "node_count" in value:
-            if value["path"] in graphs:
-                raise ValueError("Duplicate graph metadata")
-            current = {"metadata": value, "nodes": [], "edges": []}
-            graphs[value["path"]] = current
-        elif current is not None and "pins" in value:
-            current["nodes"].append(value)
-        elif current is not None and "from" in value:
-            current["edges"].append(value)
-        else:
-            raise ValueError(f"Unexpected JSON record: {list(value)}")
-    if metadata is None:
-        raise ValueError("Missing asset metadata")
-    return metadata, graphs
 
 
 def _q(value):
@@ -415,22 +387,20 @@ def validate(asset):
         if len(json_files) != 1:
             raise ValueError(f"Expected one detailed JSON in {directory}")
         json_path = json_files[0]
-        ai_path = json_path.with_suffix(".ai.md")
         detailed = load(json_path)
-        metadata, ai_graphs = parse_ai(ai_path)
-        check(metadata == {k: v for k, v in detailed.items() if k != "graphs"}, "Asset metadata differs")
+        metadata = {k: v for k, v in detailed.items() if k not in ("graphs", "macro_definitions")}
         check(asset["source_graphs"] == asset["source_graphs_after"], "Export mutated loaded source graph")
         check(asset["dirty_before"] == asset["dirty_after"], "Export changed source package dirty state")
         source_graphs = {g["path"]: g for g in asset["source_graphs"]}
         detailed_graphs = {g["path"]: g for g in detailed["graphs"]}
         check(len(detailed_graphs) == len(detailed["graphs"]), "Duplicate detailed graph paths")
-        check(set(source_graphs) == set(detailed_graphs) == set(ai_graphs), "Graph coverage differs")
+        check(set(source_graphs) == set(detailed_graphs), "Graph coverage differs")
         pack_sizes = {}
         if full_directory != directory:
             entry_path = directory / "00_START_HERE.md"
             entry = entry_path.read_text(encoding="utf-8-sig")
             evidence_metadata = load(directory / "20_Evidence/00_Asset.json")
-            check(evidence_metadata == {k: v for k, v in metadata.items() if k != "macro_definitions"}, "Read pack asset evidence differs")
+            check(evidence_metadata == metadata, "Read pack asset evidence differs")
             manifest_path = directory / "01_Manifest.json"
             manifest = load(manifest_path) if manifest_path.exists() else None
             if manifest is not None:
@@ -533,44 +503,31 @@ def validate(asset):
         max_fanout = 0
         for path, source in source_graphs.items():
             graph = detailed_graphs[path]
-            ai = ai_graphs[path]
             nodes = {n["name"]: n for n in graph["nodes"]}
-            ai_nodes = {n["name"]: n for n in ai["nodes"]}
             check(len(nodes) == len(graph["nodes"]), f"Duplicate node name: {path}")
-            check(len(ai_nodes) == len(ai["nodes"]), f"Duplicate AI node name: {path}")
-            check(set(nodes) == set(ai_nodes) == {n["name"] for n in source["nodes"]}, f"Node coverage: {path}")
+            check(set(nodes) == {n["name"] for n in source["nodes"]}, f"Node coverage: {path}")
             aliases = {n["id"]: n["name"] for n in graph["nodes"]}
             check(len(aliases) == len(nodes), f"Duplicate node alias: {path}")
             for original in source["nodes"]:
                 node = nodes[original["name"]]
-                ai_node = ai_nodes[original["name"]]
                 for field in ("node_guid", "class_path", "comment", "is_enabled"):
                     check(node[field] == original[field], f"Source node {original['name']}.{field}")
                 if "local_variables" in original:
                     locals_ = node.get("semantic", {}).get("local_variables", [])
                     check([{k: v.get(k) for k in ("name", "default")} for v in locals_] == original["local_variables"],
                           f"Source local defaults: {original['name']}")
-                for field, value in node.items():
-                    if field not in ("pos_x", "pos_y", "pins"):
-                        check(ai_node.get(field) == value, f"AI node {original['name']}.{field}")
-                check(len(node["pins"]) == len(ai_node["pins"]) == len(original["pins"]), f"Pin count: {original['name']}")
-                for pin, ai_pin, original_pin in zip(node["pins"], ai_node["pins"], original["pins"]):
+                check(len(node["pins"]) == len(original["pins"]), f"Pin count: {original['name']}")
+                for pin, original_pin in zip(node["pins"], original["pins"]):
                     for field, value in original_pin.items():
                         actual = pin["type"][field] if field in ("is_reference", "is_const") else pin[field]
                         check(actual == value, f"Source pin {original['name']}:{pin['index']}.{field}")
-                    expected = {k: v for k, v in pin.items() if k != "linked_to"}
-                    external = [r for r in pin["linked_to"] if not r.get("node_id")]
-                    if external:
-                        expected["external_links"] = external
-                    check(ai_pin == expected, f"AI pin {original['name']}:{pin['index']}")
                 counts["pins"] += len(node["pins"])
                 semantics[node.get("semantic", {}).get("kind", "unclassified")] += 1
                 if node["semantic_status"] == "unclassified":
                     unclassified[node["class_path"]] += 1
             original_edges = Counter((e["kind"], e["from_name"], e["from_index"], e["to_name"], e["to_index"]) for e in source["edges"])
             json_edges = Counter((e["kind"], aliases[e["from_node"]["node_id"]], e["from_pin_index"], aliases[e["to_node"]["node_id"]], e["to_pin_index"]) for e in graph["edges"])
-            ai_edges = Counter((e["kind"], aliases[e["from"]["node_id"]], e["from"]["pin_index"], aliases[e["to"]["node_id"]], e["to"]["pin_index"]) for e in ai["edges"])
-            check(original_edges == json_edges == ai_edges, f"Exact edge multiset: {path}")
+            check(original_edges == json_edges, f"Exact edge multiset: {path}")
             fanout = Counter((e["from_name"], e["from_index"]) for e in source["edges"])
             max_fanout = max(max_fanout, max(fanout.values(), default=0))
             counts["nodes"] += len(nodes)
@@ -581,8 +538,8 @@ def validate(asset):
         if pack_sizes:
             result["read_pack"] = pack_sizes
         result.update(graphs=len(source_graphs), semantic_counts=dict(semantics), unclassified_classes=dict(unclassified),
-                      max_pin_fanout=max_fanout, json_bytes=json_path.stat().st_size, ai_bytes=ai_path.stat().st_size,
-                      ai_path=str(ai_path), dirty_before=asset["dirty_before"], dirty_after=asset["dirty_after"])
+                      max_pin_fanout=max_fanout, json_bytes=json_path.stat().st_size,
+                      dirty_before=asset["dirty_before"], dirty_after=asset["dirty_after"])
     except (KeyError, OSError, ValueError, TypeError) as error:
         errors.append(str(error))
     result.update(passed=not errors, checks=checks, errors=errors)

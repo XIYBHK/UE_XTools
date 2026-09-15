@@ -5,10 +5,10 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "BlueprintTools/X_BlueprintGraphExporter.h"
-#include "BlueprintTools/X_BlueprintAIWriter.h"
 #include "BlueprintTools/X_BlueprintReadPack.h"
 
 #include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
@@ -32,6 +32,8 @@
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
 #include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonWriter.h"
 #include "K2Node_ExecutionSequence.h"
 #include "K2Node_InputKeyEvent.h"
 #include "K2Node_MathExpression.h"
@@ -45,6 +47,14 @@
 
 namespace
 {
+    TMap<FString, FString> BuildReadPackForGraph(const TSharedRef<FJsonObject>& Graph)
+    {
+        const TSharedRef<FJsonObject> Snapshot = MakeShared<FJsonObject>();
+        Snapshot->SetStringField(TEXT("asset_path"), TEXT("/Temp/ReadPackFixture.ReadPackFixture"));
+        Snapshot->SetArrayField(TEXT("graphs"), { MakeShared<FJsonValueObject>(Graph) });
+        return XBlueprintReadPack::Build(Snapshot, FString());
+    }
+
     bool TestSemanticKind(
         FAutomationTestBase& Test,
         UEdGraphNode* Node,
@@ -154,22 +164,26 @@ bool FXBlueprintGraphExporterGraphSnapshotTest::RunTest(const FString& Parameter
     }
     const double Start = FPlatformTime::Seconds();
     const TSharedPtr<FJsonObject> Json = XBlueprintGraphExporterTests::BuildGraphJson(Graph);
-    const FString Markdown = XBlueprintGraphExporterTests::BuildGraphMarkdown(Graph);
+    const TMap<FString, FString> ReadPack = BuildReadPackForGraph(Json.ToSharedRef());
+    const FString& Logic = ReadPack.FindChecked(TEXT("10_Logic/G0001.pseudo.md"));
     const double ElapsedMs = (FPlatformTime::Seconds() - Start) * 1000;
     TestEqual(TEXT("All nodes exported"), static_cast<int32>(Json->GetNumberField(TEXT("node_count"))), 132);
     TestEqual(TEXT("All entry sections retained"), Json->GetArrayField(TEXT("entry_nodes")).Num(), 3);
-    TestEqual(TEXT("Stable repeated Markdown"), XBlueprintGraphExporterTests::BuildGraphMarkdown(Graph), Markdown);
+    const TMap<FString, FString> Repeated = BuildReadPackForGraph(XBlueprintGraphExporterTests::BuildGraphJson(Graph).ToSharedRef());
+    TestEqual(TEXT("Stable repeated logic"), Repeated.FindChecked(TEXT("10_Logic/G0001.pseudo.md")), Logic);
+    TestEqual(TEXT("Stable repeated evidence"), Repeated.FindChecked(TEXT("20_Evidence/G0001.json")), ReadPack.FindChecked(TEXT("20_Evidence/G0001.json")));
     FString JsonText;
     FJsonSerializer::Serialize(Json.ToSharedRef(), TJsonWriterFactory<>::Create(&JsonText));
-    AddInfo(FString::Printf(TEXT("GraphSnapshot JSON=%s Markdown=%s elapsed=%.3fms"),
+    AddInfo(FString::Printf(TEXT("GraphSnapshot JSON=%s Logic=%s elapsed=%.3fms"),
         *FMD5::HashBytes(reinterpret_cast<const uint8*>(*JsonText), JsonText.Len() * sizeof(TCHAR)),
-        *FMD5::HashBytes(reinterpret_cast<const uint8*>(*Markdown), Markdown.Len() * sizeof(TCHAR)), ElapsedMs));
+        *FMD5::HashBytes(reinterpret_cast<const uint8*>(*Logic), Logic.Len() * sizeof(TCHAR)), ElapsedMs));
     Entries[0]->CustomFunctionName = TEXT("ChangedEntry");
     Entries[0]->NodePosY = 2000;
     Entries[0]->FindPinChecked(UEdGraphSchema_K2::PN_Then)->BreakAllPinLinks();
-    const FString Changed = XBlueprintGraphExporterTests::BuildGraphMarkdown(Graph);
+    const TMap<FString, FString> ChangedPack = BuildReadPackForGraph(XBlueprintGraphExporterTests::BuildGraphJson(Graph).ToSharedRef());
+    const FString& Changed = ChangedPack.FindChecked(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Next export observes title mutation"), Changed.Contains(TEXT("ChangedEntry")));
-    TestTrue(TEXT("Next export observes changed layout and links"), Changed != Markdown);
+    TestTrue(TEXT("Next export observes changed layout and links"), Changed != Logic);
     TestTrue(TEXT("Empty graph export"), XBlueprintGraphExporterTests::BuildGraphJson(
         NewObject<UEdGraph>())->GetArrayField(TEXT("nodes")).IsEmpty());
     return true;
@@ -312,42 +326,34 @@ bool FXBlueprintGraphExporterAIFidelityTest::RunTest(const FString& Parameters)
 
     FString Before;
     FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&Before));
-    const FString AI = XBlueprintAIWriter::Write(Snapshot.ToSharedRef());
+    const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), FString());
     FString After;
     FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&After));
     TestEqual(TEXT("Writer does not mutate snapshot"), After, Before);
-    TestEqual(TEXT("Repeated AI export stable"), XBlueprintAIWriter::Write(Snapshot.ToSharedRef()), AI);
-    TArray<FString> Lines;
-    AI.ParseIntoArrayLines(Lines);
-    int32 EdgeCount = 0;
-    int32 NodeCount = 0;
-    for (const FString& Line : Lines)
+    const TMap<FString, FString> Repeated = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), FString());
+    const FString& Evidence = ReadPack.FindChecked(TEXT("20_Evidence/G0001.json"));
+    const FString& Logic = ReadPack.FindChecked(TEXT("10_Logic/G0001.pseudo.md"));
+    TestEqual(TEXT("Repeated evidence stable"), Repeated.FindChecked(TEXT("20_Evidence/G0001.json")), Evidence);
+    TestEqual(TEXT("Repeated logic stable"), Repeated.FindChecked(TEXT("10_Logic/G0001.pseudo.md")), Logic);
+    TSharedPtr<FJsonObject> EvidenceGraph;
+    if (!TestTrue(TEXT("Evidence parseable with escaped comments"),
+        FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Evidence), EvidenceGraph))) return false;
+    for (const TSharedPtr<FJsonValue>& Edge : EvidenceGraph->GetArrayField(TEXT("edges")))
     {
-        if (!Line.StartsWith(TEXT("{"))) continue;
-        TSharedPtr<FJsonObject> Record;
-        if (!TestTrue(TEXT("Every JSON record parseable with escaped comments"),
-            FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line), Record))) return false;
-        if (Record->HasField(TEXT("from")))
-        {
-            ++EdgeCount;
-            TestEqual(TEXT("Fanout source pin identity"), Record->GetObjectField(TEXT("from"))->GetStringField(TEXT("pin_id")), Output->PinId.ToString());
-        }
-        if (Record->HasField(TEXT("pins")))
-        {
-            ++NodeCount;
-            if (Record->GetStringField(TEXT("node_guid")) == Source->NodeGuid.ToString())
-            {
-                TestEqual(TEXT("Author comment preserved"), Record->GetStringField(TEXT("comment")), Source->NodeComment);
-                TestFalse(TEXT("Disabled state preserved"), Record->GetBoolField(TEXT("is_enabled")));
-            }
-            for (const TSharedPtr<FJsonValue>& PinValue : Record->GetArrayField(TEXT("pins")))
-            {
-                TestFalse(TEXT("Internal links represented only in edge table"), PinValue->AsObject()->HasField(TEXT("linked_to")));
-            }
-        }
+        TestEqual(TEXT("Fanout source pin identity"), Edge->AsObject()->GetStringField(TEXT("from_pin_id")), Output->PinId.ToString());
     }
-    TestEqual(TEXT("AI export does not truncate at 100 edges"), EdgeCount, 105);
-    TestEqual(TEXT("AI exports classified and unknown nodes"), NodeCount, 3);
+    for (const TSharedPtr<FJsonValue>& Node : EvidenceGraph->GetArrayField(TEXT("nodes")))
+    {
+        const TSharedPtr<FJsonObject> Record = Node->AsObject();
+        if (Record->GetStringField(TEXT("node_guid")) == Source->NodeGuid.ToString())
+        {
+            TestEqual(TEXT("Author comment preserved"), Record->GetStringField(TEXT("comment")), Source->NodeComment);
+            TestFalse(TEXT("Disabled state preserved"), Record->GetBoolField(TEXT("is_enabled")));
+        }
+        TestTrue(TEXT("Logic contains every classified or unknown node"), Logic.Contains(TEXT("@") + Record->GetStringField(TEXT("id")) + TEXT(":")));
+    }
+    TestEqual(TEXT("ReadPack does not truncate at 100 edges"), EvidenceGraph->GetArrayField(TEXT("edges")).Num(), 105);
+    TestEqual(TEXT("ReadPack exports classified and unknown nodes"), EvidenceGraph->GetArrayField(TEXT("nodes")).Num(), 3);
     TestEqual(TEXT("Original graph links unchanged"), Output->LinkedTo.Num(), 105);
     return true;
 }
@@ -380,26 +386,33 @@ bool FXBlueprintGraphExporterAIControlFlowTest::RunTest(const FString& Parameter
         }
     }
     const TSharedPtr<FJsonObject> Snapshot = XBlueprintGraphExporterTests::BuildBlueprintJson(Blueprint);
-    const FString AI = XBlueprintAIWriter::Write(Snapshot.ToSharedRef());
-    int32 EdgeCount = 0;
+    const TMap<FString, FString> ReadPack = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), FString());
+    const FString& Evidence = ReadPack.FindChecked(TEXT("20_Evidence/G0001.json"));
+    const FString& Logic = ReadPack.FindChecked(TEXT("10_Logic/G0001.pseudo.md"));
+    TSharedPtr<FJsonObject> EvidenceGraph;
+    if (!TestTrue(TEXT("Control flow evidence parses"),
+        FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Evidence), EvidenceGraph))) return false;
     TSet<FString> SourcePins;
+    for (const TSharedPtr<FJsonValue>& Value : EvidenceGraph->GetArrayField(TEXT("edges")))
+    {
+        const TSharedPtr<FJsonObject> Edge = Value->AsObject();
+        SourcePins.Add(Edge->GetObjectField(TEXT("from_node"))->GetStringField(TEXT("node_id")) + TEXT(":")
+            + FString::FromInt(static_cast<int32>(Edge->GetNumberField(TEXT("from_pin_index")))));
+    }
+    int32 NodeCount = 0;
     TArray<FString> Lines;
-    AI.ParseIntoArrayLines(Lines);
+    Logic.ParseIntoArrayLines(Lines);
     for (const FString& Line : Lines)
     {
-        if (!Line.StartsWith(TEXT("{"))) continue;
-        TSharedPtr<FJsonObject> Record;
-        if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line), Record) && Record->HasField(TEXT("from")))
+        if (Line.StartsWith(TEXT("@")))
         {
-            ++EdgeCount;
-            const TSharedPtr<FJsonObject> From = Record->GetObjectField(TEXT("from"));
-            SourcePins.Add(From->GetStringField(TEXT("node_id")) + TEXT(":") + FString::FromInt(static_cast<int32>(From->GetNumberField(TEXT("pin_index")))));
+            ++NodeCount;
         }
     }
-    TestEqual(TEXT("Both shared exits and cycle retained without entry roots"), EdgeCount, 3);
+    TestEqual(TEXT("Both shared exits and cycle retained without entry roots"), EvidenceGraph->GetArrayField(TEXT("edges")).Num(), 3);
     TestEqual(TEXT("Distinct exec pin identities even with invalid GUIDs"), SourcePins.Num(), 3);
-    TestTrue(TEXT("Reflected node state included"), AI.Contains(TEXT("reflected_properties")));
-    TestFalse(TEXT("AI avoids repeated reachability expansion"), AI.Contains(TEXT("\"exec_chain\":")));
+    TestTrue(TEXT("Reflected node state included"), Evidence.Contains(TEXT("reflected_properties")));
+    TestEqual(TEXT("Logic declares shared and cyclic nodes only once"), NodeCount, 2);
     return true;
 }
 
@@ -499,13 +512,19 @@ bool FXBlueprintGraphExporterAIFileExportTest::RunTest(const FString& Parameters
     TestTrue(TEXT("Output directory uses asset name and stable digest"), DirectoryName.StartsWith(ExpectedDirectoryPrefix));
     TestFalse(TEXT("Output directory does not flatten package path"), DirectoryName.Contains(TEXT("_Temp_")));
     FString OriginalJson;
-    FString OriginalAI;
     TestTrue(TEXT("JSON file readable"), FFileHelper::LoadFileToString(OriginalJson, *JsonPath));
-    TestTrue(TEXT("AI file readable"), FFileHelper::LoadFileToString(OriginalAI, *AIPath));
+    TestFalse(TEXT("Full JSON uses LF independently of engine LINE_TERMINATOR"), OriginalJson.Contains(TEXT("\r")));
+    TestFalse(TEXT("New export has no legacy AI Markdown"), IFileManager::Get().FileExists(*AIPath));
+    TestFalse(TEXT("New export has no legacy human Markdown"), IFileManager::Get().FileExists(*MarkdownPath));
     FString StartContent;
     FString AssetEvidence;
     TestTrue(TEXT("Start file readable"), FFileHelper::LoadFileToString(StartContent, *StartPath));
     TestTrue(TEXT("Asset evidence readable"), FFileHelper::LoadFileToString(AssetEvidence, *AssetEvidencePath));
+    // Simulate an earlier bundle. Retire only its known generated filenames, never user notes.
+    const FString UserNotesPath = Directory / TEXT("90_Full/UserNotes.md");
+    TestTrue(TEXT("Seed legacy AI Markdown"), FFileHelper::SaveStringToFile(TEXT("legacy AI"), *AIPath));
+    TestTrue(TEXT("Seed legacy human Markdown"), FFileHelper::SaveStringToFile(TEXT("legacy Markdown"), *MarkdownPath));
+    TestTrue(TEXT("Seed unrelated user notes"), FFileHelper::SaveStringToFile(TEXT("user notes"), *UserNotesPath));
     Blueprint->ParentClass = UObject::StaticClass();
     IFileManager& Files = IFileManager::Get();
     IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
@@ -515,23 +534,41 @@ bool FXBlueprintGraphExporterAIFileExportTest::RunTest(const FString& Parameters
     {
         TestFalse(TEXT("Unwritable bundle must fail"), XBlueprintGraphExporterTests::ExportBlueprintFiles(Blueprint, Directory, Error));
         FString CurrentJson;
-        FString CurrentAI;
+        FString CurrentEvidence;
+        FString CurrentLegacy;
         FString CurrentStart;
         FFileHelper::LoadFileToString(CurrentJson, *JsonPath);
-        FFileHelper::LoadFileToString(CurrentAI, *AIPath);
+        FFileHelper::LoadFileToString(CurrentEvidence, *AssetEvidencePath);
+        FFileHelper::LoadFileToString(CurrentLegacy, *AIPath);
         FFileHelper::LoadFileToString(CurrentStart, *StartPath);
         TestEqual(TEXT("Failed export preserves old JSON"), CurrentJson, OriginalJson);
-        TestEqual(TEXT("Failed export preserves old AI context"), CurrentAI, OriginalAI);
+        TestEqual(TEXT("Failed export preserves old evidence"), CurrentEvidence, AssetEvidence);
+        TestEqual(TEXT("Failed export preserves legacy views"), CurrentLegacy, FString(TEXT("legacy AI")));
         TestEqual(TEXT("Failed export preserves old entry"), CurrentStart, StartContent);
         TestTrue(TEXT("Restore output permissions"), PlatformFile.SetReadOnly(*StartPath, false));
     }
+    const bool bLegacyProtected = PlatformFile.SetReadOnly(*AIPath, true);
+    TestTrue(TEXT("Protect retired output"), bLegacyProtected);
+    if (bLegacyProtected)
+    {
+        TestFalse(TEXT("Unwritable retired view must fail before replacing bundle"), XBlueprintGraphExporterTests::ExportBlueprintFiles(Blueprint, Directory, Error));
+        FString CurrentJson;
+        FFileHelper::LoadFileToString(CurrentJson, *JsonPath);
+        TestEqual(TEXT("Retirement failure preserves old snapshot"), CurrentJson, OriginalJson);
+        TestTrue(TEXT("Restore retired output permissions"), PlatformFile.SetReadOnly(*AIPath, false));
+    }
     TestTrue(TEXT("Bundle can be replaced after failure"), XBlueprintGraphExporterTests::ExportBlueprintFiles(Blueprint, Directory, Error));
-    FString UpdatedAI;
-    FFileHelper::LoadFileToString(UpdatedAI, *AIPath);
-    TestTrue(TEXT("New AI file observes source change"), UpdatedAI != OriginalAI);
+    FString UpdatedEvidence;
+    FFileHelper::LoadFileToString(UpdatedEvidence, *AssetEvidencePath);
+    TestTrue(TEXT("New evidence observes source change"), UpdatedEvidence != AssetEvidence);
+    TestFalse(TEXT("Successful replacement retires old AI view"), Files.FileExists(*AIPath));
+    TestFalse(TEXT("Successful replacement retires old human view"), Files.FileExists(*MarkdownPath));
+    FString UserNotes;
+    TestTrue(TEXT("Unrelated notes remain readable"), FFileHelper::LoadFileToString(UserNotes, *UserNotesPath));
+    TestEqual(TEXT("Unrelated notes remain unchanged"), UserNotes, FString(TEXT("user notes")));
     TArray<FString> ExportedFiles;
     Files.FindFilesRecursive(ExportedFiles, *Directory, TEXT("*"), true, false);
-    TestEqual(TEXT("Fixture has eight files including standalone reading contract"), ExportedFiles.Num(), 8);
+    TestEqual(TEXT("Fixture has six generated files plus unrelated notes"), ExportedFiles.Num(), 7);
     const FString RootDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("XTools/BlueprintExports"));
     const FString RootPrefix = RootDirectory.EndsWith(TEXT("/")) || RootDirectory.EndsWith(TEXT("\\")) ? RootDirectory : RootDirectory + TEXT("/");
     TestTrue(TEXT("Remove test-owned export directory"), Directory.StartsWith(RootPrefix)
@@ -610,7 +647,9 @@ bool FXBlueprintGraphExporterAssetIdentityTest::RunTest(const FString& Parameter
     AManifest->SetStringField(TEXT("snapshot_id"), TEXT("current-in-memory-snapshot"));
     const auto FirstIndex = Parse(XBlueprintGraphExporterTests::BuildRootIndex(IndexRoot / TEXT("not_created"), AManifest));
     TestEqual(TEXT("First export indexes in-memory package before any disk files exist"), FirstIndex->GetArrayField(TEXT("packages")).Num(), 1);
-    const auto Index = Parse(XBlueprintGraphExporterTests::BuildRootIndex(IndexRoot, AManifest));
+    const FString IndexText = XBlueprintGraphExporterTests::BuildRootIndex(IndexRoot, AManifest);
+    TestFalse(TEXT("Root JSON index uses LF independently of engine LINE_TERMINATOR"), IndexText.Contains(TEXT("\r")));
+    const auto Index = Parse(IndexText);
     TestEqual(TEXT("Machine index version"), Index->GetIntegerField(TEXT("format_version")), 1);
     TestEqual(TEXT("Machine index scope is explicitly local"), Index->GetStringField(TEXT("scope")), FString(TEXT("direct_child_export_packages")));
     TestEqual(TEXT("Machine index deduplicates old copies"), Index->GetArrayField(TEXT("packages")).Num(), 2);

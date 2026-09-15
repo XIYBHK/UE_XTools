@@ -4,7 +4,6 @@
 */
 
 #include "BlueprintTools/X_BlueprintGraphExporter.h"
-#include "BlueprintTools/X_BlueprintAIWriter.h"
 #include "BlueprintTools/X_BlueprintReadPack.h"
 
 #include "X_AssetEditor.h"
@@ -469,105 +468,6 @@ namespace
     FString NodeTitle(const UEdGraphNode* Node)
     {
         return Node ? Node->GetNodeTitle(ENodeTitleType::ListView).ToString() : FString();
-    }
-
-    bool IsKnotNode(const UEdGraphNode* Node)
-    {
-        return Cast<UK2Node_Knot>(Node) != nullptr;
-    }
-
-    FString NodeTag(const UEdGraphNode* Node)
-    {
-        if (Cast<UK2Node_Timeline>(Node))
-        {
-            return TEXT(" [Timeline]");
-        }
-        if (Cast<UK2Node_IfThenElse>(Node))
-        {
-            return TEXT(" [Branch]");
-        }
-        if (Cast<UK2Node_ExecutionSequence>(Node))
-        {
-            return TEXT(" [Sequence]");
-        }
-        if (Cast<UK2Node_Switch>(Node))
-        {
-            return TEXT(" [Switch]");
-        }
-        if (Cast<UK2Node_Select>(Node))
-        {
-            return TEXT(" [Select]");
-        }
-        if (Cast<UK2Node_DynamicCast>(Node))
-        {
-            return TEXT(" [Cast]");
-        }
-        if (Cast<UK2Node_ConstructObjectFromClass>(Node) || Cast<UK2Node_SpawnActor>(Node))
-        {
-            return TEXT(" [Spawn/Construct]");
-        }
-        if (const UK2Node_CallFunction* CallFunction = Cast<UK2Node_CallFunction>(Node))
-        {
-            if (CallFunction->FunctionReference.GetMemberName() == TEXT("Delay"))
-            {
-                return TEXT(" [Delay]");
-            }
-        }
-        return FString();
-    }
-
-    FString NodeLabel(const UEdGraphNode* Node, const TMap<const UEdGraphNode*, FString>& NodeIds)
-    {
-        FString Label = NodeTitle(Node) + NodeTag(Node);
-        const FString* NodeId = NodeIds.Find(Node);
-        if (!NodeId)
-        {
-            return Label;
-        }
-        return FString::Printf(TEXT("%s [%s]"), *Label, **NodeId);
-    }
-
-    void CollectPinsAfterKnot(const UEdGraphPin* Pin, TArray<const UEdGraphPin*>& OutPins, TSet<const UEdGraphNode*>& VisitedKnots)
-    {
-        const UEdGraphNode* Node = Pin ? Pin->GetOwningNode() : nullptr;
-        if (!Pin || !IsKnotNode(Node))
-        {
-            if (Pin)
-            {
-                OutPins.Add(Pin);
-            }
-            return;
-        }
-
-        if (VisitedKnots.Contains(Node))
-        {
-            return;
-        }
-        VisitedKnots.Add(Node);
-
-        for (const UEdGraphPin* CandidatePin : Node->Pins)
-        {
-            if (!CandidatePin || CandidatePin->Direction != EGPD_Output || CandidatePin->PinType.PinCategory != Pin->PinType.PinCategory)
-            {
-                continue;
-            }
-            for (const UEdGraphPin* LinkedPin : CandidatePin->LinkedTo)
-            {
-                CollectPinsAfterKnot(LinkedPin, OutPins, VisitedKnots);
-            }
-        }
-    }
-
-    TArray<const UEdGraphPin*> ResolveDisplayPinsAfterKnot(const UEdGraphPin* Pin)
-    {
-        TArray<const UEdGraphPin*> Pins;
-        TSet<const UEdGraphNode*> VisitedKnots;
-        CollectPinsAfterKnot(Pin, Pins, VisitedKnots);
-        if (Pins.Num() == 0 && Pin)
-        {
-            Pins.Add(Pin);
-        }
-        return Pins;
     }
 
     TSharedPtr<FJsonObject> PinTypeToJson(const FEdGraphPinType& PinType)
@@ -2587,214 +2487,6 @@ namespace
         return Components;
     }
 
-    void AppendComponentPropertiesMarkdown(
-        FString& Markdown,
-        const UActorComponent* ComponentTemplate,
-        const int32 PropertyLimit)
-    {
-        if (!ComponentTemplate || PropertyLimit <= 0)
-        {
-            return;
-        }
-
-        int32 ExportedCount = 0;
-        for (TFieldIterator<FProperty> PropertyIt(ComponentTemplate->GetClass(), EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
-        {
-            const FProperty* Property = *PropertyIt;
-            if (!ShouldExportComponentProperty(Property))
-            {
-                continue;
-            }
-
-            FString ValueText;
-            Property->ExportTextItem_Direct(
-                ValueText,
-                Property->ContainerPtrToValuePtr<void>(ComponentTemplate),
-                nullptr,
-                const_cast<UActorComponent*>(ComponentTemplate),
-                PPF_None);
-
-            Markdown += FString::Printf(
-                TEXT("  - `%s` (%s, %s): `%s`\n"),
-                *Property->GetName(),
-                *Property->GetCPPType(),
-                *PropertyFlagsToString(Property->GetPropertyFlags()),
-                *ValueText);
-            ++ExportedCount;
-            if (ExportedCount >= PropertyLimit)
-            {
-                Markdown += FString::Printf(TEXT("  - ... 属性较多，Markdown 仅显示前 %d 项；JSON 包含完整属性列表\n"), PropertyLimit);
-                break;
-            }
-        }
-    }
-
-    void AppendOneComponentMarkdown(
-        FString& Markdown,
-        const UActorComponent* ComponentTemplate,
-        const FName VariableName,
-        const FName ParentVariableName,
-        const bool bFromSimpleConstructionScript)
-    {
-        if (!ComponentTemplate)
-        {
-            return;
-        }
-
-        const FString DisplayName = VariableName.IsNone() ? ComponentTemplate->GetName() : VariableName.ToString();
-        Markdown += FString::Printf(
-            TEXT("### %s\n"),
-            *DisplayName);
-        Markdown += FString::Printf(
-            TEXT("- 类: `%s`\n"),
-            ComponentTemplate->GetClass() ? *ComponentTemplate->GetClass()->GetPathName() : TEXT(""));
-        Markdown += FString::Printf(
-            TEXT("- 模板路径: `%s`\n"),
-            *ComponentTemplate->GetPathName());
-        Markdown += FString::Printf(
-            TEXT("- 来源: `%s`\n"),
-            bFromSimpleConstructionScript ? TEXT("SimpleConstructionScript") : TEXT("ComponentTemplates"));
-        Markdown += FString::Printf(
-            TEXT("- AutoActivate: `%s`, EditableWhenInherited: `%s`\n"),
-            ComponentTemplate->bAutoActivate ? TEXT("true") : TEXT("false"),
-            ComponentTemplate->bEditableWhenInherited ? TEXT("true") : TEXT("false"));
-        if (!ParentVariableName.IsNone())
-        {
-            Markdown += FString::Printf(TEXT("- 父组件: `%s`\n"), *ParentVariableName.ToString());
-        }
-
-        if (const USceneComponent* SceneComponent = Cast<USceneComponent>(ComponentTemplate))
-        {
-            const FString MobilityText = StaticEnum<EComponentMobility::Type>()
-                ? StaticEnum<EComponentMobility::Type>()->GetNameStringByValue(static_cast<int64>(SceneComponent->Mobility.GetValue()))
-                : FString::FromInt(static_cast<int32>(SceneComponent->Mobility.GetValue()));
-            Markdown += FString::Printf(
-                TEXT("- 相对变换: Location `%s`, Rotation `%s`, Scale `%s`\n"),
-                *SceneComponent->GetRelativeLocation().ToString(),
-                *SceneComponent->GetRelativeRotation().ToString(),
-                *SceneComponent->GetRelativeScale3D().ToString());
-            Markdown += FString::Printf(
-                TEXT("- Mobility: `%s`, AttachParent: `%s`, Socket: `%s`\n"),
-                *MobilityText,
-                SceneComponent->GetAttachParent() ? *SceneComponent->GetAttachParent()->GetName() : TEXT(""),
-                *SceneComponent->GetAttachSocketName().ToString());
-        }
-
-        Markdown += TEXT("- 关键参数:\n");
-        AppendComponentPropertiesMarkdown(Markdown, ComponentTemplate, 20);
-        Markdown += TEXT("\n");
-    }
-
-    void AppendComponentTreeNodeMarkdown(FString& Markdown, const USCS_Node* Node, int32 Depth)
-    {
-        if (!Node)
-        {
-            return;
-        }
-
-        const UActorComponent* ComponentTemplate = Node->ComponentTemplate;
-        const UClass* ComponentClass = Node->ComponentClass.Get();
-        const FString Indent = FString::ChrN(Depth * 2, TEXT(' '));
-        const FString VariableName = Node->GetVariableName().ToString();
-        const FString ClassName = ComponentClass
-            ? ComponentClass->GetPathName()
-            : (ComponentTemplate && ComponentTemplate->GetClass() ? ComponentTemplate->GetClass()->GetPathName() : FString());
-
-        Markdown += FString::Printf(
-            TEXT("%s- `%s` : `%s`\n"),
-            *Indent,
-            *VariableName,
-            *ClassName);
-        if (!Node->ParentComponentOrVariableName.IsNone())
-        {
-            Markdown += FString::Printf(
-                TEXT("%s  - 父组件: `%s`\n"),
-                *Indent,
-                *Node->ParentComponentOrVariableName.ToString());
-        }
-        if (!Node->AttachToName.IsNone())
-        {
-            Markdown += FString::Printf(
-                TEXT("%s  - Socket/Bone: `%s`\n"),
-                *Indent,
-                *Node->AttachToName.ToString());
-        }
-        if (!ComponentTemplate)
-        {
-            Markdown += FString::Printf(TEXT("%s  - 无组件模板\n"), *Indent);
-        }
-
-        for (const USCS_Node* ChildNode : Node->GetChildNodes())
-        {
-            AppendComponentTreeNodeMarkdown(Markdown, ChildNode, Depth + 1);
-        }
-    }
-
-    void AppendComponentsMarkdown(FString& Markdown, const UBlueprint* Blueprint)
-    {
-        if (!Blueprint)
-        {
-            return;
-        }
-
-        TSet<const UActorComponent*> ExportedComponents;
-        int32 ComponentCount = 0;
-        FString ComponentTreeMarkdown;
-        FString ComponentMarkdown;
-
-        if (const USimpleConstructionScript* SimpleConstructionScript = Blueprint->SimpleConstructionScript)
-        {
-            ComponentTreeMarkdown += TEXT("### SCS 树\n\n");
-            for (const USCS_Node* RootNode : SimpleConstructionScript->GetRootNodes())
-            {
-                AppendComponentTreeNodeMarkdown(ComponentTreeMarkdown, RootNode, 0);
-            }
-            ComponentTreeMarkdown += TEXT("\n");
-
-            for (const USCS_Node* Node : SimpleConstructionScript->GetAllNodes())
-            {
-                const UActorComponent* ComponentTemplate = Node ? Node->ComponentTemplate : nullptr;
-                if (!ComponentTemplate)
-                {
-                    continue;
-                }
-
-                AppendOneComponentMarkdown(
-                    ComponentMarkdown,
-                    ComponentTemplate,
-                    Node->GetVariableName(),
-                    Node->ParentComponentOrVariableName,
-                    true);
-                ExportedComponents.Add(ComponentTemplate);
-                ++ComponentCount;
-            }
-        }
-
-        for (const UActorComponent* ComponentTemplate : Blueprint->ComponentTemplates)
-        {
-            if (!ComponentTemplate || ExportedComponents.Contains(ComponentTemplate))
-            {
-                continue;
-            }
-
-            AppendOneComponentMarkdown(ComponentMarkdown, ComponentTemplate, NAME_None, NAME_None, false);
-            ExportedComponents.Add(ComponentTemplate);
-            ++ComponentCount;
-        }
-
-        Markdown += TEXT("## 组件树\n\n");
-        Markdown += FString::Printf(TEXT("- 组件数: %d\n\n"), ComponentCount);
-        Markdown += ComponentTreeMarkdown;
-        if (ComponentCount == 0)
-        {
-            Markdown += TEXT("- 无组件模板信息\n\n");
-            return;
-        }
-
-        Markdown += TEXT("### 组件详情\n\n");
-        Markdown += ComponentMarkdown;
-    }
-
     TSharedPtr<FJsonObject> RichCurveKeyToJson(const FRichCurveKey& Key)
     {
         TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
@@ -2971,107 +2663,6 @@ namespace
         return Json;
     }
 
-    FString CompactFloat(float Value)
-    {
-        return FString::SanitizeFloat(Value);
-    }
-
-    void AppendRichCurveMarkdown(FString& Markdown, const FRichCurve* Curve, const FString& Prefix)
-    {
-        if (!Curve)
-        {
-            Markdown += FString::Printf(TEXT("%s- 无曲线\n"), *Prefix);
-            return;
-        }
-
-        const TArray<FRichCurveKey>& Keys = Curve->GetConstRefOfKeys();
-        if (Keys.IsEmpty())
-        {
-            Markdown += FString::Printf(TEXT("%s- 无键帧\n"), *Prefix);
-            return;
-        }
-
-        for (const FRichCurveKey& Key : Keys)
-        {
-            Markdown += FString::Printf(
-                TEXT("%s- t=%s, value=%s, interp=%s, tangent=%s, arrive=%s, leave=%s\n"),
-                *Prefix,
-                *CompactFloat(Key.Time),
-                *CompactFloat(Key.Value),
-                *RichCurveInterpModeToString(Key.InterpMode),
-                *RichCurveTangentModeToString(Key.TangentMode),
-                *CompactFloat(Key.ArriveTangent),
-                *CompactFloat(Key.LeaveTangent));
-        }
-    }
-
-    void AppendTimelinesMarkdown(FString& Markdown, const UBlueprint* Blueprint)
-    {
-        if (!Blueprint || Blueprint->Timelines.IsEmpty())
-        {
-            return;
-        }
-
-        Markdown += TEXT("## Timeline曲线\n\n");
-        for (const UTimelineTemplate* Timeline : Blueprint->Timelines)
-        {
-            if (!Timeline)
-            {
-                continue;
-            }
-
-            Markdown += FString::Printf(
-                TEXT("### %s\n"),
-                *Timeline->GetVariableName().ToString());
-            Markdown += FString::Printf(
-                TEXT("- 长度: %s, 模式: %s, 自动播放: %s, 循环: %s\n"),
-                *CompactFloat(Timeline->TimelineLength),
-                *TimelineLengthModeToString(Timeline->LengthMode),
-                Timeline->bAutoPlay ? TEXT("true") : TEXT("false"),
-                Timeline->bLoop ? TEXT("true") : TEXT("false"));
-
-            for (const FTTFloatTrack& Track : Timeline->FloatTracks)
-            {
-                Markdown += FString::Printf(TEXT("- Float轨道 `%s`\n"), *Track.GetTrackName().ToString());
-                const UCurveFloat* Curve = Track.CurveFloat.Get();
-                AppendRichCurveMarkdown(Markdown, Curve ? &Curve->FloatCurve : nullptr, TEXT("  "));
-            }
-
-            for (const FTTVectorTrack& Track : Timeline->VectorTracks)
-            {
-                Markdown += FString::Printf(TEXT("- Vector轨道 `%s`\n"), *Track.GetTrackName().ToString());
-                const UCurveVector* Curve = Track.CurveVector.Get();
-                const TCHAR* ComponentNames[] = { TEXT("x"), TEXT("y"), TEXT("z") };
-                for (int32 Index = 0; Index < 3; ++Index)
-                {
-                    Markdown += FString::Printf(TEXT("  - %s\n"), ComponentNames[Index]);
-                    AppendRichCurveMarkdown(Markdown, Curve ? &Curve->FloatCurves[Index] : nullptr, TEXT("    "));
-                }
-            }
-
-            for (const FTTLinearColorTrack& Track : Timeline->LinearColorTracks)
-            {
-                Markdown += FString::Printf(TEXT("- LinearColor轨道 `%s`\n"), *Track.GetTrackName().ToString());
-                const UCurveLinearColor* Curve = Track.CurveLinearColor.Get();
-                const TCHAR* ComponentNames[] = { TEXT("r"), TEXT("g"), TEXT("b"), TEXT("a") };
-                for (int32 Index = 0; Index < 4; ++Index)
-                {
-                    Markdown += FString::Printf(TEXT("  - %s\n"), ComponentNames[Index]);
-                    AppendRichCurveMarkdown(Markdown, Curve ? &Curve->FloatCurves[Index] : nullptr, TEXT("    "));
-                }
-            }
-
-            for (const FTTEventTrack& Track : Timeline->EventTracks)
-            {
-                Markdown += FString::Printf(TEXT("- Event轨道 `%s` -> `%s`\n"), *Track.GetTrackName().ToString(), *Track.GetFunctionName().ToString());
-                const UCurveFloat* Curve = Track.CurveKeys.Get();
-                AppendRichCurveMarkdown(Markdown, Curve ? &Curve->FloatCurve : nullptr, TEXT("  "));
-            }
-
-            Markdown += TEXT("\n");
-        }
-    }
-
     TArray<TSharedPtr<FJsonValue>> BuildTimelinesJson(const UBlueprint* Blueprint)
     {
         TArray<TSharedPtr<FJsonValue>> Timelines;
@@ -3223,277 +2814,6 @@ namespace
         return Root;
     }
 
-    // 生命周期限制在单张图的一次 Markdown 导出；下一次导出重新读取节点与连线。
-    struct FGraphDisplayCache
-    {
-        explicit FGraphDisplayCache(const TMap<const UEdGraphNode*, FString>& InNodeIds)
-            : NodeIds(InNodeIds) {}
-
-        const FString& Label(const UEdGraphNode* Node)
-        {
-            if (const FString* Existing = Labels.Find(Node))
-            {
-                return *Existing;
-            }
-            return Labels.Add(Node, NodeLabel(Node, NodeIds));
-        }
-
-        const TArray<const UEdGraphPin*>& DisplayPins(const UEdGraphPin* Pin)
-        {
-            if (const TArray<const UEdGraphPin*>* Existing = ResolvedPins.Find(Pin))
-            {
-                return *Existing;
-            }
-            return ResolvedPins.Add(Pin, ResolveDisplayPinsAfterKnot(Pin));
-        }
-
-        const TMap<const UEdGraphNode*, FString>& NodeIds;
-        TMap<const UEdGraphNode*, FString> Labels;
-        TMap<const UEdGraphPin*, TArray<const UEdGraphPin*>> ResolvedPins;
-    };
-
-    void AppendExecChainMarkdown(
-        FString& Markdown,
-        const TArray<UEdGraphNode*>& SortedNodes,
-        FGraphDisplayCache& DisplayCache,
-        TSet<const UEdGraphNode*>& OutReachableNodes)
-    {
-        TArray<const UEdGraphNode*> Entries;
-        for (const UEdGraphNode* Node : SortedNodes)
-        {
-            if (IsEntryNode(Node))
-            {
-                Entries.Add(Node);
-            }
-        }
-
-        if (Entries.Num() == 0)
-        {
-            Markdown += TEXT("- 未发现入口节点，无法生成入口可达执行链\n");
-            return;
-        }
-
-        for (const UEdGraphNode* EntryNode : Entries)
-        {
-            Markdown += FString::Printf(TEXT("#### %s\n"), *DisplayCache.Label(EntryNode));
-
-            TArray<const UEdGraphNode*> Queue;
-            TSet<const UEdGraphNode*> QueuedNodes;
-            Queue.Add(EntryNode);
-            QueuedNodes.Add(EntryNode);
-
-            int32 ExecEdgeCount = 0;
-            int32 Cursor = 0;
-            while (Cursor < Queue.Num())
-            {
-                const UEdGraphNode* Node = Queue[Cursor++];
-                if (!Node)
-                {
-                    continue;
-                }
-
-                OutReachableNodes.Add(Node);
-                for (const UEdGraphPin* Pin : Node->Pins)
-                {
-                    if (!Pin || Pin->Direction != EGPD_Output || !IsExecPin(Pin))
-                    {
-                        continue;
-                    }
-
-                    for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
-                    {
-                        const UEdGraphNode* TargetNode = LinkedPin ? LinkedPin->GetOwningNode() : nullptr;
-                        if (!TargetNode)
-                        {
-                            continue;
-                        }
-
-                        if (!IsKnotNode(Node))
-                        {
-                            for (const UEdGraphPin* DisplayPin : DisplayCache.DisplayPins(LinkedPin))
-                            {
-                                const UEdGraphNode* DisplayTargetNode = DisplayPin ? DisplayPin->GetOwningNode() : nullptr;
-                                if (!DisplayTargetNode)
-                                {
-                                    continue;
-                                }
-
-                                Markdown += FString::Printf(
-                                    TEXT("- %s.`%s` -> %s.`%s`\n"),
-                                    *DisplayCache.Label(Node),
-                                    *Pin->PinName.ToString(),
-                                    *DisplayCache.Label(DisplayTargetNode),
-                                    *DisplayPin->PinName.ToString());
-                                ++ExecEdgeCount;
-                            }
-                        }
-
-                        if (!QueuedNodes.Contains(TargetNode))
-                        {
-                            Queue.Add(TargetNode);
-                            QueuedNodes.Add(TargetNode);
-                        }
-                    }
-                }
-            }
-
-            if (ExecEdgeCount == 0)
-            {
-                Markdown += TEXT("- 无后续执行线\n");
-            }
-        }
-    }
-
-    void AppendUnreachableNodesMarkdown(
-        FString& Markdown,
-        const TArray<UEdGraphNode*>& SortedNodes,
-        FGraphDisplayCache& DisplayCache,
-        const TSet<const UEdGraphNode*>& ReachableNodes)
-    {
-        int32 Count = 0;
-        for (const UEdGraphNode* Node : SortedNodes)
-        {
-            if (!Node || IsEntryNode(Node) || !HasExecInputPin(Node) || ReachableNodes.Contains(Node))
-            {
-                continue;
-            }
-
-            Markdown += FString::Printf(TEXT("- %s\n"), *DisplayCache.Label(Node));
-            ++Count;
-        }
-
-        if (Count == 0)
-        {
-            Markdown += TEXT("- 无\n");
-        }
-    }
-
-    void AppendGraphMarkdown(FString& Markdown, UBlueprint* Blueprint, UEdGraph* Graph, FBlueprintGraphCache& GraphCache)
-    {
-        if (!Graph)
-        {
-            return;
-        }
-
-        const TArray<UEdGraphNode*>& SortedNodes = GraphCache.Nodes(Graph);
-        TMap<const UEdGraphNode*, FString> NodeIds;
-        BuildNodeIds(SortedNodes, NodeIds);
-        FGraphDisplayCache DisplayCache(NodeIds);
-
-        Markdown += FString::Printf(TEXT("## %s (%s)\n\n"), *Graph->GetName(), *GraphTypeToString(Blueprint, Graph));
-        Markdown += FString::Printf(TEXT("- 节点数: %d\n\n"), NodeIds.Num());
-
-        Markdown += TEXT("### 入口节点\n");
-        int32 EntryCount = 0;
-        for (const UEdGraphNode* Node : SortedNodes)
-        {
-            if (IsEntryNode(Node))
-            {
-                Markdown += FString::Printf(TEXT("- %s\n"), *DisplayCache.Label(Node));
-                ++EntryCount;
-            }
-        }
-        if (EntryCount == 0)
-        {
-            Markdown += TEXT("- 未发现入口节点\n");
-        }
-        Markdown += TEXT("\n");
-
-        Markdown += TEXT("### 入口可达执行流\n");
-        TSet<const UEdGraphNode*> ReachableNodes;
-        AppendExecChainMarkdown(Markdown, SortedNodes, DisplayCache, ReachableNodes);
-        Markdown += TEXT("\n");
-
-        Markdown += TEXT("### 孤立执行节点\n");
-        AppendUnreachableNodesMarkdown(Markdown, SortedNodes, DisplayCache, ReachableNodes);
-        Markdown += TEXT("\n");
-
-        Markdown += TEXT("### 数据连接摘要\n");
-        int32 DataEdgeCount = 0;
-        const int32 DataEdgeLimit = 100;
-        for (const UEdGraphNode* Node : SortedNodes)
-        {
-            if (!Node || IsKnotNode(Node) || DataEdgeCount >= DataEdgeLimit)
-            {
-                continue;
-            }
-            for (const UEdGraphPin* Pin : Node->Pins)
-            {
-                if (DataEdgeCount >= DataEdgeLimit)
-                {
-                    break;
-                }
-                if (!Pin || Pin->Direction != EGPD_Output || IsExecPin(Pin))
-                {
-                    continue;
-                }
-                for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
-                {
-                    for (const UEdGraphPin* DisplayPin : DisplayCache.DisplayPins(LinkedPin))
-                    {
-                        const UEdGraphNode* TargetNode = DisplayPin ? DisplayPin->GetOwningNode() : nullptr;
-                        if (!TargetNode)
-                        {
-                            continue;
-                        }
-                        Markdown += FString::Printf(
-                            TEXT("- %s.`%s` -> %s.`%s`\n"),
-                            *DisplayCache.Label(Node),
-                            *Pin->PinName.ToString(),
-                            *DisplayCache.Label(TargetNode),
-                            *DisplayPin->PinName.ToString());
-                        ++DataEdgeCount;
-                        if (DataEdgeCount >= DataEdgeLimit)
-                        {
-                            break;
-                        }
-                    }
-                    if (DataEdgeCount >= DataEdgeLimit)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-        if (DataEdgeCount == 0)
-        {
-            Markdown += TEXT("- 无\n");
-        }
-        else if (DataEdgeCount >= DataEdgeLimit)
-        {
-            Markdown += FString::Printf(TEXT("- ... 已截断，仅显示前 %d 条数据连接\n"), DataEdgeLimit);
-        }
-        Markdown += TEXT("\n");
-    }
-
-    FString BlueprintToMarkdown(UBlueprint* Blueprint, FBlueprintGraphCache& GraphCache)
-    {
-        FString Markdown;
-        Markdown += FString::Printf(TEXT("# %s 蓝图逻辑流\n\n"), *Blueprint->GetName());
-        Markdown += FString::Printf(TEXT("- 资产路径: `%s`\n"), *Blueprint->GetPathName());
-        Markdown += FString::Printf(TEXT("- 父类: `%s`\n\n"), Blueprint->ParentClass ? *Blueprint->ParentClass->GetPathName() : TEXT(""));
-
-        const TArray<UEdGraph*>& Graphs = GraphCache.Graphs;
-        int32 ValidGraphCount = 0;
-        for (const UEdGraph* Graph : Graphs)
-        {
-            if (Graph)
-            {
-                ++ValidGraphCount;
-            }
-        }
-        Markdown += FString::Printf(TEXT("- 图表数: %d\n\n"), ValidGraphCount);
-
-        AppendComponentsMarkdown(Markdown, Blueprint);
-        AppendTimelinesMarkdown(Markdown, Blueprint);
-
-        for (UEdGraph* Graph : Graphs)
-        {
-            AppendGraphMarkdown(Markdown, Blueprint, Graph, GraphCache);
-        }
-        return Markdown;
-    }
-
     FString BlueprintExportDirectoryName(const FString& AssetPath, const FString& AssetName)
     {
         FTCHARToUTF8 Utf8Path(*AssetPath);
@@ -3583,6 +2903,7 @@ namespace
             Index->SetArrayField(TEXT("unindexed_directories"), Unindexed);
             OutIndex->Reset();
             FJsonSerializer::Serialize(Index, TJsonWriterFactory<>::Create(OutIndex));
+            OutIndex->ReplaceInline(TEXT("\r\n"), TEXT("\n"));
             *OutIndex += TEXT("\n");
             RootEntry += TEXT("\n机器可读目录见 `00_INDEX.json`；仅覆盖本目录直接资产包，未索引目录单独列出，非项目完整资产索引。\n");
         }
@@ -3632,8 +2953,6 @@ namespace
         }
         TMap<FString, FString> Outputs;
         Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".json"), TEXT(""));
-        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".ai.md"), XBlueprintAIWriter::Write(Snapshot));
-        Outputs.Add(TEXT("90_Full/") + BaseName + TEXT(".md"), BlueprintToMarkdown(Blueprint, GraphCache));
         const TSharedPtr<IPlugin> XToolsPlugin = IPluginManager::Get().FindPlugin(TEXT("XTools"));
         const FString QueryPath = XToolsPlugin.IsValid() ? XToolsPlugin->GetBaseDir() / TEXT("Resources/BlueprintExport/05_Query.py") : FString();
         FString QueryText;
@@ -3676,9 +2995,23 @@ namespace
             OutError = TEXT("JSON 序列化失败，保留原导出。");
             return false;
         }
+        JsonText.ReplaceInline(TEXT("\r\n"), TEXT("\n"));
         Outputs[TEXT("90_Full/") + BaseName + TEXT(".json")] = JsonText;
         TArray<FString> RelativePaths;
         Outputs.GetKeys(RelativePaths);
+        // Retire only known generated views in this identity-checked asset directory.
+        // Include deletions in the same backup/rollback transaction as replacement files.
+        TSet<FString> RetiredPaths;
+        for (const TCHAR* Extension : { TEXT(".ai.md"), TEXT(".md") })
+        {
+            const FString RelativePath = TEXT("90_Full/") + BaseName + Extension;
+            const FString Path = OutOutputDir / RelativePath;
+            if (Files.FileExists(*Path) || Files.DirectoryExists(*Path))
+            {
+                RelativePaths.Add(RelativePath);
+                RetiredPaths.Add(Path);
+            }
+        }
         RelativePaths.Sort();
         RelativePaths.Remove(TEXT("00_START_HERE.md"));
         RelativePaths.Remove(RootEntryKey);
@@ -3707,7 +3040,10 @@ namespace
         bool bStaged = true;
         for (const FString& RelativePath : RelativePaths)
         {
-            bStaged = bStaged && FFileHelper::SaveStringToFile(Outputs[RelativePath], *(OutOutputDir / RelativePath + Suffix), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+            if (!RetiredPaths.Contains(OutOutputDir / RelativePath))
+            {
+                bStaged = bStaged && FFileHelper::SaveStringToFile(Outputs.FindChecked(RelativePath), *(OutOutputDir / RelativePath + Suffix), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+            }
         }
         TSet<FString> BackedUp;
         TSet<FString> RetainedBackups;
@@ -3737,9 +3073,12 @@ namespace
             for (int32 Index = 0; Index < Paths.Num(); ++Index)
             {
                 const FString& Path = Paths[Index];
-                if (!Files.Move(*Path, *(Path + Suffix), true, false, false, true))
+                const bool bApplied = RetiredPaths.Contains(Path)
+                    ? Files.Delete(*Path, false, false, true)
+                    : Files.Move(*Path, *(Path + Suffix), true, false, false, true);
+                if (!bApplied)
                 {
-                    OutError = FString::Printf(TEXT("替换失败: %s"), *Path);
+                    OutError = FString::Printf(TEXT("更新导出文件失败: %s"), *Path);
                     bSuccess = false;
                     // Move 失败也可能已改变目标，因此一并恢复本次尝试的文件。
                     for (int32 Restore = 0; Restore <= Index; ++Restore)
@@ -3932,13 +3271,6 @@ TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildGraphJson(UEdGraph* G
     int32 NodeCount = 0;
     FBlueprintGraphCache GraphCache;
     return GraphToJson(nullptr, Graph, NodeCount, GraphCache);
-}
-FString XBlueprintGraphExporterTests::BuildGraphMarkdown(UEdGraph* Graph)
-{
-    FString Markdown;
-    FBlueprintGraphCache GraphCache;
-    AppendGraphMarkdown(Markdown, nullptr, Graph, GraphCache);
-    return Markdown;
 }
 TSharedPtr<FJsonObject> XBlueprintGraphExporterTests::BuildBlueprintJson(UBlueprint* Blueprint)
 {

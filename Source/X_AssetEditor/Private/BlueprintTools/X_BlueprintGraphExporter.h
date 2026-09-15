@@ -10,7 +10,7 @@
 
 /**
  * Blueprint graph readback exporter.
- * Exports selected Blueprint assets to JSON, AI context and Markdown under Saved/XTools.
+ * Captures selected Blueprint assets once, then writes a JSON snapshot and AI ReadPack under Saved/XTools.
  */
 class FX_BlueprintGraphExporter
 {
@@ -33,6 +33,5 @@ namespace XBlueprintGraphExporterTests
     FString BuildRootEntry(const FString& RootDirectory, const FString& AssetPath);
     FString BuildRootIndex(const FString& RootDirectory, const TSharedPtr<FJsonObject>& Manifest);
     FString BuildAIPrompt(const FString& RootDirectory, const TArray<FString>& SuccessfulOutputDirs);
-    FString BuildGraphMarkdown(UEdGraph* Graph);
 }
 #endif
