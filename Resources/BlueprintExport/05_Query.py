@@ -720,6 +720,13 @@ def impact_result(base, index, args, identity):
                         "query_directory": os.path.relpath(root, base).replace(os.sep, "/")})
     queue, seen = deque([(target, 0)]), {target}
     items = ResultItems(args.max_nodes)
+    # Explain incomplete coverage before callers can exhaust either result budget.
+    # Keep the same bounded prefix and exact totals for diagnostics and callers.
+    for failure in failures:
+        items.append({"type": "coverage_error", **failure})
+    for diagnostic in diagnostics.kept:
+        items.append(diagnostic)
+    items.total += diagnostics.total - len(diagnostics.kept)
     depth_boundaries = 0
     while queue:
         path, depth = queue.popleft()
@@ -738,13 +745,6 @@ def impact_result(base, index, args, identity):
                 "invalid_exports": len(failures), "unresolved_calls": unresolved,
                 "depth_boundaries": depth_boundaries, "target": target,
                 "coverage_complete": not failures and unresolved == 0}
-    for failure in failures:
-        items.append({"type": "coverage_error", **failure})
-    # Retain only a budgeted prefix, but count every unresolvable call. Unknown calls
-    # cannot safely be excluded from a target's potential callers just to report complete coverage.
-    for diagnostic in diagnostics.kept:
-        items.append(diagnostic)
-    items.total += diagnostics.total - len(diagnostics.kept)
     result = bounded_results("impact", items.kept, args, {**identity, "metadata": metadata}, items.total)
     result["truncated"] |= bool(depth_boundaries)
     return result

@@ -780,6 +780,10 @@ class QueryTests(unittest.TestCase):
         broken = self.invoke("impact", "--target", "/Game/Test.Test:Other")
         self.assertFalse(broken["metadata"]["coverage_complete"])
         self.assertEqual(broken["metadata"]["invalid_exports"], 1)
+        limited = self.invoke("impact", "--target", "/Game/Test.Test:Other", "--max-nodes", "1")
+        self.assertEqual(limited["results"][0].get("type"), "coverage_error")
+        self.assertEqual(limited["results"][0]["status"], "invalid_export")
+        self.assertTrue(limited["truncated"])
 
     def test_index_nested_packages_move_stale_and_escape(self):
         self.set_dependency("/Game/库/Target.Target_C:Sum")
@@ -1000,6 +1004,30 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(len(result["results"]), 1)
         self.assertEqual(result["results"][0]["type"], "coverage_error")
         self.assertTrue(result["truncated"])
+
+    def test_high_fan_in_diagnostic_precedes_callers_under_both_budgets(self):
+        self.make_graph("G0003", "HighFanIn", [f"Call{i}" for i in range(156)] + ["Unknown"])
+        record = self.records[-1]
+        path = self.root / record["evidence"]
+        graph = json.loads(path.read_text(encoding="utf-8"))
+        for node in graph["nodes"]:
+            node["semantic"] = {"kind": "call_function"}
+            if node["id"] != "Unknown":
+                node["semantic"]["resolved_function"] = "/Script/Test.Library:FrequentCall"
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        for budget in ((), ("--max-nodes", "1"), ("--max-chars", "1800"),
+                       ("--max-nodes", "200", "--max-chars", "200000")):
+            with self.subTest(budget=budget):
+                result = self.invoke("impact", "--target", "/Script/Test.Library:FrequentCall", *budget)
+                self.assertEqual(result["results"][0].get("type"), "coverage_error")
+                self.assertEqual(result["results"][0]["node"], "Unknown")
+                self.assertEqual(result["results"][0]["reason"], "missing_target")
+                self.assertFalse(result["metadata"]["coverage_complete"])
+                self.assertEqual(len(result["results"]) + result["remaining_results"], 157)
+                callers = [r["node"] for r in result["results"] if "distance" in r]
+                self.assertEqual(callers, [f"Call{i}" for i in range(len(callers))])
+                self.assertEqual(result["truncated"], bool(result["remaining_results"]))
 
     def test_custom_event_guid_disambiguation_and_no_silent_name_fallback(self):
         path, graph, nodes = self.custom_event_fixture()

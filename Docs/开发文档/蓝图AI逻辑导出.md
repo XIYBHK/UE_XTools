@@ -99,7 +99,7 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 事件调用导航同时索引 `custom_event` 和普通/覆写 `event`：调用方成员 GUID 匹配目标节点的 `node_guid`，不是该节点继承的 `event.event.guid`。后者可能为零或指向原生声明，不能替代蓝图实现身份。有效 GUID 不匹配时拒绝名字回退；没有有效 GUID 时才按全部事件候选中的唯一名字定位，重复身份或损坏图仍拒绝解析。`impact.source_entries` 对两种事件都使用所属资产的事件成员路径，保证多跳反查继续沿真实入口身份前进。相关失败原因统一为 `event_index_incomplete`、`event_identity`、`event_guid_mismatch` 或 `graph_or_event_not_found`。
 
-未知调用会令 `impact.metadata.coverage_complete=false`；这是对扫描范围的不确定性说明，不能仅因节点标题是“无效消息节点”就将其过滤为不存在。`impact` 在调用结果后返回受相同预算约束的 `coverage_error`，携带包、图、节点、缺口原因及 `dependency_hint`；统计包含省略的诊断。`missing_target` 表示没有已解析的目标，不推断运行时行为；现有匹配调用仍正常返回。缺失必需文件时输出 `missing required file: <path>`，不再暴露平台相关的 Errno 文案。短 `--node` 用于快照内定位，可以读取缺少稳定 GUID 的节点；跨快照使用 `--node-guid`，它仍拒绝零值和歧义。
+未知调用会令 `impact.metadata.coverage_complete=false`；这是对扫描范围的不确定性说明，不能仅因节点标题是“无效消息节点”就将其过滤为不存在。`impact` 优先返回 `coverage_error`，再返回调用记录，避免高调用量将原因挤出首批；诊断与调用共用现有条数和字符预算。诊断携带包、图、节点、缺口原因及 `dependency_hint`；统计包含省略的诊断和调用。诊断较多会占用首批名额，极小字符预算仍需扩大，不保证固定预算下能返回全部原因。`missing_target` 表示没有已解析的目标，不推断运行时行为。缺失必需文件时输出 `missing required file: <path>`，不再暴露平台相关的 Errno 文案。短 `--node` 用于快照内定位，可以读取缺少稳定 GUID 的节点；跨快照使用 `--node-guid`，它仍拒绝零值和歧义。
 
 查询导航的相对文件字段使用显式 `path_base`：deps 每条目标自带基准，follow/impact 的调用记录目录相对顶层基准，follow 内嵌 target 再使用自身基准。`query_script` 与 `query_args` 中的 `--directory` 使用查询时生成的绝对路径，可从任意 CWD 执行；移动整包后重新查询即可，不在清单里写入当前机器路径。手工输入的相对 `--directory` 仍按 CWD 解析。
 
@@ -153,6 +153,8 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 输出按文件组暂存、备份后替换，资产入口和总目录入口最后替换；普通写入失败保留或尝试回滚，恢复失败给出保留备份路径。该流程不承诺进程崩溃或断电时的文件系统级原子提交。旧根目录的三个格式文件只有在旧 JSON 能确认由 XTools 生成且资产路径匹配时，才在新索引成功后清理；未进入新索引的历史图文件忽略。
 
 ## 版本、测试与验证
+
+2026-09-15 诊断优先级修复：100 项 Python 回归通过。真实 ForEachLoop 默认三跳反查包含 244 条调用记录及 1 条缺口诊断；默认双预算下，旧版返回 21 条调用、无诊断，新版返回 21 条调用及前置诊断。放宽条数/字符预算后，本深度内 245 条记录的内容与数量完全一致；深度边界仍可令 truncated=true，不等于剩余预算记录。8 次新旧预算对照通过，2074 个原始文件 SHA256 未变。证据见宿主 `Saved/XTools/BlueprintExportValidation/impact-diagnostic-priority-20260915/`，未重导资产或修改 C++。
 
 2026-09-15 父类事件审查修复：99 项 Python 回归通过；针对工作机 114 包、577 张资产图与 117 份宏图，共 12158 个节点进行离线快照/证据/清单核对，146 次查询通过。14 条 `K2Node_CallParentFunction` 从 `graph_not_exported` 修复为 `ok`，均按 GUID 定位并通过 follow 进入目标事件。包含宏定义的普查中 `ok` 从 854 增至 868；1 条缺失目标调用和 1 条未导出资产仍保留原状态，未知调用现在有可定位的诊断。2074 个原始文件 SHA256 未变。本轮只改 Python 查询资源和文档，不需要重新编译 C++；未启动 UE 或重新导出源资产。证据位于宿主 `Saved/XTools/BlueprintExportValidation/parent-event-review-20260915/`。
 
