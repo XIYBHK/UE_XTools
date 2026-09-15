@@ -161,12 +161,13 @@ def normalize_blueprint_target(raw, kind):
         return {"raw_target": raw, "status": "native_implementation"}
     match = re.fullmatch(r"(/[^.:]+)\.([^.:/]+):([^:]+)", raw)
     if not match:
-        return {"raw_target": raw, "status": "unresolved"}
+        return {"raw_target": raw, "status": "unresolved",
+                "reason": "missing_target" if not raw else "invalid_target_path"}
     package, object_name, member = match.groups()
     name = package.rsplit("/", 1)[-1]
     valid_names = (name,) if kind == "macro_instance" else (name + "_C", "SKEL_" + name + "_C")
     if object_name not in valid_names:
-        return {"raw_target": raw, "status": "unresolved"}
+        return {"raw_target": raw, "status": "unresolved", "reason": "unsupported_object_name"}
     asset_path = package + "." + name
     return {"raw_target": raw, "asset_path": asset_path,
             "graph_path": asset_path + ":" + member}
@@ -224,6 +225,22 @@ def dependency_index(base, current_data=None, index_path=None):
     return index
 
 
+def event_member(node):
+    """Event implementation identity belongs to this node, not its inherited declaration."""
+    semantic = node.get("semantic") or {}
+    kind = semantic.get("kind")
+    if kind == "custom_event":
+        name = semantic.get("custom_function_name")
+    elif kind == "event":
+        name = semantic.get("event", {}).get("name")
+    else:
+        return None
+    if not name:
+        return None
+    return {"id": node["id"], "node_guid": node.get("node_guid"), "name": name,
+            "kind": kind, "is_enabled": node.get("is_enabled")}
+
+
 class GraphValidation:
     """Per-query validation and callable identities; never retain graph bodies or exceptions."""
     def __init__(self):
@@ -242,15 +259,12 @@ class GraphValidation:
         self.outcomes[key] = True
         if nodes is not None:
             # Keep callable identities only, never graph bodies or node dictionaries.
-            self.members[key] = [{"id": node["id"], "node_guid": node.get("node_guid"),
-                                  "name": node["semantic"].get("custom_function_name", ""),
-                                  "is_enabled": node.get("is_enabled")}
-                                 for node in nodes.values() if node.get("semantic", {}).get("kind") == "custom_event"]
+            self.members[key] = [member for node in nodes.values() if (member := event_member(node))]
 
-    def custom_events(self, base, record):
+    def event_members(self, base, record):
         key = self.key(base, record)
         if self.outcomes.get(key) is False:
-            raise ValueError("invalid custom event index: " + record["path"])
+            raise ValueError("invalid event index: " + record["path"])
         if key not in self.members:
             try:
                 nodes, _, _ = graph_data(base, record)
@@ -328,28 +342,28 @@ def resolve_dependency(base, raw, kind, index, current_data=None, validation=Non
         named_candidates = 0
         try:
             for candidate in data["graphs"]:
-                for entry in validation.custom_events(root, candidate):
+                for entry in validation.event_members(root, candidate):
                     named_candidates += entry["name"].casefold() == name.casefold()
                     if ((guid and canonical_guid(entry["node_guid"]) == guid)
                             or (not guid and entry["name"].casefold() == name.casefold())):
                         matches.append((candidate, entry))
         except (OSError, ValueError, KeyError, TypeError, UnicodeError):
             # A damaged graph could contain another match, so uniqueness is unproven.
-            target.update(status="invalid_export", reason="custom_event_index_incomplete")
+            target.update(status="invalid_export", reason="event_index_incomplete")
             return target
         if len(matches) > 1:
-            target.update(status="ambiguous", reason="custom_event_identity", matches=len(matches))
+            target.update(status="ambiguous", reason="event_identity", matches=len(matches))
             return target
         if matches:
             record, member = matches[0]
             records = [record]
             target.update(callable_path=target["graph_path"], graph_path=record["path"],
-                          target_kind="custom_event", entry_node=member["id"], entry_node_guid=member["node_guid"],
+                          target_kind=member["kind"], entry_node=member["id"], entry_node_guid=member["node_guid"],
                           member_name=member["name"], is_enabled=member["is_enabled"],
-                          matched_by="member_guid" if guid else "unique_custom_event_name")
+                          matched_by="member_guid" if guid else "unique_" + member["kind"] + "_name")
         else:
             target.update(status="unresolved" if guid and named_candidates else "graph_not_exported",
-                          reason="custom_event_guid_mismatch" if guid and named_candidates else "graph_or_custom_event_not_found")
+                          reason="event_guid_mismatch" if guid and named_candidates else "graph_or_event_not_found")
             return target
     if not records:
         target["status"] = "graph_not_exported"
@@ -660,6 +674,7 @@ def impact_result(base, index, args, identity):
     if "graph_path" in normalized:
         target = normalized["graph_path"]
     incoming, failures = {}, []
+    diagnostics = ResultItems(args.max_nodes)
     unresolved = scanned = 0
     for root, package in index:
         if package is None:
@@ -678,9 +693,8 @@ def impact_result(base, index, args, identity):
                 entry_node = nodes.get(entry["id"])
                 if not entry_node:
                     continue
-                semantic = entry_node.get("semantic", {})
-                custom_name = semantic.get("custom_function_name") if semantic.get("kind") == "custom_event" else None
-                entry_path = package["asset_path"] + ":" + custom_name if custom_name else graph["path"]
+                member = event_member(entry_node)
+                entry_path = package["asset_path"] + ":" + member["name"] if member else graph["path"]
                 selected, _ = selection(entry["id"], nodes, edges)
                 entry_regions.append((set(selected), {"node": entry["id"], "node_guid": entry_node.get("node_guid"),
                                                       "callable_path": entry_path}))
@@ -692,6 +706,11 @@ def impact_result(base, index, args, identity):
                         path = raw
                     if not path:
                         unresolved += 1
+                        diagnostics.append({"type": "coverage_error", **resolved,
+                            "asset_path": package["asset_path"], "graph": graph["id"], "node": node["id"],
+                            "node_guid": node.get("node_guid"), "class_path": node.get("class_path"),
+                            "query_directory": os.path.relpath(root, base).replace(os.sep, "/"),
+                            "dependency_hint": dependency_hint(graph, node["id"])})
                         continue
                     incoming.setdefault(path, []).append({
                         "asset_path": package["asset_path"], "snapshot_id": package["snapshot_id"],
@@ -721,6 +740,11 @@ def impact_result(base, index, args, identity):
                 "coverage_complete": not failures and unresolved == 0}
     for failure in failures:
         items.append({"type": "coverage_error", **failure})
+    # Retain only a budgeted prefix, but count every unresolvable call. Unknown calls
+    # cannot safely be excluded from a target's potential callers just to report complete coverage.
+    for diagnostic in diagnostics.kept:
+        items.append(diagnostic)
+    items.total += diagnostics.total - len(diagnostics.kept)
     result = bounded_results("impact", items.kept, args, {**identity, "metadata": metadata}, items.total)
     result["truncated"] |= bool(depth_boundaries)
     return result
@@ -1053,6 +1077,9 @@ def main(argv=None):
                 "asset_reference_hint": "python 05_Query.py assets --graph " + records[0]["id"]}}
         print(encode(bounded_results(args.command, items.kept, args, identity, items.total)))
         return 0
+    except FileNotFoundError as error:
+        print(encode({"error": "missing required file: " + str(error.filename)}))
+        return 1
     except UnsupportedVersion as error:
         print(encode(error.payload))
         return 1

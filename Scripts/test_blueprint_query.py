@@ -889,6 +889,118 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(limited["metadata"]["depth_boundaries"], 1)
         self.assertNotIn("EA", [n.get("id") for n in limited["results"]])
 
+    def parent_event_fixture(self):
+        target = self.target_export()
+        manifest_path = target / "01_Manifest.json"
+        package = json.loads(manifest_path.read_text(encoding="utf-8"))
+        record = package["graphs"][0]
+        record.update(name="EventGraph", path=package["asset_path"] + ":EventGraph", entries=[{"id": "N0"}])
+        evidence_path = target / "evidence.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        evidence["path"] = record["path"]
+        event = evidence["nodes"][0]
+        event.update(node_guid="12345678123456781234567812345678", is_enabled=False,
+                     semantic={"kind": "event", "event": {"name": "ReceiveBeginPlay", "guid": "0" * 32,
+                                                          "parent_class": "/Script/Engine.Actor"}})
+        self.set_dependency("/Game/库/Target.SKEL_Target_C:ReceiveBeginPlay")
+        caller_path = self.root / self.records[0]["evidence"]
+        caller_graph = json.loads(caller_path.read_text(encoding="utf-8"))
+        caller = next(n for n in caller_graph["nodes"] if n["id"] == "N0")
+        caller["class_path"] = "/Script/BlueprintGraph.K2Node_CallParentFunction"
+        caller["semantic"]["function"] = {"name": "ReceiveBeginPlay", "guid": event["node_guid"]}
+        caller_path.write_text(json.dumps(caller_graph), encoding="utf-8")
+        evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+        record["evidence_sha1"] = hashlib.sha1(evidence_path.read_bytes()).hexdigest()
+        manifest_path.write_text(json.dumps(package), encoding="utf-8")
+        self.rehash()
+        return target, caller_path, caller_graph, caller
+
+    def test_parent_event_resolves_implementation_node_guid_and_follows_cross_package(self):
+        target, _, _, _ = self.parent_event_fixture()
+        dep = self.deps()["results"][0]
+        self.assertEqual((dep["status"], dep["target_kind"], dep["entry_node"]), ("ok", "event", "N0"))
+        self.assertEqual(dep["matched_by"], "member_guid")
+        self.assertFalse(dep["is_enabled"])  # Visibility is not an execution claim.
+        self.assertEqual(Path(dep["query_args"][2]), target.resolve())
+        followed = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--follow")
+        self.assertTrue(any(r.get("type") == "node" and r["asset_path"] == "/Game/库/Target.Target"
+                            for r in followed["results"]))
+        impact = self.invoke("impact", "--target", dep["callable_path"])
+        self.assertTrue(any(r.get("node") == "N0" and r.get("graph") == "G0001" for r in impact["results"]))
+
+    def test_parent_event_guid_mismatch_does_not_fall_back_to_name(self):
+        _, path, graph, caller = self.parent_event_fixture()
+        for guid, field, expected in (("F" * 32, "reason", "event_guid_mismatch"),
+                                      ("0" * 32, "matched_by", "unique_event_name")):
+            caller["semantic"]["function"]["guid"] = guid
+            path.write_text(json.dumps(graph), encoding="utf-8")
+            self.rehash()
+            self.assertEqual(self.deps()["results"][0][field], expected)
+
+    def test_event_and_custom_event_share_ambiguity_checks_and_reverse_entry_identity(self):
+        path, graph, nodes = self.custom_event_fixture()
+        nodes["EA"]["semantic"] = {"kind": "event", "event": {"name": "EA", "guid": "0" * 32}}
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        impact = self.invoke("impact", "--target", "/Game/Test.Test:EB")
+        self.assertEqual({(r.get("node"), r.get("distance")) for r in impact["results"]},
+                         {("FromA", 1), ("Call", 2), ("FromB", 2)})
+        nodes["Unused"]["semantic"]["custom_function_name"] = "EA"
+        nodes["Call"]["semantic"]["function"]["guid"] = "0" * 32
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        self.assertEqual(self.invoke("deps", "--graph", "G0003", "--node", "Call")["results"][0]["status"], "ambiguous")
+
+    def test_unresolved_call_has_reason_and_budgeted_impact_diagnostic(self):
+        self.make_cross_graph_cycle()
+        path = self.root / self.records[0]["evidence"]
+        graph = json.loads(path.read_text(encoding="utf-8"))
+        node = next(n for n in graph["nodes"] if n["id"] == "Other")
+        node.update(class_path="/Script/BlueprintGraph.K2Node_Message", semantic={"kind": "call_function"})
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        dep = self.invoke("deps", "--graph", "G0001", "--node", "Other")["results"][0]
+        self.assertEqual((dep["status"], dep["reason"]), ("unresolved", "missing_target"))
+        for target in ("/Game/Test.Test:Other", "/Game/Unrelated.Unrelated:Missing"):
+            result = self.invoke("impact", "--target", target)
+            self.assertFalse(result["metadata"]["coverage_complete"])
+            self.assertEqual(result["metadata"]["unresolved_calls"], 1)
+            diagnostic = next(r for r in result["results"] if r.get("type") == "coverage_error")
+            self.assertEqual((diagnostic["node"], diagnostic["reason"]), ("Other", "missing_target"))
+            self.assertIn("deps --graph G0001 --node Other", diagnostic["dependency_hint"])
+        limited = self.invoke("impact", "--target", "/Game/Test.Test:Other", "--max-nodes", "1")
+        self.assertEqual(len(limited["results"]), 1)
+        self.assertEqual(limited["remaining_results"], 2)
+        self.assertTrue(limited["truncated"])
+
+    def test_missing_required_file_reports_context_without_platform_errno(self):
+        for relative, command in (("01_Manifest.json", ("outline",)),
+                                  (self.records[0]["logic"], ("node", "--graph", "G0001", "--node", "N0"))):
+            path = self.root / relative
+            original = path.read_bytes()
+            path.unlink()
+            try:
+                result = self.invoke(*command, success=False)
+                self.assertIn("missing required file:", result["error"])
+                self.assertIn(path.name, result["error"])
+                self.assertNotIn("Errno", result["error"])
+            finally:
+                path.write_bytes(original)
+
+    def test_unresolved_diagnostics_keep_exact_counts_after_prefix_truncation(self):
+        path = self.root / self.records[0]["evidence"]
+        graph = json.loads(path.read_text(encoding="utf-8"))
+        for node in graph["nodes"]:
+            node["semantic"] = {"kind": "call_function"}
+        path.write_text(json.dumps(graph), encoding="utf-8")
+        self.rehash()
+        result = self.invoke("impact", "--target", "/Game/Test.Test:Unknown", "--max-nodes", "1")
+        self.assertEqual(result["metadata"]["unresolved_calls"], len(graph["nodes"]))
+        self.assertEqual(result["remaining_results"], len(graph["nodes"]) - 1)
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["type"], "coverage_error")
+        self.assertTrue(result["truncated"])
+
     def test_custom_event_guid_disambiguation_and_no_silent_name_fallback(self):
         path, graph, nodes = self.custom_event_fixture()
         nodes["Unused"]["semantic"]["custom_function_name"] = "EA"
@@ -899,7 +1011,7 @@ class QueryTests(unittest.TestCase):
         nodes["Call"]["semantic"]["function"]["guid"] = "F" * 32
         path.write_text(json.dumps(graph), encoding="utf-8")
         self.rehash()
-        self.assertEqual(dep()["reason"], "custom_event_guid_mismatch")
+        self.assertEqual(dep()["reason"], "event_guid_mismatch")
         nodes["Call"]["semantic"]["function"]["guid"] = "0" * 32
         path.write_text(json.dumps(graph), encoding="utf-8")
         self.rehash()
@@ -918,7 +1030,7 @@ class QueryTests(unittest.TestCase):
         self.custom_event_fixture()
         (self.root / self.records[1]["logic"]).write_text("broken", encoding="utf-8")
         result = self.invoke("deps", "--graph", "G0003", "--node", "Call")["results"][0]
-        self.assertEqual((result["status"], result["reason"]), ("invalid_export", "custom_event_index_incomplete"))
+        self.assertEqual((result["status"], result["reason"]), ("invalid_export", "event_index_incomplete"))
 
     def test_custom_event_index_reused_within_query_and_impact_tracks_entry_owners(self):
         self.custom_event_fixture()

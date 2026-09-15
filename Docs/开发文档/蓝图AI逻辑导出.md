@@ -97,6 +97,10 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 ### 查询返回与可携带性
 
+事件调用导航同时索引 `custom_event` 和普通/覆写 `event`：调用方成员 GUID 匹配目标节点的 `node_guid`，不是该节点继承的 `event.event.guid`。后者可能为零或指向原生声明，不能替代蓝图实现身份。有效 GUID 不匹配时拒绝名字回退；没有有效 GUID 时才按全部事件候选中的唯一名字定位，重复身份或损坏图仍拒绝解析。`impact.source_entries` 对两种事件都使用所属资产的事件成员路径，保证多跳反查继续沿真实入口身份前进。相关失败原因统一为 `event_index_incomplete`、`event_identity`、`event_guid_mismatch` 或 `graph_or_event_not_found`。
+
+未知调用会令 `impact.metadata.coverage_complete=false`；这是对扫描范围的不确定性说明，不能仅因节点标题是“无效消息节点”就将其过滤为不存在。`impact` 在调用结果后返回受相同预算约束的 `coverage_error`，携带包、图、节点、缺口原因及 `dependency_hint`；统计包含省略的诊断。`missing_target` 表示没有已解析的目标，不推断运行时行为；现有匹配调用仍正常返回。缺失必需文件时输出 `missing required file: <path>`，不再暴露平台相关的 Errno 文案。短 `--node` 用于快照内定位，可以读取缺少稳定 GUID 的节点；跨快照使用 `--node-guid`，它仍拒绝零值和歧义。
+
 查询导航的相对文件字段使用显式 `path_base`：deps 每条目标自带基准，follow/impact 的调用记录目录相对顶层基准，follow 内嵌 target 再使用自身基准。`query_script` 与 `query_args` 中的 `--directory` 使用查询时生成的绝对路径，可从任意 CWD 执行；移动整包后重新查询即可，不在清单里写入当前机器路径。手工输入的相对 `--directory` 仍按 CWD 解析。
 
 `node` 的两种模式共享 `graph/graph_path/id/node_guid/logic`，新增 `logic_status` 与 `evidence_status`。请求证据时保留原有 `node/edges` 字段；若字符预算不足，先移除证据并标记 `omitted_budget`，再把过大的 logic 设为 null 并标记，最后才丢弃整条结果。`truncated` 包含字段级省略，因此 `remaining_results=0` 不代表字段完整。`required_max_chars` 计入 JSON 尾部换行，给出恢复本次条数预算内完整记录所需预算；增加它不自动解除 `--max-nodes`。极小预算可能仍只返回空结果/预算错误，真实不存在的节点保持错误语义。
@@ -149,6 +153,8 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 输出按文件组暂存、备份后替换，资产入口和总目录入口最后替换；普通写入失败保留或尝试回滚，恢复失败给出保留备份路径。该流程不承诺进程崩溃或断电时的文件系统级原子提交。旧根目录的三个格式文件只有在旧 JSON 能确认由 XTools 生成且资产路径匹配时，才在新索引成功后清理；未进入新索引的历史图文件忽略。
 
 ## 版本、测试与验证
+
+2026-09-15 父类事件审查修复：99 项 Python 回归通过；针对工作机 114 包、577 张资产图与 117 份宏图，共 12158 个节点进行离线快照/证据/清单核对，146 次查询通过。14 条 `K2Node_CallParentFunction` 从 `graph_not_exported` 修复为 `ok`，均按 GUID 定位并通过 follow 进入目标事件。包含宏定义的普查中 `ok` 从 854 增至 868；1 条缺失目标调用和 1 条未导出资产仍保留原状态，未知调用现在有可定位的诊断。2074 个原始文件 SHA256 未变。本轮只改 Python 查询资源和文档，不需要重新编译 C++；未启动 UE 或重新导出源资产。证据位于宿主 `Saved/XTools/BlueprintExportValidation/parent-event-review-20260915/`。
 
 2026-09-15 精简后，UE 5.3 `X_AssetEditor` 常规模块编译及链接通过，93 项 Python 回归通过。本次修改的蓝图源文件与测试文件还通过了无 PCH 编译；整个模块的无 PCH 构建被既有 `X_PivotOperationTests.cpp`、`X_MaterialBakeTests.cpp` 的 `UPackage` 不完整类型错误阻止，未修改无关测试。
 
