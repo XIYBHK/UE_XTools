@@ -102,3 +102,4 @@ tmpclaude-*
 compile_commands.json
 .vscode/opencode.json
 nul
+/.workbuddy
