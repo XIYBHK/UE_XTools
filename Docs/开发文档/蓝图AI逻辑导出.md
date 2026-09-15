@@ -16,7 +16,7 @@
 ├── 20_Evidence/00_Asset.json    # 资产元数据，不含图与宏定义正文
 ├── 20_Evidence/G0001.json       # 对应图的原完整 JSON
 ├── 30_Dependencies/M0001.*      # 按需标准宏定义：.pseudo.md 与 .json
-└── 90_Full/                     # 原完整 JSON、.ai.md、.md 三种格式
+└── 90_Full/                     # 完整 JSON 归档，与分片证据使用同一 Snapshot
 ```
 
 默认按问题选择相关内容，避免无目的全量读取；全局审计或证据不足时，可扩大范围、直接读取完整文件或提高查询预算。先读总目录和资产入口；首次使用读取 `02_ReadingContract.md`，本次上下文已读相同 SHA1 的契约可跳过。契约副本随每个资产目录分发，移动单个目录后仍可独立使用；这是阅读去重，不是磁盘去重。按问题选择图的 `10_Logic/Gxxxx.pseudo.md`，证据足够时即可停止。需要精确类型、pin 属性或未知节点细节时，查询同编号的 `20_Evidence/Gxxxx.json`；变量、组件、时间轴或类信息不足时，查询 `20_Evidence/00_Asset.json` 的对应键。`90_Full/` 可供全局审计、工具解析或完整查证，不作为默认初始上下文。阅读路径是建议，文件身份、协议兼容与遗漏范围仍严格校验。
@@ -95,6 +95,16 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 `spawn_exposure_hints` 功能将重要初始化元数据提前到相关节点的 `binding:` 行：`expose_on_spawn=true [spawn_argument_possible; default_not_constant]`。渲染器按完整有效且唯一的 GUID 与名称匹配本资产 `variables[].metadata.ExposeOnSpawn`，只标注已解析的 self_member，局部/外部成员及外部宏不复用本资产声明。`node` 和 `slice` 直接保留该行，无需全量读取资产证据。它表示可以由生成调用传入，既不证明某次实际赋值，也不穷尽所有外部写入路径；没有提示不等于默认值恒定。`class_defaults.properties[].flags` 是常用标志摘要，不能替代变量完整元数据。该提示不改变节点头语法，保留 pseudo v1；独立校验器按清单功能标记联合图证据与资产变量声明核验。
 
+### 查询返回与可携带性
+
+查询导航的相对文件字段使用显式 `path_base`：deps 每条目标自带基准，follow/impact 的调用记录目录相对顶层基准，follow 内嵌 target 再使用自身基准。`query_script` 与 `query_args` 中的 `--directory` 使用查询时生成的绝对路径，可从任意 CWD 执行；移动整包后重新查询即可，不在清单里写入当前机器路径。手工输入的相对 `--directory` 仍按 CWD 解析。
+
+`node` 的两种模式共享 `graph/graph_path/id/node_guid/logic`，新增 `logic_status` 与 `evidence_status`。请求证据时保留原有 `node/edges` 字段；若字符预算不足，先移除证据并标记 `omitted_budget`，再把过大的 logic 设为 null 并标记，最后才丢弃整条结果。`truncated` 包含字段级省略，因此 `remaining_results=0` 不代表字段完整。`required_max_chars` 计入 JSON 尾部换行，给出恢复本次条数预算内完整记录所需预算；增加它不自动解除 `--max-nodes`。极小预算可能仍只返回空结果/预算错误，真实不存在的节点保持错误语义。
+
+`outline` 的结果预算单位是单个图头或入口，`graph_count/entry_count` 给出所选范围完整计数。完整归档 JSON 与根 `00_INDEX.json` 写入前统一 CRLF→LF；JSON 内转义后的字符串值不变。以上为附加字段与导航修复，不改变 ReadPack/pseudo 版本或禁止 AI 直接阅读文件。
+
+实现参考：[Python pathlib 的 CWD 与 resolve 规则](https://docs.python.org/3.13/library/pathlib.html)、[AIP-180 向后兼容原则](https://google.aip.dev/180)。优先增加共同字段，保留既有证据嵌套结构；省略行为明确可见。
+
 ### 标准宏定义的按需读取
 
 导出器收集当前本地引擎 `/Engine/EditorBlueprintResources/StandardMacros.StandardMacros` 中实际引用的宏图及其标准宏依赖，按完整图路径去重，保存到 `30_Dependencies/Mxxxx.pseudo.md` 与同编号 JSON。`01_Manifest.json.macro_definitions` 与所属资产的 `graphs` 分开，原图及节点计数不膨胀。每包最多 64 张定义图、10000 个定义节点，按整图采集；达到上限时 `coverage.macro_dependency_limit_reached=true`，未采集引用继续明确标记，`macro_definition_engine_version` 记录来源引擎版本。
@@ -105,7 +115,9 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 伪代码保留已连接来源，不用默认值覆盖连线语义；空默认值仍以 serialized 形式保留。外部函数、父类、自定义 K2Node 和非标准外部宏的实现不自动展开；实际包含的宏由清单与 `definition_status` 标识。完整图 JSON 是逐图事实证据，资产 JSON 排除 `graphs` 与 `macro_definitions` 正文。
 
-`id`、节点别名和 pin `index` 只在本次快照内定位；陈述引脚来源时同时核对 pin 名称与类型。`90_Full` 中的三个文件保留原有完整 JSON、AI 文本和 Markdown 输出，原 `AIWriter` 不变；新的 `XBlueprintReadPack::Build` 只消费 JSON 生成按需阅读包。
+`id`、节点别名和 pin `index` 只在本次快照内定位；陈述引脚来源时同时核对 pin 名称与类型。导出器只采集一次 Snapshot，`90_Full` 保留完整 JSON，`XBlueprintReadPack::Build` 从同一 JSON 生成伪代码与分片证据。旧 `.ai.md` 和人读 `.md` 不再生成；重导相同资产时，仅退役 `90_Full/<资产名>.ai.md` 与 `<资产名>.md`，删除纳入现有备份/失败恢复事务，不处理其他 Markdown 文件。
+
+每图只保留短语义提醒、证据与契约链接；通用规则集中在 `02_ReadingContract.md`。节点块及语义提示不变，`pseudo_format_version` 仍为 1；重导会更新伪代码字节量和 SHA1。已有完整 JSON、证据与查询协议保持兼容，历史包仍可读取；依赖旧 Markdown 的外部脚本需要改用 ReadPack。
 
 图编号按本次快照分配，不用于跨导出比对；持久定位结合 `asset_path`、图 `path`、`node_guid` 与 pin `id`，无效或重复 GUID 不保证稳定。同一节点同名 pin 在参数声明、数据输出、执行出口及引用中统一附加 `#index` 消歧，包括跨输入/输出方向重名。数据重路由在表达式引用中折叠，但节点仍保留；访问达到 64 个来源引用时保留当前引用并提示 `continue_in_evidence`，遇环提示 `data_cycle`。所有原节点/边仍在证据中，不递归展开任意长链。引脚重名计数按节点预先建立，避免每次生成标签重复扫描。
 
@@ -128,7 +140,7 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 `classified` 只表示匹配已有提取分支，不保证派生类展开行为完整。`reflected_properties` 保存节点派生类的非 transient、非废弃且可序列化的反射属性，包括固定长度 C++ 数组各元素；值是 UE 文本，不是可执行代码，也不覆盖非反射的原生状态。
 
-完整 `.ai.md` 仍由同一详细 JSON 快照生成，节点/边按行 JSONL 编码；省略画布坐标、重复图内邻接与可达链，图外引用以 `external_links` 保留。详细 JSON 的 `exec_chain` 是静态可达信息，不是运行时顺序；旧 `.md` 仍有摘要限制。这两份都位于 `90_Full`，不作为按需包的初始上下文。
+`90_Full` 只生成完整 JSON，保留画布坐标、图内外连线及反射事实；其中 `exec_chain` 是静态可达信息，不是运行时顺序。旧完整 `.ai.md` 与人读 `.md` 已退役，逻辑阅读统一使用按图伪代码。
 
 ## 写入与历史文件
 
@@ -138,9 +150,13 @@ python 05_Query.py diff --against "<旧资产包绝对目录>"
 
 ## 版本、测试与验证
 
+2026-09-15 精简后，UE 5.3 `X_AssetEditor` 常规模块编译及链接通过，93 项 Python 回归通过。本次修改的蓝图源文件与测试文件还通过了无 PCH 编译；整个模块的无 PCH 构建被既有 `X_PivotOperationTests.cpp`、`X_MaterialBakeTests.cpp` 的 `UPackage` 不完整类型错误阻止，未修改无关测试。
+
+工作机导出包的离线副本中，14 个资产、71 张图、2065 个节点通过证据/伪代码语义核对；完整 JSON、分片证据及节点块逐字节不变。仅替换图说明并移除两种旧展示文件，伪代码总字节数从 494927 降至 442316（约 10.63%），28 份旧展示文件合计 9890976 字节；31 次查询覆盖全部 8 类命令。原包未修改。证据见宿主 `Saved/XTools/BlueprintExportValidation/readpack-simplification-20260915/`。这是离线展示迁移与查询验证，不是 UE 重导、源资产运行验证或 token 测量；本次 C++ 自动化仅完成编译，尚未在编辑器内执行。
+
 导出核心使用 UE 5.3 起已有的 C++ 图对象和反射接口，设计覆盖 UE 5.3–5.8，不依赖 5.8 MCP 或新增蓝图脚本接口。自动化前缀为 `XTools.AssetEditor.BlueprintGraphExporter`，使用 `Scripts/Test-UE53.ps1 -Tests XTools.AssetEditor.BlueprintGraphExporter` 运行。
 
-2026-09-14 O4/O5 性能优化后最新验证为 15 项 UE 自动化、41 项 Python 回归全部通过。源图序列化按所属节点缓存 pin 索引，包含图外节点链接；单次资产导出的 JSON 与旧 Markdown 共享图枚举/排序结果，缓存均不跨导出保留。18 个实际资产重新导出通过源图对照，305 份伪代码及 18 份旧 Markdown 与冻结副本逐字节一致；15 份图证据的差异仅涉及 34 个未连接 PromotableOperator.ErrorTolerance 的 pin GUID，其余字段、顺序、索引、连线和默认值一致。5557 个源资产文件哈希不变。
+2026-09-14 O4/O5 性能优化当时验证为 15 项 UE 自动化、41 项 Python 回归全部通过。源图序列化按所属节点缓存 pin 索引，包含图外节点链接；当时单次资产导出的 JSON 与旧 Markdown 共享图枚举/排序结果，缓存均不跨导出保留。18 个实际资产重新导出通过源图对照，305 份伪代码及 18 份旧 Markdown 与冻结副本逐字节一致；15 份图证据的差异仅涉及 34 个未连接 PromotableOperator.ErrorTolerance 的 pin GUID，其余字段、顺序、索引、连线和默认值一致。5557 个源资产文件哈希不变。
 
 1256 对实际包查询的输出和退出码完全一致，另有 216 组命令/预算/损坏目标组合对照。deps 图校验次数 680→589；本机交替执行的单轮总查询耗时为 17.663→17.039 秒，不作为普遍加速承诺。证据见宿主 `Saved/XTools/BlueprintExportValidation/performance-review-20260914/report.md`，UE 报告为 `Saved/Automation/Reports/BlueprintPerformance-review-20260914-r3/`。以下为此前各阶段的验证记录。
 
@@ -164,7 +180,7 @@ UE 5.3.2 Editor Development 编译及 14 项自动化全部通过；组件临时
 python Scripts/validate_blueprint_ai_export.py <source-inventory.json> --report <validation.json>
 ```
 
-校验器同时支持旧单层目录及 ReadPack v1/v2，比较独立源图、详细 JSON、完整 AI JSONL，以及逐图/资产证据。除节点覆盖外，还从完整图推导并校验伪代码的操作目标、启用状态、参数来源/默认值、执行出口、回调和数据输出；v2 同时检查机器清单、图身份及内容摘要。该检查针对导出语法和图事实，不验证 UE 运行时行为。
+校验器比较独立源图、详细 JSON，以及逐图/资产证据，不再依赖旧 AI JSONL；旧单层 JSON 仍可与源探针对照。除节点覆盖外，还从完整图推导并校验伪代码的操作目标、启用状态、参数来源/默认值、执行出口、回调和数据输出；ReadPack v2 同时检查机器清单、图身份及内容摘要。该检查针对导出语法和图事实，不验证 UE 运行时行为。
 
 2026-09-14 IR 审查修复后，重新导出 17 个迁入库及 MasterField：255 张所属图、6525 节点、20609 引脚、8224 连接通过；50 份按包去重的标准宏定义（12 种完整宏路径，637 节点、1678 引脚、851 连接）也通过独立引擎源图对照，导出前后内存图和 dirty 状态一致。1249 次实际包查询通过，覆盖 264 次标准宏导航、505 个局部声明及 99 处 SCS 绑定；默认预算下 44 个 slice、4 个 deps 显式截断。Content 的 5557 个源资产文件前后 SHA256 一致。证据位于宿主项目 `Saved/XTools/BlueprintExportValidation/ir-review-20260914/`，编译与自动化报告为 `Saved/Automation/Reports/BlueprintIR-review-20260914-r6/`。已知 WorldContext 断言不在本轮处理范围。
 
