@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -102,6 +103,103 @@ class QueryTests(unittest.TestCase):
         followed = self.invoke("slice", "--graph", "G0002", "--node", "N0", "--follow")
         for result in (node["results"][0], sliced["nodes"][0], followed["results"][0]):
             self.assertIn(hint, result["logic"])
+
+    def test_node_common_fields_and_explicit_evidence_budget_fallback(self):
+        record = self.records[1]
+        path = self.root / record["evidence"]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["nodes"][0]["large_fact"] = "证据" * 10000
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.rehash()
+        plain = self.invoke("node", "--graph", "G0002", "--node", "N0")["results"][0]
+        full = self.invoke("node", "--graph", "G0002", "--node", "N0", "--evidence", "--max-chars", "100000")
+        for key in ("id", "node_guid", "graph", "graph_path", "logic", "logic_status"):
+            self.assertEqual(plain[key], full["results"][0][key])
+        self.assertEqual(full["results"][0]["node"], data["nodes"][0])
+        reduced = self.invoke("node", "--graph", "G0002", "--node", "N0", "--evidence", "--max-chars", "1000")
+        self.assertLessEqual(len(self.last_output.rstrip()), 1000)
+        self.assertTrue(reduced["truncated"])
+        self.assertEqual(reduced["remaining_results"], 0)
+        item = reduced["results"][0]
+        self.assertEqual((item["id"], item["logic"], item["evidence_status"]), ("N0", plain["logic"], "omitted_budget"))
+        self.assertNotIn("node", item)
+        restored = self.invoke("node", "--graph", "G0002", "--node", "N0", "--evidence", "--max-chars", str(reduced["required_max_chars"]))
+        self.assertFalse(restored["truncated"])
+        self.assertEqual(restored["results"][0]["evidence_status"], "included")
+        # Even oversized logic can retain identity, without claiming that a missing node was found.
+        (self.root / record["logic"]).write_text('```text\n@N0: opaque "' + '大' * 20000 + '"()\n```\n', encoding="utf-8")
+        self.rehash()
+        minimal = self.invoke("node", "--graph", "G0002", "--node", "N0", "--evidence", "--max-chars", "700")
+        self.assertEqual(minimal["results"][0]["id"], "N0")
+        self.assertIsNone(minimal["results"][0]["logic"])
+        self.assertEqual(minimal["results"][0]["logic_status"], "omitted_budget")
+        self.assertTrue(minimal["truncated"])
+        self.assertLessEqual(len(self.last_output.rstrip()), 700)
+        self.invoke("node", "--graph", "G0002", "--node", "Missing", "--evidence", success=False)
+
+    def test_node_budget_keeps_multiple_identities_and_does_not_mutate_input(self):
+        module = self.query_module()
+        items = [{"id": f"N{i}", "node_guid": None, "logic": "逻辑" * 50, "logic_status": "included",
+                  "node": {"fact": "X" * 5000}, "edges": [], "evidence_status": "included"} for i in range(2)]
+        args = SimpleNamespace(max_nodes=2, max_chars=1000)
+        result = module.bounded_results("node", items, args, {})
+        self.assertEqual([n["id"] for n in result["results"]], ["N0", "N1"])
+        self.assertEqual(result["remaining_results"], 0)
+        self.assertTrue(result["truncated"])
+        self.assertTrue(all(n["evidence_status"] == "omitted_budget" for n in result["results"]))
+        self.assertTrue(all(n["evidence_status"] == "included" and "node" in n for n in items))
+        self.assertLessEqual(len(module.encode(result)), 1000)
+
+    def test_navigation_arguments_ignore_cwd_and_refresh_after_relocation(self):
+        self.set_dependency("/Game/库/Target.Target_C:Sum")
+        target = self.target_export()
+        (target / "05_Query.py").write_bytes(TOOL.read_bytes())
+        navigation = self.deps()["results"][0]
+        self.assertEqual(Path(navigation["path_base"]), self.root.resolve())
+        self.assertEqual(Path(navigation["query_args"][2]), target.resolve())
+        for cwd in (self.root, self.root.parent, TOOL.parent):
+            run = subprocess.run([sys.executable, "-B", "-X", "utf8", navigation["query_script"], *navigation["query_args"]],
+                                 cwd=cwd, capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertEqual(json.loads(run.stdout)["asset_path"], "/Game/库/Target.Target")
+        moved = self.root.parent / "搬迁 包"
+        moved.mkdir()
+        shutil.copytree(target, moved / target.name)
+        shutil.copytree(self.root, moved / self.root.name)
+        result = self.query_module().resolve_dependency(moved / self.root.name, "/Game/库/Target.Target_C:Sum", "call_function",
+            self.query_module().dependency_index(moved / self.root.name))
+        self.assertEqual(Path(result["query_args"][2]), (moved / target.name).resolve())
+        self.assertEqual(result["query_directory"], navigation["query_directory"])
+
+    def test_nested_follow_target_exposes_its_own_package_base(self):
+        self.make_macro_definition()
+        self.set_dependency("/Game/库/Target.Target_C:Sum")
+        target = self.target_export()
+        shutil.copytree(self.root / "30_Dependencies", target / "30_Dependencies")
+        (target / "05_Query.py").write_bytes(TOOL.read_bytes())
+        data = json.loads((target / "01_Manifest.json").read_text(encoding="utf-8"))
+        data["macro_definitions"] = self.macros
+        data["graphs"][0]["entries"] = [{"id": "N0"}]
+        evidence = json.loads((target / "evidence.json").read_text(encoding="utf-8"))
+        evidence["nodes"][0]["semantic"] = {"kind": "macro_instance", "macro_graph": self.macros[0]["path"]}
+        (target / "evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+        data["graphs"][0]["evidence_sha1"] = hashlib.sha1((target / "evidence.json").read_bytes()).hexdigest()
+        (target / "01_Manifest.json").write_text(json.dumps(data), encoding="utf-8")
+        followed = self.invoke("slice", "--graph", "G0001", "--node", "N0", "--follow", "--max-chars", "100000")
+        call = next(item for item in followed["results"] if item.get("type") == "call" and item["depth"] == 1)
+        self.assertEqual(Path(followed["path_base"]), self.root.resolve())
+        self.assertEqual(Path(call["target"]["path_base"]), target.resolve())
+        self.assertEqual(call["target"]["query_directory"], ".")
+        run = subprocess.run([sys.executable, "-B", "-X", "utf8", call["target"]["query_script"], *call["target"]["query_args"]],
+                             cwd=self.root, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertEqual(json.loads(run.stdout)["asset_path"], "/Game/库/Target.Target")
+
+    def test_outline_budget_units_and_totals_are_explicit(self):
+        result = self.invoke("outline", "--max-nodes", "1")
+        self.assertEqual((result["graph_count"], result["entry_count"]), (2, 2))
+        self.assertEqual(result["result_budget_unit"], "graph_header_or_entry")
+        self.assertEqual(result["remaining_results"], 3)
 
     def test_result_prefix_matches_full_collection_bytes_and_counts(self):
         module = self.query_module()

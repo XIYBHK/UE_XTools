@@ -272,6 +272,18 @@ class GraphValidation:
         return self.outcomes[key]
 
 
+def navigation(base, root, record, entry_node=None):
+    """Portable relative links with an explicit base; executable arguments never depend on CWD."""
+    base, root = base.resolve(), root.resolve()
+    relative = lambda path: os.path.relpath(path, base).replace(os.sep, "/")
+    arguments = ["slice" if entry_node else "outline", "--directory", str(root), "--graph", record["id"]]
+    if entry_node:
+        arguments.extend(["--node", entry_node])
+    return {"path_base": str(base), "entry": relative(root / "00_START_HERE.md"),
+            "logic": relative(safe(root, record["logic"])), "evidence": relative(safe(root, record["evidence"])),
+            "query_directory": relative(root), "query_script": str(root / "05_Query.py"), "query_args": arguments}
+
+
 def resolve_dependency(base, raw, kind, index, current_data=None, validation=None, caller=None):
     if validation is None:
         validation = GraphValidation()
@@ -289,13 +301,8 @@ def resolve_dependency(base, raw, kind, index, current_data=None, validation=Non
                     return target
             except (OSError, ValueError, KeyError, TypeError, UnicodeError):
                 return target
-            relative = lambda path: os.path.relpath(path, base).replace(os.sep, "/")
             target.update({"status": "ok", "graph": record["id"],
-                           "entry": relative(base / "00_START_HERE.md"),
-                           "logic": relative(safe(base, record["logic"])),
-                           "evidence": relative(safe(base, record["evidence"])),
-                           "query_directory": ".",
-                           "query_args": ["outline", "--directory", ".", "--graph", record["id"]],
+                           **navigation(base, base, record),
                            "export_owner_asset_path": current_data["asset_path"]})
             return target
     canonical_name = (target["asset_path"].rsplit(".", 1)[1] + "_"
@@ -353,15 +360,8 @@ def resolve_dependency(base, raw, kind, index, current_data=None, validation=Non
             return target
     except (OSError, ValueError, KeyError, TypeError, UnicodeError):
         return target
-    relative = lambda path: os.path.relpath(path, base).replace(os.sep, "/")
     target.update({"status": "ok", "graph": record["id"],
-                   "entry": relative(root / "00_START_HERE.md"),
-                   "logic": relative(safe(root, record["logic"])),
-                   "evidence": relative(safe(root, record["evidence"])),
-                   "query_directory": relative(root),
-                   "query_args": ["outline", "--directory", relative(root), "--graph", record["id"]]})
-    if member:
-        target["query_args"] = ["slice", "--directory", relative(root), "--graph", record["id"], "--node", member["id"]]
+                   **navigation(base, root, record, member["id"] if member else None)})
     return target
 
 
@@ -496,16 +496,38 @@ class ResultItems:
 def bounded_results(command, items, args, identity, total=None):
     if total is None:
         total = len(items)
-    kept = items[:args.max_nodes]
+    kept = [dict(item) for item in items[:args.max_nodes]]
+    required_max_chars = None
     while True:
         result = {"command": command, **identity, "results": kept,
-                  "truncated": len(kept) < total, "remaining_results": total - len(kept)}
+                  "truncated": len(kept) < total or any(item.get(field) == "omitted_budget"
+                      for item in kept for field in ("evidence_status", "logic_status")),
+                  "remaining_results": total - len(kept)}
+        if required_max_chars is not None:
+            result["required_max_chars"] = required_max_chars
         if not kept and total:
             result["hint"] = "Increase --max-chars or narrow the query."
         if fits(result, args.max_chars):
             return result
         if not kept:
             raise ValueError("budget too small for JSON envelope")
+        if command == "node":
+            # Drop optional evidence before logic, then fall back to identity-only records.
+            # Never call a partially returned node complete or confuse it with a missing node.
+            if required_max_chars is None:
+                required_max_chars = len(encode(result)) + 1
+            candidate = next((item for item in reversed(kept) if item.get("evidence_status") == "included"), None)
+            if candidate is not None:
+                candidate.pop("node", None)
+                candidate.pop("edges", None)
+                candidate["evidence_status"] = "omitted_budget"
+                continue
+            candidate = next((item for item in reversed(kept) if item.get("logic_status") == "included"), None)
+            if candidate is not None:
+                candidate["logic"] = None
+                candidate.pop("dependency_hint", None)
+                candidate["logic_status"] = "omitted_budget"
+                continue
         kept = kept[:-1]
 
 
@@ -942,6 +964,8 @@ def main(argv=None):
         if args.snapshot and args.snapshot != data["snapshot_id"]:
             raise ValueError("snapshot mismatch; re-resolve node identity")
         identity = {"asset_path": data["asset_path"], "snapshot_id": data["snapshot_id"]}
+        if args.follow or args.command == "impact":
+            identity["path_base"] = str(base)
         if args.command == "diff":
             print(encode(snapshot_diff(base, args.against.resolve(), args, identity)))
             return 0
@@ -957,6 +981,9 @@ def main(argv=None):
         asset_unresolved = asset_unsupported = 0
         if args.command == "outline":
             identity["macro_definition_count"] = len(data.get("macro_definitions", []))
+            identity["graph_count"] = len(records)
+            identity["entry_count"] = sum(len(record["entries"]) for record in records)
+            identity["result_budget_unit"] = "graph_header_or_entry"
             # Each graph header and entry is separately budgeted; no graph file is read.
             for record in records:
                 items.append({"graph": record["id"], "name": record["name"], "path": record["path"],
@@ -1005,15 +1032,14 @@ def main(argv=None):
                               else slice_result(record, seed, nodes, edges, blocks, args, identity))
                     print(encode(result))
                     return 0
+                item = {"graph": record["id"], "graph_path": record["path"], "id": seed,
+                        "node_guid": nodes[seed].get("node_guid"), "logic": blocks[seed], "logic_status": "included",
+                        "evidence_status": "included" if args.evidence else "not_requested"}
+                if dependency_targets(nodes[seed]):
+                    item["dependency_hint"] = dependency_hint(record, seed)
                 if args.evidence:
-                    items.append({"graph": record["id"], "node": nodes[seed],
-                                  "edges": [e for e in edges if seed in (ref(e, "from"), ref(e, "to"))]})
-                else:
-                    item = {"graph": record["id"], "graph_path": record["path"], "id": seed,
-                            "node_guid": nodes[seed].get("node_guid"), "logic": blocks[seed]}
-                    if dependency_targets(nodes[seed]):
-                        item["dependency_hint"] = dependency_hint(record, seed)
-                    items.append(item)
+                    item.update(node=nodes[seed], edges=[e for e in edges if seed in (ref(e, "from"), ref(e, "to"))])
+                items.append(item)
         if args.command == "assets":
             identity = {**identity, "metadata": {
                 "scope": "typed_unconnected_input_defaults",

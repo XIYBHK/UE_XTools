@@ -6,6 +6,8 @@
 
 - 先按入口/outline 选图。大图用 slice（执行可达节点 + 上游数据依赖），不足再用 node --evidence。资产类、组件、时间轴事实在 20_Evidence/00_Asset.json，按键查询。默认避免无目的全量读取；全局审计或证据不足时可扩大范围，包括 90_Full。
 - CLI 默认最多 40 节点/结果、16000 Unicode 字符；truncated、remaining 与 boundary 指出省略范围。清单的 *_bytes 是 UTF-8 字节，不是 token 或字符。直接读文件不受 CLI 预算约束。
+- outline 的每个图头和每个入口各占一条结果；graph_count、entry_count 是所选范围的完整计数，result_budget_unit 标明单位，不因结果截断而减少。
+- node 两种模式都返回 graph/graph_path/id/node_guid/logic。logic_status 为 included 或 omitted_budget（此时 logic=null）；evidence_status 为 not_requested、included 或 omitted_budget。有 --evidence 且预算足够时追加原始 node/edges，保留旧嵌套字段。预算不足先省略证据，再省略逻辑，最后才省略整条记录；truncated=true 也可能对应 remaining_results=0，须检查字段状态。required_max_chars 是恢复本次条数预算内完整记录所需的字符预算，不包含因 --max-nodes 省略的记录；极小预算仍可能无法容纳身份/JSON 外壳。不存在的节点返回错误，不以降级记录冒充。
 - deps 返回调用目标路径，不返回正文。自定义事件按成员 GUID（缺失时按唯一事件名）定位到所属图的 entry_node，保留 callable_path；有效 GUID 不匹配时不静默按名字改配，SKEL_ 生成类会正规化。定义可能在本包 30_Dependencies 或同级资产目录；未找到不等于原生实现不存在。宏定义需显式选 M 编号，outline --include-macros 仅列索引。
 - 查询器随包固定，插件模板是生成来源。query 的协议版本决定兼容性，sha1 标识副本内容；重新导出更新整包。显式使用另一查询器时须协议兼容，SHA1 不是安全签名。
 
@@ -27,6 +29,7 @@
 
 ## 跨图与快照查询
 
+- deps 的 entry/logic/evidence/query_directory 相对同条记录的绝对 path_base。follow/impact 顶层 path_base 锚定调用记录的 query_directory；follow 嵌套 target 自带 path_base，可能是另一个包，不能沿用最初包的基准。成功导航的 query_script 是目标包查询器绝对路径，query_args 的 --directory 也是绝对路径，可从任意 CWD 用 Python + query_script + query_args 执行，无需 cd。绝对路径在查询时生成，不写死在导出文件中；移动目录后重新查询生成新参数。手工传入相对 --directory 仍按进程 CWD 解释。
 - slice --follow --depth 3 --max-graphs 40 按静态调用引用导航；按包/图/入口去重，同图的不同自定义事件仍会跟随。保留每个调用点、共享/递归目标和外部状态，entry_nodes 标明当前入口区域。结果按 node/call 记录预算裁剪，depth_boundaries、pending_graphs、pending_entries 和 traversal_truncated 另报遍历边界；不展开调用栈，不承诺动态派发、可执行调用或运行时顺序。
 - impact --target <完整图/函数/自定义事件路径> --depth 3 在发现的导出包内反查调用。source_entries 标明调用点所在的静态入口区域，事件间反查按事件成员路径继续，孤立调用不虚构所属入口。范围不含完整资产引用、反射或动态委托派发；coverage_complete 仅描述扫描范围，invalid_exports/unresolved_calls 须一起检查。原生函数也可作目标。
 - 跨包查询优先使用父目录 00_INDEX.json；--index 可显式指定含嵌套相对目录的索引。索引身份与实际清单不符时拒绝查询；无索引退回当前包与直接兄弟包。移动整个目录保留相对路径；新增/移动单包后需重新导出维护索引。索引不代表完整 UE 项目。
