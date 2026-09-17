@@ -154,7 +154,8 @@ bool FXBlueprintGraphExporterReadPackTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Accumulator zero and raw empty both visible"), LocalLogic.Contains(TEXT("local \"Val\": \"real:double\" = type_default(0) [raw_default=\"\"]")));
     TestTrue(TEXT("Explicit false visible"), LocalLogic.Contains(TEXT("local \"Flag\": \"bool\" = serialized(\"false\") [explicit]")));
     TestTrue(TEXT("Complex type requires evidence"), LocalLogic.Contains(TEXT("local \"Struct\": \"struct\" = type_default [see_evidence] [raw_default=\"\"]")));
-    TestTrue(TEXT("Cross-asset implementation lookup explained"), LocalLogic.Contains(TEXT("05_Query.py deps")));
+    TestTrue(TEXT("Cross-asset implementation lookup explained"), LocalLogic.Contains(TEXT("被调实现用 deps 定位")));
+    TestTrue(TEXT("Full dependency command stays in the asset entry"), Files.FindRef(TEXT("00_START_HERE.md")).Contains(TEXT("05_Query.py deps")));
     TestTrue(TEXT("Function scope appears next to declarations"), LocalLogic.Contains(TEXT("local_scope: \"/Game/Fixture:Sum\"")));
     // Two output links into one consumer are not two consumer nodes or two calls.
     auto Edges = Graph->GetArrayField(TEXT("edges"));
@@ -288,6 +289,49 @@ bool FXBlueprintGraphExporterRerouteBoundTest::RunTest(const FString& Parameters
     SourceRef->SetStringField(TEXT("node_id"), TEXT("N2"));
     const FString Cycle = XBlueprintReadPack::Build(Snapshot, TEXT("fixture contract")).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
     TestTrue(TEXT("Data cycle is explicit without recursive expansion"), Cycle.Contains(TEXT("@N2: reroute(\"In\"=@N1[\"Out\"] [data_cycle])")));
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintReadPackTypedFactsTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.ReadPackTypedFacts",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintReadPackTypedFactsTest::RunTest(const FString& Parameters)
+{
+    const FString Input = TEXT(R"JSON({"asset_path":"/Game/Typed.Typed","graphs":[{"name":"EventGraph","path":"/Game/Typed.Typed:EventGraph","edges":[],"nodes":[
+      {"id":"N0","class":"K2Node_PromotableOperator","class_path":"/Script/BlueprintGraph.K2Node_PromotableOperator","is_enabled":true,
+       "semantic":{"kind":"call_function","is_pure":true,"resolved_function":"Add_VectorVector"},
+       "pins":[{"index":7,"name":"A","direction":"input","default":"1","type":{"category":"real","display":"real:double"}},
+               {"index":2,"name":"ReturnValue","direction":"output","type":{"display":"struct/Vector"}}]},
+      {"id":"N1","class":"K2Node_VariableGet","is_enabled":true,"semantic":{"kind":"variable","access":"get","variable":{"name":"State"},
+       "enum_definitions":[{"path":"/Game/State.State","entries":[{"internal_name":"NewEnumerator0","value":"9007199254740993","display_name":"same`name","hidden":false},{"internal_name":"NewEnumerator2","value":"-7","display_name":"same`name","hidden":true}]}]},"pins":[]}
+    ]}]})JSON");
+    TSharedPtr<FJsonObject> Snapshot;
+    if (!TestTrue(TEXT("Parse typed facts"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Input), Snapshot))) { return false; }
+    FString Before;
+    FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&Before));
+    const auto Files = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), TEXT("fixture contract"));
+    const FString Logic = Files.FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Unexpanded operator class remains visible"), Logic.Contains(TEXT("specialized_class=\"/Script/BlueprintGraph.K2Node_PromotableOperator\"")));
+    TestTrue(TEXT("Does not claim compiled signature or diagnose failure"), Logic.Contains(TEXT("serialized_function_reference; compilation_not_resolved")));
+    TestTrue(TEXT("Actual scalar input retained"), Logic.Contains(TEXT("\"type\":\"real:double\"")));
+    TestTrue(TEXT("Actual vector output retained"), Logic.Contains(TEXT("\"type\":\"struct/Vector\"")));
+    TestTrue(TEXT("Nonordinal pin identity retained"), Logic.Contains(TEXT("\"index\":7")));
+    TestTrue(TEXT("Sparse wide enum values stay exact"), Logic.Contains(TEXT("\"value\":\"9007199254740993\"")) && Logic.Contains(TEXT("\"value\":\"-7\"")));
+    TestTrue(TEXT("Duplicate display names do not replace internal names"), Logic.Contains(TEXT("NewEnumerator0")) && Logic.Contains(TEXT("NewEnumerator2")));
+    TestTrue(TEXT("Display names cannot inject code fences"), Logic.Contains(TEXT("same\\u0060name")));
+    TestTrue(TEXT("Mapping exposed on specialized variable renderer"), Logic.Contains(TEXT("  enum_definitions: [")));
+    FString After;
+    FJsonSerializer::Serialize(Snapshot.ToSharedRef(), TJsonWriterFactory<>::Create(&After));
+    TestEqual(TEXT("Rendering never normalizes or repairs snapshot"), After, Before);
+    const auto Node = Snapshot->GetArrayField(TEXT("graphs"))[0]->AsObject()->GetArrayField(TEXT("nodes"))[1]->AsObject();
+    Node->GetObjectField(TEXT("semantic"))->SetStringField(TEXT("kind"), TEXT("switch"));
+    const FString Generic = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), TEXT("fixture contract")).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Generic fallback preserves mapping"), Generic.Contains(TEXT("\"enum_definitions\":")));
+    TestFalse(TEXT("Generic fallback does not duplicate enum mapping"), Generic.Contains(TEXT("  enum_definitions:")));
+    Node->GetObjectField(TEXT("semantic"))->RemoveField(TEXT("kind"));
+    const FString Opaque = XBlueprintReadPack::Build(Snapshot.ToSharedRef(), TEXT("fixture contract")).FindRef(TEXT("10_Logic/G0001.pseudo.md"));
+    TestTrue(TEXT("Enum facts do not classify an unknown node"), Opaque.Contains(TEXT("@N1: opaque ")));
+    TestTrue(TEXT("Unknown node retains referenced enum facts"), Opaque.Contains(TEXT("  enum_definitions:")) && Opaque.Contains(TEXT("NewEnumerator2")));
     return true;
 }
 #endif

@@ -27,6 +27,7 @@
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/TimelineTemplate.h"
+#include "Engine/UserDefinedEnum.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "HAL/FileManager.h"
@@ -1552,6 +1553,56 @@ namespace
         return true;
     }
 
+    void WriteUserEnumDefinitions(const UEdGraphNode* Node, const TSharedRef<FJsonObject>& Json)
+    {
+        // Only inspect already referenced types. Do not load assets or infer names from display text.
+        TArray<const UUserDefinedEnum*> Enums;
+        const auto AddEnum = [&Enums](const UObject* Object)
+        {
+            if (const UUserDefinedEnum* Enum = Cast<UUserDefinedEnum>(Object))
+            {
+                Enums.AddUnique(Enum);
+            }
+        };
+        for (const UEdGraphPin* Pin : Node->Pins)
+        {
+            if (!Pin) { continue; }
+            AddEnum(Pin->PinType.PinSubCategoryObject.Get());
+            if (Pin->PinType.ContainerType == EPinContainerType::Map)
+            {
+                AddEnum(Pin->PinType.PinValueType.TerminalSubCategoryObject.Get());
+            }
+        }
+        // Literal/bitmask nodes may expose only primitive pins; also retain partially reconstructed nodes.
+        if (const UK2Node_EnumLiteral* Literal = Cast<UK2Node_EnumLiteral>(Node)) { AddEnum(Literal->GetEnum()); }
+        if (const UK2Node_BitmaskLiteral* Literal = Cast<UK2Node_BitmaskLiteral>(Node)) { AddEnum(Literal->GetEnum()); }
+        if (const UK2Node_CastByteToEnum* CastNode = Cast<UK2Node_CastByteToEnum>(Node)) { AddEnum(CastNode->GetEnum()); }
+        if (const UK2Node_SwitchEnum* Switch = Cast<UK2Node_SwitchEnum>(Node)) { AddEnum(Switch->Enum); }
+        if (const UK2Node_Select* Select = Cast<UK2Node_Select>(Node)) { AddEnum(Select->GetEnum()); }
+        if (Enums.IsEmpty()) { return; }
+
+        TArray<TSharedPtr<FJsonValue>> Definitions;
+        for (const UUserDefinedEnum* Enum : Enums)
+        {
+            const TSharedRef<FJsonObject> Definition = MakeShared<FJsonObject>();
+            Definition->SetStringField(TEXT("path"), Enum->GetPathName());
+            TArray<TSharedPtr<FJsonValue>> Entries;
+            for (int32 Index = 0; Index < Enum->NumEnums(); ++Index)
+            {
+                const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+                Entry->SetStringField(TEXT("internal_name"), Enum->GetNameStringByIndex(Index));
+                // JSON numbers cannot represent every int64 exactly.
+                Entry->SetStringField(TEXT("value"), FString::Printf(TEXT("%lld"), Enum->GetValueByIndex(Index)));
+                Entry->SetStringField(TEXT("display_name"), Enum->GetDisplayNameTextByIndex(Index).ToString());
+                Entry->SetBoolField(TEXT("hidden"), Enum->HasMetaData(TEXT("Hidden"), Index));
+                Entries.Add(MakeShared<FJsonValueObject>(Entry));
+            }
+            Definition->SetArrayField(TEXT("entries"), Entries);
+            Definitions.Add(MakeShared<FJsonValueObject>(Definition));
+        }
+        Json->SetArrayField(TEXT("enum_definitions"), Definitions);
+    }
+
     TSharedPtr<FJsonObject> NodeSemanticToJson(const UEdGraphNode* Node)
     {
         if (!Node)
@@ -1560,13 +1611,15 @@ namespace
         }
 
         const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-        if (TryWriteConstructionSemantic(Node, Json)
+        const bool bClassified = TryWriteConstructionSemantic(Node, Json)
             || TryWriteDataSemantic(Node, Json)
             || TryWriteCallableSemantic(Node, Json)
             || TryWriteValueSemantic(Node, Json)
             || TryWriteEventSemantic(Node, Json)
             || TryWriteFunctionBoundarySemantic(Node, Json)
-            || TryWriteControlFlowSemantic(Node, Json))
+            || TryWriteControlFlowSemantic(Node, Json);
+        WriteUserEnumDefinitions(Node, Json);
+        if (bClassified || Json->HasField(TEXT("enum_definitions")))
         {
             return Json;
         }
@@ -1936,7 +1989,9 @@ namespace
         {
             Json->SetObjectField(TEXT("semantic"), Semantic);
             // 识别到一类节点不代表理解了其全部行为（派生 K2Node 仍可能改变展开逻辑）。
-            Json->SetStringField(TEXT("semantic_status"), TEXT("classified"));
+            FString Kind;
+            const bool bClassified = Semantic->TryGetStringField(TEXT("kind"), Kind) && !Kind.IsEmpty();
+            Json->SetStringField(TEXT("semantic_status"), bClassified ? TEXT("classified") : TEXT("unclassified"));
         }
         else
         {
@@ -2788,8 +2843,10 @@ namespace
             for (const TSharedPtr<FJsonValue>& NodeValue : GraphValue->AsObject()->GetArrayField(TEXT("nodes")))
             {
                 const TSharedPtr<FJsonObject>* Semantic = nullptr;
+                FString Kind;
                 if (NodeValue->AsObject()->TryGetObjectField(TEXT("semantic"), Semantic)
-                    && (*Semantic)->GetStringField(TEXT("kind")) == TEXT("macro_instance"))
+                    && (*Semantic)->TryGetStringField(TEXT("kind"), Kind)
+                    && Kind == TEXT("macro_instance"))
                 {
                     FString MacroPath;
                     (*Semantic)->TryGetStringField(TEXT("macro_graph"), MacroPath);

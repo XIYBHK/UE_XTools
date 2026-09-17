@@ -13,6 +13,11 @@
 
 ## 语义
 
+- `semantic` 是已采集事实的容器，存在该对象不代表节点已分类。未知节点可以只含 `enum_definitions` 而没有 `kind`，此时 `semantic_status` 仍为 `unclassified`，伪代码仍为 `opaque`。读取 `kind` 时须允许字段缺失；仅非空 `kind` 表示已有分类，分类也不代表完整编译语义已解析。
+
+- `promotable_operator` 保留节点当前函数引用，`operator_pins` 按实际 pin 索引列出名称、方向和类型；它们是未展开节点的快照，不是最终编译函数签名。`compilation_not_resolved` 不代表编译失败；类型提升、隐式转换和异常节点状态仍需引擎编译证据，不可仅按函数名推断向量/标量行为。
+- `enum_definitions` 只列出节点引用的已加载自定义枚举，提供内部名、十进制字符串值、当前语言显示名及 hidden 元数据。连接/身份仍使用内部名；显示名可能重复、变化或本地化，不作为标识。不按数组下标推断枚举值，不隐去隐藏项；缺少映射不表示枚举没有成员。通用 `classified` 展示在 `semantic` 内保留映射，其他节点按需单列。
+
 - @N 只在所属图/本次快照内定位；持久对照结合完整资产/图路径、node_guid 与 pin.id，无效或重复 GUID 不保证稳定。
 - find/node/slice 默认附完整 node_guid；--node-guid 接受完整非零且唯一的 GUID，仍须选图；--snapshot 可拒绝过期快照。outline 中旧包可能缺少 GUID，应按需查 evidence。
 - exit/callback 是控制流边；sequence 按引脚顺序派发，不等待异步完成。条目顺序、静态可达和数据来源不证明运行时执行顺序；requires_prior_execution 不能当作本入口调用。

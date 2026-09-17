@@ -14,6 +14,11 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
+#include "Engine/UserDefinedEnum.h"
+#include "K2Node_EnumLiteral.h"
+#include "K2Node_SwitchEnum.h"
+#include "K2Node_Select.h"
+#include "K2Node_CallFunction.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Components/StaticMeshComponent.h"
@@ -98,6 +103,136 @@ bool FXBlueprintGraphExporterSemanticClassificationTest::RunTest(const FString& 
         XBlueprintGraphExporterTests::BuildNodeSemanticJson(NewObject<UEdGraphNode>()).IsValid());
     TestFalse(TEXT("空节点不应生成语义对象"),
         XBlueprintGraphExporterTests::BuildNodeSemanticJson(nullptr).IsValid());
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FXBlueprintGraphExporterUserEnumDefinitionsTest,
+    "XTools.AssetEditor.BlueprintGraphExporter.UserEnumDefinitions",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FXBlueprintGraphExporterUserEnumDefinitionsTest::RunTest(const FString& Parameters)
+{
+    UUserDefinedEnum* Enum = NewObject<UUserDefinedEnum>();
+    // NewObject leaves the base enum form unset; user-defined name generation requires Namespaced.
+    TArray<TPair<FName, int64>> InitialNames;
+    if (!TestTrue(TEXT("Initialize user enum form"), Enum->SetEnums(InitialNames, UEnum::ECppForm::Namespaced))) { return false; }
+    TArray<TPair<FName, int64>> Names = {
+        { FName(*Enum->GenerateFullEnumName(TEXT("NewEnumerator0"))), 3 },
+        { FName(*Enum->GenerateFullEnumName(TEXT("NewEnumerator7"))), 9007199254740993LL }
+    };
+    if (!TestTrue(TEXT("Create sparse enum fixture"), Enum->SetEnums(Names, UEnum::ECppForm::Namespaced))) { return false; }
+    Enum->DisplayNameMap.Add(TEXT("NewEnumerator0"), FText::FromString(TEXT("相同显示名")));
+    Enum->DisplayNameMap.Add(TEXT("NewEnumerator7"), FText::FromString(TEXT("相同显示名")));
+    Enum->SetMetaData(TEXT("Hidden"), TEXT("true"), 1);
+    const bool DirtyBefore = Enum->GetOutermost()->IsDirty();
+
+    UK2Node_EnumLiteral* Literal = NewObject<UK2Node_EnumLiteral>();
+    Literal->Enum = Enum; // Deliberately no pins: enum literals also expose primitive output types.
+    const auto Semantic = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Literal);
+    const auto& Definitions = Semantic->GetArrayField(TEXT("enum_definitions"));
+    TestEqual(TEXT("One referenced definition"), Definitions.Num(), 1);
+    const auto Definition = Definitions[0]->AsObject();
+    TestEqual(TEXT("Enum identity is its asset path"), Definition->GetStringField(TEXT("path")), Enum->GetPathName());
+    const auto& Entries = Definition->GetArrayField(TEXT("entries"));
+    TestEqual(TEXT("All entries including generated MAX are retained"), Entries.Num(), Enum->NumEnums());
+    TestEqual(TEXT("Raw internal names survive duplicate display labels"), Entries[1]->AsObject()->GetStringField(TEXT("internal_name")), FString(TEXT("NewEnumerator7")));
+    TestEqual(TEXT("Value is not the entry index"), Entries[0]->AsObject()->GetStringField(TEXT("value")), FString(TEXT("3")));
+    TestEqual(TEXT("Large int64 values remain exact"), Entries[1]->AsObject()->GetStringField(TEXT("value")), FString(TEXT("9007199254740993")));
+    TestEqual(TEXT("Display labels are not identity keys"), Entries[0]->AsObject()->GetStringField(TEXT("display_name")), Entries[1]->AsObject()->GetStringField(TEXT("display_name")));
+    TestTrue(TEXT("Hidden entries remain identifiable"), Entries[1]->AsObject()->GetBoolField(TEXT("hidden")));
+    TestEqual(TEXT("Existing semantic classification is unchanged"), Semantic->GetStringField(TEXT("kind")), FString(TEXT("enum_literal")));
+
+    FEdGraphPinType EnumType;
+    EnumType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+    EnumType.PinSubCategoryObject = Enum;
+    UK2Node_CallFunction* Call = NewObject<UK2Node_CallFunction>();
+    Call->CreatePin(EGPD_Input, EnumType, TEXT("First"));
+    Call->CreatePin(EGPD_Output, EnumType, TEXT("Second"));
+    FEdGraphPinType MapType;
+    MapType.PinCategory = UEdGraphSchema_K2::PC_Int;
+    MapType.ContainerType = EPinContainerType::Map;
+    MapType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Byte;
+    MapType.PinValueType.TerminalSubCategoryObject = Enum;
+    Call->CreatePin(EGPD_Input, MapType, TEXT("Mapping"));
+    TestEqual(TEXT("Repeated scalar and map references are deduplicated per node"),
+        XBlueprintGraphExporterTests::BuildNodeSemanticJson(Call)->GetArrayField(TEXT("enum_definitions")).Num(), 1);
+
+    UK2Node_TemporaryVariable* Variable = NewObject<UK2Node_TemporaryVariable>();
+    Variable->CreatePin(EGPD_Output, MapType, TEXT("Variable"));
+    TestEqual(TEXT("Map value enum alone is sufficient"),
+        XBlueprintGraphExporterTests::BuildNodeSemanticJson(Variable)->GetArrayField(TEXT("enum_definitions"))[0]->AsObject()->GetStringField(TEXT("path")), Enum->GetPathName());
+
+    UK2Node_SwitchEnum* Switch = NewObject<UK2Node_SwitchEnum>();
+    Switch->Enum = Enum;
+    Switch->bHasDefaultPin = false;
+    TestTrue(TEXT("Enum switch includes definitions without requiring reconstructed pins"),
+        XBlueprintGraphExporterTests::BuildNodeSemanticJson(Switch)->HasField(TEXT("enum_definitions")));
+    UK2Node_Select* Select = NewObject<UK2Node_Select>();
+    Select->SetEnum(Enum);
+    Select->CreatePin(EGPD_Input, EnumType, TEXT("Index"));
+    Select->CreatePin(EGPD_Output, EnumType, UEdGraphSchema_K2::PN_ReturnValue);
+    TestTrue(TEXT("Enum select includes definitions"),
+        XBlueprintGraphExporterTests::BuildNodeSemanticJson(Select)->HasField(TEXT("enum_definitions")));
+
+    UK2Node_TemporaryVariable* Plain = NewObject<UK2Node_TemporaryVariable>();
+    FEdGraphPinType NonUserEnumType = EnumType;
+    NonUserEnumType.PinSubCategoryObject = NewObject<UEnum>();
+    Plain->CreatePin(EGPD_Output, NonUserEnumType, TEXT("Variable"));
+    TestFalse(TEXT("Unrelated nodes do not receive an empty definition list"),
+        XBlueprintGraphExporterTests::BuildNodeSemanticJson(Plain)->HasField(TEXT("enum_definitions")));
+
+    // Unknown/custom node behavior must remain unknown even when its pin types are understood.
+    UBlueprint* UnknownBlueprint = NewObject<UBlueprint>();
+    UnknownBlueprint->ParentClass = AActor::StaticClass();
+    UEdGraph* UnknownGraph = NewObject<UEdGraph>(UnknownBlueprint);
+    UnknownBlueprint->UbergraphPages.Add(UnknownGraph);
+    UnknownGraph->Schema = UEdGraphSchema_K2::StaticClass();
+    UEdGraphNode* UnknownScalar = NewObject<UEdGraphNode>(UnknownGraph);
+    UnknownGraph->AddNode(UnknownScalar);
+    UnknownScalar->CreatePin(EGPD_Input, EnumType, TEXT("State"));
+    UEdGraphNode* UnknownMap = NewObject<UEdGraphNode>(UnknownGraph);
+    UnknownGraph->AddNode(UnknownMap);
+    UnknownMap->CreatePin(EGPD_Output, MapType, TEXT("States"));
+    for (const UEdGraphNode* Unknown : { UnknownScalar, UnknownMap })
+    {
+        const auto UnknownSemantic = XBlueprintGraphExporterTests::BuildNodeSemanticJson(Unknown);
+        if (!TestTrue(TEXT("Unknown node retains enum pin definitions"), UnknownSemantic.IsValid())) { continue; }
+        TestFalse(TEXT("Pin type information does not invent a semantic kind"), UnknownSemantic->HasField(TEXT("kind")));
+        TestEqual(TEXT("Unknown scalar/map enum identity remains available"),
+            UnknownSemantic->GetArrayField(TEXT("enum_definitions"))[0]->AsObject()->GetStringField(TEXT("path")), Enum->GetPathName());
+    }
+    const auto UnknownSnapshot = XBlueprintGraphExporterTests::BuildGraphJson(UnknownGraph);
+    const auto& UnknownNodes = UnknownSnapshot->GetArrayField(TEXT("nodes"));
+    TestEqual(TEXT("Snapshot contains both unknown node variants"), UnknownNodes.Num(), 2);
+    for (const auto& Value : UnknownNodes)
+    {
+        const auto Unknown = Value->AsObject();
+        TestEqual(TEXT("Type definitions do not falsely mark a node classified"),
+            Unknown->GetStringField(TEXT("semantic_status")), FString(TEXT("unclassified")));
+        const auto UnknownSemantic = Unknown->GetObjectField(TEXT("semantic"));
+        TestTrue(TEXT("Snapshot retains enum definitions"), UnknownSemantic->HasField(TEXT("enum_definitions")));
+        TestFalse(TEXT("Snapshot does not invent a kind"), UnknownSemantic->HasField(TEXT("kind")));
+    }
+    // Exercise whole-blueprint dependency postprocessing, not only per-graph serialization.
+    const auto BlueprintSnapshot = XBlueprintGraphExporterTests::BuildBlueprintJson(UnknownBlueprint);
+    const auto& FullGraphs = BlueprintSnapshot->GetArrayField(TEXT("graphs"));
+    TestEqual(TEXT("Whole-blueprint snapshot includes the unknown-node graph"), FullGraphs.Num(), 1);
+    if (FullGraphs.Num() == 1)
+    {
+        const auto& FullNodes = FullGraphs[0]->AsObject()->GetArrayField(TEXT("nodes"));
+        TestEqual(TEXT("Whole-blueprint snapshot preserves both unknown nodes"), FullNodes.Num(), 2);
+        for (const auto& Value : FullNodes)
+        {
+            const auto Unknown = Value->AsObject();
+            TestEqual(TEXT("Dependency scanning retains unknown classification"),
+                Unknown->GetStringField(TEXT("semantic_status")), FString(TEXT("unclassified")));
+            const auto UnknownSemantic = Unknown->GetObjectField(TEXT("semantic"));
+            TestTrue(TEXT("Dependency scanning retains type definitions"), UnknownSemantic->HasField(TEXT("enum_definitions")));
+            TestFalse(TEXT("Dependency scanning does not require or invent a kind"), UnknownSemantic->HasField(TEXT("kind")));
+        }
+    }
+    TestEqual(TEXT("Read-only collection does not dirty the enum package"), Enum->GetOutermost()->IsDirty(), DirtyBefore);
+    TestEqual(TEXT("Read-only collection preserves actual enum values"), Enum->GetValueByIndex(1), 9007199254740993LL);
     return true;
 }
 

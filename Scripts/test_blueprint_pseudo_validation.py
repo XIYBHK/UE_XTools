@@ -202,5 +202,55 @@ class PseudoValidationTests(unittest.TestCase):
         self.assertTrue(validate_pseudo(graph, text))
 
 
+class TypedFactsTests(unittest.TestCase):
+    def operator_fixture(self):
+        node = {"id": "A", "class": "K2Node_PromotableOperator", "class_path": "/Script/BlueprintGraph.K2Node_PromotableOperator",
+                "semantic": {"kind": "call_function", "is_pure": True, "resolved_function": "Add_VectorVector"},
+                "pins": [{"index": 7, "name": "A", "direction": "input", "type": {"category": "real", "display": "real:double"}, "default": "1"},
+                         {"index": 2, "name": "ReturnValue", "direction": "output", "type": {"display": "struct/Vector"}}]}
+        pins = [{"index": p["index"], "name": p["name"], "direction": p["direction"], "type": p["type"]["display"]} for p in node["pins"]]
+        head = (' [specialized_class="/Script/BlueprintGraph.K2Node_PromotableOperator"; see_evidence]'
+                ' [promotable_operator; serialized_function_reference; compilation_not_resolved]')
+        text = ('```text\n@A: expr "Add_VectorVector"' + head + '("A"=1)\n'
+                '  operator_pins: ' + json.dumps(pins) + '\n  data_outputs: "ReturnValue" [unconnected]\n```\n')
+        return {"nodes": [node], "edges": []}, text, head
+
+    def test_current_types_retained_without_claiming_compiler_result(self):
+        graph, text, _ = self.operator_fixture()
+        self.assertEqual(validate_pseudo(graph, text, typed_operator_hints=True), [])
+        for broken in (text.replace("real:double", "struct/Vector"), text.replace('"index": 7', '"index": 0'),
+                       text.replace("compilation_not_resolved", "compilation_resolved"),
+                       '\n'.join(line for line in text.splitlines() if "operator_pins:" not in line)):
+            self.assertTrue(validate_pseudo(graph, broken, typed_operator_hints=True))
+
+    def test_old_package_remains_valid(self):
+        graph, text, head = self.operator_fixture()
+        legacy = '\n'.join(line for line in text.replace(head, "").splitlines() if "operator_pins:" not in line)
+        self.assertEqual(validate_pseudo(graph, legacy), [])
+        self.assertTrue(validate_pseudo(graph, legacy, typed_operator_hints=True))
+
+    def test_enum_mapping_requires_exact_identity_value_and_display(self):
+        graph, text, _ = self.operator_fixture()
+        enums = [{"path": "/Game/State.State", "entries": [
+            {"internal_name": "NewEnumerator0", "value": "9007199254740993", "display_name": "同名", "hidden": False},
+            {"internal_name": "NewEnumerator2", "value": "-7", "display_name": "同名", "hidden": True}]}]
+        graph["nodes"][0]["semantic"]["enum_definitions"] = enums
+        text = text.replace('  data_outputs:', '  enum_definitions: ' + json.dumps(enums, ensure_ascii=False) + '\n  data_outputs:')
+        flags = {"typed_operator_hints": True, "enum_display_mappings": True}
+        self.assertEqual(validate_pseudo(graph, text, **flags), [])
+        for broken in (text.replace("9007199254740993", "9007199254740992"), text.replace("NewEnumerator2", "NewEnumerator0"),
+                       text.replace("同名", "改名"), '\n'.join(line for line in text.splitlines() if "enum_definitions:" not in line)):
+            self.assertTrue(validate_pseudo(graph, broken, **flags))
+
+    def test_unknown_node_keeps_mapping_without_claiming_classification(self):
+        enums = [{"path": "/Game/State.State", "entries": []}]
+        node = {"id": "U", "class_path": "/Script/Other.Unknown", "semantic": {"enum_definitions": enums}, "pins": []}
+        graph = {"nodes": [node], "edges": []}
+        text = ('```text\n@U: opaque "/Script/Other.Unknown" [see_evidence; do_not_assume_noop]()\n'
+                '  enum_definitions: ' + json.dumps(enums) + '\n```\n')
+        self.assertEqual(validate_pseudo(graph, text, enum_display_mappings=True, classified_fallback=True), [])
+        self.assertTrue(validate_pseudo(graph, text.replace('opaque', 'classified'), enum_display_mappings=True, classified_fallback=True))
+
+
 if __name__ == "__main__":
     unittest.main()

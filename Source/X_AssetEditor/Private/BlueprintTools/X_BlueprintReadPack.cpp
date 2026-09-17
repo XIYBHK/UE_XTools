@@ -59,6 +59,15 @@ FString Compact(const FObject& O)
     return Out;
 }
 
+FString PseudoArray(const FValues& Values)
+{
+    FString Out;
+    const auto Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Out);
+    FJsonSerializer::Serialize(Values, Writer);
+    // Preserve JSON escaping and prevent asset-authored text from closing the code fence.
+    return Out.Replace(TEXT("`"), TEXT("\\u0060"));
+}
+
 // JSON quoting also keeps asset-authored names/comments from creating Markdown sections or code fences.
 FString Quote(const FString& S)
 {
@@ -254,9 +263,13 @@ struct FGraphView
             FString Function = Str(S, TEXT("resolved_function"));
             if (Function.IsEmpty()) { Function = Str(Obj(S, TEXT("function")), TEXT("name")); }
             Head = (Flag(S, TEXT("is_pure")) ? TEXT("expr ") : (Flag(S, TEXT("is_latent")) ? TEXT("latent_call ") : TEXT("call "))) + Quote(Function);
-            if (Class != TEXT("K2Node_CallFunction") && Class != TEXT("K2Node_CallArrayFunction") && Class != TEXT("K2Node_PromotableOperator"))
+            if (Class != TEXT("K2Node_CallFunction") && Class != TEXT("K2Node_CallArrayFunction"))
             {
                 Head += TEXT(" [specialized_class=") + Quote(Str(N, TEXT("class_path"))) + TEXT("; see_evidence]");
+            }
+            if (Class == TEXT("K2Node_PromotableOperator"))
+            {
+                Head += TEXT(" [promotable_operator; serialized_function_reference; compilation_not_resolved]");
             }
             if (Flag(S, TEXT("is_server_rpc"))) { Head += TEXT(" [server_rpc]"); }
             if (Flag(S, TEXT("is_client_rpc"))) { Head += TEXT(" [client_rpc]"); }
@@ -280,6 +293,27 @@ struct FGraphView
         {
             // Preserve every already-collected semantic field; no second kind registry/template engine.
             Out += TEXT("  semantic: ") + Compact(S).Replace(TEXT("`"), TEXT("\\u0060")) + TEXT("\n");
+        }
+        if (Kind == TEXT("call_function") && Class == TEXT("K2Node_PromotableOperator"))
+        {
+            FValues Types;
+            for (const auto& V : Array(N, TEXT("pins")))
+            {
+                const FObject P = V->AsObject();
+                if (Flag(P, TEXT("is_exec"))) { continue; }
+                const FObject Type = MakeShared<FJsonObject>();
+                Type->SetNumberField(TEXT("index"), Number(P, TEXT("index")));
+                Type->SetStringField(TEXT("name"), Str(P, TEXT("name")));
+                Type->SetStringField(TEXT("direction"), Str(P, TEXT("direction")));
+                Type->SetStringField(TEXT("type"), Str(Obj(P, TEXT("type")), TEXT("display")));
+                Types.Add(MakeShared<FJsonValueObject>(Type));
+            }
+            Out += TEXT("  operator_pins: ") + PseudoArray(Types) + TEXT("\n");
+        }
+        // Classified fallback already includes the entire semantic object, including enums.
+        if (!bGenericClassified && Array(S, TEXT("enum_definitions")).Num())
+        {
+            Out += TEXT("  enum_definitions: ") + PseudoArray(Array(S, TEXT("enum_definitions"))) + TEXT("\n");
         }
         if (Kind == TEXT("macro_instance") && Obj(S, TEXT("iteration")).IsValid())
         {
@@ -403,7 +437,8 @@ TMap<FString, FString> Build(const TSharedRef<FJsonObject>& Snapshot, const FStr
         MakeShared<FJsonValueString>(TEXT("semantic_hints")), MakeShared<FJsonValueString>(TEXT("standard_macro_definitions")),
         MakeShared<FJsonValueString>(TEXT("reading_contract")), MakeShared<FJsonValueString>(TEXT("format_contract")),
         MakeShared<FJsonValueString>(TEXT("classified_fallback")), MakeShared<FJsonValueString>(TEXT("persistent_identity")),
-        MakeShared<FJsonValueString>(TEXT("standard_macro_iteration")), MakeShared<FJsonValueString>(TEXT("spawn_exposure_hints"))});
+        MakeShared<FJsonValueString>(TEXT("standard_macro_iteration")), MakeShared<FJsonValueString>(TEXT("spawn_exposure_hints")),
+        MakeShared<FJsonValueString>(TEXT("typed_operator_hints")), MakeShared<FJsonValueString>(TEXT("enum_display_mappings"))});
     Manifest->SetStringField(TEXT("asset_path"), Str(Snapshot, TEXT("asset_path")));
     Manifest->SetStringField(TEXT("snapshot_id"), ContentHash(Compact(Snapshot)));
     const FObject ContractRecord = MakeShared<FJsonObject>();

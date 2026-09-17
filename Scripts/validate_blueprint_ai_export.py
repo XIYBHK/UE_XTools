@@ -24,7 +24,7 @@ def _q(value):
 
 
 def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, semantic_hints=False, classified_fallback=False,
-                    spawn_exposure_hints=False, variables=()):
+                    spawn_exposure_hints=False, variables=(), typed_operator_hints=False, enum_display_mappings=False):
     """Independently validate the semantic records in one ReadPack pseudo file.
 
     This intentionally parses the stable pseudo grammar and derives expected records
@@ -165,8 +165,13 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
             verb = "expr" if semantic.get("is_pure") else "latent_call" if semantic.get("is_latent") else "call"
             name = semantic.get("resolved_function") or semantic.get("function", {}).get("name", "")
             head = verb + " " + _q(name)
-            if node.get("class") not in ("K2Node_CallFunction", "K2Node_CallArrayFunction", "K2Node_PromotableOperator"):
+            ordinary = ("K2Node_CallFunction", "K2Node_CallArrayFunction")
+            if not typed_operator_hints:
+                ordinary += ("K2Node_PromotableOperator",)
+            if node.get("class") not in ordinary:
                 head += " [specialized_class=" + _q(node.get("class_path", "")) + "; see_evidence]"
+            if typed_operator_hints and node.get("class") == "K2Node_PromotableOperator":
+                head += " [promotable_operator; serialized_function_reference; compilation_not_resolved]"
             for flag in ("server_rpc", "client_rpc", "net_multicast", "reliable"):
                 if semantic.get("is_" + flag):
                     head += " [" + flag + "]"
@@ -243,6 +248,28 @@ def validate_pseudo(graph, logic, *, legacy_labels=False, require_locals=False, 
             continue
         semantic = node.get("semantic", {})
         kind = semantic.get("kind")
+        def check_json_hint(prefix, expected_value):
+            values = [line.strip()[len(prefix):] for line in body if line.strip().startswith(prefix)]
+            try:
+                if expected_value is None:
+                    if values:
+                        errors.append(f"Unexpected pseudo {prefix} {node_id}")
+                elif len(values) != 1 or json.loads(values[0]) != expected_value:
+                    errors.append(f"Pseudo {prefix} differs: {node_id}")
+            except (ValueError, TypeError):
+                errors.append(f"Invalid pseudo {prefix} {node_id}")
+
+        if typed_operator_hints:
+            operator_pins = None
+            if kind == "call_function" and node.get("class") == "K2Node_PromotableOperator":
+                operator_pins = [{"index": p.get("index", -1), "name": p.get("name", ""),
+                                  "direction": p.get("direction", ""), "type": p.get("type", {}).get("display", "")}
+                                 for p in node.get("pins", []) if not p.get("is_exec")]
+            check_json_hint("operator_pins: ", operator_pins)
+        if enum_display_mappings:
+            definitions = semantic.get("enum_definitions")
+            # Generic fallback already carries these facts in its validated semantic line.
+            check_json_hint("enum_definitions: ", definitions if definitions and not operation(node).startswith("classified ") else None)
         if classified_fallback:
             facts = [line.strip()[len("semantic: "):] for line in body if line.strip().startswith("semantic: ")]
             if operation(node).startswith("classified "):
@@ -446,6 +473,8 @@ def validate(asset):
                                                     semantic_hints=manifest is not None and "semantic_hints" in manifest.get("features", []),
                                                     classified_fallback=manifest is not None and "classified_fallback" in manifest.get("features", []),
                                                     spawn_exposure_hints=manifest is not None and "spawn_exposure_hints" in manifest.get("features", []),
+                                                    typed_operator_hints=manifest is not None and "typed_operator_hints" in manifest.get("features", []),
+                                                    enum_display_mappings=manifest is not None and "enum_display_mappings" in manifest.get("features", []),
                                                     variables=evidence_metadata.get("variables", []) if manifest is not None else ()):
                     check(False, f"{graph_id}: {pseudo_error}")
                 size = (directory / logic_file).stat().st_size
@@ -494,6 +523,8 @@ def validate(asset):
                     if "format_contract" in manifest.get("features", []):
                         check(record.get(key + "_bytes") == (directory / record[key]).stat().st_size, "Macro file byte budget differs")
                 for error in validate_pseudo(definition, (directory / record["logic"]).read_text(encoding="utf-8-sig"), require_locals=True, semantic_hints=True,
+                                             typed_operator_hints="typed_operator_hints" in manifest.get("features", []),
+                                             enum_display_mappings="enum_display_mappings" in manifest.get("features", []),
                                              classified_fallback="classified_fallback" in manifest.get("features", [])):
                     check(False, f"{record['id']}: {error}")
             result["macro_definitions"] = len(definitions)
