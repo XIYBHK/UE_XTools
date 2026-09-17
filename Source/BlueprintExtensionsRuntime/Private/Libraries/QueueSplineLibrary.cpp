@@ -4,6 +4,16 @@
 
 namespace
 {
+	bool HasFiniteGeometry(const FXToolsQueueSplineConfig& Config)
+	{
+		return FMath::IsFinite(Config.StartDistance)
+			&& FMath::IsFinite(Config.Spacing)
+			&& FMath::IsFinite(Config.FillRatio)
+			&& FMath::IsFinite(Config.SideOffset)
+			&& FMath::IsFinite(Config.DistanceJitter)
+			&& FMath::IsFinite(Config.SideJitter);
+	}
+
 	bool IsSplineUsable(const USplineComponent* SplineComponent)
 	{
 		return IsValid(SplineComponent)
@@ -66,7 +76,7 @@ TArray<FXToolsQueueSplineSlot> UQueueSplineLibrary::GenerateQueueSplineSlots(
 	const FXToolsQueueSplineConfig& Config)
 {
 	TArray<FXToolsQueueSplineSlot> Slots;
-	if (!IsSplineUsable(SplineComponent) || Config.UnitCount <= 0)
+	if (!IsSplineUsable(SplineComponent) || Config.UnitCount <= 0 || !HasFiniteGeometry(Config))
 	{
 		return Slots;
 	}
@@ -92,7 +102,7 @@ bool UQueueSplineLibrary::CalculateQueueSplineSlot(
 {
 	OutSlot = FXToolsQueueSplineSlot();
 
-	if (!IsSplineUsable(SplineComponent) || UnitIndex < 0)
+	if (!IsSplineUsable(SplineComponent) || UnitIndex < 0 || !HasFiniteGeometry(Config))
 	{
 		return false;
 	}
@@ -181,6 +191,12 @@ bool UQueueSplineLibrary::IsQueueSplineConfigValid(
 	if (Config.UnitCount < 0)
 	{
 		OutMessage = TEXT("人数不能为负数。");
+		return false;
+	}
+
+	if (!HasFiniteGeometry(Config))
+	{
+		OutMessage = TEXT("几何参数必须为有限数值。");
 		return false;
 	}
 

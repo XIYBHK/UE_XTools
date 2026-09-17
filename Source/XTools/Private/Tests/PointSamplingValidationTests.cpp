@@ -227,4 +227,52 @@ bool FPointSamplingKismetEquivalence::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPointSamplingGridCacheBoundary,
+    "XTools.PointSampling.Surface.GridCacheBoundary",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSamplingGridCacheBoundary::RunTest(const FString& Parameters)
+{
+    FScopedPointSamplingTestWorld TestWorld(TEXT("XToolsGridCacheBoundary"));
+    UWorld* World = TestWorld.Get();
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Cube"), Cube))
+    {
+        return false;
+    }
+    AActor* Target = World->SpawnActor<AActor>();
+    UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(Target);
+    Target->SetRootComponent(Mesh);
+    Mesh->SetStaticMesh(Cube);
+    Mesh->SetWorldScale3D(FVector(6.0));
+    Mesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Mesh->SetCollisionObjectType(ECC_WorldStatic);
+    Mesh->SetCollisionResponseToAllChannels(ECR_Block);
+    Mesh->RegisterComponent();
+    AActor* BoundsOwner = World->SpawnActor<AActor>();
+    UBoxComponent* Bounds = AddBoundingBox(BoundsOwner);
+    Bounds->SetBoxExtent(FVector(100.0));
+    Bounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    // 顺序跨越 floor(200 / spacing) 的边界，再回到初始输入验证缓存复用。
+    for (float Spacing : {100.0f, 100.0004f, 100.0f})
+    {
+        FPointSamplingConfig Config;
+        Config.GridSpacing = Spacing;
+        Config.Noise = 0.0f;
+        Config.bUseComplexCollision = false;
+        TArray<FVector> Points;
+        bool bSuccess = false;
+        UXToolsLibrary::SamplePointsInsideMesh(World, Target, Bounds, Config, Points, bSuccess);
+        const FString Context = FString::Printf(TEXT("GridSpacing=%.9g"), Spacing);
+        TestTrue(Context + TEXT(" 采样成功"), bSuccess);
+        TestEqual(Context + TEXT(" 缓存不得跨越网格分段边界"), Points.Num(), Spacing == 100.0f ? 27 : 8);
+        if (!Points.IsEmpty())
+        {
+            TestTrue(Context + TEXT(" 首点位置正确"), Points[0].Equals(FVector(-100.0), 0.000001));
+        }
+    }
+    return true;
+}
+
 #endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

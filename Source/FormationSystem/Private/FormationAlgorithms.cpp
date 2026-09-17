@@ -561,14 +561,25 @@ TArray<int32> UFormationManagerComponent::CalculateSpatialOrderMapping(
     }
     else
     {
-        // 使用备份代码中的改进排序策略：首先按角度排序，然后按距离排序
+        // 固定半开角度桶 [k * 0.01, (k + 1) * 0.01)，桶内按半径排序。
+        // 成对近似相等不具传递性，不能用来切换排序键。
         auto SortPredicate = [](const FSpatialSortData& A, const FSpatialSortData& B) -> bool
         {
-            if (!FMath::IsNearlyEqual(A.Angle, B.Angle, 0.01f))
+            const int32 BucketA = FMath::FloorToInt(A.Angle / 0.01f);
+            const int32 BucketB = FMath::FloorToInt(B.Angle / 0.01f);
+            if (BucketA != BucketB)
+            {
+                return BucketA < BucketB;
+            }
+            if (A.DistanceToCenter != B.DistanceToCenter)
+            {
+                return A.DistanceToCenter < B.DistanceToCenter;
+            }
+            if (A.Angle != B.Angle)
             {
                 return A.Angle < B.Angle;
             }
-            return A.DistanceToCenter < B.DistanceToCenter;
+            return A.OriginalIndex < B.OriginalIndex;
         };
 
         FromSortData.Sort(SortPredicate);

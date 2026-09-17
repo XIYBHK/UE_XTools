@@ -104,101 +104,42 @@ struct FGridParameters
     FString ErrorMessage;
 };
 
-//  智能缓存系统
-namespace XToolsGridParametersCacheKey
-{
-	// 与旧实现的 0.001f NearlyEqual 容差对齐，保证缓存键在小抖动下稳定。
-	static constexpr double QuantizeStep = 1e-3;
-
-	static int64 QuantizeFloat(const float Value)
-	{
-		return FMath::RoundToInt64(static_cast<double>(Value) / QuantizeStep);
-	}
-
-	static void QuantizeVector(const FVector& Vec, int64& OutX, int64& OutY, int64& OutZ)
-	{
-		OutX = QuantizeFloat(Vec.X);
-		OutY = QuantizeFloat(Vec.Y);
-		OutZ = QuantizeFloat(Vec.Z);
-	}
-}
-
+// 网格步数存在离散边界，缓存必须区分每个实际输入。
 struct FGridParametersKey
 {
-	int64 ExtentXQ = 0;
-	int64 ExtentYQ = 0;
-	int64 ExtentZQ = 0;
+	FVector BoxExtent;
+	FVector Location;
+	FVector Scale;
+	FQuat Rotation;
+	float GridSpacing;
 
-	int64 LocationXQ = 0;
-	int64 LocationYQ = 0;
-	int64 LocationZQ = 0;
-
-	int64 RotationXQ = 0;
-	int64 RotationYQ = 0;
-	int64 RotationZQ = 0;
-	int64 RotationWQ = 0;
-
-	int64 ScaleXQ = 0;
-	int64 ScaleYQ = 0;
-	int64 ScaleZQ = 0;
-
-	int64 GridSpacingQ = 0;
-
-	static FGridParametersKey Make(const FVector& BoxExtent, const FTransform& BoxTransform, const float GridSpacing)
+	static FGridParametersKey Make(const FVector& Extent, const FTransform& Transform, float Spacing)
 	{
-		FGridParametersKey Key;
-
-		XToolsGridParametersCacheKey::QuantizeVector(BoxExtent, Key.ExtentXQ, Key.ExtentYQ, Key.ExtentZQ);
-		XToolsGridParametersCacheKey::QuantizeVector(BoxTransform.GetLocation(), Key.LocationXQ, Key.LocationYQ, Key.LocationZQ);
-		XToolsGridParametersCacheKey::QuantizeVector(BoxTransform.GetScale3D(), Key.ScaleXQ, Key.ScaleYQ, Key.ScaleZQ);
-
-		const FQuat Rotation = BoxTransform.GetRotation().GetNormalized();
-		Key.RotationXQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.X);
-		Key.RotationYQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.Y);
-		Key.RotationZQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.Z);
-		Key.RotationWQ = XToolsGridParametersCacheKey::QuantizeFloat(Rotation.W);
-
-		Key.GridSpacingQ = XToolsGridParametersCacheKey::QuantizeFloat(GridSpacing);
-		return Key;
+		return {Extent, Transform.GetLocation(), Transform.GetScale3D(), Transform.GetRotation(), Spacing};
 	}
 
-    bool operator==(const FGridParametersKey& Other) const
-    {
-		return ExtentXQ == Other.ExtentXQ &&
-			ExtentYQ == Other.ExtentYQ &&
-			ExtentZQ == Other.ExtentZQ &&
-			LocationXQ == Other.LocationXQ &&
-			LocationYQ == Other.LocationYQ &&
-			LocationZQ == Other.LocationZQ &&
-			RotationXQ == Other.RotationXQ &&
-			RotationYQ == Other.RotationYQ &&
-			RotationZQ == Other.RotationZQ &&
-			RotationWQ == Other.RotationWQ &&
-			ScaleXQ == Other.ScaleXQ &&
-			ScaleYQ == Other.ScaleYQ &&
-			ScaleZQ == Other.ScaleZQ &&
-			GridSpacingQ == Other.GridSpacingQ;
-    }
+	bool operator==(const FGridParametersKey& Other) const
+	{
+		return BoxExtent == Other.BoxExtent && Location == Other.Location
+			&& Scale == Other.Scale && Rotation == Other.Rotation && GridSpacing == Other.GridSpacing;
+	}
 
-    friend uint32 GetTypeHash(const FGridParametersKey& Key)
-    {
-		uint32 Hash = 0;
-		Hash = HashCombine(Hash, GetTypeHash(Key.ExtentXQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.ExtentYQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.ExtentZQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.LocationXQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.LocationYQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.LocationZQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.RotationXQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.RotationYQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.RotationZQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.RotationWQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.ScaleXQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.ScaleYQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.ScaleZQ));
-		Hash = HashCombine(Hash, GetTypeHash(Key.GridSpacingQ));
-		return Hash;
-    }
+	friend uint32 GetTypeHash(const FGridParametersKey& Key)
+	{
+		auto HashScalar = [](double Value) { return GetTypeHash(Value == 0.0 ? 0.0 : Value); };
+		auto HashVector = [&HashScalar](const FVector& Value)
+		{
+			return HashCombine(HashCombine(HashScalar(Value.X), HashScalar(Value.Y)), HashScalar(Value.Z));
+		};
+		uint32 Hash = HashVector(Key.BoxExtent);
+		Hash = HashCombine(Hash, HashVector(Key.Location));
+		Hash = HashCombine(Hash, HashVector(Key.Scale));
+		Hash = HashCombine(Hash, HashScalar(Key.Rotation.X));
+		Hash = HashCombine(Hash, HashScalar(Key.Rotation.Y));
+		Hash = HashCombine(Hash, HashScalar(Key.Rotation.Z));
+		Hash = HashCombine(Hash, HashScalar(Key.Rotation.W));
+		return HashCombine(Hash, HashScalar(Key.GridSpacing));
+	}
 };
 
 class FGridParametersCache
@@ -1365,7 +1306,7 @@ static FGridParameters CalculateGridParameters(UBoxComponent* BoundingBox, float
 {
     //  创建缓存键（注意：Hash/Equals 必须一致，否则会导致 TMap 命中/冲突异常）
     const FGridParametersKey CacheKey = FGridParametersKey::Make(
-        BoundingBox->GetScaledBoxExtent(),
+        BoundingBox->GetUnscaledBoxExtent(),
         BoundingBox->GetComponentTransform(),
         GridSpacing);
 

@@ -174,4 +174,66 @@ bool FFormationMathUtils_ProducesBoundedForces::RunTest(const FString& Parameter
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFormationLibrary_RejectsNonFiniteGeneratorInputs,
+	"XTools.Formation.Library.RejectsNonFiniteGeneratorInputs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationLibrary_RejectsNonFiniteGeneratorInputs::RunTest(const FString& Parameters)
+{
+	const FVector Center = FVector::ZeroVector;
+	const FRotator Rotation = FRotator::ZeroRotator;
+	const auto CheckEmpty = [this](const TCHAR* Case, float Invalid, int32 Count, const FFormationData& Formation)
+	{
+		const FString Context = FString::Printf(TEXT("%s Invalid=%g Count=%d"), Case, Invalid, Count);
+		TestEqual(*(Context + TEXT(" 非法输入应返回空阵型")), Formation.Positions.Num(), 0);
+		TestTrue(*(Context + TEXT(" 空阵型不可携带非有限元数据")),
+			FMath::IsFinite(Formation.CenterLocation.X) && FMath::IsFinite(Formation.CenterLocation.Y)
+			&& FMath::IsFinite(Formation.CenterLocation.Z) && FMath::IsFinite(Formation.Rotation.Pitch)
+			&& FMath::IsFinite(Formation.Rotation.Yaw) && FMath::IsFinite(Formation.Rotation.Roll)
+			&& FMath::IsFinite(Formation.Size.X) && FMath::IsFinite(Formation.Size.Y)
+			&& FMath::IsFinite(Formation.Spacing));
+	};
+	const float InvalidValues[] = {std::numeric_limits<float>::quiet_NaN(),
+		std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()};
+	for (float Invalid : InvalidValues)
+	{
+		// 覆盖空、单点早退和真实三角函数生成路径。
+		for (int32 Count : {0, 1, 6})
+		{
+			CheckEmpty(TEXT("Circle.Radius"), Invalid, Count, UFormationLibrary::CreateCircleFormation(Center, Rotation, Count, Invalid));
+			CheckEmpty(TEXT("Circle.StartAngle"), Invalid, Count, UFormationLibrary::CreateCircleFormation(Center, Rotation, Count, 100.0f, Invalid));
+			CheckEmpty(TEXT("Spiral.Radius"), Invalid, Count, UFormationLibrary::CreateSpiralFormation(Center, Rotation, Count, Invalid));
+			CheckEmpty(TEXT("Spiral.Turns"), Invalid, Count, UFormationLibrary::CreateSpiralFormation(Center, Rotation, Count, 100.0f, Invalid));
+		}
+		CheckEmpty(TEXT("Square.Spacing"), Invalid, 6, UFormationLibrary::CreateSquareFormation(Center, Rotation, 6, Invalid));
+		CheckEmpty(TEXT("Line.Spacing"), Invalid, 6, UFormationLibrary::CreateLineFormation(Center, Rotation, 6, Invalid));
+		CheckEmpty(TEXT("Triangle.Spacing"), Invalid, 6, UFormationLibrary::CreateTriangleFormation(Center, Rotation, 6, Invalid));
+		CheckEmpty(TEXT("Arrow.Spacing"), Invalid, 6, UFormationLibrary::CreateArrowFormation(Center, Rotation, 6, Invalid));
+		CheckEmpty(TEXT("SolidCircle.Radius"), Invalid, 6, UFormationLibrary::CreateSolidCircleFormation(Center, Rotation, 6, Invalid));
+		CheckEmpty(TEXT("Zigzag.Spacing"), Invalid, 6, UFormationLibrary::CreateZigzagFormation(Center, Rotation, 6, Invalid));
+		CheckEmpty(TEXT("Zigzag.Amplitude"), Invalid, 6, UFormationLibrary::CreateZigzagFormation(Center, Rotation, 6, 100.0f, Invalid));
+		FVector InvalidCenter = Center;
+		InvalidCenter.Z = Invalid;
+		FRotator InvalidRotation = Rotation;
+		InvalidRotation.Yaw = Invalid;
+		CheckEmpty(TEXT("Circle.Center.Z"), Invalid, 6, UFormationLibrary::CreateCircleFormation(InvalidCenter, Rotation, 6, 100.0f));
+		CheckEmpty(TEXT("Spiral.Rotation.Yaw"), Invalid, 6, UFormationLibrary::CreateSpiralFormation(Center, InvalidRotation, 6, 100.0f));
+		CheckEmpty(TEXT("Custom.Positions[1].Z"), Invalid, 2, UFormationLibrary::CreateCustomFormation(Center, Rotation, {Center, InvalidCenter}));
+		CheckEmpty(TEXT("Custom.Center.Z"), Invalid, 1, UFormationLibrary::CreateCustomFormation(InvalidCenter, Rotation, {Center}));
+		CheckEmpty(TEXT("Custom.Rotation.Yaw"), Invalid, 1, UFormationLibrary::CreateCustomFormation(Center, InvalidRotation, {Center}));
+	}
+
+	const FFormationData NegativeCircle = UFormationLibrary::CreateCircleFormation(Center, Rotation, 6, -100.0f, -30.0f);
+	const FFormationData NegativeSpiral = UFormationLibrary::CreateSpiralFormation(Center, Rotation, 6, -100.0f, -2.0f);
+	TestFormation(*this, TEXT("有限负半径圆阵"), NegativeCircle, 6);
+	TestFormation(*this, TEXT("有限负半径和圈数螺旋"), NegativeSpiral, 6);
+	TestTrue(TEXT("负半径元数据应保留既有语义"), NegativeCircle.Size.X == -200.0f && NegativeSpiral.Size.X == -200.0f);
+	const FFormationData NegativeLine = UFormationLibrary::CreateLineFormation(Center, Rotation, 3, -100.0f);
+	TestFormation(*this, TEXT("有限负间距线阵"), NegativeLine, 3);
+	TestTrue(TEXT("有限负间距应保留镜像位置和元数据"),
+		NegativeLine.Spacing == -100.0f && NegativeLine.Positions[0].X == 100.0);
+	return true;
+}
+
 #endif

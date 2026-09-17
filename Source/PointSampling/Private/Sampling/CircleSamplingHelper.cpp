@@ -251,7 +251,10 @@ TArray<FVector> FCircleSamplingHelper::GenerateCircle(
 	bool bUseCache)
 {
 	TArray<FVector> Points;
-	if (PointCount <= 0 || Radius <= 0.0f)
+	if (PointCount <= 0 || Radius <= 0.0f || !FMath::IsFinite(Radius)
+		|| !FMath::IsFinite(MinDistance) || !FMath::IsFinite(StartAngle)
+		|| !FMath::IsFinite(JitterStrength) || !FMath::IsFinite(SolidRingSpacing)
+		|| !FMath::IsFinite(SolidLayerSpacing) || !FMath::IsFinite(SolidLayerDensity))
 	{
 		return Points;
 	}
@@ -643,14 +646,8 @@ TArray<FVector> FCircleSamplingHelper::GenerateUniformSphereShell(
 	const TArray<FSphereCircleLayer> Layers = BuildSphereCircleLayers(PointCount, Radius);
 	for (const FSphereCircleLayer& Layer : Layers)
 	{
-		if (Layer.CircleRadius <= UE_KINDA_SMALL_NUMBER || Layer.PointCount == 1)
-		{
-			Points.Add(FVector(0.0f, 0.0f, Layer.Z));
-		}
-		else
-		{
-			GenerateFullRingPoints(Points, Layer.PointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise);
-		}
+		// 单点纬度仍位于球面；零半径的极点也由同一路径处理。
+		GenerateFullRingPoints(Points, Layer.PointCount, Layer.CircleRadius, Layer.Z, StartAngle, bClockwise);
 	}
 
 	return Points;
@@ -715,43 +712,52 @@ TArray<FVector> FCircleSamplingHelper::GenerateClosePackedSphere(
 	const float TargetPointSpacing = TargetSpacing > UE_KINDA_SMALL_NUMBER
 		? TargetSpacing
 		: FindClosePackedSphereSpacing(PointCount, Radius);
-	const float LayerDensity = FMath::Max(1.0f, TargetLayerDensity);
 	// Z层级密度只插入更多水平截面，保持每个圆盘原有的环间距和环上间距。
 	const float RingSpacing = TargetPointSpacing;
-	const float BaseLayerSpacing = TargetPointSpacing * FMath::Sqrt(2.0f / 3.0f);
-	const float CapLayoutZ = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(RingSpacing)));
-	const int32 CapLayerIndex = FMath::Max(1, FMath::RoundToInt(CapLayoutZ / BaseLayerSpacing * LayerDensity));
-	const float MaximumLayerSpacing = CapLayoutZ / static_cast<float>(CapLayerIndex);
-	const float LayerSpacing = TargetLayerSpacing > UE_KINDA_SMALL_NUMBER
-		? FMath::Min(TargetLayerSpacing, MaximumLayerSpacing)
-		: MaximumLayerSpacing;
-
-	TArray<FVector> Points = BuildClosePackedSphereCross(RingSpacing, LayerSpacing, -CapLayerIndex);
-	for (int32 LayerIndex = -CapLayerIndex + 1; LayerIndex < CapLayerIndex; ++LayerIndex)
+	TArray<FVector> Points;
+	if (RingSpacing >= Radius)
 	{
-		const float Z = LayerIndex * LayerSpacing;
-		const float LayoutZ = CapLayoutZ * static_cast<float>(LayerIndex) / static_cast<float>(CapLayerIndex);
-		const float CircleRadius = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(LayoutZ)));
-		const int32 RingCount = FMath::Max(1, FMath::CeilToInt(CircleRadius / RingSpacing));
-		int32 LayerPointCount = 1;
-		for (int32 RingIndex = 1; RingIndex <= RingCount; ++RingIndex)
-		{
-			const float RingRadius = CircleRadius * static_cast<float>(RingIndex) / static_cast<float>(RingCount);
-			LayerPointCount += FMath::Max(3, FMath::RoundToInt(2.0f * PI * RingRadius / RingSpacing));
-		}
-
-		GenerateSolidDiscPoints(Points, LayerPointCount, CircleRadius, Z, 0.0f, true, RingSpacing);
+		// 上下端重合，只保留球内的赤道截面，无需计算多层参数。
+		Points = BuildClosePackedSphereCross(Radius, 0.0f, 0);
 	}
-	Points.Append(BuildClosePackedSphereCross(RingSpacing, LayerSpacing, CapLayerIndex));
+	else
+	{
+		const float LayerDensity = FMath::Max(1.0f, TargetLayerDensity);
+		const float BaseLayerSpacing = RingSpacing * FMath::Sqrt(2.0f / 3.0f);
+		const float CapLayoutZ = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(RingSpacing)));
+		const int32 CapLayerIndex = FMath::Max(1, FMath::RoundToInt(CapLayoutZ / BaseLayerSpacing * LayerDensity));
+		const float MaximumLayerSpacing = CapLayoutZ / static_cast<float>(CapLayerIndex);
+		const float LayerSpacing = TargetLayerSpacing > UE_KINDA_SMALL_NUMBER
+			? FMath::Min(TargetLayerSpacing, MaximumLayerSpacing)
+			: MaximumLayerSpacing;
+
+		Points = BuildClosePackedSphereCross(RingSpacing, LayerSpacing, -CapLayerIndex);
+		for (int32 LayerIndex = -CapLayerIndex + 1; LayerIndex < CapLayerIndex; ++LayerIndex)
+		{
+			const float Z = LayerIndex * LayerSpacing;
+			const float LayoutZ = CapLayoutZ * static_cast<float>(LayerIndex) / static_cast<float>(CapLayerIndex);
+			const float CircleRadius = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - FMath::Square(LayoutZ)));
+			const int32 RingCount = FMath::Max(1, FMath::CeilToInt(CircleRadius / RingSpacing));
+			int32 LayerPointCount = 1;
+			for (int32 RingIndex = 1; RingIndex <= RingCount; ++RingIndex)
+			{
+				const float RingRadius = CircleRadius * static_cast<float>(RingIndex) / static_cast<float>(RingCount);
+				LayerPointCount += FMath::Max(3, FMath::RoundToInt(2.0f * PI * RingRadius / RingSpacing));
+			}
+
+			GenerateSolidDiscPoints(Points, LayerPointCount, CircleRadius, Z, 0.0f, true, RingSpacing);
+		}
+		Points.Append(BuildClosePackedSphereCross(RingSpacing, LayerSpacing, CapLayerIndex));
+	}
 
 	Points.Sort([](const FVector& Left, const FVector& Right)
 	{
-		// UE 最佳实践：浮点比较使用容差，避免不同计算路径产生的微小误差破坏排序稳定性
-		if (!FMath::IsNearlyEqual(Left.Z, Right.Z, UE_KINDA_SMALL_NUMBER))
+		// 字典序使用精确比较，保证排序比较器的传递性。
+		if (Left.Z != Right.Z)
 		{
 			return Left.Z < Right.Z;
 		}
-		if (!FMath::IsNearlyEqual(Left.Y, Right.Y, UE_KINDA_SMALL_NUMBER))
+		if (Left.Y != Right.Y)
 		{
 			return Left.Y < Right.Y;
 		}
@@ -916,7 +922,7 @@ TArray<FVector> FCircleSamplingHelper::GeneratePoisson(
 		float SquareSize = Radius * 2.0f;
 		
 		// 生成正方形泊松采样
-		TArray<FVector2D> Poisson2D = FPoissonDiskSampling::GeneratePoisson2D(SquareSize, SquareSize, MinDistance, 30);
+		TArray<FVector2D> Poisson2D = FPoissonDiskSampling::GeneratePoisson2DFromStream(RandomStream, SquareSize, SquareSize, MinDistance, 30);
 		
 		// 筛选圆形内的点
 		for (const FVector2D& Point2D : Poisson2D)

@@ -7,6 +7,15 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Engine/Engine.h"
 
+namespace
+{
+    bool HasFiniteFormationTransform(const FVector& Center, const FRotator& Rotation)
+    {
+        return FMath::IsFinite(Center.X) && FMath::IsFinite(Center.Y) && FMath::IsFinite(Center.Z)
+            && FMath::IsFinite(Rotation.Pitch) && FMath::IsFinite(Rotation.Yaw) && FMath::IsFinite(Rotation.Roll);
+    }
+}
+
 FFormationData UFormationLibrary::CreateSquareFormation(
     FVector CenterLocation,
     FRotator Rotation,
@@ -16,6 +25,10 @@ FFormationData UFormationLibrary::CreateSquareFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Square;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Spacing))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Spacing = Spacing;
@@ -71,6 +84,10 @@ FFormationData UFormationLibrary::CreateCircleFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Circle;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Radius) || !FMath::IsFinite(StartAngle))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Size = FVector2D(Radius * 2.0f, Radius * 2.0f);
@@ -121,6 +138,10 @@ FFormationData UFormationLibrary::CreateLineFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Line;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Spacing))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Spacing = Spacing;
@@ -163,6 +184,10 @@ FFormationData UFormationLibrary::CreateTriangleFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Triangle;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Spacing))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Spacing = Spacing;
@@ -220,6 +245,10 @@ FFormationData UFormationLibrary::CreateArrowFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Arrow;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Spacing))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Spacing = Spacing;
@@ -284,6 +313,10 @@ FFormationData UFormationLibrary::CreateSpiralFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Spiral;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Radius) || !FMath::IsFinite(Turns))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Size = FVector2D(Radius * 2.0f, Radius * 2.0f);
@@ -331,6 +364,10 @@ FFormationData UFormationLibrary::CreateSolidCircleFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::SolidCircle;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Radius))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Size = FVector2D(Radius * 2.0f, Radius * 2.0f);
@@ -400,6 +437,10 @@ FFormationData UFormationLibrary::CreateZigzagFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Zigzag;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation) || !FMath::IsFinite(Spacing) || !FMath::IsFinite(ZigzagAmplitude))
+    {
+        return Formation;
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Spacing = Spacing;
@@ -440,6 +481,17 @@ FFormationData UFormationLibrary::CreateCustomFormation(
 {
     FFormationData Formation;
     Formation.FormationType = EFormationType::Custom;
+    if (!HasFiniteFormationTransform(CenterLocation, Rotation))
+    {
+        return Formation;
+    }
+    for (const FVector& Position : RelativePositions)
+    {
+        if (!FMath::IsFinite(Position.X) || !FMath::IsFinite(Position.Y) || !FMath::IsFinite(Position.Z))
+        {
+            return Formation;
+        }
+    }
     Formation.CenterLocation = CenterLocation;
     Formation.Rotation = Rotation;
     Formation.Positions = RelativePositions;

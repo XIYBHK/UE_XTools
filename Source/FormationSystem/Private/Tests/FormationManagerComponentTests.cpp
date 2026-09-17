@@ -13,6 +13,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include "Templates/Function.h"
 #include <limits>
 
 namespace
@@ -256,6 +257,63 @@ bool FFormationManagerComponentActorTransformSafetyTests::RunTest(const FString&
         MovableActor->GetActorScale3D().Equals(ExternalScale));
 
     Manager->StopFormationTransition(false);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFormationSpatialOrderNearAngleTests,
+    "XTools.Formation.Manager.SpatialOrderNearAnglesIsPermutationInvariant",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFormationSpatialOrderNearAngleTests::RunTest(const FString& Parameters)
+{
+    UFormationManagerComponent* Manager = NewObject<UFormationManagerComponent>();
+    TArray<FVector> From;
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        const double Angle = Index * 0.006;
+        const double Radius = 3.0 - Index;
+        From.Add(FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.0));
+    }
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        From.Add(-From[Index]);
+    }
+
+    // 正负对称保证 AABB 中心为零；10 倍缩放绕过相同阵型，6 点绕过螺旋检测。
+    // 穷举目标输入顺序；旧非传递比较器会因输入顺序不同而改变同一点的排序位置。
+    TArray<int32> Order = {0, 1, 2, 3, 4, 5};
+    int32 PermutationCount = 0;
+    TFunction<void(int32)> CheckPermutations;
+    CheckPermutations = [&](int32 First)
+    {
+        if (First == Order.Num())
+        {
+            TArray<FVector> To;
+            for (int32 Index : Order)
+            {
+                To.Add(From[Index] * 10.0);
+            }
+            const TArray<int32> Mapping = Manager->CalculateOptimalAssignment(
+                From, To, EFormationTransitionMode::SpatialOrderMapping);
+            TestEqual(*FString::Printf(TEXT("排列 %d 空间排序应返回全部6个映射"), PermutationCount), Mapping.Num(), From.Num());
+            for (int32 Index = 0; Index < Mapping.Num(); ++Index)
+            {
+                TestTrue(*FString::Printf(TEXT("排列 %d 点 %d 仍应映射到同一径向缩放点"), PermutationCount, Index),
+                    Order.IsValidIndex(Mapping[Index]) && Order[Mapping[Index]] == Index);
+            }
+            ++PermutationCount;
+            return;
+        }
+        for (int32 Index = First; Index < Order.Num(); ++Index)
+        {
+            Order.Swap(First, Index);
+            CheckPermutations(First + 1);
+            Order.Swap(First, Index);
+        }
+    };
+    CheckPermutations(0);
+    TestEqual(TEXT("应覆盖全部目标排列"), PermutationCount, 720);
     return true;
 }
 

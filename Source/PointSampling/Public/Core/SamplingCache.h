@@ -47,153 +47,50 @@ public:
 	
 	bool operator==(const FPoissonCacheKey& Other) const
 	{
-		// 注意：TMap 的 Key 需要“等价关系”（自反/对称/传递）。
-		// 之前使用“容差比较”会破坏传递性，进而导致 Hash/Equals 合约不成立。
-		// 这里改为“量化后比较”，保证缓存键行为稳定且可预测。
-
-		if (CoordinateSpace != Other.CoordinateSpace)
+		// 缓存保存最终点位，必须使用生成时的原始参数，不合并近似输入。
+		if (CoordinateSpace != Other.CoordinateSpace || BoxExtent != Other.BoxExtent
+			|| Radius != Other.Radius || TargetPointCount != Other.TargetPointCount
+			|| MaxAttempts != Other.MaxAttempts || JitterStrength != Other.JitterStrength
+			|| bIs2D != Other.bIs2D)
 		{
 			return false;
 		}
-
-		auto QuantizeFloat = [](float Value, float Step) -> int32
-		{
-			return FMath::RoundToInt(Value / Step);
-		};
-
-		auto QuantizeVector = [&](const FVector& Value, float Step) -> FIntVector
-		{
-			return FIntVector(
-				QuantizeFloat(Value.X, Step),
-				QuantizeFloat(Value.Y, Step),
-				QuantizeFloat(Value.Z, Step)
-			);
-		};
-
-		auto QuantizeQuat = [&](const FQuat& Value, float Step, FIntVector& OutXYZ, int32& OutW) -> void
-		{
-			const FQuat Q = CanonicalizeRotation(Value);
-			OutXYZ = FIntVector(
-				QuantizeFloat(Q.X, Step),
-				QuantizeFloat(Q.Y, Step),
-				QuantizeFloat(Q.Z, Step)
-			);
-			OutW = QuantizeFloat(Q.W, Step);
-		};
-
-		// 基础参数：全部空间共用
-		if (QuantizeVector(BoxExtent, 0.1f) != QuantizeVector(Other.BoxExtent, 0.1f))
-		{
-			return false;
-		}
-
-		if (QuantizeFloat(Radius, 0.1f) != QuantizeFloat(Other.Radius, 0.1f))
-		{
-			return false;
-		}
-
-		if (TargetPointCount != Other.TargetPointCount)
-		{
-			return false;
-		}
-
-		if (MaxAttempts != Other.MaxAttempts)
-		{
-			return false;
-		}
-
-		if (QuantizeFloat(JitterStrength, 0.01f) != QuantizeFloat(Other.JitterStrength, 0.01f))
-		{
-			return false;
-		}
-
-		if (bIs2D != Other.bIs2D)
-		{
-			return false;
-		}
-
-		// World 空间：输出依赖 Position + Rotation（不依赖 Scale）
 		if (CoordinateSpace == EPoissonCoordinateSpace::World)
 		{
-			if (QuantizeVector(Position, 0.1f) != QuantizeVector(Other.Position, 0.1f))
-			{
-				return false;
-			}
-
-			FIntVector ThisRotXYZ, OtherRotXYZ;
-			int32 ThisRotW = 0, OtherRotW = 0;
-			QuantizeQuat(Rotation, 0.001f, ThisRotXYZ, ThisRotW);
-			QuantizeQuat(Other.Rotation, 0.001f, OtherRotXYZ, OtherRotW);
-			return ThisRotXYZ == OtherRotXYZ && ThisRotW == OtherRotW;
+			return Position == Other.Position
+				&& CanonicalizeRotation(Rotation) == CanonicalizeRotation(Other.Rotation);
 		}
-
-		// Local/Raw 空间：输出依赖 Scale 补偿（不依赖 Position/Rotation）
-		return QuantizeVector(Scale, 0.001f) == QuantizeVector(Other.Scale, 0.001f);
+		return Scale == Other.Scale;
 	}
-	
+
 	friend uint32 GetTypeHash(const FPoissonCacheKey& Key)
 	{
-		auto QuantizeFloat = [](float Value, float Step) -> int32
+		// 精确比较下 +0/-0 相等；保留 FVector/FQuat 的 double 精度。
+		auto HashScalar = [](double Value) { return GetTypeHash(Value == 0.0 ? 0.0 : Value); };
+		auto HashVector = [&HashScalar](const FVector& Value)
 		{
-			return FMath::RoundToInt(Value / Step);
+			return HashCombine(HashCombine(HashScalar(Value.X), HashScalar(Value.Y)), HashScalar(Value.Z));
 		};
-
-		auto QuantizeVector = [&](const FVector& Value, float Step) -> FIntVector
-		{
-			return FIntVector(
-				QuantizeFloat(Value.X, Step),
-				QuantizeFloat(Value.Y, Step),
-				QuantizeFloat(Value.Z, Step)
-			);
-		};
-
-		auto QuantizeQuat = [&](const FQuat& Value, float Step, FIntVector& OutXYZ, int32& OutW) -> void
-		{
-			const FQuat Q = CanonicalizeRotation(Value);
-			OutXYZ = FIntVector(
-				QuantizeFloat(Q.X, Step),
-				QuantizeFloat(Q.Y, Step),
-				QuantizeFloat(Q.Z, Step)
-			);
-			OutW = QuantizeFloat(Q.W, Step);
-		};
-
-		uint32 Hash = 0;
-
-		auto HashIntVector = [](const FIntVector& V) -> uint32
-		{
-			uint32 H = 0;
-			H = HashCombine(H, GetTypeHash(V.X));
-			H = HashCombine(H, GetTypeHash(V.Y));
-			H = HashCombine(H, GetTypeHash(V.Z));
-			return H;
-		};
-
-		// 基础字段（所有空间共用）
-		Hash = HashCombine(Hash, HashIntVector(QuantizeVector(Key.BoxExtent, 0.1f)));
-		Hash = HashCombine(Hash, GetTypeHash(QuantizeFloat(Key.Radius, 0.1f)));
+		uint32 Hash = HashVector(Key.BoxExtent);
+		Hash = HashCombine(Hash, HashScalar(Key.Radius));
 		Hash = HashCombine(Hash, GetTypeHash(Key.TargetPointCount));
 		Hash = HashCombine(Hash, GetTypeHash(Key.MaxAttempts));
-		Hash = HashCombine(Hash, GetTypeHash(QuantizeFloat(Key.JitterStrength, 0.01f)));
+		Hash = HashCombine(Hash, HashScalar(Key.JitterStrength));
 		Hash = HashCombine(Hash, GetTypeHash(Key.bIs2D));
 		Hash = HashCombine(Hash, static_cast<uint32>(Key.CoordinateSpace));
-
-		// World 空间字段
 		if (Key.CoordinateSpace == EPoissonCoordinateSpace::World)
 		{
-			Hash = HashCombine(Hash, HashIntVector(QuantizeVector(Key.Position, 0.1f)));
-			FIntVector RotXYZ;
-			int32 RotW = 0;
-			QuantizeQuat(Key.Rotation, 0.001f, RotXYZ, RotW);
-			Hash = HashCombine(Hash, HashIntVector(RotXYZ));
-			Hash = HashCombine(Hash, GetTypeHash(RotW));
+			Hash = HashCombine(Hash, HashVector(Key.Position));
+			const FQuat Q = CanonicalizeRotation(Key.Rotation);
+			Hash = HashCombine(Hash, HashScalar(Q.X));
+			Hash = HashCombine(Hash, HashScalar(Q.Y));
+			Hash = HashCombine(Hash, HashScalar(Q.Z));
+			Hash = HashCombine(Hash, HashScalar(Q.W));
 		}
 		else
 		{
-			// Local/Raw 空间字段
-			Hash = HashCombine(Hash, HashIntVector(QuantizeVector(Key.Scale, 0.001f)));
+			Hash = HashCombine(Hash, HashVector(Key.Scale));
 		}
-
 		return Hash;
 	}
 };
@@ -218,17 +115,17 @@ struct FCircleSamplingCacheKey
 
 	bool operator==(const FCircleSamplingCacheKey& Other) const
 	{
-		auto Quantize = [](float Value) { return FMath::RoundToInt(Value * 100.0f); };
+		// 生成使用原始参数，缓存不得合并相近但不同的几何请求。
 		return PointCount == Other.PointCount
 			&& RandomSeed == Other.RandomSeed
 			&& MinimumPointsPerRing == Other.MinimumPointsPerRing
-			&& Quantize(Radius) == Quantize(Other.Radius)
-			&& Quantize(MinDistance) == Quantize(Other.MinDistance)
-			&& Quantize(StartAngle) == Quantize(Other.StartAngle)
-			&& Quantize(JitterStrength) == Quantize(Other.JitterStrength)
-			&& Quantize(RingSpacing) == Quantize(Other.RingSpacing)
-			&& Quantize(LayerSpacing) == Quantize(Other.LayerSpacing)
-			&& Quantize(LayerDensity) == Quantize(Other.LayerDensity)
+			&& Radius == Other.Radius
+			&& MinDistance == Other.MinDistance
+			&& StartAngle == Other.StartAngle
+			&& JitterStrength == Other.JitterStrength
+			&& RingSpacing == Other.RingSpacing
+			&& LayerSpacing == Other.LayerSpacing
+			&& LayerDensity == Other.LayerDensity
 			&& DistributionMode == Other.DistributionMode
 			&& bIs3D == Other.bIs3D
 			&& bSolid == Other.bSolid
@@ -237,17 +134,18 @@ struct FCircleSamplingCacheKey
 
 	friend uint32 GetTypeHash(const FCircleSamplingCacheKey& Key)
 	{
-		auto Quantize = [](float Value) { return FMath::RoundToInt(Value * 100.0f); };
+		// +0 与 -0 比较相等，哈希也必须一致。
+		auto HashFloat = [](float Value) { return GetTypeHash(Value == 0.0f ? 0.0f : Value); };
 		uint32 Hash = GetTypeHash(Key.PointCount);
 		Hash = HashCombine(Hash, GetTypeHash(Key.RandomSeed));
 		Hash = HashCombine(Hash, GetTypeHash(Key.MinimumPointsPerRing));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.Radius)));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.MinDistance)));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.StartAngle)));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.JitterStrength)));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.RingSpacing)));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.LayerSpacing)));
-		Hash = HashCombine(Hash, GetTypeHash(Quantize(Key.LayerDensity)));
+		Hash = HashCombine(Hash, HashFloat(Key.Radius));
+		Hash = HashCombine(Hash, HashFloat(Key.MinDistance));
+		Hash = HashCombine(Hash, HashFloat(Key.StartAngle));
+		Hash = HashCombine(Hash, HashFloat(Key.JitterStrength));
+		Hash = HashCombine(Hash, HashFloat(Key.RingSpacing));
+		Hash = HashCombine(Hash, HashFloat(Key.LayerSpacing));
+		Hash = HashCombine(Hash, HashFloat(Key.LayerDensity));
 		Hash = HashCombine(Hash, GetTypeHash(Key.DistributionMode));
 		Hash = HashCombine(Hash, GetTypeHash(Key.bIs3D));
 		Hash = HashCombine(Hash, GetTypeHash(Key.bSolid));

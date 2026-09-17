@@ -35,6 +35,199 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPointSampling_CircleBoundaryContracts,
+	"XTools.PointSampling.Formation.CircleBoundaryContracts",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSampling_CircleBoundaryContracts::RunTest(const FString& Parameters)
+{
+	const auto Generate = [](int32 Count, float Radius, bool bIs3D, bool bSolid,
+		ECircleDistributionMode Mode, int32 Seed, bool bCache, float Angle = 0.0f, float Spacing = 0.0f)
+	{
+		return UFormationSamplingLibrary::GenerateCircle(
+			Count, FVector::ZeroVector, FRotator::ZeroRotator, Radius, bIs3D, bSolid,
+			Mode, 25.0f, Angle, true, EPoissonCoordinateSpace::Raw, 0.0f, Seed, bCache, Spacing);
+	};
+	const auto SamePoints = [](const TArray<FTransform>& A, const TArray<FTransform>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (!A[Index].Equals(B[Index], 0.0f))
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	// 球壳在低点数和小尺度下仍须保持点数，且每个点都位于球面。
+	for (float Radius : {100.0f, 0.00001f})
+	{
+		for (int32 Count : {1, 2, 3, 4, 12, 100})
+		{
+			const FString Context = FString::Printf(TEXT("球壳 Count=%d Radius=%g"), Count, Radius);
+			const TArray<FTransform> Points = Generate(Count, Radius, true, false,
+				ECircleDistributionMode::Uniform, 123, false);
+			TestEqual(Context + TEXT(" 应保持请求点数"), Points.Num(), Count);
+			for (int32 Index = 0; Index < Points.Num(); ++Index)
+			{
+				TestTrue(FString::Printf(TEXT("%s Point=%d 应在球面上"), *Context, Index),
+					FMath::Abs(Points[Index].GetLocation().Size() / Radius - 1.0) < 0.00001);
+			}
+		}
+	}
+
+	// 覆盖自动间距、恰好退化、退化两侧和正常多层配置。
+	for (int32 Count : {1, 2, 3, 5, 6, 12, 120})
+	{
+		for (float Spacing : {0.0f, 25.0f, 99.99f, 100.0f, 100.01f, 150.0f})
+		{
+			const FString Context = FString::Printf(TEXT("紧密堆叠 Count=%d Radius=100 Spacing=%g"), Count, Spacing);
+			const TArray<FTransform> Points = Generate(Count, 100.0f, true, true,
+				ECircleDistributionMode::ClosePacked, 123, false, 0.0f, Spacing);
+			TestTrue(Context + TEXT(" 应生成点"), !Points.IsEmpty());
+			if (Count == 1)
+			{
+				TestEqual(Context + TEXT(" 单点实心球应保持一个中心点"), Points.Num(), 1);
+			}
+			else if (Spacing >= 100.0f || (Spacing == 0.0f && Count <= 5))
+			{
+				TestEqual(Context + TEXT(" 退化截面只保留五点十字"), Points.Num(), 5);
+			}
+			for (int32 Index = 0; Index < Points.Num(); ++Index)
+			{
+				const FVector Location = Points[Index].GetLocation();
+				TestTrue(FString::Printf(TEXT("%s Point=%d 不得超出球体"), *Context, Index), Location.Size() <= 100.001);
+				for (int32 Other = 0; Other < Index; ++Other)
+				{
+					TestFalse(FString::Printf(TEXT("%s Points=%d,%d 不得重合"), *Context, Index, Other),
+						Location.Equals(Points[Other].GetLocation(), 0.00001));
+				}
+			}
+		}
+	}
+
+	for (bool bIs3D : {false, true})
+	{
+		const FString Context = FString::Printf(TEXT("泊松 Is3D=%d Count=12 Radius=100 MinDistance=25 Seeds=123/124 Cache=0"), bIs3D);
+		const TArray<FTransform> First = Generate(12, 100.0f, bIs3D, false,
+			ECircleDistributionMode::Poisson, 123, false);
+		const TArray<FTransform> Repeat = Generate(12, 100.0f, bIs3D, false,
+			ECircleDistributionMode::Poisson, 123, false);
+		const TArray<FTransform> Different = Generate(12, 100.0f, bIs3D, false,
+			ECircleDistributionMode::Poisson, 124, false);
+		TestTrue(Context + TEXT(" 相同种子应得到相同结果"), !First.IsEmpty() && SamePoints(First, Repeat));
+		TestFalse(Context + TEXT(" 不同种子应改变结果"), SamePoints(First, Different));
+		for (int32 Index = 0; Index < First.Num(); ++Index)
+		{
+			TestTrue(FString::Printf(TEXT("%s Point=%d 应位于范围内"), *Context, Index), First[Index].GetLocation().Size() <= 100.001);
+			for (int32 Other = 0; Other < Index; ++Other)
+			{
+				TestTrue(FString::Printf(TEXT("%s Points=%d,%d 应满足最小距离"), *Context, Index, Other),
+					FVector::Dist(First[Index].GetLocation(), First[Other].GetLocation()) >= 24.999);
+			}
+		}
+	}
+
+	FSamplingCache::Get().ClearCache();
+	const TArray<FTransform> ZeroAngle = Generate(4, 100000.0f, false, false,
+		ECircleDistributionMode::Uniform, 123, true);
+	const TArray<FTransform> Cached = Generate(4, 100000.0f, false, false,
+		ECircleDistributionMode::Uniform, 123, true, 0.004f);
+	const TArray<FTransform> Uncached = Generate(4, 100000.0f, false, false,
+		ECircleDistributionMode::Uniform, 123, false, 0.004f);
+	TestFalse(TEXT("微小角度变化不得复用旧几何"), SamePoints(ZeroAngle, Cached));
+	TestTrue(TEXT("缓存开关不得改变输出"), SamePoints(Cached, Uncached));
+
+	// 所有浮点字段都不得隐式量化；相等的有符号零必须具有相同哈希。
+	struct FCacheField
+	{
+		const TCHAR* Name;
+		float FCircleSamplingCacheKey::* Member;
+	};
+	const FCacheField Fields[] = {
+		{TEXT("Radius"), &FCircleSamplingCacheKey::Radius},
+		{TEXT("MinDistance"), &FCircleSamplingCacheKey::MinDistance},
+		{TEXT("StartAngle"), &FCircleSamplingCacheKey::StartAngle},
+		{TEXT("JitterStrength"), &FCircleSamplingCacheKey::JitterStrength},
+		{TEXT("RingSpacing"), &FCircleSamplingCacheKey::RingSpacing},
+		{TEXT("LayerSpacing"), &FCircleSamplingCacheKey::LayerSpacing},
+		{TEXT("LayerDensity"), &FCircleSamplingCacheKey::LayerDensity}
+	};
+	for (const FCacheField& Field : Fields)
+	{
+		const FString Context = FString::Printf(TEXT("缓存字段 %s"), Field.Name);
+		FCircleSamplingCacheKey A;
+		FCircleSamplingCacheKey B;
+		A.*Field.Member = 0.0f;
+		B.*Field.Member = 0.004f;
+		TestFalse(Context + TEXT(" 0 与 0.004 不能共享缓存键"), A == B);
+		B.*Field.Member = -0.0f;
+		TestTrue(Context + TEXT(" 有符号零应相等"), A == B);
+		TestEqual(Context + TEXT(" 有符号零哈希应一致"), GetTypeHash(A), GetTypeHash(B));
+	}
+	FSamplingCache::Get().ClearCache();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPointSampling_CircleRejectsNonFiniteInputs,
+	"XTools.PointSampling.Formation.CircleRejectsNonFiniteInputs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSampling_CircleRejectsNonFiniteInputs::RunTest(const FString& Parameters)
+{
+	struct FInputs
+	{
+		float Radius = 100.0f;
+		float MinDistance = 25.0f;
+		float StartAngle = 0.0f;
+		float JitterStrength = 0.0f;
+		float RingSpacing = 0.0f;
+		float LayerSpacing = 0.0f;
+		float LayerDensity = 1.0f;
+	};
+	struct FInputField
+	{
+		const TCHAR* Name;
+		float FInputs::* Member;
+	};
+	const FInputField Fields[] = {
+		{TEXT("Radius"), &FInputs::Radius},
+		{TEXT("MinDistance"), &FInputs::MinDistance},
+		{TEXT("StartAngle"), &FInputs::StartAngle},
+		{TEXT("JitterStrength"), &FInputs::JitterStrength},
+		{TEXT("RingSpacing"), &FInputs::RingSpacing},
+		{TEXT("LayerSpacing"), &FInputs::LayerSpacing},
+		{TEXT("LayerDensity"), &FInputs::LayerDensity}
+	};
+	for (float Invalid : {std::numeric_limits<float>::quiet_NaN(),
+		std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()})
+	{
+		for (const FInputField& Field : Fields)
+		{
+			FInputs Inputs;
+			Inputs.*Field.Member = Invalid;
+			for (bool bCache : {false, true})
+			{
+				const TArray<FTransform> Points = UFormationSamplingLibrary::GenerateCircle(
+					12, FVector::ZeroVector, FRotator::ZeroRotator, Inputs.Radius, true, true,
+					ECircleDistributionMode::ClosePacked, Inputs.MinDistance, Inputs.StartAngle, true,
+					EPoissonCoordinateSpace::Raw, Inputs.JitterStrength, 123, bCache,
+					Inputs.RingSpacing, Inputs.LayerSpacing, Inputs.LayerDensity);
+				TestTrue(FString::Printf(TEXT("非有限参数 %s=%g Cache=%d 应返回空数组"),
+					Field.Name, Invalid, bCache), Points.IsEmpty());
+			}
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPointSamplingCache_UpdatingExistingEntryDoesNotEvict,
 	"XTools.PointSampling.Cache.UpdatingExistingEntryDoesNotEvict",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -111,6 +304,71 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPointSamplingPoisson_RejectsNonFiniteInputs,
 	"XTools.PointSampling.Poisson.RejectsNonFiniteInputs",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPointSamplingCache_ExactPoissonInputs,
+	"XTools.PointSampling.Cache.ExactPoissonInputs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPointSamplingCache_ExactPoissonInputs::RunTest(const FString& Parameters)
+{
+	FSamplingCache& Cache = FSamplingCache::Get();
+	Cache.ClearCache();
+	FPoissonCacheKey Base;
+	Base.BoxExtent = FVector(100.0);
+	Base.Radius = 25.0f;
+	Base.Position.X = 100000000.0;
+	Cache.Store(Base, {FVector(1.0, 2.0, 3.0)});
+	const auto ExpectMiss = [this, &Cache](const TCHAR* Field, const FPoissonCacheKey& Changed)
+	{
+		TestFalse(FString::Printf(TEXT("泊松缓存应区分微小变化 %s"), Field), Cache.GetCached(Changed).IsSet());
+	};
+	FPoissonCacheKey Changed = Base;
+	Changed.Position.X += 0.04;
+	ExpectMiss(TEXT("Position / 大世界坐标"), Changed);
+	Changed = Base;
+	Changed.BoxExtent.X += 0.04;
+	ExpectMiss(TEXT("BoxExtent"), Changed);
+	Changed = Base;
+	Changed.Radius += 0.04f;
+	ExpectMiss(TEXT("Radius"), Changed);
+	Changed = Base;
+	Changed.JitterStrength = 0.004f;
+	ExpectMiss(TEXT("JitterStrength"), Changed);
+	Changed = Base;
+	Changed.Rotation = FRotator(0.0, 0.04, 0.0).Quaternion();
+	ExpectMiss(TEXT("Rotation"), Changed);
+	Base.CoordinateSpace = EPoissonCoordinateSpace::Local;
+	Cache.Store(Base, {FVector::ZeroVector});
+	Changed = Base;
+	Changed.Scale.X += 0.0004;
+	ExpectMiss(TEXT("Scale"), Changed);
+	Changed = Base;
+	Changed.JitterStrength = -0.0f;
+	TestTrue(TEXT("正负零缓存键相等"), Changed == Base);
+	TestEqual(TEXT("正负零缓存键哈希相等"), GetTypeHash(Changed), GetTypeHash(Base));
+
+	// 公开接口：相同请求命中，中心微移必须重新生成最终坐标。
+	Cache.ClearCache();
+	const auto Generate = [](double X)
+	{
+		return UPointSamplingLibrary::GeneratePoissonPointsInBoxByVector(
+			FVector(100.0, 100.0, 0.0), FTransform(FVector(X, 0.0, 0.0)),
+			25.0f, 30, EPoissonCoordinateSpace::World, 0, 0.0f, true);
+	};
+	const TArray<FVector> First = Generate(0.0);
+	const TArray<FVector> Repeat = Generate(0.0);
+	const TArray<FVector> Moved = Generate(0.04);
+	TestTrue(TEXT("有效盒体应生成点"), !First.IsEmpty() && !Moved.IsEmpty());
+	TestTrue(TEXT("相同请求应复用原点集"), First == Repeat);
+	int32 Hits = 0;
+	int32 Misses = 0;
+	Cache.GetStats(Hits, Misses);
+	TestEqual(TEXT("只有相同请求命中缓存"), Hits, 1);
+	TestEqual(TEXT("中心微移产生独立缓存项"), Misses, 2);
+	Cache.ClearCache();
+	return true;
+}
 
 bool FPointSamplingPoisson_RejectsNonFiniteInputs::RunTest(const FString& Parameters)
 {
